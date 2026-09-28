@@ -66,6 +66,9 @@
 <style>
 @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+/* Geist, every weight (variable, Latin), for headings below the first
+   screen: 600 with tight tracking is what reads as a product, not a poster. */
+@font-face { font-family: "Geist Var"; src: url("/fonts/geist-var-latin.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
 
 :root {
@@ -107,21 +110,22 @@ picture source { display: none; }
    horizon to the other. CSS only: it is visible even where animation
    frames never arrive, and it rises in once where motion is welcome. */
 .phEclipse {
-  position: absolute; z-index: -1; pointer-events: none; isolation: isolate;
+  position: absolute; z-index: -2; pointer-events: none; isolation: isolate;
   left: 50%; width: 230vw; margin-left: -115vw;
   top: 74%; height: 150vh;
 }
 .phEclipse > i { position: absolute; inset: 0; border-radius: 100%; display: block; }
-.phEclipse .rim {
-  background: #fff;
-  box-shadow:
-    0 -3px 16px 1px rgba(255, 255, 255, 0.55),
-    0 -16px 70px 8px rgba(165, 88, 251, 0.42),
-    0 -70px 220px 60px rgba(73, 34, 229, 0.30);
+/* Colour only, no shape. The planet's rim read as a hard bar under the
+   prompt, and even without it the dark body drew an arc against the glow.
+   What is left is the light: two wide, heavily blurred pools of the
+   eclipse's purple and indigo rising from below, fading into the page. */
+.phEclipse .rim, .phEclipse .core { display: none; }
+.phEclipse .glo1 { background: var(--purple); filter: blur(130px); opacity: 0.42; transform: scale(0.95); }
+.phEclipse .glo2 { background: var(--indigo); filter: blur(150px); opacity: 0.55; transform: scale(0.82) translateY(6%); }
+.promptHero::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 22%; z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, transparent, #000);
 }
-.phEclipse .glo1 { background: var(--purple); filter: blur(22px); transform: scale(0.992); }
-.phEclipse .glo2 { background: var(--indigo); filter: blur(26px); transform: scale(0.976); }
-.phEclipse .core { background: #000; filter: blur(48px); transform: scale(0.955); }
 /* A faint haze just above the horizon, where the light would scatter. */
 .promptHero::after {
   content: ""; position: absolute; z-index: -1; pointer-events: none;
@@ -333,6 +337,12 @@ picture source { display: none; }
               transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1.35);
 }
 .heroCycle .glyph svg { width: 100%; height: 100%; display: block; }
+/* The .krate file between the two sentences: the thing the line is about. */
+.heroCycle.phFile img { width: 0.86em; height: 0.86em; display: block;
+  filter: drop-shadow(0 10px 26px rgba(165, 88, 251, 0.5)); }
+@media (prefers-reduced-motion: no-preference) {
+  .heroCycle.phFile img { animation: fileFloat 4.5s ease-in-out infinite; }
+}
 .heroCycle .glyph.out { opacity: 0; transform: translateY(-12px) scale(0) rotate(12deg); transition-timing-function: ease-in; transition-duration: 0.3s; }
 .heroCycle .glyph.pre { opacity: 0; transform: translateY(16px) scale(0) rotate(-12deg); transition: none; }
 .heroSub {
@@ -1514,222 +1524,247 @@ picture source { display: none; }
 </style>
 <style>
 /* ================================================= below the first screen
-   One idea per section, a lot of black between them, and motion that
-   only ever means "this just arrived". Everything that starts hidden is
-   gated on .js (set in the head), so a reader without scripts sees it all. */
-.kx { position: relative; z-index: 2; width: 100%; background: #000; padding: clamp(80px, 12vw, 140px) 24px 0; }
-.kxHead { max-width: 760px; margin: 0 auto 48px; text-align: center; }
-.kxHead h2, .howCopy h2 {
-  font-family: var(--disp); font-weight: 600; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4.2vw, 48px); line-height: 1.12; color: #fff;
+   Rules, not decoration: one grotesque (Geist, 600, tight) for every
+   heading; headings left, on one 1280px column; 160px of air between
+   sections; surfaces are a lifted shade with a hairline ring, never a
+   coloured border; the only glow is the brand's, and only behind real
+   product. Motion is a short fade-and-rise and nothing else. Everything
+   hidden at first is gated on .js, so without scripts it all shows. */
+.kx {
+  --ink: #fafafa; --ink2: #a1a1aa; --ink3: #71717a;
+  --surf: #0e0e11; --surf2: #141418;
+  --ring: 0 0 0 1px rgba(255,255,255,0.06), 0 1px 1px rgba(0,0,0,0.4), 0 8px 30px -12px rgba(0,0,0,0.6);
+  --head: "Geist Var", var(--sans);
+  position: relative; z-index: 2; width: 100%; background: #000;
+  padding: 160px 32px 0;
 }
-.kxHead p { margin-top: 16px; font-size: clamp(15px, 1.5vw, 17px); line-height: 1.6; color: #a1a1aa; }
-.kxHead code, .kxMade code { font-family: var(--mono, ui-monospace, monospace); color: #d4d4d8; }
-.kx h3 { font-size: 17px; font-weight: 600; color: #fff; letter-spacing: -0.005em; }
-.kx p a { color: #d4d4d8; text-decoration: underline; text-underline-offset: 3px; }
-.kx p a:hover { color: #fff; }
-
-.js .reveal { opacity: 0; transform: translateY(26px); filter: blur(6px); }
-.js .reveal.in { opacity: 1; transform: none; filter: none;
-  transition: opacity 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.9s ease; }
-.wCards .reveal:nth-child(2), .facts .reveal:nth-child(2), .ways .reveal:nth-child(2) { transition-delay: 0.12s; }
-.wCards .reveal:nth-child(3), .facts .reveal:nth-child(3) { transition-delay: 0.24s; }
-
-/* ---- three cards: describe, build, send */
-.wCards { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.wCard {
-  border-radius: 22px; padding: 14px 14px 26px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015));
-  border: 1px solid rgba(255,255,255,0.08);
+.kx > * { max-width: 1280px; margin-left: auto; margin-right: auto; }
+.kxHead { margin-bottom: 56px; text-align: left; }
+.kxHead h2, .howCopy h2, .numsCopy h2 {
+  font-family: var(--head); font-weight: 600; letter-spacing: -0.04em;
+  font-size: clamp(30px, 3.2vw, 44px); line-height: 1.1; color: var(--ink);
 }
-.wCard h3 { margin: 22px 12px 8px; }
-.wCard p { margin: 0 12px; font-size: 14.5px; line-height: 1.6; color: #a1a1aa; }
+.kxHead p, .howLead, .numsCopy > p { margin-top: 14px; max-width: 580px; font-size: 17px; line-height: 1.6; color: var(--ink2); }
+.kx h3 { font-family: var(--head); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.kx code { font-family: var(--mono, ui-monospace, monospace); font-size: 0.92em; color: #d4d4d8; }
+.kx p a { color: var(--ink); text-decoration: underline; text-decoration-color: rgba(255,255,255,0.3); text-underline-offset: 3px; }
+.kx p a:hover { text-decoration-color: var(--ink); }
+
+.js .reveal { opacity: 0; transform: translateY(16px); }
+.js .reveal.in { opacity: 1; transform: none; transition: opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.wCards .reveal:nth-child(2), .facts .reveal:nth-child(2), .ways .reveal:nth-child(2) { transition-delay: 0.08s; }
+.wCards .reveal:nth-child(3), .facts .reveal:nth-child(3) { transition-delay: 0.16s; }
+
+/* ---- three cards */
+.wCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.wCard { border-radius: 16px; background: var(--surf); box-shadow: var(--ring); overflow: hidden; }
+.wCard h3 { margin: 24px 24px 6px; }
+.wCard p { margin: 0 24px 28px; font-size: 14px; line-height: 24px; color: var(--ink2); }
 .wVis {
-  position: relative; height: 230px; border-radius: 14px; overflow: hidden;
-  display: grid; place-items: center;
-  background:
-    radial-gradient(80% 90% at 50% 110%, rgba(165, 88, 251, 0.26), transparent 70%),
-    radial-gradient(60% 60% at 20% 0%, rgba(73, 34, 229, 0.18), transparent 70%),
-    #07070a;
+  position: relative; height: 260px; overflow: hidden; display: grid; place-items: center;
+  background: radial-gradient(60% 70% at 50% 100%, rgba(124, 58, 237, 0.18), transparent 70%), var(--surf);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .miniBar {
   width: 82%; display: flex; align-items: center; gap: 2px;
-  padding: 14px 12px 14px 16px; border-radius: 16px;
-  background: rgba(24, 24, 27, 0.92); border: 1px solid rgba(255,255,255,0.14);
-  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  padding: 14px 12px 14px 16px; border-radius: 14px;
+  background: #16161b; box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 20px 40px -12px rgba(0,0,0,0.8);
   font-size: 14px; color: #e4e4e7; white-space: nowrap; overflow: hidden;
 }
-.miniText { overflow: hidden; text-overflow: clip; }
-.miniCaret { width: 2px; height: 17px; background: #c4b5fd; flex: none; animation: caretBlink 1s steps(1) infinite; }
-.miniSend { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; background: #fff; color: #000; }
+.miniText { overflow: hidden; }
+.miniCaret { width: 1.5px; height: 17px; background: #c4b5fd; flex: none; animation: caretBlink 1s steps(1) infinite; }
+.miniSend { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; background: #fafafa; color: #000; }
 @keyframes caretBlink { 50% { opacity: 0; } }
 .miniWin {
-  position: relative; width: 58%; aspect-ratio: 720 / 880; max-height: 88%;
-  border-radius: 12px; overflow: hidden; background: #0b0b0f;
-  border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  position: relative; width: 86%; aspect-ratio: 16 / 10.3; border-radius: 10px; overflow: hidden;
+  background: #0b0b0f; box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 24px 50px -16px rgba(0,0,0,0.9);
 }
-.miniWin .dots { position: absolute; top: 8px; left: 10px; display: flex; gap: 5px; z-index: 2; }
-.miniWin .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.22); }
-.miniWin img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.miniWin .dots { display: none; }
+.miniWin img { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; }
 .miniWin .scan {
-  position: absolute; left: 0; right: 0; height: 36%; top: -40%;
-  background: linear-gradient(180deg, transparent, rgba(165, 88, 251, 0.35), transparent);
-  animation: scanDown 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  position: absolute; left: 0; right: 0; height: 30%; top: -35%;
+  background: linear-gradient(180deg, transparent, rgba(167, 139, 250, 0.22), transparent);
+  animation: scanDown 3.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 .miniWin .tag {
-  position: absolute; left: 8px; bottom: 8px; font-size: 10.5px; color: #e9d5ff;
-  background: rgba(10,10,14,0.8); border: 1px solid rgba(196,181,253,0.3); border-radius: 999px; padding: 3px 8px;
+  position: absolute; right: 10px; bottom: 10px; font-size: 11px; color: #e4e4e7;
+  background: rgba(10,10,14,0.85); box-shadow: 0 0 0 1px rgba(255,255,255,0.1); border-radius: 999px; padding: 4px 9px;
 }
-@keyframes scanDown { to { top: 110%; } }
-.kFile { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.kFile img { width: 64px; height: 64px; filter: drop-shadow(0 12px 30px rgba(165, 88, 251, 0.45)); animation: fileFloat 4s ease-in-out infinite; }
+@keyframes scanDown { to { top: 105%; } }
+.kFile { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.kFile img { width: 60px; height: 60px; filter: drop-shadow(0 14px 28px rgba(124, 58, 237, 0.45)); animation: fileFloat 5s ease-in-out infinite; }
 .kFile b { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; font-weight: 500; color: #e4e4e7; }
-.kFile .oses { display: flex; gap: 6px; margin-top: 6px; }
-.kFile .oses span {
-  font-size: 11.5px; color: #a1a1aa; padding: 4px 10px; border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.1); animation: osLight 3.6s ease-in-out infinite;
-}
+.kFile .oses { display: flex; gap: 6px; }
+.kFile .oses span { font-size: 12px; color: var(--ink3); padding: 4px 10px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,0.08); animation: osLight 3.6s ease-in-out infinite; }
 .kFile .oses span:nth-child(2) { animation-delay: 1.2s; }
 .kFile .oses span:nth-child(3) { animation-delay: 2.4s; }
-@keyframes fileFloat { 50% { transform: translateY(-6px); } }
-@keyframes osLight {
-  0%, 60%, 100% { color: #a1a1aa; border-color: rgba(255,255,255,0.1); background: transparent; }
-  15%, 40% { color: #fff; border-color: rgba(196,181,253,0.55); background: rgba(165, 88, 251, 0.16); }
-}
+@keyframes fileFloat { 50% { transform: translateY(-5px); } }
+@keyframes osLight { 0%, 55%, 100% { color: var(--ink3); } 15%, 40% { color: #fafafa; box-shadow: 0 0 0 1px rgba(196,181,253,0.45); } }
 
-/* ---- the focused panel */
-.kxHow { height: 420vh; padding-top: clamp(80px, 10vw, 120px); }
-.howPin { position: sticky; top: 72px; height: calc(100vh - 96px); min-height: 560px; display: flex; }
+/* ---- the focused panel: a lifted block, nearly edge to edge */
+.kxHow { height: 420vh; padding: 120px 16px 0; }
+.kxHow > .howPin { max-width: none; }
+.howPin { position: sticky; top: 16px; height: calc(100vh - 32px); min-height: 560px; display: flex; }
 .howCard {
-  --rise: 0; --glow: 0;
-  width: min(1240px, 100%); margin: 0 auto; height: 100%;
-  display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.25fr); gap: clamp(24px, 4vw, 56px);
-  padding: clamp(28px, 4vw, 56px); border-radius: 30px; overflow: hidden;
-  background:
-    radial-gradient(70% 60% at 75% 110%, rgba(165, 88, 251, calc(0.22 * var(--glow))), transparent 70%),
-    radial-gradient(50% 40% at 10% 0%, rgba(73, 34, 229, calc(0.18 * var(--glow))), transparent 70%),
-    #0c0c11;
-  border: 1px solid rgba(255,255,255,0.09);
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 -30px 120px -40px rgba(165, 88, 251, calc(0.5 * var(--glow)));
-  transform: translateY(calc((1 - var(--rise)) * 90px)) scale(calc(0.92 + 0.08 * var(--rise)));
+  --rise: 0;
+  width: 100%; height: 100%; border-radius: 16px; overflow: hidden;
+  background: #111114;
+  display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.3fr); gap: 56px;
+  padding: 72px max(40px, calc((100% - 1280px) / 2));
+  transform: translateY(calc((1 - var(--rise)) * 80px)) scale(calc(0.96 + 0.04 * var(--rise)));
   transform-origin: 50% 100%;
 }
 .howCopy { display: flex; flex-direction: column; min-height: 0; }
-.howLead { margin-top: 14px; font-size: 15.5px; line-height: 1.6; color: #a1a1aa; max-width: 420px; }
-.steps { list-style: none; margin: auto 0 0; padding: 28px 0 0; }
-.steps li { position: relative; border-top: 1px solid rgba(255,255,255,0.08); padding: 14px 0 16px; }
+.steps { list-style: none; margin: auto 0 0; padding: 32px 0 0; }
+.steps li { position: relative; border-top: 1px solid rgba(255,255,255,0.08); padding: 16px 0 18px; }
 .steps li:last-child { border-bottom: 1px solid rgba(255,255,255,0.08); }
-.steps button {
-  appearance: none; background: none; border: 0; padding: 0; cursor: pointer;
-  font: inherit; font-size: 16px; font-weight: 500; color: #71717a; text-align: left;
-  transition: color 0.3s;
-}
-.steps li.on button, .steps button:hover { color: #fff; }
-.steps li p {
-  max-height: 0; overflow: hidden; opacity: 0; margin-top: 0;
-  font-size: 14px; line-height: 1.6; color: #a1a1aa;
-  transition: max-height 0.45s ease, opacity 0.45s ease, margin-top 0.45s ease;
-}
-.steps li.on p { max-height: 90px; opacity: 1; margin-top: 8px; }
-.steps .prog { position: absolute; left: 0; bottom: -1px; width: 38%; height: 2px; opacity: 0; transition: opacity 0.3s; }
-.steps .prog i { display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: linear-gradient(90deg, #7c3aed, #c4b5fd); border-radius: 2px; }
+.steps button { appearance: none; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-family: var(--head); font-size: 16px; font-weight: 400; color: var(--ink2); text-align: left; transition: color 0.3s; }
+.steps li.on button { color: var(--ink); font-weight: 600; }
+.steps button:hover { color: var(--ink); }
+.steps li p { max-height: 0; overflow: hidden; opacity: 0; font-size: 14px; line-height: 22px; color: var(--ink2); transition: max-height 0.5s ease, opacity 0.5s ease, margin-top 0.5s ease; }
+.steps li.on p { max-height: 90px; opacity: 1; margin-top: 6px; }
+.steps .prog { position: absolute; left: 0; bottom: -1px; width: 100%; height: 1px; opacity: 0; transition: opacity 0.3s; }
+.steps .prog i { display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: linear-gradient(90deg, #a78bfa, #f0abfc); }
 .steps li.on .prog { opacity: 1; }
-.howStage { position: relative; min-height: 0; border-radius: 18px; }
-.hs {
-  position: absolute; inset: 0; margin: 0; display: grid; place-items: center;
-  opacity: 0; transform: translateY(18px) scale(0.97);
-  transition: opacity 0.6s ease, transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
+.howStage { position: relative; min-height: 0; }
+.hs { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; opacity: 0; transform: translateY(12px); transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .hs.on { opacity: 1; transform: none; }
-.hs picture, .hs > img { width: 100%; }
-.hs img { width: 100%; height: auto; max-height: 100%; object-fit: contain; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 30px 80px rgba(0,0,0,0.6); display: block; }
-.mockChat, .mockShare {
-  width: min(460px, 92%); padding: 24px; border-radius: 18px;
-  background: #121218; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 30px 80px rgba(0,0,0,0.6);
-  display: flex; flex-direction: column; gap: 14px;
-}
-.mockChat .you { align-self: flex-end; max-width: 85%; padding: 10px 14px; border-radius: 16px 16px 5px 16px; background: #1f1f28; border: 1px solid rgba(255,255,255,0.08); color: #fff; font-size: 14px; }
+.hs picture { width: 100%; }
+.hs img { width: 100%; height: auto; max-height: 100%; object-fit: contain; border-radius: 12px; box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 40px 80px -30px rgba(0,0,0,0.9); display: block; }
+.mockChat, .mockShare { width: min(460px, 92%); padding: 24px; border-radius: 14px; background: #17171b; box-shadow: 0 0 0 1px rgba(255,255,255,0.07), 0 40px 80px -30px rgba(0,0,0,0.9); display: flex; flex-direction: column; gap: 14px; }
+.mockChat .you { align-self: flex-end; max-width: 85%; padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: #24242a; color: var(--ink); font-size: 14px; line-height: 1.5; }
 .mockChat .krate { color: #e4e4e7; font-size: 14px; line-height: 1.6; }
-.mockChat .dim { color: #a1a1aa; }
-.mockBtn { align-self: flex-start; padding: 7px 16px; border-radius: 999px; background: #fff; color: #000; font-size: 13px; font-weight: 600; }
-.mockApp { height: 220px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); }
-.mockApp img { width: 100%; height: 100%; object-fit: cover; object-position: top; border: 0; box-shadow: none; border-radius: 0; }
-.mockLink { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-radius: 12px; background: #0b0b0f; border: 1px solid rgba(255,255,255,0.1); font-family: var(--mono, ui-monospace, monospace); font-size: 13px; color: #d4d4d8; }
-.mockLink b { margin-left: auto; font-family: var(--sans, inherit); font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: #fff; color: #000; }
-.mockShare p { font-size: 13px; color: #a1a1aa; }
+.mockChat .dim { color: var(--ink2); }
+.mockBtn { align-self: flex-start; padding: 7px 16px; border-radius: 999px; background: #fafafa; color: #000; font-size: 13px; font-weight: 600; }
+.mockApp { height: 220px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.07); }
+.mockApp img { width: 100%; height: 100%; object-fit: cover; object-position: top left; border: 0; box-shadow: none; border-radius: 0; }
+.mockLink { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-radius: 10px; background: #0e0e11; box-shadow: 0 0 0 1px rgba(255,255,255,0.08); font-family: var(--mono, ui-monospace, monospace); font-size: 13px; color: #d4d4d8; }
+.mockLink b { margin-left: auto; font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: #fafafa; color: #000; }
+.mockShare p { font-size: 13px; color: var(--ink2); }
 
-/* ---- made with Krate: a bento of the best, then a quiet row */
-.bento { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.bx, .sx { margin: 0; border-radius: 22px; overflow: hidden; background: #0b0b10; border: 1px solid rgba(255,255,255,0.08);
-  transition: border-color 0.3s, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.5s; }
+/* ---- made with Krate */
+.bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.bx, .sx { margin: 0; border-radius: 16px; overflow: hidden; background: var(--surf); box-shadow: var(--ring); transition: box-shadow 0.4s ease, transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .bx.bxWide { grid-column: span 2; }
-.bxImg { position: relative; overflow: hidden; aspect-ratio: 16 / 10; background: #07070a; }
-/* One picture height across a row, wide or not, so the captions line up
-   and no card is left with an empty band under its words. */
-.bento .bxImg { aspect-ratio: auto; height: clamp(220px, 25vw, 340px); }
-.bxImg img { width: 100%; height: 100%; object-fit: cover; display: block; transform: scale(1.001); transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.bxImg::after { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, transparent 55%, rgba(11,11,16,0.85)); }
-.bx figcaption, .sx figcaption { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 4px; }
-.bx figcaption b, .sx figcaption b { font-size: 16px; font-weight: 600; color: #fff; }
-.bx figcaption span, .sx figcaption span { font-size: 14px; line-height: 1.5; color: #a1a1aa; }
-.bx:hover, .sx:hover { border-color: rgba(196,181,253,0.35); transform: translateY(-4px); box-shadow: 0 30px 80px -30px rgba(165, 88, 251, 0.45); }
-.bx:hover .bxImg img, .sx:hover .bxImg img { transform: scale(1.04); }
-.smallRow { max-width: 1240px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.bxImg { position: relative; overflow: hidden; aspect-ratio: 16 / 10; background: #08080a; }
+.bento .bxImg { aspect-ratio: auto; height: clamp(220px, 24vw, 330px); }
+.bxImg img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 1s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.bx figcaption, .sx figcaption { padding: 18px 22px 22px; display: flex; flex-direction: column; gap: 4px; }
+.bx figcaption b, .sx figcaption b { font-family: var(--head); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.bx figcaption span, .sx figcaption span { font-size: 14px; line-height: 22px; color: var(--ink2); }
+.bx:hover, .sx:hover { transform: translateY(-3px); box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 24px 60px -24px rgba(0,0,0,0.9); }
+.bx:hover .bxImg img, .sx:hover .bxImg img { transform: scale(1.025); }
+.smallRow { margin-top: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .sx .bxImg { aspect-ratio: 16 / 10.5; }
-.sx figcaption { padding: 12px 16px 16px; }
+.sx figcaption { padding: 14px 18px 18px; }
 .sx figcaption b { font-size: 14.5px; }
 .sx figcaption span { font-size: 13px; }
-.kxMore { text-align: center; margin-top: 36px; }
-.bento .reveal:nth-child(3n+2) { transition-delay: 0.1s; }
-.bento .reveal:nth-child(3n) { transition-delay: 0.2s; }
+.kxMore { margin-top: 40px; }
+.kxMore .btn { padding-left: 0; }
 
-/* ---- facts and the two ways in */
-.facts { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.fact { padding: 28px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); }
-.fIc { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #c4b5fd; background: rgba(165, 88, 251, 0.12); border: 1px solid rgba(196,181,253,0.2); }
-.fIc svg { width: 20px; height: 20px; }
-.fact h3 { margin: 18px 0 8px; }
-.fact p { font-size: 14.5px; line-height: 1.6; color: #a1a1aa; }
-.ways { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.way { padding: 32px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.1); background: linear-gradient(180deg, rgba(165,88,251,0.08), rgba(255,255,255,0.015) 60%); display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
-.wayK { font-size: 12.5px; letter-spacing: 0.04em; text-transform: uppercase; color: #a78bfa; }
-.way p { font-size: 14.5px; line-height: 1.6; color: #a1a1aa; }
-.way .btn, .way .ctaRow { margin-top: auto; padding-top: 14px; }
+/* ---- numbers */
+.numsGrid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 80px; align-items: start; }
+.nums { margin: 48px 0 0; display: flex; flex-direction: column; gap: 28px; }
+.num dt { font-size: 14px; color: var(--ink2); }
+.num dd { margin: 6px 0 0; font-family: var(--head); font-weight: 480; font-size: 48px; line-height: 1.05; letter-spacing: -0.03em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.bars { padding: 40px; border-radius: 16px; background: var(--surf); box-shadow: var(--ring); }
+.bar + .bar { margin-top: 30px; }
+.barK { font-size: 14px; color: var(--ink); margin-bottom: 12px; }
+.barRow { display: grid; grid-template-columns: 1fr 190px; align-items: center; gap: 14px; }
+.barRow + .barRow { margin-top: 8px; }
+.barRow::before { content: ""; grid-column: 1; grid-row: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.05); }
+.barRow .fill { grid-column: 1; grid-row: 1; height: 6px; border-radius: 3px; width: calc(max(var(--w), 0.012) * 100%); transform-origin: left; transform: scaleX(0); transition: transform 1.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.barRow.us .fill { background: linear-gradient(90deg, #8b5cf6, #c4b5fd); }
+.barRow.them .fill { background: rgba(255,255,255,0.22); }
+.barRow em { grid-column: 2; font-style: normal; font-size: 13px; color: var(--ink2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.barRow.us em { color: var(--ink); }
+.bars.in .fill { transform: scaleX(1); }
+.bars.in .bar:nth-child(2) .fill { transition-delay: 0.12s; }
+.bars.in .bar:nth-child(3) .fill { transition-delay: 0.24s; }
+.bars.in .bar:nth-child(4) .fill { transition-delay: 0.36s; }
+.barNote { margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 13px; line-height: 20px; color: var(--ink3); }
+.barNote a { color: var(--ink2); }
+
+/* ---- voices */
+.kxVoices .kxHead { text-align: center; }
+.voice { max-width: 880px; margin: 0 auto; text-align: center; }
+.voice blockquote { margin: 0; font-family: var(--head); font-weight: 500; font-size: clamp(22px, 2.6vw, 32px); line-height: 1.35; letter-spacing: -0.02em; color: var(--ink); transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.voice blockquote::before { content: "\201C"; }
+.voice blockquote::after { content: "\201D"; }
+.voice figcaption { margin-top: 24px; display: flex; flex-direction: column; gap: 2px; }
+.voice figcaption b { font-size: 15px; font-weight: 600; color: var(--ink); }
+.voice figcaption span { font-size: 14px; color: var(--ink2); }
+.voice.swap blockquote { opacity: 0; transform: translateY(8px); }
+.voiceDots { display: flex; justify-content: center; gap: 8px; margin-top: 28px; }
+.voiceDots button { width: 6px; height: 6px; padding: 0; border: 0; border-radius: 999px; background: rgba(255,255,255,0.2); cursor: pointer; transition: width 0.3s, background 0.3s; }
+.voiceDots button[aria-selected="true"] { width: 22px; background: var(--ink); }
+
+/* ---- facts: text under hairlines, no icons */
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
+.fact { padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+.fact .fIc { display: none; }
+.fact h3 { margin: 0 0 8px; }
+.fact p { font-size: 15px; line-height: 24px; color: var(--ink2); }
+
+/* ---- two ways in */
+.ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.way { padding: 36px; border-radius: 16px; background: var(--surf); box-shadow: var(--ring); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.wayK { font-size: 13px; color: var(--ink3); }
+.way h3 { font-size: 22px; letter-spacing: -0.03em; }
+.way p { font-size: 15px; line-height: 24px; color: var(--ink2); max-width: 420px; }
+.way .btn, .way .ctaRow { margin-top: 20px; }
 .way .ctaRow { justify-content: flex-start; }
 
-/* ---- the closing prompt */
-.ctaInner { align-items: center; text-align: center; }
-.ctaInner .ctaText { max-width: 640px; margin: 0 auto; }
-.endBar { position: relative; z-index: 1; width: min(640px, 100%); }
-.endNote { position: relative; z-index: 1; margin-top: -32px; min-height: 22px; font-size: 13.5px; color: #d4d4d8; }
+/* ---- the closing prompt: no bezel, the bar over a soft glow */
+/* Clipped sideways: the closing glow is wider than a phone, and an
+   unclipped section widened the whole page past the screen. */
+#ctaSec { padding-top: 160px; overflow-x: clip; }
+#ctaSec .ctaCard { max-width: 900px; border: 0; background: none; box-shadow: none; padding: 0; }
+#ctaSec .ctaInner { background: none; border: 0; box-shadow: none; align-items: center; text-align: center; overflow: visible; gap: 32px; }
+/* The page closes the way it opens: the brand's light under a prompt bar. */
+#ctaSec .ctaInner canvas { display: none; }
+#ctaSec .ctaCard::before {
+  content: ""; position: absolute; left: 50%; bottom: -30%; width: 140%; height: 90%; transform: translateX(-50%);
+  background: radial-gradient(50% 50% at 50% 50%, rgba(124, 58, 237, 0.32), rgba(73, 34, 229, 0.14) 45%, transparent 72%);
+  filter: blur(40px); pointer-events: none; z-index: 0;
+}
+/* The downloads list joins the same column and the same type. */
+#ctaSec .dlAll { max-width: 1280px; }
+#ctaSec .dlAll h2 { font-family: "Geist Var", var(--sans); font-weight: 600; letter-spacing: -0.04em; font-size: clamp(26px, 2.6vw, 34px); }
+#ctaSec .ctaText { max-width: 640px; margin: 0 auto; }
+#ctaSec .ctaText h2 { font-family: "Geist Var", var(--sans); font-weight: 600; letter-spacing: -0.04em; font-size: clamp(30px, 3.2vw, 44px); line-height: 1.1; clip-path: none; filter: none; }
+#ctaSec .ctaText p { font-size: 17px; }
+.endBar { position: relative; z-index: 1; width: min(680px, 100%); }
+.endNote { position: relative; z-index: 1; margin-top: -16px; min-height: 22px; font-size: 13.5px; color: #d4d4d8; }
 .endNote a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
 
 @media (max-width: 900px) {
-  .wCards, .facts { grid-template-columns: minmax(0, 1fr); max-width: 520px; }
-  .ways { grid-template-columns: minmax(0, 1fr); max-width: 520px; }
-  /* No pinned scroll on a phone: the panel is a normal block, the steps
-     all open, the picture advancing on its own. */
-  .kxHow { height: auto; }
+  .kx { padding: 110px 20px 0; }
+  .wCards, .facts, .ways, .bento { grid-template-columns: minmax(0, 1fr); }
+  .facts { gap: 28px; }
+  .bx.bxWide { grid-column: auto; }
+  .bento .bxImg { height: auto; aspect-ratio: 16 / 10; }
+  .smallRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .numsGrid { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .num dd { font-size: 40px; }
+  .bars { padding: 24px; }
+  .barRow { grid-template-columns: 1fr; gap: 6px; }
+  .barRow em { grid-column: 1; grid-row: 2; }
+  .kxHow { height: auto; padding: 110px 8px 0; }
   .howPin { position: relative; top: 0; height: auto; min-height: 0; }
-  .howCard { grid-template-columns: minmax(0, 1fr); transform: none; --glow: 1; }
-  /* The pictures get a box of their own under the words, clipped, so a
-     tall one can never lie over the heading. */
-  .howStage { height: 340px; overflow: hidden; }
+  .howCard { grid-template-columns: minmax(0, 1fr); transform: none; padding: 40px 20px; gap: 32px; }
+  .howStage { height: 320px; overflow: hidden; }
   .mockChat, .mockShare { padding: 18px; gap: 10px; }
   .mockApp { height: 150px; }
   .steps li p { max-height: none; opacity: 1; margin-top: 6px; }
-  .steps li button { color: #fff; }
-  .bento { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
-  .bx.bxWide { grid-column: auto; }
-  .bento .bxImg { height: auto; aspect-ratio: 16 / 10; }
-  .smallRow { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 560px; }
+  .steps li button { color: var(--ink); font-weight: 600; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .js .reveal { opacity: 1; transform: none; filter: none; }
-  .bx, .sx, .bxImg img { transition: none; }
+  .js .reveal { opacity: 1; transform: none; }
   .miniCaret, .miniWin .scan, .kFile img, .kFile .oses span { animation: none; }
   .howCard { transform: none; }
+  .bx, .sx, .bxImg img { transition: none; }
+  .barRow .fill { transform: none; transition: none; }
 }
 </style>
 <noscript><style>
@@ -1783,7 +1818,7 @@ picture source { display: none; }
          build with Krate cycle between its two sentences. -->
     <h1 class="phTitle">
       <span>Build once.</span>
-      <span class="heroCycle"><span class="glyph" id="phGlyph"></span></span>
+      <span class="heroCycle phFile"><img src="/krate-document-icon.png" width="64" height="64" alt="" /></span>
       <span class="dim">Ship one file.</span>
     </h1>
     <p class="ph-sub">Describe an app and Krate's AI builds it: one file that
@@ -1819,7 +1854,7 @@ picture source { display: none; }
     <article class="wCard reveal">
       <div class="wVis">
         <div class="miniBar" aria-hidden="true">
-          <span class="miniText" id="miniText">A pomodoro timer with a task list</span><span class="miniCaret"></span>
+          <span class="miniText" id="miniText">A live globe of our edge network</span><span class="miniCaret"></span>
           <span class="miniSend"><svg viewBox="0 0 16 16" width="12" height="12" fill="none"><path d="M8 12.8V3.6M8 3.6L4.2 7.4M8 3.6l3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
       </div>
@@ -1830,7 +1865,7 @@ picture source { display: none; }
       <div class="wVis">
         <div class="miniWin" aria-hidden="true">
           <span class="dots"><i></i><i></i><i></i></span>
-          <img src="/app-shots/pomodoro.png" alt="" loading="lazy" width="720" height="880" />
+          <img src="/showcase/orbit.webp" alt="" loading="lazy" width="1600" height="1030" />
           <span class="scan"></span>
           <span class="tag">testing it…</span>
         </div>
@@ -1842,7 +1877,7 @@ picture source { display: none; }
       <div class="wVis">
         <div class="kFile" aria-hidden="true">
           <img src="/krate-document-icon.png" alt="" width="64" height="64" />
-          <b>pomodoro.krate</b>
+          <b>orbit.krate</b>
           <span class="oses"><span>macOS</span><span>Windows</span><span>Linux</span></span>
         </div>
       </div>
@@ -1875,8 +1910,8 @@ picture source { display: none; }
         </figure>
         <figure class="hs hsPlan">
           <div class="mockChat">
-            <p class="you">A pomodoro timer with a task list</p>
-            <p class="krate">Here's what I'll build: a 25-minute timer with a break, and a task list beside it that remembers what you finished.</p>
+            <p class="you">A live globe of our edge network, with each city's latency</p>
+            <p class="krate">Here's what I'll build: a rotating Earth with your cities on it, links from the hub with packets travelling along them, and a list of every node with its latency and status.</p>
             <p class="krate dim">It will ask your permission to: save its own settings.</p>
             <span class="mockBtn">Build it</span>
           </div>
@@ -1886,8 +1921,8 @@ picture source { display: none; }
         </figure>
         <figure class="hs hsShare">
           <div class="mockShare">
-            <div class="mockApp"><img src="/app-shots/pomodoro.png" alt="" loading="lazy" width="720" height="880" /></div>
-            <div class="mockLink"><span>krate.tech/a/pomodoro</span><b>Copy</b></div>
+            <div class="mockApp"><img src="/showcase/orbit.webp" alt="" loading="lazy" width="1600" height="1030" /></div>
+            <div class="mockLink"><span>krate.tech/a/orbit</span><b>Copy</b></div>
             <p>Opens on Mac, Windows and Linux.</p>
           </div>
         </figure>
@@ -1957,6 +1992,60 @@ picture source { display: none; }
   <p class="kxMore reveal"><a class="btn btn-ghost" href="/cloud/"><span>More in the gallery &rarr;</span><span class="hoverco"></span><span class="ripple"></span></a></p>
 </section>
 
+<!-- ========================================================= numbers
+     Every figure here is a sealed measurement in
+     evidence/claims/performance.json (check-claims.py holds the page to
+     it): the Krate notes app against MarkText on one Mac. The sentence
+     under them says exactly that, so nobody reads a universal claim. -->
+<section class="kx kxNums" id="numbers">
+  <div class="numsGrid">
+    <div class="numsCopy">
+      <h2 class="reveal">Light on your machine.</h2>
+      <p class="reveal">The same notes app, built on Krate and measured against MarkText, an Electron editor, on the same Mac.</p>
+      <dl class="nums">
+        <div class="num reveal"><dt>The app file</dt><dd><span class="count" data-to="36.6" data-dec="1">36.6</span> KiB</dd></div>
+        <div class="num reveal"><dt>Memory, 50,000-line document</dt><dd><span class="count" data-to="178.5" data-dec="1">178.5</span> MiB</dd></div>
+        <div class="num reveal"><dt>Warm start to a window</dt><dd><span class="count" data-to="237.1" data-dec="1">237.1</span> ms</dd></div>
+      </dl>
+    </div>
+    <div class="bars reveal" id="numBars">
+      <div class="bar">
+        <p class="barK">The app file</p>
+        <div class="barRow us"><span class="fill" style="--w: 0.012"></span><em>Krate 36.6 KiB</em></div>
+        <div class="barRow them"><span class="fill" style="--w: 1"></span><em>MarkText 284.6 MiB installed</em></div>
+      </div>
+      <div class="bar">
+        <p class="barK">Memory with 50,000 lines open</p>
+        <div class="barRow us"><span class="fill" style="--w: 0.078"></span><em>Krate 178.5 MiB</em></div>
+        <div class="barRow them"><span class="fill" style="--w: 1"></span><em>MarkText 2,299.4 MiB</em></div>
+      </div>
+      <div class="bar">
+        <p class="barK">Warm start to a visible window</p>
+        <div class="barRow us"><span class="fill" style="--w: 0.388"></span><em>Krate 237.1 ms</em></div>
+        <div class="barRow them"><span class="fill" style="--w: 1"></span><em>MarkText 611.5 ms</em></div>
+      </div>
+      <div class="bar">
+        <p class="barK">Idle CPU with the document open</p>
+        <div class="barRow us"><span class="fill" style="--w: 0.267"></span><em>Krate 1.97%</em></div>
+        <div class="barRow them"><span class="fill" style="--w: 1"></span><em>MarkText 7.38%</em></div>
+      </div>
+      <p class="barNote">One app, one workload, one Apple M4 Mac: an equivalent workload, not feature parity. <a href="/reports/">How it was measured</a></p>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== voices
+     Filled from QUOTES in the script below; the section stays hidden
+     until there is at least one real quote to show. -->
+<section class="kx kxVoices" id="voices" hidden>
+  <div class="kxHead reveal"><h2>What people are saying.</h2></div>
+  <figure class="voice reveal" id="voice" aria-live="polite">
+    <blockquote id="voiceText"></blockquote>
+    <figcaption><b id="voiceName"></b><span id="voiceRole"></span></figcaption>
+  </figure>
+  <div class="voiceDots" id="voiceDots" role="tablist" aria-label="Quotes"></div>
+</section>
+
 <!-- ======================================================= receipts -->
 <section class="kx kxFacts" id="receipts">
   <div class="kxHead reveal">
@@ -1964,17 +2053,14 @@ picture source { display: none; }
   </div>
   <div class="facts">
     <div class="fact reveal">
-      <span class="fIc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 11.5l2.2 2.2L15.5 9"/></svg></span>
       <h3>It asks first.</h3>
       <p>An app gets a window and nothing else until you say yes: files, the network, the camera, each one asked for by name. <a href="/run-ai-generated-code-safely.html">How that works.</a></p>
     </div>
     <div class="fact reveal">
-      <span class="fIc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></span>
       <h3>The source comes with it.</h3>
       <p>Every app carries the Rust project it was built from. Read it, change it, build it again yourself.</p>
     </div>
     <div class="fact reveal">
-      <span class="fIc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M7.5 12h9"/></svg></span>
       <h3>The player is open source.</h3>
       <p>Krate, the part that runs the apps, is MIT or Apache licensed. <a href="/reports/">The measurements are public.</a></p>
     </div>
@@ -2136,30 +2222,6 @@ addEventListener("load", function () {
 // The icon between the phrases cycles through what people actually make.
 // The AIs that do the writing, taking turns in the headline -- the same
 // move the reference site makes with its brand marks.
-var GLYPHS = [
-  '<svg viewBox="0 0 24 24" fill="#D97757"><path d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"/></svg>',
-  '<svg viewBox="0 0 24 24" fill="#fff"><path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365 2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/></svg>',
-  '<svg viewBox="0 0 24 24" fill="#fff"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>',
-  '<svg viewBox="0 0 24 24" fill="#fff"><path d="M12 24A14.3 14.3 0 0 0 0 12 14.3 14.3 0 0 0 12 0a14.3 14.3 0 0 0 12 12 14.3 14.3 0 0 0-12 12z"/></svg>',
-  '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>'
-];
-/* The headline's logos, cycling between its two sentences. */
-var gi = 0, glyphs = [$("phGlyph")].filter(Boolean);
-glyphs.forEach(function (g) { g.innerHTML = GLYPHS[0]; });
-if (!reduced) setInterval(function () {
-  glyphs.forEach(function (g) { g.classList.add("out"); });
-  setTimeout(function () {
-    gi = (gi + 1) % GLYPHS.length;
-    glyphs.forEach(function (g) {
-      g.innerHTML = GLYPHS[gi];
-      g.classList.remove("out");
-      g.classList.add("pre");
-      void g.offsetWidth;
-      g.classList.remove("pre");
-    });
-  }, 300);
-}, 1500);
-
 /* ------------------------------------------------------ star counter */
 fetch("https://api.github.com/repos/incyashraj/krate")
   .then(function (r) { return r.ok ? r.json() : null; })
@@ -2472,14 +2534,14 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
   if (!box || !form) return;
 
   var IDEAS = [
-    "A habit tracker that remembers my streaks",
-    "A budget app that starts from my bank's CSV",
-    "A pomodoro timer with a task list",
-    "A flashcard app for learning Spanish",
-    "A recipe box that scales the servings",
-    "A markdown notes app with search",
-    "A JSON viewer for my API responses",
-    "A tip calculator that splits the bill"
+    "A live globe of our servers with each city's latency",
+    "A music player with a live spectrum",
+    "A SQL client for our app's database",
+    "A spending dashboard from my bank's CSV",
+    "A log viewer that streams our API gateway",
+    "A 3D racing game with five rivals",
+    "A code editor with a file tree and a minimap",
+    "An API client for our Stripe endpoints"
   ];
   var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var idea = 0, shown = 0, deleting = false;
@@ -2595,8 +2657,8 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
 
   /* Card one types what people ask for. */
   var mini = $("miniText");
-  var ASKS = ["A pomodoro timer with a task list", "A budget app from my bank's CSV",
-              "A flashcard app for Spanish", "A log viewer for my team"];
+  var ASKS = ["A live globe of our edge network", "A music player with a live spectrum",
+              "A SQL client for our database", "A spending dashboard from my bank's CSV"];
   if (mini && !reduced) {
     var ai = 0, ci = ASKS[0].length, del = true;
     setInterval(function () {
@@ -2649,6 +2711,74 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
     if (!narrow.matches || reduced) return;
     setStep((current + 1) % steps.length, 1);
   }, 3600);
+
+  /* Numbers count up once, as they arrive; the bars grow with them. The
+     final figures are in the markup, so without scripts they simply show. */
+  var counts = [].slice.call(document.querySelectorAll(".count"));
+  var bars = $("numBars");
+  function countUp(el) {
+    var to = parseFloat(el.getAttribute("data-to")), dec = +el.getAttribute("data-dec") || 0;
+    if (reduced || !isFinite(to)) return;
+    var t0 = performance.now(), dur = 1400;
+    (function tick(t) {
+      var p = Math.min(1, (t - t0) / dur); p = 1 - Math.pow(1 - p, 3);
+      el.textContent = (to * p).toFixed(dec);
+      if (p < 1) requestAnimationFrame(tick); else el.textContent = to.toFixed(dec);
+    })(t0);
+  }
+  if ("IntersectionObserver" in window && (counts.length || bars)) {
+    var nio = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        if (e.target === bars) bars.classList.add("in"); else countUp(e.target);
+        nio.unobserve(e.target);
+      });
+    }, { threshold: 0.4 });
+    counts.forEach(function (c) { nio.observe(c); });
+    if (bars) nio.observe(bars);
+  } else if (bars) { bars.classList.add("in"); }
+  // The floor again: bars on screen for a moment are shown grown.
+  setTimeout(function () {
+    if (bars && !bars.classList.contains("in")) {
+      var r = bars.getBoundingClientRect();
+      if (r.top < innerHeight && r.bottom > 0) bars.classList.add("in");
+    }
+  }, 1500);
+  addEventListener("scroll", function () {
+    if (!bars || bars.classList.contains("in")) return;
+    var r = bars.getBoundingClientRect();
+    if (r.top < innerHeight * 0.85 && r.bottom > 0) setTimeout(function () { bars.classList.add("in"); }, 400);
+  }, { passive: true });
+
+  /* What people are saying: real quotes only, so the section stays hidden
+     until this list has one. {text, name, role}. */
+  var QUOTES = [];
+  var voices = $("voices");
+  if (voices && QUOTES.length) {
+    voices.hidden = false;
+    var vi = 0, dots = $("voiceDots"), fig = $("voice");
+    function showQuote(i) {
+      vi = i;
+      fig.classList.add("swap");
+      setTimeout(function () {
+        $("voiceText").textContent = QUOTES[i].text;
+        $("voiceName").textContent = QUOTES[i].name;
+        $("voiceRole").textContent = QUOTES[i].role || "";
+        fig.classList.remove("swap");
+      }, reduced ? 0 : 280);
+      [].forEach.call(dots.children, function (d, k) { d.setAttribute("aria-selected", String(k === i)); });
+    }
+    QUOTES.forEach(function (q, k) {
+      var d = document.createElement("button");
+      d.type = "button";
+      d.setAttribute("role", "tab");
+      d.setAttribute("aria-label", q.name);
+      d.addEventListener("click", function () { showQuote(k); });
+      dots.appendChild(d);
+    });
+    showQuote(0);
+    if (QUOTES.length > 1 && !reduced) setInterval(function () { showQuote((vi + 1) % QUOTES.length); }, 7000);
+  }
 
   /* The closing bar hands its words to the first screen's, which already
      knows how to sign in, check the service and start the build. */
