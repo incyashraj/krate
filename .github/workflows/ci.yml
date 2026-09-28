@@ -1876,12 +1876,14 @@ jobs:
           done
       # The build service, driven as a real process with a stub hub and a
       # fake engine: ownership on every job operation, restart honesty,
-      # download expiry, and the audit trail (IC-416).
+      # download expiry, and the audit trail (IC-416). free-app-rule runs it
+      # against the REAL hub worker, which imports the validator wasm built
+      # above -- hence the flag.
       - name: Build service tests
         run: |
           for test in cloud/builder/test/*.test.mjs; do
             echo "== $test"
-            node "$test"
+            node --experimental-wasm-modules "$test"
           done
       - name: Install mdBook
         run: |

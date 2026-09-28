@@ -550,7 +550,7 @@ function killTree(proc, signal) {
  * the same command the desktop runs, so a change made in a tab and a change
  * made in Studio cannot come out different. `revise` names the finished job
  * it starts from: { parentId, source, change, caseId, name }. */
-async function startBuild({ request, token, account, device, revise = null, shape = "", attachments = [] }) {
+async function startBuild({ request, token, account, device, revise = null, shape = "", attachments = [], byok = false }) {
   // 128 random bits. The id appears in URLs and is all a page holds, so it
   // must not be guessable -- the truncated UUID this used to be was the only
   // thing between anyone on the internet and another person's app file.
@@ -592,10 +592,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // A change arrives with its case already opened by `allowedToRevise`,
   // which had to ask the hub anyway to learn whether the change was
   // allowed at all. Opening a second one here would count it twice.
-  job.caseId = revise ? revise.caseId : await caseOpen(token, device, request);
+  // A build on the person's OWN key opens no case: the ledger counts what
+  // Krate pays for, and this is not ours. Asking it anyway was a 402 from
+  // the hub the moment the free app was used -- so the one thing the wall
+  // offers, "add your own API key and keep building here", was refused on
+  // every build after the first (K-924).
+  job.caseId = revise ? revise.caseId : byok ? null : await caseOpen(token, device, request);
   // No case, no build: an unrecorded build is a funded build nobody counts
-  // (K-888). The dev builder has no ledger and is exempt.
-  if (!revise && !job.caseId && process.env.KRATE_BUILDER_DEV !== "1") {
+  // (K-888). The dev builder has no ledger and is exempt, and so is a build
+  // on the person's own key.
+  if (!revise && !byok && !job.caseId && process.env.KRATE_BUILDER_DEV !== "1") {
     jobs.delete(id);
     const err = new Error("We could not start that just now. Nothing was counted. Try again in a minute.");
     err.status = 502;
@@ -1222,7 +1228,10 @@ const server = createServer(async (req, res) => {
       }
       let job;
       try {
-        job = await startBuild({ request, token, account: allowed.account, device, shape, attachments: body.attachments });
+        job = await startBuild({
+          request, token, account: allowed.account, device, shape,
+          attachments: body.attachments, byok: Boolean(allowed.byok),
+        });
       } catch (err) {
         // The slot is ours until a job owns it; a start that threw must
         // not lock the account out of building.
@@ -1336,7 +1345,12 @@ const server = createServer(async (req, res) => {
       // invited it (K-908). As a make it spends the free app only if it
       // succeeds -- the same terms as any first build.
       const offRequestParent = Boolean(job.result && job.result.verdict === "off-request");
-      const mayRevise = await allowedToRevise(token, device, change, !offRequestParent);
+      // A change on the person's own key is theirs to pay for, so the free
+      // change does not apply -- the same bargain as a build (K-924).
+      const byok = Boolean(API_AGENTS[AGENT] && (await ownKey(token, AGENT)));
+      const mayRevise = byok
+        ? { ok: true, caseId: null }
+        : await allowedToRevise(token, device, change, !offRequestParent);
       if (!mayRevise.ok) {
         // Release the slot claimed above: a refusal is not a build, and an
         // unreleased claim locks this account out of building for the life
