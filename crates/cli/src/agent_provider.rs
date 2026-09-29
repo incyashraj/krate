@@ -821,7 +821,7 @@ fn usage_limit_summary(blob: &str, stdout: &str, stderr: &str) -> Option<String>
     let when = lower.find("try again at").map(|at| {
         let rest = &original[at + "try again at".len()..];
         rest.trim_start()
-            .split(|c: char| c == '.' || c == '\n' || c == '"' || c == ',')
+            .split(['.', '\n', '"', ','])
             .next()
             .unwrap_or("")
             .trim()
