@@ -6036,8 +6036,18 @@ mod tests {
             "#!/bin/sh\ncase \"$1\" in\n  --version) echo 'krate 0.1.28' ;;\n  *) echo \"error: unrecognized subcommand '$1'\" >&2; exit 2 ;;\nesac\n",
         );
 
+        // A script written a moment ago can fail to exec with ETXTBSY on
+        // Linux when another test thread forks while the write is still
+        // open (the child holds the descriptor until its own exec). That is
+        // the test harness racing itself, not the probe: ask a few times.
+        let current_speaks = (0..10).any(|attempt| {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            probe_speaks_plan(&current)
+        });
         assert!(
-            probe_speaks_plan(&current),
+            current_speaks,
             "an engine that knows `plan` must be recognised as current"
         );
         assert!(
