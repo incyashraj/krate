@@ -221,19 +221,27 @@ def classify_lanes(ci):
 
 
 def gather_fuzz():
-    code, out, _err = sh([
-        "gh", "api",
-        f"repos/{REPO}/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success&per_page=1",
-        "--jq", ".workflow_runs[0].created_at // empty",
-    ])
+    # Ask for successes INSIDE the window, not "the newest success": the runs
+    # list is not returned in date order, so a first page can miss the newest
+    # run. On 2026-09-29 per_page=1 answered a run 35 days old and this script
+    # said 12, while the nightly had succeeded two days earlier.
+    since = (datetime.datetime.now(datetime.timezone.utc)
+             - datetime.timedelta(days=FUZZ_FRESH_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    base = f"repos/{REPO}/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success"
+    newest = "[.workflow_runs[].created_at] | max // empty"
+    code, out, _err = sh(["gh", "api", f"{base}&created=%3E%3D{since}&per_page=100", "--jq", newest])
     if code != 0:
         return {"assessed": False, "why": "gh is unavailable"}
+    fresh = bool(out)
     if not out:
-        return {"assessed": True, "fresh": False, "age_days": None,
-                "why": "no successful fuzz nightly has ever run"}
+        # Stale: find the newest success anywhere, only to say how stale.
+        code, out, _err = sh(["gh", "api", f"{base}&per_page=100", "--jq", newest])
+        if code != 0 or not out:
+            return {"assessed": True, "fresh": False, "age_days": None,
+                    "why": "no successful fuzz nightly has ever run"}
     last = datetime.datetime.fromisoformat(out.replace("Z", "+00:00"))
     age = (datetime.datetime.now(datetime.timezone.utc) - last).days
-    return {"assessed": True, "fresh": age <= FUZZ_FRESH_DAYS, "age_days": age, "last": out}
+    return {"assessed": True, "fresh": fresh and age <= FUZZ_FRESH_DAYS, "age_days": age, "last": out}
 
 
 def gather_advisories():
