@@ -5,13 +5,13 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Build desktop software once. Ship one .krate file.</strong>
+  <strong>Describe an app. Get one file.</strong>
 </p>
 
 <p align="center">
-  The same application file runs through native Krate runtimes on macOS, Windows and Linux.<br>
-  Share the app, its assets and its requested permissions.<br>
-  No separate application build per OS.
+  Krate turns a sentence into a real desktop app: one small <code>.krate</code> file<br>
+  that opens on macOS, Windows and Linux, and asks before it touches anything.<br>
+  Open-source runtime. No per-OS builds. No browser inside every app.
 </p>
 
 <p align="center">
@@ -29,7 +29,9 @@
 <p align="center">
   <a href="https://krate.tech/">Website</a>
   ·
-  <a href="https://krate.tech/studio/">Krate Studio</a>
+  <a href="https://krate.tech/app/">Make an app in your browser</a>
+  ·
+  <a href="https://krate.tech/download/">Download Studio</a>
   ·
   <a href="https://krate.tech/docs/quickstart.html">Docs</a>
   ·
@@ -48,9 +50,23 @@
 
 <p align="center">
   <a href="https://krate.tech/">
-    <img src="docs/landing/og-v4.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+    <img src="docs/landing/readme/studio-build.gif" width="860" alt="A real build in Krate Studio: one sentence, a plan, the AI writing and checking the app, then the finished colour palette app">
   </a>
+  <br>
+  <sub>A real build, recorded in one take: one sentence in, a 24 KB app out. The AI's 2 min 47 s of work is sped up.</sub>
 </p>
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/landing/showcase/orbit.webp" width="280" alt="Orbit, a live network globe"><br><sub><b>Orbit</b> · network globe</sub></td>
+    <td align="center"><img src="docs/landing/showcase/aurora.webp" width="280" alt="Aurora, northern lights computed per pixel"><br><sub><b>Aurora</b> · simulation</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/landing/showcase/player.webp" width="280" alt="Player, a music player with a live spectrum"><br><sub><b>Player</b> · music player</sub></td>
+    <td align="center"><img src="docs/landing/showcase/editor.webp" width="280" alt="Editor, a code editor with tree, tabs and minimap"><br><sub><b>Editor</b> · code editor</sub></td>
+  </tr>
+</table>
+<p align="center"><sub>Made with Krate. Each is one <code>.krate</code> file; see them running at <a href="https://krate.tech/#made">krate.tech</a>.</sub></p>
 
 ## Start with the runtime
 
@@ -124,7 +140,8 @@ you intend to support. A passing build is not a functional or security audit.
 
 ## Nothing installed? Start in the browser
 
-[krate.tech/app](https://krate.tech/app/) is Krate Studio in a tab. Describe
+[krate.tech/app](https://krate.tech/app/) is Krate Studio in a tab. Sign in
+with GitHub, Google or an email link, describe
 the app you want and **Krate AI** writes it, builds it on our machines and
 hands back a `.krate` you can download and run. No install, no toolchain, no
 API key of your own.
@@ -171,6 +188,10 @@ Energy was not measured and no battery-life claim is made from it.
 
 ## Why a file
 
+<p align="center">
+  <img src="docs/landing/og-v4.png" width="760" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+</p>
+
 Cross-platform frameworks can share source while still producing separate
 application packages for each platform. Krate moves the platform-specific
 part into a shared runtime and makes the application artifact portable.
@@ -189,8 +210,15 @@ Today, that depends on the app fitting Krate's supported interfaces.
 ## Krate Studio
 
 <p align="center">
-  <img src="docs/landing/app-shots/studio-home.png" width="900" alt="Krate Studio">
+  <img src="docs/landing/readme/studio-session.png" width="900" alt="Krate Studio: the conversation on the left, the finished app in the Preview panel on the right, with Files, Code and Details beside it">
 </p>
+
+A session is a conversation beside a panel. On the left, what you asked,
+the plan, and the AI's working (folded into one live line you can open).
+On the right, the app itself: **Preview** runs it, **Files** lists what is
+inside the `.krate`, **Code** shows the Rust it was built from, **Details**
+says what it may use. **Share** gives a link, the file, or a one-click
+installer for someone new to Krate.
 
 Studio runs the same engine the CLI does: build, import-check, run and
 pack, with the engine's real output on screen, not a summary of it. It uses
@@ -205,7 +233,7 @@ lookalikes:
 - **In a browser**, at [krate.tech/app](https://krate.tech/app/). Krate AI
   does the writing and the build happens on our machines. Nothing to
   install, and your first app and first change are free.
-- **On your machine**, from [krate.tech/studio](https://krate.tech/studio/).
+- **On your machine**, from [krate.tech/download](https://krate.tech/download/).
   Signed `.dmg` on macOS, installer on Windows (unsigned for now, so
   SmartScreen asks once), AppImage on Linux. Free and unlimited with your
   own AI.
