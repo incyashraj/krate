@@ -799,7 +799,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
       // the disk does not have.
       await persistResultBytes(job);
       await persistJob(job);
-      await audit({ action: "done", account, job: job.id });
+      await audit({ action: "done", account, job: job.id, ...(job.spend ? { usd: job.spend.usd, rounds: job.spend.rounds } : {}) });
       // Only a build that produced a file the engine accepted counts
       // against the allowance: "made" is the one outcome that consumes the
       // case's funding. An app that is not what was asked is recorded as

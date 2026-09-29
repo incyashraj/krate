@@ -481,6 +481,47 @@ fn run_tool(app_dir: &Path, krate_bin: &str, call: &ToolCall) -> String {
                 }
             }
         }
+        "edit_file" => {
+            let path = call.input["path"].as_str().unwrap_or_default();
+            let find = call.input["find"].as_str().unwrap_or_default();
+            let replace = call.input["replace"].as_str().unwrap_or_default();
+            if find.is_empty() {
+                return "refused: `find` is empty; give the exact text to replace".to_string();
+            }
+            match resolve_in_app(app_dir, path) {
+                Err(why) => format!("refused: {why}"),
+                Ok(target) => match read_in_app(&target) {
+                    Err(err) => format!("could not read {path}: {err}"),
+                    Ok(text) => {
+                        let n = text.matches(find).count();
+                        if n == 0 {
+                            return format!("no match in {path}: `find` must be the exact text as it is in the file (read_file to see it)");
+                        }
+                        if n > 1 {
+                            return format!("{n} matches in {path}: include more surrounding lines so `find` is unique");
+                        }
+                        let next = text.replacen(find, replace, 1);
+                        match write_in_app(&target, &next) {
+                            Ok(()) => {
+                                crate::report_progress_note(&format!("editing {path}"));
+                                let digest = {
+                                    use sha2::{Digest, Sha256};
+                                    let mut hasher = Sha256::new();
+                                    hasher.update(next.as_bytes());
+                                    format!("{:x}", hasher.finalize())
+                                };
+                                format!(
+                                    "edited {path} ({} bytes now, sha256:{})",
+                                    next.len(),
+                                    &digest[..16]
+                                )
+                            }
+                            Err(err) => format!("could not write {path}: {err}"),
+                        }
+                    }
+                },
+            }
+        }
         "read_file" => {
             let path = call.input["path"].as_str().unwrap_or_default();
             match resolve_in_app(app_dir, path) {
@@ -538,6 +579,19 @@ fn tool_schema(vendor: ApiVendor) -> serde_json::Value {
                     "contents": {"type": "string", "description": "The complete new contents of the file"}
                 },
                 "required": ["path", "contents"]
+            }
+        },
+        {
+            "name": "edit_file",
+            "description": "Replace one exact snippet in a file inside the app directory. `find` must match exactly once; the reply says if it matched nowhere or more than once. Cheaper than rewriting the file: use it for every fix after the first write.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative path inside the app, e.g. src/lib.rs"},
+                    "find": {"type": "string", "description": "The exact text to replace, as it appears in the file"},
+                    "replace": {"type": "string", "description": "What it becomes"}
+                },
+                "required": ["path", "find", "replace"]
             }
         },
         {
@@ -913,7 +967,12 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
         "content": format!(
             "Build this app: {request}\n\nWrite the code with write_file, then call \
              check_app. Keep fixing what check_app reports until it passes. \
-             When it passes, reply with the single word DONE."
+             When it passes, reply with the single word DONE.\n\n\
+             Two habits that make this fast: (1) after the first write, fix \
+             with edit_file -- the smallest unique snippet and its replacement \
+             -- and rewrite a whole file only when most of it changes; (2) put \
+             the write or edit AND check_app in the same reply, so each fix \
+             costs one round, not two."
         )
     })];
 
@@ -1121,6 +1180,35 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn edit_file_replaces_one_exact_snippet_and_refuses_ambiguity() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "fn a() {}\nfn b() {}\nfn a2() {}\n",
+        )
+        .unwrap();
+        let call = |find: &str, replace: &str| super::ToolCall {
+            id: String::new(),
+            name: "edit_file".to_string(),
+            input: serde_json::json!({ "path": "src/lib.rs", "find": find, "replace": replace }),
+        };
+        let out = super::run_tool(dir.path(), "krate", &call("fn b() {}", "fn b() { 1 }"));
+        assert!(out.starts_with("edited src/lib.rs"), "{out}");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap(),
+            "fn a() {}\nfn b() { 1 }\nfn a2() {}\n"
+        );
+        let out = super::run_tool(dir.path(), "krate", &call("fn a", "fn z"));
+        assert!(out.starts_with("2 matches"), "{out}");
+        let out = super::run_tool(dir.path(), "krate", &call("fn q() {}", "x"));
+        assert!(out.starts_with("no match"), "{out}");
+        let out = super::run_tool(dir.path(), "krate", &call("", "x"));
+        assert!(out.starts_with("refused"), "{out}");
+        assert!(super::run_tool(dir.path(), "krate", &call("fn z", "y")).starts_with("no match"));
+    }
+
     use super::*;
 
     /// K-862: a plan asks for a short answer and sends no tool schema; the

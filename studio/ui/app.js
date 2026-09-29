@@ -2614,20 +2614,9 @@ function showFailReporting(on) {
     const el = $(id);
     if (el) el.classList.toggle("hidden", !on);
   }
-  // "Report an issue" collects the build's workspace off the disk, which the
-  // browser does not have -- the bridge implements neither `report_collect`
-  // nor `report_send`. On the web it opened a sheet with an empty file list,
-  // a disabled Send and "That part of Studio needs the app on your
-  // computer.", which is a dead end offered to somebody whose build just
-  // failed and who has no other channel.
-  //
-  // Hidden there. "Send the request" beside it is NOT hidden: it posts to
-  // /makeit, which the bridge does implement, so the web keeps a real way to
-  // tell us what went wrong.
-  if (!tauri) {
-    const report = $("reportBtn");
-    if (report) report.classList.add("hidden");
-  }
+  // "Report an issue" works in a tab too now: the bridge packs the
+  // conversation, the build service's record of the job and the app's
+  // manifest and source out of the .krate (see report_collect there).
   const offer = document.querySelector(".fail-offer");
   if (offer) offer.classList.toggle("hidden", !on);
 }
@@ -7612,8 +7601,25 @@ $("supSend")?.addEventListener("click", async () => {
     return;
   }
   $("supSend").disabled = true;
+  // Whatever support will need to find the fault travels with the ticket:
+  // when a session is open, its report (the conversation, the build's
+  // record, the app's manifest and source, this machine) is sent first and
+  // named in the ticket, so nobody has to ask "which build?" and "can you
+  // send the log?" as the first reply. A report that cannot be gathered
+  // never stops the ticket: the words still go.
+  let attached = "";
   try {
-    const out = await invoke("support_new", { subject, message: body, email });
+    if (state.session) {
+      const info = await invoke("report_collect", { session: state.session.id });
+      const said = await invoke("report_send", { path: info.path, session: state.session.id, note: subject });
+      attached = `\n\n[${said}: ${(info.files || []).join(", ")}]`;
+    }
+  } catch (e) {
+    attached = `\n\n[no report could be gathered: ${plainWords(e)}]`;
+  }
+  const where = `\n[${tauri ? "Studio desktop" : "Studio web"} · ${navigator.platform || ""}` + (state.session ? ` · session ${state.session.id}` : "") + "]";
+  try {
+    const out = await invoke("support_new", { subject, message: body + attached + where, email });
     if (out && out.id) rememberSupKey({ id: out.id, key: out.key });
     $("supSubject").value = ""; $("supBody").value = "";
     $("supNote").textContent = supportSignedIn()

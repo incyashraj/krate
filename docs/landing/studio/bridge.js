@@ -516,6 +516,9 @@ function deviceId() {
 /* Sessions live on the hub, keyed to the account, so a person's work
  * follows them between machines -- something the desktop cannot do. Held
  * in local storage as well so the page is not blank while the hub answers. */
+/* Reports gathered in this tab, by the id report_collect handed out. */
+const reportsInMemory = new Map();
+
 function localSessions() {
   // Shape-checked, not just parse-checked.
   //
@@ -1941,6 +1944,77 @@ const COMMANDS = {
       body: JSON.stringify({ subject: subject || "", text: message || "", email: email || "" }),
     });
   },
+  /* ---- a report, from a tab --------------------------------------------
+   * The desktop packs the local build workspace. A tab has no workspace,
+   * but it has everything that matters for finding a fault: the
+   * conversation, the build's own record on the service, the app's
+   * manifest and source (inside the .krate it was handed), and what this
+   * browser is. Packed as a stored zip -- the same writer the source
+   * download uses -- and kept in memory until report_send posts it. */
+  async report_collect({ session } = {}) {
+    const enc = new TextEncoder();
+    const files = [];
+    const s = localSessions().find((x) => x.id === session) || null;
+    const about = [
+      "Krate Studio, in a browser",
+      `page: ${location.href}`,
+      `browser: ${navigator.userAgent}`,
+      `platform: ${navigator.platform || ""}`,
+      `account: ${(bridge.me && bridge.me.user && bridge.me.user.login) || "signed out"}`,
+      `time: ${new Date().toISOString()}`,
+      `builder: ${BUILDER}`,
+      `hub: ${HUB}`,
+    ].join("\n") + "\n";
+    files.push(["about.txt", enc.encode(about)]);
+    if (s) files.push(["session.json", enc.encode(JSON.stringify(s, null, 1))]);
+    // The build service's own record of the job, when this session has one.
+    const jobId = (s && s.result && jobIdOf(s.result.path)) || bridge.job || null;
+    if (jobId) {
+      try {
+        const job = await builder(`/build/${jobId}`);
+        files.push(["build.json", enc.encode(JSON.stringify({ id: jobId, ...job, shot: job && job.shot ? "(image omitted)" : null }, null, 1))]);
+      } catch (e) {
+        files.push(["build.json", enc.encode(JSON.stringify({ id: jobId, error: String((e && e.message) || e) }, null, 1))]);
+      }
+    }
+    // What the app declares and what it was built from, out of the .krate.
+    if (s && s.result && s.result.path) {
+      try {
+        const list = await appContentsOf(s.result.path);
+        for (const e of list) {
+          if (typeof e.text !== "string") continue;
+          if (e.name === "source/manifest.toml" || e.name === "source/Cargo.toml" || e.name === "source/src/lib.rs") {
+            files.push(["workspace/" + e.name.slice("source/".length), enc.encode(e.text)]);
+          }
+        }
+      } catch (e) {
+        files.push(["workspace/README.txt", enc.encode("the app's files could not be read: " + String((e && e.message) || e) + "\n")]);
+      }
+    }
+    const blob = zipWrite(files);
+    const id = "report-" + Math.random().toString(36).slice(2, 10);
+    reportsInMemory.set(id, blob);
+    return { path: id, size: blob.size, files: files.map(([n]) => n) };
+  },
+
+  async report_send({ path, session, note } = {}) {
+    const blob = reportsInMemory.get(path);
+    if (!blob) throw new Error("Gather the report first.");
+    const headers = {
+      "content-type": "application/zip",
+      "x-krate-session": String(session || ""),
+      "x-krate-version": "studio-web",
+      "x-krate-os": String(navigator.platform || "web"),
+      "x-krate-note": encodeURIComponent(String(note || "").slice(0, 400)),
+    };
+    if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
+    const res = await fetch(`${HUB}/report`, { method: "POST", headers, body: blob });
+    if (!res.ok) throw new Error((await res.text().catch(() => "")) || `the report was not accepted (${res.status})`);
+    const out = await res.json().catch(() => ({}));
+    reportsInMemory.delete(path);
+    return `report ${out.id || "sent"}`;
+  },
+
   async support_list({ keys } = {}) {
     return hub("/support/list", {
       method: "POST",

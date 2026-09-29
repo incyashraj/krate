@@ -47,11 +47,6 @@ assert.ok(answered.size > 40, `found ${answered.size} bridge commands -- the sca
 // nobody got round to. A command that a tab could serve does not belong on
 // this list; it belongs in the bridge.
 const DESKTOP_ONLY = {
-  // Both read the local build workspace -- the agent's transcript, the
-  // generated lib.rs, the Cargo.toml. A browser build happens on the build
-  // service and leaves nothing on the person's machine to collect.
-  report_collect: "reads the local build workspace, which a tab does not have",
-  report_send: "sends what report_collect gathered; unreachable without it",
   // Runs the .krate through the local engine to see what it does. A tab
   // has no engine and no file to run.
   diagnose_app: "runs the app through the local engine",
