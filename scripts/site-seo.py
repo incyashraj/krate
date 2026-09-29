@@ -24,7 +24,7 @@ ALIASES = {"/docs/introduction.html": "/docs/", **{
 # /support/ is the token-protected admin console (docs/support/index.html).
 UTILITY_ROOTS = {"app", "account", "login", "billing", "publish", "make", "support"}
 UTILITY_PATHS = {"/cloud/app/", "/docs/print.html", "/404.html", "/docs/404.html"}
-PRIORITY_PATHS = {"/", "/studio/", "/faq/", "/docs/", "/docs/quickstart.html",
+PRIORITY_PATHS = {"/", "/studio/", "/download/", "/about/", "/faq/", "/docs/", "/docs/quickstart.html",
                   "/docs/porting.html", "/docs/limits.html", "/reports/", "/progress/",
                   "/open/", "/cloud/", "/portable-desktop-app-format.html",
                   "/run-ai-generated-code-safely.html", "/share-an-app-made-with-ai.html",

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#000000" />
+<title>Download Krate Studio for Mac, Windows and Linux</title>
+<meta name="description" content="Download Krate Studio, the Krate Player or the krate command line for macOS, Windows and Linux. Free, with every file from the latest release." />
+<link rel="canonical" href="https://krate.tech/download/" />
+<meta property="og:title" content="Download Krate Studio for Mac, Windows and Linux" />
+<meta property="og:description" content="Download Krate Studio, the Krate Player or the krate command line for macOS, Windows and Linux. Free, with every file from the latest release." />
+<meta property="og:url" content="https://krate.tech/download/" />
+<meta property="og:image" content="https://krate.tech/og-v4.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="/krate-favicon.png" />
+<style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
+  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; }
+.hidden { display: none !important; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  transform: translateX(-50%); }
+.brandbar .name { display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
+.brandbar .name img { height: 19px; width: auto; }
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
+@media (max-width: 640px) { .bnav { display: none; } }
+.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
+  margin-left: -450px; pointer-events: none; border-radius: 100%;
+  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
+  filter: blur(40px); }
+.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
+h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
+.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
+.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
+.card:nth-of-type(2) { animation-delay: 0.06s; }
+.card:nth-of-type(3) { animation-delay: 0.12s; }
+.card:nth-of-type(4) { animation-delay: 0.18s; }
+.card:nth-of-type(5) { animation-delay: 0.24s; }
+.card:nth-of-type(6) { animation-delay: 0.3s; }
+@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+.card p { font-size: 13.5px; color: #a1a1aa; }
+.card p b { color: #d4d4d8; font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+  white-space: nowrap; user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+  transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
+.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
+.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
+.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot nav a:hover { color: #d4d4d8; }
+
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+
+  /* Touch, not width: a thumb needs 44px whatever the screen size, and
+     these pages' nav and footer links were 19-20px tall. */
+  @media (pointer: coarse) {
+    nav a[href], .foot a[href], footer a[href] {
+      display: inline-block; padding-top: 11px; padding-bottom: 11px;
+    }
+    button, input[type=submit] { min-height: 44px; }
+    /* Buttons that are links, and the brand mark, which is a tap target
+       on every page (it goes home). */
+    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
+  }
+</style>
+<style>
+.dlMain { margin: 6px 0 34px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.dlMain .btn.primary { padding: 12px 20px; font-size: 14.5px; }
+.dlMain small { color: #a1a1aa; font-size: 12.5px; }
+.card ul { list-style: none; margin-top: 12px; display: grid; gap: 6px; }
+.card li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.03); font-size: 13.5px; }
+.card li a { color: #f4f4f5; flex: 1; }
+.card li a:hover { color: #c4b5fd; }
+.dlSize { font-size: 12px; color: #71717a; white-space: nowrap; }
+.dlSize:empty { display: none; }
+code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: rgba(255,255,255,0.06); border-radius: 5px; padding: 1px 6px; color: #d4d4d8; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: 13.5px; margin-top: 10px; }
+.facts dt { color: #71717a; }
+.facts dd { color: #e4e4e7; }
+.card p + p { margin-top: 8px; }
+.card a.u { color: #e4e4e7; text-decoration: underline; text-decoration-color: rgba(255,255,255,0.3); text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+<div class="bloom"></div>
+<div class="topblur"></div>
+<div class="brandbar">
+  <a class="name" href="/"><img src="/krate-logo.png" alt="" /> KRATE</a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="/studio/">Studio</a>
+    <a href="/download/" class="here">Download</a>
+    <a href="/cloud/">Apps</a>
+    <a href="/docs/">Docs</a>
+    <a href="/about/">About</a>
+  </nav>
+</div>
+<div class="wrap">
+<h1 class="page">Download Krate.</h1>
+<p class="pagesub">Krate Studio makes apps with the AI you already have, opens them and shares them. It is free, and it runs on Mac, Windows and Linux.</p>
+<div class="dlMain">
+  <a class="btn primary" id="dlBest" href="https://github.com/incyashraj/krate/releases/latest">Download Krate Studio</a>
+  <small id="dlBestNote">The latest release, for this computer.</small>
+</div>
+<section class="card" style="display:block">
+  <h2>Krate Studio</h2>
+  <p>Make apps with your AI, open apps, share them. The whole thing.</p>
+  <ul>
+    <li data-asset="^krate-studio-.*-universal\.dmg$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon and Intel</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-studio-.*-windows-x64-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64 installer</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-studio-.*-linux-x86_64\.AppImage$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, x86_64 AppImage</a><span class="dlSize"></span></li>
+  </ul>
+</section>
+<section class="card" style="display:block">
+  <h2>Krate Player</h2>
+  <p>Only opens .krate files somebody sent you. Smaller. <a class="u" href="/open/">How opening works.</a></p>
+  <ul>
+    <li data-asset="^krate-app-.*-aarch64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-app-.*-x86_64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Intel</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-player-.*-x86_64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64 installer</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-player-.*-aarch64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, ARM installer</a><span class="dlSize"></span></li>
+  </ul>
+</section>
+<section class="card" style="display:block">
+  <h2>Command line</h2>
+  <p>The <code>krate</code> tool on its own, for developers and scripts. Or in a terminal: <code>curl -fsSL https://krate.tech/install.sh | sh</code> on Mac and Linux, <code>irm https://krate.tech/install.ps1 | iex</code> on Windows.</p>
+  <ul>
+    <li data-asset="^krate-\d[^-]*-aarch64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-\d[^-]*-x86_64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Intel</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-\d[^-]*-x86_64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-\d[^-]*-aarch64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, ARM</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-\d[^-]*-x86_64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, x86_64</a><span class="dlSize"></span></li>
+    <li data-asset="^krate-\d[^-]*-aarch64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, arm64</a><span class="dlSize"></span></li>
+    <li data-asset="^SHA256SUMS$"><a href="https://github.com/incyashraj/krate/releases/latest">Checksums (SHA256SUMS)</a><span class="dlSize"></span></li>
+  </ul>
+</section>
+<p class="pagesub" id="dlVersion" style="margin-top:18px">Not sure which Mac you have? Apple menu, About This Mac: a <b>Chip</b> line means Apple Silicon, a <b>Processor</b> line means Intel. <a class="u" href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Every release, on GitHub.</a></p>
+<script>
+/* One button for this computer, then every file with its real link and size
+   from the latest release. The rows are written out, so the page works
+   without scripts; the script only fills them in and hides what a release
+   did not ship. */
+(function () {
+  var ua = navigator.userAgent || "";
+  var os = /Windows/i.test(ua) ? "windows" : /Mac/i.test(ua) ? "mac" : /Linux|X11/i.test(ua) ? "linux" : "";
+  var BEST = { mac: ["^krate-studio-.*-universal\\.dmg$", "Download for macOS"],
+               windows: ["^krate-studio-.*-windows-x64-setup\\.exe$", "Download for Windows"],
+               linux: ["^krate-studio-.*-linux-x86_64\\.AppImage$", "Download for Linux"] };
+  var best = document.getElementById("dlBest");
+  if (BEST[os]) best.textContent = BEST[os][1];
+  function mb(b) { var m = b / 1048576; return m < 1 ? Math.round(b / 1024) + " KB" : (m < 10 ? m.toFixed(1) : Math.round(m)) + " MB"; }
+  fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel || !rel.assets) return;
+      document.querySelectorAll("[data-asset]").forEach(function (li) {
+        var re = new RegExp(li.dataset.asset), hit = null;
+        rel.assets.forEach(function (a) { if (!hit && re.test(a.name)) hit = a; });
+        if (!hit) { li.hidden = true; return; }
+        var a = li.querySelector("a"); a.href = hit.browser_download_url; a.title = hit.name;
+        li.querySelector(".dlSize").textContent = mb(hit.size);
+      });
+      if (BEST[os]) {
+        var re = new RegExp(BEST[os][0]);
+        rel.assets.forEach(function (a) { if (re.test(a.name)) { best.href = a.browser_download_url; document.getElementById("dlBestNote").textContent = rel.tag_name + " · " + mb(a.size); } });
+      }
+    }).catch(function () {});
+})();
+</script>
+</div>
+<footer class="foot">
+  <span>© 2026 Krate Labs</span>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/studio/">Studio</a>
+    <a href="/download/">Download</a>
+    <a href="/cloud/">Apps</a>
+    <a href="/docs/">Docs</a>
+    <a href="/faq/">FAQ</a>
+    <a href="/about/">About</a>
+    <a href="/contact/">Contact</a>
+    <a href="https://github.com/incyashraj/krate">GitHub</a>
+  </nav>
+</footer>
+<script>
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname }), keepalive: true, mode: "cors" }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

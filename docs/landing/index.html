@@ -23,8 +23,8 @@
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
-<title>Krate: build desktop apps once, ship one file</title>
-<meta name="description" content="Build desktop software and share one .krate file across macOS, Windows and Linux. Open-source runtimes, explicit permissions and AI-assisted authoring in Krate Studio." />
+<title>Krate: Describe an app. Get one file.</title>
+<meta name="description" content="Krate turns a sentence into a real desktop app: one small file that runs on Mac, Windows and Linux. Make it in your browser or in Krate Studio with your own AI, then send it to anyone." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/" />
   <meta property="og:title" content="Krate: build desktop apps once, ship one file" />
@@ -42,12 +42,34 @@
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Organization",
+        "@id": "https://krate.tech/#organization",
+        "name": "Krate Labs",
+        "alternateName": "Krate",
+        "url": "https://krate.tech/",
+        "logo": "https://krate.tech/krate-logo.png",
+        "description": "Krate Labs makes Krate: describe an app and get one small file that runs on Mac, Windows and Linux.",
+        "founder": {"@type": "Person", "name": "Yashraj Pardeshi"},
+        "sameAs": ["https://github.com/incyashraj/krate"]
+      },
+      {
         "@type": "WebSite",
         "@id": "https://krate.tech/#website",
         "name": "Krate",
         "url": "https://krate.tech/",
-        "description": "Build desktop software and share one .krate file across macOS, Windows and Linux through native Krate runtimes.",
-        "sameAs": ["https://github.com/incyashraj/krate"]
+        "description": "Describe an app and get one file that runs on Mac, Windows and Linux.",
+        "publisher": {"@id": "https://krate.tech/#organization"}
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://krate.tech/#studio",
+        "name": "Krate Studio",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Windows, Linux",
+        "url": "https://krate.tech/studio/",
+        "downloadUrl": "https://krate.tech/download/",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+        "publisher": {"@id": "https://krate.tech/#organization"}
       },
       {
         "@type": "SoftwareSourceCode",
@@ -1273,7 +1295,7 @@ picture source { display: none; }
     <a href="/studio/">Studio</a>
     <a href="/cloud/">Apps</a>
     <a href="/docs/">Docs</a>
-    <a href="/account/">Account</a>
+    <a href="/download/">Download</a>
     <a class="cta" href="#start">Start building</a>
   </nav>
 </div>
@@ -1504,7 +1526,7 @@ picture source { display: none; }
         <a data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.55 10.5 4.5v7H3v-5.95zM3 18.45V12.5h7.5v7L3 18.45zM11.5 4.36 21 3v8.5h-9.5v-7.14zM21 12.5V21l-9.5-1.36V12.5H21z"/></svg>Windows</a>
         <a data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15c.5-2.5.5-4.5 2-6m6 6c-.5-2.5-.5-4.5-2-6"/></svg>Linux</a>
         <div class="sep"></div>
-        <a href="https://github.com/incyashraj/krate/releases/latest" target="_blank" rel="noopener">Every file in the release &rarr;</a>
+        <a href="/download/">Every download &rarr;</a>
       </div>
     </div>
   </div>
@@ -1514,17 +1536,17 @@ picture source { display: none; }
       <span>© 2026 Krate Labs. The player is open source, MIT or Apache-2.0.</span>
     </div>
     <nav>
-      <a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a>
+      <a href="/studio/">Studio</a>
+      <a href="/download/">Download</a>
       <a href="/cloud/">Apps</a>
-    <a href="/docs/">Docs</a>
-      <a href="#receipts">Why Krate</a>
-      <a href="/cloud/">Gallery</a>
+      <a href="/docs/">Docs</a>
+      <a href="/docs/quickstart.html">Quickstart</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/about/">About</a>
+      <a href="/contact/">Contact</a>
       <a href="/open/">Received an app?</a>
       <a href="/account/">Account</a>
-      <a href="/faq/">FAQ</a>
-      <a href="/docs/quickstart.html">Quickstart</a>
-      <a href="/share-an-app-made-with-ai.html">Share an AI-built app</a>
-      <a href="/contact/">Contact</a>
+      <a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a>
     </nav>
   </footer>
