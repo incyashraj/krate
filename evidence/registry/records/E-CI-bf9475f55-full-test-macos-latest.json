@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-bf9475f55-full-test-macos-latest",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "bf9475f55933e48a911607eb5225305551a1b91c",
+   "tree": "35806b7b9e10652198712634aba2f867aef118d5"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "macos",
+  "arch": "arm64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Full test (macos-latest)' of CI run 36471370203",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"
+ },
+ "raw_result": {
+  "conclusion": "success",
+  "run_id": "36471370203",
+  "location": "https://github.com/incyashraj/krate/actions/runs/36471370203",
+  "note": ""
+ },
+ "outcome": "pass",
+ "scope": {
+  "supports": "Full test (macos-latest) concluded pass on commit bf9475f55",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-28T19:29:29Z",
+  "finish": "2026-09-28T19:51:40Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}
