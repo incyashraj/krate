@@ -1997,19 +1997,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Ask for successes INSIDE the window rather than "the newest
+          # success": the runs list is not returned in date order, so a
+          # first page can miss the newest run entirely. On 2026-09-29
+          # per_page=1 answered a run 35 days old and per_page=30 one 13 days
+          # old, while the nightly had succeeded two days earlier.
+          since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
           last=$(gh api \
-            "repos/${{ github.repository }}/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success&per_page=1" \
-            --jq '.workflow_runs[0].created_at // empty')
+            "repos/${{ github.repository }}/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success&created=%3E%3D${since}&per_page=100" \
+            --jq '[.workflow_runs[].created_at] | max // empty')
           if [ -z "$last" ]; then
-            echo "::error::no successful fuzz nightly has EVER run -- the campaign is not evidence"
+            echo "::error::no successful fuzz nightly since ${since}: the fuzz signal is dark. A stable release cannot lean on a campaign that is not running -- fix the nightly (see K-244) or run it by hand (gh workflow run self-hosted-fuzz-nightly.yml) before releasing."
             exit 1
           fi
           age_days=$(( ( $(date -u +%s) - $(date -u -d "$last" +%s) ) / 86400 ))
           echo "last successful fuzz nightly: $last (${age_days} day(s) ago)"
-          if [ "$age_days" -gt 7 ]; then
-            echo "::error::the fuzz signal has been dark for ${age_days} days. A stable release cannot lean on a campaign that is not running -- fix the nightly (see K-244) or run it by hand (gh workflow run self-hosted-fuzz-nightly.yml) before releasing."
-            exit 1
-          fi
 
   deny:
     name: Dependency audit (cargo-deny)
