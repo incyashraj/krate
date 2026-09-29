@@ -20,7 +20,8 @@ const hasGuard = login.includes('if (next === "studio" && !fromApp)') && login.i
 const cases = [
   ["signed out, plain visit", { token: null, search: "" }, "/login/?next=studio"],
   ["signed in", { token: "krate_tok", search: "" }, null],
-  ["signed out but ?stay", { token: null, search: "?stay" }, null],
+  // There is no look-around door: a signed-out visit goes to sign in, whatever the query.
+  ["signed out with a stray ?stay", { token: null, search: "?stay" }, "/login/?next=studio"],
 ];
 let bad = 0;
 for (const [name, input, want] of cases) {
