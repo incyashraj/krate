@@ -4081,6 +4081,8 @@ async function refreshAgents() {
     : "bad";
   const text =
     chosen.state === "working" ? chosen.label
+    : chosen.state === "not-ready" && aiLimited(chosen) ? `${chosen.label} · usage limit`
+    : chosen.state === "not-ready" && aiSignedOut(chosen) ? `${chosen.label} · sign in`
     : chosen.state === "not-ready" ? `${chosen.label} · needs a fix`
     : chosen.state === "paused" ? `${chosen.label} · paused`
     : `${chosen.label} · not installed`;
@@ -4338,10 +4340,19 @@ function openAiSheet() {
         $("aiSheet").classList.add("hidden");
       });
       row.appendChild(use);
+    } else if (a.state === "not-ready" && !aiSignedOut(a)) {
+      // Signed in but not usable right now: a spent plan, an old version, a
+      // tool that will not start. "Sign in" here sent people to sign in to a
+      // tool they were signed in to (K-943). The engine's sentence says what
+      // it is; the button asks again, and the working AIs are one tap away.
+      const again = document.createElement("button");
+      again.className = "btn";
+      again.textContent = "Check again";
+      again.addEventListener("click", () => { refreshAgents(); openAiSheet(); });
+      row.appendChild(again);
     } else if (a.state === "not-ready") {
-      // Installed but unusable, which almost always means "not signed in".
-      // The engine's own detail says why; the button does something about
-      // it instead of asking the person to read and retype a command.
+      // Really signed out: the button opens the tool's own sign-in, then
+      // asks again once it is done.
       const fix = document.createElement("button");
       fix.className = "btn";
       fix.textContent = "Sign in";
@@ -5748,6 +5759,16 @@ function setComposerMode(mode) {
   paintModes();
 }
 window.setWebMode = setComposerMode;
+
+/* What the engine found, in two questions the buttons depend on. The
+ * engine's sentence is the contract: "not signed in" for a sign-out,
+ * "usage limit" for a spent plan (K-943). */
+function aiSignedOut(a) {
+  return /not signed in/i.test(String((a && a.detail) || ""));
+}
+function aiLimited(a) {
+  return /usage limit/i.test(String((a && a.detail) || ""));
+}
 
 function paintModes() {
   const mode = composerMode();

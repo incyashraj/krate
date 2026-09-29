@@ -700,6 +700,21 @@ fn diagnose(provider: &dyn AgentProvider, stdout: &str, stderr: &str) -> Readine
     let blob = format!("{stdout}\n{stderr}").to_lowercase();
     let name = provider.name();
 
+    // A usage limit is checked FIRST. The tool IS signed in -- it had to be,
+    // to be told its plan is used up -- and a limit reply can carry sign-in
+    // words anywhere around it (an account URL, "log in to buy credits").
+    // Codex's reply was "You've hit your usage limit ... try again at 3:47
+    // PM", matched none of the old words ("rate limit", "quota"), fell
+    // through to a JSON line about an MCP hook, and Studio offered "Sign in"
+    // to somebody who was signed in (K-943).
+    if let Some(summary) = usage_limit_summary(&blob, stdout, stderr) {
+        return Readiness::NotReady {
+            summary,
+            remedy: None,
+            said: what_it_said(stdout, stderr),
+        };
+    }
+
     let (summary, remedy) = if blob.contains("not logged in")
         || blob.contains("unauthorized")
         || blob.contains("authentication")
@@ -778,6 +793,46 @@ fn diagnose(provider: &dyn AgentProvider, stdout: &str, stderr: &str) -> Readine
         remedy,
         said: what_it_said(stdout, stderr),
     }
+}
+
+/// "is signed in, but has hit its usage limit" -- and when it resets, if the
+/// tool said -- for any of the ways the tools word a spent plan. `blob` is
+/// the lower-cased pair of streams; the time is read from the originals so
+/// "3:47 PM" keeps its case.
+fn usage_limit_summary(blob: &str, stdout: &str, stderr: &str) -> Option<String> {
+    const LIMIT: &[&str] = &[
+        "usage limit",
+        "hit your limit",
+        "limit reached",
+        "limit exceeded",
+        "rate limit",
+        "rate-limit",
+        "quota",
+        "too many requests",
+        "out of credits",
+        "insufficient credits",
+        "purchase more credits",
+    ];
+    if !LIMIT.iter().any(|w| blob.contains(w)) {
+        return None;
+    }
+    let original = format!("{stdout}\n{stderr}");
+    let lower = original.to_lowercase();
+    let when = lower.find("try again at").map(|at| {
+        let rest = &original[at + "try again at".len()..];
+        rest.trim_start()
+            .split(|c: char| c == '.' || c == '\n' || c == '"' || c == ',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .chars()
+            .take(24)
+            .collect::<String>()
+    });
+    Some(match when.filter(|w| !w.is_empty()) {
+        Some(w) => format!("is signed in, but has hit its usage limit -- it resets at {w}"),
+        None => "is signed in, but has hit its usage limit".to_string(),
+    })
 }
 
 /// What the tool printed, trimmed to something a person will actually read.
@@ -1977,6 +2032,39 @@ impl AgentProvider for GrokProvider {
             .and_then(|v| v.as_str());
         let command = event.pointer("/rawInput/command").and_then(|v| v.as_str());
         describe_tool_use(name, path, command)
+    }
+}
+
+#[cfg(test)]
+mod usage_limit_tests {
+    use super::*;
+
+    #[test]
+    fn a_spent_plan_is_a_usage_limit_not_a_sign_in() {
+        // Codex 0.148's real reply to the probe on 2026-09-29, signed in
+        // with ChatGPT, plan used up.
+        let stdout = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"skipping MCP tool hook in /Users/someone/.codex"}}
+{"type":"error","message":"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 3:47 PM."}"#;
+        let blob = stdout.to_lowercase();
+        let summary = usage_limit_summary(&blob, stdout, "").expect("a usage limit");
+        assert_eq!(
+            summary,
+            "is signed in, but has hit its usage limit -- it resets at 3:47 PM"
+        );
+        assert!(!summary.contains("not signed in"));
+    }
+
+    #[test]
+    fn a_limit_with_login_words_around_it_is_still_a_limit() {
+        let stderr = "Rate limit reached. Log in to your account to buy more.";
+        let summary = usage_limit_summary(&stderr.to_lowercase(), "", stderr).expect("a limit");
+        assert_eq!(summary, "is signed in, but has hit its usage limit");
+    }
+
+    #[test]
+    fn a_real_sign_out_is_not_a_limit() {
+        let stderr = "Error: Not logged in. Please run claude login.";
+        assert!(usage_limit_summary(&stderr.to_lowercase(), "", stderr).is_none());
     }
 }
 

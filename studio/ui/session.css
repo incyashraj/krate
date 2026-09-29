@@ -30,6 +30,11 @@
   border-right: 0;
 }
 #viewSession .rail-head { gap: 4px; padding-left: 10px; padding-right: 10px; }
+/* The Mac draws its window buttons over the top-left corner; the header
+   keeps the same room for them that every other title bar does. */
+body.macos #viewSession .rail-head { padding-left: 84px; }
+/* With the sidebar open, the sidebar sits under the buttons instead. */
+body.macos.side-open #viewSession .rail-head { padding-left: 10px; }
 body.windows #viewSession .rail-head { padding-right: 10px; }
 
 .sess-title {
