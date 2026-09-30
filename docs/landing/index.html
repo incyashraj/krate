@@ -1574,7 +1574,7 @@ addEventListener("load", function () {
 // The AIs that do the writing, taking turns in the headline -- the same
 // move the reference site makes with its brand marks.
 /* ------------------------------------------------------ star counter */
-fetch("https://api.github.com/repos/incyashraj/krate")
+fetch("https://hub.krate.tech/repo")
   .then(function (r) { return r.ok ? r.json() : null; })
   .then(function (d) {
     if (!d || !d.stargazers_count) return;
@@ -1673,7 +1673,7 @@ document.addEventListener("click", function () {
   document.querySelectorAll(".split .more").forEach(function (m) { m.dataset.open = "false"; });
 });
 // Resolve real asset links from the latest release.
-fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
+fetch("https://hub.krate.tech/release/latest")
   .then(function (r) { return r.ok ? r.json() : null; })
   .then(function (rel) {
     if (!rel || !rel.assets) return;

@@ -28,6 +28,7 @@ on:
       - "scripts/public_facts.py"
       - "scripts/test-public-facts.py"
       - "scripts/test-landing-assets.py"
+      - "scripts/check-first-party.py"
       - "scripts/discovery-report.py"
       - "scripts/pages-release.py"
       - "scripts/replay-ported-apps.sh"
@@ -134,6 +135,8 @@ jobs:
           persist-credentials: false
       - name: Verify landing image alternatives
         run: python3 scripts/test-landing-assets.py
+      - name: Pages load from krate.tech only
+        run: python3 scripts/check-first-party.py --self-test && python3 scripts/check-first-party.py
       - name: Verify discovery snapshot accounting
         run: python3 scripts/discovery-report.py --self-test
       - name: Install Rust toolchain

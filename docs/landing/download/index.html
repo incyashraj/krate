@@ -184,7 +184,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background:
   var best = document.getElementById("dlBest");
   if (BEST[os]) best.textContent = BEST[os][1];
   function mb(b) { var m = b / 1048576; return m < 1 ? Math.round(b / 1024) + " KB" : (m < 10 ? m.toFixed(1) : Math.round(m)) + " MB"; }
-  fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
+  fetch("https://hub.krate.tech/release/latest")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rel) {
       if (!rel || !rel.assets) return;

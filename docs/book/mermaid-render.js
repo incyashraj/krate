@@ -6,7 +6,9 @@
     }
 
     var script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js";
+    // Served from the docs themselves (mermaid 10.9.3, MIT), never a CDN:
+    // opening a page must not hand the reader's address to a third party.
+    script.src = (typeof path_to_root === "string" ? path_to_root : "") + "assets/mermaid.min.js";
     script.onload = callback;
     script.onerror = function () {
       console.warn("Krate docs could not load Mermaid diagrams.");

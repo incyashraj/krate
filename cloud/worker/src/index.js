@@ -382,6 +382,12 @@ export default {
         }
         return cors(new Response(null, { status: 204 }));
       }
+      // The release and star count krate.tech shows, fetched here and
+      // cached, so a visitor's browser talks to krate.tech only and never
+      // hands their address to a third party just by opening a page.
+      if (request.method === "GET" && (pathname === "/release/latest" || pathname === "/repo")) {
+        return cors(await githubMirror(pathname, request));
+      }
       if (request.method === "GET" && pathname === "/stats") {
         return cors(await stats(env));
       }
@@ -2025,6 +2031,33 @@ async function sharePut(request, code, env) {
   return new Response(out, {
     headers: { "content-type": "application/json" },
   });
+}
+
+/// A trimmed, cached copy of the two GitHub answers the website reads. The
+/// Cache API holds it for ten minutes (no KV, no budget spent), which keeps
+/// the hub far inside GitHub's unauthenticated limit.
+async function githubMirror(pathname, request) {
+  const cache = caches.default;
+  const key = new Request(new URL(pathname, request.url).toString(), { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const upstream = pathname === "/repo"
+    ? "https://api.github.com/repos/incyashraj/krate"
+    : "https://api.github.com/repos/incyashraj/krate/releases/latest";
+  const r = await fetch(upstream, { headers: { accept: "application/vnd.github+json", "user-agent": "krate-hub" } });
+  if (!r.ok) return text("GitHub did not answer", 502);
+  const d = await r.json();
+  const body = pathname === "/repo"
+    ? { stargazers_count: d.stargazers_count || 0 }
+    : {
+        tag_name: d.tag_name,
+        assets: (d.assets || []).map((a) => ({ name: a.name, browser_download_url: a.browser_download_url, size: a.size })),
+      };
+  const res = new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json", "cache-control": "public, max-age=600" },
+  });
+  await cache.put(key, res.clone());
+  return res;
 }
 
 // ------------------------------------------------------------ who is real
