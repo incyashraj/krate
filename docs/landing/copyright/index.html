@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="What Krate collects, in plain words -- written from the public source code, so every claim can be checked against it." />
-  <link rel="canonical" href="https://krate.tech/privacy/" />
-  <meta property="og:title" content="Krate: privacy" />
-  <meta property="og:description" content="What Krate collects, in plain words -- written from the public source code, so every claim can be checked against it." />
+  <meta name="description" content="How to report an app on krate.tech that uses your work without permission, and what happens next." />
+  <link rel="canonical" href="https://krate.tech/copyright/" />
+  <meta property="og:title" content="Krate: copyright" />
+  <meta property="og:description" content="How to report an app on krate.tech that uses your work without permission, and what happens next." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/privacy/" />
+  <meta property="og:url" content="https://krate.tech/copyright/" />
   <meta property="og:image" content="https://krate.tech/og-v4.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <title>Krate: privacy</title>
+  <title>Krate: copyright</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <style>
@@ -85,6 +85,8 @@
   .page h2 { margin-top: 34px; font-size: 19px; letter-spacing: -0.015em; }
   .page h2 + p, .page h2 ~ p { margin-top: 10px; color: var(--muted); font-size: 15px; max-width: 46em; }
   .page p a { color: var(--text); border-bottom: 1px solid var(--line); }
+  .page ul.plain { margin: 10px 0 0 1.2em; color: var(--muted); font-size: 15px; max-width: 46em; }
+  .page ul.plain li { margin-top: 6px; }
   .back { display: inline-block; margin-top: 40px; color: var(--muted); font-size: 14.5px; }
   .back:hover { color: var(--text); }
 
@@ -109,60 +111,45 @@
 </header>
 
 <main class="page wrap">
-  <p class="kicker">PRIVACY</p>
-  <h1>What Krate collects, in plain words.</h1>
-  <p class="lede">Last updated 2026-09-30. This page is written from the
-  source code, which is public; every claim here can be checked against it.</p>
+  <p class="kicker">COPYRIGHT</p>
+  <h1>Reporting work that was posted without permission.</h1>
+  <p class="lede">Last updated 2026-09-30. Apps in the Krate gallery, and
+  their names, screenshots and icons, are published by the people who made
+  them. If one of them uses your work without your permission, tell us and
+  we will look at it quickly.</p>
 
-  <h2>Apps you run</h2>
-  <p>Krate apps run in a permission sandbox. An app can only touch what you
-  granted on its consent screen, and the list you approve is the whole list.
-  App data stays on your computer unless the app declares a network or shared
-  capability and you approve it.</p>
+  <h2>How to report it</h2>
+  <p>Email <a href="mailto:legal@krate.tech">legal@krate.tech</a> with:</p>
+  <ul class="plain">
+    <li>the work you own that you believe was copied;</li>
+    <li>the link to the app on krate.tech, or its name in the gallery;</li>
+    <li>your name, postal address, phone number and email address;</li>
+    <li>a statement that you believe in good faith the use is not
+    authorised by you, your agent or the law;</li>
+    <li>a statement, under penalty of perjury, that your notice is accurate
+    and that you own the right or are authorised to act for the owner;</li>
+    <li>your physical or electronic signature (typing your full name is
+    enough).</li>
+  </ul>
+  <p>We take down or disable the reported app while we look at it, tell the
+  person who published it, and pass them a copy of your notice.</p>
 
-  <h2>Anonymous usage counting</h2>
-  <p>The Krate tool counts how many people use it, without learning who they
-  are. What is sent: a random id generated on your machine, the Krate
-  version, the operating system name, and which of a fixed set of actions
-  happened (make, open, publish). What is never sent: app names, prompts,
-  file paths, usernames, email, location, or any hardware identifier. The id
-  is random bytes in a file; deleting the file makes your install a new
-  anonymous one. The first run prints one line explaining this. Our server
-  also notes whether the event came from a home or office connection or from
-  a cloud network, using the network owner's name that Cloudflare provides,
-  so test machines are not counted as people; the address itself is not kept.
-  Turn it off permanently with <code>KRATE_NO_USAGE=1</code>.</p>
+  <h2>If your app was taken down</h2>
+  <p>If you published an app that was taken down and you believe that was a
+  mistake, email <a href="mailto:legal@krate.tech">legal@krate.tech</a> with the app's link,
+  your name, address and phone number, a statement under penalty of perjury
+  that you believe in good faith it was removed by mistake, your consent to
+  the jurisdiction of the courts where you live (or, outside the United
+  States, where we are), and your signature. We send your counter-notice to
+  the person who reported it and put the app back after 10 to 14 working
+  days unless they tell us they have gone to court.</p>
 
-  <h2>The website</h2>
-  <p>krate.tech pages send one small event when a page opens: the page path
-  and the name of the site you came from (just its name, such as google.com,
-  never the full address). Clicking a download link sends the same kind of
-  event with the system you picked. Our server adds the country your
-  connection is in, which Cloudflare tells it, and a daily visitor code: a
-  one-way scramble of your connection and browser mixed with a secret that
-  changes every day. It lets us count people instead of page loads. It cannot
-  be turned back into an address, and it cannot link your visits across days.
-  The address itself is never kept. No cookies, nothing stored on your
-  device, and no third-party analytics. Search crawlers and link previews are
-  counted apart from people.</p>
+  <h2>Repeat infringers</h2>
+  <p>We close the accounts of people who repeatedly publish other people's
+  work without permission.</p>
 
-  <h2>Your account, if you sign in</h2>
-  <p>Signing in (with GitHub, Google or an email link) stores the name,
-  email address and picture that provider gives us, and the apps you
-  publish, because published apps are credited to their publisher and
-  support replies need somewhere to go. Nothing else about your account is
-  read or stored. Each sign-in step is counted as started, finished or
-  failed on our side, without recording who you are, so we can see when
-  signing in breaks. Shared-store data (an app feature you opt into per app) is synced
-  through krate.tech and readable by anyone holding that store's invite
-  code, which the consent screen says before you approve it.</p>
-
-  <h2>Questions</h2>
-  <p>Open an issue at
-  <a href="https://github.com/incyashraj/krate">github.com/incyashraj/krate</a>
-  -- the same place the code that this page describes lives.</p>
-
-  <a class="back" href="/">&larr; Back to krate.tech</a>
+  <p>The rest of the rules for publishing are in <a href="/terms/">the
+  terms</a>.</p>
 </main>
 
 <footer class="site-foot">

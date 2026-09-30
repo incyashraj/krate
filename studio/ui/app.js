@@ -7292,6 +7292,13 @@ function dressPlanSheet() {
       '<button class="btn" id="planBuyYearly">$96/year</button>';
     $("planBuyMonthly").addEventListener("click", () => startCheckout("monthly", "planNote"));
     $("planBuyYearly").addEventListener("click", () => startCheckout("yearly", "planNote"));
+    // The renewal terms sit beside the buttons, before anyone pays: a plan
+    // renews by itself, so the person has to see that, how often, and how
+    // to stop it at the moment they decide (California's automatic renewal
+    // law, and the plain decent thing). Stripe repeats it at checkout.
+    $("planNote").textContent =
+      "Renews automatically every month or year at the same price until you cancel. " +
+      "Cancel any time from your account; your plan stays active to the end of the period you paid for.";
     if (b.founding) {
       founding.innerHTML =
         '<button class="btn btn-primary" id="planBuyFounding">Join for $79/year</button>';

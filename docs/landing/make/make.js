@@ -500,6 +500,8 @@ function askToSignIn() {
     <p class="note hidden" id="signEmailNote"></p>
     <p class="note">Krate never sees your password. GitHub or Google ask you
     directly, and the email link needs no password at all.</p>
+    <p class="note">By continuing you confirm you are 13 or older and agree to
+    the <a href="/terms/">terms</a>.</p>
     <button class="close" data-close>Not now</button>`);
   wrap.querySelector("#signGh").onclick = () => signIn("/login/start");
   wrap.querySelector("#signGoogle").onclick = () => signIn("/login/google/start");

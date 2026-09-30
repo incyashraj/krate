@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="What Krate collects, in plain words -- written from the public source code, so every claim can be checked against it." />
-  <link rel="canonical" href="https://krate.tech/privacy/" />
-  <meta property="og:title" content="Krate: privacy" />
-  <meta property="og:description" content="What Krate collects, in plain words -- written from the public source code, so every claim can be checked against it." />
+  <meta name="description" content="The terms for using Krate, krate.tech and your Krate account, in plain words." />
+  <link rel="canonical" href="https://krate.tech/terms/" />
+  <meta property="og:title" content="Krate: terms" />
+  <meta property="og:description" content="The terms for using Krate, krate.tech and your Krate account, in plain words." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/privacy/" />
+  <meta property="og:url" content="https://krate.tech/terms/" />
   <meta property="og:image" content="https://krate.tech/og-v4.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <title>Krate: privacy</title>
+  <title>Krate: terms</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <style>
@@ -109,60 +109,76 @@
 </header>
 
 <main class="page wrap">
-  <p class="kicker">PRIVACY</p>
-  <h1>What Krate collects, in plain words.</h1>
-  <p class="lede">Last updated 2026-09-30. This page is written from the
-  source code, which is public; every claim here can be checked against it.</p>
+  <p class="kicker">TERMS</p>
+  <h1>The terms for using Krate, in plain words.</h1>
+  <p class="lede">Last updated 2026-09-30. These terms are between you and
+  Krate Labs ("we"). They cover krate.tech, your Krate account, the app
+  gallery, building apps in Krate Studio on the web, and support. The Krate
+  runtime, player and command line are open source: their own licence
+  (MIT or Apache-2.0) is what governs that code, and these terms do not
+  take anything away from it.</p>
 
-  <h2>Apps you run</h2>
-  <p>Krate apps run in a permission sandbox. An app can only touch what you
-  granted on its consent screen, and the list you approve is the whole list.
-  App data stays on your computer unless the app declares a network or shared
-  capability and you approve it.</p>
+  <h2>Who can use Krate</h2>
+  <p>You must be at least 13 years old to use krate.tech, create an account
+  or publish an app, or older if the law where you live sets a higher age
+  for using online services on your own. If you are under the age of
+  majority where you live, a parent or guardian must agree to these terms
+  for you. We do not knowingly collect information from children under 13;
+  if we learn that an account belongs to one, we delete it.</p>
 
-  <h2>Anonymous usage counting</h2>
-  <p>The Krate tool counts how many people use it, without learning who they
-  are. What is sent: a random id generated on your machine, the Krate
-  version, the operating system name, and which of a fixed set of actions
-  happened (make, open, publish). What is never sent: app names, prompts,
-  file paths, usernames, email, location, or any hardware identifier. The id
-  is random bytes in a file; deleting the file makes your install a new
-  anonymous one. The first run prints one line explaining this. Our server
-  also notes whether the event came from a home or office connection or from
-  a cloud network, using the network owner's name that Cloudflare provides,
-  so test machines are not counted as people; the address itself is not kept.
-  Turn it off permanently with <code>KRATE_NO_USAGE=1</code>.</p>
+  <h2>Your account</h2>
+  <p>You sign in with GitHub, Google or an email link. Keep that sign-in to
+  yourself; what happens under your account is your responsibility. You can
+  sign out everywhere, and ask us to delete your account, from
+  <a href="/account/">your account page</a> or through
+  <a href="/contact/">support</a>.</p>
 
-  <h2>The website</h2>
-  <p>krate.tech pages send one small event when a page opens: the page path
-  and the name of the site you came from (just its name, such as google.com,
-  never the full address). Clicking a download link sends the same kind of
-  event with the system you picked. Our server adds the country your
-  connection is in, which Cloudflare tells it, and a daily visitor code: a
-  one-way scramble of your connection and browser mixed with a secret that
-  changes every day. It lets us count people instead of page loads. It cannot
-  be turned back into an address, and it cannot link your visits across days.
-  The address itself is never kept. No cookies, nothing stored on your
-  device, and no third-party analytics. Search crawlers and link previews are
-  counted apart from people.</p>
+  <h2>What you make is yours</h2>
+  <p>The apps you make with Krate belong to you, and so does the file. The AI
+  that writes an app is the one you choose (for example Claude, ChatGPT or
+  Grok), and what it writes can have mistakes: check an app before you rely
+  on it for anything important.</p>
+  <p>When you publish an app to the gallery or share a link, you give Krate
+  Labs permission to store it, show it, make copies of it for people who
+  open it, and show its name, screenshot and icon on krate.tech -- only as
+  far as needed to run the gallery and your links. You can unpublish at any
+  time, and that permission ends for new visitors.</p>
 
-  <h2>Your account, if you sign in</h2>
-  <p>Signing in (with GitHub, Google or an email link) stores the name,
-  email address and picture that provider gives us, and the apps you
-  publish, because published apps are credited to their publisher and
-  support replies need somewhere to go. Nothing else about your account is
-  read or stored. Each sign-in step is counted as started, finished or
-  failed on our side, without recording who you are, so we can see when
-  signing in breaks. Shared-store data (an app feature you opt into per app) is synced
-  through krate.tech and readable by anyone holding that store's invite
-  code, which the consent screen says before you approve it.</p>
+  <h2>What you must not do</h2>
+  <p>Do not publish or share anything you do not have the right to share,
+  anything unlawful, or software meant to harm the people who open it. Do
+  not try to break into Krate, other people's accounts or apps, get round
+  the limits on free building, or overload the build service. We may remove
+  anything that breaks these rules, and close accounts that break them
+  repeatedly, including people who keep posting other people's work
+  (see <a href="/copyright/">copyright</a>).</p>
 
-  <h2>Questions</h2>
-  <p>Open an issue at
-  <a href="https://github.com/incyashraj/krate">github.com/incyashraj/krate</a>
-  -- the same place the code that this page describes lives.</p>
+  <h2>Paid plans</h2>
+  <p>Making apps on your own computer with your own AI is free. If you buy a
+  paid plan on the web, the price and how often it renews are shown before
+  you pay. A plan renews automatically at the end of each month or year, at
+  the price you agreed to, until you cancel. You can cancel at any time
+  from your account, in the same few clicks it took to subscribe; your plan
+  then stays active until the end of the period you paid for and does not
+  renew. We tell you before any price change applies to you. Refunds are
+  given where the law requires them. Your AI provider bills you separately
+  for any AI you bring yourself; that is between you and them.</p>
 
-  <a class="back" href="/">&larr; Back to krate.tech</a>
+  <h2>No guarantees</h2>
+  <p>Krate is provided as it is. We work hard to keep it running and your
+  files safe, but we do not promise that it will always be available or
+  free of mistakes, and apps are made by AI tools we do not control. To the
+  extent the law allows, Krate Labs is not liable for indirect or
+  consequential losses, and our total liability to you is limited to what
+  you paid us in the twelve months before the claim, or 50 US dollars if
+  you paid nothing. Nothing here limits rights you have that the law does
+  not allow a contract to take away.</p>
+
+  <h2>Changes and questions</h2>
+  <p>If these terms change, we update the date at the top, and for a
+  change that matters we tell signed-in people before it applies. Questions
+  go through <a href="/contact/">the contact page</a>. How we handle your
+  information is on <a href="/privacy/">the privacy page</a>.</p>
 </main>
 
 <footer class="site-foot">
