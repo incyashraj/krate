@@ -284,28 +284,28 @@ export default {
         return cors(await publish(request, env));
       }
       if (request.method === "GET" && pathname === "/login/start") {
-        return loginStart(url, env);
+        return noteStep(env, "signin", "github-start", loginStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/callback") {
-        return loginCallback(url, env);
+        return noteStep(env, "signin", "github-done", loginCallback(url, env));
       }
       if (request.method === "GET" && pathname === "/login/google/start") {
-        return googleStart(url, env);
+        return noteStep(env, "signin", "google-start", googleStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/google/callback") {
-        return googleCallback(url, env);
+        return noteStep(env, "signin", "google-done", googleCallback(url, env));
       }
       if (request.method === "POST" && pathname === "/login/email") {
         // Fetched from page scripts on krate.tech, unlike the login
         // redirects around it, so the answer must carry CORS headers or
         // the browser discards it and reports a phantom network failure.
-        return cors(await emailStart(request, env));
+        return cors(await noteStep(env, "signin", "email-start", emailStart(request, env)));
       }
       if (request.method === "GET" && pathname === "/login/email/verify") {
-        return emailVerify(url, env);
+        return noteStep(env, "signin", "email-done", emailVerify(url, env));
       }
       if (request.method === "POST" && pathname === "/auth/start") {
-        return cors(await authStart(env));
+        return cors(await noteStep(env, "signin", "desktop-start", authStart(env)));
       }
       if (request.method === "POST" && pathname === "/auth/poll") {
         return cors(await authPoll(request, env));
@@ -376,12 +376,7 @@ export default {
       if (request.method === "POST" && pathname === "/view") {
         try {
           const body = await request.json();
-          const page = String(body.page || "/").slice(0, 64);
-          env.USAGE.writeDataPoint({
-            blobs: ["view", page],
-            doubles: [1],
-            indexes: ["view"],
-          });
+          await noteView(request, env, body);
         } catch {
           // A malformed beacon is not worth an error to the visitor.
         }
@@ -467,7 +462,7 @@ export default {
       // for -- not in raw counter bumps. A failed attempt retries inside
       // its case for free; only a case that produced a file consumes one.
       if (request.method === "POST" && pathname === "/case/open") {
-        return cors(await caseOpen(request, env));
+        return cors(await noteStep(env, "try", "case-open", caseOpen(request, env)));
       }
       if (request.method === "POST" && pathname === "/case/attempt") {
         return cors(await caseAttempt(request, env));
@@ -2032,6 +2027,101 @@ async function sharePut(request, code, env) {
   });
 }
 
+// ------------------------------------------------------------ who is real
+//
+// The numbers a founder reads to know whether real people came, signed up
+// and tried Krate. Everything here goes to Analytics Engine (env.USAGE) and
+// NEVER to KV: counting must not be able to spend the budget sign-ups need
+// (K-952, K-912).
+
+/// A crawler, a link preview, a monitor or a script -- not a person.
+function isBot(request) {
+  const ua = request.headers.get("user-agent") || "";
+  if (!ua) return true;
+  if (request.cf && request.cf.verifiedBotCategory) return true;
+  return /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|headless|lighthouse|pingdom|uptime|monitor|curl\/|wget|python|go-http|node-fetch|axios|java\/|okhttp|scrapy|puppeteer|playwright/i.test(ua);
+}
+
+/// Where a visit came from, as a bare host ("google.com"), never a URL.
+/// Our own pages are "-": moving around krate.tech is not a source.
+function refHost(ref) {
+  try {
+    const host = new URL(String(ref || "")).hostname.toLowerCase().replace(/^www\./, "");
+    if (!host || host === "krate.tech" || host.endsWith(".krate.tech")) return "-";
+    return host.slice(0, 64);
+  } catch {
+    return "-";
+  }
+}
+
+/// A home or office connection, or a cloud network (CI, build farms, our
+/// own Fly builder). Cloudflare names the network's owner on every request.
+function netOf(request) {
+  const org = String((request.cf && request.cf.asOrganization) || "");
+  return /microsoft|azure|amazon|aws|google|digitalocean|hetzner|ovh|linode|akamai|oracle|alibaba|tencent|fly\.io|flyio|cloudflare|github|macstadium|scaleway|vultr|contabo|leaseweb|choopa/i.test(org)
+    ? "cloud"
+    : "home";
+}
+
+/// One visitor for one day: a salted hash of the connection and browser,
+/// with the salt and the day inside it. No cookie, nothing stored on the
+/// device, and it cannot follow anyone past midnight UTC -- the way
+/// privacy-first analytics count uniques. The raw address is never kept.
+async function visitorHash(request, env) {
+  const day = new Date().toISOString().slice(0, 10);
+  const ip = request.headers.get("cf-connecting-ip") || "";
+  const ua = request.headers.get("user-agent") || "";
+  const data = new TextEncoder().encode(`${env.VISITOR_SALT || "krate"}|${day}|${ip}|${ua}`);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+  return [...digest.slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/// A page view or a download click from krate.tech.
+async function noteView(request, env, body) {
+  if (!env.USAGE) return;
+  const page = String(body.page || "/").slice(0, 64);
+  const event = body.event === "download" ? "download" : "view";
+  const os = ["mac", "windows", "linux"].includes(body.os) ? body.os : "-";
+  env.USAGE.writeDataPoint({
+    // blob1 kind, blob2 page, blob3 source host, blob4 country,
+    // blob5 human|bot, blob6 view|download, blob7 download os
+    blobs: [
+      "view",
+      page,
+      refHost(body.ref),
+      String((request.cf && request.cf.country) || "-"),
+      isBot(request) ? "bot" : "human",
+      event,
+      os,
+    ],
+    doubles: [1],
+    indexes: [await visitorHash(request, env)],
+  });
+}
+
+/// Record how a sign-in step or a make attempt ended, then hand the
+/// response on untouched. A step that throws is recorded and re-thrown.
+/// This is how the desk can say "5 people tried to sign in, 2 finished"
+/// -- the failed attempts of 2026-09-29 left no trace anywhere.
+async function noteStep(env, kind, step, pending) {
+  const record = (outcome, status) => {
+    try {
+      if (env.USAGE) {
+        env.USAGE.writeDataPoint({ blobs: [kind, step, outcome, String(status)], doubles: [1], indexes: [kind] });
+      }
+    } catch {}
+  };
+  let res;
+  try {
+    res = await pending;
+  } catch (e) {
+    record("error", 500);
+    throw e;
+  }
+  record(res.status >= 500 ? "error" : res.status >= 400 ? "refused" : "ok", res.status);
+  return res;
+}
+
 async function usage(request, env) {
   let event;
   try {
@@ -2095,6 +2185,11 @@ async function usage(request, env) {
         // listing itself makes public. Absent for everything else, so
         // opening a file somebody sent you privately is not counted here.
         String(event.app || "").match(/^[0-9a-f]{6,64}$/) ? event.app : "-",
+        // Where it came from: a home or office connection, or a cloud
+        // network (CI runners, build farms, our own Fly builder). CI replays
+        // opened 17,345 apps on a single day, which buried every real person
+        // in the counts; this is how the dashboard tells them apart.
+        netOf(request),
       ],
       doubles: [1],
       indexes: [id],
@@ -5030,6 +5125,10 @@ async function adminApi(request, pathname, env) {
       billing_live: billingLive(env),
     });
   }
+  if (route === "people") {
+    const days = Math.min(90, Math.max(1, parseInt(new URL(request.url).searchParams.get("days") || "30", 10) || 30));
+    return json(await people(env, days));
+  }
   if (route === "users") {
     const q = (new URL(request.url).searchParams.get("q") || "").toLowerCase();
     const listing = await env.APPS.list({ prefix: "user:", limit: 1000 });
@@ -5041,9 +5140,11 @@ async function adminApi(request, pathname, env) {
       if (q && !hay.includes(q)) continue;
       const ent = JSON.parse((await env.APPS.get(`ent:${u.id}`)) || "null");
       out.push({ ...u, ent, active: entitlementActive(ent) });
-      if (out.length >= 100) break;
     }
-    return json({ users: out });
+    // Newest first. KV lists keys in id order -- random UUIDs -- so the
+    // first 100 were an arbitrary 100 and a new sign-up could sit anywhere.
+    out.sort((a, b) => (b.created || 0) - (a.created || 0));
+    return json({ users: out.slice(0, 200) });
   }
   if (route === "user/plan" && request.method === "POST") {
     // The support override: comp a user, or clear an override.
@@ -5121,6 +5222,111 @@ async function adminApi(request, pathname, env) {
 /// The admin desk page. One file, no build step; signs in through the same
 /// krate.tech login the product uses and talks to /admin/api/* with the
 /// token. Renders nothing for non-admins because the APIs 404.
+/// Rows from Analytics Engine, or null when the read token is missing or
+/// the query fails -- the desk must say "unknown", never show a zero.
+async function aeRows(env, sql) {
+  if (!env.CF_ANALYTICS_TOKEN) return null;
+  try {
+    const r = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+      { method: "POST", headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` }, body: sql },
+    );
+    if (!r.ok) return null;
+    return (await r.json()).data || [];
+  } catch {
+    return null;
+  }
+}
+
+/// The founder's question in one answer: did real people come to krate.tech,
+/// sign up, and try Krate? Per day, humans only, CI and cloud machines set
+/// apart, and every sign-in attempt beside the ones that finished.
+async function people(env, days) {
+  const W = `timestamp > now() - INTERVAL '${days}' DAY`;
+  const W7 = "timestamp > now() - INTERVAL '7' DAY";
+  const human = "blob1 = 'view' AND blob5 = 'human'";
+  const [views, steps, usage, pages, sources, countries, legacy] = await Promise.all([
+    aeRows(env, `SELECT toDate(timestamp) AS day, blob6 AS ev, count(DISTINCT index1) AS uniq, sum(_sample_interval) AS n FROM krate_usage WHERE ${human} AND ${W} GROUP BY day, ev`),
+    aeRows(env, `SELECT toDate(timestamp) AS day, blob1 AS kind, blob2 AS step, blob3 AS outcome, sum(_sample_interval) AS n FROM krate_usage WHERE blob1 IN ('signin', 'try') AND blob2 != '' AND ${W} GROUP BY day, kind, step, outcome`),
+    aeRows(env, `SELECT toDate(timestamp) AS day, blob1 AS action, blob9 AS net, sum(_sample_interval) AS n, count(DISTINCT index1) AS machines FROM krate_usage WHERE blob1 IN ('install', 'make', 'open', 'publish') AND ${W} GROUP BY day, action, net`),
+    aeRows(env, `SELECT blob2 AS k, count(DISTINCT index1) AS v FROM krate_usage WHERE ${human} AND blob6 = 'view' AND ${W7} GROUP BY k ORDER BY v DESC LIMIT 12`),
+    aeRows(env, `SELECT blob3 AS k, count(DISTINCT index1) AS v FROM krate_usage WHERE ${human} AND blob3 != '-' AND blob3 != '' AND ${W7} GROUP BY k ORDER BY v DESC LIMIT 12`),
+    aeRows(env, `SELECT blob4 AS k, count(DISTINCT index1) AS v FROM krate_usage WHERE ${human} AND ${W7} GROUP BY k ORDER BY v DESC LIMIT 12`),
+    // Page loads from before visitor counting: no visitor, no bot flag.
+    aeRows(env, `SELECT toDate(timestamp) AS day, sum(_sample_interval) AS n FROM krate_usage WHERE blob1 = 'view' AND blob5 = '' AND ${W} GROUP BY day`),
+  ]);
+
+  const byDay = {};
+  const today = new Date();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today.getTime() - i * 86400_000).toISOString().slice(0, 10);
+    byDay[d] = {
+      day: d, visitors: 0, views: 0, views_old: 0, downloads: 0,
+      signin_tries: 0, signin_done: 0, signin_failed: 0,
+      make_tries: 0, accounts_new: 0,
+      installs: 0, installs_ci: 0, installs_unmarked: 0,
+      opens: 0, makes: 0, publishes: 0,
+    };
+  }
+  const at = (d) => byDay[String(d).slice(0, 10)];
+  for (const r of views || []) {
+    const row = at(r.day); if (!row) continue;
+    if (r.ev === "download") row.downloads += Number(r.n);
+    else { row.visitors += Number(r.uniq); row.views += Number(r.n); }
+  }
+  for (const r of legacy || []) {
+    const row = at(r.day); if (row) row.views_old += Number(r.n);
+  }
+  for (const r of steps || []) {
+    const row = at(r.day); if (!row) continue;
+    const n = Number(r.n);
+    if (r.kind === "try") { row.make_tries += n; continue; }
+    if (String(r.step).endsWith("-start")) row.signin_tries += n;
+    if (String(r.step).endsWith("-done") && r.outcome === "ok") row.signin_done += n;
+    if (r.outcome === "error") row.signin_failed += n;
+  }
+  for (const r of usage || []) {
+    const row = at(r.day); if (!row) continue;
+    const real = r.net === "home";
+    if (r.action === "install") {
+      if (real) row.installs += Number(r.machines);
+      else if (r.net === "cloud") row.installs_ci += Number(r.machines);
+      else row.installs_unmarked += Number(r.machines);
+    } else if (real) {
+      const key = { open: "opens", make: "makes", publish: "publishes" }[r.action];
+      row[key] += Number(r.n);
+    }
+  }
+
+  // Accounts come from KV itself, so they are right even for the days
+  // before this counting existed.
+  const listing = await env.APPS.list({ prefix: "user:", limit: 1000 });
+  const accounts = [];
+  for (const k of listing.keys) {
+    const u = JSON.parse((await env.APPS.get(k.name)) || "null");
+    if (!u) continue;
+    accounts.push({ name: u.name, login: u.login, email: u.email, providers: u.providers, created: u.created });
+    const row = at(new Date(u.created || 0).toISOString());
+    if (row) row.accounts_new += 1;
+  }
+  accounts.sort((a, b) => (b.created || 0) - (a.created || 0));
+
+  return {
+    days: Object.values(byDay),
+    accounts_total: accounts.length,
+    newest_accounts: accounts.slice(0, 30),
+    top_pages_7d: pages,
+    top_sources_7d: sources,
+    top_countries_7d: countries,
+    analytics: views === null ? "unavailable (CF_ANALYTICS_TOKEN missing or the query failed)" : "ok",
+    notes: [
+      "Visitors are people, not page loads: one browser on one connection counts once a day. Bots, crawlers, link previews and scripts are left out.",
+      "Visitor, source, download and sign-in-attempt counting started 2026-09-30. Before that there are only raw page loads (views_old), bots included, and only from the pages that sent them.",
+      "Installs, opens, makes and publishes count only home or office connections. CI runners and cloud machines are in installs_ci. Rows from before 2026-09-30 carry no network mark (installs_unmarked).",
+    ],
+  };
+}
+
 function adminPage() {
   const html = `<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -5152,7 +5358,8 @@ textarea{min-height:70px;resize:vertical}
 </div>
 <div id="app" style="display:none">
 <nav>
-  <button data-t="tickets" class="on">Tickets</button>
+  <button data-t="people" class="on">People</button>
+  <button data-t="tickets">Tickets</button>
   <button data-t="users">Users</button>
   <button data-t="payments">Payments</button>
   <button data-t="makeit">Make-it queue</button>
@@ -5169,12 +5376,37 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.payments} payments · billing \${o.billing_live?"LIVE":"not configured"}\`;el("#app").style.display="";show("tickets");}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.payments} payments · billing \${o.billing_live?"LIVE":"not configured"}\`;el("#app").style.display="";show("people");}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
 async function show(tab){
   const v=el("#view");v.innerHTML='<p class="mut">loading…</p>';
+  if(tab==="people"){
+    const P=await api("people?days=30");
+    const D=P.days;
+    const last7=D.slice(0,7);
+    const sum=(rows,k)=>rows.reduce((a,r)=>a+(r[k]||0),0);
+    const card=(label,value,hint)=>'<div class="card" style="flex:1;min-width:150px"><div class="mut">'+label+'</div><div style="font-size:26px;font-weight:600">'+value+'</div><div class="mut">'+hint+'</div></div>';
+    let h='<p class="mut" style="margin-bottom:10px">Last 7 days, real people only. Analytics: '+esc(P.analytics)+'</p>';
+    h+='<div class="row" style="align-items:stretch;margin-bottom:10px">'
+      +card("Visitors",sum(last7,"visitors"),"people on krate.tech, counted once a day")
+      +card("Download clicks",sum(last7,"downloads"),"from the site")
+      +card("Sign-ins",sum(last7,"signin_done")+" / "+sum(last7,"signin_tries"),"finished / started · "+sum(last7,"signin_failed")+" failed on our side")
+      +card("New accounts",sum(last7,"accounts_new"),P.accounts_total+" accounts in all")
+      +card("Tried making",sum(last7,"make_tries"),"make attempts, desktop and web")
+      +card("Real installs",sum(last7,"installs"),sum(last7,"installs_ci")+" CI/cloud set apart")
+      +'</div>';
+    const cols=[["day","Day"],["visitors","Visitors"],["views","Page views"],["views_old","Old page loads"],["downloads","Downloads"],["signin_tries","Sign-in starts"],["signin_done","Sign-ins done"],["signin_failed","Failed (ours)"],["accounts_new","New accounts"],["make_tries","Make attempts"],["installs","Installs"],["installs_ci","CI/cloud"],["installs_unmarked","Unmarked"],["opens","Opens"],["publishes","Publishes"]];
+    h+='<div class="card" style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px"><tr>'+cols.map(c=>'<th style="text-align:right;padding:4px 8px;color:var(--mut);font-weight:500;white-space:nowrap">'+c[1]+'</th>').join("")+'</tr>';
+    for(const r of D){h+='<tr>'+cols.map(c=>{const v=r[c[0]];const z=(v===0);return '<td style="text-align:right;padding:4px 8px;border-top:1px solid var(--line);'+(z?'color:#475066':'')+'">'+esc(v)+'</td>';}).join("")+'</tr>';}
+    h+='</table></div>';
+    h+='<div class="card"><b>Newest accounts</b>'+(P.newest_accounts.length?'':'<p class="mut">None yet.</p>')+P.newest_accounts.map(a=>'<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span class="grow"><b>'+esc(a.name||a.login||a.email)+'</b> <span class="mut">'+esc(a.email||"")+' · '+esc((a.providers||[]).join(", "))+'</span></span><span class="mut">'+when(a.created)+'</span></div>').join("")+'</div>';
+    const list=(title,rows)=>'<div class="card" style="flex:1;min-width:220px"><b>'+title+'</b>'+((rows&&rows.length)?rows.map(x=>'<div class="row" style="padding:3px 0"><span class="grow">'+esc(x.k)+'</span><span class="mut">'+esc(x.v)+'</span></div>').join(""):'<p class="mut">Nothing yet.</p>')+'</div>';
+    h+='<div class="row" style="align-items:stretch">'+list("Pages, 7 days",P.top_pages_7d)+list("Where they came from, 7 days",P.top_sources_7d)+list("Countries, 7 days",P.top_countries_7d)+'</div>';
+    h+='<div class="card mut">'+P.notes.map(esc).join("<br>")+'</div>';
+    v.innerHTML=h;
+  }
   if(tab==="tickets"){
     const {tickets}=await api("tickets");
     v.innerHTML=tickets.length?"":'<p class="mut">No tickets.</p>';

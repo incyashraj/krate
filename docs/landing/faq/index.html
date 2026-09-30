@@ -153,17 +153,37 @@ details.qa .a code { font-family: ui-monospace, Menlo, monospace; font-size: 12p
 </footer>
 
 <script>
-// Count the visit, and nothing about the visitor. No cookie, no stored id,
-// no referrer -- the page path and the day, sent to our own hub.
+// Count the visit, and nothing about the visitor: the page and the site
+// you came from, by name only. No cookie, nothing stored (see /privacy/).
 (function () {
   try {
     fetch("https://hub.krate.tech/view", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ page: location.pathname }),
+      body: JSON.stringify({ page: location.pathname, ref: document.referrer }),
       keepalive: true,
       mode: "cors",
     }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+<script>
+// A click on a download link, counted like a page view: which page, which
+// system. Nothing about the person (see /privacy/).
+(function () {
+  try {
+    document.addEventListener("click", function (e) {
+      var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (!a) return;
+      var h = a.getAttribute("href") || "";
+      if (!/releases\/(download|latest)|\.(dmg|exe|msi|AppImage|zip|tar\.gz)(\?|$)/i.test(h)) return;
+      var os = /\.dmg|darwin|mac/i.test(h) ? "mac" : /\.exe|\.msi|windows/i.test(h) ? "windows" : /AppImage|linux/i.test(h) ? "linux" : "-";
+      fetch("https://hub.krate.tech/view", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: location.pathname, event: "download", os: os }),
+        keepalive: true, mode: "cors",
+      }).catch(function () {});
+    }, true);
   } catch (e) {}
 })();
 </script>

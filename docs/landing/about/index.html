@@ -185,7 +185,27 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background:
 (function () {
   try {
     fetch("https://hub.krate.tech/view", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ page: location.pathname }), keepalive: true, mode: "cors" }).catch(function () {});
+      body: JSON.stringify({ page: location.pathname, ref: document.referrer }), keepalive: true, mode: "cors" }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+<script>
+// A click on a download link, counted like a page view: which page, which
+// system. Nothing about the person (see /privacy/).
+(function () {
+  try {
+    document.addEventListener("click", function (e) {
+      var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (!a) return;
+      var h = a.getAttribute("href") || "";
+      if (!/releases\/(download|latest)|\.(dmg|exe|msi|AppImage|zip|tar\.gz)(\?|$)/i.test(h)) return;
+      var os = /\.dmg|darwin|mac/i.test(h) ? "mac" : /\.exe|\.msi|windows/i.test(h) ? "windows" : /AppImage|linux/i.test(h) ? "linux" : "-";
+      fetch("https://hub.krate.tech/view", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: location.pathname, event: "download", os: os }),
+        keepalive: true, mode: "cors",
+      }).catch(function () {});
+    }, true);
   } catch (e) {}
 })();
 </script>

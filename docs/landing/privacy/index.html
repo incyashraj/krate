@@ -111,7 +111,7 @@
 <main class="page wrap">
   <p class="kicker">PRIVACY</p>
   <h1>What Krate collects, in plain words.</h1>
-  <p class="lede">Last updated 2026-08-29. This page is written from the
+  <p class="lede">Last updated 2026-09-30. This page is written from the
   source code, which is public; every claim here can be checked against it.</p>
 
   <h2>Apps you run</h2>
@@ -127,19 +127,33 @@
   happened (make, open, publish). What is never sent: app names, prompts,
   file paths, usernames, email, location, or any hardware identifier. The id
   is random bytes in a file; deleting the file makes your install a new
-  anonymous one. The first run prints one line explaining this. Turn it off
-  permanently with <code>KRATE_NO_USAGE=1</code>.</p>
+  anonymous one. The first run prints one line explaining this. Our server
+  also notes whether the event came from a home or office connection or from
+  a cloud network, using the network owner's name that Cloudflare provides,
+  so test machines are not counted as people; the address itself is not kept.
+  Turn it off permanently with <code>KRATE_NO_USAGE=1</code>.</p>
 
   <h2>The website</h2>
-  <p>krate.tech pages send one anonymous view event: the page path and the
-  day. No cookies, no identifiers, no referrer, and no third-party
-  analytics.</p>
+  <p>krate.tech pages send one small event when a page opens: the page path
+  and the name of the site you came from (just its name, such as google.com,
+  never the full address). Clicking a download link sends the same kind of
+  event with the system you picked. Our server adds the country your
+  connection is in, which Cloudflare tells it, and a daily visitor code: a
+  one-way scramble of your connection and browser mixed with a secret that
+  changes every day. It lets us count people instead of page loads. It cannot
+  be turned back into an address, and it cannot link your visits across days.
+  The address itself is never kept. No cookies, nothing stored on your
+  device, and no third-party analytics. Search crawlers and link previews are
+  counted apart from people.</p>
 
-  <h2>Publishing a link, if you sign in</h2>
-  <p>Publishing an app to the shared gallery uses GitHub sign-in. We store
-  your GitHub login and the apps you publish, because published apps are
-  credited to their publisher. Nothing else about your account is read or
-  stored. Shared-store data (an app feature you opt into per app) is synced
+  <h2>Your account, if you sign in</h2>
+  <p>Signing in (with GitHub, Google or an email link) stores the name,
+  email address and picture that provider gives us, and the apps you
+  publish, because published apps are credited to their publisher and
+  support replies need somewhere to go. Nothing else about your account is
+  read or stored. Each sign-in step is counted as started, finished or
+  failed on our side, without recording who you are, so we can see when
+  signing in breaks. Shared-store data (an app feature you opt into per app) is synced
   through krate.tech and readable by anyone holding that store's invite
   code, which the consent screen says before you approve it.</p>
 
@@ -168,16 +182,36 @@
 
 <script>
 // One anonymous page view -- the page name and the day, to our own hub.
-// No cookie, no id, no referrer; strictly less than any analytics vendor.
+// The page and the site you came from, by name; no cookie (see /privacy/).
 (function () {
   try {
     fetch("https://hub.krate.tech/view", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ page: location.pathname }),
+      body: JSON.stringify({ page: location.pathname, ref: document.referrer }),
       keepalive: true,
       mode: "cors",
     }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+<script>
+// A click on a download link, counted like a page view: which page, which
+// system. Nothing about the person (see /privacy/).
+(function () {
+  try {
+    document.addEventListener("click", function (e) {
+      var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (!a) return;
+      var h = a.getAttribute("href") || "";
+      if (!/releases\/(download|latest)|\.(dmg|exe|msi|AppImage|zip|tar\.gz)(\?|$)/i.test(h)) return;
+      var os = /\.dmg|darwin|mac/i.test(h) ? "mac" : /\.exe|\.msi|windows/i.test(h) ? "windows" : /AppImage|linux/i.test(h) ? "linux" : "-";
+      fetch("https://hub.krate.tech/view", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: location.pathname, event: "download", os: os }),
+        keepalive: true, mode: "cors",
+      }).catch(function () {});
+    }, true);
   } catch (e) {}
 })();
 </script>
