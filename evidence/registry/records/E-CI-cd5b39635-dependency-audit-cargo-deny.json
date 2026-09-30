@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-cd5b39635-dependency-audit-cargo-deny",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "cd5b396355e1f62325ee0a971b0f2e40ef73ac80",
+   "tree": "bb789f296b4f4330008c658d47c33599cbf8b3ec"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Dependency audit (cargo-deny)' of CI run 36557127592",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "cargo-deny found no advisory, licence or source violation in the locked dependency graph"
+ },
+ "raw_result": {
+  "conclusion": "failure",
+  "run_id": "36557127592",
+  "location": "https://github.com/incyashraj/krate/actions/runs/36557127592",
+  "note": "concluded failure"
+ },
+ "outcome": "fail",
+ "scope": {
+  "supports": "Dependency audit (cargo-deny) concluded fail on commit cd5b39635",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-29T10:41:42Z",
+  "finish": "2026-09-29T10:43:19Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}
