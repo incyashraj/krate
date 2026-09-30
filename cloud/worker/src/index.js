@@ -2328,15 +2328,27 @@ const GITHUB_CLIENT_ID = "Ov23liV2n8Dxi0okyv0F";
 // either, so nothing published under the old flow breaks.
 
 async function ensureUser(env, provider, stableId, profile) {
+  // Writes only what changed (K-952). This runs on EVERY request that
+  // carries a GitHub token -- Studio's session sync sends one on each save
+  // and list -- and it used to PUT the user, the ident and the email ident
+  // every time, changed or not. A day of one person working in Studio spent
+  // the free plan's 1,000 KV writes, and every sign-in after that failed
+  // before an account could exist. A returning, unchanged account now costs
+  // zero writes; KV budget belongs to new people.
   const identKey = `ident:${provider}:${stableId}`;
-  let userId = await env.APPS.get(identKey);
-  if (!userId && profile.email) {
+  const emailKey = profile.email ? `ident:email:${profile.email.toLowerCase()}` : null;
+  const identHeld = await env.APPS.get(identKey);
+  let userId = identHeld;
+  let emailHeld = null;
+  if (emailKey) {
+    emailHeld = await env.APPS.get(emailKey);
     // Same inbox, same person: unify across providers by verified email.
-    userId = await env.APPS.get(`ident:email:${profile.email.toLowerCase()}`);
+    if (!userId) userId = emailHeld;
   }
+  let record;
   if (!userId) {
     userId = crypto.randomUUID();
-    await env.APPS.put(`user:${userId}`, JSON.stringify({
+    record = {
       id: userId,
       created: Date.now(),
       name: profile.name || "",
@@ -2344,22 +2356,24 @@ async function ensureUser(env, provider, stableId, profile) {
       email: profile.email || "",
       avatar_url: profile.avatar_url || "",
       providers: [provider],
-    }));
+    };
+    await env.APPS.put(`user:${userId}`, JSON.stringify(record));
   } else {
-    const record = JSON.parse((await env.APPS.get(`user:${userId}`)) || "{}");
+    record = JSON.parse((await env.APPS.get(`user:${userId}`)) || "{}");
+    const before = JSON.stringify(record);
     if (!(record.providers || []).includes(provider)) {
       record.providers = [...(record.providers || []), provider];
     }
     record.name = record.name || profile.name || "";
     record.avatar_url = record.avatar_url || profile.avatar_url || "";
     record.email = record.email || profile.email || "";
-    await env.APPS.put(`user:${userId}`, JSON.stringify(record));
+    if (JSON.stringify(record) !== before) {
+      await env.APPS.put(`user:${userId}`, JSON.stringify(record));
+    }
   }
-  await env.APPS.put(identKey, userId);
-  if (profile.email) {
-    await env.APPS.put(`ident:email:${profile.email.toLowerCase()}`, userId);
-  }
-  return JSON.parse(await env.APPS.get(`user:${userId}`));
+  if (identHeld !== userId) await env.APPS.put(identKey, userId);
+  if (emailKey && emailHeld !== userId) await env.APPS.put(emailKey, userId);
+  return record;
 }
 
 async function newSession(env, userId) {
