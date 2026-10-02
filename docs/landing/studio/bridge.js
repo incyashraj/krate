@@ -1691,6 +1691,18 @@ const COMMANDS = {
   pick_folder() {
     return refuse("A browser chooses where downloads go, not this page.");
   },
+  /* Porting reads a project folder on the person's computer, which a page
+   * cannot do; the web door is a zip upload, not built yet. Until then the
+   * answer is the desktop, said plainly. */
+  pick_source_folder() {
+    return refuse("Porting reads a project folder on your computer, so it runs in Studio on your machine. Download Studio and open the folder there.");
+  },
+  port_plan() {
+    return refuse("Porting runs in Studio on your computer.");
+  },
+  port_app() {
+    return refuse("Porting runs in Studio on your computer.");
+  },
   /* Attaching a file, in a tab.
    *
    * A desktop picker answers with PATHS, and everything downstream --

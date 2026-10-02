@@ -1,0 +1,57 @@
+{
+ "schema": "krate.port.plan.v1",
+ "source": "/Users/someone/tkinter-todo-app",
+ "verdict": "needs-changes",
+ "profile": "desktop-native-source-port",
+ "languages": [
+  "python"
+ ],
+ "frameworks": [
+  "tkinter"
+ ],
+ "entry_points": [],
+ "suggested_capabilities": [
+  "ui.window:create"
+ ],
+ "findings": [
+  {
+   "id": "framework-tkinter",
+   "severity": "change",
+   "confidence": "high",
+   "title": "tkinter application framework",
+   "detail": "A Python toolkit. The port rewrites each screen as a Krate widget tree: labels, entries, buttons and lists map one to one, and the event handlers become the app's update step.",
+   "evidence": [
+    {
+     "path": "todo.py",
+     "line": 1
+    }
+   ]
+  },
+  {
+   "id": "rewritten-in-rust",
+   "severity": "change",
+   "confidence": "high",
+   "title": "Written in python: the port rewrites it in Rust",
+   "detail": "Krate apps are Rust, so this port is a rewrite, not a build of the original: the AI reads the python source for what the app does and writes the same behaviour against the Krate SDK, keeping the screens, the actions and the data it saves. This source is 8 KB of text, which is within what one port can carry.",
+   "evidence": [
+    {
+     "path": "."
+    }
+   ]
+  }
+ ],
+ "next_steps": [
+  "Confirm that the proposed `desktop-native-source-port` profile preserves the app's required user journeys.",
+  "Review the suggested capabilities and replace broad source paths or network destinations with precise scopes.",
+  "Translate the host and UI boundary while keeping portable business logic unchanged.",
+  "Build in an isolated work directory, reject unknown component imports, and record the source diff.",
+  "Verify allow, deny, persistence, close, and reopen journeys on macOS, Windows, and Linux."
+ ],
+ "scan": {
+  "files_seen": 4,
+  "files_scanned": 2,
+  "bytes_scanned": 8872,
+  "skipped_large_files": 0,
+  "symlinks_skipped": 0
+ }
+}

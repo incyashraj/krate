@@ -2692,6 +2692,7 @@ call site is wrong, not the bindings.\n\
 ## Detected work\n\
 \n\
 {findings}\n\
+{translation}\
 \n\
 ## Required result\n\
 \n\
@@ -2705,6 +2706,30 @@ call site is wrong, not the bindings.\n\
    its permission wall has been tested.\n",
         source = plan.source,
         profile = plan.profile,
+        translation = translation_note(plan),
+    )
+}
+
+/// What the agent must know when the source is not Rust: the port is a
+/// rewrite in Rust that keeps the behaviour, not a build of the original.
+/// Without this the task read as "port this Python" to a tool that was then
+/// handed a Rust candidate and no word about the language changing.
+fn translation_note(plan: &krate_port::PortPlan) -> String {
+    if plan.languages.is_empty() || plan.languages.iter().any(|l| l == "rust") {
+        return String::new();
+    }
+    format!(
+        "\n## This is a translation\n\
+\n\
+The source is {langs}. Krate apps are Rust, so the port is a REWRITE: read the\n\
+source in `reference-source/` for what the app does and how it behaves, then\n\
+write that behaviour in Rust against the Krate SDK in `candidate/`. Keep the\n\
+same screens, the same actions, the same words on the buttons, and the same\n\
+data it saves. Where the source used its toolkit (tkinter, Qt, the DOM), use\n\
+Krate's widget tree or canvas. Where it used its standard library for files,\n\
+time or the network, use the matching `krate::` module and declare the\n\
+capability. Do not try to run or embed the original.\n",
+        langs = plan.languages.join(" and ")
     )
 }
 

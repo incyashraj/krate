@@ -360,32 +360,71 @@ const KNOWN_NO_STD: &[&str] = &[
     "krate",
 ];
 
-/// Crates that require std, from documentation or from a port that hit the
-/// wall. One of these in the tree means the port cannot proceed as-is.
-const KNOWN_STD_ONLY: &[&str] = &[
-    "tokio",
-    "reqwest",
-    "hyper",
-    "image",
-    "lopdf",
-    "printpdf",
-    "pdf",
-    "pdfium-render",
-    "clap",
-    "regex",
-    "chrono",
-    "rusqlite",
-    "notify",
-    "walkdir",
-    "rayon",
-    "crossterm",
-    "ratatui",
-    "eframe",
-    "egui",
-    "iced",
-    "druid",
-    "gtk",
-    "winit",
+/// Crates that need std AND have no Krate replacement: what they do is the
+/// app's substance, and Krate has nothing to express it with. One of these
+/// in the tree means the port cannot proceed as-is.
+/// How much non-Rust source one port can rewrite in a sitting. Measured
+/// against the proven ports (hexyl, 2,400 lines; the code editor Studio
+/// wrote, 2,358 lines): about 3,000 lines, ~40 bytes each.
+const MAX_TRANSLATED_BYTES: u64 = 120 * 1024;
+
+const KNOWN_STD_ONLY: &[&str] = &["lopdf", "printpdf", "pdf", "pdfium-render"];
+
+/// Crates that need std but that a port REPLACES, because the thing they do
+/// is something Krate provides itself. A port is a rewrite against the Krate
+/// SDK, not a recompile of the dependency tree, so none of these survive
+/// into the .krate -- and none of them is a wall.
+///
+/// This list used to live inside KNOWN_STD_ONLY, which made every eframe app
+/// "unsupported" at the gate: the toolkit the port exists to replace was the
+/// reason the port never ran. The proven bank-savings port was an eframe app.
+const REPLACED_BY_PORT: &[(&str, &str)] = &[
+    (
+        "eframe",
+        "Krate's own UI: the widget tree and canvas (`krate::ui`, `krate::gfx`)",
+    ),
+    ("egui", "Krate's own UI: the widget tree and canvas"),
+    ("iced", "Krate's own UI: the widget tree and canvas"),
+    ("druid", "Krate's own UI: the widget tree and canvas"),
+    ("gtk", "Krate's own UI: the widget tree and canvas"),
+    ("winit", "Krate's own window (`ui.window:create`)"),
+    (
+        "crossterm",
+        "a Krate window: a terminal UI becomes a drawn one",
+    ),
+    (
+        "ratatui",
+        "a Krate window: a terminal UI becomes a drawn one",
+    ),
+    (
+        "tokio",
+        "Krate's own event loop; host calls are synchronous",
+    ),
+    (
+        "reqwest",
+        "`krate::net` (`net.connect:<host>:<port>`, one grant per host)",
+    ),
+    (
+        "hyper",
+        "`krate::net` (`net.connect:<host>:<port>`, one grant per host)",
+    ),
+    ("rusqlite", "`store.sql`, Krate's own database"),
+    (
+        "chrono",
+        "`time.clock` plus `locale.format` for dates the person reads",
+    ),
+    (
+        "clap",
+        "`io.args` read by hand (a few lines; clap needs std)",
+    ),
+    ("regex", "`regex-lite`, which builds without std"),
+    ("walkdir", "`fs.list` under a folder the person granted"),
+    ("notify", "`fs.watch` under a folder the person granted"),
+    ("rayon", "a plain loop; guests are single-threaded"),
+    (
+        "image",
+        "the `zune-png` / `zune-jpeg` decoders and Krate's image widget",
+    ),
 ];
 
 fn scan_std_wall(analysis: &mut Analysis) {
@@ -398,12 +437,55 @@ fn scan_std_wall(analysis: &mut Analysis) {
         .filter(|d| KNOWN_STD_ONLY.contains(&d.as_str()))
         .cloned()
         .collect();
+    let replaced: Vec<(String, &str)> = analysis
+        .direct_dependencies
+        .iter()
+        .filter_map(|d| {
+            REPLACED_BY_PORT
+                .iter()
+                .find(|(name, _)| name == &d.as_str())
+                .map(|(_, with)| (d.clone(), *with))
+        })
+        .collect();
     let unverified: Vec<String> = analysis
         .direct_dependencies
         .iter()
-        .filter(|d| !KNOWN_NO_STD.contains(&d.as_str()) && !KNOWN_STD_ONLY.contains(&d.as_str()))
+        .filter(|d| {
+            !KNOWN_NO_STD.contains(&d.as_str())
+                && !KNOWN_STD_ONLY.contains(&d.as_str())
+                && !REPLACED_BY_PORT.iter().any(|(name, _)| name == &d.as_str())
+        })
         .cloned()
         .collect();
+
+    // The dependencies the port replaces. Work, and said as work, but not a
+    // wall: the whole point of the port is that these go.
+    if !replaced.is_empty() {
+        let list = replaced
+            .iter()
+            .map(|(name, with)| format!("{name} -> {with}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        add_evidence_finding(
+            analysis,
+            FindingSpec {
+                id: "replaced-by-the-port".to_string(),
+                severity: Severity::Change,
+                confidence: Confidence::High,
+                title: "Dependencies the port replaces with Krate's own".to_string(),
+                detail: format!(
+                    "These crates need std, which Krate guests do not have, but each does \
+                     something Krate provides itself, so the port rewrites against the Krate \
+                     SDK and none of them survives into the .krate: {list}."
+                ),
+                capability: None,
+            },
+            Evidence {
+                path: "Cargo.toml".to_string(),
+                line: None,
+            },
+        );
+    }
 
     // The report that earned this check said "needs changes, one finding,
     // map your file paths" about a project whose PDF crate needs std -- a
@@ -1621,7 +1703,7 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
         "rs" | "py" | "swift" | "m" | "mm" | "cs" | "xml" | "c" | "cc" | "cpp" | "h" | "hpp"
     );
 
-    let frameworks: [(&str, &[&str], bool); 16] = [
+    let frameworks: [(&str, &[&str], bool); 18] = [
         (
             "electron",
             &["\"electron\"", "from 'electron'", "from \"electron\""],
@@ -1653,6 +1735,14 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
             is_native_source,
         ),
         ("gtk", &["gtk::", "gtk4", "pygobject"], is_native_source),
+        // Python's own toolkits. A tkinter to-do list was handed the CLI
+        // profile: the analyzer could not see it opened a window.
+        (
+            "tkinter",
+            &["import tkinter", "from tkinter", "tk.tk()", "tkinter.tk()"],
+            extension == "py",
+        ),
+        ("kivy", &["from kivy", "import kivy"], extension == "py"),
         (
             "appkit",
             &["import appkit", "nsapplication", "nswindow"],
@@ -1729,6 +1819,8 @@ fn is_windowed_framework(framework: &str) -> bool {
             | "winui"
             | "qt"
             | "gtk"
+            | "tkinter"
+            | "kivy"
             | "egui"
             | "iced"
             | "slint"
@@ -1751,6 +1843,8 @@ fn framework_label(framework: &str) -> &str {
         "vite" => "Vite",
         "electron" => "Electron",
         "egui" => "egui/eframe",
+        "tkinter" => "tkinter",
+        "kivy" => "Kivy",
         "iced" => "Iced",
         "slint" => "Slint",
         "dioxus" => "Dioxus",
@@ -1772,6 +1866,9 @@ fn framework_advice(framework: &str) -> &str {
         }
         "egui" | "iced" | "slint" | "dioxus" | "winit" => {
             "This is an immediate-mode or declarative Rust UI. The layout and business logic usually port well; the draw loop becomes a Krate widget tree, and anything drawn to a raw canvas needs an explicit replacement."
+        }
+        "tkinter" | "kivy" => {
+            "A Python toolkit. The port rewrites each screen as a Krate widget tree: labels, entries, buttons and lists map one to one, and the event handlers become the app's update step."
         }
         _ => "Map this framework to a supported Krate portability profile.",
     }
@@ -1871,36 +1968,73 @@ fn finish_plan(source: PathBuf, mut analysis: Analysis) -> Result<PortPlan> {
         );
     }
 
-    // A language the port pipeline cannot build. `krate port --to` builds the
-    // candidate with cargo-component, so today that means Rust and nothing
-    // else. Saying "needs changes" about a Python project put it in the same
-    // category as a Rust project that ports cleanly, and `--prepare` then laid
-    // down a Rust scaffold without ever mentioning that the language has to
-    // change -- which someone would only discover by reading the file.
+    // A language the port pipeline cannot build directly. `krate port --to`
+    // compiles the candidate with cargo-component, so the candidate is Rust
+    // whatever the source was -- which is fine, because a port is a REWRITE
+    // against the Krate SDK, and an agent rewrites a small app from Python or
+    // JavaScript the same way it rewrites one from eframe. So for a source
+    // the agent can hold in one sitting this is work, said as work; past that
+    // size it is a wall, said as one. The bound is scanned text, which is the
+    // measure the receipt line already reports.
+    //
+    // It used to be a blocker at any size: a 166-line tkinter to-do list was
+    // "unsupported", and `--prepare` laid down a Rust scaffold without a word
+    // about the language changing.
     if !analysis.languages.is_empty() && !analysis.languages.contains("rust") {
         let found: Vec<String> = analysis.languages.iter().cloned().collect();
-        add_evidence_finding(
-            &mut analysis,
-            FindingSpec {
-                id: "language-not-buildable".to_string(),
-                severity: Severity::Blocker,
-                confidence: Confidence::High,
-                title: format!("Krate cannot build {} yet", found.join(", ")),
-                detail: format!(
-                    "The port pipeline compiles the candidate with cargo-component, so it can \
-                     build Rust today and nothing else. This project is {}. Its logic can still \
-                     be ported by rewriting it in Rust against the Krate SDK -- the analysis \
-                     above still says which capabilities it would need -- but `krate port --to` \
-                     cannot do that step for you.",
-                    found.join(" and ")
-                ),
-                capability: None,
-            },
-            Evidence {
-                path: ".".to_string(),
-                line: None,
-            },
-        );
+        let scanned = analysis.scan.bytes_scanned;
+        if scanned <= MAX_TRANSLATED_BYTES {
+            add_evidence_finding(
+                &mut analysis,
+                FindingSpec {
+                    id: "rewritten-in-rust".to_string(),
+                    severity: Severity::Change,
+                    confidence: Confidence::High,
+                    title: format!(
+                        "Written in {}: the port rewrites it in Rust",
+                        found.join(", ")
+                    ),
+                    detail: format!(
+                        "Krate apps are Rust, so this port is a rewrite, not a build of the \
+                         original: the AI reads the {} source for what the app does and writes \
+                         the same behaviour against the Krate SDK, keeping the screens, the \
+                         actions and the data it saves. This source is {} KB of text, which is \
+                         within what one port can carry.",
+                        found.join(" and "),
+                        scanned / 1024
+                    ),
+                    capability: None,
+                },
+                Evidence {
+                    path: ".".to_string(),
+                    line: None,
+                },
+            );
+        } else {
+            add_evidence_finding(
+                &mut analysis,
+                FindingSpec {
+                    id: "language-not-buildable".to_string(),
+                    severity: Severity::Blocker,
+                    confidence: Confidence::High,
+                    title: format!("Too much {} to rewrite in one port", found.join(", ")),
+                    detail: format!(
+                        "Krate apps are Rust, so a {} source is ported by rewriting it against \
+                         the Krate SDK -- and this one is {} KB of text, past the {} KB one port \
+                         can carry reliably. Port it in pieces: a module, a screen or a command \
+                         at a time, each as its own app or as a step that grows the candidate.",
+                        found.join(" and "),
+                        scanned / 1024,
+                        MAX_TRANSLATED_BYTES / 1024
+                    ),
+                    capability: None,
+                },
+                Evidence {
+                    path: ".".to_string(),
+                    line: None,
+                },
+            );
+        }
     }
 
     let has_blocker = analysis
@@ -2003,7 +2137,7 @@ fn next_steps(analysis: &Analysis, verdict: &Verdict, profile: &str) -> Vec<Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{analyze, snapshot, Severity, Verdict};
+    use super::{analyze, snapshot, Severity, Verdict, MAX_TRANSLATED_BYTES};
     use std::fs;
 
     #[test]
@@ -2064,36 +2198,94 @@ mod tests {
         .unwrap();
 
         let plan = analyze(dir.path()).unwrap();
-        // Swift, which the pipeline cannot build -- the point of the test is that
-        // it is not reported as ready, and unsupported is the stronger form of that.
-        assert_eq!(plan.verdict, Verdict::Unsupported);
+        // Swift: a small one is a rewrite the agent does, so it is work, never
+        // "ready" -- the point of the test is that it is not reported as ready.
+        assert_eq!(plan.verdict, Verdict::NeedsChanges);
         assert_eq!(plan.profile, "desktop-native-source-port");
         assert!(plan.frameworks.contains(&"swiftui".to_string()));
     }
 
     #[test]
-    fn a_language_the_pipeline_cannot_build_is_a_blocker_not_a_to_do() {
-        // A Python project came back "needs changes" -- the same verdict a Rust
-        // project that ports cleanly gets -- and `--prepare` then wrote a Rust
-        // scaffold without ever saying the language has to change.
+    fn a_small_app_in_another_language_is_a_rewrite_not_a_wall() {
+        // A 166-line tkinter to-do list was "unsupported": the language was a
+        // blocker at any size, so the agent -- which rewrites the app anyway --
+        // never got to see it.
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("main.py"), "import random\nprint(1)\n").unwrap();
-        fs::write(dir.path().join("requirements.txt"), "requests==2.31.0\n").unwrap();
+        fs::write(
+            dir.path().join("todo.py"),
+            "import tkinter as tk\nroot = tk.Tk()\nroot.mainloop()\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert_eq!(plan.verdict, Verdict::NeedsChanges);
+        assert_eq!(
+            plan.profile, "desktop-native-source-port",
+            "tkinter opens a window"
+        );
+        let rewrite = plan
+            .findings
+            .iter()
+            .find(|f| f.id == "rewritten-in-rust")
+            .expect("the rewrite is named as work");
+        assert!(matches!(rewrite.severity, Severity::Change));
+        assert!(rewrite.title.contains("python"), "{}", rewrite.title);
+        assert!(!plan
+            .findings
+            .iter()
+            .any(|f| f.id == "language-not-buildable"));
+    }
+
+    #[test]
+    fn too_much_foreign_source_is_still_a_wall() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = "x = 1  # a line of python that pads the file out\n".repeat(4000);
+        assert!(big.len() as u64 > MAX_TRANSLATED_BYTES);
+        fs::write(dir.path().join("main.py"), big).unwrap();
 
         let plan = analyze(dir.path()).unwrap();
         assert_eq!(plan.verdict, Verdict::Unsupported);
-        let blocker = plan
+        let wall = plan
             .findings
             .iter()
             .find(|f| f.id == "language-not-buildable")
-            .expect("a blocker naming the language");
-        assert!(blocker.title.contains("python"), "{}", blocker.title);
-        // It must say what is still possible, not only what is refused.
-        assert!(
-            blocker.detail.contains("rewriting it in Rust"),
-            "the blocker should name the way forward: {}",
-            blocker.detail
-        );
+            .expect("past the bound it is a blocker, and says the size");
+        assert!(wall.detail.contains("KB"), "{}", wall.detail);
+    }
+
+    /// The toolkit the port exists to replace must not be the reason the port
+    /// never runs. A real eframe + chrono + image app came back "unsupported"
+    /// at the gate, while the proven bank-savings port was an eframe app.
+    #[test]
+    fn dependencies_the_port_replaces_are_work_not_a_wall() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"todo\"\n[dependencies]\neframe = \"0.36\"\nchrono = \"0.4\"\nimage = \"0.25\"\nserde = \"1\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("main.rs"),
+            "use eframe::egui;\nfn main() {}\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert_eq!(plan.verdict, Verdict::NeedsChanges, "{:?}", plan.findings);
+        let replaced = plan
+            .findings
+            .iter()
+            .find(|f| f.id == "replaced-by-the-port")
+            .expect("the replacements are named");
+        assert!(matches!(replaced.severity, Severity::Change));
+        for name in ["eframe", "chrono", "image"] {
+            assert!(
+                replaced.detail.contains(name),
+                "{name} missing: {}",
+                replaced.detail
+            );
+        }
+        assert!(!plan.findings.iter().any(|f| f.id == "std-dependency-wall"));
     }
 
     #[test]
@@ -2467,9 +2659,9 @@ dependencies = [
         fs::write(dir.path().join("main.tsx"), "import React from 'react';").unwrap();
 
         let plan = analyze(dir.path()).unwrap();
-        // No Rust in this project, so the pipeline cannot build it -- the
-        // profile is still the right one for the eventual rewrite.
-        assert_eq!(plan.verdict, Verdict::Unsupported);
+        // No Rust in this project: a small one is rewritten by the port, and
+        // the profile is the right one for that rewrite.
+        assert_eq!(plan.verdict, Verdict::NeedsChanges);
         assert_eq!(plan.profile, "tauri-source-port");
         assert!(plan.frameworks.contains(&"tauri".to_string()));
     }
@@ -2489,9 +2681,9 @@ dependencies = [
         .unwrap();
 
         let plan = analyze(dir.path()).unwrap();
-        // TypeScript, so the project as a whole cannot be built; the microphone
-        // finding below is what this test is actually about.
-        assert_eq!(plan.verdict, Verdict::Unsupported);
+        // TypeScript, so the port is a rewrite (work, not a wall); the
+        // microphone finding below is what this test is actually about.
+        assert_eq!(plan.verdict, Verdict::NeedsChanges);
         assert!(plan
             .suggested_capabilities
             .contains(&"audio.capture".to_string()));
@@ -2584,8 +2776,8 @@ dependencies = [
                 plan.languages.contains(&language.to_string()),
                 "{marker} should detect {language}"
             );
-            // None of these languages can be built by the pipeline yet.
-            assert_eq!(plan.verdict, Verdict::Unsupported);
+            // None of these is Rust, so each is a rewrite: work, said as work.
+            assert_eq!(plan.verdict, Verdict::NeedsChanges);
         }
     }
 

@@ -25,6 +25,39 @@ project runs unchanged inside Krate. Pure logic may be reusable; UI and host
 integration often need adaptation. A missing essential API is a stop condition,
 not something a packaging flag can fix.
 
+## From Krate Studio
+
+Studio's home screen has a second way in under the prompt box: **Have an
+app already? Open its folder and I'll port it.** Pick the project folder,
+and Studio shows the same plan the command below prints: the verdict,
+every finding with its file and line, and the permissions the ported app
+would ask for. Nothing is built or changed at that point. Press **Port it**
+and the AI rewrites the app against the Krate SDK, with the same progress,
+stop button and finished card as a build. Your original folder is never
+touched; the result is a new `.krate` in your apps folder, and you can
+change it afterwards the way you change any app Studio made.
+
+## What a port is
+
+A port is a rewrite, not a recompile. The AI reads your source for what
+the app does and writes that behaviour against the Krate SDK. So a
+dependency that does something Krate provides itself is work, not a wall:
+eframe, egui, iced and GTK become Krate's widget tree and canvas, reqwest
+becomes `net`, rusqlite becomes `store.sql`, chrono becomes `time.clock`,
+and none of them survives into the `.krate`. The plan names each one and
+what replaces it.
+
+The same is true of the language. A project in Python, JavaScript, Go or
+Swift is rewritten in Rust, keeping the screens, the actions and the data
+it saves; the plan says so in a finding called "Written in python: the
+port rewrites it in Rust". One port carries about 120 KB of source text
+(around 3,000 lines). Past that the plan says the size and asks you to
+port it in pieces.
+
+What stays a wall: a dependency with no Krate equivalent (PDF rendering
+today), spawning processes, and anything on the
+["not yet" list](limits.md).
+
 ## Look first
 
 ```sh

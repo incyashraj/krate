@@ -1349,6 +1349,119 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     Ok(picked.map(|p| p.display().to_string()))
 }
 
+/// The folder of an app the person already has, for porting. Its own picker
+/// rather than `pick_folder`, whose title promises a place to SAVE apps.
+#[tauri::command]
+async fn pick_source_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let picked = rfd::FileDialog::new()
+            .set_title("Choose the project folder of the app to port")
+            .set_directory(dirs_home())
+            .pick_folder();
+        let _ = tx.send(picked);
+    })
+    .map_err(|err| err.to_string())?;
+    let picked = rx
+        .recv_timeout(std::time::Duration::from_secs(300))
+        .map_err(|_| "the folder picker did not answer".to_string())?;
+    Ok(picked.map(|p| p.display().to_string()))
+}
+
+/// What it would take to port the project at `source`: the engine's
+/// read-only scan, as its `krate.port.plan.v1` JSON. Reads the project,
+/// never builds, runs or changes it -- the page shows the verdict and the
+/// findings before anything is spent.
+#[tauri::command]
+async fn port_plan(source: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine()?;
+        let out = silent_cmd(&engine)
+            .args(["port", "--format", "json", "--"])
+            .arg(&source)
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|err| format!("could not start the engine: {err}"))?;
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        // The engine prints the plan even when it is a refusal (exit 1 on
+        // "unsupported"), so the page gets the findings either way; only a
+        // run that printed no plan at all is an error.
+        if text.trim_start().starts_with('{') {
+            return Ok(text);
+        }
+        let err = String::from_utf8_lossy(&out.stderr);
+        Err(err
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("the engine could not read that folder")
+            .to_string())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+/// Port the project at `source` into a .krate: the engine prepares an
+/// isolated workspace (the original is never changed), the AI rewrites the
+/// candidate against the Krate SDK, and the result is built, import-checked,
+/// packed and permission-tested before the file exists. Same runner as
+/// `create_app`, so the progress, the logs and the stop button are the ones
+/// the person already knows.
+#[tauri::command]
+async fn port_app(
+    app: tauri::AppHandle,
+    source: String,
+    agent: String,
+    out_dir: String,
+    session: String,
+) -> Result<CreateResult, String> {
+    eprintln!("[port_app] enter: session={session} agent={agent} source={source}");
+    let notify_app = app.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine()?;
+        let dir = if out_dir.is_empty() {
+            PathBuf::from(Settings::default().out_dir)
+        } else {
+            PathBuf::from(out_dir)
+        };
+        std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+        let name = Path::new(&source)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "ported-app".to_string());
+        let out_path = free_path(&dir, &slugify(&name));
+        remember_target(&session, &out_path);
+        // A fresh workspace per attempt: the engine refuses a --prepare
+        // directory that exists, and a retry must start from the plan again
+        // rather than from a half-transformed candidate.
+        let session_work = studio_dir().join("builds").join(&session);
+        let _ = std::fs::create_dir_all(&session_work);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let workspace = session_work.join(format!("port-{stamp}"));
+        let mut cmd = silent_cmd(&engine);
+        cmd.arg("port")
+            .args(["--prepare"])
+            .arg(&workspace)
+            .args(["--agent", &agent, "--yes", "--to"])
+            .arg(&out_path)
+            .arg("--transcript")
+            .arg(session_work.join("port-transcript.json"))
+            .arg("--")
+            .arg(&source);
+        cmd.env("KRATE_TRACE", session_work.join("trace.jsonl"));
+        run_author(&app, cmd, &engine, &out_path, Some(session_work))
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+    if out.is_err() {
+        notify(&notify_app, "That port didn't come together. Come see why.");
+    }
+    out
+}
+
 /* ---- authoring -------------------------------------------------------- */
 
 #[derive(serde::Serialize)]
@@ -1387,6 +1500,15 @@ struct CreateResult {
 /// (2026-09-05) every such build showed the failure card (K-349).
 fn is_off_request(code: Option<i32>, was_stopped: bool, file_exists: bool) -> bool {
     code == Some(6) && !was_stopped && file_exists
+}
+
+/// Exit 7 is `krate port`'s own honest ending: the port built, runs, and
+/// refuses without its access, and nobody has yet compared it with the
+/// original ("This is not a finished port yet"). A file exists and works,
+/// so this is a result with a note on it, never a failure -- the runner
+/// used to read every exit but 0 and 6 as "didn't come together".
+fn is_port_unverified(code: Option<i32>, was_stopped: bool, file_exists: bool) -> bool {
+    code == Some(7) && !was_stopped && file_exists
 }
 
 /// The reason, from what the engine printed: its verdict line, then each
@@ -2117,7 +2239,8 @@ fn run_author(
         .map_err(|_| "Krate lost track of that build. Try again.")? = None;
 
     let off_request = is_off_request(status.code(), was_stopped, out_path.exists());
-    if !status.success() && !off_request {
+    let port_unverified = is_port_unverified(status.code(), was_stopped, out_path.exists());
+    if !status.success() && !off_request && !port_unverified {
         if was_stopped {
             return Err("stopped".to_string());
         }
@@ -2171,9 +2294,21 @@ fn run_author(
         asks,
         shot: shoot(engine, out_path).unwrap_or_default(),
         source_dir,
-        verdict: off_request.then(|| "off-request".to_string()),
+        verdict: if off_request {
+            Some("off-request".to_string())
+        } else if port_unverified {
+            Some("ported".to_string())
+        } else {
+            None
+        },
         verdict_detail: if off_request {
             off_request_detail(&tail)
+        } else if port_unverified {
+            Some(
+                "Built from your project and permission-tested. Not yet compared with the \
+                 original: open it and check it does what yours did."
+                    .to_string(),
+            )
         } else {
             None
         },
@@ -5153,6 +5288,9 @@ fn main() {
             agents,
             app_contents,
             create_app,
+            pick_source_folder,
+            port_plan,
+            port_app,
             revise_app,
             stop_build,
             build_alive,

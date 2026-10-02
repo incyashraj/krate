@@ -2374,6 +2374,11 @@ function fillDone(result, opts) {
       : "Built, but it is not what you asked for.";
     verdictEl.textContent = [head, ...kept, "Say what to change and it becomes the next version."].join(" ");
     verdictEl.classList.remove("hidden");
+  } else if (result.verdict === "ported") {
+    // A port's honest ending: it builds, runs and refuses without its
+    // access, and only the person can say whether it does what theirs did.
+    verdictEl.textContent = String(result.verdict_detail || "Ported. Open it and check it does what your original did.");
+    verdictEl.classList.remove("hidden");
   } else {
     verdictEl.textContent = "";
     verdictEl.classList.add("hidden");
@@ -2462,10 +2467,13 @@ function finishBuild(result) {
   // AS THAT, beside the app -- not as a success, and not as a failure over
   // a file that exists (K-349).
   const offRequest = Boolean(result && result.verdict === "off-request");
+  const ported = Boolean(result && result.verdict === "ported");
   built.messages.push({
     who: "KRATE",
     body: offRequest
       ? `v${version} built, but it is not what you asked for.${result.verdict_detail ? `\n${result.verdict_detail}` : ""}\nThe file is there and it runs. Tell me what to change and it becomes v${version + 1}.`
+      : ported
+      ? `v${version} ported · ${result.size}${mins ? ` · ${mins} min` : ""}. It builds, runs and asks only for what it declared. Open it and check it does what your original did; tell me what to change and it becomes v${version + 1}.`
       : `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}. Tell me what to change and it becomes v${version + 1}.`,
     files: [],
     when: Math.floor(Date.now() / 1000),
@@ -3520,7 +3528,7 @@ async function resumeRunningBuild(request, reattach) {
   }
 }
 
-async function buildNow(request, files, revising, planSession, starterShape) {
+async function buildNow(request, files, revising, planSession, starterShape, portSource) {
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   resumeAfterKey = null;
   // Plan mode means no new app, whatever the path here: a stray "build it"
@@ -3560,6 +3568,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   // side did all the talking.
   const version = (state.session.builds || 0) + 1;
   if (revising) say("KRATE", "Reading your app, then making that change.", null, { variant: "note" });
+  if (portSource) say("KRATE", "Reading your project, then writing it again as a Krate app. Your original is not touched.", null, { variant: "note" });
   // Warn BEFORE the first flash, not after. While it works, the AI opens
   // the app to look at it and fix what it sees -- windows appear for a
   // second and sounds play. Unexplained, that reads as the machine
@@ -3593,7 +3602,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   // Draw what we can; the invoke below happens either way.
   try {
     beginBuild(
-      revising ? "Making your change" : "Making your app",
+      portSource ? "Porting your app" : revising ? "Making your change" : "Making your app",
       // Honest numbers: measured across real builds (traces in
       // ~/.krate/studio/builds), a fresh app is 5-15 minutes and the
       // median is ~13. "A few minutes" read as a promise and then as a lie.
@@ -3615,7 +3624,14 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   }
 
   try {
-    const result = revising
+    const result = portSource
+      ? await invoke("port_app", {
+          source: portSource,
+          agent: state.agent,
+          outDir: state.outDir,
+          session: state.session.id,
+        })
+      : revising
       ? await invoke("revise_app", {
           path: currentApp().path,
           change: request,
@@ -3695,7 +3711,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
         null,
         { variant: "ask", actions: wallActions(err) },
       );
-      resumeWhenKeyed(() => buildNow(request, files, revising, planSession, starterShape));
+      resumeWhenKeyed(() => buildNow(request, files, revising, planSession, starterShape, portSource));
       // A wall on a CHANGE leaves the app they already made: keep it on
       // screen, and keep the box saying "change it". It went blank ("Your
       // app will appear here") and the box asked for a new app, although
@@ -6578,6 +6594,97 @@ async function startFromHomeInner() {
   make(text, { pastAgentCheck: true });
 }
 
+/* ---- porting an app the person already has ----------------------------
+ *
+ * The second way in. A folder on this computer, not a sentence: the engine
+ * reads it (never builds, runs or changes it) and says what the port would
+ * take -- the verdict, every finding with its file and line, and the
+ * permissions the app would ask for. That is the plan message, and Port it
+ * is its Build it. The port itself runs through buildNow, so the chip, the
+ * stages, the stop button and the done card are the ones a build has. */
+async function startPortFromHome() {
+  if (!tauri) {
+    const hint = $("homeHint");
+    if (hint) hint.textContent = "Porting reads a project folder on your computer, so it runs in Studio on your Mac, Windows or Linux machine. Download Studio, open the folder there, and the app comes out as one file.";
+    return;
+  }
+  if (state.buildingSession && !state.buildSettled) {
+    const hint = $("homeHint");
+    if (hint) hint.textContent = `One app at a time: "${clip(state.buildingSession.title || "your other app", 60)}" is still being made.`;
+    return;
+  }
+  let source = null;
+  try { source = await invoke("pick_source_folder"); } catch (err) { console.warn("picker:", err); }
+  if (!source) return;
+  const name = baseName(source) || source;
+  try { await refreshAgents(); } catch (e) { /* use the list we have */ }
+  if (!(state.agents || []).some((a) => a.state === "working")) {
+    openAiSheet();
+    return;
+  }
+  newSession(`Port ${name}`);
+  $("thread").innerHTML = "";
+  show("idle");
+  showView("session");
+  say("YOU", `Port my app: ${name}`);
+  say("KRATE", "Reading your project…", null, { variant: "note" });
+  unlockComposer("The plan comes first; then Port it.");
+  let plan;
+  try {
+    plan = JSON.parse(await invoke("port_plan", { source }));
+  } catch (err) {
+    say("KRATE", `I couldn't read that folder: ${plainWords(err)}`, null, { variant: "ask" });
+    return;
+  }
+  showPortPlan(plan, source, name);
+}
+
+/* The plan, in the conversation. Blockers first and in full, because a
+ * blocker is the whole answer; changes as a list the person can skim. */
+function showPortPlan(plan, source, name) {
+  const findings = plan.findings || [];
+  const blockers = findings.filter((f) => f.severity === "blocker");
+  const changes = findings.filter((f) => f.severity === "change");
+  const where = (f) => {
+    const ev = (f.evidence || []).slice(0, 3).map((e) => (e.line ? `${e.path}:${e.line}` : e.path)).filter(Boolean);
+    return ev.length ? ` (${ev.join(", ")})` : "";
+  };
+  const needs = (plan.suggested_capabilities || []).filter(Boolean);
+  const needsLine = needs.length
+    ? `\n\nThe ported app will ask your permission to: ${needs.map((c) => { const w = capWords(c); return w.charAt(0).toLowerCase() + w.slice(1); }).join("; ")}.`
+    : "";
+  const langs = (plan.languages || []).join(", ");
+  const fws = (plan.frameworks || []).join(", ");
+  const head = `${name} is ${langs || "a project"}${fws ? ` using ${fws}` : ""}. ` +
+    `I read ${plan.scan ? plan.scan.files_scanned : "its"} files and changed nothing.`;
+  if (plan.verdict === "unsupported" || blockers.length) {
+    const why = blockers.map((f) => `• ${f.title}${where(f)}\n  ${f.detail}`).join("\n");
+    say("KRATE", `${head}\n\nThis one can't be ported as it is:\n${why}\n\nFix that in the project, or tell me a smaller piece of it to port, and I'll look again.`, null, { variant: "ask" });
+    return;
+  }
+  const work = changes.length
+    ? `\n\nWhat the port changes:\n${changes.map((f) => `• ${f.title}${where(f)}`).join("\n")}`
+    : "\n\nNothing in it needs changing: it ports as it is.";
+  state.portSource = source;
+  clearAnsweredActions();
+  say("KRATE", `${head}${work}${needsLine}\n\nThe port rewrites the app against Krate's SDK and keeps your original untouched. Press Port it and it comes out as one file.`, null, {
+    variant: "plan",
+    actions: [{ label: "Port it", primary: true, run: () => portNow(source) }],
+  });
+  {
+    const rec = state.session.messages[state.session.messages.length - 1];
+    if (rec) rec.kind = "ask";
+  }
+  showPlanning("The port plan is ready", "read it in the conversation, or start the work from here", "waiting on you", null,
+    [{ label: "Port it", primary: true, run: () => portNow(source) }]);
+}
+
+async function portNow(source) {
+  if (state.buildingSession) return;
+  clearAnsweredActions();
+  await buildNow(`Port ${baseName(source)}`, [], false, "", "", source);
+}
+
 /* Something was typed while a build was running. Two honest answers, and
  * the person picks. The words stay in the box until they do, so backing out
  * of the sheet loses nothing. */
@@ -6710,6 +6817,7 @@ function submitInSession() {
 
 $("loginBtn").addEventListener("click", login);
 $("homeSend").addEventListener("click", startFromHome);
+$("homePort")?.addEventListener("click", (e) => { e.preventDefault(); startPortFromHome(); });
 
 
 /* Speak it. Browser speech recognition, which the webview provides, so
