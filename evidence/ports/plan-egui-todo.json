@@ -1,0 +1,151 @@
+{
+ "schema": "krate.port.plan.v1",
+ "source": "/Users/someone/egui-todo",
+ "verdict": "needs-changes",
+ "profile": "desktop-native-source-port",
+ "languages": [
+  "rust"
+ ],
+ "frameworks": [
+  "egui"
+ ],
+ "entry_points": [
+  "Cargo.toml"
+ ],
+ "suggested_capabilities": [
+  "fs.read:<path> / fs.write:<path>",
+  "ui.menu",
+  "ui.window:create"
+ ],
+ "findings": [
+  {
+   "id": "filesystem",
+   "severity": "change",
+   "confidence": "medium",
+   "title": "Local filesystem use",
+   "detail": "Map each path to an app-scoped Krate file capability and remove ambient filesystem access.",
+   "capability": "fs.read:<path> / fs.write:<path>",
+   "evidence": [
+    {
+     "path": "src/storage.rs",
+     "line": 1
+    }
+   ]
+  },
+  {
+   "id": "framework-egui",
+   "severity": "change",
+   "confidence": "high",
+   "title": "egui/eframe application framework",
+   "detail": "This is an immediate-mode or declarative Rust UI. The layout and business logic usually port well; the draw loop becomes a Krate widget tree, and anything drawn to a raw canvas needs an explicit replacement.",
+   "evidence": [
+    {
+     "path": "src/app.rs",
+     "line": 1
+    },
+    {
+     "path": "src/main.rs",
+     "line": 12
+    },
+    {
+     "path": "src/style.rs",
+     "line": 1
+    },
+    {
+     "path": "src/ui/todo.rs",
+     "line": 2
+    }
+   ]
+  },
+  {
+   "id": "menu-bar",
+   "severity": "change",
+   "confidence": "medium",
+   "title": "System menu bar",
+   "detail": "Krate declares `ui.menu` but no host implements it yet, because the three systems disagree about where a menu bar lives. Move these actions into the window -- buttons or a list -- or the port will lose them.",
+   "capability": "ui.menu",
+   "evidence": [
+    {
+     "path": "src/app.rs",
+     "line": 48
+    },
+    {
+     "path": "src/state.rs",
+     "line": 29
+    },
+    {
+     "path": "src/storage.rs",
+     "line": 23
+    },
+    {
+     "path": "src/ui/todo.rs",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "id": "native-library-binding",
+   "severity": "change",
+   "confidence": "high",
+   "title": "Binds a native C library",
+   "detail": "The dependency tree pulls khronos-egl, wayland-sys, x11-dl, which locate and link a library already installed on the machine. Nothing here builds for Krate: the target has no C toolchain and no system libraries to find. Usually these sit under a dependency the port replaces anyway -- an HTTP client becomes `net`, a database becomes `store.sql`, a windowing crate becomes Krate's own UI -- and the binding leaves with it. Sometimes one feature flag is the whole cause: `image`'s `avif-native` pulls `dav1d-sys` while the same crate's pure-Rust decoders do not. Check which case this is before starting, because if the native library is what the app actually does, the port has nothing left to build on.",
+   "evidence": [
+    {
+     "path": "Cargo.lock",
+     "line": 2038
+    }
+   ]
+  },
+  {
+   "id": "platform-conditional",
+   "severity": "change",
+   "confidence": "medium",
+   "title": "Operating-system-specific code",
+   "detail": "Replace platform branches with a portable Krate interface or disclose behavior that cannot be preserved.",
+   "evidence": [
+    {
+     "path": "build.rs",
+     "line": 2
+    }
+   ]
+  },
+  {
+   "id": "replaced-by-the-port",
+   "severity": "change",
+   "confidence": "high",
+   "title": "Dependencies the port replaces with Krate's own",
+   "detail": "These crates need std, which Krate guests do not have, but each does something Krate provides itself, so the port rewrites against the Krate SDK and none of them survives into the .krate: chrono -> `time.clock` plus `locale.format` for dates the person reads; eframe -> Krate's own UI: the widget tree and canvas (`krate::ui`, `krate::gfx`); image -> the `zune-png` / `zune-jpeg` decoders and Krate's image widget.",
+   "evidence": [
+    {
+     "path": "Cargo.toml"
+    }
+   ]
+  },
+  {
+   "id": "std-dependency-unverified",
+   "severity": "change",
+   "confidence": "medium",
+   "title": "Every dependency must work without std -- these are unverified",
+   "detail": "Krate guests build `#![no_std]`, and most of the crates people reach for do not (every common PDF, image and document crate needs std; `rand` works because it supports no_std, which makes it the exception rather than the rule). Not yet verified either way: env_logger, winres. Check each crate's docs for no_std support before starting -- one std-only dependency is enough to stop the port.",
+   "evidence": [
+    {
+     "path": "Cargo.toml"
+    }
+   ]
+  }
+ ],
+ "next_steps": [
+  "Confirm that the proposed `desktop-native-source-port` profile preserves the app's required user journeys.",
+  "Review the suggested capabilities and replace broad source paths or network destinations with precise scopes.",
+  "Translate the host and UI boundary while keeping portable business logic unchanged.",
+  "Build in an isolated work directory, reject unknown component imports, and record the source diff.",
+  "Verify allow, deny, persistence, close, and reopen journeys on macOS, Windows, and Linux."
+ ],
+ "scan": {
+  "files_seen": 12,
+  "files_scanned": 10,
+  "bytes_scanned": 146734,
+  "skipped_large_files": 0,
+  "symlinks_skipped": 0
+ }
+}

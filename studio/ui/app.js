@@ -6603,11 +6603,6 @@ async function startFromHomeInner() {
  * is its Build it. The port itself runs through buildNow, so the chip, the
  * stages, the stop button and the done card are the ones a build has. */
 async function startPortFromHome() {
-  if (!tauri) {
-    const hint = $("homeHint");
-    if (hint) hint.textContent = "Porting reads a project folder on your computer, so it runs in Studio on your Mac, Windows or Linux machine. Download Studio, open the folder there, and the app comes out as one file.";
-    return;
-  }
   if (state.buildingSession && !state.buildSettled) {
     const hint = $("homeHint");
     if (hint) hint.textContent = `One app at a time: "${clip(state.buildingSession.title || "your other app", 60)}" is still being made.`;
@@ -6617,10 +6612,12 @@ async function startPortFromHome() {
   try { source = await invoke("pick_source_folder"); } catch (err) { console.warn("picker:", err); }
   if (!source) return;
   const name = baseName(source) || source;
-  try { await refreshAgents(); } catch (e) { /* use the list we have */ }
-  if (!(state.agents || []).some((a) => a.state === "working")) {
-    openAiSheet();
-    return;
+  if (tauri) {
+    try { await refreshAgents(); } catch (e) { /* use the list we have */ }
+    if (!(state.agents || []).some((a) => a.state === "working")) {
+      openAiSheet();
+      return;
+    }
   }
   newSession(`Port ${name}`);
   $("thread").innerHTML = "";

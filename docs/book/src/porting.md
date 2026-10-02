@@ -37,6 +37,13 @@ stop button and finished card as a build. Your original folder is never
 touched; the result is a new `.krate` in your apps folder, and you can
 change it afterwards the way you change any app Studio made.
 
+The same door is in the web Studio at [krate.tech/app](https://krate.tech/app).
+There you pick the folder in the browser; it is uploaded once (source files
+only -- `.git`, `node_modules`, `target` and build output are left behind,
+and the upload is deleted when the job ends) and the plan comes back before
+anything is built. Porting counts as one build on your account, like a
+prompt does.
+
 ## What a port is
 
 A port is a rewrite, not a recompile. The AI reads your source for what

@@ -398,6 +398,43 @@ function tooLong(text, what) {
  * refused BY NAME, so a person who attached three things and one was too
  * large is told which one rather than losing all three silently.
  */
+const PROJECT_SKIP = /\/(\.git|node_modules|target|dist|build|__pycache__|\.venv|venv)\/|\/\.[^/]*$/;
+const PROJECT_FILE_MAX = 2 * 1024 * 1024;
+const PROJECT_FILES_MAX = 600;
+const PROJECT_BYTES_MAX = 16 * 1024 * 1024;
+
+function fileBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/* A folder picker: the browser's own, which hands back every file under
+ * the folder with its relative path. Cancelling resolves to an empty list
+ * the same way pickLocalFiles does. */
+function pickLocalFolder() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.webkitdirectory = true;
+    input.style.display = "none";
+    document.body.appendChild(input);
+    let settled = false;
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      try { input.remove(); } catch (e) {}
+      resolve(value);
+    };
+    window.addEventListener("focus", () => { setTimeout(() => done([]), 600); }, { once: true });
+    input.addEventListener("change", () => done([...(input.files || [])]));
+    input.click();
+  });
+}
+
 function pickLocalFiles({ accept, multiple }) {
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
@@ -1691,17 +1728,75 @@ const COMMANDS = {
   pick_folder() {
     return refuse("A browser chooses where downloads go, not this page.");
   },
-  /* Porting reads a project folder on the person's computer, which a page
-   * cannot do; the web door is a zip upload, not built yet. Until then the
-   * answer is the desktop, said plainly. */
-  pick_source_folder() {
-    return refuse("Porting reads a project folder on your computer, so it runs in Studio on your machine. Download Studio and open the folder there.");
+  /* Porting, in a tab.
+   *
+   * A desktop picker answers with a folder PATH and the engine reads it
+   * there. A browser has no paths: it has the files the person chose with
+   * a folder picker, and the bytes must travel. So the page keeps the
+   * project (name, relative paths, bytes) and hands Studio's UI the folder
+   * name as the "source"; the build service writes the files back to disk
+   * and runs the same `krate port` the desktop runs. What is skipped
+   * before upload: anything under .git, node_modules, target, dist or
+   * build, dotfiles, and files past 2 MB -- none of which a port reads. */
+  async pick_source_folder() {
+    if (!bridge.token) return goSignIn("");
+    const files = await pickLocalFolder();
+    if (!files.length) return null;
+    const name = (files[0].webkitRelativePath || "").split("/")[0] || "project";
+    const kept = [];
+    let total = 0;
+    for (const file of files) {
+      const rel = (file.webkitRelativePath || file.name).split("/").slice(1).join("/");
+      if (!rel || PROJECT_SKIP.test("/" + rel)) continue;
+      if (file.size > PROJECT_FILE_MAX) continue;
+      if (kept.length >= PROJECT_FILES_MAX || total + file.size > PROJECT_BYTES_MAX) break;
+      total += file.size;
+      kept.push({ path: rel, bytes: await fileBase64(file) });
+    }
+    if (!kept.length) throw refusal(`${name} has no files a port can read (source files, under 2 MB each).`);
+    bridge.project = { name, files: kept };
+    return name;
   },
-  port_plan() {
-    return refuse("Porting runs in Studio on your computer.");
+  /* The engine's read-only plan for the uploaded project, as its own JSON.
+   * No model runs and nothing is counted: asking what it would take is
+   * not porting. */
+  async port_plan({ source } = {}) {
+    if (!bridge.token) return goSignIn("");
+    if (!bridge.project || bridge.project.name !== source) return refuse("Pick the project folder first.");
+    const text = await builder("/port/plan", { method: "POST", body: JSON.stringify({ project: bridge.project }) });
+    return typeof text === "string" ? text : JSON.stringify(text);
   },
-  port_app() {
-    return refuse("Porting runs in Studio on your computer.");
+  /* The port itself: the same door and the same wall as a build, because
+   * on the ledger a port is an app made. */
+  async port_app({ source, session } = {}) {
+    if (!bridge.token) return goSignIn("");
+    if (!bridge.project || bridge.project.name !== source) return refuse("Pick the project folder first.");
+    const request = `Port ${source}`;
+    const sessionId = session || `web-${Date.now()}`;
+    if (!localSessions().some((s) => s.id === sessionId)) {
+      await COMMANDS.session_save({
+        session: { id: sessionId, title: request, created: nowSecs(), updated: nowSecs(), messages: [{ who: "YOU", body: request }], result: null },
+      }).catch(() => {});
+    }
+    let started;
+    try {
+      started = await builder("/port", { method: "POST", body: JSON.stringify({ device: deviceId(), project: bridge.project }) });
+    } catch (err) {
+      const text = String((err && err.message) || err || "");
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch (_) {}
+      if (parsed && parsed.wall) {
+        const wall = new Error(parsed.message || "You have made your app.");
+        wall.wall = true;
+        wall.download = Boolean(parsed.download);
+        if (err && err.status) wall.status = err.status;
+        throw wall;
+      }
+      const over = sessionOver(err, request, sessionId);
+      if (over) return over;
+      throw err;
+    }
+    return watchJob(started.id, request, sessionId);
   },
   /* Attaching a file, in a tab.
    *

@@ -31,8 +31,8 @@ import { join } from "node:path";
 import worker from "../../worker/src/index.js";
 import { r2Mock } from "../../worker/test/r2-mock.mjs";
 
-const HUB_PORT = 8941;
-const BUILDER_PORT = 8942;
+const HUB_PORT = 8943;
+const BUILDER_PORT = 8944;
 const HUB = `http://127.0.0.1:${HUB_PORT}`;
 const BUILDER = `http://127.0.0.1:${BUILDER_PORT}`;
 const BUILDER_SECRET = "free-app-rule-builder-secret";

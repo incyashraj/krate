@@ -1,0 +1,35 @@
+{
+  "agent_result": "# Port result: `src-tk-todo` → Krate\n\nStatus: **source written, NOT yet verified.** In this session, `cargo build` and\n`krate` both needed approval and were refused, so the candidate has not been\ncompiled. The import check and the permission-wall test have not run either.\nRun `krate create` (or `cargo build --release --target wasm32-wasip1` in\n`candidate/`) before you count this port as complete.\n\n## Preserved\n- One 650x540 window titled \"To-Do List App\", with a gray20 background and the\n  source's `place(...)` coordinates. It is drawn on one canvas whose design size\n  is 650x540.\n- The \"MY TO-DO\" header, the task entry with its grey \"Enter your task here...\"\n  placeholder, and the placeholder behaviour: it clears when you click into the\n  entry and comes back when you leave the entry empty.\n- The \"Add Task\", \"Toggle Complete\" and \"Delete Task\" buttons, with the same\n  labels and the same behaviour:\n  - Add puts in \"N. text\", where N is the current count + 1. As in the source,\n    rows are not renumbered after a delete.\n  - Toggle adds or removes \" ✓\" and sets the row to light green, white or the\n    default colour. Like the source, it drops the selection when it re-inserts\n    a row.\n  - Delete removes the selected row.\n- A 14-row list (gray49) with a gray73 selection. Clicking below the last row\n  selects the last row, as in Tk. Double-clicking a row edits it: the text,\n  without its number and ✓, goes into the entry and the row is deleted. As in\n  the source, the entry's grey/black text colour does not change on edit.\n- Each `messagebox` warning, with the same title (\"Warning\") and the same\n  wording: \"Please enter a task.\", \"Please select a task to delete.\",\n  \"Please select a task.\", \"Please select a task to edit.\".\n- The help icon in the top-right corner, its \"Help\" hover tooltip, and the\n  \"About\" box with the source's full text.\n- The counter line \"Total Tasks: N | Completed: C | Pending: P\". It is empty\n  until the first change, as in the source.\n- Data: the source saves nothing, and the port keeps tasks in memory only, so\n  there is no `store.kv`.\n\n## Changed\n- Message boxes are drawn as modal panels inside the window, closed with OK,\n  Enter or Escape, instead of native OS dialogs. The contract's Krate API has no\n  message-box call.\n- The info.png icon is redrawn with shapes (a teal ring, a pale cyan disc and\n  a \"?\") instead of loading the PNG. Loading it would need a PNG decoder\n  dependency.\n- Fonts: the host's font is used. The source used Helvetica, Cascadia Mono\n  and a bold weight, and the port fakes bold for the header.\n- Double-click is detected by timing two presses on the same row (about\n  400-500 ms, estimated from event-loop rounds) because there is no native\n  double-click event.\n- A new message, \"The list is full. Delete a task first.\", appears at 200\n  tasks. Each task line is capped at 192 bytes (fixed buffers, no allocation).\n- The Up/Down keys move the selection and scroll the list when the list has\n  focus. This replaces the Tk listbox's mouse-wheel and drag scrolling.\n- The window cannot be resized in the source. Krate's host scales the canvas\n  instead.\n\n## Not yet supported\n- Editing inside the entry is limited to typing at the end and Backspace.\n  Moving the cursor, selecting text, clipboard paste and Tk's text bindings are\n  missing.\n- Mouse-wheel scrolling of the list.\n- Focusing the buttons with the keyboard (Tab), and the lightgray highlight a\n  focused button shows.\n- Unverified: whether the host sends pointer-move events for the tooltip, and\n  the exact key names (\"ArrowUp\" and \"Up\" are both accepted).\n\n## Verification path\n`quick` runs every handler once: Add with the placeholder, adding three tasks,\ntoggling on, off and on, editing by double-click and re-adding, deleting, and\nthe warnings. It checks the results, prints the task list, the counter line and\n`check:ok`, then exits 0 (or 1 on `check:fail`). The manifest declares\n`ui.window:create` (required, gates the app) plus the starter's `io.stdout` and\n`io.args`. `store.kv` was removed because the app saves nothing.\n",
+  "artifact_evidence": "work-tk/artifact.json",
+  "author": "claude",
+  "behavior_journeys": "work-tk/journeys.json",
+  "bundle_sha256": "a338e3c981157b4cfb4301643ed202187fd3403b22436d92109c45bc8ffe0ee3",
+  "checks": [
+    "candidate built as a WebAssembly component",
+    "component imports only krate:* interfaces",
+    "bundle runs with all declared grants",
+    "bundle refuses when its required gating permission is withheld"
+  ],
+  "gating_permission": "runs with its grants (exit 0); nothing to withhold: the app asks only for defaults and its window",
+  "journey_results": "work-tk/journey-results.json",
+  "krate_bytes": 17597,
+  "output": "tk-todo.krate",
+  "plan_verdict": "needs-changes",
+  "port_plan_sha256": "abbd49374958f87c330eeec8c9d415251f724b92a7571bf868e8f49b7c44a59b",
+  "profile": "desktop-native-source-port",
+  "remaining_verification": [
+    "compare the original and ported user journeys",
+    "test interactive behavior and persistence",
+    "run the same bundle on Mac, Windows, and Linux"
+  ],
+  "repair_attempts_allowed": 2,
+  "repair_attempts_used": 0,
+  "requested_permissions": [
+    "ui.window:create",
+    "io.stdout",
+    "io.args"
+  ],
+  "schema": "krate.port.result.v1",
+  "source": "<work>/src-tk-todo",
+  "source_unchanged": true
+}

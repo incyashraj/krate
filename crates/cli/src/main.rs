@@ -2282,16 +2282,20 @@ fn port_project(req: PortRequest) -> Result<u8> {
         preflight_toolchain(req.yes, req.no_install)?;
         let command = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
             (Some(name), None) => {
-                let provider = resolve_agent(name)?;
-                match provider.name() {
-                    "claude" => PortAuthor::Claude,
-                    // Porting drives the agent with its own prompts and repair
-                    // loop, which have only been built for Claude so far. Say
-                    // that plainly rather than silently doing something else.
-                    other => anyhow::bail!(
-                        "--agent {other} cannot port yet; porting supports only `claude` today. \
-                         Use --author-cmd <command> to drive {other} yourself."
+                if let Some(vendor) = api_key::ApiVendor::parse(name) {
+                    PortAuthor::Api(vendor)
+                } else {
+                    let provider = resolve_agent(name)?;
+                    match provider.name() {
+                        "claude" => PortAuthor::Claude,
+                        // Porting drives the agent with its own prompts and repair
+                        // loop, which have only been built for Claude so far. Say
+                        // that plainly rather than silently doing something else.
+                        other => anyhow::bail!(
+                        "--agent {other} cannot port yet; porting supports `claude`, `anthropic` \
+                         and `openai` today. Use --author-cmd <command> to drive {other} yourself."
                     ),
+                    }
                 }
             }
             (None, Some(command)) => PortAuthor::Command(command),
@@ -2316,6 +2320,10 @@ fn port_project(req: PortRequest) -> Result<u8> {
 #[derive(Clone, Copy)]
 enum PortAuthor<'a> {
     Claude,
+    /// A model API (Anthropic, OpenAI): the same authoring loop `create`
+    /// runs on the web, pointed at the candidate. This is the author the
+    /// build service uses, which has no Claude Code to call.
+    Api(api_key::ApiVendor),
     Command(&'a str),
 }
 
@@ -2778,6 +2786,13 @@ fn complete_port(
         PortAuthor::Claude => {
             run_claude_port(workspace, &source_snapshot, &candidate, &task_path)?;
             "claude"
+        }
+        PortAuthor::Api(vendor) => {
+            run_api_port(vendor, &source_snapshot, &candidate, &task_path, None)?;
+            match vendor {
+                api_key::ApiVendor::Anthropic => "anthropic",
+                api_key::ApiVendor::OpenAi => "openai",
+            }
         }
         PortAuthor::Command(command) => {
             run_port_author_command(
@@ -3663,6 +3678,13 @@ fn run_port_repair(
             repair.attempt,
             repair.error_path,
         ),
+        PortAuthor::Api(vendor) => run_api_port(
+            vendor,
+            source,
+            candidate,
+            task,
+            Some((repair.attempt, repair.error_path)),
+        ),
         PortAuthor::Command(command) => run_port_author_command(
             command,
             workspace,
@@ -3708,6 +3730,64 @@ fn run_port_author_command(
     Ok(())
 }
 
+/// This binary's path, for a prompt that tells the agent what to run.
+fn krate_exe_for_prompt() -> String {
+    std::env::current_exe()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "krate".to_string())
+}
+
+/// Port with a model API: the authoring loop `create` runs on the web
+/// (write_file / edit_file / check_app until it passes), handed the port
+/// task instead of a one-sentence request. The task tells it the source is
+/// at `reference-source/` inside the candidate, which is where this copies
+/// it to; the copy is removed afterwards so it is never built, packed or
+/// shipped. A repair hands the same loop the validation error.
+fn run_api_port(
+    vendor: api_key::ApiVendor,
+    source: &Path,
+    candidate: &Path,
+    task: &Path,
+    repair: Option<(u8, &Path)>,
+) -> Result<()> {
+    let task_text = fs::read_to_string(task).with_context(|| format!("read {}", task.display()))?;
+    let inside = candidate.join("reference-source");
+    let _ = fs::remove_dir_all(&inside);
+    copy_tree(source, &inside).context("copy the source snapshot beside the candidate")?;
+    let mut request = format!(
+        "{task_text}\n\
+\n\
+Where things are, relative to the app directory you are working in:\n\
+- the original source, read only: `reference-source/` (do not edit it; it is\n\
+  removed before the app is packed, so nothing may depend on it at run time)\n\
+- the candidate you are porting into: `.` (Cargo.toml, manifest.toml, src/)\n\
+\n\
+Read the source first, then port it into the candidate, then call check_app\n\
+until it passes."
+    );
+    if let Some((attempt, error_path)) = repair {
+        let error_text = fs::read_to_string(error_path).unwrap_or_default();
+        request.push_str(&format!(
+            "\n\nThis is repair attempt {attempt}: the previous candidate failed Krate \
+             validation. Read the candidate and fix only the reported failure. Do not \
+             weaken the manifest, remove behaviour, or add WASI imports.\n\nValidation \
+             error:\n{error_text}"
+        ));
+    }
+    let app_dir = candidate.to_string_lossy().into_owned();
+    let outcome = api_author::run(vendor, &app_dir, &request);
+    let _ = fs::remove_dir_all(&inside);
+    match outcome {
+        Ok(0) => Ok(()),
+        Ok(code) => anyhow::bail!(
+            "the {} port author stopped with exit {code}",
+            vendor.label()
+        ),
+        Err(err) => Err(err),
+    }
+}
+
 fn run_claude_port(workspace: &Path, source: &Path, candidate: &Path, task: &Path) -> Result<()> {
     let task_text = fs::read_to_string(task).with_context(|| format!("read {}", task.display()))?;
     let prompt = format!(
@@ -3718,22 +3798,41 @@ The source path and candidate path are absolute:\n\
 - candidate, edit here: {candidate}\n\
 \n\
 Use Read to understand the source. Use Edit or Write only inside the candidate\n\
-directory. When finished, write a short PORT_RESULT.md in the workspace listing\n\
-what was preserved, changed, and not yet supported. Do not explain in chat;\n\
-perform the port.",
+directory.\n\
+\n\
+Build and check as you go, the way a person would:\n\
+- `{krate} check-app {candidate}` builds the candidate, confirms it imports only\n\
+  Krate interfaces, and runs it once. Run it after every change and keep fixing\n\
+  what it reports until it prints OK. Use `--no-run` while iterating.\n\
+- To see the window, after a passing check:\n\
+  `{krate} run {candidate}/target/wasm32-wasip1/release/*.wasm --manifest\n\
+  {candidate}/manifest.toml --auto-grant --shoot frame.png`, then Read\n\
+  frame.png. Compare it with what the original drew and fix what differs.\n\
+\n\
+When finished, write a short PORT_RESULT.md in the workspace listing what was\n\
+preserved, changed, and not yet supported. Do not explain in chat; perform the\n\
+port.",
         source = source.display(),
         candidate = candidate.display(),
+        krate = krate_exe_for_prompt(),
     );
     let transcript = workspace.join(".agent-transcript.txt");
     let file = fs::File::create(&transcript).ok();
     let mut command = ProcessCommand::new("claude");
+    // Read/Edit/Write write the code; Bash lets it verify, which is what
+    // makes a port a loop rather than a blind shot. Headless, so prompts
+    // would block forever: bypass them, inside a throwaway workspace, the
+    // same reasoning as `create` (agent_provider.rs). It used to be
+    // Read,Edit,Write under acceptEdits, and the agent's own result note
+    // said it could not run a single build command -- the eframe port came
+    // out compiling and visually broken.
     command
         .arg("-p")
         .arg(prompt)
         .arg("--allowed-tools")
-        .arg("Read,Edit,Write")
+        .arg("Read,Edit,Write,Bash")
         .arg("--permission-mode")
-        .arg("acceptEdits")
+        .arg("bypassPermissions")
         .current_dir(workspace);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
@@ -3779,10 +3878,12 @@ Candidate, edit here: {candidate}\n\
 Validation error:\n\
 {error_text}\n\
 \n\
-Use Read to inspect files and Edit or Write only inside the candidate. Do not\n\
+Use Read to inspect files and Edit or Write only inside the candidate. Run\n\
+`{krate} check-app {candidate}` to confirm the repair before you stop. Do not\n\
 explain in chat. Make the smallest complete repair.",
         source = source.display(),
         candidate = candidate.display(),
+        krate = krate_exe_for_prompt(),
     );
     let transcript = workspace.join(format!(".agent-repair-{attempt}.txt"));
     let file = fs::File::create(&transcript).ok();
@@ -3791,9 +3892,9 @@ explain in chat. Make the smallest complete repair.",
         .arg("-p")
         .arg(prompt)
         .arg("--allowed-tools")
-        .arg("Read,Edit,Write")
+        .arg("Read,Edit,Write,Bash")
         .arg("--permission-mode")
-        .arg("acceptEdits")
+        .arg("bypassPermissions")
         .current_dir(workspace);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {

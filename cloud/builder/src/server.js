@@ -324,6 +324,9 @@ const STAGE_RULES = [
   { stage: "write", re: /writing (the app's code|a file)|writing .*\.rs|setting up the build|declaring what the app needs/i },
   { stage: "test",  re: /checking it builds|running your app to test|opening your app to see|looking at how your app|==> building|Compiling|Generating bindings/i },
   { stage: "done",  re: /==> packing|==> verifying/i },
+  // `krate port`'s own lines: the AI rewrite, then the engine's checks.
+  { stage: "write", re: /==> transforming the candidate/i },
+  { stage: "test",  re: /==> validating the port candidate|==> repair attempt/i },
 ];
 const STAGE_ORDER = ["read", "write", "test", "done"];
 
@@ -558,7 +561,7 @@ function killTree(proc, signal) {
  * the same command the desktop runs, so a change made in a tab and a change
  * made in Studio cannot come out different. `revise` names the finished job
  * it starts from: { parentId, source, change, caseId, name }. */
-async function startBuild({ request, token, account, device, revise = null, shape = "", attachments = [], byok = false }) {
+async function startBuild({ request, token, account, device, revise = null, shape = "", attachments = [], byok = false, port = null }) {
   // 128 random bits. The id appears in URLs and is all a page holds, so it
   // must not be guessable -- the truncated UUID this used to be was the only
   // thing between anyone on the internet and another person's app file.
@@ -643,9 +646,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // Options first and `--` before the person's words, so a request that
   // starts with "-" -- any pasted bullet list -- is text, not an option
   // the engine refuses (K-889).
-  const args = revise
+  // A port is the same door as a build on the ledger -- an app made -- and
+  // the same engine, pointed at the project the person uploaded instead of
+  // at a sentence. The engine prepares its own workspace beside it, never
+  // in it: the upload is never changed.
+  const args = port
+    ? ["port", "--prepare", port.work, "--agent", AGENT, "--yes", "--to", output, "--transcript", transcript, "--", port.source]
+    : revise
     ? ["revise", "--agent", AGENT, "--output", output, ...attachArgs, "--", revise.source, revise.change]
     : ["create", "--output", output, "--agent", AGENT, "--transcript", transcript, ...attachArgs, "--", request];
+  if (port) job.port = { work: port.work, name: port.name || "" };
   // The engine needs the model key and nothing of the service's own: the
   // secret that lets this service fetch a person's key stays here.
   const runEnv = withoutServiceSecrets(process.env);
@@ -725,7 +735,11 @@ async function startBuild({ request, token, account, device, revise = null, shap
     // case continues until an app that serves the request exists, and the
     // next change starts from this one.
     const offRequest = code === 6 && !job.error && (await stat(output).catch(() => null));
-    if ((code !== 0 || job.error) && !offRequest) {
+    // Exit 7 is `krate port`'s honest ending: built, import-checked and
+    // permission-tested, not yet compared with the original. A file exists
+    // and works, so it is a result with that note, never a failure.
+    const ported = code === 7 && !job.error && job.port && (await stat(output).catch(() => null));
+    if ((code !== 0 || job.error) && !offRequest && !ported) {
       const timedOut = Boolean(job.error);
       job.state = "failed";
       job.error = job.error || plainFailure(tail);
@@ -777,16 +791,31 @@ async function startBuild({ request, token, account, device, revise = null, shap
           verdict = String(written.verdict || "").replace(/^built a working, permission-gated \.krate, but it does not serve the request: ?/, "").trim();
         }
       } catch (e) {}
+      if (job.port) {
+        // A port's permissions live in the workspace's artifact record
+        // (krate.port.artifact.v1), not in the transcript.
+        try {
+          const artifact = JSON.parse(await readFile(join(job.port.work, "artifact.json"), "utf8"));
+          if (Array.isArray(artifact.requested_permissions)) asks = artifact.requested_permissions.filter((p) => typeof p === "string");
+        } catch (e) {}
+        verdict = "Built from your project and permission-tested. Not yet compared with the original: open it and check it does what yours did.";
+      }
       if (offRequest) job.line = "built, but it is not what you asked for";
+      if (ported) job.line = "ported; open it and compare";
       job.result = {
         id,
-        name: revise ? revise.name : prettyName(engineName ? engineName.replace(/[-_]+/g, " ") : request),
+        // A port is named after the project it came from, never "Port x".
+        name: revise
+          ? revise.name
+          : job.port
+          ? prettyName((job.port.name || request.replace(/^Port /, "")).replace(/[-_]+/g, " "))
+          : prettyName(engineName ? engineName.replace(/[-_]+/g, " ") : request),
         size: prettySize(info.size),
         asks,
         shot: job.shot,
         // "off-request": the engine's verdict that the app does not serve
         // the request, with its reason; null when the app was accepted.
-        verdict: offRequest ? "off-request" : null,
+        verdict: offRequest ? "off-request" : ported ? "ported" : null,
         verdict_detail: verdict || null,
         // Held in memory and handed over on download. The file is the
         // product; we are not its host.
@@ -873,6 +902,79 @@ async function writeAttachments(list, dir) {
     written.push(path);
   }
   return written;
+}
+
+/* An uploaded project: relative paths and bytes, written under <dir>/project.
+ *
+ * Every path is checked segment by segment. `..`, an absolute path, an
+ * empty segment and a segment the sanitiser would change are refused
+ * outright rather than cleaned, because a cleaned path is a different file
+ * than the one the person meant and the port would read the wrong tree.
+ * Dotfiles and the directories no port reads are skipped. The bounds match
+ * what the page sends. */
+const MAX_PROJECT_FILES = 600;
+const MAX_PROJECT_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_PROJECT_BYTES = 16 * 1024 * 1024;
+const PROJECT_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}$/;
+const PROJECT_SKIP_DIRS = new Set([".git", "node_modules", "target", "dist", "build", "__pycache__", ".venv", "venv"]);
+
+function projectPathProblem(path) {
+  if (typeof path !== "string" || !path || path.length > 400) return "a file has no usable path";
+  if (path.startsWith("/") || /^[A-Za-z]:/.test(path) || path.includes("\\")) return `${path} is not a relative path`;
+  for (const part of path.split("/")) {
+    if (part === "." || part === ".." || part === "") return `${path} steps outside the project`;
+    if (PROJECT_SKIP_DIRS.has(part)) continue;
+    if (!PROJECT_SEGMENT.test(part)) return `${path} has a name a port cannot use`;
+  }
+  return null;
+}
+
+async function writeProject(project, dir) {
+  const files = Array.isArray(project && project.files) ? project.files : [];
+  if (!files.length) throw Object.assign(new Error("The project has no files."), { status: 400 });
+  if (files.length > MAX_PROJECT_FILES) throw Object.assign(new Error(`That is more than ${MAX_PROJECT_FILES} files. Upload the app's source folder, not its build output.`), { status: 413 });
+  const root = join(dir, "project");
+  await mkdir(root, { recursive: true });
+  let total = 0;
+  let written = 0;
+  for (const item of files) {
+    const path = item && item.path;
+    const problem = projectPathProblem(path);
+    if (problem) throw Object.assign(new Error(problem), { status: 400 });
+    if (path.split("/").some((part) => PROJECT_SKIP_DIRS.has(part))) continue;
+    const bytes = Buffer.from(String(item.bytes || ""), "base64");
+    if (bytes.length > MAX_PROJECT_FILE_BYTES) continue;
+    total += bytes.length;
+    if (total > MAX_PROJECT_BYTES) throw Object.assign(new Error(`That is more than ${MAX_PROJECT_BYTES / 1024 / 1024} MB of files.`), { status: 413 });
+    const target = join(root, ...path.split("/"));
+    if (!target.startsWith(root + "/")) throw Object.assign(new Error(`${path} steps outside the project`), { status: 400 });
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, bytes);
+    written += 1;
+  }
+  if (!written) throw Object.assign(new Error("The project has no files a port can read."), { status: 400 });
+  return root;
+}
+
+/* `krate port <dir> --format json`: the engine's read-only plan for an
+ * uploaded project. No model, no allowance, bounded by time. */
+function portPlan(root) {
+  return new Promise((resolve) => {
+    const proc = spawn(KRATE, ["port", "--format", "json", "--", root], { env: withoutServiceSecrets(process.env), detached: GROUP });
+    let out = "";
+    let err = "";
+    proc.stdout.on("data", (b) => { out += b.toString(); });
+    proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
+    const killer = setTimeout(() => killTree(proc, "SIGKILL"), 60_000);
+    proc.on("error", (e) => { clearTimeout(killer); resolve({ ok: false, message: `could not run the engine: ${e.message}` }); });
+    proc.on("close", () => {
+      clearTimeout(killer);
+      // The engine prints the plan even when it is a refusal (exit 1 on
+      // "unsupported"); only a run with no plan at all is an error.
+      if (out.trim().startsWith("{")) return resolve({ ok: true, text: out });
+      resolve({ ok: false, message: err.split("\n").filter(Boolean).pop() || "the engine could not read that project" });
+    });
+  });
 }
 
 async function planRequest(request, theirKey = null, attachments = []) {
@@ -1082,7 +1184,7 @@ async function caseAttempt(token, device, caseId, outcome, note) {
 async function cleanup(job, opts = {}) {
   // The bytes are already in memory by now; the directory is scratch.
   try { await rm(job.dir, { recursive: true, force: true }); } catch (e) {}
-  if (job.sourceDir && /krate-revise-/.test(job.sourceDir)) {
+  if (job.sourceDir && /krate-(revise|port)-/.test(job.sourceDir)) {
     try { await rm(job.sourceDir, { recursive: true, force: true }); } catch (e) {}
   }
   if (!opts.keepFile) job.result = null;
@@ -1268,6 +1370,73 @@ const server = createServer(async (req, res) => {
       } catch (err) {
         // The slot is ours until a job owns it; a start that threw must
         // not lock the account out of building.
+        activeByAccount.delete(allowed.account);
+        if (err && err.status) return send(res, err.status, err.message);
+        throw err;
+      }
+      return json(res, 200, { id: job.id });
+    }
+
+    // What it would take to port an uploaded project: the engine's read-only
+    // scan, as its own JSON. Nothing is built, nothing is counted.
+    if (req.method === "POST" && url.pathname === "/port/plan") {
+      const body = await readBody(req);
+      const account = await resolveAccount(token);
+      if (!account) return send(res, 401, "Sign in first.");
+      const dir = await mkdtemp(join(tmpdir(), "krate-port-plan-"));
+      try {
+        const root = await writeProject(body.project, dir);
+        const answer = await portPlan(root);
+        await audit({ action: "port-plan", account, ok: answer.ok });
+        if (!answer.ok) return send(res, 502, answer.message);
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/json");
+        return res.end(answer.text);
+      } catch (err) {
+        if (err && err.status) return send(res, err.status, err.message);
+        throw err;
+      } finally {
+        await rm(dir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+
+    // Port an uploaded project: the same wall, slot and ledger as a build.
+    if (req.method === "POST" && url.pathname === "/port") {
+      const body = await readBody(req);
+      const device = String(body.device || "").trim();
+      const name = String((body.project && body.project.name) || "project").replace(/[^A-Za-z0-9._ -]+/g, " ").trim().slice(0, 80) || "project";
+      const request = `Port ${name}`;
+      const off = authoringOff();
+      if (off && !(API_AGENTS[AGENT] && (await ownKey(token, AGENT)))) {
+        return json(res, 503, { wall: true, download: true, message: off });
+      }
+      const allowed = await allowedToBuild(token, device);
+      if (!allowed.ok) {
+        if (allowed.wall) return json(res, 402, { wall: true, download: Boolean(allowed.download), message: allowed.message });
+        if (allowed.upstream) return send(res, 502, allowed.message);
+        return send(res, 401, allowed.message);
+      }
+      if (!claimBuildSlot(allowed.account)) {
+        return send(res, 429, "One app is already being made. It will be a few minutes.");
+      }
+      let job;
+      try {
+        // The project is written before the job starts, so a bad upload
+        // is refused with a reason and never claims a case.
+        const holding = await mkdtemp(join(tmpdir(), "krate-port-"));
+        let root;
+        try {
+          root = await writeProject(body.project, holding);
+        } catch (err) {
+          await rm(holding, { recursive: true, force: true }).catch(() => {});
+          throw err;
+        }
+        job = await startBuild({
+          request, token, account: allowed.account, device, byok: Boolean(allowed.byok),
+          port: { source: root, work: join(holding, "work"), name },
+        });
+        job.sourceDir = holding;
+      } catch (err) {
         activeByAccount.delete(allowed.account);
         if (err && err.status) return send(res, err.status, err.message);
         throw err;
