@@ -1703,7 +1703,7 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
         "rs" | "py" | "swift" | "m" | "mm" | "cs" | "xml" | "c" | "cc" | "cpp" | "h" | "hpp"
     );
 
-    let frameworks: [(&str, &[&str], bool); 18] = [
+    let frameworks: [(&str, &[&str], bool); 21] = [
         (
             "electron",
             &["\"electron\"", "from 'electron'", "from \"electron\""],
@@ -1743,6 +1743,24 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
             extension == "py",
         ),
         ("kivy", &["from kivy", "import kivy"], extension == "py"),
+        // Python's game and canvas toolkits. A pygame snake was handed the
+        // CLI profile with no window in its capabilities, for the same
+        // reason tkinter was.
+        (
+            "pygame",
+            &["import pygame", "pygame.init(", "pygame.display"],
+            extension == "py",
+        ),
+        (
+            "pyglet",
+            &["import pyglet", "pyglet.window"],
+            extension == "py",
+        ),
+        (
+            "arcade",
+            &["import arcade", "arcade.window"],
+            extension == "py",
+        ),
         (
             "appkit",
             &["import appkit", "nsapplication", "nswindow"],
@@ -1821,6 +1839,9 @@ fn is_windowed_framework(framework: &str) -> bool {
             | "gtk"
             | "tkinter"
             | "kivy"
+            | "pygame"
+            | "pyglet"
+            | "arcade"
             | "egui"
             | "iced"
             | "slint"
@@ -1845,6 +1866,9 @@ fn framework_label(framework: &str) -> &str {
         "egui" => "egui/eframe",
         "tkinter" => "tkinter",
         "kivy" => "Kivy",
+        "pygame" => "pygame",
+        "pyglet" => "pyglet",
+        "arcade" => "Arcade",
         "iced" => "Iced",
         "slint" => "Slint",
         "dioxus" => "Dioxus",
@@ -1869,6 +1893,9 @@ fn framework_advice(framework: &str) -> &str {
         }
         "tkinter" | "kivy" => {
             "A Python toolkit. The port rewrites each screen as a Krate widget tree: labels, entries, buttons and lists map one to one, and the event handlers become the app's update step."
+        }
+        "pygame" | "pyglet" | "arcade" => {
+            "A Python game or canvas toolkit. The port draws the same frames on a Krate canvas: the game loop becomes the app's tick, the surface blits become draw calls, and key and mouse handlers become input events."
         }
         _ => "Map this framework to a supported Krate portability profile.",
     }
@@ -2203,6 +2230,37 @@ mod tests {
         assert_eq!(plan.verdict, Verdict::NeedsChanges);
         assert_eq!(plan.profile, "desktop-native-source-port");
         assert!(plan.frameworks.contains(&"swiftui".to_string()));
+    }
+
+    #[test]
+    fn a_pygame_game_opens_a_window() {
+        // A pygame snake went through as a CLI candidate with no window in
+        // its capabilities; the agent made a window anyway, the plan said
+        // nothing about one.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("snake.py"),
+            "import pygame\npygame.init()\nscreen = pygame.display.set_mode((640, 480))\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert!(
+            plan.frameworks.iter().any(|f| f == "pygame"),
+            "{:?}",
+            plan.frameworks
+        );
+        assert_eq!(
+            plan.profile, "desktop-native-source-port",
+            "pygame opens a window"
+        );
+        assert!(
+            plan.suggested_capabilities
+                .iter()
+                .any(|c| c.starts_with("ui.window")),
+            "the window is in the capabilities: {:?}",
+            plan.suggested_capabilities
+        );
     }
 
     #[test]

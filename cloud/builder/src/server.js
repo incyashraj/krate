@@ -929,11 +929,18 @@ function projectPathProblem(path) {
   return null;
 }
 
+/* The folder's own name, made safe for a path. The engine names the port
+ * after the folder it is handed ("Port `snake-game` to Krate"), so an
+ * upload written under a generic "project" lost the name on the way in. */
+function projectName(project) {
+  return String((project && project.name) || "project").replace(/[^A-Za-z0-9._ -]+/g, " ").trim().slice(0, 80) || "project";
+}
+
 async function writeProject(project, dir) {
   const files = Array.isArray(project && project.files) ? project.files : [];
   if (!files.length) throw Object.assign(new Error("The project has no files."), { status: 400 });
   if (files.length > MAX_PROJECT_FILES) throw Object.assign(new Error(`That is more than ${MAX_PROJECT_FILES} files. Upload the app's source folder, not its build output.`), { status: 413 });
-  const root = join(dir, "project");
+  const root = join(dir, projectName(project));
   await mkdir(root, { recursive: true });
   let total = 0;
   let written = 0;
@@ -1404,7 +1411,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/port") {
       const body = await readBody(req);
       const device = String(body.device || "").trim();
-      const name = String((body.project && body.project.name) || "project").replace(/[^A-Za-z0-9._ -]+/g, " ").trim().slice(0, 80) || "project";
+      const name = projectName(body.project);
       const request = `Port ${name}`;
       const off = authoringOff();
       if (off && !(API_AGENTS[AGENT] && (await ownKey(token, AGENT)))) {

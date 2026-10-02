@@ -34,7 +34,7 @@ function run(plan) {
     clearAnsweredActions: () => {},
     capWords: (c) => ({ "ui.window:create": "Open a window", "store.kv": "Save its own settings" }[c] || c),
     portNow: () => {},
-    state: { session: { messages: [{}] }, portSource: null },
+    state: { session: { messages: [{}], portSource: null } },
   };
   vm.createContext(ctx);
   vm.runInContext(fn + "\nshowPortPlan(plan, source, name);", Object.assign(ctx, { plan, source: "/Users/someone/app", name: "app" }));
@@ -57,7 +57,7 @@ assert.equal(plan.verdict, "needs-changes", "the fixture is the engine's needs-c
   assert.ok(m.extra && m.extra.actions && m.extra.actions.some((a) => a.label === "Port it" && a.primary), "Port it is the primary action");
   assert.equal(staged.length, 1, "the stage shows the plan is ready");
   assert.equal(staged[0][0], "The port plan is ready");
-  assert.equal(state.portSource, "/Users/someone/app", "the source is remembered for the port");
+  assert.equal(state.session.portSource, "/Users/someone/app", "the source is remembered on the session, so a retry after a restart can port again");
   console.log("ok   a plan with no blocker names the work and offers Port it");
 }
 

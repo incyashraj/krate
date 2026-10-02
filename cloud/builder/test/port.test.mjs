@@ -173,6 +173,7 @@ test("a port ends done, with verdict ported and the artifact's permissions", asy
   const [src, work] = handed.split("\n");
   assert.equal(dirname(work), dirname(src), "the workspace sat beside the project, not inside it");
   assert.equal(basename(work), "work");
+  assert.equal(basename(src), "tkinter-todo", "the engine sees the folder's own name, not a generic one");
   assert.equal(await stat(src).catch(() => null), null, "the upload was deleted once the job was done");
 });
 

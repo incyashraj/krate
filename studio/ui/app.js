@@ -2907,6 +2907,14 @@ function limitAcked() {
 }
 
 async function make(request, opts) {
+  // A failed port is retried as a port. The session remembers the folder,
+  // so "Try again" (and a typed "retry") goes back through the port door
+  // instead of handing "Port snake-game" to the create path as a prompt --
+  // which is what it did: the retry built a new app FROM those two words.
+  const porting = state.session;
+  if (porting && porting.portSource && !porting.result && request === porting.failedRequest) {
+    return portNow(porting.portSource);
+  }
   // No AI, no build. On the desktop the app is authored by a tool on this
   // machine, so with none of them ready there is nothing to author with --
   // and Studio used to start anyway: the progress display ran, the agent
@@ -6643,7 +6651,11 @@ function showPortPlan(plan, source, name) {
   const blockers = findings.filter((f) => f.severity === "blocker");
   const changes = findings.filter((f) => f.severity === "change");
   const where = (f) => {
-    const ev = (f.evidence || []).slice(0, 3).map((e) => (e.line ? `${e.path}:${e.line}` : e.path)).filter(Boolean);
+    // A finding about the whole project carries "." as its path; that is
+    // not a place to look, so it is not shown as one.
+    const ev = (f.evidence || []).slice(0, 3)
+      .filter((e) => e.path && e.path !== ".")
+      .map((e) => (e.line ? `${e.path}:${e.line}` : e.path));
     return ev.length ? ` (${ev.join(", ")})` : "";
   };
   const needs = (plan.suggested_capabilities || []).filter(Boolean);
@@ -6662,7 +6674,9 @@ function showPortPlan(plan, source, name) {
   const work = changes.length
     ? `\n\nWhat the port changes:\n${changes.map((f) => `• ${f.title}${where(f)}`).join("\n")}`
     : "\n\nNothing in it needs changing: it ports as it is.";
-  state.portSource = source;
+  // On the session, so it survives a restart and a failed port can be
+  // tried again through the same door.
+  state.session.portSource = source;
   clearAnsweredActions();
   say("KRATE", `${head}${work}${needsLine}\n\nThe port rewrites the app against Krate's SDK and keeps your original untouched. Press Port it and it comes out as one file.`, null, {
     variant: "plan",

@@ -3819,6 +3819,10 @@ port.",
     let transcript = workspace.join(".agent-transcript.txt");
     let file = fs::File::create(&transcript).ok();
     let mut command = ProcessCommand::new("claude");
+    // The same sign-in the create path hands over (K-882). Without it a
+    // port from Studio, which isolates the agent's config dir, ended two
+    // seconds in with "Not logged in" while `claude` in a terminal was fine.
+    agent_provider::with_claude_sign_in(&mut command);
     // Read/Edit/Write write the code; Bash lets it verify, which is what
     // makes a port a loop rather than a blind shot. Headless, so prompts
     // would block forever: bypass them, inside a throwaway workspace, the
@@ -3847,11 +3851,28 @@ port.",
         .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
     if !status.success() {
         anyhow::bail!(
-            "the Claude port agent did not finish successfully; see {}",
+            "the Claude port agent did not finish successfully: {}; see {}",
+            agent_last_words(&transcript),
             transcript.display()
         );
     }
     Ok(())
+}
+
+/// The last line the agent wrote, for an error a person will read. "Not
+/// logged in · Please run /login" is the whole diagnosis; "see
+/// .agent-transcript.txt" is a path Studio never shows.
+fn agent_last_words(transcript: &Path) -> String {
+    fs::read_to_string(transcript)
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .rev()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .map(|line| line.chars().take(200).collect())
+        })
+        .unwrap_or_else(|| "no output".to_string())
 }
 
 fn run_claude_port_repair(
@@ -3888,6 +3909,7 @@ explain in chat. Make the smallest complete repair.",
     let transcript = workspace.join(format!(".agent-repair-{attempt}.txt"));
     let file = fs::File::create(&transcript).ok();
     let mut command = ProcessCommand::new("claude");
+    agent_provider::with_claude_sign_in(&mut command);
     command
         .arg("-p")
         .arg(prompt)
