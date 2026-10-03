@@ -4,6 +4,10 @@
 
 **Updated:** 2026-09-20
 
+> **Update, 27 Sep 2026:** the numbers in this post are from our 25 August
+> 2026 notes comparison and are now Historical. Current figures, each with
+> its status, are on the [reports page](https://krate.tech/reports/).
+
 WebAssembly outside the browser has been "almost ready" for years. Some of that
 is real progress and some is marketing, and the line between them is worth
 drawing precisely if you are deciding whether to build on it.
@@ -19,16 +23,17 @@ test its behaviour on the systems you support.
 
 **The app does not need its own browser engine.** Krate puts the platform
 implementation in a shared runtime installed once. Each app carries its own
-code and assets. Our [notes comparison](https://krate.tech/reports/) measured
-a 36.6 KiB notes-app bundle, excluding the 88.6 MiB shared runtime.
+code and assets. Our [notes comparison](https://krate.tech/reports/) of
+25 August 2026 (Historical, runtime v0.1.58) measured a 36.6 KiB notes-app
+bundle, excluding the 88.6 MiB shared runtime.
 That historical bundle is not a size promise for current apps: a `.krate`
 download can also carry source, SDK interfaces and assets.
 
 **Measure startup with a real workload.** Module compilation, runtime caches,
 window creation and loading the user's data all contribute. The same notes
 comparison measured a 237.1 ms median warm open for a 50,000-line document
-on an Apple M4 Mac. That is one workload, not a startup guarantee for every
-WebAssembly app.
+on an Apple M4 Mac (Historical, 25 August 2026). That is one workload, not a
+startup guarantee for every WebAssembly app.
 
 **The component model is the part that matters.** Plain WebAssembly gives you a
 sandbox with integers. The component model gives you typed interfaces across

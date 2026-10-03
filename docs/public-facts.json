@@ -9,5 +9,57 @@
   "website": "https://krate.tech",
   "repository": "https://github.com/incyashraj/krate",
   "latest_release_url": "https://github.com/incyashraj/krate/releases/latest",
-  "benchmark_claim_ids": ["app-file-size", "memory-50k", "warm-start-50k"]
+  "benchmark_claim_ids": ["app-file-size", "memory-50k", "warm-start-50k"],
+  "current_register": "Krate Benchmark Register, compiled 2026-09-26 for runtime and CLI 0.5.1 (commit 774ec7f35)",
+  "current_measurements": [
+    {
+      "register": "9",
+      "status": "Current",
+      "label": "Same file on three systems",
+      "text": "Ten ported apps, the same bundle bytes on each system, ran on macOS, Ubuntu and Windows GitHub CI runners with runtime 0.5.1: 10 of 10 pass on all three. One app has no replay check.",
+      "link": "https://github.com/incyashraj/krate/actions/runs/35552275372"
+    },
+    {
+      "register": "1.1",
+      "status": "Current",
+      "label": "App size",
+      "text": "The compiled app component (code.wasm) of ten shipped apps is 18 to 31 KB, for example krate-clock 18,042 B, board 28,210 B and streak 30,512 B (packed 2026-08-26)."
+    },
+    {
+      "register": "1.1",
+      "status": "Current",
+      "label": "Full shareable bundle",
+      "text": "The full .krate bundle also carries the app's source and SDK so a shared app can be edited. Examples: clock 100,744 B, board 108,974 B, streak 110,742 B."
+    },
+    {
+      "register": "1.2, E6",
+      "status": "Current (E6)",
+      "label": "First-time download",
+      "text": "A first-time recipient downloads the Krate Player zip plus the 37,489-byte benchmark notes app: 11,553,801 B, against 111,418,578 B for the MarkText 0.17.1 zip. That is 9.64x smaller. A returning recipient downloads only the app, 37,489 B. MarkText does far more; this compares packaging, not features."
+    },
+    {
+      "register": "1.2, E6",
+      "status": "Current (E6)",
+      "label": "First-time install",
+      "text": "Installed, Krate Player v0.3.0 plus the app take 25,592 KiB, against 291,468 KiB for MarkText 0.17.1 ARM64: 11.39x smaller."
+    },
+    {
+      "register": "3.1, E6.1",
+      "status": "Current",
+      "label": "Memory",
+      "text": "Notes app against MarkText 0.17.1 on an Apple M4 MacBook Air, runtime 0.5.1, window on a 1x display, settled after 30 s, n=10: Krate 73.5 MiB at 5,000 lines and 95.7 MiB at 50,000 lines; MarkText 358.5 MiB and 2,093.9 MiB. With Krate's window on a 2x display, Krate measured 147.9 and 175.0 MiB (n=8 to 10). Memory is macOS footprint, not RSS."
+    },
+    {
+      "register": "2.2",
+      "status": "Current, n=9",
+      "label": "Speed against native code",
+      "text": "Krate is not faster than native code. A Krate hex viewer ran 2.7x to 21.0x slower than native hexyl across 8 workloads. The gap is widest on tiny inputs, where a fixed cost of about 90 to 100 ms to start and set up dominates, and shrinks as the work grows."
+    },
+    {
+      "register": "4",
+      "status": "Not measured",
+      "label": "Energy",
+      "text": "Energy and battery use have not been measured, so no energy or battery claim is made."
+    }
+  ]
 }

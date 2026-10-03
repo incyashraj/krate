@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate benchmark methodology: a scoped MarkText notes comparison, complete bundle sizes, code payload and shared runtime costs." />
+  <meta name="description" content="Krate measurements with their status: current size, cross-OS and memory figures, a dated 2026-08-25 MarkText notes comparison, and complete bundle sizes." />
   <link rel="canonical" href="https://krate.tech/reports/" />
   <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A measured notes workload, with methods and limitations. Full application bundles and shared runtime costs are shown separately." />
@@ -134,40 +134,67 @@
   <main class="report">
     <p class="eyebrow">Reports</p>
     <h1>Measurements you can inspect.</h1>
-    <p class="lede">A notes workload compared on the same machine, plus an
-      inventory of application files in this checkout. These are different
-      kinds of evidence: neither establishes a performance result for every
-      Krate app or for the latest release.</p>
-    <p class="method">Page generated 2026-09-19 from commit <code>38d66590b</code>.
-      Benchmark measured 2026-08-25.
+    <p class="lede">Current figures first, each with its status. Then an
+      older notes comparison, kept under its date, and an inventory of
+      application files in this checkout. None of these is a performance
+      result for every Krate app.</p>
+    <p class="method">Page generated 2026-09-27 from commit <code>087453b2</code>.
+      Current figures come from the Krate Benchmark Register, compiled 2026-09-26 for runtime and CLI 0.5.1 (commit 774ec7f35).
+      The historical notes comparison was measured 2026-08-25.
       Building this page does not run a new benchmark.</p>
 
     
     <nav class="toc" aria-label="What is in this report">
       <h2 class="toc-h">What is in here</h2>
       <ol>
-        <li><a href="#krate-notes-and-marktext">Krate notes and MarkText</a></li>
+        <li><a href="#where-krate-stands-today">Where Krate stands today</a></li>
+        <li><a href="#krate-notes-and-marktext-25-august-2026">Krate notes and MarkText, 25 August 2026</a></li>
         <li><a href="#bundle-code-payload-and-runtime-are-different-co">Bundle, code payload and runtime are different costs</a></li>
         <li><a href="#how-to-evaluate-your-application">How to evaluate your application</a></li>
       </ol>
     </nav>
 <section>
-      <p class="eyebrow">One matched workload</p>
-      <h2 id="krate-notes-and-marktext">Krate notes and MarkText.</h2>
+      <p class="eyebrow">Current</p>
+      <h2 id="where-krate-stands-today">Where Krate stands today.</h2>
+      <p>Each row carries the status the Benchmark Register gives it, and the
+        Register section it comes from. A figure marked Not measured has no
+        evidence behind it yet.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Measurement</th><th>Result</th><th>Status</th><th>Register</th></tr></thead>
+          <tbody><tr><td>Same file on three systems</td><td>Ten ported apps, the same bundle bytes on each system, ran on macOS, Ubuntu and Windows GitHub CI runners with runtime 0.5.1: 10 of 10 pass on all three. One app has no replay check. <a href="https://github.com/incyashraj/krate/actions/runs/35552275372">CI run</a></td><td>Current</td><td>&sect;9</td></tr>
+<tr><td>App size</td><td>The compiled app component (code.wasm) of ten shipped apps is 18 to 31 KB, for example krate-clock 18,042 B, board 28,210 B and streak 30,512 B (packed 2026-08-26).</td><td>Current</td><td>&sect;1.1</td></tr>
+<tr><td>Full shareable bundle</td><td>The full .krate bundle also carries the app's source and SDK so a shared app can be edited. Examples: clock 100,744 B, board 108,974 B, streak 110,742 B.</td><td>Current</td><td>&sect;1.1</td></tr>
+<tr><td>First-time download</td><td>A first-time recipient downloads the Krate Player zip plus the 37,489-byte benchmark notes app: 11,553,801 B, against 111,418,578 B for the MarkText 0.17.1 zip. That is 9.64x smaller. A returning recipient downloads only the app, 37,489 B. MarkText does far more; this compares packaging, not features.</td><td>Current (E6)</td><td>&sect;1.2, E6</td></tr>
+<tr><td>First-time install</td><td>Installed, Krate Player v0.3.0 plus the app take 25,592 KiB, against 291,468 KiB for MarkText 0.17.1 ARM64: 11.39x smaller.</td><td>Current (E6)</td><td>&sect;1.2, E6</td></tr>
+<tr><td>Memory</td><td>Notes app against MarkText 0.17.1 on an Apple M4 MacBook Air, runtime 0.5.1, window on a 1x display, settled after 30 s, n=10: Krate 73.5 MiB at 5,000 lines and 95.7 MiB at 50,000 lines; MarkText 358.5 MiB and 2,093.9 MiB. With Krate's window on a 2x display, Krate measured 147.9 and 175.0 MiB (n=8 to 10). Memory is macOS footprint, not RSS.</td><td>Current</td><td>&sect;3.1, E6.1</td></tr>
+<tr><td>Speed against native code</td><td>Krate is not faster than native code. A Krate hex viewer ran 2.7x to 21.0x slower than native hexyl across 8 workloads. The gap is widest on tiny inputs, where a fixed cost of about 90 to 100 ms to start and set up dominates, and shrinks as the work grows.</td><td>Current, n=9</td><td>&sect;2.2</td></tr>
+<tr><td>Energy</td><td>Energy and battery use have not been measured, so no energy or battery claim is made.</td><td>Not measured</td><td>&sect;4</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Historical (2026-08-25)</p>
+      <h2 id="krate-notes-and-marktext-25-august-2026">Krate notes and MarkText, 25 August 2026.</h2>
+      <p>These numbers were true for the build and date shown (runtime
+        v0.1.58); the code has changed since. The current figures are above.
+        The 178.5 MiB memory reading also caught a short GPU memory spike
+        after the first frame.</p>
       <p>MarkText 0.17.1 ARM64 vs the Krate notes replica, Apple M4, macOS 27 (build 26A5388g), on AC power; equivalent-workload comparison, not feature parity. This does not establish full editor
         feature parity. Warm-open and memory rows refer to the same
         50,000-line document, not different document sizes.</p>
       <div class="table-scroll">
         <table>
           <thead><tr><th>Measurement</th><th>Krate</th><th>MarkText</th></tr></thead>
-          <tbody><tr><td>Historical code payload versus installed application</td><td>36.6 KiB</td><td>284.6 MiB installed</td></tr>
+          <tbody><tr><td>Historical app bundle versus installed application</td><td>36.6 KiB</td><td>284.6 MiB installed</td></tr>
 <tr><td>Memory, 50,000 lines</td><td>178.5 MiB, one process</td><td>2,299.4 MiB across four processes</td></tr>
 <tr><td>Warm open, 50,000 lines</td><td>237.1 ms median</td><td>611.5 ms median</td></tr></tbody>
         </table>
       </div>
       <p class="method">Warm open is time to a visible window, median of ten
         runs per app. Memory is settled footprint across the whole process
-        tree. The code-payload row excludes Krate's shared runtime and does
+        tree. The historical app-bundle row excludes Krate's shared runtime and does
         not measure a current source-bearing bundle.</p>
       <p class="method">architecture-matched: both ARM64. The 37 KiB is the per-app payload; the shared Krate runtime is installed once at 88.6 MiB, making the first-app disk ratio 3.21x, not 7,961x. Never quote the payload ratio as a whole-install ratio.
         That first-app ratio is the historical runtime-plus-payload accounting,
@@ -196,7 +223,7 @@
         <table>
           <thead><tr><th>Repository artifact</th><th>Full bundle bytes</th>
             <th>Code payload bytes</th><th>Carries source</th></tr></thead>
-          <tbody><tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/grex.krate"><code>evidence/ported/grex.krate</code></a></td><td class="num">54,084</td><td class="num">145,016</td><td>No</td></tr>
+          <tbody><tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/grex.krate"><code>evidence/ported/grex.krate</code></a></td><td class="num">54,121</td><td class="num">145,016</td><td>No</td></tr>
 <tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/envelope.krate"><code>evidence/ported/envelope.krate</code></a></td><td class="num">19,495</td><td class="num">55,178</td><td>No</td></tr>
 <tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-mdview.krate"><code>evidence/store/krate-mdview.krate</code></a></td><td class="num">19,416</td><td class="num">43,917</td><td>No</td></tr>
 <tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/mdview.krate"><code>evidence/ported/mdview.krate</code></a></td><td class="num">18,965</td><td class="num">42,876</td><td>No</td></tr>
