@@ -28,6 +28,11 @@
   // light / dark, remembered
   const thm = $('#thm');
   if (thm) thm.addEventListener('click', () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('krate-theme', t); } catch (e) {} });
+  // signed in on this site (the token /login/done keeps): the header's
+  // "Sign in" becomes "Account", in the bar and in the phone menu
+  try {
+    if (localStorage.getItem('krate_tok')) $$('a.signin[href="/login/"], .mnav a[href="/login/"]').forEach(a => { a.textContent = 'Account'; a.setAttribute('href', '/account/'); });
+  } catch (e) {}
   // a hairline under the header once the page moves
   const hd = $('.hd'); const onScroll = () => hd && hd.classList.toggle('scrolled', scrollY > 4); addEventListener('scroll', onScroll, { passive: true }); onScroll();
   // things arrive as they come into view
