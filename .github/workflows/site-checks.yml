@@ -20,6 +20,9 @@ on:
       - "scripts/test-landing-assets.py"
       - "scripts/discovery-report.py"
       - "scripts/pages-release.py"
+      - "scripts/site_kit.py"
+      - "scripts/fingerprint-css.py"
+      - "scripts/ensure-touch-targets.py"
   push:
     branches: [main]
     paths:
@@ -40,6 +43,9 @@ on:
       - "scripts/test-landing-assets.py"
       - "scripts/discovery-report.py"
       - "scripts/pages-release.py"
+      - "scripts/site_kit.py"
+      - "scripts/fingerprint-css.py"
+      - "scripts/ensure-touch-targets.py"
   workflow_dispatch:
 
 permissions:
@@ -70,3 +76,7 @@ jobs:
         run: python3 scripts/discovery-report.py --self-test
       - name: Release refresh and website workflow inputs
         run: python3 scripts/pages-release.py --self-test
+      - name: Design kit pages share one header and footer
+        run: python3 scripts/site_kit.py --self-test && python3 scripts/site_kit.py --check
+      - name: Stylesheet fingerprinting and phone rules
+        run: python3 scripts/fingerprint-css.py --self-test && python3 scripts/ensure-touch-targets.py --self-test

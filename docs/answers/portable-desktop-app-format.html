@@ -1,1530 +1,141 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#000000" />
-
-
-<link rel="icon" href="/krate-favicon.png" />
-
-
-
-
-
-
-
-
-
-
-
-
-
-<style>
-@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-
-:root {
-  color-scheme: dark;
-  --purple: #A558FB;
-  --indigo: #4922E5;
-  --z50: #fafafa; --z100: #f4f4f5; --z300: #d4d4d8; --z400: #a1a1aa;
-  --z500: #71717a; --z700: #3f3f46; --z800: #27272a; --z900: #18181b;
-  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --disp: "Syne", var(--sans);
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: auto; }
-body {
-  background: #000; color: #fff; font-family: var(--sans);
-  font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-}
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img { max-width: 100%; display: block; }
-picture { display: contents; }
-picture source { display: none; }
-::selection { background: rgba(165, 88, 251, 0.35); }
-
-/* ------------------------------------------------ progressive blur bar */
-.topblur {
-  position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
-  pointer-events: none; user-select: none;
-  background: linear-gradient(to top, transparent, #000);
-  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
-          mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-}
-
-/* ------------------------------------------------------- brand header */
-.brandbar {
-  position: fixed; top: 20px; left: 50%; z-index: 50;
-  display: flex; align-items: center; gap: 14px; user-select: none;
-  opacity: 0; transform: translateX(-50%) translateY(-8px);
-  transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
-  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
-.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
-  transition: color 0.15s ease, background 0.15s ease; }
-.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-/* The nav is where "Make an app" lives, and on a phone that is the
-   primary action of the whole page. It used to be hidden wholesale under
-   760px, so a phone visitor had a download button and nothing else. The
-   bar keeps the first link and drops the rest. */
-@media (max-width: 760px) {
-  /* ---- a real header, not a floating badge ---------------------------
-   *
-   * This used to hide the nav entirely, on the argument that a brand, a
-   * star pill and four links cannot share one centred row. That is true
-   * -- so the answer is to stop it being a centred row. As shipped, a
-   * phone visitor had no navigation at all: no menu, no links, no way to
-   * reach Apps or Docs except by scrolling to the footer.
-   *
-   * A full-width bar instead, pinned to the top: brand on the left, the
-   * one action on the right, the way every other site does it. The star
-   * pill goes -- it is a badge, and a badge is not worth the only other
-   * slot on a phone's header. */
-  /* The bar's own layout -- full width, square, inset for the notch --
-     is set further down this file, in the block that also drops its old
-     pill radius. Putting it in two places is what left the header a
-     rounded badge for a whole deploy: these rules come FIRST, so at equal
-     specificity the later ones win, and half of what was written here
-     never applied. Only what nothing else touches stays. */
-  .brandbar .starpill { display: none; }
-  /* One link, the one the page is for. The rest of the site is reachable
-     from the footer, and four 12.5px links in a phone header would be
-     four targets nobody can hit. */
-  .bnav { display: flex; margin-left: 0; }
-  .bnav a:not([href="/docs/quickstart.html"]) { display: none; }
-  /* A quiet link, not a second white button.
-     The hero already has "Make an app" as a full-width white button a
-     few hundred pixels down -- the page's one action. Repeating it in the
-     header as another white pill made the header heavier than the
-     wordmark beside it and asked the same question twice. Here it is a
-     link: present if you want it before you have read anything, and out
-     of the way if you do not. */
-  .bnav a[href="/docs/quickstart.html"] {
-    font-size: 14px; font-weight: 500; color: #e4e4e7;
-    background: none; padding: 10px 2px; border-radius: 0;
-    min-height: 44px; display: inline-flex; align-items: center;
-  }
-
-}
-.brandbar.in { opacity: 1; transform: translateX(-50%) translateY(0); }
-.brandbar .name {
-  display: flex; align-items: center; gap: 0.34em;
-  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em;
-}
-.brandbar .name img { height: 19px; width: auto; }
-.starpill {
-  display: flex; align-items: center; gap: 6px; white-space: nowrap;
-  border-radius: 999px; background: rgba(24, 24, 27, 0.8); padding: 5px 11px;
-  font-size: 10px; font-weight: 500; color: #d4d4d8;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 4px 12px -4px rgba(0,0,0,0.6);
-  /* No backdrop-filter. It blurs everything BEHIND the element's own box,
-     and since this pill sits 10px from the wordmark its blur reached back
-     over the final letters of KRATE -- the "E" looked smeared, and every
-     geometric check said the two boxes did not overlap, because they do
-     not. The pill is already 80% opaque; the blur bought nothing. */
-  transition: box-shadow 0.2s ease, background-color 0.2s ease, scale 0.2s ease;
-}
-.starpill:hover {
-  background: rgba(39, 39, 42, 0.9);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 8px 20px -8px rgba(0,0,0,0.7);
-}
-.starpill:active { scale: 0.96; }
-.starpill svg { width: 12px; height: 12px; color: #fbbf24; flex: none; }
-.starpill .num { font-variant-numeric: tabular-nums; }
-
-/* --------------------------------------------------------------- hero */
-.heroTrack { position: relative; height: 195vh; width: 100%; }
-.heroStick { position: sticky; top: 0; height: 100vh; width: 100%; overflow: hidden; }
-
-/* The eclipse: one giant ellipse hanging above the screen, its bottom edge
-   the visible arc. Four concentric coats, outermost first: a white rim with
-   its own halo, a purple band, an indigo band, and a heavily blurred black
-   core that darkens the deep interior. */
-.eclipse {
-  position: absolute; left: 50%; top: 0; width: 200vw; height: 200vh;
-  margin-left: -100vw; pointer-events: none; isolation: isolate;
-  opacity: 0; filter: blur(15px);
-  transform: translateY(-180vh) scaleY(1.12);
-  will-change: transform, opacity, filter;
-}
-.eclipse > i { position: absolute; inset: 0; border-radius: 100%; display: block; }
-.eclipse .rim  { background: #fff; box-shadow: 0 5px 18px 1px rgba(255, 255, 255, 0.55), 0 14px 44px 4px rgba(165, 88, 251, 0.32); }
-.eclipse .glo1 { background: var(--purple); filter: blur(22px); transform: scale(0.988); }
-.eclipse .glo2 { background: var(--indigo); filter: blur(22px); transform: scale(0.964); }
-.eclipse .core { background: #000; filter: blur(48px); transform: scale(0.94); }
-
-.heroContent {
-  position: absolute; inset: 0; z-index: 10;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  gap: 24px; padding: max(15vh, 110px) 24px 0; text-align: center;
-  will-change: transform, opacity, filter;
-}
-.heroContent h1 {
-  font-family: var(--disp); font-weight: 600;
-  font-size: clamp(34px, 7.4vw, 76px);
-  line-height: 1.1; letter-spacing: -0.01em; color: #fff;
-  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
-  opacity: 0; filter: blur(8px); transform: translateY(24px);
-}
-.heroContent h1 .dim { font-weight: 500; color: #a1a1aa; }
-.heroCycle {
-  display: inline-flex; align-items: center; justify-content: center;
-  overflow: visible; vertical-align: middle;
-  width: 1.06em; margin: 0 0.125em;
-}
-.heroCycle .glyph {
-  display: inline-block; width: 0.82em; height: 0.82em;
-  transition: opacity 0.42s cubic-bezier(0.2, 0.8, 0.2, 1),
-              transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1.35);
-}
-.heroCycle .glyph svg { width: 100%; height: 100%; display: block; }
-.heroCycle .glyph.out { opacity: 0; transform: translateY(-12px) scale(0) rotate(12deg); transition-timing-function: ease-in; transition-duration: 0.3s; }
-.heroCycle .glyph.pre { opacity: 0; transform: translateY(16px) scale(0) rotate(-12deg); transition: none; }
-.heroSub {
-  max-width: 620px; font-size: 14px; line-height: 1.7; color: #a1a1aa;
-  opacity: 0; filter: blur(4px); transform: translateY(16px);
-}
-.heroCtas { opacity: 0; transform: translateY(16px); }
-/* The second door: makers download, receivers open. Both start here. */
-.secondDoor { margin-top: 18px; font-size: 13px; color: #71717a; }
-.secondDoor a { color: #a1a1aa; text-decoration: underline;
-  text-underline-offset: 3px; transition: color 0.15s ease; }
-.secondDoor a:hover { color: #fff; }
-.heroContent h1.in, .heroSub.in, .heroCtas.in { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
-
-/* ------------------------------------------------------------ buttons */
-.ctaRow { display: flex; gap: 12px; margin-top: 8px; align-items: stretch; justify-content: center; flex-wrap: wrap; }
-.split { display: inline-flex; align-items: stretch; gap: 2px; position: relative; }
-.btn {
-  position: relative; overflow: hidden; isolation: isolate;
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 16px; font-size: 14px; font-weight: 500; letter-spacing: 0.01em;
-  white-space: nowrap; user-select: none;
-  /* A thumb is not a mouse pointer: every button clears 44px, which is
-     what both platform guidelines ask for and what this page's 34px
-     buttons failed. */
-  min-height: 44px;  /* a thumb needs 44; a pointer does not mind */
-  transition: background-color 0.3s, color 0.3s, box-shadow 0.3s,
-              border-radius 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.2);
-}
-.btn svg { width: 16px; height: 16px; flex: none;
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.2); }
-.btn[data-pressed="true"] svg { transform: scale(0.9); }
-.btn .hoverco {
-  position: absolute; inset: 0; background: currentColor; opacity: 0;
-  transition: opacity 0.2s linear; pointer-events: none;
-}
-.btn:hover .hoverco { opacity: 0.08; }
-.btn .ripple {
-  position: absolute; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(closest-side, currentColor 65%, transparent 100%);
-  opacity: 0; transition: opacity 0.375s linear;
-}
-.btn > span { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; pointer-events: none; }
-.btn-primary { background: #fff; color: #0a0a0a; border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-.btn-primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.btn-primary[data-pressed="true"] { border-radius: 20px; }
-/* The download, demoted.
- *
- * Making an app is the product; downloading a tool is how somebody does
- * more of it later. So the hero leads with Make in the white primary, and
- * the download sits on the quiet line under it -- the same split button,
- * every id and handler intact, wearing a smaller and softer skin. */
-.dlLine { display: flex; align-items: center; justify-content: center;
-  gap: 10px; flex-wrap: wrap; }
-.dlLine .split { transform: none; }
-.dlLine .btn { padding: 6px 12px; font-size: 12.5px; }
-.dlLine .btn svg { width: 14px; height: 14px; }
-.dlLine .split .more { padding: 6px 8px; }
-.dlLine .btn-primary { background: rgba(255,255,255,0.10); color: #d4d4d8;
-  box-shadow: none; border: 1px solid rgba(255,255,255,0.14); }
-.dlLine .btn-primary:hover { background: rgba(255,255,255,0.16); color: #fff;
-  box-shadow: none; }
-.btn-ghost { background: transparent; color: #fff; border-radius: 12px; }
-.btn-ghost:hover { background: rgba(255,255,255,0.1); }
-.btn-ghost[data-pressed="true"] { border-radius: 20px; }
-.split .main { border-radius: 12px 4px 4px 12px; }
-.split .main[data-pressed="true"] { border-radius: 20px; }
-.split .more { border-radius: 4px 12px 12px 4px; padding: 10px; }
-.split .more[data-pressed="true"], .split .more[data-open="true"] { border-radius: 20px; }
-.dlmenu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
-  min-width: 230px; padding: 6px; border-radius: 14px;
-  background: rgba(24, 24, 27, 0.95); text-align: left;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 16px 40px -12px rgba(0,0,0,0.8);
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; transform: translateY(-6px) scale(0.97); pointer-events: none;
-  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1.2);
-}
-.dlmenu.open { opacity: 1; transform: none; pointer-events: auto; }
-.dlmenu.up { top: auto; bottom: calc(100% + 8px); transform: translateY(6px) scale(0.97); }
-.dlmenu.up.open { transform: none; }
-.dlmenu a {
-  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
-  border-radius: 9px; font-size: 13px; color: #d4d4d8;
-}
-.dlmenu a:hover { background: rgba(255,255,255,0.07); color: #fff; }
-.dlmenu a svg { width: 15px; height: 15px; flex: none; opacity: 0.8; }
-.dlmenu .sep { height: 1px; margin: 5px 8px; background: rgba(255,255,255,0.08); }
-
-/* -------------------------------------------------------- studio shot */
-.shotWrap {
-  position: absolute; inset: 0; z-index: 20; pointer-events: none;
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0; transform: translateY(60px) scale(0.85);
-  will-change: transform, opacity;
-}
-.shotBox { position: relative; width: 100%; max-width: min(1080px, calc(100vw - 130px)); aspect-ratio: 1240 / 800; margin: 0 24px; }
-.shotBox .frame {
-  position: absolute; inset: 0; overflow: hidden; border-radius: 24px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 40px 120px -20px rgba(0,0,0,0.8);
-}
-.shotBox .frame img { width: 100%; height: 100%; object-fit: cover; }
-.chip {
-  position: absolute; z-index: 2;
-  display: flex; align-items: center; justify-content: center;
-  width: 58px; height: 58px; border-radius: 16px;
-  background: #101013;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 16px 40px -10px rgba(0,0,0,0.8);
-  opacity: 0; transform: scale(0.3) rotate(-10deg);
-  transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1.4);
-}
-.chip svg, .chip img { width: 28px; height: 28px; }
-.chip.in { opacity: 1; transform: scale(1) rotate(0deg); }
-.chip.in .float { animation: chipfloat 5.2s ease-in-out infinite alternate; }
-.chip .float { display: flex; align-items: center; justify-content: center; }
-@keyframes chipfloat { from { transform: translateY(-4px); } to { transform: translateY(5px); } }
-.chip.c1 { left: -28px; bottom: 22%; }
-.chip.c2 { right: -24px; top: 10%; }
-.chip.c3 { left: -18px; top: 8%; }
-.chip.c4 { right: -30px; bottom: 26%; }
-.chip.c5 { left: 16%; top: -26px; }
-.chip.c1.in { transition-delay: 0.05s; } .chip.c1.in .float { animation-duration: 5.2s; }
-.chip.c2.in { transition-delay: 0.16s; } .chip.c2.in .float { animation-duration: 6.4s; animation-delay: 0.8s; }
-.chip.c3.in { transition-delay: 0.27s; } .chip.c3.in .float { animation-duration: 5.8s; animation-delay: 0.4s; }
-.chip.c4.in { transition-delay: 0.38s; } .chip.c4.in .float { animation-duration: 6.1s; animation-delay: 1.1s; }
-.chip.c5.in { transition-delay: 0.49s; } .chip.c5.in .float { animation-duration: 5.5s; animation-delay: 0.6s; }
-@media (max-width: 760px) { .chip.c3, .chip.c4, .chip.c5 { display: none; } }
-
-/* ------------------------------------------------------------ marquee */
-/* Vertically centered in the dark band between the arc and the page end:
-   the arc's lowest dip sits at 57vh, so the band's middle is ~78vh. */
-.marqWrap {
-  position: absolute; top: 78vh; left: 0; right: 0; z-index: 40;
-  opacity: 0; filter: blur(6px); transform: translateY(calc(-50% + 16px));
-  will-change: transform, opacity, filter;
-}
-.marqWrap.in { opacity: 1; filter: blur(0); transform: translateY(-50%);
-  transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.marqLabel {
-  position: absolute; bottom: 14px; left: 0; right: 0; z-index: 40;
-  text-align: center;
-  font-size: 10px; font-weight: 500; letter-spacing: 0.25em;
-  text-transform: uppercase; color: #71717a;
-  opacity: 0; transition: opacity 1s ease;
-  will-change: opacity;
-}
-.marqLabel.in { opacity: 1; }
-.marqMask {
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8% 92%, transparent);
-          mask-image: linear-gradient(90deg, transparent, #000 8% 92%, transparent);
-}
-.marqTrack {
-  display: flex; gap: 14px; width: max-content; padding: 4px 16px;
-  animation: marquee 110s linear infinite;
-}
-.marqTrack:hover { animation-play-state: paused; }
-@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-/* The reference site's card shape, carrying our promises: a small glyph,
-   a bold title, and the sentence right there -- nothing hidden. */
-.stat {
-  width: 296px; flex: none; text-align: left; user-select: none; cursor: default;
-  border-radius: 16px; background: rgba(24, 24, 27, 0.9); padding: 13px 15px 14px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 1px 2px -1px rgba(0,0,0,0.5);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  transition: box-shadow 0.2s ease, background-color 0.2s ease, translate 0.2s ease, scale 0.2s ease;
-}
-.stat:hover {
-  translate: 0 -2px; background: rgba(39, 39, 42, 0.9);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 12px 32px -12px rgba(0,0,0,0.7);
-}
-.stat .head { display: flex; align-items: center; gap: 10px; }
-.stat .ic {
-  flex: none; width: 34px; height: 34px; border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, 0.04);
-  outline: 1px solid rgba(255, 255, 255, 0.09); outline-offset: -1px;
-}
-.stat .ic svg { width: 16px; height: 16px; }
-.stat .val { font-size: 13.5px; font-weight: 500; color: #f4f4f5; line-height: 1.3; }
-.stat .note {
-  margin-top: 9px; font-size: 12.5px; line-height: 1.5; color: #d4d4d8;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-
-/* ----------------------------------------------------- section: works */
-/* Sized to what it holds, not to the window. `min-height: 100vh` forced a
-   whole screen of black for one paragraph and a graphic, and on a tall
-   display that reads as a page that failed to load rather than as air. */
-/* ---- what it is: the phone's answer, hidden on a desktop -------------- */
-.whatis { display: none; }
-/* The forwards-facing subtitle is the phone's; the desktop keeps the one
-   that leads with the denials, because its marquee explains them
-   immediately underneath. */
-.heroSubPhone { display: none; }
-.works {
-  position: relative; z-index: 30; width: 100%;
-  background: #000; padding: 96px 24px;
-  display: flex; align-items: center; justify-content: center;
-}
-.worksGrid {
-  width: 100%; max-width: 1120px;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
-}
-@media (max-width: 900px) { .worksGrid { grid-template-columns: 1fr; } }
-/* A grid item's default `min-width: auto` is its content's minimum, and the
-   orbit's rings are positioned to overflow their box -- so on a 320px screen
-   this column sized itself to 322 and the whole page scrolled sideways to
-   346. The rings are decoration and are meant to spill; the column must not
-   grow to contain them. */
-.worksGrid > * { min-width: 0; }
-.orbitStage { min-width: 0; overflow: hidden; }
-.works h2 {
-  font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4vw, 46px); line-height: 1.12; color: #fff;
-  margin-bottom: 16px;
-  opacity: 0; filter: blur(8px); transform: translateY(20px);
-}
-.works .copy {
-  max-width: 560px; font-size: 14px; line-height: 1.75; color: #a1a1aa;
-  margin-bottom: 32px;
-  opacity: 0; filter: blur(8px); transform: translateY(16px);
-}
-.works.in h2, .works.in .copy { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1); }
-.works.in .copy { transition-delay: 0.1s; }
-.tagRow { display: flex; gap: 1px; }
-.tag {
-  padding: 5px 13px; background: rgba(24,24,27,0.6);
-  font-size: 11px; font-weight: 500; color: #a1a1aa; white-space: nowrap;
-  opacity: 0; filter: blur(6px); transform: translateY(10px) scaleX(0.4) scaleY(0.8);
-  transform-origin: left center;
-}
-.tag:first-child { border-radius: 999px 2px 2px 999px; }
-.tag:last-child { border-radius: 2px 999px 999px 2px; }
-@media (max-width: 760px) {
-  /* Keep every label readable when the three-chip row exceeds a phone's
-     content width. Larger screens keep the existing single row. */
-  .tagRow { flex-wrap: wrap; row-gap: 6px; }
-}
-.works.in .tag { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.7s ease, filter 0.7s ease, transform 0.7s cubic-bezier(0.2,0.8,0.2,1.2); }
-.works.in .tag:nth-child(1) { transition-delay: 0.22s; }
-.works.in .tag:nth-child(2) { transition-delay: 0.3s; }
-.works.in .tag:nth-child(3) { transition-delay: 0.38s; }
-
-.orbitStage {
-  position: relative; min-height: 420px;
-  display: flex; align-items: center; justify-content: center;
-}
-.orbitBox {
-  position: relative; width: 100%; max-width: 420px; height: 420px;
-  overflow: visible;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 75%, transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 0%, #000 75%, transparent 100%);
-}
-.ring {
-  position: absolute; inset: 0; margin: auto; border-radius: 50%;
-  border-top: 1px solid rgba(255,255,255,0.15);
-  background: linear-gradient(to bottom, rgba(255,255,255,0.1), transparent 25%);
-  opacity: 0; filter: blur(8px); transform: scale(0.5);
-}
-.works.in .ring { opacity: 1; filter: blur(0); transform: scale(1);
-  transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2,0.8,0.2,1); }
-.ring.r1 { width: 350px; height: 350px; }
-.ring.r2 { width: 215px; height: 215px; }
-.works.in .ring.r2 { transition-delay: 0.12s; }
-.orbArm {
-  position: absolute; top: 0; left: 50%; height: 50%; width: 48px;
-  margin-left: -24px; transform-origin: bottom center;
-  display: flex; justify-content: center; align-items: flex-start;
-  pointer-events: none;
-}
-.orbArm .counter { margin-top: -24px; pointer-events: auto; }
-.orbIcon {
-  width: 48px; height: 48px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--z900); border: 1px solid rgba(255,255,255,0.2);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-  transition: transform 0.3s ease;
-  opacity: 0; filter: blur(6px); scale: 0;
-}
-.works.in .orbIcon { opacity: 1; filter: blur(0); scale: 1;
-  transition: opacity 0.6s ease, filter 0.6s ease, scale 0.6s cubic-bezier(0.2,0.8,0.2,1.4),
-              transform 0.3s ease; }
-.works.in .d1 { transition-delay: 0.25s; } .works.in .d2 { transition-delay: 0.34s; }
-.works.in .d3 { transition-delay: 0.43s; } .works.in .d4 { transition-delay: 0.52s; }
-.works.in .d5 { transition-delay: 0.61s; }
-.orbIcon:hover { transform: scale(1.1); }
-.orbIcon svg { width: 20px; height: 20px; }
-@keyframes orbit-cw  { from { transform: rotate(var(--a0)); } to { transform: rotate(calc(var(--a0) + 360deg)); } }
-@keyframes orbit-ccw { from { transform: rotate(var(--a0)); } to { transform: rotate(calc(var(--a0) - 360deg)); } }
-@keyframes counter-cw  { from { transform: rotate(calc(-1 * var(--a0))); } to { transform: rotate(calc(-1 * var(--a0) - 360deg)); } }
-@keyframes counter-ccw { from { transform: rotate(calc(-1 * var(--a0))); } to { transform: rotate(calc(-1 * var(--a0) + 360deg)); } }
-.centerGlyph {
-  position: absolute; left: 0; right: 0; bottom: 0; margin: 8px auto;
-  width: fit-content; z-index: 5;
-  border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); padding: 4px;
-  background: #000;
-  opacity: 0; filter: blur(10px); transform: scale(0.3);
-}
-.works.in .centerGlyph { opacity: 1; filter: blur(0); transform: scale(1);
-  transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1.3);
-  transition-delay: 0.35s; }
-.centerGlyph .inner {
-  width: 64px; height: 64px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: #000; box-shadow: 0 0 40px rgba(255,255,255,0.12);
-}
-.centerGlyph img { width: 32px; height: 32px; }
-
-/* --------------------------------------------------- section: how */
-/* Sections stack directly on each other, so a big bottom padding here
-   lands on top of the next section's top padding and reads as a hole.
-   The receipts and pricing sections follow this one; each owns a
-   symmetric 88px and they add to a normal gap rather than a gap and a
-   half. */
-.how {
-  position: relative; z-index: 30; width: 100%;
-  background: #000; padding: 88px 24px;
-  display: flex; flex-direction: column; align-items: center;
-}
-.how h2, .price h2 {
-  font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4vw, 46px); line-height: 1.12; color: #fff;
-  text-align: center; margin-bottom: 12px;
-  opacity: 0; filter: blur(8px); transform: translateY(20px);
-}
-.how .lead, .price .lead {
-  font-size: 14px; color: #a1a1aa; text-align: center; margin-bottom: 48px;
-  opacity: 0; filter: blur(8px); transform: translateY(16px);
-}
-.how.in h2, .how.in .lead, .price.in h2, .price.in .lead {
-  opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1);
-}
-.how.in .lead, .price.in .lead { transition-delay: 0.1s; }
-.stepGrid {
-  width: 100%; max-width: 1024px;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
-}
-@media (max-width: 760px) { .stepGrid { grid-template-columns: 1fr; } }
-/* The scrolling stat cards were wider than a phone, so every card was cut
-   off at both edges and none could be read whole. */
-@media (max-width: 860px) {
-  /* Cards were clipped at both edges: a fixed width wider than the screen
-     with a track that starts off-canvas. */
-  .marqTrack .stat { width: min(74vw, 290px); white-space: normal; }
-  .marqTrack { gap: 12px; }
-  .marqLabel { font-size: 11.5px; padding: 0 16px; text-align: center; }
-}
-.step {
-  border-radius: 20px; padding: 26px 24px 28px;
-  background: rgba(24, 24, 27, 0.5);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
-  opacity: 0; filter: blur(8px); transform: translateY(24px);
-  transition: box-shadow 0.25s ease, translate 0.25s ease;
-}
-.step:hover { translate: 0 -3px; box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 16px 40px -16px rgba(0,0,0,0.8); }
-.how.in .step { opacity: 1; filter: blur(0); transform: none; }
-.how.in .step { transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1), box-shadow 0.25s ease, translate 0.25s ease; }
-.how.in .step:nth-child(1) { transition-delay: 0.15s; }
-.how.in .step:nth-child(2) { transition-delay: 0.28s; }
-.how.in .step:nth-child(3) { transition-delay: 0.41s; }
-.step .n {
-  font-family: var(--disp); font-weight: 800; font-size: 30px;
-  color: var(--purple); line-height: 1; margin-bottom: 14px;
-}
-.step h3 { font-size: 16px; font-weight: 500; color: #fff; margin-bottom: 8px; }
-.step p { font-size: 13.5px; line-height: 1.65; color: #a1a1aa; }
-
-/* ------------------------------------------------- section: pricing */
-.price {
-  position: relative; z-index: 30; width: 100%;
-  background: #000; padding: 88px 24px;
-  display: flex; flex-direction: column; align-items: center;
-}
-/* The grid is shared by the receipts (three) and the pricing (two), so it
-   sizes to whatever it holds and centres what is left over. Fixed at three
-   columns, two cards hugged the left of a 1024px track with a hole beside
-   them. */
-.priceGrid {
-  width: 100%; max-width: 1024px; margin-inline: auto;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px; align-items: stretch; justify-content: center;
-}
-#free .priceGrid { max-width: 720px; }
-@media (max-width: 820px) { .priceGrid { grid-template-columns: 1fr; max-width: 440px; } }
-.plan {
-  display: flex; flex-direction: column; border-radius: 20px; padding: 26px 24px;
-  background: rgba(24, 24, 27, 0.5);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
-  opacity: 0; filter: blur(8px); transform: translateY(24px);
-}
-.price.in .plan { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1),
-              box-shadow 0.25s ease, translate 0.25s ease; }
-.price.in .plan:nth-child(1) { transition-delay: 0.15s; }
-.price.in .plan:nth-child(2) { transition-delay: 0.28s; }
-.price.in .plan:nth-child(3) { transition-delay: 0.41s; }
-.plan:hover { translate: 0 -3px; box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 16px 40px -16px rgba(0,0,0,0.8); }
-.plan.hot { box-shadow: 0 0 0 1px rgba(165, 88, 251, 0.45), 0 0 44px -14px rgba(165, 88, 251, 0.5); }
-.plan.hot:hover { box-shadow: 0 0 0 1px rgba(165, 88, 251, 0.65), 0 16px 50px -14px rgba(165, 88, 251, 0.45); }
-.plan .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.plan h3 { font-size: 15px; font-weight: 500; color: #fff; }
-.plan .badge {
-  font-size: 10px; font-weight: 500; letter-spacing: 0.06em; color: #a1a1aa;
-  border: 1px solid rgba(255,255,255,0.12); border-radius: 999px; padding: 3px 9px;
-}
-.plan.hot .badge { color: var(--purple); border-color: rgba(165, 88, 251, 0.4); }
-.plan .amount { font-family: var(--disp); font-weight: 700; font-size: 30px; color: #fff; }
-.plan .amount span { font-family: var(--sans); font-weight: 400; font-size: 12.5px; color: #a1a1aa; }
-.plan ul { list-style: none; margin: 16px 0 22px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.plan li { font-size: 13px; line-height: 1.5; color: #d4d4d8; padding-left: 20px; position: relative; }
-.plan li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 9px; height: 5px;
-  border-left: 1.6px solid #7ee2a8; border-bottom: 1.6px solid #7ee2a8; transform: rotate(-45deg); }
-.plan .btn { width: 100%; border-radius: 12px; }
-.plan .btn.ghosty { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16); color: #fff; }
-.plan .btn.ghosty:hover { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.price .note { margin-top: 26px; font-size: 12.5px; color: #71717a; text-align: center;
-  opacity: 0; transition: opacity 0.8s ease 0.5s; }
-.price.in .note { opacity: 1; }
-.price .note a { color: #a1a1aa; text-decoration: underline; }
-
-/* The reveal is decoration; the words are not.
- *
- * A section whose heading never fades in is a screen of empty black, and
- * that is a far worse outcome than a missing animation. These sections
- * therefore start VISIBLE, and the scroll reveal (which still runs) only
- * has to move them, not to grant them existence.
- *
- * Written after chasing exactly that bug: the observer never fired for a
- * newly added section, its text sat at opacity 0 forever, and the page
- * looked broken on a tall display.
- */
-.price h2, .price .lead, .price .note, .price .plan,
-.how h2, .how .lead, .how .step {
-  opacity: 1; filter: none; transform: none;
-}
-
-/* -------------------------------------------------------- section: cta */
-/* Same reasoning as .works above: the closing card and the footer do not
-   need a full screen reserved for them. */
-.ctaSec {
-  position: relative; z-index: 30; width: 100%;
-  background: #000; padding: 96px 24px 40px;
-  display: flex; flex-direction: column; justify-content: space-between; align-items: center;
-  gap: 64px;
-}
-.ctaCard {
-  position: relative; width: 100%; max-width: 1024px; margin: auto 0;
-  border-radius: 32px; border: 1px solid rgba(255,255,255,0.1);
-  background: linear-gradient(to bottom, rgba(255,255,255,0.1), rgba(255,255,255,0.05), transparent);
-  padding: 8px;
-  box-shadow: 0 32px 100px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.1),
-              inset 0 1px 1px rgba(255,255,255,0.25);
-  opacity: 0; filter: blur(16px); transform: translateY(40px) scale(0.94);
-}
-.ctaSec.in .ctaCard { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 1s ease, filter 1s ease, transform 1s cubic-bezier(0.2,0.8,0.2,1); }
-.ctaInner {
-  position: relative; overflow: hidden; border-radius: 26px;
-  background: rgba(9, 9, 11, 0.9); border: 1px solid rgba(255,255,255,0.05);
-  padding: clamp(32px, 6vw, 56px);
-  display: flex; flex-direction: column; justify-content: space-between;
-  gap: clamp(40px, 7vw, 64px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.9);
-}
-.ctaInner canvas { position: absolute; inset: 0; width: 100%; height: 100%;
-  opacity: 0.3; pointer-events: none; }
-.ctaText { position: relative; z-index: 1; max-width: 560px; }
-.ctaText h2 {
-  font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(26px, 4vw, 40px); line-height: 1.28; color: #fff;
-  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
-  filter: blur(12px); opacity: 0; transform: translateX(-30px);
-}
-.ctaSec.in .ctaText h2 {
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-  filter: blur(0); opacity: 1; transform: none;
-  transition: clip-path 1s cubic-bezier(0.2,0.8,0.2,1) 0.2s, filter 0.9s ease 0.2s,
-              opacity 0.9s ease 0.2s, transform 0.9s cubic-bezier(0.2,0.8,0.2,1) 0.2s;
-}
-.ctaText p {
-  margin-top: 16px; font-size: 14px; line-height: 1.7; color: #a1a1aa;
-  opacity: 0; filter: blur(8px); transform: translateY(16px);
-}
-.ctaSec.in .ctaText p { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.9s ease 0.45s, filter 0.9s ease 0.45s, transform 0.9s cubic-bezier(0.2,0.8,0.2,1) 0.45s; }
-.ctaActs {
-  position: relative; z-index: 1; align-self: flex-end;
-  opacity: 0; filter: blur(8px); transform: translateY(20px) scale(0.85);
-}
-.ctaSec.in .ctaActs { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.9s ease 0.55s, filter 0.9s ease 0.55s, transform 0.9s cubic-bezier(0.2,0.8,0.2,1.2) 0.55s; }
-
-/* -------------------------------------------------------------- footer */
-.foot {
-  width: 100%; max-width: 1024px; margin-top: 64px;
-  padding: 32px 0 16px; border-top: 1px solid rgba(255,255,255,0.1);
-  display: flex; align-items: center; justify-content: space-between; gap: 24px;
-  font-size: 12px; color: #a1a1aa; flex-wrap: wrap;
-}
-.foot .who { display: flex; align-items: center; gap: 12px; }
-.foot .who img { width: 16px; height: 16px; opacity: 0.7; }
-.foot nav { display: flex; gap: 20px; flex-wrap: wrap; }
-.foot nav a { transition: color 0.2s ease; }
-.foot nav a:hover { color: #d4d4d8; }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
-  .eclipse { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
-  .heroContent h1, .heroSub, .heroCtas { opacity: 1 !important; filter: none !important; transform: none !important; }
-  .works h2, .works .copy, .works .tag, .ring, .orbIcon, .centerGlyph,
-  .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
-    opacity: 1 !important; filter: none !important; transform: none !important;
-    clip-path: none !important; scale: 1 !important;
-  }
-}
-
-/* ---- the hero, on a phone -------------------------------------------- */
-@media (max-width: 760px) {
-  /* ---- the arc ---------------------------------------------------------
-   *
-   * The eclipse is a 1890px disc whose bright rim is the page's one piece
-   * of colour. On a desktop it arcs below the buttons and reads as a
-   * horizon. On a phone it was drawn straight THROUGH them: measured at
-   * 390x700 the disc's top edge is at 315 and the download row occupies
-   * 420-494, so the rim crossed "Want it on your machine?" and washed the
-   * button behind it until the text was barely there.
-   *
-   * A previous pass tried pushing it down 40% and dimming it, which is
-   * why those numbers look deliberate -- but 40% of 1890px, on an element
-   * already scaled 1.35, lands it back over the same buttons.
-   *
-   * Sized off the VIEWPORT instead, so the rim always falls below the
-   * content rather than at whatever height a 1890px disc happens to
-   * reach: the arc sits under the hero, the way it does on a desktop. */
-  /* ---- the glow ------------------------------------------------------
-   *
-   * On a desktop the eclipse is a horizon: a huge disc whose bright rim
-   * arcs below the hero, with the page's content standing on it. That
-   * reading needs width. On a phone the disc is mostly off-screen and
-   * what is left is a pale curve at the very bottom, under content that
-   * has already ended -- scenery for a landscape that is not there.
-   *
-   * Behind the headline instead, as a light source rather than a horizon:
-   * a soft bloom the words sit in front of, which is what the mark on the
-   * Studio home does and what the shape actually reads as at this size.
-   * The script's inline `translateY(-143vh)` still applies, so the disc
-   * is placed to land under it -- 143vh up from 148vh puts the glow's
-   * centre just behind the headline.
-   *
-   * Centred by margin, not by transform: the transform is the script's. */
-  /* The element is named for what it is: a white rim, two coloured glows,
-     and a BLACK core disc in front of them. The colour is only ever seen
-     as the ring the core does not cover -- hide the core and the whole
-     thing becomes a solid purple wall, which is exactly what happened on
-     the first attempt here.
-     So the eclipse stays an eclipse; it is only moved and softened. */
-  /* Placed so the ring's LOWER arc crosses the top of the screen -- the
-     glow comes from above and falls on the hero, the way a sky lights a
-     landscape. A ring centred on the hero encircles the words instead of
-     lighting them, and the same ring below the fold is scenery for a
-     horizon that is not there. This is the founder's suggestion and it is
-     the right one: the light belongs at the top.
-     143vh of the script's inline transform is subtracted from this. */
-  .eclipse {
-    /* Sized and placed in vh only. Mixing vw into the offset made the
-       arc's landing depend on the aspect ratio: at 390x844 it ended 202px
-       ABOVE the screen and left nothing but a smudge.
-       The disc is 150vh tall and its top is 143vh (the script's offset)
-       minus 118vh, so its lower arc crosses at 32vh -- a third of the way
-       down, above the headline, lighting it from the sky. */
-    width: 150vh; height: 150vh;
-    left: 50%; margin-left: -75vh;
-    /* 18, not 25: the arc was crossing at 0.32 of the screen and the
-       headline starts at 0.26, so the brightest part of the light landed
-       ON the words. Lifted so the glow peaks above them and the headline
-       reads against the fade. */
-    top: 18vh; bottom: auto;
-    /* 0.42, not 0.55: at full strength the band is a colour the words sit
-       ON rather than a light falling across them. */
-    opacity: 0.42;
-  }
-  /* The rim is the one hard edge -- a bright white hairline that reads as
-     a horizon on a wide screen and as a stray arc on a narrow one. The
-     glow keeps its shape without it. */
-  .eclipse .rim { display: none; }
-  /* The two coloured layers are blurred 22px, which against a 2880px
-     desktop disc is a soft haze and against a 1266px phone disc is a
-     crisp band -- a purple stripe with visible top and bottom edges,
-     sliced across the headline. Blurred far harder so the colour falls
-     off gradually and reads as light rather than as a painted shape. */
-  .eclipse .glo1, .eclipse .glo2 { filter: blur(90px); }
-
-  /* ---- the scroll transition -----------------------------------------
-   *
-   * The hero sits in a 195vh track: you scroll a screen of sticky nothing
-   * while the words fade out and a picture of Studio fades in. On a
-   * desktop that is a cinematic worth its length, and the picture it
-   * lands on is 1080px wide.
-   *
-   * On a phone it was 802px of scrolling -- most of two screens -- to
-   * arrive at one static image 304px across. The transition cost more
-   * than it delivered. The mechanism is untouched: the script reads this
-   * height, so the same fades simply happen over a shorter distance.
-   *
-   * (This belongs in THIS block, not the earlier `max-width: 760px` one
-   * further up the file: the base `.heroTrack` rule sits between the two,
-   * at equal specificity, so a copy in the earlier block loses on source
-   * order and silently does nothing.)
-   *
-   * 112vh, not 130: the transition costs scroll distance to reveal a
-   * 304px picture, and on a phone that reveal is a toll on the way to the
-   * next sentence rather than the moment it is on a desktop. Trimmed to
-   * the least that still lets the fade read as a fade. */
-  .heroTrack { height: 112vh; }
-  /* With the arc below the content, the download button no longer needs a
-     plate of its own to be legible -- but it keeps a quiet one, because
-     it is the second action on the screen and should not compete with
-     "Make an app" for attention. */
-  .dlLine .btn-primary {
-    background: rgba(20, 20, 24, 0.92); color: #fff;
-    border-color: rgba(255, 255, 255, 0.22);
-    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  }
-
-  /* ---- the hero as one composition -------------------------------------
-   *
-   * It was `justify-content: flex-start` with 84px of top padding: the
-   * content stacked from the top and stopped at 534 in a 700px screen,
-   * leaving 166px of nothing beneath it and no reason for the eye to go
-   * there. Centred in the space between the brand bar and the foot
-   * instead, so the screen reads as one composed thing rather than a
-   * column that ran out. */
-  .heroContent {
-    padding: 78px 20px 24px;
-    justify-content: center;
-  }
-  /* The headline's second line is #a1a1aa -- the same grey as the
-     paragraph under it -- so the largest words on the page were also the
-     faintest. It keeps the contrast step it has on a desktop, where it
-     sits against a much darker ground. */
-  #heroH1 { font-size: clamp(30px, 9vw, 40px); line-height: 1.12; }
-  #heroH1 .dim { color: #d4d4d8; }
-  /* Two lines, always. The h1 is a wrapping flexbox and the cycling glyph
-     was the only thing between its two sentences -- hiding that glyph on
-     phones (it stranded at the end of line one and read as a typo) left
-     them touching: "Build once.Ship one file." with no space at all. The
-     break is made explicit rather than left to whatever happens to sit
-     between them. */
-  #heroH1 { flex-direction: column; }
-  .heroSub { font-size: 14.5px; line-height: 1.6; }
-  /* Each action on its own full-width row: two buttons side by side at
-     this width leaves both too narrow to read and too small to hit. */
-  .ctaRow { flex-direction: column; align-items: stretch; gap: 10px; }
-  .ctaRow .btn, .ctaRow .split { width: 100%; }
-  .split .main { flex: 1; }
-  .secondDoor { font-size: 13px; line-height: 1.7; color: #c7c7d1; }
-  .secondDoor a { color: #fff; }
-  .dlLine { flex-direction: column; gap: 8px; }
-  /* 44, not 40. This was trimmed to buy back four pixels of hero height,
-     which is the wrong trade for the button that downloads the product --
-     and the hero now fits without it (the marquee gave up the space
-     instead). The split's chevron is the same control, so it matches. */
-  .dlLine .btn, .dlLine .split > * { min-height: 44px; }
-  /* The marquee is gone on a phone, and this is the reason it stayed so
-     long: it was the only thing on the small screen that said what Krate
-     gives you. Now `.whatis` says it in a list you can read at rest,
-     built from the SAME seven STATS entries -- so keeping both printed
-     every point twice, once scrolling past and once standing still.
-     Measured: whatis items=7, marquee uniq=7, shared=7. A marquee is also
-     the wrong instrument here: it moves text away from a reader who
-     cannot hover to pause it. The desktop keeps it as ambient texture
-     beside a hero that has room to spare. */
-  .marqWrap { display: none; }
-
-  /* 10px is a label on a monitor you are sitting two feet from and a smudge
-     on a phone held at arm's length. These are all short chips -- the star
-     count, the plan badges -- so a point and a half costs no layout and
-     makes them legible. The desktop keeps its finer setting. */
-  .starpill, .plan .badge { font-size: 11.5px; }
-
-  /* ---- the download button at the foot of the page -------------------
-   *
-   * `.ctaRow` above is the hero's button row; this is the other one, in
-   * the closing card, and it had no phone rule at all. Measured at 390px:
-   * the block was `align-self: flex-end` so it took 180px of a 321px
-   * card, and inside it the main button collapsed to 26px around 110px of
-   * text while the chevron kept 153 -- "…oad f" beside an empty white
-   * slab, which is what the founder's screenshot shows.
-   *
-   * A flex child may shrink below its content unless told not to: that is
-   * `min-width: auto` losing to `flex: 1 1 0%`. */
-  .ctaActs { align-self: stretch; width: 100%; }
-  .ctaActs .split { display: flex; width: 100%; }
-  .ctaActs .split .main { flex: 1 1 auto; min-width: 0; }
-  .ctaActs .split .more { flex: 0 0 52px; }
-  .ctaActs .split > * { min-height: 44px; }
-
-  /* ---- the footer ----------------------------------------------------
-   *
-   * Ten links wrapping 5 / 4 / 1 across three rows 64px apart, under a
-   * copyright line that takes the full width. It reads as a list that ran
-   * out of room rather than a list that was arranged.
-   *
-   * Two even columns instead: the same ten links, in a shape that fits
-   * the screen it is on. */
-  .foot {
-    flex-direction: column; align-items: flex-start;
-    gap: 22px; margin-top: 40px; padding-top: 26px;
-  }
-  .foot nav {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 2px 18px; width: 100%;
-  }
-  .foot nav a { padding-top: 11px; padding-bottom: 11px; }
-
-  /* ---- the length ----------------------------------------------------
-   *
-   * The page is 7150px on a phone: five sections of about 1100px each,
-   * every one of them padded 88-96px top AND bottom because that is what
-   * suits a 1440px monitor. On a phone that is a screen and a half of
-   * nothing between each idea. Halved -- the sections still breathe, and
-   * the page loses roughly 500px of pure gap. */
-  section.works, section.how, section.price, section.ctaSec {
-    padding-top: 40px; padding-bottom: 40px;
-  }
-  .ctaSec { padding-bottom: 28px; }
-
-  /* ---- the cards ------------------------------------------------------
-   *
-   * The page is 7.8 screens of scrolling for 768 words. Most of that is
-   * the cards: measured at 390x844 each one holds 55-72 words in 400px,
-   * padded 26px, stacked one per screen. Side by side on a desktop they
-   * are a comparison you read across; stacked on a phone they become a
-   * queue where every card is its own screen and the comparison is gone.
-   *
-   * They keep their words. What comes down is the air around the words --
-   * padding, leading, the gaps between cards and between their rows --
-   * which is what was sized for a monitor. */
-  .plan, .step {
-    padding: 18px 18px 20px;
-    border-radius: 16px;
-  }
-  .priceGrid, .stepGrid { gap: 12px; }
-  .plan ul, .step p { line-height: 1.5; }
-  /* `padding: 4px 0` here was the bug: the shorthand reset padding-left to
-     0 while the tick stayed absolutely positioned at left:2px, so every
-     line drew its checkmark straight through its own first letter. Set the
-     vertical padding only and the 20px runway for the tick survives. */
-  .plan li { padding-top: 4px; padding-bottom: 4px; }
-  .plan ul { margin-bottom: 14px; }
-  /* The footnote under each card is a source citation -- true and worth
-     keeping, but it is set at the size of body copy and takes 60px. */
-  .plan .note { font-size: 11.5px; line-height: 1.5; }
-  /* NOT trimmed: the evidence cards keep all four claims.
-     They are the longest thing on the page -- 1.9 screens of three cards
-     with four detailed proofs each -- and dropping two per card takes the
-     page from 7.8 screens to 6.8. But which two is a judgement about what
-     convinces somebody, not about layout: "Ten complete apps together:
-     283 KB" is stronger proof than the markdown viewer above it, and
-     "956 tests, and a fuzzer on the bundle parser" is the sort of line a
-     sceptical reader is looking for. Cutting by position would have
-     dropped both.
-     That call belongs to the founder, so the section stays whole and
-     only its spacing comes down. (Shrinking the type instead made the
-     cards TALLER: 16px to 14px turned a 405px card into 411, because the
-     lines rewrapped worse.) */
-  /* The section headings and their ledes carry a desktop's spacing too. */
-  .price h2, .how h2 { margin-bottom: 8px; }
-  .price .lead, .how .lead { margin-bottom: 20px; font-size: 14px; }
-  /* The big number on a plan card is display type for a wide screen. */
-  .plan .amount { font-size: 26px; }
-
-  /* The orbit: five vendor logos circling a Krate mark, 420px tall, whose
-     whole message is "works with the AI you already pay for" -- which the
-     paragraph beside it already says. On a desktop it is the right half of
-     a two-column section and earns its space; stacked on a phone it is
-     half a screen of animation under the sentence it illustrates. */
-  .orbitStage { min-height: 260px; }
-  .orbitBox { height: 260px; }
-  .worksGrid { gap: 20px; }
-
-  /* The closing section's card and the footer were 212px apart -- a
-     desktop's breathing room between the last thing you read and the
-     links under it. */
-  .ctaSec .foot { margin-top: 28px; }
-
-  /* ---- what it is ----------------------------------------------------
-   *
-   * The first thing after the headline, because it is the first question:
-   * what IS this. The hero opens with what Krate is not -- "no installer,
-   * no per-OS port, no signing dance" -- which lands for somebody who has
-   * felt those problems and means nothing to anybody else.
-   *
-   * A plain sentence, then the seven facts as a list. Seven rows of one
-   * bold phrase and one sentence: scannable in a thumb-flick, readable if
-   * you stop. */
-  /* The two subtitles swap: what it IS, not what it is not. */
-  #heroSub { display: none; }
-  /* `max-width: 620px` on a 375px screen means edge to edge with no side
-     padding at all, so the sentence ran the full width of the glass. A
-     measure of roughly 34 characters is what a phone paragraph wants. */
-  .heroSubPhone {
-    display: block;
-    /* Geist's zero is 0.672em wide: keep the same final 34-character
-       measure without sizing the box from the temporary fallback font.
-       Using ch here changed three lines to two when Geist loaded. */
-    max-width: 22.848em;
-    margin-left: auto; margin-right: auto;
-    padding: 0 18px;
-  }
-
-  .whatis {
-    display: block;
-    padding: 40px 20px 8px;
-    max-width: 640px; margin: 0 auto;
-  }
-  .whatis h2 {
-    font-family: var(--disp); font-weight: 700;
-    font-size: clamp(24px, 7.5vw, 32px); line-height: 1.14;
-    letter-spacing: -0.02em; color: #fff;
-  }
-  .whatis .lead {
-    margin-top: 12px; font-size: 15px; line-height: 1.6; color: #a1a1aa;
-  }
-  .whatisList {
-    list-style: none; margin: 24px 0 0; padding: 0;
-    display: flex; flex-direction: column; gap: 2px;
-  }
-  .whatisList li {
-    display: flex; gap: 13px; align-items: flex-start;
-    padding: 13px 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
-  }
-  .whatisList li:first-child { border-top: 0; }
-  .wIc {
-    flex: none; width: 19px; height: 19px; margin-top: 1px;
-    display: grid; place-items: center;
-  }
-  .wIc svg { width: 19px; height: 19px; display: block; }
-  .wTx { font-size: 13.5px; line-height: 1.55; color: #a1a1aa; }
-  /* The claim on its own line, in white, with the explanation under it:
-     the eye can take the seven claims alone and stop at the one it wants. */
-  .wTx b {
-    display: block; margin-bottom: 2px;
-    font-size: 14.5px; font-weight: 500; color: #fff; letter-spacing: -0.005em;
-  }
-
-  /* ---- the brand bar -------------------------------------------------
-   *
-   * It is fixed at top 20 with a transparent background, so the page
-   * scrolls under it and the words collide with the mark -- visible in
-   * every one of the founder's screenshots.
-   *
-   * This started as a pill drawn around the floating badge. It is a real
-   * bar now (see the header block near the top of the file), and the
-   * settings live HERE rather than there because the rules in that block
-   * come earlier in the file: at equal specificity this one wins on
-   * source order, and a pill radius left behind here kept the bar looking
-   * like a floating badge however square the earlier rule asked for. */
-  .brandbar {
-    left: 0; right: 0; top: 0;
-    width: 100%; max-width: none;
-    transform: none;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px;
-    /* The notch. Without viewport-fit=cover in the page head this resolves
-       to 0 and costs nothing, which is the correct fallback. */
-    padding: 6px 14px 6px 12px;
-    padding-top: calc(6px + env(safe-area-inset-top));
-    border-radius: 0;
-    /* The bar used to be a flat near-black panel with a 1px white
-       hairline under it, sitting directly on the hero's purple glow. Two
-       hard edges in the same place -- the tone step from near-black to
-       purple, and the line itself -- and it read as two stacked
-       rectangles rather than one surface.
-       The panel now fades out over its last few pixels instead, so the
-       bar meets the glow rather than cutting it. */
-    background: linear-gradient(
-      to bottom,
-      rgba(10, 10, 10, 0.88) 0%,
-      rgba(10, 10, 10, 0.82) 62%,
-      rgba(10, 10, 10, 0.55) 88%,
-      rgba(10, 10, 10, 0) 100%
-    );
-    -webkit-backdrop-filter: blur(16px) saturate(1.4);
-    backdrop-filter: blur(16px) saturate(1.4);
-    /* No hairline. A border draws the same crisp edge the gradient
-       exists to avoid; the blur behind the bar is what separates it
-       from the page. */
-    border-bottom: 0;
-  }
-  /* The glow begins at full strength at y=0, because the eclipse's box
-     sits entirely above the fold (measured: its lowest layer ends at
-     -33px) and only its 90px blur spills into view -- so there is
-     nothing above it to fade from, and it met the bar as a flat wash.
-     This is the missing top of that falloff: a short, dark veil over the
-     first stretch of the hero, behind the content and above the glow, so
-     the colour arrives instead of starting.
-
-     Kept SHORT and light on purpose: a first pass at 190px and 0.72
-     alpha softened the seam and flattened the glow with it, which trades
-     one problem for a worse one -- the colour is the hero. This reaches
-     just past the bar and is gone by 96px. */
-  .heroStick::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 70px;
-    z-index: 1;
-    pointer-events: none;
-    background: linear-gradient(
-      to bottom,
-      rgba(10, 10, 10, 0.42) 0%,
-      rgba(10, 10, 10, 0.16) 60%,
-      rgba(10, 10, 10, 0) 100%
-    );
-  }
-  /* The entrance animation re-centres with a transform; on a full-width
-     bar there is nothing to centre and it would slide the bar sideways. */
-  .brandbar.in { transform: none; }
-  /* A vertical rule between a brand and a button is a desktop nav's
-     separator -- with one link on either side of it, it is just a line
-     down the middle of the header. */
-  .brandbar .bnav { border-left: 0; padding-left: 0; }
-
-  /* ---- the Studio screenshot -----------------------------------------
-   *
-   * A 1240x800 capture of a desktop window, shown at 221x143. Nothing in
-   * it is legible at that size -- it is a grey smudge that happens to be
-   * rectangular, and the founder is right that shrinking it further is
-   * not the answer.
-   *
-   * The box reserves 130px of the viewport for the chips that float at
-   * its corners, and those chips are already hidden here. So the picture
-   * gets the full width back.
-   *
-   * It shows the WHOLE window, not a crop. The earlier version zoomed
-   * 175% into the top-left corner, which measured out at 27% of the
-   * picture: the conversation panel and nothing else. So a phone visitor
-   * saw Studio talking and never saw the app it made -- and the app is
-   * the proof. Individual words are small at this size, but the shape is
-   * legible: a conversation on one side, a finished app on the other, and
-   * that shape is the whole claim. */
-  .shotBox {
-    max-width: none; margin: 0 16px;
-    aspect-ratio: 1240 / 800;
-  }
-  .shotBox .frame img {
-    width: 100%; height: 100%; max-width: none;
-    object-fit: contain; object-position: center;
-  }
-  /* The remaining two chips float at negative offsets, which is a nice
-     touch beside a 1080px frame and a pair of half-cropped squares beside
-     a 304px one. The other three are already hidden here; these join
-     them. */
-  .chip { display: none; }
-
-  /* The headline cycles a vendor glyph between its two sentences: on a wide
-     screen all three sit on one line and it reads as a separator. Here the
-     line wraps, the glyph is stranded at the end of "Build once." and the
-     site's first sentence appears to contain a stray mark -- an X, when the
-     cycle happens to be showing Grok. Hidden: the sentence is the point,
-     and the logos are already shown further down the page. */
-  .heroCycle { display: none !important; }
-
-  /* The marquee was pinned at 78vh, a share of the screen, while the hero
-     above it stacks to a fixed pixel height. The two only clear each other
-     on a tall screen. Measured at 390 wide, the hero's last line ends at
-     554px and 78vh lands at:
-         844 -> 600   (46px clear)
-         800 -> 566   (12px clear)
-         760 -> 535   (19px OVERLAP)
-         700 -> 488   (66px overlap)
-         667 -> 462   (92px overlap)
-     Every iPhone in Safari, whose visible height is around 700 once the
-     toolbars are counted, buries "Someone sent you a file?" under the
-     cards. Pinning it to the bottom instead keeps it in the same dark band
-     and makes the gap grow with the screen rather than shrink. */
-  .marqWrap { top: auto; bottom: 74px; }
-  .marqWrap, .marqWrap.in { transform: none !important; }
-
-  /* The hero read as an empty screen with a headline floating in it.
-     Measured at 390x700: the sticky box is 100vh and `.heroContent`
-     centres about 200px of real content inside it, so 22% of the first
-     screen was black above the headline and the rest below it.
-
-     The cause is that this hero is a DESKTOP mechanism: `.heroContent`
-     and `.shotWrap` are stacked absolutely in one sticky 100vh box, and
-     scrolling cross-fades the headline out as the Studio shot comes in.
-     That needs a tall scroll runway (112vh here) whose only job is to
-     drive an animation, and on a phone it spends a whole screen of
-     height to show one screen of content.
-
-     So on a phone the two stop being one cross-fade and become two
-     things in a row: the headline sits at the top of the screen where it
-     is read, and the Studio shot follows it as an ordinary block. The
-     scroll driver is disabled here (`data-hero-static`) rather than
-     fought with CSS -- it sets inline opacity/transform every frame and
-     would win over any rule written here.
-
-     Do NOT give .heroTrack `height: auto` while the driver still runs:
-     the runway collapses to a few px, `span` goes to ~0 and the headline
-     fades out within one flick of the thumb. Measured that way first. */
-  .heroTrack { height: auto; }
-  /* `overflow: hidden` STAYS. The eclipse is a deliberately oversized
-     glow -- measured 1050px wide, from -330 to 720 at a 390px viewport --
-     and this box is what clips it. Changing this to `visible` while
-     unsticking the box made the whole page scroll sideways to 720px. */
-  /* `position: relative`, not `static`. The eclipse is absolutely
-     positioned, so it is clipped by the nearest POSITIONED ancestor --
-     a static box with `overflow: hidden` does not contain it and the
-     glow leaked to 720px on a 390px screen, scrolling the page sideways.
-     Relative keeps it the containing block while still flowing in the
-     normal document, which is what unsticks the hero. */
-  .heroStick { position: relative; height: auto; overflow: hidden; }
-  .heroContent {
-    position: static; height: auto;
-    /* The brandbar is FIXED, so it is out of flow and reserves no space:
-       with `padding-top: 22px` the bar's bottom edge sat at 57px and the
-       headline began at 22px, hiding 35px of "Build once." behind it.
-       Measured, not guessed. The bar is 44px of content plus its
-       safe-area inset, so clear that and then add the air. */
-    /* +52, not +26. The bar's `backdrop-filter: blur(16px)` blurs what is
-       BEHIND its box, and that sampling feathers past the box edge -- so
-       a headline sitting 14px under the bar gets softened by it even
-       though the geometry says the two never overlap. Measured on a real
-       render: "Build once." came out at maxEdge 27 / avgEdge 2.01 while
-       "Ship one file." on the next line was 36 / 3.32. Only the first
-       line was affected, which is the signature of a blur that reaches
-       down rather than of anything wrong with the type.
-       Clearing the blur radius with room to spare fixes it. */
-    padding: calc(44px + env(safe-area-inset-top) + 52px) 0 4px;
-    justify-content: flex-start;
-  }
-  /* Absolutely positioned for the cross-fade; in the stacked phone layout
-     it is just the next block down the page. */
-  .shotWrap {
-    position: static; height: auto;
-    margin-top: 26px; padding: 0;
-    /* The base rule hides this (`opacity: 0`) because on a desktop the
-       scroll driver fades it in. Nothing fades it in here, so without
-       these three it stayed invisible and the phone hero lost the one
-       picture of the product. */
-    opacity: 1;
-    transform: none;
-    pointer-events: auto;
-  }
-}
-
-/* On narrow, tall screens the loaded subtitle occupies three lines, but
-   the fallback font fits it into two. Reserve the final line box so loading
-   Geist does not move the buttons and screenshot. At 323px it already fits
-   two lines; at heights up to 800px the smaller type below does too. */
-@media (max-width: 322px) and (min-height: 801px) {
-  .heroSubPhone { min-height: 3lh; }
-}
-
-/* Short screens, whatever the width. The hero and the marquee both live
-   inside one 100vh sticky box, absolutely positioned, so neither can push
-   the other along -- they simply collide once the screen is short enough.
-   Measured at 375x629: the hero stack ends at 497px and the marquee needs
-   the last 190, which is 687 of an available 629. There is no arrangement
-   of two fixed blocks that fits 687px into 629.
-   So first, buy back what can be bought: tighter leading and a smaller
-   headline recover about 50px. */
-@media (max-height: 800px) and (max-width: 760px) {
-  /* The top padding is set with the rest of the hero above (78px, which
-     is the brand bar's 64px end plus daylight); only the type comes down
-     here, to buy back height on a short screen. */
-  #heroH1 { font-size: clamp(27px, 8vw, 34px); }
-  .heroSub { font-size: 13.5px; line-height: 1.55; }
-  .heroCtas { gap: 10px; }
-}
-
-/* And below that, stop trying. The marquee is scenery -- the same numbers
-   appear as full cards further down the page -- while the hero carries the
-   one button the page exists for. On a screen this short the choice is
-   which of the two to lose, and it is never the call to action.
-
-   A single height cutoff cannot express this, and trying one was wrong:
-   the hero's own height is not constant. The subtitle rewraps with the
-   width, so at 390px wide the stack ends anywhere between 504 and 543,
-   and a threshold tuned to one of those is off by a line at the other:
-
-       height  heroEnds  clearance with a 691px cutoff
-          691       505   hidden, fine
-          692       516   -13  <- still overlapping
-          700       512   -2   <- still overlapping
-          736       504   +42
-
-   So the marquee yields to the hero instead of to a number. It is hidden
-   unless the screen can hold the hero's tallest form (543) plus the
-   marquee's own 190, which is 733 -- and 740 leaves a margin for a font
-   that loads a little wider than the one measured here. Above that the
-   bottom anchor keeps the gap growing with the screen.
-
-   Verified by loading the page in an iframe at each height, because a
-   screenshot taken after a viewport resize could not be trusted to have
-   painted. */
-/* On every phone, not below a threshold. The hero is centred in its
-   screen now rather than stacked from the top, so it always ends lower
-   and there is no height at which both it and the marquee sit
-   comfortably: at 844 the cards landed on "Someone sent you a file?"
-   again, and tuning the cutoff just moves which screen loses.
-   The marquee is scenery. Its four numbers appear as full cards a
-   screen further down, where they can be read rather than glimpsed
-   sideways through a mask. The hero carries the button the page is for,
-   and on a phone it gets the screen to itself. */
-@media (max-width: 760px) {
-  .marqWrap, .marqLabel { display: none; }
-}
-
-  /* Touch, not width: a thumb needs 44px whatever the screen size, and
-     these pages' nav and footer links were 19-20px tall. */
-  @media (pointer: coarse) {
-    nav a[href], .foot a[href], footer a[href] {
-      display: inline-block; padding-top: 11px; padding-bottom: 11px;
-    }
-    button, input[type=submit] { min-height: 44px; }
-    /* Buttons that are links, and the brand mark, which is a tap target
-       on every page (it goes home). */
-    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
-  }
-</style>
-<noscript><style>
-  /* .works .tag belongs in both lists below. The three chips start at
-     opacity 0 and are cleared by the scroll observer, so without this they
-     stay invisible for a reader with JavaScript off -- measured at opacity 0
-     while the heading beside them read correctly. The reduced-motion block
-     already covers them; this list had simply left them out. */
-  .brandbar, .heroContent h1, .heroSub, .heroCtas, .works h2, .works .copy,
-  .works .tag, .how h2, .how .lead, .step, .price h2, .price .lead, .plan,
-  .ctaCard, .ctaText h2, .ctaText p, .ctaActs { opacity: 1 !important; filter: none !important; }
-  .brandbar { transform: translateX(-50%); }
-  .heroContent h1, .heroSub, .heroCtas, .step, .plan { transform: none !important; }
-  .works h2, .works .copy, .works .tag, .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
-    transform: none !important; clip-path: none !important; scale: 1 !important;
-  }
-  .heroTrack { height: auto; min-height: 680px; }
-  .heroStick { position: relative; height: auto; min-height: 680px; overflow: visible; }
-  .heroContent { position: relative; padding-bottom: 60px; }
-  .eclipse, .marqWrap, .marqLabel, .chip, .orbitStage { display: none; }
-  .whatis { display: block; }
-</style></noscript>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>One desktop app file for macOS, Windows and Linux | Krate</title>
-  <meta name="description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
-  <link rel="canonical" href="https://krate.tech/portable-desktop-app-format.html">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Krate">
-  <meta property="og:title" content="One desktop app file for macOS, Windows and Linux | Krate">
-  <meta property="og:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
-  <meta property="og:url" content="https://krate.tech/portable-desktop-app-format.html">
-  <meta property="og:image" content="https://krate.tech/og-v4.png">
-  <meta property="og:image:alt" content="Krate desktop application runtime">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="One desktop app file for macOS, Windows and Linux | Krate">
-  <meta name="twitter:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
-  <meta name="twitter:image" content="https://krate.tech/og-v4.png">
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/portable-desktop-app-format.html#webpage", "url": "https://krate.tech/portable-desktop-app-format.html", "name": "One desktop app file for macOS, Windows and Linux | Krate", "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
-  <style>
-    /* The article shell owns its layout. The homepage supplies fonts and
-       colors, not styles for these differently named elements. */
-    .subnav {
-      position: sticky; top: 0; z-index: 40;
-      background: rgba(0,0,0,.94); border-bottom: 1px solid #27272a;
-      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-    }
-    .subnav-inner, .subfoot-inner {
-      width: min(1120px, calc(100% - 48px)); margin: 0 auto;
-      display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px;
-    }
-    .subnav-inner { padding: 12px 0; }
-    .subnav .brand {
-      display: inline-flex; align-items: center; gap: 8px;
-      min-height: 44px; font-size: 16px; font-weight: 500; letter-spacing: .02em;
-    }
-    .subnav .brand img { flex: none; }
-    .subnav nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
-    .subnav nav a, .subfoot a {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-height: 44px; padding: 10px 12px; color: #a1a1aa;
-      font-size: 14px; line-height: 1.5; border-radius: 8px;
-    }
-    .subnav nav a:hover, .subfoot a:hover { color: #fff; background: #18181b; }
-    .page-wrap {
-      width: min(760px, calc(100% - 48px)); margin: 0 auto;
-      padding: 64px 0 88px; color: #d4d4d8; line-height: 1.75;
-    }
-    .page-wrap h1, .page-wrap h2, .page-wrap h3 {
-      font-family: var(--disp); color: #fafafa; font-weight: 700;
-      letter-spacing: -.025em;
-    }
-    .page-wrap h1 { font-size: clamp(30px, 4.5vw, 46px); line-height: 1.14; margin-bottom: 20px; }
-    .page-wrap h2 { font-size: clamp(22px, 3vw, 28px); line-height: 1.25; margin-bottom: 18px; }
-    .page-wrap h3 { font-size: 20px; line-height: 1.35; margin: 24px 0 12px; }
-    .page-wrap p { margin: 0 0 18px; }
-    .page-wrap .page-lede { font-size: 18px; line-height: 1.7; color: #a1a1aa; margin-bottom: 24px; }
-    .page-wrap > section { margin-top: 40px; padding-top: 32px; border-top: 1px solid #27272a; }
-    .page-wrap ul, .page-wrap ol { padding-left: 24px; margin: 0 0 20px; }
-    .page-wrap li { padding-left: 4px; margin-bottom: 10px; }
-    .page-wrap strong { color: #fafafa; font-weight: 500; }
-    .page-wrap :is(p, li) a {
-      color: #c4b5fd; text-decoration: underline; text-decoration-thickness: 1px;
-      text-underline-offset: 3px;
-    }
-    .page-wrap :is(p, li) a:hover { color: #ede9fe; }
-    .page-wrap :is(p, li) code { color: #e4e4e7; font-size: .9em; }
-    :is(.subnav, .page-wrap) .pill {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-height: 44px; padding: 10px 18px; border-radius: 999px;
-      border: 1px solid #3f3f46; background: #09090b; color: #e4e4e7;
-      font-size: 14px; font-weight: 500; line-height: 1.4; text-align: center;
-    }
-    :is(.subnav, .page-wrap) .pill:hover { background: #18181b; border-color: #71717a; }
-    :is(.subnav, .page-wrap) .pill-primary { background: #fafafa; border-color: #fafafa; color: #09090b; }
-    :is(.subnav, .page-wrap) .pill-primary:hover { background: #d4d4d8; border-color: #d4d4d8; }
-    :is(.subnav, .page-wrap, .subfoot) :is(a, pre, [tabindex]):focus-visible {
-      outline: 2px solid #c4b5fd; outline-offset: 4px;
-    }
-    .subfoot { border-top: 1px solid #27272a; color: #a1a1aa; }
-    .subfoot-inner { padding: 24px 0; justify-content: space-between; font-size: 13px; }
-    .subfoot-inner > span:last-child { display: flex; flex-wrap: wrap; gap: 4px; }
-    /* Command blocks: scroll inside the box, never widen the page. */
-    .answer-cmd {
-      margin: 0 0 18px;
-      padding: 14px 16px;
-      max-width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior-x: contain;
-      color: #7fb2ff;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 8px;
-      font-size: 13px;
-      line-height: 1.65;
-      white-space: pre;
-    }
-    /* Nothing inside the page shell may widen it either: a long URL or an
-       inline <code> token is the other way a page starts scrolling. */
-    .page-wrap { min-width: 0; }
-    .page-wrap :is(p, li, h1, h2, h3, td) { overflow-wrap: anywhere; }
-    .page-wrap section[id] { scroll-margin-top: 88px; }
-    .answer-entry { margin-bottom: 28px; }
-    .answer-entry > p { margin-top: 18px; font-size: 14px; color: #a1a1aa; }
-    /* The two pills at the foot of the page. They wrap rather than squeeze,
-       and they are a real tap target rather than a line of text: measured
-       at 26px before this, against the 44px the same pill gets in the nav. */
-    .answer-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 18px;
-    }
-    .answer-actions .pill {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      padding: 10px 20px;
-    }
-    .answer-table-wrap { max-width: 100%; overflow-x: auto; margin: 20px 0; }
-    .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
-    .answer-table caption { text-align: left; color: #a1a1aa; font-size: 13px; margin-bottom: 12px; }
-    .answer-table thead th { color: #fafafa; background: #18181b; }
-    .answer-table th, .answer-table td {
-      padding: 12px; text-align: left; vertical-align: top;
-      border-bottom: 1px solid rgba(255,255,255,.14);
-    }
-    .shipping-flow { margin: 24px 0; }
-    .shipping-flow figcaption { margin-bottom: 16px; color: #a1a1aa; font-size: 14px; }
-    .shipping-lane { padding: 20px; border: 1px solid #3f3f46; border-radius: 12px; margin-top: 12px; }
-    .shipping-lane h3 { margin: 0 0 14px; font-family: var(--sans); font-size: 16px; letter-spacing: 0; }
-    .shipping-lane ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 12px; }
-    .shipping-lane li { padding: 12px; margin: 0; min-width: 0; background: #18181b; border-radius: 8px; font-size: 14px; }
-    .shipping-lane li span { display: block; color: #a1a1aa; font-size: 12px; margin-bottom: 6px; }
-    .shipping-lane-krate { border-color: #8b5cf6; background: rgba(139,92,246,.06); }
-    .shipping-lane-krate li { background: rgba(139,92,246,.12); }
-    @media (max-width: 540px) {
-      .shipping-lane { padding: 16px; }
-      .shipping-lane ol { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 760px) {
-      .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
-      /* One per line on a phone, each full width: two pills side by side
-         at this width leaves each too narrow to read comfortably. */
-      .answer-actions { flex-direction: column; align-items: stretch; }
-      .answer-actions .pill { width: 100%; }
-    }
-    @media (max-width: 640px) {
-      .subnav-inner, .subfoot-inner { width: calc(100% - 32px); gap: 6px 12px; }
-      .subnav nav { order: 2; flex-basis: 100%; margin: 0; justify-content: space-between; }
-      .subnav-inner > .pill { margin-left: auto; }
-      .page-wrap { width: calc(100% - 40px); padding: 40px 0 56px; }
-      .page-wrap h1 { font-size: clamp(28px, 7.5vw, 36px); }
-      .page-wrap .page-lede { font-size: 16px; }
-      .page-wrap > section { margin-top: 32px; padding-top: 28px; }
-      .page-wrap section[id] { scroll-margin-top: 144px; }
-      .subfoot-inner { align-items: flex-start; gap: 12px; }
-      .subfoot-inner > span:last-child { flex-basis: 100%; }
-    }
-  </style>
+<meta name="description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
+<link rel="canonical" href="https://krate.tech/portable-desktop-app-format.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Krate">
+<meta property="og:title" content="One desktop app file for macOS, Windows and Linux | Krate">
+<meta property="og:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
+<meta property="og:url" content="https://krate.tech/portable-desktop-app-format.html">
+<meta property="og:image" content="https://krate.tech/og-v4.png">
+<meta property="og:image:alt" content="Krate desktop application runtime">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="One desktop app file for macOS, Windows and Linux | Krate">
+<meta name="twitter:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
+<meta name="twitter:image" content="https://krate.tech/og-v4.png">
+<link rel="icon" href="/krate-favicon.png">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/portable-desktop-app-format.html#webpage", "url": "https://krate.tech/portable-desktop-app-format.html", "name": "One desktop app file for macOS, Windows and Linux | Krate", "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+@media (min-width: 961px) { .ph.art { padding-left: 276px; } }
+.ph.art .lede { max-width: 640px; }
+.ph.art .acts { margin-top: 26px; gap: 10px 12px; }
+.ph.art .ent { margin-top: 18px; max-width: 640px; font-size: 14.5px; line-height: 1.6; color: var(--mute); }
+.ph.art .ent a, .ph.art .lede a { color: var(--accent); }
+.ph.art .ent code, .ph.art .lede code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: 6px; background: var(--s2); color: var(--ink); }
+.art-body { padding-top: 64px; }
+.prose { max-width: 700px; min-width: 0; }
+.prose > :first-child { margin-top: 0; }
+.prose section + section { margin-top: 52px; }
+.prose section > h2 { margin-top: 0; }
+.prose :is(p, li, h2, h3) { overflow-wrap: anywhere; }
+.answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
+.answer-table tbody th { min-width: 150px; }
+.prose em { font-style: italic; }
+.prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
+:root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
+.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+/* the comparison table */
+.answer-table-wrap { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow-x: auto; }
+.answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14.5px; }
+.answer-table caption { caption-side: top; text-align: left; padding: 14px 14px 6px; font-size: 12.5px; color: var(--ink-3); }
+.answer-table thead th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--ink-3); padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.answer-table tbody th { text-align: left; vertical-align: top; padding: 13px 14px; border-bottom: 1px solid var(--line); font-weight: 500; color: var(--ink); line-height: 1.5; }
+.answer-table td { padding: 13px 14px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; line-height: 1.5; }
+.answer-table tbody tr:last-child > * { border-bottom: 0; }
+/* the two shipping workflows, side by side */
+.prose .shipping-flow { margin-top: 26px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.prose .shipping-flow figcaption { grid-column: 1 / -1; font-size: 13.5px; line-height: 1.55; color: var(--ink-3); }
+.prose .shipping-lane { padding: 20px 20px 8px; border-radius: 18px; background: var(--soft); }
+.prose .shipping-lane-krate { background: var(--accent-soft); }
+.prose .shipping-lane h3 { margin: 0 0 10px; font-size: 16px; }
+.prose .shipping-lane-krate h3 { color: var(--accent); }
+.prose .shipping-lane ol { list-style: none; padding: 0; }
+.prose .shipping-lane li { margin: 0; padding: 11px 0 12px; border-top: 1px solid var(--line-2); font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+.prose .shipping-lane-krate li { border-top-color: color-mix(in srgb, var(--accent) 18%, transparent); }
+.prose .shipping-lane li span { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+/* the closing band: words, then the ways forward */
+.band.st { flex-direction: column; align-items: flex-start; gap: 22px; }
+.band.st p { max-width: 640px; }
+.band.st .acts { margin-top: 0; justify-content: flex-start; gap: 10px 12px; }
+.band p a { color: var(--accent); }
+@media (max-width: 680px) {
+  .art-body { padding-top: 44px; }
+  .prose .shipping-flow { grid-template-columns: 1fr; }
+  .prose pre.answer-cmd { font-size: 12.5px; }
+  .ph.art .acts, .band.st .acts { flex-direction: column; align-items: stretch; width: 100%; }
+  .band .acts .btn { white-space: normal; text-align: center; }
+}
+</style>
 </head>
 <body>
-<header class="subnav">
-  <div class="wrap subnav-inner">
-    <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
-    <nav aria-label="Primary">
-      <a href="/docs/quickstart.html">Start</a>
-      <a href="/docs/">Docs</a>
-      <a href="/cloud/">Apps</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-    <a class="pill pill-primary" href="/docs/quickstart.html#get-krate">Install</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
   </div>
 </header>
-    <main id="main" class="page-wrap">
-    <h1>One desktop app file, three operating systems</h1>
-    <p class="page-lede">Build against Krate's interfaces and distribute one .krate artifact. Each recipient runs it through a compatible native Krate runtime on macOS, Windows or Linux.</p>
-    <div class="answer-entry">
-      <nav class="answer-actions" aria-label="Choose your next step">
-<a class="pill pill-primary" href="/docs/quickstart.html">Try the same-file workflow</a>
-<a class="pill" href="/docs/porting.html">Check your project&#x27;s fit</a>
-      </nav>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
 
-    </div>
+<main id="main">
+<section class="ph sm l art wrap">
+  <span class="eye">Answer</span>
+  <h1>One desktop app file, three operating systems</h1>
+  <p class="lede">Build against Krate's interfaces and distribute one .krate artifact. Each recipient runs it through a compatible native Krate runtime on macOS, Windows or Linux.</p>
+  <p class="meta">3 min read</p>
+  <nav class="acts answer-actions" aria-label="Choose your next step">
+    <a class="btn dark" href="/docs/quickstart.html">Try the same-file workflow <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/porting.html">Check your project&#x27;s fit</a>
+  </nav>
+</section>
 
-    <section id="what-is-portable-and-what-is-installed">
-      <h2>What is portable, and what is installed?</h2>
+<section class="art-body wrap">
+  <div class="doc">
+    <nav class="toc" aria-label="On this page">
+      <h6>On this page</h6>
+      <a href="#what-is-portable-and-what-is-installed">What is portable, and what is installed?</a>
+      <a href="#try-one-file-tested-on-all-three-systems">Try one file tested on all three systems</a>
+      <a href="#what-is-inside-a-krate-file">What is inside a .krate file?</a>
+      <a href="#verify-a-shared-artifact-yourself">Verify a shared artifact yourself</a>
+      <a href="#does-one-file-remove-all-platform-work">Does one file remove all platform work?</a>
+      <a href="#what-about-size-and-performance">What about size and performance?</a>
+      <a href="#check-whether-your-project-fits">Check whether your project fits</a>
+    </nav>
+    <article class="prose">
+      <section id="what-is-portable-and-what-is-installed">
+        <h2>What is portable, and what is installed?</h2>
 <p>The <strong>application file</strong> stays the same. The <strong>runtime</strong> is installed for each machine's operating system and CPU. It executes the WebAssembly component and handles permitted host operations. Your users do not need your development toolchain to open a packed app.</p>
 <p>This is not a converter for arbitrary Windows executables, native libraries or existing Electron/Tauri packages. The application must use Krate's supported interfaces and a compatible format/API version. See the <a href="/desktop-app-distribution.html">distribution-model comparison</a>.</p>
-    </section>
-    <section id="try-one-file-tested-on-all-three-systems">
-      <h2>Try one file tested on all three systems</h2>
+      </section>
+      <section id="try-one-file-tested-on-all-three-systems">
+        <h2>Try one file tested on all three systems</h2>
 <p>Download <a href="https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate">chart.krate</a>, a bar chart of a week's rainfall. Follow the <a href="/docs/quickstart.html#try-the-chart-sample">tested sample instructions</a> to inspect its permissions and run it. The <a href="https://github.com/incyashraj/krate/tree/c46d29500f2b894c89285b04e1b5e2f75184e972/apps/krate-chart">Rust source</a> is available separately.</p>
 <p>Full-file SHA-256: <code>3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3</code>.</p>
 <p>The same bundle passed automated headless replay and rendering checks on macOS, Windows and Linux in <a href="https://github.com/incyashraj/krate/actions/runs/35454102875">this CI run</a> with source-built runtimes. Each host checks its own reference image; this is CI evidence, not an interactive test.</p>
@@ -1533,64 +144,59 @@ picture source { display: none; }
 <li>Windows: <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/windows-2022/chart.png">reference image</a> and <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/windows-2022/chart.png.json">recorded bundle hash</a>.</li>
 <li>Linux: <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/ubuntu-latest/chart.png">reference image</a> and <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/ubuntu-latest/chart.png.json">recorded bundle hash</a>.</li>
 </ul>
-    </section>
-    <section id="what-is-inside-a-krate-file">
-      <h2>What is inside a .krate file?</h2>
+      </section>
+      <section id="what-is-inside-a-krate-file">
+        <h2>What is inside a .krate file?</h2>
 <p>The bundle is a ZIP-based application format, not just a renamed executable. Its core entries are <code>manifest.toml</code> and <code>code.wasm</code>. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.</p>
 <p>The manifest identifies the app and its requested capabilities. The component calls Krate interfaces described in WIT; the native runtime supplies their implementations. Files, network and other host resources are governed by the capability model.</p>
 <p>Read the <a href="https://github.com/incyashraj/krate/tree/main/crates/bundle">bundle implementation</a> and <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>. Do not put credentials or private inputs in source or assets that will be distributed.</p>
-    </section>
-    <section id="verify-a-shared-artifact-yourself">
-      <h2>Verify a shared artifact yourself</h2>
+      </section>
+      <section id="verify-a-shared-artifact-yourself">
+        <h2>Verify a shared artifact yourself</h2>
 <p>Start with an app you built or reviewed. Install a compatible runtime on each target machine, copy the <em>same</em> file, record <code>krate --version</code>, inspect permissions and run it:</p>
 <pre class="answer-cmd" tabindex="0" aria-label="Command example">krate --version
 krate run app.krate --dump-caps
 krate run app.krate --prompt</pre>
 <p>Compare the full-file SHA-256 on each host. On macOS use <code>shasum -a 256 app.krate</code>; on Linux use <code>sha256sum app.krate</code>; in Windows PowerShell use <code>Get-FileHash app.krate -Algorithm SHA256</code>. Matching hashes establish identical bytes, not correctness or trust.</p>
 <p>Then complete the same meaningful task on each OS: load representative data, interact with the UI, save, close and reopen. Test denied permissions and OS-specific file dialogs. Keep runtime versions, hashes and results together. This is a reproduction procedure, not a claim that every application has already passed that test.</p>
-    </section>
-    <section id="does-one-file-remove-all-platform-work">
-      <h2>Does one file remove all platform work?</h2>
+      </section>
+      <section id="does-one-file-remove-all-platform-work">
+        <h2>Does one file remove all platform work?</h2>
 <p>No. Krate maintains native runtime builds. Developers still need to test behavior on target systems, check supported capabilities and manage API/format compatibility. A runtime update may be necessary for apps using newer interfaces.</p>
 <p>The benefit is a shared application artifact rather than a separate app package for each OS. OS installation, trust checks and updates still apply to the runtime. The format does not make unsupported APIs available or bypass platform security.</p>
-    </section>
-    <section id="what-about-size-and-performance">
-      <h2>What about size and performance?</h2>
+      </section>
+      <section id="what-about-size-and-performance">
+        <h2>What about size and performance?</h2>
 <p>Measure three different things: the compiled component, the complete bundle you distribute, and the installed runtime plus app. Source and assets can make the bundle much larger than its component. A shared runtime is not free disk space; its cost is paid once and must appear in first-app comparisons.</p>
 <p>The <a href="/reports/">measurement reports</a> identify workloads and accounting boundaries. Do not extrapolate a notes workload into a universal speed, memory or file-size claim.</p>
-    </section>
-    <section id="check-whether-your-project-fits">
-      <h2>Check whether your project fits</h2>
+      </section>
+      <section id="check-whether-your-project-fits">
+        <h2>Check whether your project fits</h2>
 <p>Krate's aim is software distribution for developers, not a fixed list of toy apps. What determines today's fit is the available API surface: UI, data, networking, media and OS integration. Check the <a href="/docs/limits.html">current limits</a> and use the <a href="/docs/porting.html">porting guide</a> to inventory dependencies before committing to a migration.</p>
-    </section>
-
-    <section>
-      <h2>Build with Krate</h2>
-      <p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p>
-      <!-- A <p> turned into a flex row made these two pills flex children,
-           so they took the line-box height (measured 26px) instead of their
-           own padding, while the identical pill in the nav measured 44px.
-           A div with a class, so the rule below can reach it and the two
-           wrap instead of squeezing on a narrow screen. -->
-      <div class="answer-actions">
-        <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
-        <a class="pill" href="/docs/porting.html">Evaluate your app</a>
-        <a class="pill" href="/studio/">Make an app in Studio</a>
-        <a class="pill" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
-      </div>
-    </section>
-    </main>
-<footer class="subfoot">
-  <div class="wrap subfoot-inner">
-    <span>© 2026 Krate</span>
-    <span>
-      <a href="/docs/">Docs</a>
-      <a href="/reports/">Reports</a>
-      <a href="/progress/">Progress</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-      <a href="/contact/">Contact</a>
-    </span>
+      </section>
+    </article>
   </div>
+</section>
+
+<div class="band st rv">
+  <div><h2>Build with Krate</h2><p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p></div>
+  <div class="acts">
+    <a class="btn dark" href="/docs/quickstart.html">Developer quickstart <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/porting.html">Evaluate your app</a>
+    <a class="btn ghost" href="/studio/">Make an app in Studio</a>
+    <a class="btn link" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
+  </div>
+</div>
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
 </footer>
+<script src="/kit/site.js"></script>
 </body>
 </html>

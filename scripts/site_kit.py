@@ -24,7 +24,9 @@ MARK = "/krate-mark-3d-96.png"
 
 # Set before first paint so a dark-mode reader never sees a light flash. The
 # choice is the reader's own (the header's sun/moon button), else the system's.
-HEAD_THEME = """<script>(() => { let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>"""
+# It also marks the page `.js`: anything the kit hides until a script reveals
+# it is hidden only under .js, so a reader without scripts sees all of it.
+HEAD_THEME = """<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>"""
 
 KIT_LINKS = """<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">"""
@@ -74,6 +76,7 @@ PARTS = {
     "header": (re.compile(r'<header class="hd">.*?</header>', re.S), HEADER),
     "menu": (re.compile(r'<nav class="mnav".*?</nav>', re.S), MNAV),
     "footer": (re.compile(r'<footer class="foot">.*?</footer>', re.S), FOOTER),
+    "theme script": (re.compile(r"<script>\(\(\) => \{ (?:const d = document\.documentElement; d\.classList\.add\('js'\); )?let t = null;.*?</script>", re.S), HEAD_THEME),
 }
 
 # Where kit pages live in the repository (generated pages are checked by
@@ -95,8 +98,6 @@ def problems(html: str) -> list:
             out.append(f"{name} differs from scripts/site_kit.py")
     if not re.search(r'<script src="[^"]*/kit/site(?:\.[0-9a-f]{12})?\.js"></script>', html):
         out.append("does not load /kit/site.js")
-    if "localStorage.getItem('krate-theme')" not in html:
-        out.append("has no theme script in its head")
     return out
 
 
@@ -116,9 +117,32 @@ def kit_pages(root: pathlib.Path):
                 yield page, text
 
 
+# Hidden by design rather than waiting for a reveal: a shut drawer or menu.
+HIDDEN_STATES = {".drawer", ".mnav"}
+
+
+def hidden_ungated(css: str) -> list:
+    """Selectors in the kit stylesheet that start something invisible
+    (opacity: 0) without being gated on .js or being a closed menu. Those
+    stay invisible to a reader with scripts off."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    out = []
+    for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if not re.search(r"opacity:\s*0(?![.\d])", body):
+            continue
+        for name in (x.strip() for x in sel.split(",")):
+            if name.startswith("@") or name in HIDDEN_STATES or name.startswith(".js ") or name in ("from", "to") or name.endswith("%"):
+                continue
+            out.append(name)
+    return out
+
+
 def check(root: pathlib.Path) -> int:
     bad = 0
     n = 0
+    for name in hidden_ungated((root / "docs/landing/kit/site.css").read_text()):
+        print(f"docs/landing/kit/site.css: {name} starts hidden and is not gated on .js")
+        bad += 1
     for page, text in kit_pages(root):
         n += 1
         for p in problems(text):
@@ -138,6 +162,8 @@ def self_test() -> int:
     assert is_kit('<link rel="stylesheet" href="/kit/site.0123456789ab.css">'), "a hashed kit sheet is the kit"
     nojs = page.replace(KIT_SCRIPT, "")
     assert "does not load /kit/site.js" in problems(nojs)
+    assert hidden_ungated(".rv { opacity: 0; }") == [".rv"], "an ungated reveal is reported"
+    assert hidden_ungated(".js .rv { opacity: 0; } .drawer { opacity: 0; } .x { opacity: 0.5; }") == []
     print("ok  site_kit self-test")
     return 0
 

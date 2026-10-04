@@ -23,269 +23,75 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LANDING = ROOT / "docs" / "landing" / "index.html"
 OUT = ROOT / "docs" / "answers"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import site_kit as K  # noqa: E402  the header, phone menu and footer every kit page shares
 
+ARROW = K.ARROW
 
-def chrome():
-    """Head from the landing page; nav and footer as the subpage shell.
-
-    The head is lifted from the real landing page so meta and stylesheet
-    choices cannot drift. The nav and footer are NOT scraped: the landing
-    page's header is the mega-panel one, and scraping it broke silently when
-    the landing was rebuilt -- find() missed, and every answer page shipped
-    with no navigation at all. The subpage shell (the same subnav/subfoot as
-    /faq.html) is what these pages actually want, so it is written out here.
-    """
-    s = LANDING.read_text()
-    end = re.search(r"</head\s*>", s, re.I)
-    if end is None:
-        raise ValueError("Landing page has no closing head tag")
-    head = s[:end.end()]
-    # These live at the site root; the landing's relative links do not.
-    head = head.replace('href="./', 'href="/').replace('src="./', 'src="/')
-
-    nav = """<header class="subnav">
-  <div class="wrap subnav-inner">
-    <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
-    <nav aria-label="Primary">
-      <a href="/docs/quickstart.html">Start</a>
-      <a href="/docs/">Docs</a>
-      <a href="/cloud/">Apps</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-    <a class="pill pill-primary" href="/docs/quickstart.html#get-krate">Install</a>
-  </div>
-</header>"""
-
-    foot = """<footer class="subfoot">
-  <div class="wrap subfoot-inner">
-    <span>© 2026 Krate</span>
-    <span>
-      <a href="/docs/">Docs</a>
-      <a href="/reports/">Reports</a>
-      <a href="/progress/">Progress</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-      <a href="/contact/">Contact</a>
-    </span>
-  </div>
-</footer>"""
-    return head, nav, foot
-
-
-# These pages inline the LANDING page's head, which does not carry the
-# `.answer-cmd` rule -- that one lives in docs/landing/krate.css, a
-# stylesheet these pages never load. So the command blocks shipped as bare
-# <pre>: `white-space: pre`, no overflow rule, no max width. Measured at
-# 390px, one `krate run ... --grant` line made the whole document 655px
-# wide and the PAGE scrolled sideways, on every answer page.
+# Page-only styles, on the kit's tokens. The page data below keeps its own
+# class names (answer-cmd, answer-table, shipping-lane): the content is the
+# same content the pages had before the 2026-10 redesign, restyled here.
 #
-# The commands must stay unwrapped -- a shell line broken across lines is a
-# line somebody pastes wrong -- so the block scrolls inside its own box
-# instead, and `max-width: 100%` stops it widening its parents.
-ANSWER_CSS = """  <style>
-    /* The article shell owns its layout. The homepage supplies fonts and
-       colors, not styles for these differently named elements. */
-    .subnav {
-      position: sticky; top: 0; z-index: 40;
-      background: rgba(0,0,0,.94); border-bottom: 1px solid #27272a;
-      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-    }
-    .subnav-inner, .subfoot-inner {
-      width: min(1120px, calc(100% - 48px)); margin: 0 auto;
-      display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px;
-    }
-    .subnav-inner { padding: 12px 0; }
-    .subnav .brand {
-      display: inline-flex; align-items: center; gap: 8px;
-      min-height: 44px; font-size: 16px; font-weight: 500; letter-spacing: .02em;
-    }
-    .subnav .brand img { flex: none; }
-    .subnav nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
-    .subnav nav a, .subfoot a {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-height: 44px; padding: 10px 12px; color: #a1a1aa;
-      font-size: 14px; line-height: 1.5; border-radius: 8px;
-    }
-    .subnav nav a:hover, .subfoot a:hover { color: #fff; background: #18181b; }
-    .page-wrap {
-      width: min(760px, calc(100% - 48px)); margin: 0 auto;
-      padding: 64px 0 88px; color: #d4d4d8; line-height: 1.75;
-    }
-    .page-wrap h1, .page-wrap h2, .page-wrap h3 {
-      font-family: var(--disp); color: #fafafa; font-weight: 700;
-      letter-spacing: -.025em;
-    }
-    .page-wrap h1 { font-size: clamp(30px, 4.5vw, 46px); line-height: 1.14; margin-bottom: 20px; }
-    .page-wrap h2 { font-size: clamp(22px, 3vw, 28px); line-height: 1.25; margin-bottom: 18px; }
-    .page-wrap h3 { font-size: 20px; line-height: 1.35; margin: 24px 0 12px; }
-    .page-wrap p { margin: 0 0 18px; }
-    .page-wrap .page-lede { font-size: 18px; line-height: 1.7; color: #a1a1aa; margin-bottom: 24px; }
-    .page-wrap > section { margin-top: 40px; padding-top: 32px; border-top: 1px solid #27272a; }
-    .page-wrap ul, .page-wrap ol { padding-left: 24px; margin: 0 0 20px; }
-    .page-wrap li { padding-left: 4px; margin-bottom: 10px; }
-    .page-wrap strong { color: #fafafa; font-weight: 500; }
-    .page-wrap :is(p, li) a {
-      color: #c4b5fd; text-decoration: underline; text-decoration-thickness: 1px;
-      text-underline-offset: 3px;
-    }
-    .page-wrap :is(p, li) a:hover { color: #ede9fe; }
-    .page-wrap :is(p, li) code { color: #e4e4e7; font-size: .9em; }
-    :is(.subnav, .page-wrap) .pill {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-height: 44px; padding: 10px 18px; border-radius: 999px;
-      border: 1px solid #3f3f46; background: #09090b; color: #e4e4e7;
-      font-size: 14px; font-weight: 500; line-height: 1.4; text-align: center;
-    }
-    :is(.subnav, .page-wrap) .pill:hover { background: #18181b; border-color: #71717a; }
-    :is(.subnav, .page-wrap) .pill-primary { background: #fafafa; border-color: #fafafa; color: #09090b; }
-    :is(.subnav, .page-wrap) .pill-primary:hover { background: #d4d4d8; border-color: #d4d4d8; }
-    :is(.subnav, .page-wrap, .subfoot) :is(a, pre, [tabindex]):focus-visible {
-      outline: 2px solid #c4b5fd; outline-offset: 4px;
-    }
-    .subfoot { border-top: 1px solid #27272a; color: #a1a1aa; }
-    .subfoot-inner { padding: 24px 0; justify-content: space-between; font-size: 13px; }
-    .subfoot-inner > span:last-child { display: flex; flex-wrap: wrap; gap: 4px; }
-    /* Command blocks: scroll inside the box, never widen the page. */
-    .answer-cmd {
-      margin: 0 0 18px;
-      padding: 14px 16px;
-      max-width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior-x: contain;
-      color: #7fb2ff;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 8px;
-      font-size: 13px;
-      line-height: 1.65;
-      white-space: pre;
-    }
-    /* Nothing inside the page shell may widen it either: a long URL or an
-       inline <code> token is the other way a page starts scrolling. */
-    .page-wrap { min-width: 0; }
-    .page-wrap :is(p, li, h1, h2, h3, td) { overflow-wrap: anywhere; }
-    .page-wrap section[id] { scroll-margin-top: 88px; }
-    .answer-entry { margin-bottom: 28px; }
-    .answer-entry > p { margin-top: 18px; font-size: 14px; color: #a1a1aa; }
-    /* The two pills at the foot of the page. They wrap rather than squeeze,
-       and they are a real tap target rather than a line of text: measured
-       at 26px before this, against the 44px the same pill gets in the nav. */
-    .answer-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 18px;
-    }
-    .answer-actions .pill {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      padding: 10px 20px;
-    }
-    .answer-table-wrap { max-width: 100%; overflow-x: auto; margin: 20px 0; }
-    .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
-    .answer-table caption { text-align: left; color: #a1a1aa; font-size: 13px; margin-bottom: 12px; }
-    .answer-table thead th { color: #fafafa; background: #18181b; }
-    .answer-table th, .answer-table td {
-      padding: 12px; text-align: left; vertical-align: top;
-      border-bottom: 1px solid rgba(255,255,255,.14);
-    }
-    .shipping-flow { margin: 24px 0; }
-    .shipping-flow figcaption { margin-bottom: 16px; color: #a1a1aa; font-size: 14px; }
-    .shipping-lane { padding: 20px; border: 1px solid #3f3f46; border-radius: 12px; margin-top: 12px; }
-    .shipping-lane h3 { margin: 0 0 14px; font-family: var(--sans); font-size: 16px; letter-spacing: 0; }
-    .shipping-lane ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 12px; }
-    .shipping-lane li { padding: 12px; margin: 0; min-width: 0; background: #18181b; border-radius: 8px; font-size: 14px; }
-    .shipping-lane li span { display: block; color: #a1a1aa; font-size: 12px; margin-bottom: 6px; }
-    .shipping-lane-krate { border-color: #8b5cf6; background: rgba(139,92,246,.06); }
-    .shipping-lane-krate li { background: rgba(139,92,246,.12); }
-    @media (max-width: 540px) {
-      .shipping-lane { padding: 16px; }
-      .shipping-lane ol { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 760px) {
-      .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
-      /* One per line on a phone, each full width: two pills side by side
-         at this width leaves each too narrow to read comfortably. */
-      .answer-actions { flex-direction: column; align-items: stretch; }
-      .answer-actions .pill { width: 100%; }
-    }
-    @media (max-width: 640px) {
-      .subnav-inner, .subfoot-inner { width: calc(100% - 32px); gap: 6px 12px; }
-      .subnav nav { order: 2; flex-basis: 100%; margin: 0; justify-content: space-between; }
-      .subnav-inner > .pill { margin-left: auto; }
-      .page-wrap { width: calc(100% - 40px); padding: 40px 0 56px; }
-      .page-wrap h1 { font-size: clamp(28px, 7.5vw, 36px); }
-      .page-wrap .page-lede { font-size: 16px; }
-      .page-wrap > section { margin-top: 32px; padding-top: 28px; }
-      .page-wrap section[id] { scroll-margin-top: 144px; }
-      .subfoot-inner { align-items: flex-start; gap: 12px; }
-      .subfoot-inner > span:last-child { flex-basis: 100%; }
-    }
-  </style>
-"""
+# Command blocks must stay unwrapped -- a shell line broken across lines is a
+# line somebody pastes wrong -- so a block scrolls inside its own box and
+# never widens the page (at 390px one `krate run ... --grant` line once made
+# every answer page scroll sideways).
+ANSWER_CSS = """<style>
+@media (min-width: 961px) { .ph.art { padding-left: 276px; } }
+.ph.art .lede { max-width: 640px; }
+.ph.art .acts { margin-top: 26px; gap: 10px 12px; }
+.ph.art .ent { margin-top: 18px; max-width: 640px; font-size: 14.5px; line-height: 1.6; color: var(--mute); }
+.ph.art .ent a, .ph.art .lede a { color: var(--accent); }
+.ph.art .ent code, .ph.art .lede code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: 6px; background: var(--s2); color: var(--ink); }
+.art-body { padding-top: 64px; }
+.prose { max-width: 700px; min-width: 0; }
+.prose > :first-child { margin-top: 0; }
+.prose section + section { margin-top: 52px; }
+.prose section > h2 { margin-top: 0; }
+.prose :is(p, li, h2, h3) { overflow-wrap: anywhere; }
+.answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
+.answer-table tbody th { min-width: 150px; }
+.prose em { font-style: italic; }
+.prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
+:root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
+.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+/* the comparison table */
+.answer-table-wrap { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow-x: auto; }
+.answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14.5px; }
+.answer-table caption { caption-side: top; text-align: left; padding: 14px 14px 6px; font-size: 12.5px; color: var(--ink-3); }
+.answer-table thead th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--ink-3); padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.answer-table tbody th { text-align: left; vertical-align: top; padding: 13px 14px; border-bottom: 1px solid var(--line); font-weight: 500; color: var(--ink); line-height: 1.5; }
+.answer-table td { padding: 13px 14px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; line-height: 1.5; }
+.answer-table tbody tr:last-child > * { border-bottom: 0; }
+/* the two shipping workflows, side by side */
+.prose .shipping-flow { margin-top: 26px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.prose .shipping-flow figcaption { grid-column: 1 / -1; font-size: 13.5px; line-height: 1.55; color: var(--ink-3); }
+.prose .shipping-lane { padding: 20px 20px 8px; border-radius: 18px; background: var(--soft); }
+.prose .shipping-lane-krate { background: var(--accent-soft); }
+.prose .shipping-lane h3 { margin: 0 0 10px; font-size: 16px; }
+.prose .shipping-lane-krate h3 { color: var(--accent); }
+.prose .shipping-lane ol { list-style: none; padding: 0; }
+.prose .shipping-lane li { margin: 0; padding: 11px 0 12px; border-top: 1px solid var(--line-2); font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+.prose .shipping-lane-krate li { border-top-color: color-mix(in srgb, var(--accent) 18%, transparent); }
+.prose .shipping-lane li span { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+/* the closing band: words, then the ways forward */
+.band.st { flex-direction: column; align-items: flex-start; gap: 22px; }
+.band.st p { max-width: 640px; }
+.band.st .acts { margin-top: 0; justify-content: flex-start; gap: 10px 12px; }
+.band p a { color: var(--accent); }
+@media (max-width: 680px) {
+  .art-body { padding-top: 44px; }
+  .prose .shipping-flow { grid-template-columns: 1fr; }
+  .prose pre.answer-cmd { font-size: 12.5px; }
+  .ph.art .acts, .band.st .acts { flex-direction: column; align-items: stretch; width: 100%; }
+  .band .acts .btn { white-space: normal; text-align: center; }
+}
+</style>"""
 
 
-class PageHead(HTMLParser):
-    """Keep shared styles/assets, never inherit the homepage's identity.
-
-    Attribute order, quote style and optional HTML self-closing slashes must
-    not determine whether the canonical and social metadata are replaced.
-    """
-
-    def __init__(self):
-        super().__init__(convert_charrefs=False)
-        self.parts = []
-        self.skip = None
-
-    def handle_starttag(self, tag, attrs):
-        values = {key.lower(): (value or "").lower() for key, value in attrs}
-        name = values.get("name", "")
-        prop = values.get("property", "")
-        if tag == "title" or (tag == "script" and values.get("type") == "application/ld+json"):
-            self.skip = tag
-            return
-        if self.skip:
-            return
-        if tag == "meta" and (name in {"description", "robots"} or name.startswith("twitter:") or prop.startswith("og:")):
-            return
-        if tag == "link" and "canonical" in values.get("rel", "").split():
-            return
-        self.parts.append(self.get_starttag_text())
-
-    def handle_startendtag(self, tag, attrs):
-        self.handle_starttag(tag, attrs)
-
-    def handle_endtag(self, tag):
-        if self.skip:
-            if tag == self.skip:
-                self.skip = None
-            return
-        self.parts.append(f"</{tag}>")
-
-    def handle_data(self, data):
-        if not self.skip:
-            self.parts.append(data)
-
-    def handle_entityref(self, name):
-        self.handle_data(f"&{name};")
-
-    def handle_charref(self, name):
-        self.handle_data(f"&#{name};")
-
-    def handle_comment(self, data):
-        if not self.skip:
-            self.parts.append(f"<!--{data}-->")
-
-    def handle_decl(self, decl):
-        self.parts.append(f"<!{decl}>")
-
-
-def page_head(head, page):
-    parser = PageHead()
-    parser.feed(head)
-    parser.close()
+def page_head(page):
+    """The head of one answer page: its own title, description, canonical,
+    social cards and structured data, then the kit."""
     title = html.escape(page["title"], quote=True)
     description = html.escape(page["description"], quote=True)
     url = "https://krate.tech/" + page["slug"]
@@ -295,49 +101,62 @@ def page_head(head, page):
         "description": page["description"], "inLanguage": "en",
         "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"},
     }, ensure_ascii=False).replace("<", "\\u003c")
-    metadata = f'''<title>{title}</title>
-  <meta name="description" content="{description}">
-  <link rel="canonical" href="{url}">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Krate">
-  <meta property="og:title" content="{title}">
-  <meta property="og:description" content="{description}">
-  <meta property="og:url" content="{url}">
-  <meta property="og:image" content="https://krate.tech/og-v4.png">
-  <meta property="og:image:alt" content="Krate desktop application runtime">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{title}">
-  <meta name="twitter:description" content="{description}">
-  <meta name="twitter:image" content="https://krate.tech/og-v4.png">
-  <script type="application/ld+json">{schema}</script>
-{ANSWER_CSS}'''
-    rendered = re.sub(r"</head\s*>", lambda _: metadata + "</head>", "".join(parser.parts), count=1, flags=re.I)
-    return "\n".join(line.rstrip() for line in rendered.splitlines())
+    return f'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{title}</title>
+<meta name="description" content="{description}">
+<link rel="canonical" href="{url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Krate">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{description}">
+<meta property="og:url" content="{url}">
+<meta property="og:image" content="https://krate.tech/og-v4.png">
+<meta property="og:image:alt" content="Krate desktop application runtime">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{description}">
+<meta name="twitter:image" content="https://krate.tech/og-v4.png">
+<link rel="icon" href="/krate-favicon.png">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script type="application/ld+json">{schema}</script>
+{K.HEAD_THEME}
+{K.KIT_LINKS}
+{ANSWER_CSS}
+</head>'''
 
 
 def section_id(title):
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
 
 
-def render(page):
-    head, nav, foot = chrome()
+def read_minutes(page):
+    words = len(re.sub(r"<[^>]+>", " ", page["lead"] + " ".join(b for _, b in page["sections"])).split())
+    return max(1, round(words / 220))
 
-    head = page_head(head, page)
+
+def render(page):
+    head = page_head(page)
 
     section_ids = [section_id(title) for title, _ in page["sections"]]
     if len(section_ids) != len(set(section_ids)) or not all(section_ids):
         raise ValueError(f"Section anchors must be unique: {page['slug']}")
     actions = "\n".join(
-        f'<a class="pill{(" pill-primary" if index == 0 else "")}" '
-        f'href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
+        (f'    <a class="btn dark" href="{html.escape(url, quote=True)}">{html.escape(label)} {ARROW}</a>' if index == 0
+         else f'    <a class="btn ghost" href="{html.escape(url, quote=True)}">{html.escape(label)}</a>')
         for index, (label, url) in enumerate(page["entry_actions"])
     )
-    entry_note = f'<p>{page["entry_note"]}</p>' if page.get("entry_note") else ""
+    entry_note = f'  <p class="ent">{page["entry_note"]}</p>\n' if page.get("entry_note") else ""
+    toc = "\n".join(f'      <a href="#{section_id(t)}">{html.escape(t)}</a>' for t, _ in page["sections"])
     sections = "\n".join(
-        f'''    <section id="{section_id(t)}">
-      <h2>{html.escape(t)}</h2>
+        f'''      <section id="{section_id(t)}">
+        <h2>{html.escape(t)}</h2>
 {b}
-    </section>'''
+      </section>'''
         for t, b in page["sections"]
     )
     sections = sections.replace('<pre class="answer-cmd">',
@@ -345,36 +164,45 @@ def render(page):
 
     return f"""{head}
 <body>
-{nav}
-    <main id="main" class="page-wrap">
-    <h1>{html.escape(page["h1"])}</h1>
-    <p class="page-lede">{page["lead"]}</p>
-    <div class="answer-entry">
-      <nav class="answer-actions" aria-label="Choose your next step">
+{K.HEADER}
+{K.MNAV}
+
+<main id="main">
+<section class="ph sm l art wrap">
+  <span class="eye">Answer</span>
+  <h1>{html.escape(page["h1"])}</h1>
+  <p class="lede">{page["lead"]}</p>
+  <p class="meta">{read_minutes(page)} min read</p>
+  <nav class="acts answer-actions" aria-label="Choose your next step">
 {actions}
-      </nav>
-{entry_note}
-    </div>
+  </nav>
+{entry_note}</section>
 
+<section class="art-body wrap">
+  <div class="doc">
+    <nav class="toc" aria-label="On this page">
+      <h6>On this page</h6>
+{toc}
+    </nav>
+    <article class="prose">
 {sections}
+    </article>
+  </div>
+</section>
 
-    <section>
-      <h2>Build with Krate</h2>
-      <p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p>
-      <!-- A <p> turned into a flex row made these two pills flex children,
-           so they took the line-box height (measured 26px) instead of their
-           own padding, while the identical pill in the nav measured 44px.
-           A div with a class, so the rule below can reach it and the two
-           wrap instead of squeezing on a narrow screen. -->
-      <div class="answer-actions">
-        <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
-        <a class="pill" href="/docs/porting.html">Evaluate your app</a>
-        <a class="pill" href="/studio/">Make an app in Studio</a>
-        <a class="pill" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
-      </div>
-    </section>
-    </main>
-{foot}
+<div class="band st rv">
+  <div><h2>Build with Krate</h2><p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p></div>
+  <div class="acts">
+    <a class="btn dark" href="/docs/quickstart.html">Developer quickstart {ARROW}</a>
+    <a class="btn ghost" href="/docs/porting.html">Evaluate your app</a>
+    <a class="btn ghost" href="/studio/">Make an app in Studio</a>
+    <a class="btn link" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
+  </div>
+</div>
+</main>
+
+{K.FOOTER}
+{K.KIT_SCRIPT}
 </body>
 </html>
 """
@@ -524,28 +352,18 @@ krate publish regex.krate</pre>
 
 
 class MetadataTests(unittest.TestCase):
-    def test_homepage_identity_is_replaced_with_varied_html(self):
-        variants = [
-            '<meta name="description" content="old" />',
-            "<meta content='old' NAME='description'>",
-            '<META content="old" name="description"/>',
-        ]
-        for description in variants:
-            with self.subTest(description=description):
-                original = f'''<!DOCTYPE html><html lang="en"><head>
-                <title>OLD HOME</title>{description}
-                <link href='https://krate.tech/' rel='canonical'>
-                <meta content='OLD HOME' property='og:title'>
-                <meta content='OLD HOME' name='twitter:title'>
-                <script type='application/ld+json'>{{"name":"OLD HOME"}}</script>
-                <style>.kept {{ color: red; }}</style></head>'''
-                result = page_head(original, PAGES[0])
-                self.assertNotIn("OLD HOME", result)
-                self.assertNotIn('content="old"', result)
-                self.assertNotIn("content='old'", result)
-                self.assertEqual(result.count('rel="canonical"'), 1)
-                self.assertEqual(result.count('name="description"'), 1)
-                self.assertIn(".kept { color: red; }", result)
+    def test_head_is_built_per_page_never_borrowed(self):
+        # The head used to be lifted from the homepage and its identity
+        # scrubbed out; when the homepage was rebuilt that scraping broke
+        # silently. Each head is now written from the page's own data.
+        for page in PAGES:
+            result = page_head(page)
+            for other in PAGES:
+                if other is not page:
+                    self.assertNotIn(html.escape(other["title"], quote=True), result)
+            self.assertNotIn('content="noindex"', result)
+            self.assertIn(K.KIT_LINKS, result)
+            self.assertIn(K.HEAD_THEME, result)
 
     def test_each_page_owns_its_metadata(self):
         for page in PAGES:
@@ -573,7 +391,7 @@ class MetadataTests(unittest.TestCase):
         for page in PAGES:
             with self.subTest(slug=page["slug"]):
                 result = render(page)
-                entry = result.index('<nav class="answer-actions" aria-label="Choose your next step">')
+                entry = result.index('<nav class="acts answer-actions" aria-label="Choose your next step">')
                 self.assertLess(entry, result.index('<section id="'))
                 self.assertEqual(len(page["entry_actions"]), 2)
                 for label, href in page["entry_actions"]:
@@ -581,7 +399,8 @@ class MetadataTests(unittest.TestCase):
                     self.assertIn(f'href="{html.escape(href, quote=True)}"', result)
                 for href in ("/docs/quickstart.html", "/docs/porting.html", "/docs/limits.html", "/studio/"):
                     self.assertIn(f'href="{href}"', result)
-                self.assertIn('href="/docs/quickstart.html#get-krate">Install</a>', result)
+                self.assertIn(K.HEADER, result)
+                self.assertIn(K.FOOTER, result)
                 self.assertNotIn('href="/#install"', result)
 
     def test_all_same_page_actions_have_unique_targets(self):
@@ -644,21 +463,21 @@ class MetadataTests(unittest.TestCase):
             result = render(page)
             self.assertIn('href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>', result)
 
-    def test_article_shell_defines_its_own_layout_and_accessible_controls(self):
-        # These class names do not exist in the homepage stylesheet. A
-        # generated article must not depend on unrelated homepage selectors.
-        for selector in (".subnav", ".subnav-inner", ".page-wrap",
-                         ".page-wrap h1", ".page-wrap h2", ".subfoot", ".subfoot-inner"):
-            self.assertIn(selector, ANSWER_CSS)
-        self.assertIn("width: min(760px, calc(100% - 48px))", ANSWER_CSS)
-        self.assertIn("width: calc(100% - 40px)", ANSWER_CSS)
-        self.assertIn("min-height: 44px", ANSWER_CSS)
-        self.assertIn(":focus-visible", ANSWER_CSS)
-        self.assertIn("scroll-margin-top: 144px", ANSWER_CSS)
+    def test_article_shell_is_the_kit_and_commands_never_widen_the_page(self):
+        # The shell is the design kit's; the page adds only what its own
+        # content needs. A command block scrolls in its own box (at 390px
+        # one long line once made every answer page scroll sideways).
+        self.assertIn(".prose pre.answer-cmd", ANSWER_CSS)
+        self.assertIn("overflow-x: auto", ANSWER_CSS)
+        self.assertIn("white-space: pre;", ANSWER_CSS)
+        self.assertIn("max-width: 100%", ANSWER_CSS)
+        self.assertIn("overflow-wrap: anywhere", ANSWER_CSS)
         for page in PAGES:
             result = render(page)
-            self.assertIn(ANSWER_CSS.strip(), result)
-            self.assertIn('<nav aria-label="Primary">', result)
+            self.assertIn(ANSWER_CSS, result)
+            self.assertIn('<nav class="toc" aria-label="On this page">', result)
+            for t, _ in page["sections"]:
+                self.assertIn(f'<a href="#{section_id(t)}">', result)
             for opening in re.findall(r'<pre\b[^>]*>', result):
                 self.assertIn('tabindex="0"', opening)
                 self.assertIn('aria-label="Command example"', opening)
@@ -773,7 +592,7 @@ class MetadataTests(unittest.TestCase):
 
     def test_metadata_is_escaped(self):
         page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')
-        result = page_head("<html><head></head>", page)
+        result = page_head(page)
         self.assertIn("&quot;quoted&quot; &lt;title&gt; &amp; more", result)
         schemas = re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)
         self.assertEqual(json.loads(schemas[0])["description"], page["description"])
