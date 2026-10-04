@@ -708,6 +708,69 @@
     add();
   })();
 
+  /* ---- a toast: one line that says a thing happened ------------------- */
+  const toastEl = document.createElement("div");
+  toastEl.className = "kr-toast"; toastEl.setAttribute("role", "status");
+  document.body.appendChild(toastEl);
+  let toastT = 0;
+  function toast(text, burst) {
+    toastEl.innerHTML = `<i>${ico("check", "")}</i><span></span>` + (burst && !reduce ? '<span class="kr-burst" aria-hidden="true">' +
+      Array.from({ length: 14 }, (_, i) => { const a = i / 14 * Math.PI * 2, d = 46 + (i % 3) * 14;
+        return `<b style="--c:${["#3d6df0", "#22c55e", "#e8873f", "#7c5ce8", "#d6578f"][i % 5]};--x:${Math.cos(a) * d}px;--y:${Math.sin(a) * d}px;animation-delay:${i * 8}ms"></b>`; }).join("") + "</span>" : "");
+    q("span", toastEl).textContent = text;
+    toastEl.classList.add("on");
+    clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove("on"), 2600);
+  }
+  // Published: the sheet closes and the link is on the clipboard. Say so
+  // where it is seen. Only when a NEW link appeared, so closing the sheet
+  // any other way says nothing.
+  (function published() {
+    const sheet = $("publishSheet");
+    if (!sheet) return;
+    let before = null;
+    const link = () => { const s = app(); return s && s.session && s.session.result ? s.session.result.share_url || null : null; };
+    watch(sheet, { attributes: true, attributeFilter: ["class"] }, () => {
+      if (!sheet.classList.contains("hidden")) { before = link(); return; }
+      const now = link();
+      if (now && now !== before) toast("Published. The link is copied", true);
+      before = now;
+    });
+  })();
+
+  /* Press a card, then a button that appears once its page is open. */
+  function thenPress(id, ms = 6000) {
+    const t0 = Date.now();
+    const tick = () => {
+      const b = $(id);
+      if (b && !b.classList.contains("hidden") && b.offsetParent) { press(b); return; }
+      if (Date.now() - t0 < ms) setTimeout(tick, 100);
+    };
+    setTimeout(tick, 150);
+  }
+
+  /* ---- Your apps: Run and Share on a card, on hover ------------------- */
+  (function appHover() {
+    const grid = $("appsGrid");
+    if (!grid) return;
+    const add = () => qa(".app-card", grid).forEach((card) => {
+      const well = q(".thumb-well", card);
+      if (!well || q(".kr-hov", card) || well.classList.contains("blank")) return;
+      const h = document.createElement("span");
+      h.className = "kr-hov";
+      h.innerHTML = `<span class="kr-hb dark" role="button" tabindex="0" data-a="run">${ico("play")}Run</span>` +
+        `<span class="kr-hb" role="button" tabindex="0" data-a="share">${ico("share")}Share</span>`;
+      h.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-a]"); if (!b) return;
+        e.stopPropagation(); e.preventDefault();
+        card.click();
+        thenPress(b.dataset.a === "run" ? "barRun" : "barShare");
+      });
+      well.appendChild(h);
+    });
+    watch(grid, { childList: true }, add);
+    add();
+  })();
+
   /* ---- the Gallery: a thumb under the category, and windows round apps -- */
   (function gallery() {
     const cats = $("cloudCats");
@@ -733,9 +796,48 @@
         fb.innerHTML = `<span class="kr-lights"><i></i><i></i><i></i></span><span class="kr-fbn"></span>`;
         q(".kr-fbn", fb).textContent = name;
         shot.insertBefore(fb, shot.firstChild);
+        // Remix: start your own from what this one is, in your words.
+        const desc = (q(".cloud-desc", c) || {}).textContent || "";
+        if (!desc) return;
+        const rx = document.createElement("span");
+        rx.className = "kr-hov";
+        rx.innerHTML = `<span class="kr-hb dark" role="button" tabindex="0">${ico("spark")}Remix</span>`;
+        rx.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); remix(desc, name); });
+        shot.appendChild(rx);
       });
     };
     watch(grid, { childList: true, subtree: true }, frame);
+  })();
+  function remix(desc, name) {
+    const home = q('#side .side-row[data-side="home"]');
+    if (home) home.click();
+    setTimeout(() => {
+      setMode("create");
+      const ta = $("homePrompt"); if (!ta) return;
+      const s = desc.replace(/[.\s]+$/, "").replace(/^\w/, (c) => c.toUpperCase()) + ", but ";
+      ta.value = ""; ta.focus();
+      let k = 0;
+      const step = () => { ta.value = s.slice(0, ++k); ta.dispatchEvent(new Event("input")); if (k < s.length) setTimeout(step, reduce ? 0 : 10); };
+      step();
+      toast(`Starting from ${name}. Say what to change`);
+    }, 250);
+  }
+
+  /* ---- one gallery app: the app in a window, everything else beside it -- */
+  (function detail() {
+    const stageEl = q("#viewApp .appstage"), ident = q("#viewApp .ident"), bar2 = q("#viewApp .actionbar");
+    if (!stageEl || !ident || !bar2) return;
+    bar2.parentNode.insertBefore(ident, bar2);
+    const fb = document.createElement("span");
+    fb.className = "kr-fb"; fb.setAttribute("aria-hidden", "true");
+    fb.innerHTML = '<span class="kr-lights"><i></i><i></i><i></i></span><span class="kr-fbn"></span>';
+    stageEl.insertBefore(fb, stageEl.firstChild);
+    const nm = $("detailName");
+    const paint = () => { q(".kr-fbn", fb).textContent = nm ? nm.textContent : ""; };
+    watch(nm, { childList: true, characterData: true, subtree: true }, paint);
+    paint();
+    const view = $("viewApp");
+    watch(view, { attributes: true, attributeFilter: ["class"] }, () => { if (!view.classList.contains("hidden")) { const m = q(".detail", view); if (m) m.scrollTop = 0; } });
   })();
 
   /* ---- Settings: an indicator that slides to the section ---------------- */

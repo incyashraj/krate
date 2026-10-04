@@ -1344,3 +1344,80 @@ body:not(.light) .kr-pal { background: #1a1a1d; }
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5l1.3 3.7L13 6.5 9.3 7.8 8 11.5 6.7 7.8 3 6.5l3.7-1.3z'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5l1.3 3.7L13 6.5 9.3 7.8 8 11.5 6.7 7.8 3 6.5l3.7-1.3z'/%3E%3C/svg%3E") center / contain no-repeat; }
 #viewSession .sessbar textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- a toast, and a small burst when something is published ------------- */
+.kr-toast { position: fixed; left: 50%; bottom: 26px; z-index: 330; height: 40px; padding: 0 16px 0 10px; border-radius: 999px; display: flex; align-items: center; gap: 9px;
+  font: 500 13.5px var(--sans); color: var(--btn-ink); background: var(--btn); box-shadow: 0 16px 40px -12px rgba(0, 0, 0, .45);
+  transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: transform .5s var(--spring), opacity .3s; }
+.kr-toast.on { transform: translate(-50%, 0); opacity: 1; }
+.kr-toast i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; }
+.kr-toast i svg { width: 11px; height: 11px; }
+.kr-burst { position: absolute; left: 20px; top: 20px; width: 0; height: 0; }
+.kr-burst b { position: absolute; width: 6px; height: 6px; border-radius: 2px; background: var(--c); animation: krBurst .9s var(--ease) both; }
+@keyframes krBurst { from { transform: translate(0, 0) scale(1); opacity: 1; } to { transform: translate(var(--x), var(--y)) scale(.4) rotate(220deg); opacity: 0; } }
+
+/* ---- actions that appear on a picture when you hover it ------------------ */
+.kr-hov { position: absolute; right: 10px; bottom: 10px; z-index: 3; display: flex; gap: 6px; opacity: 0; transform: translateY(6px); pointer-events: none;
+  transition: opacity .3s var(--ease), transform .4s var(--ease); }
+.app-card:hover .kr-hov, .app-card:focus-within .kr-hov, .cloud-card:hover .kr-hov, .cloud-card:focus-within .kr-hov { opacity: 1; transform: none; pointer-events: auto; }
+.kr-hb { height: 30px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font: 500 12.5px var(--sans); color: #111; background: rgba(255, 255, 255, .94); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, .35); transition: transform .2s var(--ease); }
+.kr-hb.dark { background: #111; color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, .22), 0 4px 14px -6px rgba(0, 0, 0, .35); }
+.kr-hb:hover { transform: translateY(-1px); }
+.kr-hb .kr-ico { width: 13px; height: 13px; }
+.app-card .thumb-well { position: relative; }
+@media (hover: none) { .kr-hov { display: none; } }
+
+/* ---- one gallery app: a window on the left, the rest on the right -------- */
+#viewApp .detail-inner { max-width: 1120px; padding-top: 6px; }
+#viewApp .appstage { border: 0; border-radius: 14px; padding-top: 26px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -30px rgba(24, 24, 27, .4);
+  opacity: 1; transform: none; animation: krZoom .8s var(--ease) both; }
+@keyframes krZoom { from { opacity: 0; transform: scale(.96); } }
+#viewApp .appstage-shot { height: auto; min-height: 0; max-height: none; aspect-ratio: 16 / 10; background: #0b0c0e; }
+#viewApp .appstage-fade { display: none; }
+#viewApp .ident { position: static; display: flex; align-items: center; gap: 14px; margin: 0; }
+#viewApp .ident h1 { color: var(--ink); text-shadow: none; font-size: 30px; font-weight: 600; letter-spacing: -.04em; }
+#viewApp .ident-by { color: var(--ink-3); text-shadow: none; margin-top: 6px; }
+#viewApp .ident-by .ident-cat { color: var(--ink-3); }
+#viewApp .ident-icon-slot .cloud-icon { width: 56px; height: 56px; border-radius: 15px; font-size: 19px; border: 0; box-shadow: var(--sh-1); }
+#viewApp .actionbar { margin-top: 18px; gap: 8px; }
+#viewApp .actionbar .btn { height: 36px; }
+#viewApp .quick { gap: 18px; }
+#viewApp .detail .card, body.light #viewApp .detail .card { padding: 16px 18px; }
+#viewApp .plist li, body.light #viewApp .plist li { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px 0 7px; border: 0; border-radius: 999px;
+  font: 400 12.5px var(--sans); color: var(--ink-2); background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); animation: krAsk .5s var(--spring) both; }
+#viewApp .plist li::before { content: ""; width: 16px; height: 16px; flex: none; border-radius: 50%;
+  background: var(--green) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpath d='M2 4.7l1.6 1.6L7 2.8' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px no-repeat; }
+#viewApp .pgroup.out .plist li::before { background-color: var(--orange); }
+#viewApp .pgroup.out .plist li, body.light #viewApp .pgroup.out .plist li { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--orange) 40%, transparent); background: color-mix(in srgb, var(--orange) 7%, transparent); }
+#viewApp .wall { color: var(--ink-3); }
+#viewApp .ident, #viewApp .actionbar, #viewApp .detail-note, #viewApp .cols { opacity: 1; transform: none; }
+@media (min-width: 1100px) {
+  #viewApp .detail-inner { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); column-gap: 36px; align-items: start; }
+  #viewApp .appstage { grid-column: 1; grid-row: 1 / span 6; position: sticky; top: 8px; margin-top: 0; }
+  #viewApp .detail-inner > :not(.appstage) { grid-column: 2; min-width: 0; }
+  #viewApp .ident { animation: krRv .8s var(--ease) .1s both; }
+  #viewApp .actionbar { animation: krRv .8s var(--ease) .17s both; flex-wrap: wrap; }
+  #viewApp .actionbar .quick { margin-left: 0; width: 100%; justify-content: flex-start; margin-top: 10px; }
+  #viewApp .actionbar .quick .v { text-align: left; }
+  #viewApp .cols { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 18px; animation: krRv .8s var(--ease) .24s both; }
+}
+
+/* ---- first run: the fan springs open, then drifts ------------------------ */
+#viewOnboard .fan-card { width: 240px; height: 157px; border: 0; border-radius: 16px; box-shadow: 0 0 0 1px var(--hair), 0 40px 80px -40px rgba(24, 24, 27, .45);
+  animation: fanIn 1s var(--spring) forwards, krFanDrift 7s ease-in-out infinite alternate; animation-delay: calc(var(--k, 0) * 70ms + .2s), calc(1.4s + var(--k, 0) * .4s); }
+body:not(.light) #viewOnboard .fan-card { box-shadow: 0 0 0 1px var(--hair), 0 40px 90px -40px rgba(0, 0, 0, .9); }
+#viewOnboard .fan-card:nth-child(n) { --o: 1; }
+#viewOnboard .fan-card:nth-child(1) { --x: -300px; --y: 34px; --r: -12deg; --s: .86; }
+#viewOnboard .fan-card:nth-child(2) { --x: -170px; --y: 8px; --r: -6deg; --s: .94; }
+#viewOnboard .fan-card:nth-child(3) { --x: 0px; --y: -6px; --r: 0deg; --s: 1.08; }
+#viewOnboard .fan-card:nth-child(4) { --x: 170px; --y: 8px; --r: 6deg; --s: .94; }
+#viewOnboard .fan-card:nth-child(5) { --x: 300px; --y: 34px; --r: 12deg; --s: .86; }
+@keyframes krFanDrift { to { translate: 0 -6px; } }
+@media (max-width: 760px) {
+  #viewOnboard .fan-card { width: 170px; height: 111px; }
+  #viewOnboard .fan-card:nth-child(1) { --x: -150px; } #viewOnboard .fan-card:nth-child(2) { --x: -85px; }
+  #viewOnboard .fan-card:nth-child(4) { --x: 85px; } #viewOnboard .fan-card:nth-child(5) { --x: 150px; }
+}
+@media (prefers-reduced-motion: reduce) { #viewOnboard .fan-card { animation: fanIn .01s forwards; } .kr-toast { transition: none; } }
