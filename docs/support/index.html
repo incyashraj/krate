@@ -1,100 +1,128 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+<meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Krate Support</title>
-  <link rel="stylesheet" href="/site.css" />
   <link rel="icon" href="/krate-favicon.png" />
-  <style>
-    /* Admin surface: dense, plain, no decoration. Its job is to let one
-       person read twenty reports quickly. */
-    /* The token field is `width: 100%` with .9rem of side padding, and
-       nothing on this page reset the box model -- so on a 390px phone it
-       measured 411 and the whole page scrolled sideways. Border-box makes
-       a stated width mean the width. */
-    *, *::before, *::after { box-sizing: border-box; }
-    .bar { display: flex; gap: .8rem; align-items: center; margin: 1.6rem 0 1.2rem; flex-wrap: wrap; }
-    .bar input {
-      flex: 1; min-width: 240px;
-      background: var(--panel); color: var(--text);
-      border: 1px solid var(--line); border-radius: 9px;
-      padding: .6rem .8rem; font: inherit;
-    }
-    .bar input:focus { outline: none; border-color: var(--blue); }
-    .count { color: var(--quiet); font-size: .88rem; }
-    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-    th {
-      text-align: left; font-size: .72rem; letter-spacing: .09em;
-      text-transform: uppercase; color: var(--quiet);
-      padding: 0 .8rem .6rem; font-weight: 600;
-    }
-    td { padding: .8rem; border-top: 1px solid var(--line); vertical-align: top; }
-    tr:hover td { background: rgba(255,255,255,.02); }
-    .who { color: var(--text); font-weight: 600; }
-    .when, .env { color: var(--quiet); font-size: .82rem; font-family: var(--mono); }
-    .note { color: var(--muted); max-width: 34rem; line-height: 1.5; }
-    .dl { color: var(--blue-soft); font-family: var(--mono); font-size: .82rem; white-space: nowrap; }
-    .gate { max-width: 34rem; margin: 3rem auto; text-align: center; }
-    .gate p { color: var(--muted); line-height: 1.7; margin-bottom: 1.2rem; }
-    .gate input {
-      width: 100%; background: var(--panel); color: var(--text);
-      border: 1px solid var(--line); border-radius: 9px;
-      padding: .7rem .9rem; font: inherit; font-family: var(--mono); font-size: .85rem;
-      margin-bottom: .8rem;
-    }
-    .err { color: var(--danger, #ff7f95); font-size: .88rem; margin-top: .8rem; }
-    .empty { color: var(--quiet); text-align: center; padding: 3rem 1rem; }
-  
-  /* Touch, not width: a thumb needs 44px whatever the screen size, and
-     these pages' nav and footer links were 19-20px tall. */
-  @media (pointer: coarse) {
-    nav a[href], .foot a[href], footer a[href] {
-      display: inline-block; padding-top: 11px; padding-bottom: 11px;
-    }
-    button, input[type=submit] { min-height: 44px; }
-    /* Buttons that are links, and the brand mark, which is a tap target
-       on every page (it goes home). */
-    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
-  }
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+/* Admin surface: dense and plain; its job is to let one person read twenty reports quickly. */
+.sp-hd { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sp-hd h1 { margin-top: 0; }
+#whoami:empty { display: none; }
+.ph.sm.l.sp { padding-top: 64px; }
+.ph.sp .eye { margin-bottom: 12px; }
+.gate.panel { width: min(460px, 100%); margin: 40px 0 0; text-align: left; }
+.gate.panel .mk { margin: 0 0 18px; }
+.gate.panel p { font-size: 14.5px; line-height: 1.65; }
+.gate code, .sp-list code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 1px 6px; border-radius: 6px; background: var(--s2); color: var(--ink); }
+.gate .form { margin-top: 22px; gap: 12px; }
+.gate #token { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14px; }
+.gate .btn { width: 100%; }
+.err { font-size: 13.5px; line-height: 1.55; color: var(--danger); }
+.err:empty { display: none; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin: 40px 0 18px; }
+.bar #q { flex: 1; min-width: min(240px, 100%); }
+.bar .count { font-size: 13.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; margin-right: 4px; }
+.sp-list table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 14px; }
+.sp-list th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--ink-3); padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.sp-list td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink-2); }
+.sp-list tbody tr:last-child td { border-bottom: 0; }
+.sp-list tbody tr { transition: background .15s; }
+.sp-list tbody tr:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.sp-list .who { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.sp-list td.when { white-space: nowrap; }
+.sp-list .when, .sp-list .env { font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-3); font-weight: 400; }
+.sp-list .note { max-width: 34rem; line-height: 1.55; color: var(--ink-2); }
+.sp-list .dl { font: 500 12.5px ui-monospace, "SF Mono", Menlo, monospace; color: var(--accent); white-space: nowrap; }
+.sp-list .dl:hover { text-decoration: underline; text-underline-offset: 3px; }
+.sp-list .empty { padding: 56px 16px; text-align: center; color: var(--ink-3); font-size: 14.5px; }
+@media (max-width: 680px) { .ph.sm.l.sp { padding-top: 44px; } .gate.panel { padding: 28px 22px 24px; } .bar .btn { flex: 1; } }
 </style>
 </head>
 <body>
-  <header class="subnav">
-    <div class="wrap subnav-inner">
-      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
-      <nav><a href="/cloud/">Gallery</a><a href="/docs/">Docs</a></nav>
-      <span class="pill" id="whoami"></span>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
     </div>
-  </header>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
 
-  <main class="page-wide">
-    <h1>Support reports</h1>
+<main>
+<section class="ph sm l wrap sp">
+  <span class="eye">Admin</span>
+  <div class="sp-hd"><h1>Support reports</h1><span class="tag" id="whoami"></span></div>
 
-    <div id="gate" class="gate">
-      <p>Reports people sent from Krate Studio. Admin only. Paste the token
-      Krate already holds for you: it is the <code>token</code> field in
-      <code>~/.krate/github.json</code> (it starts <code>krs_</code>), or any
-      GitHub token for an admin account. It stays in this browser and is sent
-      only to the hub.</p>
-      <input id="token" type="password" placeholder="ghp_… or krs_…" autocomplete="off" />
-      <button class="pill pill-primary" id="signin">Open reports</button>
+  <div id="gate" class="gate panel">
+    <img class="mk" src="/krate-mark-3d-96.png" alt="">
+    <p>Reports people sent from Krate Studio. Admin only. Paste the token
+    Krate already holds for you: it is the <code>token</code> field in
+    <code>~/.krate/github.json</code> (it starts <code>krs_</code>), or any
+    GitHub token for an admin account. It stays in this browser and is sent
+    only to the hub.</p>
+    <div class="form">
+      <label class="fld"><span>Token</span>
+        <input id="token" type="password" placeholder="ghp_… or krs_…" autocomplete="off" />
+      </label>
+      <button class="btn dark" id="signin">Open reports</button>
       <p class="err" id="gateErr"></p>
     </div>
+  </div>
+</section>
 
-    <div id="board" hidden>
-      <div class="bar">
-        <input type="search" id="q" placeholder="Search by person, note, version, session" autocomplete="off" />
-        <span class="count" id="count"></span>
-        <button class="pill" id="refresh">Refresh</button>
-        <button class="pill" id="forget">Sign out</button>
-      </div>
-      <div id="list"></div>
+<section class="wrap">
+  <div id="board" hidden>
+    <div class="bar">
+      <input class="inp" type="search" id="q" placeholder="Search by person, note, version, session" autocomplete="off" />
+      <span class="count" id="count"></span>
+      <button class="btn ghost sm" id="refresh">Refresh</button>
+      <button class="btn ghost sm" id="forget">Sign out</button>
     </div>
-  </main>
+    <div class="tblw sp-list" id="list"></div>
+  </div>
+</section>
 
-  <script>
+<!-- Design preview only (not live logic): open this file with ?board to see the
+     signed-in state; the live script toggles #gate / #board with the hidden attribute. -->
+
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+</footer>
+<script src="/kit/site.js"></script>
+<script>
     const HUB = "https://hub.krate.tech";
     const KEY = "krate.support.token";
     let ALL = [];
@@ -163,7 +191,7 @@
               <td class="who">${esc(x.name || x.from)}<br /><span class="when">@${esc(x.from)}</span></td>
               <td class="when">${esc(ago(x.received))}</td>
               <td class="env">${esc(x.krate)} · ${esc(x.os)}<br />${esc(x.session)}</td>
-              <td class="note">${esc(x.note) || "<span class=\\"when\\">no note</span>"}</td>
+              <td class="note">${esc(x.note) || '<span class="when">no note</span>'}</td>
               <td><a class="dl" href="#" data-id="${esc(x.id)}">download ${kb(x.size)}</a></td>
             </tr>`).join("")}</tbody>
         </table>` : '<p class="empty">Nothing reported yet.</p>';

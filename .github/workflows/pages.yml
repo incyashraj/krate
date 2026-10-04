@@ -43,6 +43,7 @@ on:
       # very commit that added the script.
       - "scripts/ensure-touch-targets.py"
       - "scripts/site_kit.py"
+      - "scripts/test-inline-scripts.mjs"
       - "scripts/install.sh"
       - "scripts/install.ps1"
       # Studio's own interface IS the web Studio: the build copies
@@ -431,6 +432,9 @@ jobs:
           # Pages on the 2026-10 design kit share one header, phone menu and
           # footer, copied into each page. A copy that drifted from
           # scripts/site_kit.py fails the deploy instead of shipping.
+          # And every inline script parses: a syntax error leaves a page that
+          # draws and does nothing (the support board, K-966).
+          node scripts/test-inline-scripts.mjs
           python3 scripts/site_kit.py --self-test
           python3 scripts/site_kit.py --check
           python3 scripts/ensure-touch-targets.py --self-test

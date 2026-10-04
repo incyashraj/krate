@@ -29,6 +29,7 @@ for t in docs/landing/studio/*-test.mjs; do
   run "$(basename "$t")" node "$t"
 done
 run "studio hooks" node scripts/check-studio-hooks.mjs
+run "inline scripts parse" node scripts/test-inline-scripts.mjs
 run "public facts" python3 scripts/test-public-facts.py
 run "contributor docs" python3 scripts/test-contributor-docs.py
 run "answer pages self-test" python3 scripts/build-answer-pages.py --self-test

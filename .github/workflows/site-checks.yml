@@ -21,6 +21,7 @@ on:
       - "scripts/discovery-report.py"
       - "scripts/pages-release.py"
       - "scripts/site_kit.py"
+      - "scripts/test-inline-scripts.mjs"
       - "scripts/fingerprint-css.py"
       - "scripts/ensure-touch-targets.py"
   push:
@@ -44,6 +45,7 @@ on:
       - "scripts/discovery-report.py"
       - "scripts/pages-release.py"
       - "scripts/site_kit.py"
+      - "scripts/test-inline-scripts.mjs"
       - "scripts/fingerprint-css.py"
       - "scripts/ensure-touch-targets.py"
   workflow_dispatch:
@@ -76,6 +78,8 @@ jobs:
         run: python3 scripts/discovery-report.py --self-test
       - name: Release refresh and website workflow inputs
         run: python3 scripts/pages-release.py --self-test
+      - name: Every inline script on every page parses
+        run: node scripts/test-inline-scripts.mjs
       - name: Design kit pages share one header and footer
         run: python3 scripts/site_kit.py --self-test && python3 scripts/site_kit.py --check
       - name: Stylesheet fingerprinting and phone rules
