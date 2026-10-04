@@ -1439,3 +1439,48 @@ body:not(.light) #viewOnboard .fan-card { box-shadow: 0 0 0 1px var(--hair), 0 4
 @media (min-width: 861px) {
   body.macos.kr-rail .side-top { height: 78px; padding: 0 0 4px; justify-content: center; align-items: flex-end; }
 }
+
+/* ================================================================ round three
+ * Against the design file the founder sent (krate-studio.html), screen by
+ * screen. */
+
+/* ---- the sidebar's head: lights row, then the mark and the toggle ------- */
+body.macos .side-top { height: 44px; padding: 0; margin: 0; }
+body:not(.macos) .side-top { height: 8px; }
+.side-brandrow, body:not(.macos) .side-brandrow { height: 34px; margin: 0 0 10px; padding: 0 2px 0 0; justify-content: space-between; }
+.side-brandrow .side-toggle { position: static; width: 30px; height: 30px; margin: 0; border-radius: 9px; color: var(--ink-2); background: transparent; }
+.side-brandrow .side-toggle:hover { background: var(--surface-3); color: var(--ink); }
+body.macos .side-brandrow .side-toggle, body.macos.light .side-brandrow .side-toggle { color: var(--ink-2); }
+.side-mark { padding: 0 8px 0 14px; }
+.kr-ct { margin-left: auto; font: 400 11.5px var(--sans); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.kr-ct:empty { display: none; }
+@media (min-width: 861px) {
+  body.kr-rail .side-brandrow { flex-direction: column; height: auto; gap: 14px; align-items: center; margin-bottom: 12px; }
+  body.kr-rail .side-brandrow .side-toggle { order: -1; }
+  body.kr-rail .side-mark { padding: 0; width: 30px; justify-content: center; }
+  body.kr-rail .kr-ct { display: none; }
+  body.macos.kr-rail .side-top { height: 44px; display: block; }
+}
+
+/* ---- Home: no theme button (it lives in your menu), a microphone -------- */
+#themeBtn { display: none !important; }
+.kr-micbtn > svg:not(.kr-mic) { display: none; }
+.kr-micbtn .kr-mic { width: 18px; height: 18px; }
+
+/* ---- Home: "Your apps 5 ⌃" ------------------------------------------------- */
+#viewHome .shelf-grip, #viewHome .shelf-tabs { display: none; }
+.kr-shtog { display: inline-flex; align-items: center; gap: 7px; height: 32px; margin-left: -10px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; cursor: pointer;
+  font: 500 13.5px var(--sans); color: var(--ink-2); transition: background .2s, color .2s; }
+.kr-shtog:hover { background: var(--surface-2); color: var(--ink); }
+.kr-shct { font-style: normal; font-size: 11.5px; font-weight: 500; color: var(--ink-3); padding: 1px 7px; border-radius: 999px; background: var(--surface-2); }
+.kr-shct:empty { display: none; }
+.kr-shchev { width: 13px; height: 13px; color: var(--ink-3); transform: rotate(180deg); transition: transform .5s var(--ease); }
+.kr-shtog[aria-expanded="true"] .kr-shchev { transform: none; }
+#viewHome .shelf.shut .shelf-all { opacity: 0; pointer-events: none; }
+#viewHome .shelf-all { transition: opacity .3s var(--ease); }
+
+/* ---- search: thumbnails and keys ----------------------------------------- */
+.kr-th0 { width: 28px; height: 20px; flex: none; border-radius: 5px; overflow: hidden; background: var(--surface-2); box-shadow: var(--sh-1); }
+.kr-th0 img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.side-nav > .side-search { cursor: pointer; }
+.side-nav > .side-search input { cursor: pointer; pointer-events: none; }

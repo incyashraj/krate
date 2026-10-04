@@ -25,6 +25,7 @@
   const stages = () => { try { return STAGES; } catch (e) { return []; } };
   const desktopApp = () => { try { return !!tauri; } catch (e) { return false; } };
   const wide = () => window.matchMedia("(min-width: 861px)").matches;
+  const mod = /mac/i.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl ";
   const visible = (el) => !!el && !el.classList.contains("hidden") && el.offsetParent !== null;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const watch = (el, opts, fn) => { if (el && window.MutationObserver) new MutationObserver(fn).observe(el, opts); };
@@ -183,6 +184,31 @@
   const go = $("homePortGo");
   if (go) go.addEventListener("click", startPort);
 
+  /* ---- Home: the shelf's head is "Your apps (n)" and a chevron ---------- */
+  (function shelfHead() {
+    const grip = $("shelfGrip"), shelf = $("shelf");
+    if (!grip || !shelf) return;
+    const tog = document.createElement("button");
+    tog.type = "button"; tog.className = "kr-shtog";
+    tog.innerHTML = `<span>Your apps</span><em class="kr-shct"></em>${ico("chev", "kr-ico kr-shchev")}`;
+    grip.insertAdjacentElement("afterend", tog);
+    const sync = () => tog.setAttribute("aria-expanded", shelf.classList.contains("shut") ? "false" : "true");
+    tog.addEventListener("click", () => {
+      // Your apps, not Examples: the design's shelf is only what you made.
+      const mine = $("tabMine"); if (mine && !mine.classList.contains("on")) press(mine);
+      press(grip);
+    });
+    watch(shelf, { attributes: true, attributeFilter: ["class"] }, sync);
+    sync();
+  })();
+  // The design's microphone on Home, where the old button drew a wave.
+  (function mic() {
+    const v = $("homeVoiceBtn");
+    if (!v) return;
+    v.classList.add("kr-micbtn");
+    v.insertAdjacentHTML("afterbegin", ico("mic", "kr-ico kr-mic"));
+  })();
+
   /* ---- the AI's own mark wherever the AI is named ---------------------- */
   function agentMark(name) {
     const n = String(name || "").toLowerCase();
@@ -293,7 +319,17 @@
     if (!search || !first) return;
     first.insertAdjacentElement("afterend", search);
     const kbd = q(".side-key", search);
-    if (kbd) kbd.textContent = navigator.platform && /mac/i.test(navigator.platform) ? "⌘K" : "Ctrl K";
+    if (kbd) kbd.textContent = mod + "K";
+    // In the design, Search is a row that opens the search window, not a
+    // field. The field stays (app.js filters Recents with it and "/" focuses
+    // it) but taking focus now opens search instead.
+    const field = $("sideSearch");
+    if (field) {
+      field.readOnly = true;
+      field.setAttribute("aria-haspopup", "dialog");
+      field.addEventListener("focus", () => { field.blur(); paletteOpen(); });
+    }
+    search.addEventListener("click", () => paletteOpen());
     const gap = document.createElement("span"); gap.className = "kr-gap"; search.insertAdjacentElement("afterend", gap);
   })();
   // One indicator that slides to whichever row is current.
@@ -315,6 +351,30 @@
   qa(".side-row", side || document).forEach((r) => { const t = q("span", r); if (t && !r.dataset.tip) r.dataset.tip = t.textContent.trim(); });
   const toggleBtn = $("sideCloseToggle");
   if (toggleBtn) toggleBtn.dataset.tip = "Show the sidebar";
+  // The design's head: the mark on the left, the panel toggle on the right,
+  // one row under the window's traffic lights.
+  const brandRow = side && q(".side-brandrow", side);
+  if (toggleBtn && brandRow) brandRow.appendChild(toggleBtn);
+
+  // How many apps you have made, beside Your apps: files, deduped by path,
+  // the same count the Your apps page shows.
+  (function appCount() {
+    const row = q('#side .side-row[data-side="all"]');
+    if (!row) return;
+    const ct = document.createElement("span"); ct.className = "kr-ct"; row.appendChild(ct);
+    let t = 0;
+    const count = async () => {
+      let list = [];
+      try { list = (await invoke("sessions_list")) || []; } catch (e) { return; }
+      const n = new Set(list.filter((x) => x.result && x.result.path).map((x) => x.result.path)).size;
+      ct.textContent = n ? String(n) : "";
+      const shelfCt = q("#shelf .kr-shct"); if (shelfCt) shelfCt.textContent = n ? String(n) : "";
+    };
+    const soon = () => { clearTimeout(t); t = setTimeout(count, 400); };
+    watch($("shelfBody"), { childList: true }, soon);
+    watch($("sideSessions"), { childList: true }, soon);
+    soon();
+  })();
 
   // On a wide window a shut sidebar becomes a rail of icons, every icon in
   // its place; on a narrow one it still slides away entirely.
@@ -404,42 +464,66 @@
     }, true);
   })();
 
-  /* ---- search everything: ⌘K ------------------------------------------- */
+  /* ---- search everything: ⌘K ------------------------------------------- *
+   * The design's search: Studio's actions with their keys, your apps with
+   * their pictures and sizes, and -- once the Gallery has been loaded -- the
+   * apps in it. Every row does what the matching control in Studio does. */
+  let paletteOpen = () => {};
   (function palette() {
     const scrim = document.createElement("div"); scrim.className = "kr-scrim";
     const pal = document.createElement("div"); pal.className = "kr-pal"; pal.setAttribute("role", "dialog"); pal.setAttribute("aria-label", "Search");
-    pal.innerHTML = `<div class="kr-pin">${ico("search")}<input type="text" placeholder="Search your apps and Studio" aria-label="Search" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div><div class="kr-pres"></div><div class="kr-pf"><span>↑↓ to move</span><span>↵ to open</span><span>⌘K anywhere</span></div>`;
+    pal.innerHTML = `<div class="kr-pin">${ico("search")}<input type="text" placeholder="Search apps, actions and the gallery" aria-label="Search" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div><div class="kr-pres"></div><div class="kr-pf"><span>↑↓ to move</span><span>↵ to open</span><span>${mod}K anywhere</span></div>`;
     document.body.append(scrim, pal);
     const input = q("input", pal), res = q(".kr-pres", pal);
-    let items = [], hl = 0;
+    let items = [], hl = 0, mine = [];
     const isOn = () => pal.classList.contains("on");
     const rowClick = (sel) => () => { const r = q(sel); if (r) r.click(); };
+    const appName = (s) => ((s.result && s.result.name) || s.title || "App").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const shotOf = new Map();
+    async function loadMine() {
+      let list = [];
+      try { list = (await invoke("sessions_list")) || []; } catch (e) { list = []; }
+      const seen = new Set();
+      mine = list.filter((x) => x.result && x.result.path && !seen.has(x.result.path) && seen.add(x.result.path))
+        .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      for (const x of mine.slice(0, 12)) {
+        if (shotOf.has(x.id)) continue;
+        const sh = x.result.shot;
+        if (sh && sh !== "file") shotOf.set(x.id, sh);
+        else if (sh === "file") invoke("session_shot", { id: x.id }).then((d) => { if (d) { shotOf.set(x.id, d); if (isOn()) render(); } }).catch(() => {});
+      }
+      if (isOn()) render();
+    }
     function render() {
       const s = input.value.trim().toLowerCase();
       const dark = !document.body.classList.contains("light");
       const acts = [
-        ["New app", "new", rowClick('#side .side-row[data-side="home"]')],
-        ["Port an app", "port", rowClick("#sidePort")],
-        ["Your apps", "grid", rowClick('#side .side-row[data-side="all"]')],
-        ["Gallery", "compass", rowClick('#side .side-row[data-side="discover"]')],
-        ["Settings", "gear", () => press($("sideSettings"))],
-        [dark ? "Switch to light" : "Switch to dark", dark ? "sun" : "moon", () => press($("themeBtn"))],
-      ].filter((a) => a[0].toLowerCase().includes(s)).map((a) => ({ g: "Actions", t: a[0], i: ico(a[1]), f: a[2] }));
-      const sess = qa("#sideSessions .sess-row").map((r) => ({ r, t: (q(".sess-name", r) || r).textContent.trim() }))
-        .filter((x) => x.t.toLowerCase().includes(s)).slice(0, 8)
-        .map((x) => ({ g: "Your apps", t: x.t, i: ico("file"), f: () => x.r.click() }));
-      items = [...acts, ...sess];
-      if (s && !items.length) items = [{ g: "Make it", t: `Make “${input.value.trim()}”`, i: ico("spark"), f: () => {
+        ["New app", "new", rowClick('#side .side-row[data-side="home"]'), mod + "N"],
+        ["Port an app", "port", rowClick("#sidePort"), ""],
+        ["Open the IDE", "code", rowClick("#sideIde"), ""],
+        ["Settings", "gear", () => press($("sideSettings")), mod + ","],
+        [dark ? "Switch to light" : "Switch to dark", dark ? "sun" : "moon", () => press($("themeBtn")), ""],
+        ["Gallery", "compass", rowClick('#side .side-row[data-side="discover"]'), ""],
+      ].filter((a) => (a[0] !== "Open the IDE" || $("sideIde")) && a[0].toLowerCase().includes(s))
+        .map((a) => ({ g: "Actions", t: a[0], i: ico(a[1]), k: a[3], f: a[2] }));
+      const apps = mine.filter((x) => appName(x).toLowerCase().includes(s) || (x.title || "").toLowerCase().includes(s)).slice(0, 8)
+        .map((x) => ({ g: "Your apps", t: appName(x), i: `<span class="kr-th0">${shotOf.has(x.id) ? `<img src="${esc(shotOf.get(x.id))}" alt="">` : ""}</span>`, k: x.result.size || "", f: () => { try { openSession(x); } catch (e) {} } }));
+      const st = app();
+      const gal = s && st && Array.isArray(st.cloud) ? st.cloud.filter((a) => ((a.meta && a.meta.name) || "").toLowerCase().includes(s)).slice(0, 5)
+        .map((a) => ({ g: "Gallery", t: a.meta.name, i: `<span class="kr-th0">${a.shot ? `<img src="${esc(a.shot)}" alt="">` : ""}</span>`, k: a.meta.author ? "@" + a.meta.author : "", f: () => { try { showCloudApp(a); } catch (e) {} } })) : [];
+      items = [...acts, ...apps, ...gal];
+      if (s && !items.length) items = [{ g: "Make it", t: `Make “${input.value.trim()}”`, i: ico("spark"), k: "↵", f: () => {
         rowClick('#side .side-row[data-side="home"]')();
-        const ta = $("homePrompt"); if (ta) { ta.value = input.value.trim(); ta.dispatchEvent(new Event("input")); ta.focus(); }
+        setTimeout(() => { const ta = $("homePrompt"); if (ta) { ta.value = input.value.trim(); ta.dispatchEvent(new Event("input")); ta.focus(); } }, 200);
       } }];
       hl = Math.max(0, Math.min(hl, items.length - 1));
       let g = "";
       res.innerHTML = items.map((it, i) => (it.g !== g ? `<div class="kr-ph2">${esc((g = it.g))}</div>` : "") +
-        `<button type="button" class="kr-pi${i === hl ? " hl" : ""}" data-i="${i}">${it.i}<span class="kr-pt">${esc(it.t)}</span></button>`).join("");
+        `<button type="button" class="kr-pi${i === hl ? " hl" : ""}" data-i="${i}">${it.i}<span class="kr-pt">${esc(it.t)}</span>${it.k ? `<em>${esc(it.k)}</em>` : ""}</button>`).join("");
     }
-    function open() { closePop(); input.value = ""; hl = 0; render(); scrim.classList.add("on"); pal.classList.add("on"); setTimeout(() => input.focus(), 30); }
+    function open() { closePop(); input.value = ""; hl = 0; render(); loadMine(); scrim.classList.add("on"); pal.classList.add("on"); setTimeout(() => input.focus(), 30); }
     function close() { scrim.classList.remove("on"); pal.classList.remove("on"); }
+    paletteOpen = open;
     function pick(i) { const it = items[i]; close(); if (it) it.f(); }
     input.addEventListener("input", () => { hl = 0; render(); });
     input.addEventListener("keydown", (e) => {
@@ -454,11 +538,14 @@
     res.addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) pick(+b.dataset.i); });
     res.addEventListener("mousemove", (e) => { const b = e.target.closest("[data-i]"); if (b && +b.dataset.i !== hl) { hl = +b.dataset.i; qa(".kr-pi", res).forEach((x) => x.classList.toggle("hl", x === b)); } });
     scrim.addEventListener("click", close);
-    // On the icon rail the search row is only an icon: it opens this.
-    const ss = q(".side-search");
-    if (ss) ss.addEventListener("click", (e) => { if (document.body.classList.contains("kr-rail")) { e.preventDefault(); open(); } });
     document.addEventListener("keydown", (e) => {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); isOn() ? close() : open(); }
+      const m = (e.metaKey || e.ctrlKey) && !e.altKey;
+      if (!m) return;
+      const k = e.key.toLowerCase();
+      if (k === "k") { e.preventDefault(); isOn() ? close() : open(); }
+      // The keys the design shows beside these actions.
+      if (k === "n" && !e.shiftKey) { e.preventDefault(); close(); rowClick('#side .side-row[data-side="home"]')(); setTimeout(() => { const t = $("homePrompt"); if (t) t.focus(); }, 250); }
+      if (k === ",") { e.preventDefault(); close(); press($("sideSettings")); }
     });
   })();
 
