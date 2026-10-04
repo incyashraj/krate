@@ -49,7 +49,7 @@
       const b = document.createElement("button");
       b.type = "button"; b.className = "kr-pi" + (it.on ? " on" : "") + (it.danger ? " danger" : "");
       b.setAttribute("role", "menuitem");
-      b.innerHTML = (it.icon ? ico(it.icon) : "") +
+      b.innerHTML = (it.mark ? `<span class="kr-lgb">${it.mark}</span>` : it.icon ? ico(it.icon) : "") +
         `<span class="kr-pt">${esc(it.label)}${it.sub ? `<small>${esc(it.sub)}</small>` : ""}</span>` +
         (it.on ? ico("check", "kr-ico kr-tick") : it.em ? `<em>${esc(it.em)}</em>` : "");
       b.addEventListener("click", (e) => { e.stopPropagation(); closePop(); it.run && it.run(); });
@@ -265,6 +265,55 @@
   markChip($("builtByChip"), $("builtByName"));
   markChip($("agentChip2"), $("agentName2"));
   markChip($("agentChip"), $("agentName"));
+
+  /* ---- the AI chip opens a picker, not a sheet ------------------------- */
+  // Each AI found on this computer, with its mark and whether it is ready.
+  // A ready one is chosen right here (app.js's useAgent, the same call the
+  // sheet's "Use this" makes); one that needs installing or a sign-in opens
+  // the sheet, which is where that is done. API keys live in the sheet too.
+  const logo = (name) => { try { return aiLogo(name); } catch (e) { return agentMark(name); } };
+  function agentPicker(anchor) {
+    const st = app(); if (!st) return;
+    const API = new Set(["anthropic", "openai"]);
+    const list = (st.agents || []).filter((a) => !API.has(a.name));
+    const sheet = () => { try { openAiSheet(); } catch (e) {} };
+    const items = [{ head: "Who writes your apps" }];
+    const order = [...list.filter((a) => a.state === "working"), ...list.filter((a) => a.state !== "working")];
+    for (const a of order) {
+      const on = a.name === st.agent && a.state === "working";
+      const sub = a.state === "working" ? (on ? "Ready · writing your apps" : "Ready")
+        : a.state === "missing" ? "Not installed"
+        : a.state === "paused" ? "Paused just now"
+        : /sign/i.test(a.detail || "") ? "Needs a sign-in" : "Needs a one-time fix";
+      items.push({
+        mark: logo(a.name), label: a.label || a.name, sub, on,
+        em: a.state === "missing" ? "Install" : a.state === "working" ? "" : "Fix",
+        run: async () => {
+          if (a.state !== "working") return sheet();
+          if (on) return;
+          try { await useAgent(a.name); toast(`${a.label || a.name} will write your apps`); } catch (e) { sheet(); }
+        },
+      });
+    }
+    if (!order.length) {
+      items.push(st.agentsError
+        ? { icon: "info", label: "Krate could not look for AIs", sub: "See why", run: sheet }
+        : { icon: "refresh", label: "Looking for your AIs", sub: "A moment", run: () => { try { refreshAgents(); } catch (e) {} } });
+    }
+    if (desktopApp()) items.push("sep", { icon: "key", label: "Use an API key", sub: "Anthropic, OpenAI or Google", run: sheet });
+    else items.push("sep", { icon: "gear", label: "More about your AI", run: sheet });
+    openPop(anchor, items, { big: true, above: anchor.getBoundingClientRect().top > innerHeight / 2 });
+  }
+  ["agentChip", "agentChip2", "builtByChip"].forEach((id) => {
+    const chip = $(id);
+    if (!chip) return;
+    chip.setAttribute("aria-haspopup", "menu");
+    chip.addEventListener("click", (e) => {
+      if (bypass) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      agentPicker(chip);
+    }, true);
+  });
 
   /* ---- Build / Plan as one chip with a menu ---------------------------- */
   function modeChip(seg, opts = {}) {
@@ -640,13 +689,137 @@
       s.textContent = part; body.appendChild(s);
     });
   }
+  // A plan and a question are cards, not lines. The words are app.js's own
+  // (the planner writes at most three sentences; questions come numbered,
+  // "1. ", "2. "); the card only sets them out, and its buttons press the
+  // ones app.js put under the message. The message's own text stays in the
+  // page, hidden, so copying and replaying read what they always read.
+  const PLAN_HEAD = /^Here's what I'll build:\s*/;
+  function appName() {
+    // A name the person gave (a rename, or the built app's) is used as it
+    // is. Otherwise the request is the title, and a request reads as a
+    // sentence, so the card names the thing: "a tip splitter for dinners"
+    // is a Tip Splitter.
+    const t = (($("railTitle") || {}).textContent || "").trim();
+    const first = q(".msg.you .body", thread);
+    const asked = first ? first.textContent.trim() : "";
+    if (t && t !== "New app" && t !== asked) return t;
+    const p = asked.replace(/^(please\s+)?(make|build|create|write)\s+(me\s+)?/i, "").replace(/^(a|an|the|my)\s+/i, "");
+    const w = p.split(/\s+(?:with|that|for|which|to|where|using|so|in|on|and)\s+/i)[0].split(/\s+/).slice(0, 4).join(" ").replace(/[.,;:!?]+$/, "");
+    return w ? w.replace(/\b\w/g, (c) => c.toUpperCase()) : "Your app";
+  }
+  function sentences(s) {
+    return s.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/).map((x) => x.replace(/[.]$/, "").trim()).filter(Boolean);
+  }
+  function cardButtons(msg, card, onPick) {
+    const row = q(":scope > .msg-actions", msg);
+    const acts = document.createElement("div"); acts.className = "kr-acts";
+    if (row) {
+      qa("button", row).forEach((b) => {
+        const nb = document.createElement("button");
+        nb.type = "button";
+        nb.className = "btn " + (b.classList.contains("btn-primary") ? "kr-dark" : "kr-ghost");
+        nb.textContent = b.textContent;
+        nb.addEventListener("click", () => { onPick && onPick(b, acts); b.click(); });
+        nb._real = b;
+        acts.appendChild(nb);
+      });
+      row.hidden = true;
+    }
+    card.appendChild(acts);
+    return acts;
+  }
+  function settle(acts, words) {
+    acts.innerHTML = `<span class="kr-tr done kr-went"><span class="kr-tic"><span class="kr-ck">${ico("check", "")}</span></span>${esc(words)}</span>`;
+  }
+  function planCard(msg, body) {
+    const port = msg.classList.contains("plan") && !PLAN_HEAD.test(body);
+    let text = body.replace(PLAN_HEAD, "");
+    let needs = [];
+    const nm = text.match(/\n\n(?:The ported app|It) will ask your permission to: ([^\n]*)\.?\s*$/m);
+    if (nm) { needs = nm[1].replace(/\.$/, "").split(/;\s*/).filter(Boolean); text = text.replace(nm[0], ""); }
+    let items, lead = "";
+    if (port) {
+      const parts = text.split(/\n\n/);
+      lead = parts[0] || "";
+      items = (text.match(/^•\s*(.+)$/gm) || []).map((l) => l.replace(/^•\s*/, ""));
+      if (!items.length && /Nothing in it needs changing/.test(text)) items = ["Nothing in it needs changing: it ports as it is"];
+      items.push("Your original is not touched");
+    } else {
+      items = sentences(text);
+    }
+    const card = document.createElement("div");
+    card.className = "kr-plan";
+    card.innerHTML = `<span class="kr-ptag">${ico("spark", "kr-ico")}${port ? "Port plan" : "Plan"}</span><h4>${esc(appName())}</h4>` +
+      (lead ? `<p class="kr-plead">${esc(lead)}</p>` : "") + "<ul></ul>" +
+      (needs.length ? `<div class="kr-pneeds"><span>It will ask first to</span>${needs.map((n) => `<em>${esc(n)}</em>`).join("")}</div>` : "");
+    const ul = q("ul", card);
+    items.forEach((t, i) => {
+      const li = document.createElement("li"); li.textContent = t;
+      li.style.animationDelay = (reduce ? 0 : 120 + i * 150) + "ms";
+      ul.appendChild(li);
+    });
+    const acts = cardButtons(msg, card, (b, a) => settle(a, port ? "Porting this plan" : "Building this plan"));
+    if (acts.children.length && !port) {
+      // The second way out: change the plan in words. The next message is
+      // the final word on it (app.js, runPlan), so the box says so.
+      const ch = document.createElement("button");
+      ch.type = "button"; ch.className = "btn kr-ghost"; ch.textContent = "Change something";
+      ch.addEventListener("click", () => { const p = $("prompt"); if (p) { p.placeholder = "What should change in the plan?"; p.focus(); } });
+      acts.appendChild(ch);
+    }
+    if (acts.children.length) {
+      const b0 = acts.children[0]; if (/^Build it$/.test(b0.textContent)) b0.textContent = "Build this";
+    } else acts.remove();
+    msg.classList.add("kr-carded", "kr-plan-msg");
+    msg.appendChild(card);
+  }
+  function questionCard(msg, body) {
+    const qs = body.split("\n").map((l) => l.replace(/^\s*\d+\.\s*/, "").trim()).filter(Boolean);
+    const card = document.createElement("div");
+    card.className = "kr-qc";
+    card.innerHTML = `<span class="kr-qtag">${ico("msg", "kr-ico")}${qs.length > 1 ? `${qs.length} questions before I build` : "One question before I build"}</span>` +
+      qs.map((t, i) => `<b class="kr-qq" style="animation-delay:${reduce ? 0 : 80 + i * 120}ms">${qs.length > 1 ? `<i>${i + 1}</i>` : ""}<span>${esc(t)}</span></b>`).join("");
+    const acts = cardButtons(msg, card, (b, a) => settle(a, "Building without an answer"));
+    const ans = document.createElement("button");
+    ans.type = "button"; ans.className = "btn kr-dark"; ans.textContent = qs.length > 1 ? "Answer them" : "Answer it";
+    ans.addEventListener("click", () => { const p = $("prompt"); if (p) { p.disabled = false; p.focus(); } });
+    acts.prepend(ans);
+    qa("button", acts).forEach((b) => { if (b._real && /^Build it$/.test(b.textContent)) { b.textContent = "Skip and build"; b.title = "Krate picks for you; you can change it after"; } });
+    msg.classList.add("kr-carded", "kr-q-msg");
+    msg.appendChild(card);
+  }
+  function cardify(n) {
+    if (!n.matches || !n.matches(".msg.krate") || n.classList.contains("kr-carded")) return false;
+    const body = (q(":scope > .body", n) || {}).textContent || "";
+    if (n.classList.contains("plan") || PLAN_HEAD.test(body)) { planCard(n, body); return true; }
+    if (/^\s*1\.\s/.test(body)) { questionCard(n, body); return true; }
+    return false;
+  }
+  // A typed answer or a build makes the old card's buttons stale: app.js
+  // removes its own row then (clearAnsweredActions), and the card follows.
+  function syncCards() {
+    qa(".kr-carded", thread).forEach((m) => {
+      const a = q(".kr-acts", m);
+      if (!a || q(".kr-went", a)) return;
+      const live = qa("button", a).some((b) => !b._real || b._real.isConnected);
+      const anyReal = qa("button", a).some((b) => b._real);
+      if (anyReal && !qa("button", a).some((b) => b._real && b._real.isConnected)) {
+        if (m.classList.contains("kr-plan-msg") && q(".msg.vlive, .msg.vok", thread)) settle(a, "Building this plan");
+        else a.remove();
+      } else if (!live) a.remove();
+    });
+  }
+  if (thread) qa(".msg.krate", thread).forEach(cardify);
   watch(thread, { childList: true }, (recs) => {
     const added = [];
     recs.forEach((r) => r.addedNodes.forEach((n) => { if (n.nodeType === 1) added.push(n); }));
+    added.forEach(cardify);
+    syncCards();
     if (added.length > 2) return;
     added.forEach((n) => {
       n.classList.add("kr-in");
-      if (n.matches(".msg.krate") && !n.matches(".vlive, .vok, .vbad")) wordIn(n);
+      if (n.matches(".msg.krate") && !n.matches(".vlive, .vok, .vbad, .kr-carded")) wordIn(n);
     });
   });
 
@@ -705,7 +878,7 @@
       toolsFor = null; toolsHtml = "";
     }
   }
-  setInterval(paintTools, 400);
+  setInterval(() => { paintTools(); syncCards(); }, 400);
   watch(thread, { childList: true, subtree: false }, paintTools);
 
   /* ---- the card being made: the crate ----------------------------------- */
@@ -814,11 +987,32 @@
     function mirror() {
       if (!asks || !capTrust) return;
       const nots = capTrust.textContent.split(" · ").map((s) => s.trim()).filter((s) => /^cannot /.test(s));
+      // The walls a person most wants to know about, when this app was not
+      // given the door: the camera and the rest of their files.
+      const st = app(), r = st && st.session && st.session.result;
+      if (r && capTrust.textContent) {
+        const caps = (r.asks || []).map(String);
+        if (!caps.some((c) => c.startsWith("camera."))) nots.push("cannot use the camera");
+        if (!caps.some((c) => c.startsWith("fs."))) nots.push("cannot open your other files");
+      }
       const have = qa("li.no", asks).map((li) => li.textContent);
       if (have.length === nots.length && have.every((t, i) => t === nots[i])) return;
       qa("li.no", asks).forEach((li) => li.remove());
       nots.forEach((t) => { const li = document.createElement("li"); li.className = "no"; li.textContent = t; asks.appendChild(li); });
       qa("li", asks).forEach((li, i) => li.style.setProperty("--k", i));
+    }
+    // Where the file is, one click away, and the three systems it opens on.
+    const meta = q("#doneCard .done-meta"), sub = q("#doneCard .done-sub"), size = $("doneSize");
+    if (meta && sub && size) {
+      sub.textContent = "";
+      sub.append(size);
+      sub.insertAdjacentHTML("beforeend", '<span class="kr-os-dots"><i>macOS</i><i>Windows</i><i>Linux</i></span>');
+      const nm = $("doneName");
+      const show = document.createElement("button");
+      show.type = "button"; show.className = "kr-showf";
+      show.innerHTML = ico(desktopApp() ? "folder" : "down") + `<span>${desktopApp() ? "Show in folder" : "Download"}</span>`;
+      show.addEventListener("click", () => press($("filesSave")));
+      if (nm) { const row = document.createElement("div"); row.className = "kr-dnrow"; nm.before(row); row.append(nm, show); }
     }
     watch(asks, { childList: true }, mirror);
     watch(capTrust, { childList: true, characterData: true, subtree: true }, mirror);
@@ -860,6 +1054,7 @@
   // Published: the sheet closes and the link is on the clipboard. Say so
   // where it is seen. Only when a NEW link appeared, so closing the sheet
   // any other way says nothing.
+  let linking = false; // Share's Make a link publishes too, and says so itself
   (function published() {
     const sheet = $("publishSheet");
     if (!sheet) return;
@@ -868,7 +1063,7 @@
     watch(sheet, { attributes: true, attributeFilter: ["class"] }, () => {
       if (!sheet.classList.contains("hidden")) { before = link(); return; }
       const now = link();
-      if (now && now !== before) toast("Published. The link is copied", true);
+      if (now && now !== before && !linking) toast("Published. The link is copied", true);
       before = now;
     });
   })();
@@ -989,7 +1184,7 @@
     };
     // An icon beside each section, as in the design. The list is built by
     // app.js from the section headings, so they are added as it appears.
-    const ICONS = { agent: "cpu", output: "folder", updates: "refresh", gallery: "compass", support: "msg", privacy: "shield",
+    const ICONS = { "your ai": "cpu", agent: "cpu", output: "folder", updates: "refresh", gallery: "compass", support: "msg", privacy: "shield",
       profile: "user", appearance: "paint", "sign in with": "key", account: "user", keys: "key", terminal: "term" };
     const iconify = () => qa("button", nav2).forEach((b) => {
       if (q(".kr-ico", b)) return;
@@ -1000,6 +1195,65 @@
     iconify();
     watch(nav2, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] }, () => requestAnimationFrame(place));
     watch($("setSheet"), { attributes: true, attributeFilter: ["class"] }, () => requestAnimationFrame(place));
+  })();
+
+  /* ---- Settings: Your AI as cards, and Reduce motion -------------------- */
+  (function settingsAi() {
+    const box = $("setAgentCards"), sheetEl = $("setSheet");
+    if (!box || !sheetEl) return;
+    const API = new Set(["anthropic", "openai"]);
+    const sheet = () => { try { openAiSheet(); } catch (e) {} };
+    function paint() {
+      const st = app(); if (!st) return;
+      const list = (st.agents || []).filter((a) => !API.has(a.name));
+      const order = [...list.filter((a) => a.state === "working"), ...list.filter((a) => a.state !== "working")];
+      const sig = JSON.stringify([st.agent, order.map((a) => [a.name, a.state, a.remedy || ""])]);
+      if (box.dataset.sig === sig) return;
+      box.dataset.sig = sig;
+      box.innerHTML = "";
+      if (!order.length) { box.innerHTML = `<p class="kr-agc-empty">${st.agentsError ? "Krate could not look for AI tools on this computer." : "Looking for AI tools on this computer…"}</p>`; return; }
+      order.forEach((a, i) => {
+        const ok = a.state === "working", on = ok && a.name === st.agent;
+        const b = document.createElement("div");
+        b.className = "kr-agc" + (on ? " on" : "") + (ok ? "" : " off"); b.setAttribute("role", "listitem");
+        b.style.setProperty("--k", i);
+        const sub = ok ? (on ? "Writing your apps" : "Ready to use")
+          : a.state === "missing" ? "Not installed" : a.state === "paused" ? "Paused just now"
+          : /sign/i.test(a.detail || "") ? "Installed, needs a sign-in" : "Installed, needs a one-time fix";
+        b.innerHTML = `<span class="kr-lgb">${logo(a.name)}</span><span class="kr-agt"><b></b><small></small>${a.state === "missing" && a.remedy ? '<span class="kr-cmdl"><code></code><button type="button" data-copy>Copy</button></span>' : ""}</span>` +
+          (ok ? `<span class="kr-stt ok">${on ? "In use" : "Ready"}</span>` : `<button type="button" class="kr-stt act">${a.state === "missing" ? "Install" : "Fix"}</button>`);
+        q("b", b).textContent = a.label || a.name;
+        q("small", b).textContent = sub;
+        const code = q("code", b); if (code) code.textContent = a.remedy;
+        const cp = q("[data-copy]", b);
+        if (cp) cp.addEventListener("click", (e) => { e.stopPropagation(); (navigator.clipboard ? navigator.clipboard.writeText(a.remedy) : Promise.reject()).then(() => { cp.textContent = "Copied"; setTimeout(() => { cp.textContent = "Copy"; }, 1200); }, () => {}); });
+        const act = q("button.kr-stt", b); if (act) act.addEventListener("click", (e) => { e.stopPropagation(); sheet(); });
+        if (ok && !on) {
+          b.tabIndex = 0; b.classList.add("pick"); b.title = `Use ${a.label || a.name}`;
+          const pick = async () => { try { await useAgent(a.name); toast(`${a.label || a.name} will write your apps`); } catch (e) { sheet(); } paint(); };
+          b.addEventListener("click", pick);
+          b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+        }
+        box.appendChild(b);
+      });
+    }
+    watch(sheetEl, { attributes: true, attributeFilter: ["class"] }, () => { if (!sheetEl.classList.contains("hidden")) paint(); });
+    setInterval(() => { if (!sheetEl.classList.contains("hidden")) paint(); }, 1000);
+    // The key row opens the sheet that holds the keys. (app.js pressed the
+    // AI chip here, which now opens a menu beside a chip the dialog hides.)
+    const keyBtn = $("setAgentBtn");
+    if (keyBtn) keyBtn.addEventListener("click", (e) => { e.stopImmediatePropagation(); sheet(); }, true);
+    if (!desktopApp()) { const kp = $("setKeyPanel"); if (kp) kp.hidden = true; }
+    // Reduce motion: this computer only, on top of the system's own setting.
+    const calm = $("setCalm");
+    let on = false; try { on = localStorage.getItem("krate-calm") === "1"; } catch (e) {}
+    const apply = (v) => { document.body.classList.toggle("kr-calm", v); if (calm) { calm.classList.toggle("on", v); calm.setAttribute("aria-checked", String(v)); } };
+    apply(on);
+    if (calm) calm.addEventListener("click", () => {
+      const v = calm.classList.contains("on");
+      try { localStorage.setItem("krate-calm", v ? "1" : "0"); } catch (e) {}
+      apply(v);
+    });
   })();
 
   /* ---- first run: which step this is ------------------------------------ */
@@ -1023,6 +1277,139 @@
     paint();
     qa(".fan-card", ob).forEach((c, i) => c.style.setProperty("--k", i));
   }
+
+  /* ---- Share: one sheet with the three ways ------------------------------ */
+  // Replaces app.js's small Share menu. Every way still runs app.js's own
+  // code: a link is app.js's publish (unlisted), the file is its card and
+  // its gift-for-a-new-person, Publish is its publish sheet. A function
+  // declared at the top of app.js is a property of the page, so assigning
+  // it here changes every door that opens Share.
+  const shareWrap = document.createElement("div");
+  shareWrap.className = "sheet-wrap hidden kr-share-wrap"; shareWrap.id = "krShare";
+  shareWrap.innerHTML = `<div class="sheet kr-share" role="dialog" aria-modal="true" aria-labelledby="krShareH">
+    <div class="kr-sh-h"><div><h2 id="krShareH">Share <span data-n></span></h2><p class="sheet-sub">One file. Whoever gets it double-clicks, and it opens.</p></div>
+      <button type="button" class="kr-x" data-close title="Close" aria-label="Close">${ico("x")}</button></div>
+    <div class="kr-shfile"><span class="kr-shic"><img src="krate-logo.png" alt=""></span><span class="kr-sht"><b data-f></b><small data-s></small></span><em data-v hidden></em></div>
+    <div class="kr-ways" role="tablist">
+      <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Anyone with it can open the app</small></button>
+      <button type="button" class="kr-way" data-w="file" role="tab" style="--c:#7c5ce8"><i>${ico("file")}</i><b>Send the file</b><small>Email, a chat, a USB stick</small></button>
+      <button type="button" class="kr-way" data-w="pub" role="tab" style="--c:#22a35a"><i>${ico("globe")}</i><b>Publish</b><small>List it in the public gallery</small></button>
+    </div>
+    <div class="kr-wp" data-w="link"></div>
+    <div class="kr-wp" data-w="file"></div>
+    <div class="kr-wp" data-w="pub"></div>
+    <p class="kr-shnote">${ico("info")}<span>New to Krate? They install it once, like a video player.</span></p>
+  </div>`;
+  document.body.appendChild(shareWrap);
+  let shareApp = null, shareVer = null;
+  const linkOf = () => { const s = app(); const r = s && s.session && s.session.result; return r && r.share_url ? r.share_url : null; };
+  const isCurrent = () => { try { const c = currentApp(); return !!(c && shareApp && c.path === shareApp.path); } catch (e) { return false; } };
+  function closeShare() { shareWrap.classList.add("hidden"); }
+  shareWrap.addEventListener("click", (e) => {
+    if (e.target === shareWrap || e.target.closest("[data-close]")) closeShare();
+    const w = e.target.closest(".kr-way"); if (w) pickWay(w.dataset.w);
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !shareWrap.classList.contains("hidden")) { closeShare(); e.stopPropagation(); } }, true);
+  function pickWay(w) {
+    qa(".kr-way", shareWrap).forEach((b) => { b.classList.toggle("on", b.dataset.w === w); b.setAttribute("aria-selected", String(b.dataset.w === w)); });
+    qa(".kr-wp", shareWrap).forEach((p) => p.classList.toggle("on", p.dataset.w === w));
+  }
+  function paintLink(url, fresh) {
+    const pane = q('.kr-wp[data-w="link"]', shareWrap);
+    const shown = url.replace(/^https?:\/\//, "");
+    let qr = ""; try { qr = window.krQrSvg ? window.krQrSvg(url, "kr-qrsvg") : ""; } catch (e) {}
+    pane.innerHTML = `<div class="kr-linkf"><span class="kr-u"></span><button type="button" class="btn kr-dark" data-copy>${ico("copy")}<span>Copy</span></button></div>` +
+      (qr ? `<div class="kr-qr">${qr}<p>Point a phone at this to send it on, or paste the link anywhere: a chat, an email, a post.<br><span>Only people with the link can find it.</span></p></div>` : "");
+    const u = q(".kr-u", pane);
+    if (fresh && !reduce) [...shown].forEach((ch, i) => { const c = document.createElement("span"); c.className = "kr-c"; c.style.animationDelay = i * 14 + "ms"; c.textContent = ch; u.appendChild(c); });
+    else u.textContent = shown;
+    q("[data-copy]", pane).addEventListener("click", (e) => {
+      const b = e.currentTarget;
+      const done = () => { b.classList.add("ok"); q("span", b).textContent = "Copied"; setTimeout(() => { b.classList.remove("ok"); q("span", b).textContent = "Copy"; }, 1400); };
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(done, done);
+    });
+  }
+  function paintMakeLink() {
+    const pane = q('.kr-wp[data-w="link"]', shareWrap);
+    if (!isCurrent()) {
+      pane.innerHTML = `<p class="kr-shp">A link is made for the newest version. Open it and share from there.</p>`;
+      return;
+    }
+    pane.innerHTML = `<button type="button" class="btn kr-dark kr-make"><span class="kr-pg"></span><span class="kr-lb">Make a link</span></button><p class="kr-sherr" hidden></p>`;
+    const b = q(".kr-make", pane);
+    b.addEventListener("click", async () => {
+      if (b.dataset.busy) return;
+      b.dataset.busy = "1"; b.classList.add("busy");
+      q(".kr-lb", b).textContent = `Uploading ${(shareApp && shareApp.size) || "the app"}…`;
+      const sheet = $("publishSheet");
+      linking = true;
+      try {
+        openPublishSheet();
+        if (sheet) sheet.classList.add("hidden");
+        const listed = $("pubListed"); if (listed) listed.checked = false;
+        await publishFromSheet();
+      } catch (e) { /* app.js says why in the publish sheet's note */ }
+      linking = false;
+      const url = linkOf();
+      if (url) { paintLink(url, true); toast("Link made and copied", true); return; }
+      // Publishing needs an account: the publish sheet carries that step.
+      if ($("pubSignin") && !$("pubSignin").classList.contains("hidden")) { closeShare(); if (sheet) sheet.classList.remove("hidden"); return; }
+      delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link";
+      const why = (($("pubNote") || {}).textContent || "").trim();
+      const err = q(".kr-sherr", pane); err.textContent = why || "The link could not be made just now. Try again in a moment."; err.hidden = false;
+    });
+  }
+  function paintFile() {
+    const pane = q('.kr-wp[data-w="file"]', shareWrap);
+    if (!desktopApp()) {
+      pane.innerHTML = `<p class="kr-shp">Download the file and send it any way you like. Whoever gets it opens it with Krate.</p>
+        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-dl>${ico("down")}Download the file</button></div>`;
+      q("[data-dl]", pane).addEventListener("click", () => press($("filesSave")));
+      return;
+    }
+    pane.innerHTML = `<div class="kr-shacts"><button type="button" class="btn kr-dark" data-send>${ico("share")}<span>Send it</span></button>
+        <button type="button" class="btn kr-ghost" data-show>${ico("folder")}Show in folder</button></div>
+      <p class="kr-shst" data-st>A card with the app inside: Mail, Messages and AirDrop are one click away.</p>
+      <div class="kr-new"><b>For someone new to Krate</b><small>A file that installs Krate once, then opens the app.</small>
+        <div class="kr-os"><button type="button" class="btn kr-ghost" data-os="mac">Mac</button><button type="button" class="btn kr-ghost" data-os="windows">Windows</button><button type="button" class="btn kr-ghost" data-os="linux">Linux</button></div>
+        <p class="kr-shst" data-wst></p></div>`;
+    const st = q("[data-st]", pane), wst = q("[data-wst]", pane);
+    q("[data-send]", pane).addEventListener("click", () => { try { sendCard(shareApp, st); } catch (e) {} });
+    q("[data-show]", pane).addEventListener("click", () => { if (isCurrent()) press($("filesSave")); else try { invokeReveal(); } catch (e) {} });
+    qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
+  }
+  const invokeReveal = () => press($("filesSave"));
+  function paintPub() {
+    const pane = q('.kr-wp[data-w="pub"]', shareWrap);
+    pane.innerHTML = `<p class="kr-shp">It goes in the public gallery under your name, with a picture of it running and one line about it. Publish again later to change any of that.</p>
+      <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}Publish…</button></div>`;
+    q("[data-pub]", pane).addEventListener("click", () => {
+      closeShare();
+      try { openPublishSheet(); const l = $("pubListed"); if (l) l.checked = true; } catch (e) {}
+    });
+    if (!isCurrent()) pane.innerHTML = `<p class="kr-shp">Publishing puts the newest version in the gallery. Open it and publish from there.</p>`;
+  }
+  function openShare(which, version) {
+    let cur = null; try { cur = currentApp(); } catch (e) {}
+    shareApp = which && which.path ? which : cur;
+    if (!shareApp) return;
+    shareVer = version || null;
+    const s = app();
+    const name = (shareApp.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "your app";
+    q("[data-n]", shareWrap).textContent = name;
+    q("[data-f]", shareWrap).textContent = shareApp.name || "app.krate";
+    q("[data-s]", shareWrap).textContent = [shareApp.size, "opens on macOS, Windows and Linux"].filter(Boolean).join(" · ");
+    const builds = s && s.session && s.session.builds;
+    const v = q("[data-v]", shareWrap);
+    if (version && builds && version < builds) { v.hidden = false; v.textContent = `v${version} · newest is v${builds}`; } else v.hidden = true;
+    const url = isCurrent() ? linkOf() : null;
+    if (url) paintLink(url, false); else paintMakeLink();
+    paintFile(); paintPub();
+    pickWay("link");
+    shareWrap.classList.remove("hidden");
+    setTimeout(() => { const b = q(".kr-way.on", shareWrap); if (b) b.focus(); }, 60);
+  }
+  try { if (typeof openSendSheet === "function") window.openSendSheet = (which, version) => openShare(which, version); } catch (e) {}
 
   /* ---- the sidebar's Port an app ---------------------------------------- */
   const sidePort = $("sidePort");

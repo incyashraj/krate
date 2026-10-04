@@ -4253,6 +4253,14 @@ async function paintApiKeys() {
   });
 }
 
+/// Make `name` the AI that writes the apps, and remember it. The sheet's
+/// "Use this" and the chip's quick menu both come here.
+async function useAgent(name) {
+  state.agent = name;
+  await invoke("settings_set", { settings: { out_dir: state.outDir, agent: state.agent } });
+  await refreshAgents();
+}
+
 function openAiSheet() {
   const list = $("aiList");
   list.innerHTML = "";
@@ -4358,9 +4366,7 @@ function openAiSheet() {
       use.className = "btn";
       use.textContent = "Use this";
       use.addEventListener("click", async () => {
-        state.agent = a.name;
-        await invoke("settings_set", { settings: { out_dir: state.outDir, agent: state.agent } });
-        refreshAgents();
+        await useAgent(a.name);
         $("aiSheet").classList.add("hidden");
       });
       row.appendChild(use);

@@ -803,21 +803,31 @@
         </button>
         <div class="set-scroll" data-scroller>
 <div class="set-group">
-          <h2>Agent</h2>
-          <div class="set-row">
-            <div><div class="lab">Coding agent</div><div class="hint">The AI that writes your app, checks that it builds and runs, and fixes what it finds</div></div>
-            <div class="ctl"><span class="set-val" id="setAgent">…</span><button class="set-mini" id="setAgentBtn">Change</button></div>
+          <h2>Your AI</h2>
+          <p class="set-sub">Who writes your apps. Krate works with the AI tools you already have, and never holds their keys.</p>
+          <div class="kr-agc-list" id="setAgentCards" role="list"></div>
+          <div class="set-panel" id="setKeyPanel">
+            <div class="set-row">
+              <div><div class="lab">API key</div><div class="hint">No AI tool installed? Paste a key from Anthropic or OpenAI instead</div></div>
+              <div class="ctl"><span class="set-val hidden" id="setAgent">…</span><button class="set-mini" id="setAgentBtn">Add a key</button></div>
+            </div>
           </div>
         </div>
+
         <div class="set-group">
           <h2>Output</h2>
+          <p class="set-sub">Every .krate you make lands here.</p>
+          <div class="set-panel">
           <div class="set-row">
             <div><div class="lab">Output folder</div><div class="hint">Where packed .krate files are written</div></div>
             <div class="ctl"><span class="set-val" id="setOutDir">…</span><button class="set-mini" id="setOutBtn">Choose</button></div>
           </div>
+          </div>
         </div>
+
         <div class="set-group hidden" id="setTerminalGroup">
           <h2>Terminal</h2>
+          <div class="set-panel">
           <div class="set-row">
             <div><div class="lab">The <code>krate</code> command</div><div class="hint" id="setTermHint">…</div></div>
             <div class="ctl"><button class="set-mini" id="setTermBtn">Set up</button></div>
@@ -828,9 +838,13 @@
             lists it; the docs cover porting, capabilities and CI.</div></div>
             <div class="ctl"><button class="set-mini" id="setOpenDocs">Docs</button></div>
           </div>
+          </div>
         </div>
+
         <div class="set-group">
           <h2>Updates</h2>
+          <p class="set-sub">The newest Krate, and what changed in it.</p>
+          <div class="set-panel">
           <div class="upd" id="upd">
             <div class="upd-top">
               <span class="upd-ic" id="updIc">
@@ -848,26 +862,27 @@
               <ul id="updList"></ul>
             </div>
           </div>
-        </div>
-        <div class="set-group">
-          <h2>Gallery</h2>
-          <div class="set-row">
-            <div><div class="nm">Published apps</div><div class="sub">What other people have shipped. Every one is a file you can download and inspect.</div></div>
-            <button class="btn btn-ghost" id="galleryBtn">Open the gallery</button>
           </div>
         </div>
+
         <div class="set-group">
-          <h2>Support</h2>
-          <div class="set-row">
-            <div><div class="lab">Report a problem</div><div class="hint">Goes to us with the session log attached; replies land in this window</div></div>
-            <div class="ctl"><button class="set-mini" id="supportBtn">Contact support</button></div>
-          </div>
-        </div>
-        <div class="set-group">
-          <h2>Privacy</h2>
-          <div class="set-row">
-            <div><div class="lab">Anonymous usage counting</div><div class="hint">Counted today: a view when a Krate page is opened, sent with the page path and nothing else, and which action happened. No account, no prompts, no code, no file names.</div></div>
-            <div class="ctl"><button class="sw on" id="swUsage" data-soon aria-label="Usage counting, always on" title="Always on today. Nothing personal is sent." disabled></button></div>
+          <h2>Appearance</h2>
+          <p class="set-sub">How Krate looks on this computer.</p>
+          <div class="set-panel">
+            <div class="set-row">
+              <div><div class="lab">Theme</div><div class="hint">The button in the title bar changes this too</div></div>
+              <div class="ctl">
+                <div class="seg" id="profTheme" role="group" aria-label="Theme">
+                  <button type="button" data-theme="light">Light</button>
+                  <button type="button" data-theme="dark">Dark</button>
+                  <button type="button" data-theme="system">Auto</button>
+                </div>
+              </div>
+            </div>
+            <div class="set-row">
+              <div><div class="lab">Reduce motion</div><div class="hint">Fewer moving parts; the same information</div></div>
+              <div class="ctl"><button class="sw" id="setCalm" type="button" role="switch" aria-checked="false" aria-label="Reduce motion"></button></div>
+            </div>
           </div>
         </div>
 
@@ -923,24 +938,41 @@
         </div>
 
         <div class="set-group">
-          <h2>Appearance</h2>
-          <p class="set-sub">How Krate looks on this computer.</p>
+          <h2>Gallery</h2>
+          <p class="set-sub">What you publish, and what other people have shipped.</p>
           <div class="set-panel">
-            <div class="set-row">
-              <div><div class="lab">Theme</div><div class="hint">The button in the title bar changes this too</div></div>
-              <div class="ctl">
-                <div class="seg" id="profTheme" role="group" aria-label="Theme">
-                  <button type="button" data-theme="light">Light</button>
-                  <button type="button" data-theme="dark">Dark</button>
-                  <button type="button" data-theme="system">Auto</button>
-                </div>
-              </div>
-            </div>
+          <div class="set-row">
+            <div><div class="nm">Published apps</div><div class="sub">What other people have shipped. Every one is a file you can download and inspect.</div></div>
+            <button class="btn btn-ghost" id="galleryBtn">Open the gallery</button>
+          </div>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h2>Privacy</h2>
+          <p class="set-sub">What leaves this computer.</p>
+          <div class="set-panel">
+          <div class="set-row">
+            <div><div class="lab">Anonymous usage counting</div><div class="hint">Counted today: a view when a Krate page is opened, sent with the page path and nothing else, and which action happened. No account, no prompts, no code, no file names.</div></div>
+            <div class="ctl"><button class="sw on" id="swUsage" data-soon aria-label="Usage counting, always on" title="Always on today. Nothing personal is sent." disabled></button></div>
+          </div>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h2>Support</h2>
+          <p class="set-sub">Something wrong? Tell us here, and the answer comes back to this window.</p>
+          <div class="set-panel">
+          <div class="set-row">
+            <div><div class="lab">Report a problem</div><div class="hint">Goes to us with the session log attached; replies land in this window</div></div>
+            <div class="ctl"><button class="set-mini" id="supportBtn">Contact support</button></div>
+          </div>
           </div>
         </div>
 
         <div class="set-group">
           <h2>Sign in with</h2>
+          <div class="set-panel">
           <div class="conn-row">
             <span class="lg"><svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></span>
             <div><div class="nm">GitHub</div><div class="sub" id="connGhSub">Used when you publish a link</div></div>
@@ -951,6 +983,7 @@
                (it works) and offered Apple (it does not exist anywhere). -->
           <div class="conn-row">
             <div><div class="sub">The sign-in page Krate opens also takes a Google account or an email link.</div></div>
+          </div>
           </div>
         </div>
         </div>
@@ -1441,6 +1474,7 @@
 
   <script src="app.js"></script>
   <script src="ide.js"></script>
+  <script src="qr.js"></script>
   <script src="redesign.js"></script>
 </body>
 </html>
