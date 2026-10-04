@@ -1421,3 +1421,9 @@ body:not(.light) #viewOnboard .fan-card { box-shadow: 0 0 0 1px var(--hair), 0 4
   #viewOnboard .fan-card:nth-child(4) { --x: 85px; } #viewOnboard .fan-card:nth-child(5) { --x: 150px; }
 }
 @media (prefers-reduced-motion: reduce) { #viewOnboard .fan-card { animation: fanIn .01s forwards; } .kr-toast { transition: none; } }
+
+/* A change to a built app: the app itself, softened, while it is reworked. */
+.kr-face { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; object-position: top center; opacity: 0; filter: blur(12px) saturate(.6); transform: scale(1.04); transition: opacity .8s var(--ease), filter .8s var(--ease); }
+.forming-ghost[data-rev="1"] .kr-face { opacity: .8; filter: blur(3px) saturate(.75); }
+.forming-ghost[data-rev="1"] .fg-crate, .forming-ghost[data-rev="1"] .fg-bits { opacity: 0; transition: opacity .6s var(--ease); }
+#viewSession .build-card.flashing .forming-ghost[data-rev="1"] .kr-face { filter: blur(5px) saturate(.75); }

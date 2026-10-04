@@ -641,6 +641,19 @@
     }
     const ph = PH[Math.max(0, Math.min(3, idx | 0))] || "plan";
     setPh(ph);
+    // A change to an app that already exists: the app stays in view,
+    // softened, while it is reworked -- the picture the finished card
+    // already holds, not a new one.
+    const prior = q("#thread .msg.vok") && q("#thread .msg.vlive");
+    const src = prior && $("shot") ? $("shot").getAttribute("src") || "" : "";
+    let face = q(".kr-face", buildGhost);
+    if (src) {
+      if (!face) { face = document.createElement("img"); face.className = "kr-face"; face.alt = ""; buildGhost.insertBefore(face, buildGhost.firstChild); }
+      if (face.getAttribute("src") !== src) face.setAttribute("src", src);
+      buildGhost.dataset.rev = "1";
+    } else if (buildGhost.dataset.rev) {
+      delete buildGhost.dataset.rev;
+    }
     if (ph === "write") {
       if (!writeAt) writeAt = Date.now();
       const t = (Date.now() - writeAt) / 1000;
