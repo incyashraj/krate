@@ -1,9 +1,8 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#000000" />
 <title>Download Krate Studio for Mac, Windows and Linux</title>
 <meta name="description" content="Download Krate Studio, the Krate Player or the krate command line for macOS, Windows and Linux. Free, with every file from the latest release." />
 <link rel="canonical" href="https://krate.tech/download/" />
@@ -13,163 +12,145 @@
 <meta property="og:image" content="https://krate.tech/og-v4.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
 <style>
-@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
-  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --disp: "Syne", var(--sans); }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
-  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img { max-width: 100%; }
-.hidden { display: none !important; }
-::selection { background: rgba(165, 88, 251, 0.35); }
-.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
-  pointer-events: none; user-select: none;
-  background: linear-gradient(to top, transparent, #000);
-  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
-          mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
-  display: flex; align-items: center; gap: 14px; user-select: none;
-  transform: translateX(-50%); }
-.brandbar .name { display: flex; align-items: center; gap: 0.34em;
-  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
-.brandbar .name img { height: 19px; width: auto; }
-.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
-  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
-.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
-  transition: color 0.15s ease, background 0.15s ease; }
-.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
-@media (max-width: 640px) { .bnav { display: none; } }
-.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
-  margin-left: -450px; pointer-events: none; border-radius: 100%;
-  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
-  filter: blur(40px); }
-.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
-h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
-.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
-.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
-  opacity: 0; transform: translateY(12px); filter: blur(6px);
-  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  transition: box-shadow 0.25s ease, translate 0.25s ease; }
-.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
-.card:nth-of-type(2) { animation-delay: 0.06s; }
-.card:nth-of-type(3) { animation-delay: 0.12s; }
-.card:nth-of-type(4) { animation-delay: 0.18s; }
-.card:nth-of-type(5) { animation-delay: 0.24s; }
-.card:nth-of-type(6) { animation-delay: 0.3s; }
-@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
-.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
-.card p { font-size: 13.5px; color: #a1a1aa; }
-.card p b { color: #d4d4d8; font-weight: 500; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
-  white-space: nowrap; user-select: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
-  transition: transform 0.15s ease, box-shadow 0.15s ease; }
-.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
-.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
-.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
-.foot nav a:hover { color: #d4d4d8; }
-
-@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
-
-  /* Touch, not width: a thumb needs 44px whatever the screen size, and
-     these pages' nav and footer links were 19-20px tall. */
-  @media (pointer: coarse) {
-    nav a[href], .foot a[href], footer a[href] {
-      display: inline-block; padding-top: 11px; padding-bottom: 11px;
-    }
-    button, input[type=submit] { min-height: 44px; }
-    /* Buttons that are links, and the brand mark, which is a tap target
-       on every page (it goes home). */
-    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
-  }
-</style>
-<style>
-.dlMain { margin: 6px 0 34px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.dlMain .btn.primary { padding: 12px 20px; font-size: 14.5px; }
-.dlMain small { color: #a1a1aa; font-size: 12.5px; }
-.card ul { list-style: none; margin-top: 12px; display: grid; gap: 6px; }
-.card li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.03); font-size: 13.5px; }
-.card li a { color: #f4f4f5; flex: 1; }
-.card li a:hover { color: #c4b5fd; }
-.dlSize { font-size: 12px; color: #71717a; white-space: nowrap; }
+[hidden] { display: none !important; }
+.dl-note small { font-size: inherit; }
+.dl-note { margin-top: 14px; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.prods { display: grid; gap: 18px; }
+.prod { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 40px; padding: 34px; }
+.prod h2 { font-size: 26px; letter-spacing: -.03em; }
+.prod .lead p { margin-top: 10px; font-size: 15px; line-height: 1.6; color: var(--mute); }
+.prod .lead p a { color: var(--accent); }
+.prod .lead .eye { display: flex; margin-bottom: 8px; }
+.term { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.term small { display: block; margin-bottom: 6px; font-size: 12.5px; color: var(--ink-3); }
+.term pre.k { padding: 12px 14px; border-radius: 12px; font-size: 12.5px; white-space: pre; }
+.term pre.k::before { content: "$ "; color: #6b6b75; }
+.files { list-style: none; display: grid; gap: 6px; align-content: start; }
+.files li { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 0 16px 0 6px; border-radius: 14px; background: var(--soft); transition: background .2s; }
+.files li:hover { background: var(--s3); }
+.files li a { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 10px 0; font-size: 14.5px; color: var(--ink); }
+.files li a .dli { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--ink-2); background: var(--s1); box-shadow: 0 0 0 1px var(--hair); transition: color .2s; }
+.files li:hover a .dli { color: var(--accent); }
+.files li a .dli svg { width: 15px; height: 15px; }
+.dlSize { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dlSize:empty { display: none; }
-code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: rgba(255,255,255,0.06); border-radius: 5px; padding: 1px 6px; color: #d4d4d8; }
-.facts { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: 13.5px; margin-top: 10px; }
-.facts dt { color: #71717a; }
-.facts dd { color: #e4e4e7; }
-.card p + p { margin-top: 8px; }
-.card a.u { color: #e4e4e7; text-decoration: underline; text-decoration-color: rgba(255,255,255,0.3); text-underline-offset: 3px; }
+.foot-note { margin-top: 28px; }
+.foot-note b { font-weight: 600; color: var(--ink); }
+.foot-note a { color: var(--accent); }
+@media (max-width: 860px) { .prod { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 26px; } }
+@media (max-width: 680px) { .prod { padding: 22px 18px; } .files li { padding-right: 12px; } }
 </style>
 </head>
 <body>
-<div class="bloom"></div>
-<div class="topblur"></div>
-<div class="brandbar">
-  <a class="name" href="/"><img src="/krate-logo.png" alt="" /> KRATE</a>
-  <nav class="bnav" aria-label="Primary">
-    <a href="/studio/">Studio</a>
-    <a href="/download/" class="here">Download</a>
-    <a href="/cloud/">Apps</a>
-    <a href="/docs/">Docs</a>
-    <a href="/about/">About</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
   </nav>
-</div>
-<div class="wrap">
-<h1 class="page">Download Krate.</h1>
-<p class="pagesub">Krate Studio makes apps with the AI you already have, opens them and shares them. It is free, and it runs on Mac, Windows and Linux.</p>
-<div class="dlMain">
-  <a class="btn primary" id="dlBest" href="https://github.com/incyashraj/krate/releases/latest">Download Krate Studio</a>
-  <small id="dlBestNote">The latest release, for this computer.</small>
-</div>
-<section class="card" style="display:block">
-  <h2>Krate Studio</h2>
-  <p>Make apps with your AI, open apps, share them. The whole thing.</p>
-  <ul>
-    <li data-asset="^krate-studio-.*-universal\.dmg$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon and Intel</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-studio-.*-windows-x64-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64 installer</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-studio-.*-linux-x86_64\.AppImage$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, x86_64 AppImage</a><span class="dlSize"></span></li>
-  </ul>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main>
+<section class="ph wrap n">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Download</span>
+  <h1>Download Krate.</h1>
+  <p class="lede">Krate Studio makes apps with the AI you already have, opens them and shares them. It is free, and it runs on Mac, Windows and Linux.</p>
+  <div class="acts">
+    <a class="btn dark" id="dlBest" href="https://github.com/incyashraj/krate/releases/latest">Download Krate Studio</a>
+  </div>
+  <p class="dl-note"><small id="dlBestNote">The latest release, for this computer.</small></p>
 </section>
-<section class="card" style="display:block">
-  <h2>Krate Player</h2>
-  <p>Only opens .krate files somebody sent you. Smaller. <a class="u" href="/open/">How opening works.</a></p>
-  <ul>
-    <li data-asset="^krate-app-.*-aarch64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-app-.*-x86_64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Intel</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-player-.*-x86_64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64 installer</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-player-.*-aarch64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, ARM installer</a><span class="dlSize"></span></li>
-  </ul>
+
+<section class="sec t wrap">
+  <div class="prods">
+    <section class="card prod rv">
+      <div class="lead">
+        <span class="eye">Make and open</span>
+        <h2>Krate Studio</h2>
+        <p>Make apps with your AI, open apps, share them. The whole thing.</p>
+      </div>
+      <ul class="files">
+        <li data-asset="^krate-studio-.*-universal\.dmg$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>macOS, Apple Silicon and Intel</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-studio-.*-windows-x64-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Windows, x64 installer</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-studio-.*-linux-x86_64\.AppImage$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Linux, x86_64 AppImage</a><span class="dlSize"></span></li>
+      </ul>
+    </section>
+
+    <section class="card prod rv">
+      <div class="lead">
+        <span class="eye">Open only</span>
+        <h2>Krate Player</h2>
+        <p>Only opens .krate files somebody sent you. Smaller. <a href="/open/">How opening works.</a></p>
+      </div>
+      <ul class="files">
+        <li data-asset="^krate-app-.*-aarch64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>macOS, Apple Silicon</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-app-.*-x86_64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>macOS, Intel</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-player-.*-x86_64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Windows, x64 installer</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-player-.*-aarch64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Windows, ARM installer</a><span class="dlSize"></span></li>
+      </ul>
+    </section>
+
+    <section class="card prod rv">
+      <div class="lead">
+        <span class="eye">For developers</span>
+        <h2>Command line</h2>
+        <p>The <code class="k">krate</code> tool on its own, for developers and scripts. Or in a terminal:</p>
+        <div class="term">
+          <div><small>On Mac and Linux</small><pre class="k">curl -fsSL https://krate.tech/install.sh | sh</pre></div>
+          <div><small>On Windows</small><pre class="k">irm https://krate.tech/install.ps1 | iex</pre></div>
+        </div>
+      </div>
+      <ul class="files">
+        <li data-asset="^krate-\d[^-]*-aarch64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>macOS, Apple Silicon</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-x86_64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>macOS, Intel</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-x86_64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Windows, x64</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-aarch64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Windows, ARM</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-x86_64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Linux, x86_64</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-aarch64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>Linux, arm64</a><span class="dlSize"></span></li>
+        <li data-asset="^SHA256SUMS$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.2l2 2 4-4.4"/><circle cx="7" cy="7" r="5.4"/></svg></span>Checksums (SHA256SUMS)</a><span class="dlSize"></span></li>
+      </ul>
+    </section>
+  </div>
+
+  <p class="call foot-note rv" id="dlVersion"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v4.5M10 6.4v.1"/></svg><span>Not sure which Mac you have? Apple menu, About This Mac: a <b>Chip</b> line means Apple Silicon, a <b>Processor</b> line means Intel. <a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Every release, on GitHub.</a></span></p>
 </section>
-<section class="card" style="display:block">
-  <h2>Command line</h2>
-  <p>The <code>krate</code> tool on its own, for developers and scripts. Or in a terminal: <code>curl -fsSL https://krate.tech/install.sh | sh</code> on Mac and Linux, <code>irm https://krate.tech/install.ps1 | iex</code> on Windows.</p>
-  <ul>
-    <li data-asset="^krate-\d[^-]*-aarch64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-\d[^-]*-x86_64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Intel</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-\d[^-]*-x86_64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-\d[^-]*-aarch64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, ARM</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-\d[^-]*-x86_64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, x86_64</a><span class="dlSize"></span></li>
-    <li data-asset="^krate-\d[^-]*-aarch64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, arm64</a><span class="dlSize"></span></li>
-    <li data-asset="^SHA256SUMS$"><a href="https://github.com/incyashraj/krate/releases/latest">Checksums (SHA256SUMS)</a><span class="dlSize"></span></li>
-  </ul>
-</section>
-<p class="pagesub" id="dlVersion" style="margin-top:18px">Not sure which Mac you have? Apple menu, About This Mac: a <b>Chip</b> line means Apple Silicon, a <b>Processor</b> line means Intel. <a class="u" href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Every release, on GitHub.</a></p>
+
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+</footer>
+<script src="/kit/site.js"></script>
 <script>
 /* One button for this computer, then every file with its real link and size
    from the latest release. The rows are written out, so the page works
@@ -202,23 +183,6 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background:
     }).catch(function () {});
 })();
 </script>
-</div>
-<footer class="foot">
-  <span>© 2026 Krate Labs</span>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/studio/">Studio</a>
-    <a href="/download/">Download</a>
-    <a href="/cloud/">Apps</a>
-    <a href="/docs/">Docs</a>
-    <a href="/faq/">FAQ</a>
-    <a href="/about/">About</a>
-    <a href="/contact/">Contact</a>
-    <a href="/privacy/">Privacy</a>
-    <a href="/terms/">Terms</a>
-    <a href="https://github.com/incyashraj/krate">GitHub</a>
-  </nav>
-</footer>
 <script>
 (function () {
   try {
