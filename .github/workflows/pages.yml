@@ -42,6 +42,7 @@ on:
       # precisely the trap the comment above describes, and it caught the
       # very commit that added the script.
       - "scripts/ensure-touch-targets.py"
+      - "scripts/site_kit.py"
       - "scripts/install.sh"
       - "scripts/install.ps1"
       # Studio's own interface IS the web Studio: the build copies
@@ -427,6 +428,11 @@ jobs:
           # Nothing reported that, because a missing rule looks exactly
           # like a page that does not need one. Doing it here means a new
           # page is covered the day it is added.
+          # Pages on the 2026-10 design kit share one header, phone menu and
+          # footer, copied into each page. A copy that drifted from
+          # scripts/site_kit.py fails the deploy instead of shipping.
+          python3 scripts/site_kit.py --self-test
+          python3 scripts/site_kit.py --check
           python3 scripts/ensure-touch-targets.py --self-test
           python3 scripts/ensure-touch-targets.py _site
           # Last, once every page is in place: name the stylesheet after a hash
@@ -434,6 +440,7 @@ jobs:
           # with max-age=600, so a deploy that changed the stylesheet shipped
           # new HTML against whatever copy the visitor already had -- the page
           # rendered unstyled and nothing on the server was wrong.
+          python3 scripts/fingerprint-css.py --self-test
           python3 scripts/fingerprint-css.py _site
       - name: Finalize and verify crawl metadata
         run: |

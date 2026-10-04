@@ -37,6 +37,9 @@ run "landing assets" python3 scripts/test-landing-assets.py
 run "first party" python3 scripts/check-first-party.py
 run "first party self-test" python3 scripts/check-first-party.py --self-test
 run "touch targets self-test" python3 scripts/ensure-touch-targets.py --self-test
+run "site kit self-test" python3 scripts/site_kit.py --self-test
+run "site kit pages" python3 scripts/site_kit.py --check
+run "fingerprint self-test" python3 scripts/fingerprint-css.py --self-test
 run "site tests deployed" python3 scripts/check-site-tests-deployed.py
 
 rm -f "$out"

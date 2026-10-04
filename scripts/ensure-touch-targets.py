@@ -84,10 +84,22 @@ def already_has(html: str) -> bool:
     return re.search(r'<style[^>]*\bid=["\']%s["\']' % re.escape(MARK), html, re.I) is not None
 
 
+# Pages built on the 2026-10 design kit link one shared stylesheet that
+# carries its own phone rules, sized to its own components. The generic block
+# below would fight it: its `.foot a[href] { display: inline-flex }` lays the
+# kit's stacked footer links side by side, and its `.num.num` and `.tag.tag`
+# floors resize the kit's table numbers and tags. So a kit page is left alone.
+KIT_SHEET = re.compile(r'<link[^>]+href=["\'][^"\']*/kit/site(?:\.[0-9a-f]{12})?\.css["\']', re.I)
+
+
+def uses_kit(html: str) -> bool:
+    return KIT_SHEET.search(html) is not None
+
+
 def ensure(html: str) -> tuple[str, bool]:
     """Return (html, changed). Idempotent: a page already carrying the
-    block is returned untouched."""
-    if already_has(html):
+    block, or built on the design kit, is returned untouched."""
+    if already_has(html) or uses_kit(html):
         return html, False
     # Last thing in the head, so a page's own rules of equal specificity
     # still win on source order.
@@ -171,6 +183,15 @@ def self_test() -> int:
     assert already_has('<style id="%s">x</style>' % MARK)
     assert already_has("<style id='%s'>x</style>" % MARK)
     assert not already_has("<p>%s</p>" % MARK), "prose alone is not the block"
+
+    # 8. A page on the design kit carries its own phone rules and is left
+    #    alone, whatever the stylesheet's path looks like after hashing.
+    kit = '<html><head><link rel="stylesheet" href="/kit/site.css"></head><body><footer class="foot"><a href="/">x</a></footer></body></html>'
+    out8, did8 = ensure(kit)
+    assert not did8 and out8 == kit, "a kit page must not get the generic block"
+    assert uses_kit('<link rel="stylesheet" href="/kit/site.0123456789ab.css">'), "a hashed kit sheet is still the kit"
+    assert not uses_kit('<link rel="stylesheet" href="/krate.css">'), "the old sheet is not the kit"
+    assert not uses_kit("<p>we moved to /kit/site.css</p>"), "prose naming the kit is not the kit"
 
     print("ok  ensure-touch-targets self-test")
     return 0
