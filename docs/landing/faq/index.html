@@ -13,7 +13,7 @@
 <link rel="icon" href="/krate-favicon.png" />
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
 <style>

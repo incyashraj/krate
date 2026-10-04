@@ -24,9 +24,11 @@ MARK = "/krate-mark-3d-96.png"
 
 # Set before first paint so a dark-mode reader never sees a light flash. The
 # choice is the reader's own (the header's sun/moon button), else the system's.
+# Studio in the browser shares this origin and this key, and stores "system"
+# there for "follow the computer"; anything but light or dark means that.
 # It also marks the page `.js`: anything the kit hides until a script reveals
 # it is hidden only under .js, so a reader without scripts sees all of it.
-HEAD_THEME = """<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>"""
+HEAD_THEME = """<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>"""
 
 KIT_LINKS = """<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">"""
@@ -76,7 +78,7 @@ PARTS = {
     "header": (re.compile(r'<header class="hd">.*?</header>', re.S), HEADER),
     "menu": (re.compile(r'<nav class="mnav".*?</nav>', re.S), MNAV),
     "footer": (re.compile(r'<footer class="foot">.*?</footer>', re.S), FOOTER),
-    "theme script": (re.compile(r"<script>\(\(\) => \{ (?:const d = document\.documentElement; d\.classList\.add\('js'\); )?let t = null;.*?</script>", re.S), HEAD_THEME),
+    "theme script": (re.compile(r"<script>\(\(\) => \{ (?:const d = document\.documentElement; d\.classList\.add\('js'\); )?let t = null; try \{ t = localStorage\.getItem\('krate-theme'\);.*?</script>", re.S), HEAD_THEME),
 }
 
 # Where kit pages live in the repository (generated pages are checked by

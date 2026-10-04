@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
 <style>
@@ -82,7 +82,7 @@
   <h1>What is in this checkout.</h1>
   <p class="lede">Krate lets developers package software as one .krate file that runs through native Krate runtimes on macOS, Windows and Linux.</p>
   <p class="lede">The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.</p>
-  <p class="meta">Latest published release at generation: <a href="https://github.com/incyashraj/krate/releases/latest"><code>v0.5.4</code></a>. Generated 2026-10-04 from commit <code class="k">1ef1449af</code>. This is a source snapshot, not a fresh cross-platform test run.</p>
+  <p class="meta">Latest published release at generation: <a href="https://github.com/incyashraj/krate/releases/latest"><code>v0.5.4</code></a>. Generated 2026-10-04 from commit <code class="k">9d406c48b</code>. This is a source snapshot, not a fresh cross-platform test run.</p>
 </section>
 
 <section class="sec t wrap stats-sec">

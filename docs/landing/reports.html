@@ -16,7 +16,7 @@
 <link rel="apple-touch-icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
 <style>
@@ -88,7 +88,7 @@
   <span class="eye">Reports</span>
   <h1>Measurements you can inspect.</h1>
   <p class="lede">A notes workload compared on the same machine, plus an inventory of application files in this checkout. These are different kinds of evidence: neither establishes a performance result for every Krate app or for the latest release.</p>
-  <p class="meta">Page generated 2026-10-04 from commit <code class="k">1ef1449af</code>. Benchmark measured 2026-08-25. Building this page does not run a new benchmark.</p>
+  <p class="meta">Page generated 2026-10-04 from commit <code class="k">9d406c48b</code>. Benchmark measured 2026-08-25. Building this page does not run a new benchmark.</p>
 </section>
 
 <div class="sec t wrap">
