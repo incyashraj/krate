@@ -889,3 +889,8 @@ body:not(.light) .set-nav button.on { background: var(--surface-3); }
 #viewSession .fail-raw-wrap summary { color: var(--ink-3); }
 #viewSession .fail-raw { border: 0; border-radius: 12px; background: var(--surface-2); color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { #viewSession .fail-card { animation: none; } }
+@media (max-width: 600px) {
+  .cloud { padding: 28px 18px 48px; }
+  .page-inner { padding: 28px 18px 0; }
+  .cloud-head .display, .page-head h1 { font-size: 28px; }
+}
