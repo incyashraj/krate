@@ -1411,6 +1411,179 @@
   }
   try { if (typeof openSendSheet === "function") window.openSendSheet = (which, version) => openShare(which, version); } catch (e) {}
 
+  /* ---- first run: a welcome over Home, and a three-step tour ------------- */
+  // The old welcome was three full screens before the app. Now Home is
+  // there from the first second, with a small card over it: Skip, or a tour
+  // that points at the real box, the real AI chip and the real sidebar.
+  // app.js still decides WHEN (needsOnboarding) and records that it was
+  // seen (markOnboarded); this only changes what "the welcome" is.
+  const obWrap = document.createElement("div");
+  obWrap.className = "kr-ob"; obWrap.id = "krOb";
+  obWrap.setAttribute("role", "dialog"); obWrap.setAttribute("aria-modal", "true"); obWrap.setAttribute("aria-labelledby", "krObT");
+  obWrap.innerHTML = `<div class="kr-ob-card" tabindex="-1">
+    <button type="button" class="kr-x kr-ob-x" aria-label="Close">${ico("x")}</button>
+    <img class="kr-ob-mk" src="krate-logo.png" alt="">
+    <h2 id="krObT">Say what you want.<br>Get an app.</h2>
+    <p class="kr-ob-s">Take a quick tour to see how Krate Studio works, or close this and start making.</p>
+    <div class="kr-pv" data-ph="a" aria-hidden="true"><div class="kr-pv-win">
+      <div class="kr-pv-side"><b></b><i class="on"></i><i></i><i></i><i></i><span></span><span></span><span></span></div>
+      <div class="kr-pv-main">
+        <div class="kr-pv-a"><p class="kr-pv-q">What are we <em>building</em>?</p><div class="kr-pv-cmp"><span class="kr-pv-tx"></span><span class="kr-pv-car"></span><span class="kr-pv-go">${ico("up")}</span></div></div>
+        <div class="kr-pv-b"><div class="kr-pv-card"><div class="kr-pv-th"><svg viewBox="14 30 132 126">${[1, 2, 3].map((n) => { const y = [0, 104, 84, 64][n]; return `<g class="kr-sl kr-s${n}"><path class="l" d="M28 ${y} L80 ${y + 26} L80 ${y + 41} L28 ${y + 15}Z"/><path class="r" d="M80 ${y + 26} L132 ${y} L132 ${y + 15} L80 ${y + 41}Z"/><path class="t" d="M28 ${y} L80 ${y - 26} L132 ${y} L80 ${y + 26}Z"/></g>`; }).join("")}</svg></div>
+          <div class="kr-pv-nm"><b>Weather</b><small>Writing the app</small></div></div></div>
+        <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens on every desktop</small></div></div>
+      </div></div></div>
+    <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots"><i class="on"></i><i></i><i></i><i></i></span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
+  </div>`;
+  document.body.appendChild(obWrap);
+  const tourEl = document.createElement("div");
+  tourEl.className = "kr-tour"; tourEl.setAttribute("aria-live", "polite");
+  tourEl.innerHTML = `<div class="kr-tr-hole"></div><div class="kr-tr-card" role="dialog" aria-labelledby="krTrT" tabindex="-1"><span class="kr-tr-arr"></span>
+    <div class="kr-tr-top"><span class="kr-tr-n"></span><button type="button" class="kr-x" aria-label="End the tour">${ico("x")}</button></div>
+    <h4 id="krTrT"></h4><p></p>
+    <div class="kr-tr-f"><span class="kr-dots"><i></i><i></i><i></i></span><button type="button" class="kr-plain kr-tr-back">Back</button><button type="button" class="kr-dark kr-tr-next">Next</button></div></div>`;
+  document.body.appendChild(tourEl);
+  const homeBox = () => $("homePrompt");
+  let pvT = 0, pvRun = 0;
+  const sleep = (ms) => new Promise((r) => { pvT = setTimeout(r, ms); });
+  async function pvPlay() {
+    const my = ++pvRun, pv = q(".kr-pv", obWrap), tx = q(".kr-pv-tx", obWrap), s = "a weather app for my cities";
+    if (reduce) { pv.dataset.ph = "c"; return; }
+    while (my === pvRun && obWrap.classList.contains("on")) {
+      pv.dataset.ph = "a"; tx.textContent = "";
+      for (let i = 1; i <= s.length; i++) { tx.textContent = s.slice(0, i); await sleep(42); if (my !== pvRun) return; }
+      await sleep(500); if (my !== pvRun) return;
+      pv.dataset.ph = "b"; await sleep(2600); if (my !== pvRun) return;
+      pv.dataset.ph = "c"; await sleep(3000);
+    }
+  }
+  // On the web a note about what is free also opens on a first visit.
+  // One thing at a time: it waits until the welcome and the tour are done.
+  let heldNote = null;
+  const holdNote = () => { const n = $("welcomeSheet"); if (n && !n.classList.contains("hidden")) { n.classList.add("hidden"); heldNote = n; } };
+  const releaseNote = () => { if (heldNote) { heldNote.classList.remove("hidden"); heldNote = null; return true; } return false; };
+  function obOpen() {
+    closePop();
+    obWrap.classList.remove("out"); obWrap.classList.add("on");
+    holdNote(); setTimeout(holdNote, 600);
+    pvPlay();
+    setTimeout(() => { const c = q(".kr-ob-card", obWrap); if (c) c.focus({ preventScroll: true }); }, 400);
+  }
+  function obClose(tour) {
+    if (!obWrap.classList.contains("on")) return;
+    try { markOnboarded(); } catch (e) {}
+    obWrap.classList.add("out"); pvRun++; clearTimeout(pvT);
+    setTimeout(() => {
+      obWrap.classList.remove("on", "out");
+      if (tour) tourStart(); else if (!releaseNote()) { const b = homeBox(); if (b) b.focus(); }
+    }, reduce ? 0 : 280);
+  }
+  q(".kr-ob-x", obWrap).addEventListener("click", () => obClose(false));
+  q(".kr-ob-skip", obWrap).addEventListener("click", () => obClose(false));
+  q(".kr-ob-go", obWrap).addEventListener("click", () => obClose(true));
+  obWrap.addEventListener("click", (e) => { if (e.target === obWrap) obClose(false); });
+
+  const firstVisible = (...els) => els.find((el) => el && el.offsetParent !== null && el.getBoundingClientRect().width > 0) || null;
+  const TOUR = [
+    { el: () => firstVisible(q("#viewHome .composer-shell .bigbar"), q("#viewHome .composer-shell")), t: "Say what you want",
+      p: () => desktopApp() ? "Describe an app in a sentence, like “a habit tracker with streaks”. Your AI writes it, and Krate builds it, opens it and checks it." : "Describe an app in a sentence, like “a habit tracker with streaks”. Krate’s AI writes it, builds it, opens it and checks it." },
+    { el: () => firstVisible($("builtByChip"), $("agentChip")), t: () => desktopApp() ? "Use the AI you already have" : "Krate’s AI does the writing",
+      p: () => desktopApp() ? "Claude, Codex, Gemini and others. Krate works with whichever one you pick, and you can change it here at any time." : "Here it is Krate’s own. In Studio on your computer you can pick Claude, Codex or Gemini instead." },
+    { el: () => firstVisible(q("#side .side-nav")), can: () => !!q("#side .side-nav"), side: "right", before: () => openSide(true), t: "Every app is one small file",
+      p: "What you make lands in Your apps as a single .krate file you can send to anyone. Find more, or remix one, in the Gallery." },
+  ];
+  let trI = -1, sideOpened = false;
+  // On a narrow window the sidebar is a drawer: it opens for the step that
+  // points at it, and closes again when the tour is over.
+  function openSide(on) {
+    const side = $("side"), t = $("sideToggle");
+    if (!side || !t || wide()) return;
+    const open = side.dataset.open === "true";
+    if (on && !open) { press(t); sideOpened = true; return true; }
+    if (!on && open && sideOpened) { press(t); sideOpened = false; }
+    return false;
+  }
+  // Only the steps this window can show: a phone's composer has no AI chip.
+  let steps = TOUR;
+  function tourStart() {
+    steps = TOUR.filter((t) => (t.can ? t.can() : !!t.el()));
+    if (!steps.length) return;
+    q(".kr-tr-f .kr-dots", tourEl).innerHTML = steps.map(() => "<i></i>").join("");
+    trI = 0; sideOpened = false; tourEl.classList.add("on"); tourShow();
+  }
+  function tourEnd(done) {
+    if (trI < 0) return;
+    trI = -1; tourEl.classList.remove("on");
+    openSide(false);
+    if (releaseNote()) return;
+    if (done) toast("You are all set. Say what you want to make.");
+    setTimeout(() => { const b = homeBox(); if (b) b.focus(); }, 200);
+  }
+  function tourShow() {
+    const st = steps[trI];
+    // Wait for a drawer that just started opening to finish moving.
+    if (st.before) { if (st.before()) return setTimeout(() => { if (trI >= 0) tourShow(); }, 380); }
+    else openSide(false);
+    const el = st.el();
+    if (!el) { if (trI < steps.length - 1) { trI++; return tourShow(); } return tourEnd(true); }
+    const r = el.getBoundingClientRect(), pad = 8, hole = q(".kr-tr-hole", tourEl), card = q(".kr-tr-card", tourEl);
+    const rad = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 12;
+    Object.assign(hole.style, { left: r.left - pad + "px", top: r.top - pad + "px", width: r.width + pad * 2 + "px", height: r.height + pad * 2 + "px", borderRadius: rad + pad + "px" });
+    q(".kr-tr-n", tourEl).textContent = `${trI + 1} of ${steps.length}`;
+    q("h4", tourEl).textContent = typeof st.t === "function" ? st.t() : st.t;
+    q("p", card).textContent = typeof st.p === "function" ? st.p() : st.p;
+    qa(".kr-dots i", card).forEach((d, i) => d.classList.toggle("on", i === trI));
+    q(".kr-tr-back", tourEl).style.visibility = trI ? "visible" : "hidden";
+    q(".kr-tr-next", tourEl).textContent = trI === steps.length - 1 ? "Start making" : "Next";
+    card.classList.remove("in"); void card.offsetWidth;
+    const cw = Math.min(320, innerWidth - 32), ch = card.offsetHeight || 190;
+    let x, y, side = st.side || "below";
+    if (side === "right") { x = r.right + 20; y = Math.max(16, Math.min(r.top + 10, innerHeight - ch - 16)); }
+    if (side === "right" && x + cw > innerWidth - 16) side = "below";
+    if (side !== "right") {
+      x = Math.min(Math.max(16, r.left + r.width / 2 - cw / 2), innerWidth - cw - 16); y = r.bottom + 18; side = "below";
+      if (y + ch > innerHeight - 16) { y = Math.max(16, r.top - ch - 18); side = "above"; }
+    }
+    Object.assign(card.style, { left: x + "px", top: y + "px", width: cw + "px" }); card.dataset.side = side;
+    const arr = q(".kr-tr-arr", tourEl);
+    if (side === "right") { arr.style.left = "-6px"; arr.style.top = Math.min(ch - 24, Math.max(18, r.top + Math.min(r.height, 40) / 2 - y)) + "px"; }
+    else { arr.style.top = ""; arr.style.left = Math.min(cw - 24, Math.max(18, r.left + r.width / 2 - x - 6)) + "px"; }
+    card.classList.add("in");
+    card.focus({ preventScroll: true });
+  }
+  q(".kr-tr-next", tourEl).addEventListener("click", () => { if (trI >= steps.length - 1) return tourEnd(true); trI++; tourShow(); });
+  q(".kr-tr-back", tourEl).addEventListener("click", () => { if (trI > 0) { trI--; tourShow(); } });
+  q(".kr-tr-top .kr-x", tourEl).addEventListener("click", () => tourEnd(false));
+  addEventListener("resize", () => { if (trI >= 0) tourShow(); });
+  document.addEventListener("keydown", (e) => {
+    if (obWrap.classList.contains("on") && e.key === "Escape") { e.stopPropagation(); e.preventDefault(); obClose(false); return; }
+    if (trI < 0) return;
+    if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); tourEnd(false); }
+    else if (e.key === "ArrowRight" || (e.key === "Enter" && !e.target.closest(".kr-tr-back, .kr-tr-top .kr-x"))) { e.preventDefault(); q(".kr-tr-next", tourEl).click(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); q(".kr-tr-back", tourEl).click(); }
+  }, true);
+  // app.js shows its welcome with showView("onboard"): on first run, and
+  // from Settings' replay. Both now land on Home with the card over it.
+  try {
+    if (typeof showView === "function") {
+      const show = showView;
+      window.showView = function (name, ...rest) {
+        if (name === "onboard") {
+          try { closeSettings(); } catch (e) {}
+          try { enterHome(); } catch (e) { show("home"); }
+          setTimeout(obOpen, 350);
+          return;
+        }
+        return show.call(this, name, ...rest);
+      };
+      // The welcome may already be up: an answer that comes back at once
+      // (the browsable mock, a cached web session) lets app.js show it
+      // before this file has loaded.
+      const old = $("viewOnboard");
+      if (old && !old.classList.contains("hidden")) window.showView("onboard");
+    }
+  } catch (e) {}
+
   /* ---- the sidebar's Port an app ---------------------------------------- */
   const sidePort = $("sidePort");
   if (sidePort) sidePort.addEventListener("click", () => {
