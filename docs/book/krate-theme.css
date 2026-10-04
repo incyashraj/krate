@@ -1,7 +1,7 @@
 /* The book, dressed as the rest of krate.tech.
  *
  * mdBook's own themes stay installed; this file re-points the variables of
- * the default (navy) theme at the site's palette -- see docs/landing/site.css,
+ * the default (navy) theme at the site's palette -- see docs/landing/kit/site.css,
  * the 2026 shell -- and restyles the chrome the variables do not reach. The
  * book is served at /docs/ on krate.tech, so /fonts/ resolves to the fonts
  * the landing page already ships; a local `mdbook serve` falls back to Inter

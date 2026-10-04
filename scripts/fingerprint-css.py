@@ -61,28 +61,41 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as d:
         site = pathlib.Path(d)
         (site / "kit").mkdir()
-        (site / "krate.css").write_text("a{}")
         (site / "site.css").write_text("old{}")
         (site / "kit/site.css").write_text("kit{}")
         (site / "kit/site.js").write_text("void 0")
-        (site / "old.html").write_text('<link href="/krate.css"><link href="/site.css">')
+        (site / "old.html").write_text('<link href="/site.css">')
         (site / "new.html").write_text('<link rel="stylesheet" href="/kit/site.css"><script src="/kit/site.js"></script>')
         sys.argv = ["x", str(site)]
         assert main() == 0, "the build must pass"
         old, new = (site / "old.html").read_text(), (site / "new.html").read_text()
-        assert re.search(r'href="/krate\.[0-9a-f]{12}\.css"', old), "krate.css is fingerprinted"
-        assert 'href="/site.css"' in old, "the old /site.css beside the landing page is not the kit"
+        assert 'href="/site.css"' in old, "a /site.css beside the landing page is not the kit"
         assert re.search(r'href="/kit/site\.[0-9a-f]{12}\.css"', new), "the kit stylesheet is fingerprinted"
         assert re.search(r'src="/kit/site\.[0-9a-f]{12}\.js"', new), "the kit script is fingerprinted"
         assert not (site / "kit/site.css").exists() and (site / "site.css").exists(), "only the kit sheet moved"
     with tempfile.TemporaryDirectory() as d:
         site = pathlib.Path(d)
         (site / "kit").mkdir()
-        (site / "krate.css").write_text("a{}")
         (site / "kit/site.css").write_text("kit{}")
-        (site / "a.html").write_text('<link href="/krate.css">')
+        (site / "kit/site.js").write_text("void 0")
+        (site / "a.html").write_text('<script src="/kit/site.js"></script>')
         sys.argv = ["x", str(site)]
         assert main() == 1, "a kit sheet nothing references must fail the build"
+    with tempfile.TemporaryDirectory() as d:
+        site = pathlib.Path(d)
+        (site / "a.html").write_text("<p>x</p>")
+        sys.argv = ["x", str(site)]
+        assert main() == 1, "a site without the kit must fail the build"
+    with tempfile.TemporaryDirectory() as d:
+        site = pathlib.Path(d)
+        (site / "kit").mkdir()
+        (site / "kit/site.css").write_text("kit{}")
+        (site / "kit/site.js").write_text("void 0")
+        (site / "krate.css").write_text("a{}")
+        (site / "a.html").write_text('<link href="/kit/site.css"><script src="/kit/site.js"></script><link href="/krate.css">')
+        sys.argv = ["x", str(site)]
+        assert main() == 0
+        assert re.search(r'href="/krate\.[0-9a-f]{12}\.css"', (site / "a.html").read_text()), "a leftover krate.css is still hashed"
     print("ok  fingerprint-css self-test")
     return 0
 
@@ -95,24 +108,21 @@ def main() -> int:
         return 2
 
     site = pathlib.Path(sys.argv[1])
-    n = fingerprint(site, "krate.css", required=True)
-    if n < 0:
-        return 1
-    if n == 0:
-        # The rename succeeded but nothing points at the new name, so every
-        # page is now unstyled. Fail the build rather than publish that.
-        sys.stderr.write("renamed krate.css but no page referenced it; the site would ship unstyled\n")
-        return 1
-
-    # The 2026-10 design kit: one stylesheet and one script every redesigned
-    # page loads. Same reason as above -- a changed kit under an unchanged
-    # name renders new HTML against a cached old sheet for ten minutes.
+    # Since the 2026-10 redesign every page loads the design kit's one
+    # stylesheet and one script; the old shared krate.css is gone. A site
+    # without the kit, or a kit no page points at, would ship unstyled.
     for rel in ("kit/site.css", "kit/site.js"):
-        if (site / rel).is_file() and fingerprint(site, rel, required=False) == 0:
-            sys.stderr.write(f"renamed {rel} but no page referenced it; the kit pages would ship broken\n")
+        n = fingerprint(site, rel, required=True)
+        if n < 0:
             return 1
+        if n == 0:
+            sys.stderr.write(f"renamed {rel} but no page referenced it; the site would ship unstyled\n")
+            return 1
+    # krate.css, if a page still carries it, is hashed the same way.
+    if (site / "krate.css").is_file() and fingerprint(site, "krate.css", required=False) == 0:
+        sys.stderr.write("renamed krate.css but no page referenced it\n")
+        return 1
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,1214 +1,419 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+<meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Make an app by describing it -- Krate</title>
-  <!-- Root-absolute, not relative: this page is served from /docs/pages/, so a
-       "./krate-favicon.png" would 404 and the tab would fall back to a blank
-       page icon. -->
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta name="description" content="Describe the app you want, an AI writes it, and you get one file that runs on Mac, Windows, and Linux and can be shared. A plain, honest walkthrough." />
-  <!-- The site's own stylesheets, linked rather than copied. This page used
-       to carry an 860-line snapshot of krate.css; the site moved on and the
-       copy did not, which is why it drifted into looking like an older
-       version of Krate. The <style> block below now only holds rules for
-       sections the landing page does not have. -->
-  <link rel="stylesheet" href="/krate.css" />
-  <link rel="stylesheet" href="/site.css" />
-  <style>
-    /* Geist, the site's face since the 2026 shell. Served from the site root. */
-    @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-    @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-
-    :root {
-      color-scheme: dark;
-      --bg: #0a0a0a;
-      --panel: #0f1012;
-      --panel-raised: #16171b;
-      --line: #1f2228;
-      --line-strong: #2e323a;
-      --text: #ffffff;
-      --muted: rgba(255, 255, 255, 0.55);
-      --quiet: rgba(255, 255, 255, 0.35);
-      --blue: #6291ff;
-      --blue-soft: #a9c2ff;
-      --cyan: #6cf4d7;
-      --yellow: #f4dc74;
-      --danger: #ff7f95;
-      --max: 920px;
-      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, Consolas, monospace;
-      --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    * { box-sizing: border-box; }
-
-    html {
-      scroll-behavior: smooth;
-      scroll-padding-top: 84px;
-    }
-
-    body {
-      margin: 0;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 50% -20%, rgba(98, 145, 255, .13), transparent 34rem),
-        var(--bg);
-      font-family: var(--sans);
-      font-size: 15.5px;
-      line-height: 1.65;
-    }
-
-    /* The body moved to the site's sans (the 2026 shell); everything that
-       is actually code keeps the mono it always had. */
-    pre, code, kbd, samp { font-family: var(--mono); }
-
-    a { color: inherit; }
-    button { font: inherit; }
-    img { display: block; max-width: 100%; }
-
-    ::selection {
-      color: #ffffff;
-      background: rgba(98, 145, 255, 0.45);
-    }
-
-    .skip {
-      position: fixed;
-      z-index: 999;
-      top: 12px;
-      left: 12px;
-      padding: 9px 13px;
-      color: var(--bg);
-      background: var(--cyan);
-      transform: translateY(-160%);
-    }
-
-    .skip:focus { transform: translateY(0); }
-
-    .wrap {
-      width: min(var(--max), calc(100% - 40px));
-      margin: 0 auto;
-    }
-
-    .tui-steps { list-style: none; counter-reset: s; padding: 0; margin: 2rem 0 0; }
-    .tui-steps li {
-      counter-increment: s; position: relative;
-      padding: 0 0 1.6rem 3rem; border-left: 1px solid var(--line);
-      margin-left: .9rem;
-    }
-    .tui-steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
-    .tui-steps li::before {
-      content: counter(s);
-      position: absolute; left: -.9rem; top: 0;
-      width: 1.8rem; height: 1.8rem; border-radius: 50%;
-      display: grid; place-items: center;
-      background: var(--panel-raised); border: 1px solid var(--line-strong);
-      color: var(--blue-soft); font-size: .8rem; font-weight: 600;
-    }
-    .tui-steps h3 { margin: 0 0 .4rem; font-size: 1.02rem; color: var(--text); }
-    .tui-steps p { margin: 0 0 .7rem; color: var(--muted); line-height: 1.65; }
-    .tui-steps pre {
-      background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
-      padding: .7rem .85rem; margin: 0; overflow-x: auto;
-      font-family: var(--mono); font-size: .82rem; color: var(--blue-soft);
-      line-height: 1.6;
-    }
-    .aside {
-      margin-top: 2rem; padding-top: 1.2rem; border-top: 1px solid var(--line);
-      color: var(--quiet); font-size: .9rem; line-height: 1.65;
-    }
-    .aside code {
-      font-family: var(--mono); font-size: .82rem;
-      background: var(--bg); border: 1px solid var(--line);
-      border-radius: 5px; padding: .1rem .4rem;
-    }
-    h1, h2, h3, p { margin-top: 0; }
-
-    .hero {
-      padding: 96px 0 58px;
-      text-align: center;
-    }
-
-    .eyebrow {
-      margin: 0 0 22px;
-      color: var(--cyan);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: .11em;
-      text-transform: uppercase;
-    }
-
-    /* The hero h1 carries .display, which site.css owns -- the type
-       scale, weight and tracking come from there so this page cannot
-       drift from the home page again. Only the hero's own spacing
-       lives here. */
-    /* krate.css sets `font-family: var(--mono)` on body -- correct for the
-       docs shell it was written for, wrong for a hero. site.css's .display
-       only sets size and tracking and inherits the face, so name it here or
-       the headline renders in monospace. */
-    .hero h1.display {
-      margin: 0 auto 22px;
-      max-width: 18ch;
-      font-family: var(--sans);
-    }
-    .hero .home-hero-badge { margin-bottom: 26px; }
-    .hero .hero-lead { margin-left: auto; margin-right: auto; }
-
-    .hero-lead {
-      max-width: 56ch;
-      margin-bottom: 0;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: clamp(16px, 2vw, 20px);
-      line-height: 1.6;
-    }
-
-    .hero-lead strong {
-      color: var(--text);
-      font-weight: 600;
-    }
-
-    .section {
-      padding: 52px 0;
-      border-top: 1px solid var(--line);
-    }
-
-    .label {
-      margin-bottom: 13px;
-      color: var(--cyan);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-    }
-
-    h2 {
-      margin-bottom: 16px;
-      font-size: clamp(26px, 4vw, 38px);
-      line-height: 1.14;
-      letter-spacing: -.045em;
-    }
-
-    h3 {
-      margin-bottom: 10px;
-      font-size: 19px;
-      letter-spacing: -.02em;
-    }
-
-    .prose {
-      max-width: 68ch;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 16px;
-      line-height: 1.7;
-    }
-
-    .prose p { margin-bottom: 16px; }
-    .prose p:last-child { margin-bottom: 0; }
-
-    .prose strong { color: var(--text); font-weight: 650; }
-
-    .prose a {
-      color: var(--blue-soft);
-      text-decoration-color: rgba(169, 194, 255, .4);
-      text-underline-offset: 3px;
-    }
-
-    .prose a:hover,
-    .prose a:focus-visible { text-decoration-color: var(--blue-soft); }
-
-    code {
-      font-family: var(--mono);
-      color: var(--blue-soft);
-      font-size: .92em;
-    }
-
-    /* The connect-your-AI table: one row per tool, name / how to install /
-       which flag. A real table would be semantically right but wraps badly on
-       a phone, so this is a grid that collapses to stacked rows. */
-    .ai-table {
-      margin-top: 24px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .ai-row {
-      display: grid;
-      grid-template-columns: 12rem 1fr 11rem;
-      gap: 16px;
-      align-items: center;
-      padding: 14px 18px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .ai-row:last-child { border-bottom: none; }
-
-    .ai-name {
-      font-family: var(--sans);
-      font-weight: 650;
-      color: var(--text);
-    }
-
-    .ai-install,
-    .ai-flag {
-      color: var(--muted);
-      font-size: 13px;
-      overflow-wrap: anywhere;
-    }
-
-    .ai-flag code { color: var(--cyan); }
-
-    @media (max-width: 640px) {
-      .ai-row {
-        grid-template-columns: 1fr;
-        gap: 6px;
-      }
-    }
-
-    /* The prerequisites box: two plain facts, set apart so nobody misses them
-       before they start. */
-    .note-box {
-      max-width: 68ch;
-      margin-top: 24px;
-      padding: 18px 20px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-left: 2px solid var(--cyan);
-      border-radius: 8px;
-    }
-
-    .note-box p {
-      margin: 0 0 12px;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 15px;
-      line-height: 1.65;
-    }
-
-    .note-box p:last-child { margin-bottom: 0; }
-    .note-box strong { color: var(--text); }
-    .note-box a { color: var(--cyan); text-decoration: none; }
-    .note-box a:hover { text-decoration: underline; }
-
-    /* The steps. Each is a heading, a line of prose, and a copy-pasteable
-       command with its own copy button. */
-    .step {
-      margin-top: 34px;
-      padding-top: 34px;
-      border-top: 1px solid var(--line);
-    }
-
-    .step:first-of-type {
-      margin-top: 8px;
-      padding-top: 0;
-      border-top: 0;
-    }
-
-    .step-head {
-      display: flex;
-      align-items: baseline;
-      gap: 12px;
-      margin-bottom: 10px;
-    }
-
-    .step-num {
-      flex: none;
-      display: inline-grid;
-      place-items: center;
-      min-width: 26px;
-      height: 26px;
-      padding: 0 6px;
-      color: var(--bg);
-      background: var(--blue-soft);
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 800;
-    }
-
-    .step-head h3 { margin: 0; }
-
-    .step-body {
-      max-width: 66ch;
-      margin: 0 0 16px;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 15px;
-      line-height: 1.65;
-    }
-
-    .step-body code { color: var(--blue-soft); }
-
-    /* The command block plus its copy button. The command scrolls sideways on a
-       narrow screen instead of pushing the page. */
-    .cmd {
-      display: flex;
-      align-items: stretch;
-      gap: 10px;
-      max-width: 100%;
-    }
-
-    .cmd pre {
-      flex: 1 1 auto;
-      min-width: 0;
-      margin: 0;
-      padding: 15px 16px;
-      overflow-x: auto;
-      color: #dce4f7;
-      background: #090b0f;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      font-family: var(--mono);
-      font-size: 13px;
-      line-height: 1.5;
-      white-space: pre;
-    }
-
-    .cmd pre .p { color: var(--cyan); }
-    .cmd pre .s { color: var(--yellow); }
-
-    .copy-button {
-      flex: none;
-      align-self: flex-start;
-      padding: 9px 13px;
-      color: var(--muted);
-      background: var(--panel-raised);
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: var(--mono);
-      font-size: 12px;
-      transition: color .15s ease, border-color .15s ease;
-    }
-
-    .copy-button:hover,
-    .copy-button:focus-visible {
-      color: var(--text);
-      border-color: var(--line-strong);
-      outline: none;
-    }
-
-    .copy-button.copied {
-      color: var(--bg);
-      background: var(--cyan);
-      border-color: var(--cyan);
-    }
-
-    /* The command builder. You describe the app, it writes the command. This
-       exists because hand-assembled commands on this site have been wrong
-       before -- a built command cannot be. Styling reuses the tokens above so
-       it reads as part of the page, not a widget bolted on. */
-    .builder {
-      max-width: 68ch;
-      margin-top: 24px;
-      padding: 22px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-    }
-
-    .builder-field { margin-bottom: 20px; }
-    .builder-field:last-child { margin-bottom: 0; }
-
-    /* Field labels only. The radio rows are labels too, so they are excluded
-       here and styled by .builder .choice below. */
-    .builder .builder-field > label,
-    .builder legend,
-    .builder .field-label {
-      display: block;
-      margin-bottom: 8px;
-      padding: 0;
-      color: var(--text);
-      font-family: var(--sans);
-      font-size: 14px;
-      font-weight: 650;
-    }
-
-    .builder .hint {
-      margin: 0 0 10px;
-      color: var(--quiet);
-      font-family: var(--sans);
-      font-size: 13px;
-      line-height: 1.55;
-    }
-
-    .builder textarea,
-    .builder input[type="text"] {
-      display: block;
-      width: 100%;
-      padding: 11px 13px;
-      color: var(--text);
-      background: #090b0f;
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
-      font-family: var(--mono);
-      font-size: 13px;
-      line-height: 1.55;
-    }
-
-    .builder textarea {
-      min-height: 76px;
-      resize: vertical;
-    }
-
-    .builder textarea::placeholder,
-    .builder input[type="text"]::placeholder { color: var(--quiet); }
-
-    .builder textarea:focus-visible,
-    .builder input[type="text"]:focus-visible {
-      border-color: var(--cyan);
-      outline: 2px solid var(--cyan);
-      outline-offset: 1px;
-    }
-
-    .builder fieldset {
-      margin: 0;
-      padding: 0;
-      border: 0;
-    }
-
-    .choices {
-      display: grid;
-      gap: 8px;
-    }
-
-    /* Written as .builder .choice, not .choice: the generic ".builder label"
-       rule above also matches these (each choice IS a label) and would
-       otherwise win on specificity and flatten the padding to zero. */
-    .builder .choice {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 12px 14px;
-      background: var(--panel-raised);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      cursor: pointer;
-      font-family: var(--sans);
-      font-size: 14px;
-      font-weight: 400;
-      line-height: 1.45;
-    }
-
-    /* The text column has to be a real block, or the note runs past the
-       rounded corner instead of wrapping inside it. */
-    .choice .choice-text {
-      display: block;
-      flex: 1 1 auto;
-      min-width: 0;
-    }
-
-    .choice:hover { border-color: var(--line-strong); }
-
-    .choice input[type="radio"] {
-      flex: none;
-      margin: 3px 0 0;
-      accent-color: var(--cyan);
-    }
-
-    .choice input[type="radio"]:focus-visible {
-      outline: 2px solid var(--cyan);
-      outline-offset: 2px;
-    }
-
-    .choice:has(input:checked) {
-      border-color: var(--cyan);
-      background: rgba(108, 244, 215, .06);
-    }
-
-    .choice .choice-text { color: var(--text); font-weight: 650; }
-
-    .choice .choice-note {
-      display: block;
-      margin-top: 3px;
-      color: var(--quiet);
-      font-weight: 400;
-      font-size: 12.5px;
-      line-height: 1.5;
-    }
-
-    /* The built command. Same look as the static command blocks above so a
-       generated command and a hand-written one are visually the same thing. */
-    .builder-out {
-      margin-top: 22px;
-      padding-top: 20px;
-      border-top: 1px solid var(--line);
-    }
-
-    .builder-out .cmd pre { white-space: pre-wrap; word-break: break-word; }
-
-    .builder-out .cmd pre.is-empty { color: var(--quiet); }
-
-    .builder-status {
-      margin: 10px 0 0;
-      color: var(--quiet);
-      font-family: var(--sans);
-      font-size: 13px;
-      line-height: 1.55;
-    }
-
-    .copy-button[disabled] {
-      opacity: .45;
-      cursor: not-allowed;
-    }
-
-    .copy-button[disabled]:hover { color: var(--muted); border-color: var(--line); }
-
-    /* Hidden until the script runs, so a browser with no JS never sees a
-       control that would do nothing. */
-    .js-only { display: none; }
-
-    /* The share section's two ways, side by side where there's room. */
-    .two-up {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 16px;
-      margin-top: 22px;
-    }
-
-    .share-card {
-      padding: 20px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-    }
-
-    .share-card h3 { margin-bottom: 8px; font-size: 16px; }
-
-    .share-card p {
-      margin: 0 0 14px;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .share-card p:last-child { margin-bottom: 0; }
-    .share-card code { color: var(--blue-soft); }
-
-    /* Honesty pills, borrowed in spirit from the landing page's future pills. */
-    .pill {
-      display: inline-block;
-      margin-bottom: 14px;
-      padding: 4px 9px;
-      border-radius: 99px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-
-    .pill.live {
-      color: var(--cyan);
-      border: 1px solid rgba(108, 244, 215, .4);
-    }
-
-    .pill.soon {
-      color: var(--yellow);
-      border: 1px solid rgba(244, 220, 116, .35);
-    }
-
-    /* A gallery of real apps the AI built, one screenshot each. Proof beats
-       prose: these are the actual first frames, not mockups. */
-    .gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 18px;
-      margin-top: 26px;
-    }
-    .shot {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      overflow: hidden;
-      background: var(--panel);
-    }
-    .shot figure { margin: 0; }
-    .shot img {
-      display: block;
-      width: 100%;
-      height: 170px;
-      object-fit: cover;
-      object-position: top center;
-      background: #eef0f4;
-      border-bottom: 1px solid var(--line);
-    }
-    .shot figcaption {
-      padding: 12px 14px;
-    }
-    .shot .req {
-      color: var(--text);
-      font-size: 13.5px;
-      font-family: var(--sans);
-    }
-    .shot .req::before { content: "\201C"; }
-    .shot .req::after { content: "\201D"; }
-    .shot .made {
-      margin-top: 4px;
-      color: var(--quiet);
-      font-size: 11.5px;
-    }
-
-    /* Troubleshooting: collapsible details, matching the FAQ feel. */
-    .trouble {
-      max-width: 68ch;
-      margin-top: 20px;
-    }
-
-    .trouble details {
-      border-bottom: 1px solid var(--line);
-    }
-
-    .trouble details:first-child {
-      border-top: 1px solid var(--line);
-    }
-
-    .trouble summary {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 16px 2px;
-      color: var(--text);
-      cursor: pointer;
-      list-style: none;
-      font-size: 15px;
-      font-weight: 650;
-    }
-
-    .trouble summary::-webkit-details-marker { display: none; }
-
-    .trouble summary::after {
-      content: "+";
-      flex: none;
-      color: var(--blue-soft);
-      font-size: 20px;
-      font-weight: 400;
-    }
-
-    .trouble details[open] summary::after {
-      content: "\00d7";
-      color: var(--cyan);
-    }
-
-    .trouble summary:hover,
-    .trouble summary:focus-visible {
-      color: var(--cyan);
-      outline: none;
-    }
-
-    .trouble .answer {
-      padding: 0 2px 20px;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 15px;
-      line-height: 1.7;
-    }
-
-    .trouble .answer code { color: var(--blue-soft); }
-
-    .cta-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 28px;
-    }
-
-    .button {
-      min-height: 44px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 11px 17px;
-      color: var(--text);
-      background: transparent;
-      border: 1px solid var(--line-strong);
-      border-radius: 6px;
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    .button.primary {
-      color: var(--bg);
-      background: var(--text);
-      border-color: var(--text);
-    }
-
-    .button:hover,
-    .button:focus-visible {
-      color: var(--bg);
-      background: var(--cyan);
-      border-color: var(--cyan);
-      outline: none;
-    }
-
-    footer {
-      padding: 28px 0 40px;
-      color: var(--quiet);
-      border-top: 1px solid var(--line);
-      font-size: 11px;
-    }
-
-    .footer-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 18px;
-    }
-
-    .footer-links a {
-      color: var(--muted);
-      text-decoration: none;
-    }
-
-    .footer-links a:hover,
-    .footer-links a:focus-visible {
-      color: var(--text);
-      outline: none;
-    }
-
-    @media (max-width: 600px) {
-      .wrap { width: min(100% - 28px, var(--max)); }
-      .footer-inner {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      *, *::before, *::after {
-        transition-duration: .01ms !important;
-        animation-duration: .01ms !important;
-      }
-    }
-
-    /* The "On this page" rail (populated by the script at the end). */
-    .krate-rail {
-      position: fixed; top: 100px; right: 24px; width: 200px;
-      max-height: calc(100vh - 140px); overflow-y: auto;
-      font-size: 13px; line-height: 1.5; font-family: var(--sans);
-    }
-    .krate-rail-title { color: var(--text); font-weight: 500; margin-bottom: 10px; }
-    .krate-rail-link {
-      display: block; color: var(--quiet); padding: 3px 0;
-      text-decoration: none; transition: color .15s;
-    }
-    .krate-rail-link:hover, .krate-rail-link.active { color: var(--text); }
-  </style>
+    <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+/* page-only styles, built from the kit's tokens.
+   The article layout shared by the guide and answer pages: an opener that
+   lines up with the text column, contents on the left, the text on the right. */
+@media (min-width: 961px) { .ph.art { padding-left: 276px; } }
+.ph.art .lede { max-width: 640px; }
+.ph.art .acts { margin-top: 26px; gap: 10px 12px; }
+.ph.art .ent { margin-top: 18px; max-width: 640px; font-size: 14.5px; line-height: 1.6; color: var(--mute); }
+.ph.art .ent a, .ph.art .lede a { color: var(--accent); }
+.ph.art .ent code, .ph.art .lede code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: 6px; background: var(--s2); color: var(--ink); }
+.ph.art h1 .rw { color: var(--accent); }
+.ph.art .pill .tag { height: 22px; margin-right: 2px; font-size: 11px; letter-spacing: .02em; }
+.ph.art .pill { padding-left: 4px; padding-right: 14px; } .ph.art .pill b { font-weight: 600; }
+.art-body { padding-top: 64px; }
+.prose { max-width: 700px; min-width: 0; }
+.prose > :first-child { margin-top: 0; }
+.prose h2 { scroll-margin-top: 6px; }
+.prose .lbl { margin-top: 60px; font-size: 13px; font-weight: 500; color: var(--accent); }
+.prose .lbl + h2 { margin-top: 6px; scroll-margin-top: 30px; }
+.prose > .lbl:first-child { margin-top: 0; }
+.prose h2 code, .prose h3 code { font-size: .82em; }
+.prose em { font-style: italic; }
+:root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
+.prose pre .p { color: #fff; font-weight: 500; } .prose pre .s { color: #b6e3a8; }
+.prose a.btn { text-decoration: none; }
+.prose .acts { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px 12px; }
+/* notes inside the text */
+.prose .call { margin-top: 22px; color: var(--ink-2); }
+.prose .call > div > * + * { margin-top: 8px; }
+.prose .call .tag { margin-bottom: 2px; }
+/* a command with a copy button (the live page wires the button) */
+.cmd { position: relative; }
+.cmd pre { padding-right: 82px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmd .cp { position: absolute; top: 9px; right: 9px; height: 28px; padding: 0 11px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #d4d4dc; background: rgba(255,255,255,.09); transition: background .2s; }
+.cmd .cp:hover { background: rgba(255,255,255,.16); }
+/* numbered steps */
+.prose ol.steps { list-style: none; padding: 0; counter-reset: st; display: grid; gap: 12px; margin-top: 22px; }
+.prose ol.steps > li { counter-increment: st; position: relative; margin: 0; padding: 22px 24px 22px 68px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); }
+.prose ol.steps > li::before { content: counter(st); position: absolute; left: 24px; top: 22px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); }
+.prose ol.steps h3 { margin-top: 2px; font-size: 17px; }
+.prose ol.steps > li > * + * { margin-top: 8px; }
+.prose ol.steps > li > pre, .prose ol.steps > li > .cmd { margin-top: 14px; }
+/* cards inside the text */
+.prose .g2 { margin-top: 24px; }
+.prose .card { font-size: 14.5px; line-height: 1.6; }
+.prose .card h3 { margin-top: 12px; font-size: 17px; }
+.prose .card ul { margin-top: 8px; color: var(--mute); }
+.prose .card li + li { margin-top: 3px; }
+/* questions inside the text */
+.prose .qa { margin-top: 22px; }
+.prose .qa summary { font-size: 16px; color: var(--ink); }
+.prose .qa .ans { font-size: 15px; }
+/* tables inside the text */
+.prose .tblw { margin-top: 22px; }
+.prose .tbl { min-width: 640px; }
+.prose .tbl caption { caption-side: top; text-align: left; padding: 14px 14px 6px; font-size: 12.5px; color: var(--ink-3); }
+.prose .tbl tbody th { text-align: left; vertical-align: top; padding: 13px 14px; border-bottom: 1px solid var(--line); font-size: 14.5px; line-height: 1.5; font-weight: 500; color: var(--ink); }
+.prose .tbl tbody tr:last-child > * { border-bottom: 0; }
+.prose .tbl td { line-height: 1.5; }
+/* the closing band: words, then the ways forward */
+.band.st { flex-direction: column; align-items: flex-start; gap: 22px; }
+.band.st p { max-width: 640px; }
+.band.st .acts { margin-top: 0; justify-content: flex-start; gap: 10px 12px; }
+.band p a { color: var(--accent); }
+@media (max-width: 680px) {
+  .art-body { padding-top: 44px; }
+  .prose ol.steps > li { padding: 20px; }
+  .prose ol.steps > li::before { position: static; margin-bottom: 12px; }
+  .band .acts .btn { white-space: normal; text-align: center; }
+}
+.prose code.hash { overflow-wrap: anywhere; }
+.prose .aside { font-size: 14.5px; color: var(--mute); }
+/* the AI tools, one per row */
+.prose .ai { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow: hidden; }
+.prose .ai-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 6px 18px; align-items: center; padding: 13px 18px; border-top: 1px solid var(--line); font-size: 14.5px; }
+.prose .ai-row:first-child { border-top: 0; }
+.prose .ai-name { font-weight: 500; color: var(--ink); }
+.prose .ai-install { color: var(--mute); min-width: 0; }
+.prose .ai code { overflow-wrap: anywhere; }
+.prose .ai-flag code { color: var(--accent); background: var(--accent-soft); white-space: nowrap; }
+/* the one-line command builder */
+.prose .builder { margin-top: 24px; padding: 24px; border-radius: 22px; background: var(--s1); box-shadow: var(--sh-1); gap: 20px; }
+.prose .builder .fld { border: 0; min-width: 0; }
+.prose .builder legend { margin-bottom: 8px; padding: 0; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.prose .builder .hint { margin-top: -2px; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
+.prose .builder .choices { display: grid; gap: 8px; }
+.prose .builder label.choice { display: flex; align-items: flex-start; gap: 12px; padding: 13px 14px; border-radius: 14px; box-shadow: inset 0 0 0 1px var(--line-2); cursor: pointer; font-weight: 400; transition: box-shadow .2s, background .2s; }
+.prose .builder label.choice:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.prose .builder .choice input { margin-top: 4px; accent-color: var(--accent); flex: none; }
+.prose .builder .choice-text { font-size: 14.5px; font-weight: 500; line-height: 1.45; color: var(--ink); }
+.prose .builder .choice-note { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--mute); }
+.prose .builder-out { display: grid; gap: 8px; }
+.prose .builder .field-label { font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.prose .builder-status { font-size: 13px; color: var(--ink-3); }
+.prose .builder pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* apps made from one line */
+.prose .gal { margin-top: 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.prose .gal figure { border-radius: 16px; overflow: hidden; background: var(--s1); box-shadow: var(--sh-1); }
+.prose .gal img { width: 100%; aspect-ratio: 5 / 4; object-fit: cover; object-position: top left; background: var(--soft); border-bottom: 1px solid var(--line); }
+.prose .gal figcaption { padding: 11px 14px 13px; line-height: 1.45; }
+.prose .gal .req { display: block; font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.prose .gal .made { margin-top: 2px; font-size: 12.5px; color: var(--mute); }
+@media (max-width: 680px) {
+  .prose .ai-row { grid-template-columns: minmax(0, 1fr) auto; padding: 13px 16px; }
+  .prose .ai-install { grid-column: 1 / -1; grid-row: 2; }
+  .prose .builder { padding: 18px; }
+  .prose .gal { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+}
+.prose .builder [hidden] { display: none; }
+</style>
 </head>
 <body>
-  <a class="skip" href="#main">Skip to content</a>
-
-<header class="site-head" id="siteHead">
-  <div class="wrap head-inner">
-    <a class="brand" href="/">
-      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
-      KRATE
-    </a>
-
-    <nav class="head-nav" aria-label="Primary">
-      <div class="nav-item">
-        <button class="nav-link" type="button" aria-expanded="false">Product <span class="chev">▾</span></button>
-        <div class="nav-panel">
-          <div class="panel-links">
-            <a href="/#ctaSec">Start<span class="d">install once, open anything</span></a>
-            <a href="/cloud/">Gallery<span class="d">real published apps, run by URL</span></a>
-            <a href="/progress/">Platforms<span class="d">six builds, both chips, three systems</span></a>
-            <a href="/faq.html">FAQ<span class="d">the honest answers</span></a>
-          </div>
-          <div class="panel-mini" aria-hidden="true">
-            <div class="p">&gt; a habit tracker</div>
-            <div><span class="g">+</span> writing the code</div>
-            <div><span class="g">+</span> compiling it</div>
-            <div><span class="g">+</span> checking it runs</div>
-            <div class="p">done · 41 KB<span class="cursor"></span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="nav-item">
-        <button class="nav-link" type="button" aria-expanded="false">Develop <span class="chev">▾</span></button>
-        <div class="nav-panel">
-          <div class="panel-links">
-            <a href="/docs/">Docs<span class="d">the book: build, check, pack</span></a>
-            <a href="/reports/">Reports<span class="d">what runs today, with proof</span></a>
-            <a href="/progress/">Progress<span class="d">release by release</span></a>
-            <a href="https://github.com/incyashraj/krate">GitHub<span class="d">all of it, open source</span></a>
-          </div>
-          <div class="panel-mini" aria-hidden="true">
-            <div class="p">$ krate check-app .</div>
-            <div><span class="g">✓</span> build passed</div>
-            <div><span class="g">✓</span> imports passed</div>
-            <div><span class="g">✓</span> run passed</div>
-            <div><span class="g">OK</span><span class="cursor"></span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="nav-item">
-        <button class="nav-link" type="button" aria-expanded="false">Cloud <span class="chev">▾</span></button>
-        <div class="nav-panel">
-          <div class="panel-links">
-            <a href="/cloud/">Gallery<span class="d">browse what people published</span></a>
-            <a href="/publish/">Publish<span class="d">one command, a link anyone can run</span></a>
-            <a href="/contact/">Contact<span class="d">talk to the person building it</span></a>
-          </div>
-          <div class="panel-mini" aria-hidden="true">
-            <div class="p">$ krate publish app.krate</div>
-            <div><span class="g">✓</span> uploaded</div>
-            <div class="b">krate.tech/cloud</div>
-            <div class="p">send the link<span class="cursor"></span></div>
-          </div>
-        </div>
-      </div>
-    </nav>
-
-    <div class="head-cta">
-      <a class="pill pill-primary" href="/#ctaSec">Install</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
     </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
   </div>
 </header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
 
-  <main id="main">
-    <!-- 1. Hero -->
-    <header class="hero">
-      <div class="wrap">
-        <a class="home-hero-badge" href="/#ctaSec">
-          <span class="new">START</span> <b>one command</b>&nbsp;· then describe what you want
-        </a>
-        <h1 class="display">Describe it. Krate makes it
-          <span class="rot"><span class="word" id="rotWord">real</span><span class="bar"></span></span>
-        </h1>
-        <p class="hero-lead">Describe the app you want in plain English. An AI writes it. You get <strong>one file</strong> that runs on Mac, Windows, and Linux, and that you can send to anyone.</p>
-      </div>
-    </header>
+<main>
+<section class="ph sm l art wrap">
+  <span class="eye">Guide</span>
+  <h1>Describe it. Krate makes it <span class="rw" id="rotWord">real</span></h1>
+  <p class="lede">Describe the app you want in plain English. An AI writes it. You get <strong>one file</strong> that runs on Mac, Windows, and Linux, and that you can send to anyone.</p>
+  <p class="meta">7 min read</p>
+  <div class="acts">
+    <a class="pill" href="/#ctaSec"><span class="tag blue">START</span> <b>one command</b>&nbsp;· then describe what you want</a>
+  </div>
+</section>
 
-    <!-- 2. Prerequisites -->
-    <section class="section" id="before-you-start">
-      <div class="wrap">
-        <p class="label">Before you start</p>
-        <h2>Two things you need.</h2>
-        <div class="prose">
-          <p>You need <strong>Krate installed</strong>. If you do not have it yet, grab it from the <a href="/#ctaSec">home page</a> -- one command in your terminal.</p>
-          <p>You also need the <strong>Rust build tools</strong>. This is what turns the AI's code into a real running app. You do not have to write any Rust yourself.</p>
-        </div>
-        <div class="note-box">
-          <p><strong>You do not install the build tools by hand.</strong> The first time you make an app, Krate checks what is missing and offers to set it up for you. Say yes and it installs.</p>
-          <p>It is a one-time setup of about five minutes. After that, every app you make builds fast. You can check your setup any time with <code>krate doctor</code>.</p>
-        </div>
-      </div>
-    </section>
+<section class="art-body wrap">
+  <div class="doc">
+    <nav class="toc" aria-label="On this page">
+      <h6>On this page</h6>
+      <a href="#before-you-start">Before you start</a>
+      <a href="#type-krate">Type krate</a>
+      <a href="#connect-your-ai">Connect your AI</a>
+      <a href="#build-your-command">Build your command</a>
+      <a href="#what-to-expect">What to expect</a>
+      <a href="#krate-cloud">Krate Cloud</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+    </nav>
+    <article class="prose">
+      <p class="lbl">Before you start</p>
+      <h2 id="before-you-start">Two things you need.</h2>
+      <p>You need <strong>Krate installed</strong>. If you do not have it yet, grab it from the <a href="/#ctaSec">home page</a> -- one command in your terminal.</p>
+      <p>You also need the <strong>Rust build tools</strong>. This is what turns the AI's code into a real running app. You do not have to write any Rust yourself.</p>
+      <div class="call"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="7.2"/><path d="M10 9v4.6M10 6.4v.1"/></svg><div>
+        <p><strong>You do not install the build tools by hand.</strong> The first time you make an app, Krate checks what is missing and offers to set it up for you. Say yes and it installs.</p>
+        <p>It is a one-time setup of about five minutes. After that, every app you make builds fast. You can check your setup any time with <code>krate doctor</code>.</p>
+      </div></div>
 
-    <!-- 2b. Connect your AI. Deliberately a lookup, not a login: every one of
-         these tools owns its own sign-in, and Krate holding a copy of anyone's
-         credentials would be strictly worse than the tool holding its own. -->
-    <section class="band">
-      <div class="wrap">
-        <h2>Type <code>krate</code>. Say what you want.</h2>
-        <p class="lead">
-          Everything below happens inside <code>krate</code>. You do not need to
-          remember a flag, name an output file, or know which AI you have
-          installed.
-        </p>
-
-        <ol class="tui-steps">
-          <li>
-            <h3>Type <code>krate</code></h3>
-            <p>It opens a short menu. Pick <strong>Make an app</strong>.</p>
-            <pre>krate</pre>
-          </li>
-          <li>
-            <h3>Say what you want</h3>
-            <p>
-              Plain words. Krate checks which AI tools actually work on your
-              machine and asks which should write it. One that is installed but
-              not signed in is shown with the command that fixes it, so you
-              cannot pick one that will fail.
-            </p>
-            <pre>a checklist that saves my todos</pre>
-          </li>
-          <li>
-            <h3>Watch it build</h3>
-            <p>
-              It reads Krate's API reference, writes the code, compiles it, and
-              checks the app runs and paints a window. Two to five minutes,
-              with each stage and its elapsed time on screen.
-            </p>
-            <pre>&#10003; wrote the app's code        1m 12s
+      <!-- Connect your AI. Deliberately a lookup, not a login: every one of
+           these tools owns its own sign-in, and Krate holding a copy of anyone's
+           credentials would be strictly worse than the tool holding its own. -->
+      <h2 id="type-krate">Type <code>krate</code>. Say what you want.</h2>
+      <p>Everything below happens inside <code>krate</code>. You do not need to remember a flag, name an output file, or know which AI you have installed.</p>
+      <ol class="steps">
+        <li>
+          <h3>Type <code>krate</code></h3>
+          <p>It opens a short menu. Pick <strong>Make an app</strong>.</p>
+          <pre>krate</pre>
+        </li>
+        <li>
+          <h3>Say what you want</h3>
+          <p>Plain words. Krate checks which AI tools actually work on your machine and asks which should write it. One that is installed but not signed in is shown with the command that fixes it, so you cannot pick one that will fail.</p>
+          <pre>a checklist that saves my todos</pre>
+        </li>
+        <li>
+          <h3>Watch it build</h3>
+          <p>It reads Krate's API reference, writes the code, compiles it, and checks the app runs and paints a window. Two to five minutes, with each stage and its elapsed time on screen.</p>
+          <pre>&#10003; wrote the app's code        1m 12s
 &#10003; checked it builds and runs    38s
 
 Created checklist.krate  (14 KB)</pre>
-          </li>
-          <li>
-            <h3>Open it, change it, or publish it</h3>
-            <p>
-              Krate offers all three when it finishes. Changing it means saying
-              what should be different &mdash; the app carries its own source,
-              so the AI edits what is there instead of starting over.
-            </p>
-          </li>
-        </ol>
+        </li>
+        <li>
+          <h3>Open it, change it, or publish it</h3>
+          <p>Krate offers all three when it finishes. Changing it means saying what should be different -- the app carries its own source, so the AI edits what is there instead of starting over.</p>
+        </li>
+      </ol>
+      <p class="aside">Prefer one line with no prompts? <code>krate create "a checklist" --output checklist.krate</code> does the same thing, for scripts and CI.</p>
 
-        <p class="aside">
-          Prefer one line with no prompts?
-          <code>krate create "a checklist" --output checklist.krate</code>
-          does the same thing, for scripts and CI.
-        </p>
+      <p class="lbl">Connect your AI</p>
+      <h2 id="connect-your-ai">Use the AI you already have.</h2>
+      <p>Krate does not run an AI for you and never sees your account. It uses an AI tool that is already installed on your machine and already signed in to you. Your code stays on your computer, and your key never touches us.</p>
+      <p>Run this to see what you can use right now:</p>
+      <div class="cmd">
+        <pre id="cmd-ai"><span class="p">krate</span> ai</pre>
+        <button class="cp copy-button" type="button" data-target="cmd-ai" aria-label="Copy command">Copy</button>
       </div>
-    </section>
-
-    <section class="section" id="connect-your-ai">
-      <div class="wrap">
-        <p class="label">Connect your AI</p>
-        <h2>Use the AI you already have.</h2>
-        <div class="prose">
-          <p>Krate does not run an AI for you and never sees your account. It uses an AI tool that is already installed on your machine and already signed in to you. Your code stays on your computer, and your key never touches us.</p>
-          <p>Run this to see what you can use right now:</p>
+      <p>It prints the tools it found, the ones you could add, and the exact command to make your first app. If you have none of them yet, install any one below, sign in to it once, and run <code>krate ai</code> again.</p>
+      <div class="ai" role="list">
+        <div class="ai-row" role="listitem">
+          <div class="ai-name">Claude Code</div>
+          <div class="ai-install"><code>npm install -g @anthropic-ai/claude-code</code></div>
+          <div class="ai-flag"><code>--agent claude</code></div>
         </div>
-
-        <div class="cmd">
-          <pre id="cmd-ai"><span class="p">krate</span> ai</pre>
-          <button class="copy-button" type="button" data-target="cmd-ai" aria-label="Copy command">Copy</button>
+        <div class="ai-row" role="listitem">
+          <div class="ai-name">OpenAI Codex</div>
+          <div class="ai-install"><code>npm install -g @openai/codex</code></div>
+          <div class="ai-flag"><code>--agent codex</code></div>
         </div>
-
-        <div class="prose">
-          <p>It prints the tools it found, the ones you could add, and the exact command to make your first app. If you have none of them yet, install any one below, sign in to it once, and run <code>krate ai</code> again.</p>
+        <div class="ai-row" role="listitem">
+          <div class="ai-name">Google Gemini</div>
+          <div class="ai-install"><code>npm install -g @google/gemini-cli</code></div>
+          <div class="ai-flag"><code>--agent gemini</code></div>
         </div>
-
-        <div class="ai-table" role="list">
-          <div class="ai-row" role="listitem">
-            <div class="ai-name">Claude Code</div>
-            <div class="ai-install"><code>npm install -g @anthropic-ai/claude-code</code></div>
-            <div class="ai-flag"><code>--agent claude</code></div>
-          </div>
-          <div class="ai-row" role="listitem">
-            <div class="ai-name">OpenAI Codex</div>
-            <div class="ai-install"><code>npm install -g @openai/codex</code></div>
-            <div class="ai-flag"><code>--agent codex</code></div>
-          </div>
-          <div class="ai-row" role="listitem">
-            <div class="ai-name">Google Gemini</div>
-            <div class="ai-install"><code>npm install -g @google/gemini-cli</code></div>
-            <div class="ai-flag"><code>--agent gemini</code></div>
-          </div>
-          <div class="ai-row" role="listitem">
-            <div class="ai-name">GitHub Copilot</div>
-            <div class="ai-install"><code>npm install -g @github/copilot</code></div>
-            <div class="ai-flag"><code>--agent copilot</code></div>
-          </div>
-          <div class="ai-row" role="listitem">
-            <div class="ai-name">xAI Grok</div>
-            <div class="ai-install">Install the Grok CLI from xAI</div>
-            <div class="ai-flag"><code>--agent grok</code></div>
-          </div>
+        <div class="ai-row" role="listitem">
+          <div class="ai-name">GitHub Copilot</div>
+          <div class="ai-install"><code>npm install -g @github/copilot</code></div>
+          <div class="ai-flag"><code>--agent copilot</code></div>
         </div>
-
-        <div class="note-box">
-          <p><strong>Using something else?</strong> Any tool that can write files from a prompt works. Pass it with <code>--author-cmd "your command"</code> instead of <code>--agent</code>. Krate hands it the request and a working starter, then checks whatever it writes.</p>
-          <p><strong>No AI at all?</strong> You can still make an app. Leave the AI out and Krate uses a built-in template.</p>
+        <div class="ai-row" role="listitem">
+          <div class="ai-name">xAI Grok</div>
+          <div class="ai-install">Install the Grok CLI from xAI</div>
+          <div class="ai-flag"><code>--agent grok</code></div>
         </div>
       </div>
-    </section>
+      <div class="call"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="7.2"/><path d="M10 9v4.6M10 6.4v.1"/></svg><div>
+        <p><strong>Using something else?</strong> Any tool that can write files from a prompt works. Pass it with <code>--author-cmd "your command"</code> instead of <code>--agent</code>. Krate hands it the request and a working starter, then checks whatever it writes.</p>
+        <p><strong>No AI at all?</strong> You can still make an app. Leave the AI out and Krate uses a built-in template.</p>
+      </div></div>
 
-    <!-- 3. The command builder. Nobody should hand-assemble a create command.
-         Without JavaScript this still renders a real, runnable example command
-         in the output block, so the section is never an empty box. -->
-    <section class="section" id="build-your-command">
-      <div class="wrap">
-        <p class="label">Build your command</p>
-        <h2>Rather not be asked? Build the one-line version.</h2>
-        <div class="prose">
-          <p>Everything above happens by typing <code>krate</code> and answering its questions. If you would rather have a single command &mdash; for a script, for CI, or to keep in your notes &mdash; describe the app here and it is written out with the quoting handled.</p>
+      <!-- The command builder. Nobody should hand-assemble a create command.
+           Without JavaScript this still renders a real, runnable example command
+           in the output block, so the section is never an empty box. -->
+      <p class="lbl">Build your command</p>
+      <h2 id="build-your-command">Rather not be asked? Build the one-line version.</h2>
+      <p>Everything above happens by typing <code>krate</code> and answering its questions. If you would rather have a single command -- for a script, for CI, or to keep in your notes -- describe the app here and it is written out with the quoting handled.</p>
+      <div class="builder form">
+        <div class="fld">
+          <label for="b-request">What do you want the app to do?</label>
+          <p class="hint">Plain words. One focused app works best -- a tool, a form, a small game.</p>
+          <textarea id="b-request" name="request" rows="3" spellcheck="true" autocomplete="off" placeholder="a habit tracker that saves my streaks"></textarea>
         </div>
-
-        <div class="builder">
-          <div class="builder-field">
-            <label for="b-request">What do you want the app to do?</label>
-            <p class="hint">Plain words. One focused app works best -- a tool, a form, a small game.</p>
-            <textarea id="b-request" name="request" rows="3" spellcheck="true" autocomplete="off" placeholder="a habit tracker that saves my streaks"></textarea>
+        <fieldset class="fld">
+          <legend>Which AI should write it?</legend>
+          <div class="choices">
+            <label class="choice">
+              <input type="radio" name="b-ai" value="claude" checked />
+              <span class="choice-text">Claude Code
+                <span class="choice-note">You have the <code>claude</code> command installed. This is the supported path.</span>
+              </span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="b-ai" value="other" />
+              <span class="choice-text">Another AI tool
+                <span class="choice-note">Any command that writes the app source. Krate hands it the request.</span>
+              </span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="b-ai" value="none" />
+              <span class="choice-text">No AI, use a built-in template
+                <span class="choice-note">Works offline and finishes in seconds. You edit it afterwards.</span>
+              </span>
+            </label>
           </div>
-
-          <div class="builder-field">
-            <fieldset>
-              <legend>Which AI should write it?</legend>
-              <div class="choices">
-                <label class="choice">
-                  <input type="radio" name="b-ai" value="claude" checked />
-                  <span class="choice-text">Claude Code
-                    <span class="choice-note">You have the <code>claude</code> command installed. This is the supported path.</span>
-                  </span>
-                </label>
-                <label class="choice">
-                  <input type="radio" name="b-ai" value="other" />
-                  <span class="choice-text">Another AI tool
-                    <span class="choice-note">Any command that writes the app source. Krate hands it the request.</span>
-                  </span>
-                </label>
-                <label class="choice">
-                  <input type="radio" name="b-ai" value="none" />
-                  <span class="choice-text">No AI, use a built-in template
-                    <span class="choice-note">Works offline and finishes in seconds. You edit it afterwards.</span>
-                  </span>
-                </label>
-              </div>
-            </fieldset>
+        </fieldset>
+        <div class="fld js-only" id="b-author-cmd-field" hidden>
+          <label for="b-author-cmd">The command that writes the app</label>
+          <p class="hint">It is given <code>KRATE_APP_DIR</code>, <code>KRATE_APP_NAME</code>, and <code>KRATE_REQUEST</code>, and must write <code>Cargo.toml</code>, <code>src/lib.rs</code>, and <code>manifest.toml</code> into the app directory.</p>
+          <input type="text" id="b-author-cmd" name="author-cmd" autocomplete="off" spellcheck="false" placeholder="my-ai-tool write-app" />
+        </div>
+        <div class="fld js-only" id="b-output-field" hidden>
+          <label for="b-output">File name to save it as</label>
+          <p class="hint">Filled in from your description. Change it if you want a different name.</p>
+          <input type="text" id="b-output" name="output" autocomplete="off" spellcheck="false" placeholder="my-app.krate" />
+        </div>
+        <div class="builder-out">
+          <p class="field-label">The short way</p>
+          <div class="cmd"><pre tabindex="0">krate</pre></div>
+          <p class="builder-status">Asks you everything it needs. Nothing below is required.</p>
+        </div>
+        <div class="builder-out">
+          <p class="field-label" id="b-out-label">Your command</p>
+          <div class="cmd">
+            <pre id="b-command" aria-labelledby="b-out-label" aria-live="polite" tabindex="0">krate create "a habit tracker that saves my streaks" --output habit-tracker.krate --agent claude</pre>
+            <button class="cp copy-button" type="button" data-target="b-command" id="b-copy" aria-label="Copy the built command">Copy</button>
           </div>
-
-          <div class="builder-field js-only" id="b-author-cmd-field" hidden>
-            <label for="b-author-cmd">The command that writes the app</label>
-            <p class="hint">It is given <code>KRATE_APP_DIR</code>, <code>KRATE_APP_NAME</code>, and <code>KRATE_REQUEST</code>, and must write <code>Cargo.toml</code>, <code>src/lib.rs</code>, and <code>manifest.toml</code> into the app directory.</p>
-            <input type="text" id="b-author-cmd" name="author-cmd" autocomplete="off" spellcheck="false" placeholder="my-ai-tool write-app" />
-          </div>
-
-          <div class="builder-field js-only" id="b-output-field" hidden>
-            <label for="b-output">File name to save it as</label>
-            <p class="hint">Filled in from your description. Change it if you want a different name.</p>
-            <input type="text" id="b-output" name="output" autocomplete="off" spellcheck="false" placeholder="my-app.krate" />
-          </div>
-
-          <div class="builder-out">
-            <p class="field-label">The short way</p>
-            <div class="cmd">
-              <pre tabindex="0">krate</pre>
-            </div>
-            <p class="builder-status">
-              Asks you everything it needs. Nothing below is required.
-            </p>
-          </div>
-
-          <div class="builder-out">
-            <p class="field-label" id="b-out-label">Your command</p>
-            <div class="cmd">
-              <pre id="b-command" aria-labelledby="b-out-label" aria-live="polite" tabindex="0">krate create "a habit tracker that saves my streaks" --output habit-tracker.krate --agent claude</pre>
-              <button class="copy-button" type="button" data-target="b-command" id="b-copy" aria-label="Copy the built command">Copy</button>
-            </div>
-            <p class="builder-status" id="b-status">Run this in your terminal, in the folder where you want the file to land.</p>
-          </div>
+          <p class="builder-status" id="b-status">Run this in your terminal, in the folder where you want the file to land.</p>
         </div>
       </div>
-    </section>
 
-    <!-- 4. The steps -->
-    <section class="section" id="what-to-expect">
-      <div class="wrap">
-        <p class="label">What to expect</p>
-        <h2>It writes real apps, and checks its own work.</h2>
-        <div class="prose">
-          <p>When Krate hands your request to an AI, that AI does not write blind. It is handed a full reference to what Krate can do, then works in a <strong>loop</strong>: write the code, run Krate's own checker, read exactly what failed, fix it -- and it does not stop until the app builds, imports only what it declared, and actually runs. What you get is a real, working <code>.krate</code>, not a mockup.</p>
-          <p>It is at its best with <strong>focused apps</strong>: a tool, a form, a game, a utility. Each of these was built from a single plain-English line, and each is a real working app:</p>
-        </div>
-
-        <div class="gallery">
-          <div class="shot"><figure>
-            <img src="/app-shots/calc.png" alt="A calculator app with a grid of number and operator buttons and a display showing 33" loading="lazy" />
-            <figcaption><span class="req">a calculator with buttons</span><p class="made">a full clickable keypad that evaluates what you type</p></figcaption>
-          </figure></div>
-          <div class="shot"><figure>
-            <img src="/app-shots/pomodoro.png" alt="A pomodoro timer with a circular orange progress ring and a large countdown" loading="lazy" />
-            <figcaption><span class="req">a pomodoro timer with a ring</span><p class="made">a circular countdown drawn on a canvas</p></figcaption>
-          </figure></div>
-          <div class="shot"><figure>
-            <img src="/app-shots/maze.png" alt="A randomly generated maze with a player dot and a green exit square" loading="lazy" />
-            <figcaption><span class="req">a maze you can walk with arrow keys</span><p class="made">a generated maze, a player, an exit</p></figcaption>
-          </figure></div>
-          <div class="shot"><figure>
-            <img src="/app-shots/todo.png" alt="A todo list app with a text field, checkboxes, and an add-task button" loading="lazy" />
-            <figcaption><span class="req">a todo list that saves</span><p class="made">checkboxes that are still there next time</p></figcaption>
-          </figure></div>
-          <div class="shot"><figure>
-            <img src="/app-shots/converter.png" alt="A miles to kilometers converter showing 26.2 miles equals 42.164 km" loading="lazy" />
-            <figcaption><span class="req">a miles to kilometers converter</span><p class="made">live conversion as you type</p></figcaption>
-          </figure></div>
-          <div class="shot"><figure>
-            <img src="/app-shots/imgview.png" alt="An image viewer window with a button to pick a PNG file" loading="lazy" />
-            <figcaption><span class="req">an image viewer</span><p class="made">pick a PNG through a dialog and show it</p></figcaption>
-          </figure></div>
-        </div>
-
-        <div class="prose" style="margin-top:26px">
-          <p>It <strong>will not</strong> one-shot a large, sprawling app from one line -- narrow it down, or build it in pieces. Authoring iterates, so a run can take a few minutes; Krate shows a heartbeat while it works, and if it stops early it tells you how far the checker got and what remained. Running the same command again usually finishes it.</p>
-          <p>You can also skip the AI and start from a built-in template offline, then edit it:</p>
-        </div>
-        <div class="cmd" style="max-width:66ch;margin-top:16px">
-          <pre id="cmd-4"><span class="p">krate</span> create <span class="s">"a checklist"</span> --output ./mytodo --kind checklist</pre>
-          <button class="copy-button" type="button" data-target="cmd-4" aria-label="Copy command">Copy</button>
-        </div>
+      <p class="lbl">What to expect</p>
+      <h2 id="what-to-expect">It writes real apps, and checks its own work.</h2>
+      <p>When Krate hands your request to an AI, that AI does not write blind. It is handed a full reference to what Krate can do, then works in a <strong>loop</strong>: write the code, run Krate's own checker, read exactly what failed, fix it -- and it does not stop until the app builds, imports only what it declared, and actually runs. What you get is a real, working <code>.krate</code>, not a mockup.</p>
+      <p>It is at its best with <strong>focused apps</strong>: a tool, a form, a game, a utility. Each of these was built from a single plain-English line, and each is a real working app:</p>
+      <div class="gal">
+        <figure>
+          <img src="/app-shots/calc.png" alt="A calculator app with a grid of number and operator buttons and a display showing 33" loading="lazy" />
+          <figcaption><span class="req">a calculator with buttons</span><p class="made">a full clickable keypad that evaluates what you type</p></figcaption>
+        </figure>
+        <figure>
+          <img src="/app-shots/pomodoro.png" alt="A pomodoro timer with a circular orange progress ring and a large countdown" loading="lazy" />
+          <figcaption><span class="req">a pomodoro timer with a ring</span><p class="made">a circular countdown drawn on a canvas</p></figcaption>
+        </figure>
+        <figure>
+          <img src="/app-shots/maze.png" alt="A randomly generated maze with a player dot and a green exit square" loading="lazy" />
+          <figcaption><span class="req">a maze you can walk with arrow keys</span><p class="made">a generated maze, a player, an exit</p></figcaption>
+        </figure>
+        <figure>
+          <img src="/app-shots/todo.png" alt="A todo list app with a text field, checkboxes, and an add-task button" loading="lazy" />
+          <figcaption><span class="req">a todo list that saves</span><p class="made">checkboxes that are still there next time</p></figcaption>
+        </figure>
+        <figure>
+          <img src="/app-shots/converter.png" alt="A miles to kilometers converter showing 26.2 miles equals 42.164 km" loading="lazy" />
+          <figcaption><span class="req">a miles to kilometers converter</span><p class="made">live conversion as you type</p></figcaption>
+        </figure>
+        <figure>
+          <img src="/app-shots/imgview.png" alt="An image viewer window with a button to pick a PNG file" loading="lazy" />
+          <figcaption><span class="req">an image viewer</span><p class="made">pick a PNG through a dialog and show it</p></figcaption>
+        </figure>
       </div>
-    </section>
-
-    <!-- 6. Krate Cloud / publish -->
-    <section class="section" id="krate-cloud">
-      <div class="wrap">
-        <p class="label">Krate Cloud</p>
-        <h2>Publishing, honestly.</h2>
-        <div class="prose">
-          <p><span class="pill live">Works today</span></p>
-          <p>The <code>krate publish</code> command is real: it uploads your <code>.krate</code> to a hub and returns a link, and anyone can <code>krate run</code> that link. Because the hub stores each app by the hash of its bytes, publishing the same app twice returns the same URL.</p>
-          <p><span class="pill">Works today</span></p>
-          <p>A <strong>public listing</strong> is live at <a href="/cloud/">krate.tech/cloud</a>: published apps show up there with what each one asks for, who made it, and a command anyone can copy. Publishing signs you in with GitHub so the app carries your name.</p>
-          <p>Publish from the terminal with <code>krate publish yourapp.krate</code>, or from <a href="/publish/">the publish page</a> by dropping the file into the browser -- it reads the app itself and shows its name, size, and every permission before you send it.</p>
-          <p>Signing and automatic updates are not built yet.</p>
-        </div>
-        <div class="cta-row">
-          <a class="button primary" href="/cloud/">See what people have published</a>
-          <a class="button" href="/#ctaSec">Get Krate</a>
-        </div>
+      <p>It <strong>will not</strong> one-shot a large, sprawling app from one line -- narrow it down, or build it in pieces. Authoring iterates, so a run can take a few minutes; Krate shows a heartbeat while it works, and if it stops early it tells you how far the checker got and what remained. Running the same command again usually finishes it.</p>
+      <p>You can also skip the AI and start from a built-in template offline, then edit it:</p>
+      <div class="cmd">
+        <pre id="cmd-4"><span class="p">krate</span> create <span class="s">"a checklist"</span> --output ./mytodo --kind checklist</pre>
+        <button class="cp copy-button" type="button" data-target="cmd-4" aria-label="Copy command">Copy</button>
       </div>
-    </section>
 
-    <!-- 7. Troubleshooting -->
-    <section class="section" id="troubleshooting">
-      <div class="wrap">
-        <p class="label">Troubleshooting</p>
-        <h2>If something goes wrong.</h2>
-        <div class="trouble">
-          <details>
-            <summary>The AI run hangs or takes forever</summary>
-            <div class="answer">
-              <p>While it works, Krate prints a dot every few seconds so you can see it is alive. Authoring iterates -- write, check, fix -- so a few minutes is normal. If it runs long and stops, Krate tells you how far its checker got, so you know what remained; running the same command again usually finishes it. If it keeps stalling, start from a template instead: add <code>--kind checklist</code> and edit what it gives you. You can also give it more time with <code>KRATE_AUTHOR_TIMEOUT_SECS</code>.</p>
-            </div>
-          </details>
-          <details>
-            <summary>It failed installing Rust</summary>
-            <div class="answer">
-              <p>Update to the latest version of Krate and try again. The install step has improved across releases, and a newer Krate handles setups that an older one tripped on. Reinstall Krate from the <a href="/#ctaSec">home page</a>, then run <code>krate create</code> again.</p>
-            </div>
-          </details>
-          <details>
-            <summary>cargo-component not found</summary>
-            <div class="answer">
-              <p>The newest Krate ships <code>cargo-component</code> alongside the tools it installs for you, so this is fixed by reinstalling the latest Krate. After that, run <code>krate doctor</code> to confirm your setup is complete.</p>
-            </div>
-          </details>
-        </div>
+      <p class="lbl">Krate Cloud</p>
+      <h2 id="krate-cloud">Publishing, honestly.</h2>
+      <p><span class="tag ok">Works today</span></p>
+      <p>The <code>krate publish</code> command is real: it uploads your <code>.krate</code> to a hub and returns a link, and anyone can <code>krate run</code> that link. Because the hub stores each app by the hash of its bytes, publishing the same app twice returns the same URL.</p>
+      <p><span class="tag">Works today</span></p>
+      <p>A <strong>public listing</strong> is live at <a href="/cloud/">krate.tech/cloud</a>: published apps show up there with what each one asks for, who made it, and a command anyone can copy. Publishing signs you in with GitHub so the app carries your name.</p>
+      <p>Publish from the terminal with <code>krate publish yourapp.krate</code>, or from <a href="/publish/">the publish page</a> by dropping the file into the browser -- it reads the app itself and shows its name, size, and every permission before you send it.</p>
+      <p>Signing and automatic updates are not built yet.</p>
+      <div class="acts">
+        <a class="btn dark sm" href="/cloud/">See what people have published <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+        <a class="btn ghost sm" href="/#ctaSec">Get Krate</a>
       </div>
-    </section>
-  </main>
 
-  <footer>
-    <div class="wrap footer-inner">
-      <span>© 2026 Krate Labs</span>
-      <div class="footer-links">
-        <a href="/">Home</a>
-        <a href="/docs/">Docs</a>
-        <a href="/cloud/">Cloud</a>
-        <a href="https://github.com/incyashraj/krate">GitHub</a>
-        <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
+      <p class="lbl">Troubleshooting</p>
+      <h2 id="troubleshooting">If something goes wrong.</h2>
+      <div class="qa">
+        <details>
+          <summary>The AI run hangs or takes forever</summary>
+          <div class="ans">
+            <p>While it works, Krate prints a dot every few seconds so you can see it is alive. Authoring iterates -- write, check, fix -- so a few minutes is normal. If it runs long and stops, Krate tells you how far its checker got, so you know what remained; running the same command again usually finishes it. If it keeps stalling, start from a template instead: add <code>--kind checklist</code> and edit what it gives you. You can also give it more time with <code>KRATE_AUTHOR_TIMEOUT_SECS</code>.</p>
+          </div>
+        </details>
+        <details>
+          <summary>It failed installing Rust</summary>
+          <div class="ans">
+            <p>Update to the latest version of Krate and try again. The install step has improved across releases, and a newer Krate handles setups that an older one tripped on. Reinstall Krate from the <a href="/#ctaSec">home page</a>, then run <code>krate create</code> again.</p>
+          </div>
+        </details>
+        <details>
+          <summary>cargo-component not found</summary>
+          <div class="ans">
+            <p>The newest Krate ships <code>cargo-component</code> alongside the tools it installs for you, so this is fixed by reinstalling the latest Krate. After that, run <code>krate doctor</code> to confirm your setup is complete.</p>
+          </div>
+        </details>
       </div>
-    </div>
-  </footer>
+    </article>
+  </div>
+</section>
 
-  <script>
+<!-- The live page points at /#ctaSec ("Get Krate") and /cloud/ throughout;
+     the band carries those two, worded from the page's own title and lede. -->
+<div class="band st rv">
+  <div><h2>Describe it. Krate makes it real.</h2><p>You get one file that runs on Mac, Windows, and Linux, and that you can send to anyone.</p></div>
+  <div class="acts">
+    <a class="btn dark" href="/#ctaSec">Get Krate <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/cloud/">See what people have published</a>
+  </div>
+</div>
+
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+</footer>
+<script src="/kit/site.js"></script>
+<script>
     // Copy buttons: inline, no external libraries, CSP-safe. Each button names
     // the id of the <pre> whose text it copies. We copy pre.textContent so the
     // syntax-highlight spans do not end up in the clipboard.
@@ -1419,43 +624,6 @@ Created checklist.krate  (14 KB)</pre>
       }
 
       render();
-    })();
-  </script>
-
-  <script>
-    /* The "On this page" rail, same as the book's: built from the page's own
-       h2 sections on screens wide enough to carry it. */
-    (function () {
-      "use strict";
-      if (!window.matchMedia("(min-width: 1400px)").matches) return;
-      var sections = document.querySelectorAll("section[id]");
-      if (sections.length < 2) return;
-      var rail = document.createElement("nav");
-      rail.className = "krate-rail";
-      rail.setAttribute("aria-label", "On this page");
-      rail.innerHTML = '<div class="krate-rail-title">On this page</div>';
-      var links = [];
-      sections.forEach(function (s) {
-        var h = s.querySelector("h2");
-        if (!h) return;
-        var a = document.createElement("a");
-        a.href = "#" + s.id;
-        a.className = "krate-rail-link";
-        a.textContent = h.textContent.trim();
-        rail.appendChild(a);
-        links.push({ a: a, s: s });
-      });
-      if (links.length < 2) return;
-      document.body.appendChild(rail);
-      var spy = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-          if (!e.isIntersecting) return;
-          links.forEach(function (l) {
-            l.a.classList.toggle("active", l.s === e.target);
-          });
-        });
-      }, { rootMargin: "-80px 0px -60% 0px" });
-      links.forEach(function (l) { spy.observe(l.s); });
     })();
   </script>
 <script>
