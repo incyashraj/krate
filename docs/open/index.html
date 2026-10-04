@@ -1,244 +1,209 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#000000" />
 <title>Open a Krate app</title>
 <meta name="description" content="Someone sent you a .krate file. Install Krate once, double-click the file, decide what it may do." />
 <link rel="icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
 <style>
-@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
-  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --disp: "Syne", var(--sans); }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
-  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img { max-width: 100%; }
-.hidden { display: none !important; }
-::selection { background: rgba(165, 88, 251, 0.35); }
-.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
-  pointer-events: none; user-select: none;
-  background: linear-gradient(to top, transparent, #000);
-  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
-          mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
-  display: flex; align-items: center; gap: 14px; user-select: none;
-  transform: translateX(-50%); }
-.brandbar .name { display: flex; align-items: center; gap: 0.34em;
-  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
-.brandbar .name img { height: 19px; width: auto; }
-.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
-  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
-.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
-  transition: color 0.15s ease, background 0.15s ease; }
-.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
-@media (max-width: 640px) { .bnav { display: none; } }
-.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
-  margin-left: -450px; pointer-events: none; border-radius: 100%;
-  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
-  filter: blur(40px); }
-.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
-h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
-.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
-.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
-  opacity: 0; transform: translateY(12px); filter: blur(6px);
-  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  transition: box-shadow 0.25s ease, translate 0.25s ease; }
-.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
-.card:nth-of-type(2) { animation-delay: 0.06s; }
-.card:nth-of-type(3) { animation-delay: 0.12s; }
-.card:nth-of-type(4) { animation-delay: 0.18s; }
-.card:nth-of-type(5) { animation-delay: 0.24s; }
-.card:nth-of-type(6) { animation-delay: 0.3s; }
-@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
-.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
-.card p { font-size: 13.5px; color: #a1a1aa; }
-.card p b { color: #d4d4d8; font-weight: 500; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
-  white-space: nowrap; user-select: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
-  transition: transform 0.15s ease, box-shadow 0.15s ease; }
-.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
-.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
-.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
-.foot nav a:hover { color: #d4d4d8; }
+/* the page's script hides and shows with the hidden attribute; it must beat kit display rules (.btn is inline-flex) */
+.hidden, [hidden] { display: none !important; }
 
-.perm { border-radius: 18px; background: #0c0c0e; box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 24px 60px -20px rgba(0,0,0,0.9);
-  max-width: 420px; margin: 18px auto 6px; padding: 22px 24px; }
-.perm h3 { font-size: 14.5px; font-weight: 500; margin-bottom: 12px; }
-.perm .p { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: #d4d4d8; padding: 7px 0; }
-.perm .p svg { flex: none; margin-top: 3px; }
-.perm .p span b { display: block; font-weight: 500; color: #fff; }
-.perm .p span i { font-style: normal; font-size: 12px; color: #71717a; }
-.perm .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
-.perm .deny { font-size: 12.5px; color: #a1a1aa; }
-.permnote { text-align: center; font-size: 12px; color: #71717a; margin-bottom: 4px; }
-.stepn { font-family: var(--disp); font-weight: 800; font-size: 26px; color: var(--purple); line-height: 1; margin-bottom: 10px; }
-.termbox { display: flex; gap: 8px; align-items: center; margin-top: 12px;
-  background: #000; border: 1px solid rgba(255,255,255,0.1); border-radius: 11px; padding: 10px 14px; }
-.termbox code { flex: 1; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #d4d4d8; overflow-x: auto; white-space: nowrap; }
-.termbox button { font-size: 12px; color: #a1a1aa; flex: none; }
-.termbox button:hover { color: #fff; }
-/* On a phone the command and the Copy button cannot share a line: measured
-   at 412px the code box was 249 wide holding 325 of text, so the command
-   was cut off mid-URL and nobody could read what they were about to run.
-   Stacked, the command gets the whole width, and the box still scrolls
-   sideways for the tail of the longer one. */
-@media (max-width: 560px) {
-  .termbox { flex-direction: column; align-items: stretch; gap: 6px; }
-  .termbox code { width: 100%; }
-  .termbox button {
-    /* 44, not the 32 this first shipped with: Copy is the whole point of
-       the row -- the command is too long to retype -- and a thumb needs
-       44. Measured at 55x34 before this. */
-    align-self: flex-start; min-height: 44px; padding: 6px 16px;
-    border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
-    background: rgba(255,255,255,0.05);
-  }
-}
+/* the app they were actually sent (?a=<hash>), above everything else */
+.theirapp { display: flex; align-items: center; gap: 22px; margin: 34px auto 0; max-width: 620px; padding: 12px 22px 12px 12px; border-radius: 24px; text-align: left; background: var(--s1); box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 35%, var(--hair)), 0 24px 50px -30px rgba(30,90,50,.3); }
+.theirapp #taShot { flex: none; width: 210px; aspect-ratio: 16 / 11; object-fit: cover; object-position: top center; border-radius: 14px; background: var(--s2); box-shadow: 0 0 0 1px var(--hair); }
+.ta-doc { display: none; flex: none; width: auto; height: 74px; margin: 6px 4px 6px 10px; filter: drop-shadow(0 6px 12px rgba(24,24,27,.14)); }
+#taShot[hidden] + .ta-doc { display: block; }
+.ta-text { min-width: 0; }
+.ta-kicker { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 500; color: var(--green); }
+.ta-kicker::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+.theirapp h2 { margin-top: 6px; font-size: 24px; letter-spacing: -.03em; line-height: 1.15; overflow-wrap: anywhere; }
+.ta-sub { margin-top: 4px; font-size: 14px; color: var(--mute); }
+.dlrow { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
+.theirapp .dlrow { margin-top: 14px; }
 
-@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
-
-/* The app they were actually sent, above everything else on the page. */
-.theirapp {
-  display: flex; align-items: center; gap: 18px;
-  margin: 0 0 26px; padding: 16px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: 16px;
-}
-.theirapp img {
-  width: 132px; height: 92px; flex: none;
-  object-fit: cover; object-position: top center;
-  border-radius: 9px; border: 1px solid rgba(255,255,255,0.10);
-  background: #101014;
-}
-.ta-kicker {
-  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
-  color: #7ee2a8; margin: 0 0 4px;
-}
-.theirapp h2 { font-size: 21px; margin: 0; line-height: 1.2; }
-.ta-sub { font-size: 13px; color: #a1a1aa; margin: 5px 0 0; }
-@media (max-width: 560px) {
-  .theirapp { flex-direction: column; align-items: flex-start; gap: 13px; }
-  .theirapp img { width: 100%; height: 128px; }
-}
-.dlnote { margin-top: 9px; font-size: 12.5px; color: #a1a1aa; }
+/* the steps */
+.osteps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.ostep { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 18px; }
+.stepn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; font-weight: 600; color: var(--accent); background: var(--accent-soft); }
+.ostep h2, #galleryCard h2 { font-size: 20px; line-height: 1.3; letter-spacing: -.025em; margin-top: 4px; }
+.ostep p, #galleryCard p { margin-top: 6px; font-size: 15px; line-height: 1.6; color: var(--mute); }
+.ostep p b { font-weight: 600; color: var(--ink); }
+#warnCard .stepn { color: var(--warn); background: var(--warn-soft); }
+#warnCard { box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 30%, var(--hair)), var(--sh-1); }
+.dlnote { margin-top: 12px; font-size: 13.5px; line-height: 1.55; color: var(--ink-3); }
 .dlnote:empty { display: none; }
-.dlrow { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
-.dlrow [hidden] { display: none; }
+.term-h { margin-top: 22px; font-size: 13.5px; color: var(--ink-3); }
+.termbox { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--soft); box-shadow: inset 0 0 0 1px var(--hair); }
+.termbox code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; font: 500 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); }
+.termbox code::before { content: "$ "; color: var(--ink-4); }
+.termbox button { flex: none; height: 32px; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 500; color: var(--ink); background: var(--s1); box-shadow: inset 0 0 0 1px var(--line-2); transition: box-shadow .2s; }
+.termbox button:hover { box-shadow: inset 0 0 0 1px var(--accent); }
 
-  /* Touch, not width: a thumb needs 44px whatever the screen size, and
-     these pages' nav and footer links were 19-20px tall. */
-  @media (pointer: coarse) {
-    nav a[href], .foot a[href], footer a[href] {
-      display: inline-block; padding-top: 11px; padding-bottom: 11px;
-    }
-    button, input[type=submit] { min-height: 44px; }
-    /* Buttons that are links, and the brand mark, which is a tap target
-       on every page (it goes home). */
-    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
-  }
+/* the permission window, drawn the way Krate draws it */
+.ostep.permstep .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 360px); gap: 28px; align-items: start; }
+.perm { border-radius: 20px; padding: 20px 20px 18px; background: var(--s1); box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -30px rgba(24,24,27,.35); }
+.perm .ph2 { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.perm .ph2 img { width: 26px; height: 26px; }
+.perm h3 { font-size: 15.5px; font-weight: 500; }
+.perm .p { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.perm .p:first-of-type { border-top: 0; }
+.perm .p i { flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; }
+.perm .p i svg { width: 10px; height: 10px; }
+.perm .p span b { display: block; font-weight: 500; color: var(--ink); }
+.perm .p span em { font-style: normal; font-size: 12.5px; color: var(--ink-3); }
+.perm .acts { margin-top: 14px; justify-content: flex-end; gap: 8px; }
+.perm .acts .btn { height: 34px; padding: 0 14px; font-size: 13.5px; }
+.permnote { margin-top: 10px; font-size: 12.5px; color: var(--ink-3); text-align: center; }
+
+#galleryCard { text-align: center; padding: 34px 26px; }
+#galleryCard .btn { margin-top: 16px; }
+
+
+@media (max-width: 760px) { .ostep.permstep .body { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) {
+  .theirapp { flex-direction: column; align-items: stretch; gap: 14px; padding: 12px 12px 18px; }
+  .theirapp #taShot { width: 100%; }
+  .ta-doc { margin: 8px 0 0 6px; height: 60px; }
+  .ta-text { padding: 0 6px; }
+  .ostep { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .dlrow .btn { width: 100%; }
+  /* the command gets the whole width; Copy below it, 44px tall */
+  .termbox { flex-direction: column; align-items: stretch; gap: 6px; padding: 10px 12px; }
+  .termbox button { align-self: flex-start; min-height: 44px; }
+}
+@media (pointer: coarse) { .termbox button { min-height: 44px; } }
 </style>
 </head>
 <body>
-<div class="bloom"></div>
-<div class="topblur"></div>
-<div class="brandbar">
-  <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
-  <nav class="bnav" aria-label="Primary">
-    <a href="/#receipts" >Why Krate</a>
-    <a href="/cloud/" >Apps</a>
-    <a href="/docs/" >Docs</a>
-    <a href="/account/" >Account</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
   </nav>
-</div>
-<div class="wrap">
-<!-- When a link carries ?a=<hash>, this page is about ONE app: the one they
-     were actually sent. The worker already redirects here with the hash;
-     until now the page threw it away and showed the generic form. -->
-<div class="theirapp" id="theirApp" hidden>
-  <img id="taShot" alt="" hidden />
-  <div class="ta-text">
-    <p class="ta-kicker">Waiting for you</p>
-    <h2 id="taName">Your app</h2>
-    <p class="ta-sub" id="taSize"></p>
-    <p class="dlrow" id="taRow" hidden><a class="btn" id="taGet" href="#">Download the app</a></p>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
   </div>
-</div>
-<h1 class="page" id="pageHead">Someone sent you an app.</h1>
-<p class="pagesub">It is one small file, like a photo. To open it you need Krate once -- like a player for a movie. After that, every app anyone sends you just opens, and each one tells you what it wants first.</p>
-<div class="card">
-  <div class="stepn">1</div>
-  <h2>Get Krate, once</h2>
-  <p id="dlSize">Free and open source. This is the only setup there is: after it, every app anyone ever sends you is just a double-click.</p>
-  <p class="dlrow"><a class="btn primary" id="dlBtn" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a><a class="btn" id="dlBtn2" href="https://github.com/incyashraj/krate/releases/latest" hidden>Download for Intel Macs</a></p>
-  <p class="dlnote" id="dlNote"></p>
-  <div id="terminal">
-    <p style="margin-top:12px; font-size:12.5px">Comfortable in a terminal instead?</p>
-    <div class="termbox"><code>curl -fsSL https://krate.tech/install.sh | sh</code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
-    <div class="termbox"><code>irm https://krate.tech/install.ps1 | iex</code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main>
+<section class="ph wrap n">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Received an app?</span>
+  <h1 class="page" id="pageHead">Someone sent you an app.</h1>
+  <p class="lede pagesub">It is one small file, like a photo. To open it you need Krate once -- like a player for a movie. After that, every app anyone sends you just opens, and each one tells you what it wants first.</p>
+
+  <!-- When a link carries ?a=<hash>, this page is about ONE app: the one they were actually sent.
+       The script fills taName / taSize / taShot / taGet from GET /meta/<hash> and unhides it. -->
+  <div class="theirapp" id="theirApp" hidden>
+    <img id="taShot" alt="" hidden>
+    <img class="ta-doc" src="/krate-doc.png" alt="">
+    <div class="ta-text">
+      <p class="ta-kicker">Waiting for you</p>
+      <h2 id="taName">Your app</h2>
+      <p class="ta-sub" id="taSize"></p>
+      <p class="dlrow" id="taRow" hidden><a class="btn dark" id="taGet" href="#">Download the app</a></p>
+    </div>
   </div>
-</div>
-<!-- The warning is going to happen. A receiver who was told about it clicks
-     through; a receiver surprised by it closes the tab and tells the sender
-     the file was broken. So we say it first, in the words their own OS uses. -->
-<div class="card" id="warnCard" hidden>
-  <div class="stepn">2</div>
-  <h2 id="warnTitle">Your computer will ask once</h2>
-  <p id="warnBody"></p>
-</div>
-<div class="card">
-  <div class="stepn" id="stepOpen">2</div>
-  <h2 id="openTitle">Double-click the file</h2>
-  <p id="openBody">The same as a document or a photo. Nothing to unzip, nothing to install per app, no developer tools.</p>
-</div>
-<div class="card">
-  <div class="stepn" id="stepPerm">3</div>
-  <h2>Decide what it may do</h2>
-  <p>Before any of the app runs, a window like this appears. The app opens with exactly what you allow -- it cannot reach the internet, or any other folder on your computer.</p>
-  <div class="perm">
-    <h3>“Notes” wants to:</h3>
-    <div class="p"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>read files in its notes folder</b><i>to load the notes you saved before</i></span></div>
-    <div class="p"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>save files in its notes folder</b><i>to keep the note you are writing</i></span></div>
-    <div class="p"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>use your clipboard</b><i>to copy and paste inside the app</i></span></div>
-    <div class="acts"><button class="btn deny">Cancel</button><span class="btn primary">Allow and open</span></div>
+</section>
+
+<section class="sec t wrap n">
+  <div class="osteps">
+    <div class="card ostep rv">
+      <div class="stepn">1</div>
+      <div class="body">
+        <h2>Get Krate, once</h2>
+        <p id="dlSize">Free and open source. This is the only setup there is: after it, every app anyone ever sends you is just a double-click.</p>
+        <p class="dlrow"><a class="btn dark" id="dlBtn" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a><a class="btn ghost" id="dlBtn2" href="https://github.com/incyashraj/krate/releases/latest" hidden>Download for Intel Macs</a></p>
+        <p class="dlnote" id="dlNote"></p>
+        <div id="terminal">
+          <p class="term-h">Comfortable in a terminal instead?</p>
+          <div class="termbox"><code>curl -fsSL https://krate.tech/install.sh | sh</code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
+          <div class="termbox"><code>irm https://krate.tech/install.ps1 | iex</code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- The warning is going to happen. A receiver who was told about it clicks through; a receiver surprised
+         by it closes the tab. So we say it first, in the words their own OS uses. (Unhidden per OS by the script.) -->
+    <div class="card ostep rv" id="warnCard" hidden>
+      <div class="stepn">2</div>
+      <div class="body">
+        <h2 id="warnTitle">Your computer will ask once</h2>
+        <p id="warnBody"></p>
+      </div>
+    </div>
+
+    <div class="card ostep rv">
+      <div class="stepn" id="stepOpen">2</div>
+      <div class="body">
+        <h2 id="openTitle">Double-click the file</h2>
+        <p id="openBody">The same as a document or a photo. Nothing to unzip, nothing to install per app, no developer tools.</p>
+      </div>
+    </div>
+
+    <div class="card ostep permstep rv">
+      <div class="stepn" id="stepPerm">3</div>
+      <div class="body">
+        <div>
+          <h2>Decide what it may do</h2>
+          <p>Before any of the app runs, a window like this appears. The app opens with exactly what you allow -- it cannot reach the internet, or any other folder on your computer.</p>
+        </div>
+        <div>
+          <div class="perm" aria-label="An example of Krate's permission window">
+            <div class="ph2"><img src="/krate-mark-3d-96.png" alt=""><h3>“Notes” wants to:</h3></div>
+            <div class="p"><i><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span><b>read files in its notes folder</b><em>to load the notes you saved before</em></span></div>
+            <div class="p"><i><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span><b>save files in its notes folder</b><em>to keep the note you are writing</em></span></div>
+            <div class="p"><i><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span><b>use your clipboard</b><em>to copy and paste inside the app</em></span></div>
+            <div class="acts"><span class="btn ghost">Cancel</span><span class="btn dark">Allow and open</span></div>
+          </div>
+          <p class="permnote">It gets nothing else: no files, no internet, no camera.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card rv" id="galleryCard">
+      <h2>Nothing to open yet?</h2>
+      <p>Take a real one from the gallery -- every listing is one click and the same permission flow.</p>
+      <a class="btn ghost" href="/cloud/">Browse the gallery</a>
+    </div>
   </div>
-  <p class="permnote">It gets nothing else: no files, no internet, no camera.</p>
-</div>
-<div class="card" style="text-align:center" id="galleryCard">
-  <h2>Nothing to open yet?</h2>
-  <p style="margin-bottom:14px">Take a real one from the gallery -- every listing is one click and the same permission flow.</p>
-  <a class="btn" href="/cloud/">Browse the gallery</a>
-</div>
-</div>
+</section>
+
+
+</main>
+
 <footer class="foot">
-  <span>© 2026 Krate Labs</span>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/cloud/">Gallery</a>
-    <a href="/open/">Received an app?</a>
-    <a href="/faq/">FAQ</a>
-    <a href="/contact/">Contact</a>
-    <a href="https://github.com/incyashraj/krate">GitHub</a>
-  </nav>
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
 </footer>
+<script src="/kit/site.js"></script>
 <script>
 document.querySelectorAll("[data-copy]").forEach(function (b) {
   b.addEventListener("click", function () {
