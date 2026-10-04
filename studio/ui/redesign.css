@@ -1174,6 +1174,16 @@ body:not(.light) #thread .plancard { background: var(--surface-2); }
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, var(--hair)), 0 10px 30px -18px color-mix(in srgb, var(--accent) 50%, transparent); }
 body:not(.light) #thread .msg.ask { background: var(--surface-2); }
 #thread .msg.ask::before { display: none; }
+#thread .msg.plan { border: 0; border-radius: 16px; padding: 14px 16px; background: var(--surface); box-shadow: var(--sh-1); }
+body:not(.light) #thread .msg.plan { background: var(--surface-2); }
+#thread .msg.plan::before { display: none; }
+#thread .msg.plan .body, #thread .msg.ask .body { font-size: 14px; line-height: 1.6; color: var(--ink); }
+#thread .msg.plan .body::before, #thread .msg.ask .body::before { display: block; margin-bottom: 6px; font: 500 11.5px var(--sans); }
+#thread .msg.plan .body::before { content: "✦ Plan"; color: var(--violet); }
+#thread .msg.ask .body::before { content: "One thing first"; color: var(--accent); }
+body:not(.light) #thread .msg.plan .body::before { color: #a891ff; }
+#thread .msg.plan .msg-actions, #thread .msg.ask .msg-actions { display: flex; gap: 8px; margin-top: 14px; }
+#thread .msg.plan .msg-tools, #thread .msg.ask .msg-tools { display: none; }
 #thread .msg-actions .btn { height: 30px; padding: 0 12px; font-size: 13px; }
 
 /* ---- the composer in a session: one pill -------------------------------- */
@@ -1306,3 +1316,28 @@ body:not(.light) .kr-pal { background: #1a1a1d; }
   .f-group > .f-row, .dt-card, #viewOnboard .ob-scene.on, #viewSession .asks li, .kr-ready, #viewSession .done-card, #viewSession .done-card img, .sess-row.kr-enter { animation: none !important; opacity: 1; }
   .kr-ready { display: none; }
 }
+
+/* ---- Home: the shelf of your apps, five across the sheet ------------------ */
+#viewHome .shelf-body { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; overflow: hidden; padding: 4px 0 2px; max-height: min(210px, 38vh); }
+#viewHome .shelf.shut .shelf-body { max-height: 0; padding: 0; }
+#viewHome .shelf-card { width: auto; min-width: 0; }
+#viewHome .shelf-card:nth-child(n + 6) { display: none; }
+#viewHome .shelf-card .shot { border-radius: 14px; transition: transform .45s var(--ease), box-shadow .3s; }
+/* The lift fits: the body keeps 4px above the tiles for it. */
+#viewHome .shelf-card:hover .shot { transform: translateY(-3px); box-shadow: var(--sh-2); border: 0; }
+#viewHome .shelf-card b { margin-top: 8px; font-size: 13px; font-weight: 500; color: var(--ink); }
+#viewHome .shelf-card .shelf-making { color: var(--accent); font-size: 12px; }
+#viewHome .shelf:not(.shut) .shelf-card { animation: krRv .6s var(--ease) both; }
+#viewHome .shelf:not(.shut) .shelf-card:nth-child(2) { animation-delay: 45ms; } #viewHome .shelf:not(.shut) .shelf-card:nth-child(3) { animation-delay: 90ms; }
+#viewHome .shelf:not(.shut) .shelf-card:nth-child(4) { animation-delay: 135ms; } #viewHome .shelf:not(.shut) .shelf-card:nth-child(5) { animation-delay: 180ms; }
+#viewHome .shelf-grip .chev { transition: transform .5s var(--ease); }
+#viewHome .shelf-tabs { gap: 2px; }
+@media (max-width: 1100px) { #viewHome .shelf-body { grid-template-columns: repeat(4, minmax(0, 1fr)); } #viewHome .shelf-card:nth-child(n + 5) { display: none; } }
+@media (max-width: 600px) { #viewHome .shelf-body { grid-template-columns: repeat(2, minmax(0, 1fr)); } #viewHome .shelf-card:nth-child(n + 3) { display: none; } }
+/* In a session the pill is narrow: Plan first shows as its violet spark. */
+#viewSession .kr-mode.compact.plan { width: 34px; padding: 0; justify-content: center; }
+#viewSession .kr-mode.compact.plan .mv, #viewSession .kr-mode.compact.plan .kr-chev { display: none; }
+#viewSession .kr-mode.compact.plan::before { content: ""; width: 15px; height: 15px; background: var(--violet);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5l1.3 3.7L13 6.5 9.3 7.8 8 11.5 6.7 7.8 3 6.5l3.7-1.3z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5l1.3 3.7L13 6.5 9.3 7.8 8 11.5 6.7 7.8 3 6.5l3.7-1.3z'/%3E%3C/svg%3E") center / contain no-repeat; }
+#viewSession .sessbar textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
