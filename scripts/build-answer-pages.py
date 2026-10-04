@@ -484,111 +484,18 @@ class MetadataTests(unittest.TestCase):
 
     def test_scroll_revealed_selectors_are_readable_without_javascript(self):
         # Anything that starts hidden and waits for a script -- a reveal on
-        # scroll, the hero's rise, a bar that grows -- is invisible to a
-        # reader with JavaScript off and to one who asked for reduced
-        # motion. The homepage's rule: a style that starts something hidden
-        # is either gated on `.js` (set by the head script, so without
-        # scripts the rule never applies) or restored in the noscript block;
-        # and every `.js`-gated one is restored under reduced motion.
-        #
-        # This reads the stylesheet rather than a hand-kept list of
-        # selectors: K-726 shipped with one selector missing from such a
-        # list, and the heading beside it read correctly, so the gap was easy
-        # to miss by eye. Comments are stripped first -- a sabotage run once
-        # passed because the comment above a lost rule still named it.
-        source = LANDING.read_text()
-
-        def strip(css):
-            return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
-
-        def top_rules(css):
-            # (selector, body) for every rule at the top level and inside
-            # @media blocks, walking braces so nested blocks cannot confuse
-            # a regex. @keyframes and @font-face are skipped.
-            out, depth, i, start, stack = [], 0, 0, 0, []
-            while i < len(css):
-                ch = css[i]
-                if ch == "{":
-                    head = css[start:i].strip()
-                    stack.append((head, i + 1))
-                    depth += 1
-                    start = i + 1
-                elif ch == "}":
-                    head, body_start = stack.pop()
-                    depth -= 1
-                    # A keyframe step ("50% { opacity: 0 }") is not a rule.
-                    inside_frames = any(h.startswith("@keyframes") for h, _ in stack)
-                    if not head.startswith("@") and not inside_frames:
-                        out.append((head, css[body_start:i]))
-                    start = i + 1
-                i += 1
-            return out
-
-        def index(pairs):
-            found = {}
-            for selectors, body in pairs:
-                for name in (s.strip() for s in selectors.split(",")):
-                    if name:
-                        found.setdefault(name, []).append(body)
-            return found
-
-        def reduced_blocks(css):
-            out, i = [], 0
-            while True:
-                at = css.find("prefers-reduced-motion", i)
-                if at < 0:
-                    return "\n".join(out)
-                open_at = css.find("{", at)
-                depth, j = 1, open_at + 1
-                while depth and j < len(css):
-                    depth += {"{": 1, "}": -1}.get(css[j], 0)
-                    j += 1
-                out.append(css[open_at + 1:j - 1])
-                i = j
-
-        noscript = re.search(r"<noscript><style>(.*?)</style></noscript>", source, re.S)
-        self.assertIsNotNone(noscript, "the homepage must keep a noscript fallback")
-        sheet = strip("\n".join(re.findall(
-            r"<style>(.*?)</style>", source.replace(noscript.group(0), ""), re.S)))
-        reduced = index(top_rules(reduced_blocks(sheet)))
-        self.assertTrue(reduced, "the homepage must keep a reduced-motion fallback")
-        fallback = index(top_rules(strip(noscript.group(1))))
-
-        HIDES = (("opacity", r"opacity:\s*0(?![.\d])", "opacity: 1"),
-                 ("scale", r"scale[XY]?\(\s*0\s*\)", "transform: none"),
-                 # A polygon whose every point sits at x=0 has no area: the
-                 # hidden shape. A full-width polygon is the revealed one.
-                 ("clip", r"clip-path:\s*polygon\((?:\s*0%?\s+[0-9.]+%?\s*,?)+\s*\)", "clip-path: none"))
-        # Hidden by design, not waiting for a reveal: a shut menu, a quote
-        # mid-swap, a hairline decoration, a button's hover sheen and its
-        # press ripple.
-        STATES = {".dlmenu", ".voice.swap blockquote", ".steps .prog",
-                  ".btn .hoverco", ".btn .ripple",
-                  # the permission wall after a press: the glass lifted, the sheet gone
-                  ".wall.is-granted .frost", ".wall.is-denied .sheet"}
-
-        hidden = 0
-        for selector, body in top_rules(sheet):
-            if selector.startswith("@"):
-                continue
-            hides = [h for h in HIDES if re.search(h[1], body)]
-            if not hides:
-                continue
-            for name in (s.strip() for s in selector.split(",")):
-                if not name or name in STATES:
-                    continue
-                hidden += 1
-                if name.startswith(".js "):
-                    where, label = reduced, "under reduced motion"
-                else:
-                    where, label = fallback, "without JavaScript"
-                bodies = where.get(name)
-                self.assertIsNotNone(
-                    bodies, f"{name} starts hidden and has no rule {label}, so it stays hidden")
-                joined = " ".join(bodies)
-                for _, _, restore in hides:
-                    self.assertIn(restore, joined, f"{name} is never restored ({restore}) {label}")
-        self.assertGreater(hidden, 0, "the homepage reveals nothing any more; this test is stale")
+        # scroll, a rise, a bar that grows -- is invisible to a reader with
+        # JavaScript off. Since the 2026-10 redesign every page, the homepage
+        # included, takes its reveals from the design kit, where a hidden
+        # start is allowed only under `.js` (set by the head script). This
+        # reads the kit's stylesheet; the homepage's own illustrations are
+        # checked in a browser with scripts off by scripts/test-site-nojs.mjs.
+        kit = (ROOT / "docs/landing/kit/site.css").read_text()
+        self.assertEqual(K.hidden_ungated(kit), [], "a kit rule hides something without .js")
+        self.assertIn(".js .rv { opacity: 0;", kit, "the reveal is gated on .js")
+        home = LANDING.read_text()
+        self.assertNotRegex(home, r"(?m)^\.rv \{", "the homepage must not define its own ungated reveal")
+        self.assertIn("d.classList.add('js')", home, "the homepage marks .js before first paint")
 
     def test_metadata_is_escaped(self):
         page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')

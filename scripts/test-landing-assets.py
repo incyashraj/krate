@@ -94,7 +94,10 @@ class LandingAssets(unittest.TestCase):
     def test_picture_fallbacks_reserve_original_dimensions(self):
         # /studio/ lost its brand-bar logo picture with the 2026-10 redesign:
         # the kit header uses the small 3D mark, which is 15 KB as a PNG.
-        for page, expected in (("index.html", 2), ("studio/index.html", 1)):
+        # The 2026-10 homepage shows its three desktops as WebP images (the
+        # OS screenshots are 272 KB as WebP against 3.6 MB as PNG) inside a
+        # box with a fixed aspect ratio, so it has no <picture> fallbacks.
+        for page, expected in (("index.html", 0), ("studio/index.html", 1)):
             pictures = Pictures((ROOT / page).read_text()).pictures
             self.assertEqual(len(pictures), expected)
             for picture in pictures:
@@ -105,6 +108,18 @@ class LandingAssets(unittest.TestCase):
                     self.assertTrue((ROOT / source["srcset"].lstrip("/")).is_file())
                     original = ROOT / image["src"].lstrip("/")
                     self.assertEqual((int(image["width"]), int(image["height"])), png_size(original))
+
+
+class HomeScreenshots(unittest.TestCase):
+    def test_the_three_desktops_are_served_and_reserve_their_space(self):
+        source = (ROOT / "index.html").read_text()
+        for name in ("os-mac", "os-mac-dark", "os-win", "os-win-dark", "os-linux", "os-linux-dark"):
+            with self.subTest(name=name):
+                self.assertIn(f'src="/{name}.webp"', source)
+                self.assertTrue((ROOT / f"{name}.webp").is_file())
+        # The box the screenshots sit in has a fixed ratio, so loading them
+        # cannot move the page.
+        self.assertIn("aspect-ratio: 1200 / 760", source)
 
 
 if __name__ == "__main__":

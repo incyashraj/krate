@@ -42,6 +42,13 @@ run "site kit pages" python3 scripts/site_kit.py --check
 run "fingerprint self-test" python3 scripts/fingerprint-css.py --self-test
 run "site tests deployed" python3 scripts/check-site-tests-deployed.py
 
+# Browser checks, when a Playwright module is available (it is not in CI).
+if [ -n "$KRATE_PLAYWRIGHT_MODULE" ] || node -e "import('playwright')" >/dev/null 2>&1; then
+  run "pages readable without JavaScript" node scripts/test-site-nojs.mjs
+else
+  echo "SKIP pages readable without JavaScript (set KRATE_PLAYWRIGHT_MODULE)"
+fi
+
 rm -f "$out"
 if [ "$fails" -gt 0 ]; then
   echo "$fails check(s) failed"
