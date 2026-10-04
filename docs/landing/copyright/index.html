@@ -1,9 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+<meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0a0a0a" />
   <meta name="description" content="How to report an app on krate.tech that uses your work without permission, and what happens next." />
   <link rel="canonical" href="https://krate.tech/copyright/" />
   <meta property="og:title" content="Krate: copyright" />
@@ -15,160 +14,115 @@
   <title>Krate: copyright</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <style>
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-400.woff2") format("woff2");
-    font-weight: 400; font-style: normal; font-display: swap;
-  }
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-500.woff2") format("woff2");
-    font-weight: 500; font-style: normal; font-display: swap;
-  }
-  :root {
-    color-scheme: dark;
-    --bg: #0a0a0a; --panel: #0f1012; --panel-2: #141519;
-    --line: #1f2228; --line-soft: #17191e;
-    --text: #ffffff;
-    --muted: rgba(255, 255, 255, 0.55);
-    --quiet: rgba(255, 255, 255, 0.35);
-    --accent: #6291ff; --good: #4ade80; --warn: #f4dc74;
-    --r-card: 16px; --r-pill: 999px; --max: 760px;
-    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
-    --enter: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg); color: var(--text); font-family: var(--sans);
-    font-size: 16px; line-height: 1.6;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-  }
-  a { color: inherit; text-decoration: none; }
-  img { max-width: 100%; display: block; }
-  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
-  .hidden { display: none !important; }
-  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-  .site-head {
-    position: sticky; top: 0; z-index: 40;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line-soft);
-  }
-  .head-inner { display: flex; align-items: center; gap: 24px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
-  .head-nav { display: flex; gap: 4px; margin-left: auto; }
-  .head-nav a { font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill); transition: color 150ms ease, background 150ms ease; }
-  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-  @media (max-width: 640px) { .head-nav { display: none; } }
-  .pill {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 9px 18px; border-radius: var(--r-pill);
-    border: 1px solid var(--line); font-size: 14.5px; font-weight: 500;
-    transition: border-color 150ms ease, background 150ms ease; cursor: pointer;
-    background: none; color: var(--text); font-family: inherit;
-  }
-  .pill:hover { border-color: rgba(255,255,255,0.28); }
-  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
-  .pill-primary:hover { background: rgba(255,255,255,0.86); border-color: rgba(255,255,255,0.86); }
-  .page { padding-top: clamp(48px, 8vh, 84px); padding-bottom: clamp(64px, 10vh, 100px); }
-  .kicker { font-size: 12px; letter-spacing: 0.14em; color: var(--quiet); }
-  .page h1 { margin-top: 10px; font-size: clamp(30px, 4.6vw, 46px); letter-spacing: -0.028em; line-height: 1.08; }
-  .lede { margin-top: 14px; color: var(--muted); max-width: 38em; font-size: 16.5px; }
-  .site-foot { border-top: 1px solid var(--line-soft); padding: 32px 0 40px; }
-  .foot-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 1120px; margin: 0 auto; padding: 0 24px; font-size: 13px; color: var(--muted); }
-  .foot-inner nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
-  .foot-inner a:hover { color: var(--text); }
-  code { font-family: var(--mono); font-size: 0.86em; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.1em 0.4em; }
-
-  .page h2 { margin-top: 34px; font-size: 19px; letter-spacing: -0.015em; }
-  .page h2 + p, .page h2 ~ p { margin-top: 10px; color: var(--muted); font-size: 15px; max-width: 46em; }
-  .page p a { color: var(--text); border-bottom: 1px solid var(--line); }
-  .page ul.plain { margin: 10px 0 0 1.2em; color: var(--muted); font-size: 15px; max-width: 46em; }
-  .page ul.plain li { margin-top: 6px; }
-  .back { display: inline-block; margin-top: 40px; color: var(--muted); font-size: 14.5px; }
-  .back:hover { color: var(--text); }
-
-  </style>
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+.ph .updated { display: block; margin-top: 16px; }
+.lg { margin-top: 64px; padding-bottom: 8px; }
+.lg .toc { padding-top: 6px; }
+.lg .prose { max-width: 680px; }
+.lg .prose > h2:first-child { margin-top: 0; }
+.lg .prose .back { display: inline-flex; align-items: center; gap: 6px; margin-top: 44px; font-size: 14.5px; font-weight: 500; color: var(--ink-2); text-decoration: none; }
+.lg .prose .back:hover { color: var(--ink); }
+@media (max-width: 680px) { .lg { margin-top: 40px; } .lg .prose h2 { margin-top: 44px; font-size: 23px; } }
+</style>
 </head>
 <body>
-
-<header class="site-head">
-  <div class="head-inner">
-    <a class="brand" href="/">
-      <img src="/krate-logo.png" alt="" width="22" height="22" />
-      KRATE
-    </a>
-    <nav class="head-nav" aria-label="Primary">
-      <a href="/#how">How it works</a>
-      <a href="/cloud/">Gallery</a>
-      <a href="/docs/">Docs</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-    <a class="pill pill-primary" href="/studio/">Download Studio</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
   </div>
 </header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
 
-<main class="page wrap">
-  <p class="kicker">COPYRIGHT</p>
+<main>
+<section class="ph sm l wrap">
+  <span class="eye">Copyright</span>
   <h1>Reporting work that was posted without permission.</h1>
-  <p class="lede">Last updated 2026-09-30. Apps in the Krate gallery, and
+  <p class="lede">Apps in the Krate gallery, and
   their names, screenshots and icons, are published by the people who made
   them. If one of them uses your work without your permission, tell us and
   we will look at it quickly.</p>
+  <span class="updated">Last updated 2026-09-30</span>
+</section>
 
-  <h2>How to report it</h2>
-  <p>Email <a href="mailto:legal@krate.tech">legal@krate.tech</a> with:</p>
-  <ul class="plain">
-    <li>the work you own that you believe was copied;</li>
-    <li>the link to the app on krate.tech, or its name in the gallery;</li>
-    <li>your name, postal address, phone number and email address;</li>
-    <li>a statement that you believe in good faith the use is not
-    authorised by you, your agent or the law;</li>
-    <li>a statement, under penalty of perjury, that your notice is accurate
-    and that you own the right or are authorised to act for the owner;</li>
-    <li>your physical or electronic signature (typing your full name is
-    enough).</li>
-  </ul>
-  <p>We take down or disable the reported app while we look at it, tell the
-  person who published it, and pass them a copy of your notice.</p>
+<div class="wrap doc lg">
+  <aside class="toc" aria-label="On this page">
+    <h6>On this page</h6>
+    <a href="#report">How to report it</a>
+    <a href="#taken-down">If your app was taken down</a>
+    <a href="#repeat">Repeat infringers</a>
+  </aside>
+  <article class="prose">
+    <h2 id="report">How to report it</h2>
+    <p>Email <a href="mailto:legal@krate.tech">legal@krate.tech</a> with:</p>
+    <ul>
+      <li>the work you own that you believe was copied;</li>
+      <li>the link to the app on krate.tech, or its name in the gallery;</li>
+      <li>your name, postal address, phone number and email address;</li>
+      <li>a statement that you believe in good faith the use is not
+      authorised by you, your agent or the law;</li>
+      <li>a statement, under penalty of perjury, that your notice is accurate
+      and that you own the right or are authorised to act for the owner;</li>
+      <li>your physical or electronic signature (typing your full name is
+      enough).</li>
+    </ul>
+    <p>We take down or disable the reported app while we look at it, tell the
+    person who published it, and pass them a copy of your notice.</p>
 
-  <h2>If your app was taken down</h2>
-  <p>If you published an app that was taken down and you believe that was a
-  mistake, email <a href="mailto:legal@krate.tech">legal@krate.tech</a> with the app's link,
-  your name, address and phone number, a statement under penalty of perjury
-  that you believe in good faith it was removed by mistake, your consent to
-  the jurisdiction of the courts where you live (or, outside the United
-  States, where we are), and your signature. We send your counter-notice to
-  the person who reported it and put the app back after 10 to 14 working
-  days unless they tell us they have gone to court.</p>
+    <h2 id="taken-down">If your app was taken down</h2>
+    <p>If you published an app that was taken down and you believe that was a
+    mistake, email <a href="mailto:legal@krate.tech">legal@krate.tech</a> with the app's link,
+    your name, address and phone number, a statement under penalty of perjury
+    that you believe in good faith it was removed by mistake, your consent to
+    the jurisdiction of the courts where you live (or, outside the United
+    States, where we are), and your signature. We send your counter-notice to
+    the person who reported it and put the app back after 10 to 14 working
+    days unless they tell us they have gone to court.</p>
 
-  <h2>Repeat infringers</h2>
-  <p>We close the accounts of people who repeatedly publish other people's
-  work without permission.</p>
+    <h2 id="repeat">Repeat infringers</h2>
+    <p>We close the accounts of people who repeatedly publish other people's
+    work without permission.</p>
 
-  <p>The rest of the rules for publishing are in <a href="/terms/">the
-  terms</a>.</p>
+    <hr>
+    <p>The rest of the rules for publishing are in <a href="/terms/">the
+    terms</a>.</p>
+  </article>
+</div>
 </main>
 
-<footer class="site-foot">
-  <div class="foot-inner">
-    <span>© 2026 Krate Labs</span>
-    <nav aria-label="Footer">
-      <a href="/">Home</a>
-      <a href="/studio/">Studio</a>
-      <a href="/open/">Received an app?</a>
-      <a href="/faq.html">FAQ</a>
-      <a href="/contact/">Contact</a>
-      <a href="/privacy/">Privacy</a>
-      <a href="/terms/">Terms</a>
-      <a href="/copyright/">Copyright</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-  </div>
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
 </footer>
-
+<script src="/kit/site.js"></script>
 <script>
 // One anonymous page view -- the page name and the day, to our own hub.
 // The page and the site you came from, by name; no cookie (see /privacy/).

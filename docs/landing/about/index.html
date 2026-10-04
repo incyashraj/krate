@@ -1,9 +1,8 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#000000" />
 <title>About Krate</title>
 <meta name="description" content="Krate turns a sentence into a desktop app: one small file that runs on Mac, Windows and Linux. Made by Krate Labs, open source under MIT or Apache-2.0." />
 <link rel="canonical" href="https://krate.tech/about/" />
@@ -22,167 +21,84 @@
   "mainEntity": {"@id": "https://krate.tech/#organization"}
 }
 </script>
-<style>
-@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
-  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --disp: "Syne", var(--sans); }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
-  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img { max-width: 100%; }
-.hidden { display: none !important; }
-::selection { background: rgba(165, 88, 251, 0.35); }
-.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
-  pointer-events: none; user-select: none;
-  background: linear-gradient(to top, transparent, #000);
-  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
-          mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
-  display: flex; align-items: center; gap: 14px; user-select: none;
-  transform: translateX(-50%); }
-.brandbar .name { display: flex; align-items: center; gap: 0.34em;
-  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
-.brandbar .name img { height: 19px; width: auto; }
-.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
-  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
-.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
-  transition: color 0.15s ease, background 0.15s ease; }
-.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
-@media (max-width: 640px) { .bnav { display: none; } }
-.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
-  margin-left: -450px; pointer-events: none; border-radius: 100%;
-  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
-  filter: blur(40px); }
-.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
-h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
-.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
-.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
-  opacity: 0; transform: translateY(12px); filter: blur(6px);
-  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  transition: box-shadow 0.25s ease, translate 0.25s ease; }
-.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
-.card:nth-of-type(2) { animation-delay: 0.06s; }
-.card:nth-of-type(3) { animation-delay: 0.12s; }
-.card:nth-of-type(4) { animation-delay: 0.18s; }
-.card:nth-of-type(5) { animation-delay: 0.24s; }
-.card:nth-of-type(6) { animation-delay: 0.3s; }
-@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
-.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
-.card p { font-size: 13.5px; color: #a1a1aa; }
-.card p b { color: #d4d4d8; font-weight: 500; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
-  white-space: nowrap; user-select: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
-  transition: transform 0.15s ease, box-shadow 0.15s ease; }
-.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
-.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
-.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
-.foot nav a:hover { color: #d4d4d8; }
-
-@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
-
-  /* Touch, not width: a thumb needs 44px whatever the screen size, and
-     these pages' nav and footer links were 19-20px tall. */
-  @media (pointer: coarse) {
-    nav a[href], .foot a[href], footer a[href] {
-      display: inline-block; padding-top: 11px; padding-bottom: 11px;
-    }
-    button, input[type=submit] { min-height: 44px; }
-    /* Buttons that are links, and the brand mark, which is a tap target
-       on every page (it goes home). */
-    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
-  }
-</style>
-<style>
-.dlMain { margin: 6px 0 34px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.dlMain .btn.primary { padding: 12px 20px; font-size: 14.5px; }
-.dlMain small { color: #a1a1aa; font-size: 12.5px; }
-.card ul { list-style: none; margin-top: 12px; display: grid; gap: 6px; }
-.card li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.03); font-size: 13.5px; }
-.card li a { color: #f4f4f5; flex: 1; }
-.card li a:hover { color: #c4b5fd; }
-.dlSize { font-size: 12px; color: #71717a; white-space: nowrap; }
-.dlSize:empty { display: none; }
-code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: rgba(255,255,255,0.06); border-radius: 5px; padding: 1px 6px; color: #d4d4d8; }
-.facts { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; font-size: 13.5px; margin-top: 10px; }
-.facts dt { color: #71717a; }
-.facts dd { color: #e4e4e7; }
-.card p + p { margin-top: 8px; }
-.card a.u { color: #e4e4e7; text-decoration: underline; text-decoration-color: rgba(255,255,255,0.3); text-underline-offset: 3px; }
-</style>
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
 </head>
 <body>
-<div class="bloom"></div>
-<div class="topblur"></div>
-<div class="brandbar">
-  <a class="name" href="/"><img src="/krate-logo.png" alt="" /> KRATE</a>
-  <nav class="bnav" aria-label="Primary">
-    <a href="/studio/">Studio</a>
-    <a href="/download/">Download</a>
-    <a href="/cloud/">Apps</a>
-    <a href="/docs/">Docs</a>
-    <a href="/about/" class="here">About</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
   </nav>
-</div>
-<div class="wrap">
-<h1 class="page">About Krate.</h1>
-<p class="pagesub">Krate turns a sentence into a real desktop app: one small file that opens on Mac, Windows and Linux, and asks before it touches anything.</p>
-<section class="card" style="display:block">
-  <h2>What Krate is</h2>
-  <p>An app made with Krate is a single <b>.krate</b> file, usually tens of kilobytes. Inside is the app compiled to WebAssembly, the permissions it asks for, and the Rust source it was built from. The Krate player opens the same file on every desktop, gives it a window and nothing else, and asks the person before the app may use files, the network or the camera.</p>
-  <p><b>Krate Studio</b> is where apps are made: describe one, and an AI writes it, builds it, opens it and fixes what it sees. It runs on your own computer with the AI you already use, or in your browser at <a class="u" href="/app/">krate.tech/app</a>.</p>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main>
+<section class="ph wrap n">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">About</span>
+  <h1>About Krate.</h1>
+  <p class="lede">Krate turns a sentence into a real desktop app: one small file that opens on Mac, Windows and Linux, and asks before it touches anything.</p>
 </section>
-<section class="card" style="display:block">
-  <h2>Open source</h2>
-  <p>The runtime, the player and the command line are open source under MIT or Apache-2.0, developed in public at <a class="u" href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">github.com/incyashraj/krate</a>. Every measurement Krate publishes names the evidence it came from.</p>
+
+<section class="sec t wrap n">
+  <div class="g2 ab-two">
+    <div class="card rv"><span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 3h7l3 3v11H5z"/><path d="M12 3v3h3"/></svg></span><h3>What Krate is</h3>
+      <p>An app made with Krate is a single <code class="k">.krate</code> file, usually tens of kilobytes. Inside is the app compiled to WebAssembly, the permissions it asks for, and the Rust source it was built from. The Krate player opens the same file on every desktop, gives it a window and nothing else, and asks the person before the app may use files, the network or the camera.</p></div>
+    <div class="card rv"><span class="ic" style="color:var(--violet);background:color-mix(in srgb,var(--violet) 12%,transparent)"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2l1.6 4.4L16 8l-4.4 1.6L10 14l-1.6-4.4L4 8l4.4-1.6z"/></svg></span><h3>Krate Studio</h3>
+      <p>Studio is where apps are made: describe one, and an AI writes it, builds it, opens it and fixes what it sees. It runs on your own computer with the AI you already use, or in your browser at <a href="/app/" style="color:var(--accent)">krate.tech/app</a>.</p></div>
+  </div>
 </section>
-<section class="card" style="display:block">
-  <h2>Who makes it</h2>
-  <dl class="facts">
-    <dt>Company</dt><dd>Krate Labs</dd>
-    <dt>Founder</dt><dd>Yashraj Pardeshi</dd>
-    <dt>Product</dt><dd>Krate, Krate Studio, Krate Player</dd>
-    <dt>Platforms</dt><dd>macOS, Windows, Linux</dd>
-    <dt>Licence</dt><dd>MIT or Apache-2.0 (runtime and player)</dd>
-    <dt>Website</dt><dd>krate.tech</dd>
-  </dl>
+
+<section class="sec wrap n">
+  <div class="sh rv"><h2>Open source</h2><p>The runtime, the player and the command line are open source under MIT or Apache-2.0, developed in public at <a href="https://github.com/incyashraj/krate" style="color:var(--accent)">github.com/incyashraj/krate</a>. Every measurement Krate publishes names the evidence it came from.</p></div>
 </section>
-<section class="card" style="display:block">
-  <h2>Get in touch</h2>
-  <p>Questions, bugs and ideas are answered in public on <a class="u" href="/contact/">the contact page</a>.</p>
+
+<section class="sec wrap n">
+  <h2 class="rv">Who makes it</h2>
+  <div class="tblw rv" style="margin-top:22px"><table class="tbl"><tbody>
+    <tr><td>Company</td><td>Krate Labs</td></tr>
+    <tr><td>Founder</td><td>Yashraj Pardeshi</td></tr>
+    <tr><td>Product</td><td>Krate, Krate Studio, Krate Player</td></tr>
+    <tr><td>Platforms</td><td>macOS, Windows, Linux</td></tr>
+    <tr><td>Licence</td><td>MIT or Apache-2.0 (runtime and player)</td></tr>
+    <tr><td>Website</td><td>krate.tech</td></tr>
+  </tbody></table></div>
 </section>
-</div>
+
+<div class="band rv"><div><h2>Get in touch</h2><p>Questions, bugs and ideas are answered in public.</p></div><a class="btn dark" href="/contact/">Contact Krate <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a></div>
+</main>
+
 <footer class="foot">
-  <span>© 2026 Krate Labs</span>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/studio/">Studio</a>
-    <a href="/download/">Download</a>
-    <a href="/cloud/">Apps</a>
-    <a href="/docs/">Docs</a>
-    <a href="/faq/">FAQ</a>
-    <a href="/about/">About</a>
-    <a href="/contact/">Contact</a>
-    <a href="/privacy/">Privacy</a>
-    <a href="/terms/">Terms</a>
-    <a href="https://github.com/incyashraj/krate">GitHub</a>
-  </nav>
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
 </footer>
+<script src="/kit/site.js"></script>
 <script>
 (function () {
   try {

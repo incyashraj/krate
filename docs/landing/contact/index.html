@@ -1,153 +1,112 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#000000" />
 <title>Contact Krate</title>
 <meta name="description" content="Ask a question, report a bug, or suggest something -- all in the open." />
 <link rel="icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
 <style>
-@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
-  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --disp: "Syne", var(--sans); }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
-  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img { max-width: 100%; }
-.hidden { display: none !important; }
-::selection { background: rgba(165, 88, 251, 0.35); }
-.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
-  pointer-events: none; user-select: none;
-  background: linear-gradient(to top, transparent, #000);
-  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
-          mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
-  display: flex; align-items: center; gap: 14px; user-select: none;
-  transform: translateX(-50%); }
-.brandbar .name { display: flex; align-items: center; gap: 0.34em;
-  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
-.brandbar .name img { height: 19px; width: auto; }
-.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
-  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
-.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
-  transition: color 0.15s ease, background 0.15s ease; }
-.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
-@media (max-width: 640px) { .bnav { display: none; } }
-.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
-  margin-left: -450px; pointer-events: none; border-radius: 100%;
-  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
-  filter: blur(40px); }
-.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
-h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
-.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
-.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
-  opacity: 0; transform: translateY(12px); filter: blur(6px);
-  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  transition: box-shadow 0.25s ease, translate 0.25s ease; }
-.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
-.card:nth-of-type(2) { animation-delay: 0.06s; }
-.card:nth-of-type(3) { animation-delay: 0.12s; }
-.card:nth-of-type(4) { animation-delay: 0.18s; }
-.card:nth-of-type(5) { animation-delay: 0.24s; }
-.card:nth-of-type(6) { animation-delay: 0.3s; }
-@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
-.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
-.card p { font-size: 13.5px; color: #a1a1aa; }
-.card p b { color: #d4d4d8; font-weight: 500; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
-  white-space: nowrap; user-select: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
-  transition: transform 0.15s ease, box-shadow 0.15s ease; }
-.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
-.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
-.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
-.foot nav a:hover { color: #d4d4d8; }
-
-@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
-
-  /* Touch, not width: a thumb needs 44px whatever the screen size, and
-     these pages' nav and footer links were 19-20px tall. */
-  @media (pointer: coarse) {
-    nav a[href], .foot a[href], footer a[href] {
-      display: inline-block; padding-top: 11px; padding-bottom: 11px;
-    }
-    button, input[type=submit] { min-height: 44px; }
-    /* Buttons that are links, and the brand mark, which is a tap target
-       on every page (it goes home). */
-    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
-  }
+.ct-ways .card { display: flex; flex-direction: column; }
+.ct-ways .card h3 { text-wrap: balance; }
+.ct-ways .card .more { margin-top: auto; padding-top: 18px; }
+.ct-ways .card .more svg { width: 12px; height: 12px; transition: transform .25s var(--ease); }
+.ct-ways .card.link:hover .more svg { transform: translate(2px, -2px); }
+.ic.violet { color: var(--violet); background: color-mix(in srgb, var(--violet) 12%, transparent); }
+.ic.orange { color: var(--orange); background: color-mix(in srgb, var(--orange) 13%, transparent); }
+.ct-know { display: grid; gap: 12px; margin-top: 24px; }
+.ct-know .call b { font-weight: 600; color: var(--ink); }
+.ct-know .call code { font: 500 .9em ui-monospace, "SF Mono", Menlo, monospace; padding: 1px 6px; border-radius: 6px; background: var(--s1); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hair); }
+@media (max-width: 680px) { .band .btn { width: 100%; } }
 </style>
 </head>
 <body>
-<div class="bloom"></div>
-<div class="topblur"></div>
-<div class="brandbar">
-  <a class="name" href="/"><img src="/krate-logo.png" alt="" /> KRATE</a>
-  <nav class="bnav" aria-label="Primary">
-    <a href="/#receipts" >Why Krate</a>
-    <a href="/cloud/" >Apps</a>
-    <a href="/docs/" >Docs</a>
-    <a href="/account/" >Account</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
   </nav>
-</div>
-<div class="wrap">
-<h1 class="page">Get in touch.</h1>
-<p class="pagesub">Krate is built in the open, so everything below is public and gets a reply in public. Not sure which fits? The first one is always fine.</p>
-<a class="card" href="https://github.com/incyashraj/krate/discussions" target="_blank" rel="noopener" style="display:block">
-  <h2>Ask a question, or say what is confusing</h2>
-  <p>GitHub Discussions. Anything that is not obviously a bug: how to do something, why a thing works the way it does, or that a page made no sense. &rarr;</p>
-</a>
-<a class="card" href="https://github.com/incyashraj/krate/issues/new" target="_blank" rel="noopener" style="display:block">
-  <h2>Report a bug</h2>
-  <p>Something crashed, an app would not open, a command failed. Paste what you ran and what it printed -- that alone is usually enough to find it. &rarr;</p>
-</a>
-<a class="card" href="https://github.com/incyashraj/krate/discussions/new?category=ideas" target="_blank" rel="noopener" style="display:block">
-  <h2>Suggest something</h2>
-  <p>A capability Krate does not have, an app you tried to make and could not, or a rough edge worth smoothing. &rarr;</p>
-</a>
-<div class="card">
-  <h2>Worth knowing first</h2>
-  <p><b>Reporting an app in the gallery</b> is different: every listing has a report link that opens an issue naming that app, so it does not get lost.</p>
-  <p style="margin-top:8px"><b>Before reporting a bug,</b> <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:rgba(255,255,255,0.06);border-radius:5px;padding:1px 6px">krate doctor</code> checks your setup and prints what it finds. Including that output saves a round trip.</p>
-  <p style="margin-top:8px"><b>Security problems</b> go to a private advisory on the repository's security tab, not a public issue.</p>
-</div>
-<div class="card" style="text-align:center">
-  <h2>Already have an account?</h2>
-  <p style="margin-bottom:14px">Signed-in support gets answered in a thread that follows you between the website and Studio.</p>
-  <a class="btn primary" href="/account/">Open support in your account</a>
-</div>
-</div>
-<footer class="foot">
-  <span>© 2026 Krate Labs</span>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/#receipts">Why Krate</a>
-    <a href="/cloud/">Gallery</a>
-    <a href="/open/">Received an app?</a>
-    <a href="/faq/">FAQ</a>
-    <a href="/contact/">Contact</a>
-    <a href="/privacy/">Privacy</a>
-    <a href="/terms/">Terms</a>
-    <a href="https://github.com/incyashraj/krate">GitHub</a>
-  </nav>
-</footer>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
 
+<main>
+<section class="ph sm wrap n">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Contact</span>
+  <h1>Get in touch.</h1>
+  <p class="lede">Krate is built in the open, so everything below is public and gets a reply in public. Not sure which fits? The first one is always fine.</p>
+</section>
+
+<section class="sec t wrap">
+  <div class="g3 ct-ways">
+    <a class="card link rv" href="https://github.com/incyashraj/krate/discussions" target="_blank" rel="noopener">
+      <span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3.5 4.5h13v9h-7l-4 3v-3h-2z"/></svg></span>
+      <h3>Ask a question, or say what is confusing</h3>
+      <p>GitHub Discussions. Anything that is not obviously a bug: how to do something, why a thing works the way it does, or that a page made no sense.</p>
+      <span class="more">Discussions <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l4-4M5 4h3v3"/></svg></span>
+    </a>
+    <a class="card link rv" href="https://github.com/incyashraj/krate/issues/new" target="_blank" rel="noopener">
+      <span class="ic orange"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="8" height="10" rx="4"/><path d="M8 6V5a2 2 0 0 1 4 0v1M3.5 10.5H6M14 10.5h2.5M4 6.5l2.2 1.4M16 6.5l-2.2 1.4M4.5 15l1.9-1.2M15.5 15l-1.9-1.2"/></svg></span>
+      <h3>Report a bug</h3>
+      <p>Something crashed, an app would not open, a command failed. Paste what you ran and what it printed -- that alone is usually enough to find it.</p>
+      <span class="more">New issue <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l4-4M5 4h3v3"/></svg></span>
+    </a>
+    <a class="card link rv" href="https://github.com/incyashraj/krate/discussions/new?category=ideas" target="_blank" rel="noopener">
+      <span class="ic violet"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 14.5h5M8.5 17h3M10 3a5 5 0 0 0-3 9c.6.5 1 1.2 1 2h4c0-.8.4-1.5 1-2a5 5 0 0 0-3-9z"/></svg></span>
+      <h3>Suggest something</h3>
+      <p>A capability Krate does not have, an app you tried to make and could not, or a rough edge worth smoothing.</p>
+      <span class="more">Ideas <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l4-4M5 4h3v3"/></svg></span>
+    </a>
+  </div>
+</section>
+
+<section class="sec wrap n">
+  <h2 class="rv">Worth knowing first</h2>
+  <div class="ct-know">
+    <div class="call rv"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17V3.5M5 4h9l-2 3.5 2 3.5H5"/></svg>
+      <p><b>Reporting an app in the gallery</b> is different: every listing has a report link that opens an issue naming that app, so it does not get lost.</p></div>
+    <div class="call rv"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="15" height="12" rx="2.5"/><path d="M6 8.5l2 1.5-2 1.5M10 12h4"/></svg>
+      <p><b>Before reporting a bug,</b> <code>krate doctor</code> checks your setup and prints what it finds. Including that output saves a round trip.</p></div>
+    <div class="call warn rv"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M10 2.5l6 2.3v4.6c0 3.8-2.6 6.6-6 8.1-3.4-1.5-6-4.3-6-8.1V4.8z"/></svg>
+      <p><b>Security problems</b> go to a private advisory on the repository's security tab, not a public issue.</p></div>
+  </div>
+</section>
+
+<div class="band rv"><div><h2>Already have an account?</h2><p>Signed-in support gets answered in a thread that follows you between the website and Studio.</p></div><a class="btn dark" href="/account/">Open support in your account <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a></div>
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+</footer>
+<script src="/kit/site.js"></script>
 <script>
 // Count the visit, and nothing about the visitor: the page and the site
 // you came from, by name only. No cookie, nothing stored (see /privacy/).

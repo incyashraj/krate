@@ -1,9 +1,8 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#000000" />
 <title>Krate FAQ: building and sharing cross-platform apps</title>
 <meta name="description" content="How Krate apps run on Mac, Windows and Linux, how permissions work, what you can build and how to bring an existing application." />
 <link rel="canonical" href="https://krate.tech/faq/" />
@@ -12,148 +11,87 @@
 <meta property="og:url" content="https://krate.tech/faq/" />
 <meta property="og:type" content="website" />
 <link rel="icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
 <style>
-@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
-  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --disp: "Syne", var(--sans); }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
-  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img { max-width: 100%; }
-.hidden { display: none !important; }
-::selection { background: rgba(165, 88, 251, 0.35); }
-.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
-  pointer-events: none; user-select: none;
-  background: linear-gradient(to top, transparent, #000);
-  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
-          mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
-  display: flex; align-items: center; gap: 14px; user-select: none;
-  transform: translateX(-50%); }
-.brandbar .name { display: flex; align-items: center; gap: 0.34em;
-  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
-.brandbar .name img { height: 19px; width: auto; }
-.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
-  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
-.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
-  transition: color 0.15s ease, background 0.15s ease; }
-.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
-@media (max-width: 640px) { .bnav { display: none; } }
-.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
-  margin-left: -450px; pointer-events: none; border-radius: 100%;
-  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
-  filter: blur(40px); }
-.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
-h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
-.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
-.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
-  opacity: 1; transform: translateY(12px); filter: blur(6px);
-  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  transition: box-shadow 0.25s ease, translate 0.25s ease; }
-.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
-.card:nth-of-type(2) { animation-delay: 0.06s; }
-.card:nth-of-type(3) { animation-delay: 0.12s; }
-.card:nth-of-type(4) { animation-delay: 0.18s; }
-.card:nth-of-type(5) { animation-delay: 0.24s; }
-.card:nth-of-type(6) { animation-delay: 0.3s; }
-@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
-.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
-.card p { font-size: 13.5px; color: #a1a1aa; }
-.card p b { color: #d4d4d8; font-weight: 500; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
-  white-space: nowrap; user-select: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
-  transition: transform 0.15s ease, box-shadow 0.15s ease; }
-.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
-.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
-.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
-.foot nav a:hover { color: #d4d4d8; }
-
-details.qa { border-radius: 18px; background: rgba(24,24,27,0.5);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 12px;
-  /* Starts VISIBLE. An entrance that fails leaves a page of empty black,
-     which is a worse outcome than a missing animation. The movement and
-     the blur still play; only the existence of the words is not staked on
-     it. Same lesson as the homepage and the studio page. */
-  opacity: 1; transform: translateY(12px); filter: blur(6px);
-  animation: rise 0.6s cubic-bezier(0.2,0.8,0.2,1) forwards; }
-details.qa:nth-of-type(2) { animation-delay: 0.05s; }
-details.qa:nth-of-type(3) { animation-delay: 0.1s; }
-details.qa:nth-of-type(4) { animation-delay: 0.15s; }
-details.qa:nth-of-type(5) { animation-delay: 0.2s; }
-details.qa:nth-of-type(6) { animation-delay: 0.25s; }
-details.qa summary { list-style: none; cursor: pointer; display: flex; gap: 16px;
-  align-items: baseline; padding: 18px 22px; font-size: 15px; font-weight: 500; }
-details.qa summary::-webkit-details-marker { display: none; }
-details.qa summary .n { font-family: var(--disp); font-weight: 700; color: var(--purple); font-size: 13px; flex: none; }
-details.qa summary .tw { margin-left: auto; color: #71717a; transition: transform 0.25s ease; flex: none; }
-details.qa[open] summary .tw { transform: rotate(45deg); }
-details.qa .a { padding: 0 22px 20px 51px; font-size: 13.5px; color: #a1a1aa; }
-details.qa .a p + p { margin-top: 8px; }
-details.qa .a code { font-family: ui-monospace, Menlo, monospace; font-size: 12px;
-  background: rgba(255,255,255,0.06); border-radius: 5px; padding: 1px 6px; }
-
-@media (prefers-reduced-motion: reduce) { .card, details.qa { animation: none; opacity: 1; transform: none; filter: none; } }
+.qa summary .n { flex: none; width: 26px; font-size: 13px; font-weight: 500; color: var(--ink-4); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.qa .ans { padding-left: 44px; }
+.qa .ans b { font-weight: 600; color: var(--ink); }
+.qa .ans a { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; }
+.qa summary:hover { color: var(--accent); }
+.qa summary:hover .n { color: var(--accent); }
+.qa-wrap { margin-top: 8px; }
+@media (max-width: 680px) { .qa summary { align-items: flex-start; font-size: 16px; } .qa summary::after { margin-top: 6px; } .qa summary .n { margin-top: 2px; width: 22px; } .qa .ans { padding-left: 2px; } }
 </style>
 </head>
 <body>
-<div class="bloom"></div>
-<div class="topblur"></div>
-<div class="brandbar">
-  <a class="name" href="/"><img src="/krate-logo.png" alt="" /> KRATE</a>
-  <nav class="bnav" aria-label="Primary">
-    <a href="/#receipts" >Why Krate</a>
-    <a href="/cloud/" >Apps</a>
-    <a href="/docs/" >Docs</a>
-    <a href="/account/" >Account</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
   </nav>
-</div>
-<div class="wrap">
-<h1 class="page">Questions</h1>
-<p class="pagesub">Short answer first, the boundary underneath.</p>
-<details class="qa"><summary><span class="n">01</span>What do I write, and in what?<span class="tw">+</span></summary><div class="a"><p>Rust today, compiled to a WebAssembly component. Apps use <code>krate:*</code> interfaces for system access rather than <code>wasi:*</code> imports. You can write the code yourself or use AI in Krate Studio.</p><p><code>krate check-app</code> checks compilation, imports and a headless run. It helps catch integration errors; you still test the app's behaviour. Start with the <a href="/docs/quickstart.html">developer quickstart</a>.</p></div></details>
-<details class="qa"><summary><span class="n">02</span>Can I bring an app I already have?<span class="tw">+</span></summary><div class="a"><p><code>krate port</code> reads your project and reports what maps cleanly, what needs a capability, and what will not work. It is read-only: it never builds, runs or edits your source.</p><p>Reusable application logic is a good starting point. UI code and direct operating-system calls need Krate interfaces, and dependencies must support the WebAssembly target. The <a href="/docs/porting.html">porting guide</a> walks through the process.</p></div></details>
-<details class="qa"><summary><span class="n">03</span>What can I build, and what are the current limits?<span class="tw">+</span></summary><div class="a"><p>Krate exposes interfaces for desktop UI, drawing, storage, networking and other system resources. The <a href="/docs/limits.html">capability and limits reference</a> records what is implemented and the boundaries to check for your app.</p><p>For examples you can inspect, see the <a href="/cloud/">app gallery</a> and <a href="/progress/">repository inventory</a>.</p></div></details>
-<details class="qa"><summary><span class="n">04</span>How can the same .krate file open on Mac, Windows, and Linux?<span class="tw">+</span></summary><div class="a"><p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces, and the Krate player on each operating system translates approved calls into local behavior.</p><p>The <code>.krate</code> file carries the WebAssembly component and its requested access. It is one portable app, and the same bytes run on all three desktops.</p></div></details>
-<details class="qa"><summary><span class="n">05</span>Why not use an HTML file, browser link, or Electron?<span class="tw">+</span></summary><div class="a"><p>A browser link works well for web applications. Krate gives developers a file they can distribute directly for local execution. Krate Cloud is optional; an app's own online features still need their services.</p><p>An Electron app bundles Chromium and Node.js and uses platform-specific packages. Krate apps share a native runtime rather than bundling a browser per app. See the <a href="/desktop-app-distribution.html">desktop distribution comparison</a>.</p></div></details>
-<details class="qa"><summary><span class="n">06</span>Can an app hide what it accesses or ignore the permission screen?<span class="tw">+</span></summary><div class="a"><p>Krate checks every operation at the boundary, so the list is not something the app writes about itself: if the app tries something that was not granted, the call is denied before it reaches the operating system.</p><p>If a required permission is denied, the app refuses to start and explains what is missing.</p></div></details>
-<details class="qa"><summary><span class="n">07</span>Is Krate ready for any untrusted app from the internet?<span class="tw">+</span></summary><div class="a"><p><b>Not yet.</b> The capability boundary is working and useful, but Krate is young and we are not claiming production hardening against hostile third-party code today.</p><p>Open apps from people you know, or from the gallery. The current limits and threat model are public.</p></div></details>
-<details class="qa"><summary><span class="n">08</span>Why does the person receiving an app need Krate?<span class="tw">+</span></summary><div class="a"><p>Krate is the player, like a media player for application files. Its native runtime handles operating-system differences and enforces permissions, so developers can send the same app file to all three desktops.</p><p>Install the player once, then open <code>.krate</code> files through it. An app needs a runtime version that supports its interfaces. The <a href="/open/">opening guide</a> gets you started.</p></div></details>
-<details class="qa"><summary><span class="n">09</span>Does the name collide with a Rust “crate”?<span class="tw">+</span></summary><div class="a"><p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p><p>We keep the distinction explicit wherever Rust developers could reasonably confuse the two.</p></div></details>
-<details class="qa"><summary><span class="n">10</span>What does “your first app is on us” mean?<span class="tw">+</span></summary><div class="a"><p>In your browser, Krate's own AI makes one app for you and one change to it, and we pay for it. No API key, no card, nothing to install.</p><p>Only an app that is actually made counts. A build that fails, or that we could not finish, costs you nothing and you can try again.</p></div></details>
-<details class="qa"><summary><span class="n">11</span>What happens after my free app?<span class="tw">+</span></summary><div class="a"><p>The app is a file, and it stays yours: open it, publish it, send it to anyone.</p><p>To keep making, use <a href="/studio/">Krate Studio</a> on your own computer, which is free and unlimited with the AI you already use. Or add your own API key in Studio's settings in the browser and keep going there.</p></div></details>
-<details class="qa"><summary><span class="n">12</span>Do I need an account?<span class="tw">+</span></summary><div class="a"><p>Not to open apps. Not to make apps in Krate Studio on your own computer, either; there you only sign in to publish.</p><p>Making an app in the browser does need one, so your free app is counted once and your work is kept. Sign in with GitHub, Google or a link sent to your email.</p></div></details>
-</div>
-<footer class="foot">
-  <span>© 2026 Krate Labs</span>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/#receipts">Why Krate</a>
-    <a href="/cloud/">Gallery</a>
-    <a href="/open/">Received an app?</a>
-    <a href="/faq/">FAQ</a>
-    <a href="/contact/">Contact</a>
-    <a href="/privacy/">Privacy</a>
-    <a href="/terms/">Terms</a>
-    <a href="https://github.com/incyashraj/krate">GitHub</a>
-  </nav>
-</footer>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
 
+<main>
+<section class="ph wrap n">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Questions</span>
+  <h1>Questions</h1>
+  <p class="lede">Short answer first, the boundary underneath.</p>
+</section>
+
+<section class="sec t wrap n">
+  <div class="qa qa-wrap rv">
+    <details open><summary><span class="n">01</span>What do I write, and in what?</summary><div class="ans"><p>Rust today, compiled to a WebAssembly component. Apps use <code class="k">krate:*</code> interfaces for system access rather than <code class="k">wasi:*</code> imports. You can write the code yourself or use AI in Krate Studio.</p><p><code class="k">krate check-app</code> checks compilation, imports and a headless run. It helps catch integration errors; you still test the app's behaviour. Start with the <a href="/docs/quickstart.html">developer quickstart</a>.</p></div></details>
+    <details><summary><span class="n">02</span>Can I bring an app I already have?</summary><div class="ans"><p><code class="k">krate port</code> reads your project and reports what maps cleanly, what needs a capability, and what will not work. It is read-only: it never builds, runs or edits your source.</p><p>Reusable application logic is a good starting point. UI code and direct operating-system calls need Krate interfaces, and dependencies must support the WebAssembly target. The <a href="/docs/porting.html">porting guide</a> walks through the process.</p></div></details>
+    <details><summary><span class="n">03</span>What can I build, and what are the current limits?</summary><div class="ans"><p>Krate exposes interfaces for desktop UI, drawing, storage, networking and other system resources. The <a href="/docs/limits.html">capability and limits reference</a> records what is implemented and the boundaries to check for your app.</p><p>For examples you can inspect, see the <a href="/cloud/">app gallery</a> and <a href="/progress/">repository inventory</a>.</p></div></details>
+    <details><summary><span class="n">04</span>How can the same .krate file open on Mac, Windows, and Linux?</summary><div class="ans"><p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces, and the Krate player on each operating system translates approved calls into local behavior.</p><p>The <code class="k">.krate</code> file carries the WebAssembly component and its requested access. It is one portable app, and the same bytes run on all three desktops.</p></div></details>
+    <details><summary><span class="n">05</span>Why not use an HTML file, browser link, or Electron?</summary><div class="ans"><p>A browser link works well for web applications. Krate gives developers a file they can distribute directly for local execution. Krate Cloud is optional; an app's own online features still need their services.</p><p>An Electron app bundles Chromium and Node.js and uses platform-specific packages. Krate apps share a native runtime rather than bundling a browser per app. See the <a href="/desktop-app-distribution.html">desktop distribution comparison</a>.</p></div></details>
+    <details><summary><span class="n">06</span>Can an app hide what it accesses or ignore the permission screen?</summary><div class="ans"><p>Krate checks every operation at the boundary, so the list is not something the app writes about itself: if the app tries something that was not granted, the call is denied before it reaches the operating system.</p><p>If a required permission is denied, the app refuses to start and explains what is missing.</p></div></details>
+    <details><summary><span class="n">07</span>Is Krate ready for any untrusted app from the internet?</summary><div class="ans"><p><b>Not yet.</b> The capability boundary is working and useful, but Krate is young and we are not claiming production hardening against hostile third-party code today.</p><p>Open apps from people you know, or from the gallery. The current limits and threat model are public.</p></div></details>
+    <details><summary><span class="n">08</span>Why does the person receiving an app need Krate?</summary><div class="ans"><p>Krate is the player, like a media player for application files. Its native runtime handles operating-system differences and enforces permissions, so developers can send the same app file to all three desktops.</p><p>Install the player once, then open <code class="k">.krate</code> files through it. An app needs a runtime version that supports its interfaces. The <a href="/open/">opening guide</a> gets you started.</p></div></details>
+    <details><summary><span class="n">09</span>Does the name collide with a Rust “crate”?</summary><div class="ans"><p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p><p>We keep the distinction explicit wherever Rust developers could reasonably confuse the two.</p></div></details>
+    <details><summary><span class="n">10</span>What does “your first app is on us” mean?</summary><div class="ans"><p>In your browser, Krate's own AI makes one app for you and one change to it, and we pay for it. No API key, no card, nothing to install.</p><p>Only an app that is actually made counts. A build that fails, or that we could not finish, costs you nothing and you can try again.</p></div></details>
+    <details><summary><span class="n">11</span>What happens after my free app?</summary><div class="ans"><p>The app is a file, and it stays yours: open it, publish it, send it to anyone.</p><p>To keep making, use <a href="/studio/">Krate Studio</a> on your own computer, which is free and unlimited with the AI you already use. Or add your own API key in Studio's settings in the browser and keep going there.</p></div></details>
+    <details><summary><span class="n">12</span>Do I need an account?</summary><div class="ans"><p>Not to open apps. Not to make apps in Krate Studio on your own computer, either; there you only sign in to publish.</p><p>Making an app in the browser does need one, so your free app is counted once and your work is kept. Sign in with GitHub, Google or a link sent to your email.</p></div></details>
+  </div>
+</section>
+
+<div class="band rv"><div><h2>Still have a question?</h2><p>The docs go deeper, or ask us directly.</p></div><div class="acts" style="margin-top:0;gap:10px"><a class="btn ghost" href="/docs/">Read the docs</a><a class="btn dark" href="/contact/">Contact Krate <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a></div></div>
+
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+</footer>
+<script src="/kit/site.js"></script>
 <script>
 // Count the visit, and nothing about the visitor: the page and the site
 // you came from, by name only. No cookie, nothing stored (see /privacy/).
