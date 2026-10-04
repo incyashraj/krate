@@ -360,14 +360,14 @@ function showView(name) {
   if (name === "home") resetShelfTab();
   for (const id of [
     "viewGate", "viewHome", "viewSession", "viewCloud", "viewApp",
-    "viewApps", "viewOnboard",
+    "viewApps", "viewOnboard", "viewIde",
   ]) {
     $(id).classList.add("hidden");
   }
   const view = $({
     gate: "viewGate", home: "viewHome", session: "viewSession",
     cloud: "viewCloud", appDetail: "viewApp", apps: "viewApps",
-    onboard: "viewOnboard",
+    onboard: "viewOnboard", ide: "viewIde",
   }[name]);
   view.classList.remove("hidden");
   revealIn(view);
@@ -459,7 +459,7 @@ function madeAnythingAlready() {
  * Driven from showView for the same reason syncDock is -- one place decides
  * which page is current, and both navigations read it rather than each
  * keeping its own idea. */
-const RAIL_PAGES = { home: "home", apps: "all", cloud: "discover" };
+const RAIL_PAGES = { home: "home", apps: "all", cloud: "discover", ide: "ide" };
 
 function syncRail(view) {
   const rows = document.querySelectorAll("#side .side-row");

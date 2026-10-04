@@ -163,15 +163,47 @@
       b.classList.toggle("on", on);
       b.setAttribute("aria-selected", on ? "true" : "false");
     });
+    const changed = bar.dataset.mode !== mode;
     bar.dataset.mode = mode;
     if (pane) pane.hidden = mode !== "port";
-    const kb = $("homeKb"); if (kb) kb.hidden = mode === "port";
+    const idePane = $("homeIdePane"), ideUnder = $("homeIdeUnder");
+    if (idePane) idePane.hidden = mode !== "ide";
+    if (ideUnder) ideUnder.hidden = mode !== "ide";
+    const kb = $("homeKb");
+    if (kb) {
+      kb.hidden = mode === "port";
+      kb.innerHTML = mode === "ide" ? `<kbd>${mod}I</kbd> asks your AI` : "<kbd>↵</kbd> to make";
+    }
     placeInd();
+    // The question changes with the door: building, porting, working on.
+    const title = $("homeTitle");
+    if (title && changed) {
+      let alt = q(".kr-t-alt", title);
+      if (!alt) {
+        const main = document.createElement("span"); main.className = "kr-t-main";
+        while (title.firstChild) main.appendChild(title.firstChild);
+        title.appendChild(main);
+        alt = document.createElement("span"); alt.className = "kr-t-alt"; title.appendChild(alt);
+      }
+      title.dataset.mode = mode;
+      alt.textContent = mode === "port" ? "What are we porting?" : mode === "ide" ? "What are we working on?" : "";
+      const swap = mode === "create" ? q(".kr-t-main", title) : alt;
+      swap.classList.remove("kr-swap"); void swap.offsetWidth; swap.classList.add("kr-swap");
+    }
     const sub = $("homeSub");
-    if (sub) {
+    if (sub && changed) {
       sub.textContent = mode === "port" ? "Krate reads it first and tells you what the port would take."
+        : mode === "ide" ? "Edit a Krate project yourself, with your AI one keystroke away."
         : "Describe it. Krate turns it into one small file that opens on every desktop.";
       sub.classList.remove("kr-swap"); void sub.offsetWidth; sub.classList.add("kr-swap");
+    }
+    document.dispatchEvent(new CustomEvent("kr-home-mode", { detail: mode }));
+    if (mode === "ide") { const f = $("homeIdeFind"); if (f) setTimeout(() => f.focus({ preventScroll: true }), 120); }
+    // The sidebar lights the door that is open.
+    const ideRow = $("sideIde"), homeRow = q('#side .side-row[data-side="home"]');
+    if (ideRow && homeRow && !$("viewHome").classList.contains("hidden")) {
+      ideRow.classList.toggle("on", mode === "ide");
+      homeRow.classList.toggle("on", mode !== "ide");
     }
     if (mode === "create") { const ta = $("homePrompt"); if (ta) ta.focus({ preventScroll: true }); }
   }
@@ -823,6 +855,8 @@
     toastEl.classList.add("on");
     clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove("on"), 2600);
   }
+  // ide.js says what it built with the same toast.
+  window.krToast = toast;
   // Published: the sheet closes and the link is on the clipboard. Say so
   // where it is seen. Only when a NEW link appeared, so closing the sheet
   // any other way says nothing.
