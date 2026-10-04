@@ -190,6 +190,8 @@
     if (/codex|openai|gpt/.test(n)) return ico("openai", "kr-lgo");
     if (/gemini|google/.test(n)) return ico("gemini", "kr-lgo");
     if (/krate/.test(n)) return '<img class="kr-lgo" src="krate-logo.png" alt="">';
+    // Still being looked up ("…"): no mark yet, rather than a ready-looking dot.
+    if (!n.replace(/[.\u2026\s]/g, "")) return "";
     return '<span class="kr-lgo kr-lgo-dot"></span>';
   }
   function markChip(chip, nameEl) {

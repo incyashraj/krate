@@ -337,13 +337,18 @@ body:not(.light) .web-mode button[aria-pressed="true"] { background: var(--surfa
 
 /* the shelf: a quiet strip along the foot of the sheet, not a raised tray */
 @media (min-width: 861px) {
-  #viewHome .shelf {
-    position: fixed; left: 9px; right: 9px; bottom: 9px; width: auto; margin: 0;
+  /* In the page's own column, not fixed over it: the hero takes the space
+     above and the shelf sits at the foot, so opening it lifts the composer
+     instead of covering it, on a window of any height. */
+  #viewHome .home { padding-bottom: 0; }
+  #viewHome .home-hero { margin-top: auto; margin-bottom: auto; flex: none; }
+  #viewHome .shelf, body.side-open #viewHome .shelf, body.kr-rail #viewHome .shelf {
+    position: relative; left: auto; right: auto; bottom: auto; flex: none; align-self: stretch;
+    width: auto; margin: 24px -32px 0; transform: none;
     border-radius: 0 0 15px 15px; border: 0; border-top: 1px solid var(--line);
     background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none;
     padding: 10px 20px 12px;
   }
-  body.side-open #viewHome .shelf { left: calc(var(--side-w, 240px) + 1px); width: auto; }
 }
 #viewHome .shelf-tabs { background: transparent; padding: 0; gap: 2px; }
 #viewHome .shelf-tab { height: 28px; padding: 0 10px; border-radius: 8px; font: 500 13px var(--sans); color: var(--ink-3); background: transparent; }
@@ -1005,7 +1010,6 @@ body:not(.light) .sess-row.on { background: var(--surface-2); }
   body.kr-rail .side { transform: none; width: 72px; padding: 0 10px 10px; overflow: hidden; }
   body.kr-rail .view { margin-left: 72px; }
   body.kr-rail .titlebar .side-toggle:not(#sideCloseToggle) { display: none; }
-  body.kr-rail #viewHome .shelf { left: 73px; }
   body.kr-rail .side-top { justify-content: center; padding: 0; }
   body.kr-rail .side-mark span { display: none; }
   body.kr-rail .side-mark { padding: 0 8px; }
@@ -1427,3 +1431,11 @@ body:not(.light) #viewOnboard .fan-card { box-shadow: 0 0 0 1px var(--hair), 0 4
 .forming-ghost[data-rev="1"] .kr-face { opacity: .8; filter: blur(3px) saturate(.75); }
 .forming-ghost[data-rev="1"] .fg-crate, .forming-ghost[data-rev="1"] .fg-bits { opacity: 0; transition: opacity .6s var(--ease); }
 #viewSession .build-card.flashing .forming-ghost[data-rev="1"] .kr-face { filter: blur(5px) saturate(.75); }
+/* The open shelf has to fit the 232px Home keeps for it (style.css .home),
+   or it covers the bottom of the composer on an ordinary laptop window. */
+#viewHome .shelf-body { max-height: 150px; }
+#viewHome .shelf-card .shot { aspect-ratio: auto; height: clamp(64px, 12vh, 104px); }
+/* On a Mac the traffic lights sit in the rail's top corner: the toggle goes under them. */
+@media (min-width: 861px) {
+  body.macos.kr-rail .side-top { height: 78px; padding: 0 0 4px; justify-content: center; align-items: flex-end; }
+}
