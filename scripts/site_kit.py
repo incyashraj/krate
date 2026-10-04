@@ -96,6 +96,11 @@ def problems(html: str) -> list:
             out.append(f"has {len(found)} {name}s, wants 1")
         elif found[0] != want:
             out.append(f"{name} differs from scripts/site_kit.py")
+    markup = re.sub(r"<script\b.*?</script>", "", html, flags=re.S)
+    if markup.count("<!--") != markup.count("-->"):
+        # An unclosed comment silently swallows everything after it, scripts
+        # included: a page that renders and does nothing.
+        out.append("has an unclosed HTML comment")
     if not re.search(r'<script src="[^"]*/kit/site(?:\.[0-9a-f]{12})?\.js"></script>', html):
         out.append("does not load /kit/site.js")
     return out
@@ -160,6 +165,7 @@ def self_test() -> int:
     assert apply(drift) == page, "apply restores the canonical parts"
     assert not is_kit('<link rel="stylesheet" href="/site.css">'), "the old /site.css is not the kit"
     assert is_kit('<link rel="stylesheet" href="/kit/site.0123456789ab.css">'), "a hashed kit sheet is the kit"
+    assert "has an unclosed HTML comment" in problems(page.replace("<main>", "<main><!-- note </main>"))
     nojs = page.replace(KIT_SCRIPT, "")
     assert "does not load /kit/site.js" in problems(nojs)
     assert hidden_ungated(".rv { opacity: 0; }") == [".rv"], "an ungated reveal is reported"
