@@ -162,7 +162,7 @@ const fragment = (fields) => "#" + new URLSearchParams(fields).toString();
   check(!page.els.notNow && !/id="notNow"|login-skip/.test(loginHtml), "there is no Not now on the sign-in card");
   check(b.localStorage.getItem("krate_next") === "studio", "the continuation is kept for after sign-in");
   check(!/params\.has\("stay"\)/.test(bridgeJs), "the Studio has no look-around door past its sign-in check");
-  check(/<a href="\/"[^>]*><img src="\/krate-logo\.png"/.test(loginHtml), "the logo is a link home");
+  check(/<a href="\/"[^>]*><img [^>]*src="\/krate-(?:logo|mark-3d-96)\.png"/.test(loginHtml), "the logo is a link home");
 }
 
 /* ---- the publish page uses the site's one sign-in (K-789) ---------------- */

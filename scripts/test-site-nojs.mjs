@@ -4,8 +4,10 @@
 // rise that waits for a script would leave them invisible to a reader with
 // scripts off, and nothing else would notice.
 //
-// Text inside an illustration (an element marked data-illustration, or
-// aria-hidden) is exempt: those are pictures drawn in HTML, animated by the
+// Only fades count (opacity, visibility): an element switched off with
+// display: none is a state the page chose, such as a loader or a button its
+// script shows later. Text inside an illustration (an element marked
+// data-illustration, or aria-hidden) is exempt: those are pictures drawn in HTML, animated by the
 // page's script, and the words they show are repeated in the page's text.
 //
 // Run with Playwright installed, or set KRATE_PLAYWRIGHT_MODULE to a module
@@ -66,7 +68,9 @@ for (const theme of ['light', 'dark']) {
         let n = el, why = '';
         for (; n && n !== document.documentElement; n = n.parentElement) {
           const cs = getComputedStyle(n);
-          if (cs.display === 'none') { why = 'display: none'; break; }
+          // display: none is a state (a loader, a button a script reveals
+          // later), not a reveal waiting for a script; only fades are.
+          if (cs.display === 'none') { why = ''; n = null; break; }
           if (cs.visibility === 'hidden') { why = 'visibility: hidden'; break; }
           if (parseFloat(cs.opacity) < 0.05) { why = 'opacity ' + cs.opacity; break; }
         }
