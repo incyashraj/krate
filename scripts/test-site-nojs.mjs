@@ -65,6 +65,11 @@ for (const theme of ['light', 'dark']) {
       for (const el of main.querySelectorAll('h1,h2,h3,h4,p,li,dt,dd,td,th,summary,a,button,label')) {
         const text = el.textContent.replace(/\s+/g, ' ').trim();
         if (!text || el.closest('[data-illustration],[aria-hidden="true"],template,noscript,[hidden],details:not([open]) > :not(summary)')) continue;
+        // Inside a section the page switched off (display: none) nothing is
+        // shown or animated, and that is the page's state, not a fade.
+        let off = false;
+        for (let m = el; m && m !== document.documentElement; m = m.parentElement) if (getComputedStyle(m).display === 'none') { off = true; break; }
+        if (off) continue;
         let n = el, why = '';
         for (; n && n !== document.documentElement; n = n.parentElement) {
           const cs = getComputedStyle(n);
