@@ -177,6 +177,29 @@
     mirrorCannot();
   }
 
+  /* ---- first run: which step this is ------------------------------------
+   * Dots along the foot, one per step that exists here. The browser skips
+   * the "which agent" step (app.js obGo), so it shows two dots, not three. */
+  const ob = $("viewOnboard");
+  if (ob && window.MutationObserver) {
+    const scenes = [...ob.querySelectorAll(".ob-scene")];
+    let desktop = false;
+    try { desktop = !!tauri; } catch (e) { /* no app.js */ }
+    const steps = scenes.map((s) => s.dataset.step).filter((n) => desktop || n !== "2");
+    const dots = document.createElement("div");
+    dots.className = "ob-dots"; dots.setAttribute("aria-hidden", "true");
+    dots.innerHTML = steps.map(() => "<i></i>").join("");
+    ob.appendChild(dots);
+    const paint = () => {
+      const on = scenes.find((s) => s.classList.contains("on"));
+      const at = on ? steps.indexOf(on.dataset.step) : 0;
+      [...dots.children].forEach((d, i) => d.classList.toggle("on", i === at));
+    };
+    const mo = new MutationObserver(paint);
+    scenes.forEach((s) => mo.observe(s, { attributes: true, attributeFilter: ["class"] }));
+    paint();
+  }
+
   /* ---- the sidebar's Port an app ---------------------------------------- */
   const sidePort = $("sidePort");
   if (sidePort) sidePort.addEventListener("click", () => {

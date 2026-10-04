@@ -612,3 +612,93 @@ body:not(.light) #viewSession .done-card { box-shadow: 0 0 0 1px var(--hair), 0 
 #viewSession .asks li:nth-child(5) { animation-delay: 0.24s; }
 @keyframes krAskIn { from { opacity: 0; transform: translateY(4px) scale(0.96); } }
 @media (prefers-reduced-motion: reduce) { #viewSession .done-card.in, #viewSession .asks li { animation: none; } }
+
+/* ---------------------------------------------------------------- first run
+ * The welcome has the whole window: no sidebar beside it. A short line under
+ * the title, and dots along the foot for the step you are on. */
+@media (min-width: 861px) {
+  #viewOnboard, body.side-open #viewOnboard {
+    position: fixed; inset: 0; z-index: 70; margin: 0; height: 100vh;
+    border-radius: 0; box-shadow: none; background: var(--bg);
+  }
+}
+#viewOnboard .ob-h { font-size: clamp(30px, 3.4vw, 44px); letter-spacing: -0.045em; color: var(--ink); }
+#viewOnboard .ob-p { max-width: 460px; margin: 12px auto 0; font-size: 15px; line-height: 1.55; color: var(--ink-3); text-wrap: balance; }
+#viewOnboard .ob-skip { color: var(--ink-2); }
+#viewOnboard .ob-cta {
+  height: 42px; padding: 0 20px; gap: 8px; border: 0; border-radius: 999px;
+  font: 500 14.5px var(--sans); color: var(--btn-ink); background: var(--btn);
+}
+#viewOnboard .ob-cta:hover { background: var(--btn-hover); }
+.ob-dots { position: absolute; left: 0; right: 0; bottom: 34px; z-index: 2; display: flex; justify-content: center; gap: 6px; pointer-events: none; }
+.ob-dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink-4); transition: width 0.5s var(--ease), background 0.4s; }
+.ob-dots i.on { width: 22px; background: var(--ink); }
+
+/* ---------------------------------------------------------------- Files, Code, Details
+ * The same surfaces as the rest: grouped rows on a white card with hairlines
+ * between them, quiet section labels, pill buttons. */
+#viewSession .pane-head { padding: 16px 20px 10px; border-bottom: 0; gap: 8px; }
+#viewSession .pane-title { font-size: 15px; font-weight: 500; letter-spacing: -0.015em; color: var(--ink); }
+#viewSession .pane-scroll { padding: 6px 20px 20px; }
+#viewSession .pane-empty { color: var(--ink-3); }
+#viewSession .btn {
+  border: 0; border-radius: 999px; font-family: var(--sans); font-weight: 500;
+  background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line-strong);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s var(--ease);
+}
+#viewSession .btn:hover { background: var(--surface-2); }
+#viewSession .btn:active { transform: scale(0.97); }
+#viewSession .btn.btn-primary { background: var(--btn); color: var(--btn-ink); box-shadow: none; }
+#viewSession .btn.btn-primary:hover { background: var(--btn-hover); }
+#viewSession .btn.btn-ghost { background: transparent; box-shadow: none; color: var(--ink-2); }
+#viewSession .btn.btn-ghost:hover { background: var(--surface-2); color: var(--ink); }
+#viewSession .btn.btn-sm { height: 32px; padding: 0 14px; font-size: 13px; }
+
+.f-group { margin-bottom: 20px; }
+.f-label { margin: 0 0 8px 2px; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-3); }
+.f-group > .f-row { border-radius: 0; padding: 11px 14px; gap: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair); }
+.f-group > .f-row + .f-row { margin-top: 1px; }
+.f-group > .f-label + .f-row { border-radius: 14px 14px 0 0; }
+.f-group > .f-row:last-child { border-radius: 0 0 14px 14px; }
+.f-group > .f-label + .f-row:last-child { border-radius: 14px; }
+.f-row:hover { background: var(--surface-2); }
+.f-group > .f-row:hover { background: color-mix(in srgb, var(--surface-2) 70%, var(--surface)); }
+.f-row .f-ico { width: 30px; height: 30px; border-radius: 9px; background: var(--surface-2); color: var(--ink-2); }
+.f-row .f-name { font-size: 13.5px; color: var(--ink); }
+.f-row .f-note { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.f-row button {
+  height: 28px; padding: 0 12px; border: 0; border-radius: 999px;
+  font: 500 12.5px var(--sans); color: var(--ink); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong);
+}
+.f-row button:hover { background: var(--surface-2); border: 0; }
+
+.code-tree { border-right: 1px solid var(--line); }
+.code-search {
+  margin: 12px; height: 34px; padding: 0 12px; border: 0; border-radius: 10px;
+  font: 400 13px var(--sans); color: var(--ink); background: var(--surface-2);
+}
+.code-search:focus { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, var(--hair)); }
+.code-dir { font-size: 12px; color: var(--ink-3); }
+.code-file { height: 32px; padding: 0 10px; border-radius: 9px; font: 400 13px var(--sans); color: var(--ink-2); }
+.code-file:hover { background: var(--surface-2); color: var(--ink); }
+.code-file.on { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--hair), 0 1px 2px rgba(24, 24, 27, 0.05); }
+body:not(.light) .code-file.on { background: var(--surface-2); }
+.code-head { border-bottom: 1px solid var(--line); }
+.code-path { color: var(--ink); }
+.code-ro, .code-stats { color: var(--ink-3); }
+.code-text .ln::before { color: var(--ink-4); }
+.code-text .ln:hover { background: var(--surface-2); }
+
+.dt-name { font-size: 24px; font-weight: 500; letter-spacing: -0.03em; color: var(--ink); }
+.dt-trust { color: var(--ink-2); }
+.dt-chip { border: 0; padding: 0 11px; height: 26px; display: inline-flex; align-items: center; font-size: 12.5px; color: var(--ink-2); background: var(--surface); box-shadow: 0 0 0 1px var(--hair); }
+.dt-card { border: 0; border-radius: 16px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 1px 2px rgba(24, 24, 27, 0.04); padding: 16px 18px 18px; }
+.dt-card h3 { font-size: 14px; font-weight: 500; color: var(--ink); }
+.dt-count { color: var(--ink-3); }
+.dt-list li { border-radius: 10px; background: var(--surface-2); color: var(--ink); }
+.dt-dot { background: var(--accent); }
+.dt-dot.ok { background: var(--green); }
+.dt-note { color: var(--ink-3); }
+.dt-cmd { border: 0; border-radius: 10px; background: var(--surface-2); color: var(--ink); }
+.dt-rows dt { color: var(--ink-3); }
+.dt-rows dd { color: var(--ink); }
