@@ -1169,6 +1169,45 @@
     paint();
     const view = $("viewApp");
     watch(view, { attributes: true, attributeFilter: ["class"] }, () => { if (!view.classList.contains("hidden")) { const m = q(".detail", view); if (m) m.scrollTop = 0; } });
+    // Remix beside Open it: the same start-from-this the gallery cards offer.
+    const copyBtn = $("detailCopy");
+    if (copyBtn) {
+      const rx = document.createElement("button");
+      rx.type = "button"; rx.className = "btn kr-remix"; rx.innerHTML = ico("spark") + "<span>Remix</span>";
+      rx.title = "Start your own app from this one";
+      rx.addEventListener("click", () => {
+        const desc = (($("detailDesc") || {}).textContent || "").trim();
+        const name = ((nm || {}).textContent || "this app").trim();
+        remix(desc || name, name);
+      });
+      copyBtn.before(rx);
+    }
+  })();
+
+  /* ---- Your apps: find one by name ---------------------------------------- */
+  (function findApp() {
+    const head = q("#viewApps .head-actions"), grid = $("appsGrid");
+    if (!head || !grid) return;
+    const box = document.createElement("label");
+    box.className = "kr-find";
+    box.innerHTML = `${ico("search")}<input type="search" placeholder="Find an app" aria-label="Find an app" autocomplete="off" spellcheck="false">`;
+    head.insertBefore(box, head.firstChild);
+    const input = q("input", box);
+    let empty = null;
+    const apply = () => {
+      const s = input.value.trim().toLowerCase();
+      let shown = 0;
+      qa(".app-card", grid).forEach((c) => { const hit = !s || c.textContent.toLowerCase().includes(s); c.hidden = !hit; if (hit) shown++; });
+      const nc = q(".kr-newcard", grid); if (nc) nc.hidden = !!s;
+      if (s && !shown) {
+        if (!empty) { empty = document.createElement("p"); empty.className = "kr-findnone"; grid.appendChild(empty); }
+        empty.textContent = `No app called “${input.value.trim()}”. Try another word, or make it.`;
+        empty.hidden = false;
+      } else if (empty) empty.hidden = true;
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("keydown", (e) => { if (e.key === "Escape" && input.value) { e.stopPropagation(); input.value = ""; apply(); } });
+    watch(grid, { childList: true }, () => { if (input.value) apply(); });
   })();
 
   /* ---- Settings: an indicator that slides to the section ---------------- */
@@ -1583,6 +1622,44 @@
       if (old && !old.classList.contains("hidden")) window.showView("onboard");
     }
   } catch (e) {}
+
+  /* ---- the Code pane: open the app's source in the IDE ------------------- */
+  (function codeToIde() {
+    const head = q("#paneCode .code-head"), copy = $("codeCopy");
+    if (!head || !copy || !desktopApp()) return;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn btn-sm kr-toide"; b.innerHTML = ico("code") + "<span>Open in the IDE</span>";
+    b.title = "Edit this app's source with a live preview, and ask your AI from there";
+    b.addEventListener("click", async () => {
+      let a = null; try { a = currentApp(); } catch (e) {}
+      let dir = ""; try { dir = await sourceDirOf(a); } catch (e) {}
+      if (!dir || !window.krIdeOpen) { toast("This app's source is not on this computer"); return; }
+      const name = ((a && a.name) || "").replace(/\.krate$/, "") || undefined;
+      window.krIdeOpen(dir, name);
+    });
+    copy.before(b);
+  })();
+
+  /* ---- a build that did not finish: the card it would have been ---------- */
+  (function failed() {
+    const st = $("stateFailed"), card = q("#stateFailed .fail-card");
+    if (!st || !card) return;
+    const slab = (y) => `<g><path class="l" d="M28 ${y} L80 ${y + 26} L80 ${y + 41} L28 ${y + 15}Z"/><path class="r" d="M80 ${y + 26} L132 ${y} L132 ${y + 15} L80 ${y + 41}Z"/><path class="t" d="M28 ${y} L80 ${y - 26} L132 ${y} L80 ${y + 26}Z"/></g>`;
+    const ghost = document.createElement("div");
+    ghost.className = "kr-failghost"; ghost.setAttribute("aria-hidden", "true");
+    ghost.innerHTML = `<div class="kr-fg-th"><svg viewBox="14 30 132 126">${slab(104)}${slab(84)}${slab(64)}</svg></div><div class="kr-fg-nm"><b></b><small>Did not finish</small></div>`;
+    st.insertBefore(ghost, card);
+    const paint = () => {
+      if (st.classList.contains("hidden")) return;
+      q("b", ghost).textContent = appName();
+      // The words follow what stopped it: a build that was stopped is not a failure.
+      const t = (($("failTitle") || {}).textContent || "").toLowerCase();
+      q("small", ghost).textContent = /stop/.test(t) ? "Stopped" : /open|run|start/.test(t) ? "Did not open" : "Did not finish";
+    };
+    watch(st, { attributes: true, attributeFilter: ["class"] }, paint);
+    watch($("failTitle"), { childList: true, characterData: true, subtree: true }, paint);
+    paint();
+  })();
 
   /* ---- the sidebar's Port an app ---------------------------------------- */
   const sidePort = $("sidePort");

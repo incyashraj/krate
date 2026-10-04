@@ -1897,3 +1897,51 @@ body:not(.light) .kr-tr-card { background: #18181c; }
 .kr-tr-f button { height: 34px; padding: 0 14px; font-size: 13px; }
 @media (prefers-reduced-motion: reduce) { .kr-tr-hole::after { animation: none; } }
 .kr-ob-card:focus, .kr-tr-card:focus { outline: none; }
+
+/* ---- Files and Code: the design's icons on their buttons ---------------- */
+#filesAttach, #filesSave, #paneCode .kr-toide { display: inline-flex; align-items: center; gap: 6px; }
+#filesAttach::before, #filesSave::before { content: ""; width: 13px; height: 13px; flex: none; background: currentColor;
+  -webkit-mask: var(--kr-m) center / contain no-repeat; mask: var(--kr-m) center / contain no-repeat; }
+#filesAttach { --kr-m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 3v10M3 8h10' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E"); }
+#filesSave { --kr-m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 2.5v8M4.6 7.4L8 10.8l3.4-3.4M3 13.3h10' stroke='black' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+#paneFiles .pane-head #filesSave { background: var(--ink); color: var(--bg); border-color: transparent; }
+#paneFiles .pane-head #filesSave:hover { background: color-mix(in srgb, var(--ink) 86%, var(--bg)); color: var(--bg); }
+#paneCode .kr-toide .kr-ico { width: 14px; height: 14px; }
+#paneFiles .f-label { text-transform: uppercase; letter-spacing: .05em; font-size: 11px; font-weight: 500; color: var(--ink-3); }
+
+/* ---- a build that did not finish, as in the design ---------------------- */
+#viewSession #stateFailed:not(.hidden) { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.kr-failghost { width: min(360px, 100%); border-radius: 22px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -36px rgba(0, 0, 0, .35);
+  animation: krFadeUp .5s var(--ease) both; --g1: #ececef; --g2: #dfdfe4; --g3: #d2d2d9; }
+body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --g2: #232327; --g3: #1d1d21; }
+.kr-fg-th { height: 150px; display: grid; place-items: center;
+  background: radial-gradient(50% 60% at 30% 30%, color-mix(in srgb, var(--pink) 14%, transparent), transparent 70%), radial-gradient(50% 60% at 75% 50%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%);
+  -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.kr-fg-th svg { width: 74px; overflow: visible; opacity: .8; }
+.kr-fg-th .t { fill: var(--g1); } .kr-fg-th .l { fill: var(--g2); } .kr-fg-th .r { fill: var(--g3); }
+.kr-fg-nm { padding: 0 18px 16px; margin-top: -10px; position: relative; }
+.kr-fg-nm b { display: block; font: 500 15px var(--sans); color: var(--ink); }
+.kr-fg-nm small { font-size: 12.5px; color: var(--danger); }
+#viewSession #stateFailed .fail-card, body.light #viewSession #stateFailed .fail-card { position: relative; width: min(460px, 100%); padding: 0 0 0 30px; text-align: left; background: none; box-shadow: none; border: 0; animation: krFadeUp .5s var(--ease) .1s both; }
+#viewSession #stateFailed .fail-mark { position: absolute; left: 0; top: 1px; width: 20px; height: 20px; margin: 0; display: grid; place-items: center; border-radius: 50%; }
+#viewSession #stateFailed .fail-mark svg { width: 14px; height: 14px; }
+#viewSession #stateFailed .fail-title { margin: 0; font-size: 15px; }
+#viewSession #stateFailed .fail-why { margin: 6px 0 0; font-size: 13.5px; line-height: 1.55; }
+#viewSession #stateFailed .fail-actions { justify-content: flex-start; margin-top: 14px; gap: 8px; }
+#viewSession #stateFailed .fail-offer { margin-top: 14px; }
+#viewSession #stateFailed .fail-raw-wrap { text-align: left; }
+
+/* ---- Your apps: find one ------------------------------------------------ */
+.kr-find { display: inline-flex; align-items: center; gap: 8px; height: 36px; width: 210px; padding: 0 12px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink-3); cursor: text; transition: box-shadow .2s; }
+.kr-find:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--line-strong)), 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
+.kr-find .kr-ico { width: 15px; height: 15px; flex: none; }
+.kr-find input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: 400 13.5px var(--sans); color: var(--ink); }
+.kr-find input::-webkit-search-cancel-button { display: none; }
+.kr-findnone { grid-column: 1 / -1; margin: 20px 0; text-align: center; font-size: 14px; color: var(--ink-3); }
+#viewApps .head-actions { display: flex; align-items: center; gap: 8px; }
+.kr-remix { display: inline-flex; align-items: center; gap: 6px; }
+.kr-remix .kr-ico { width: 14px; height: 14px; }
+@media (max-width: 600px) { .kr-find { width: 100%; } #viewApps .head-actions { flex-wrap: wrap; } }
+/* One gallery app: the way back reads as where you came from. */
+#viewApp #appCrumb::before { content: "Gallery  \203A  "; white-space: pre; color: var(--ink-3); }

@@ -523,4 +523,6 @@
   // Home tells us when its IDE tab is chosen (redesign.js setMode).
   document.addEventListener("kr-home-mode", (e) => { if (e.detail === "ide") { loadProjects(); paintAgent(); } });
   window.addEventListener("beforeunload", () => { if (ide) saveAll(false); });
+  // Studio's Code pane opens a built app's own source here.
+  window.krIdeOpen = (path, name) => openProject({ path, name });
 })();
