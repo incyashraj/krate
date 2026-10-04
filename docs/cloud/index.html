@@ -1,161 +1,121 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#000000" />
 <title>The Krate gallery</title>
 <meta name="description" content="Browse apps people have made and shared. One file each, sandboxed, permission-first." />
 <link rel="icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
 <style>
-@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
-  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --disp: "Syne", var(--sans); }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
-  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-img { max-width: 100%; }
-.hidden { display: none !important; }
-::selection { background: rgba(165, 88, 251, 0.35); }
-.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
-  pointer-events: none; user-select: none;
-  background: linear-gradient(to top, transparent, #000);
-  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
-          mask-image: linear-gradient(to bottom, #000 50%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
-  display: flex; align-items: center; gap: 14px; user-select: none;
-  transform: translateX(-50%); }
-.brandbar .name { display: flex; align-items: center; gap: 0.34em;
-  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
-.brandbar .name img { height: 19px; width: auto; }
-.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
-  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
-.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
-  transition: color 0.15s ease, background 0.15s ease; }
-.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
-@media (max-width: 640px) { .bnav { display: none; } }
-.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
-  margin-left: -450px; pointer-events: none; border-radius: 100%;
-  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
-  filter: blur(40px); }
-.wrap { position: relative; max-width: 1024px; margin: 0 auto; padding: 130px 22px 80px; }
-h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
-.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
-.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
-  opacity: 0; transform: translateY(12px); filter: blur(6px);
-  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-  transition: box-shadow 0.25s ease, translate 0.25s ease; }
-.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
-.card:nth-of-type(2) { animation-delay: 0.06s; }
-.card:nth-of-type(3) { animation-delay: 0.12s; }
-.card:nth-of-type(4) { animation-delay: 0.18s; }
-.card:nth-of-type(5) { animation-delay: 0.24s; }
-.card:nth-of-type(6) { animation-delay: 0.3s; }
-@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
-.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
-.card p { font-size: 13.5px; color: #a1a1aa; }
-.card p b { color: #d4d4d8; font-weight: 500; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
-  white-space: nowrap; user-select: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
-  transition: transform 0.15s ease, box-shadow 0.15s ease; }
-.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
-.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.foot { max-width: 1024px; margin: 40px auto 0; padding: 26px 22px 18px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; align-items: center; justify-content: space-between; gap: 20px;
-  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
-.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
-.foot nav a:hover { color: #d4d4d8; }
+.hidden, [hidden] { display: none !important; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
-/* Two up on a phone. `minmax(250px, 1fr)` gives ONE column below 514px,
-   so the gallery became eighteen 292px cards in a single stack: 5,497px
-   of scrolling -- five and a half screens -- to look at a shelf. Measured
-   at 390x844 that is 119px of page per word.
-   A gallery is a thing you scan, not read, and every app store on a phone
-   scans two across. The cards get smaller; the shelf becomes browsable. */
+/* the gallery: the script fills #grid with a.appc > .shot > img + .b > .nm + .by (img? author .kb) */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 34px 22px; }
+.grid > p { grid-column: 1 / -1; padding: 56px 0; text-align: center; font-size: 14.5px; }
+.appc { display: block; min-width: 0; animation: up .7s var(--ease) both; }
+/* each shot sits in a window, after Studio's gallery. (The kit has its own .shot; this resets it.) */
+.appc .shot { position: relative; padding: 26px 0 0; border-radius: 14px; overflow: hidden; background: var(--s2); box-shadow: 0 0 0 1px var(--hair), var(--sh-1); transition: transform .5s var(--ease), box-shadow .35s; }
+.appc .shot::before { content: ""; position: absolute; inset: 0 0 auto; height: 26px; border-bottom: 1px solid var(--line);
+  background: radial-gradient(circle at 14px 13px, #ff5f57 3.6px, transparent 4.2px), radial-gradient(circle at 27px 13px, #febc2e 3.6px, transparent 4.2px), radial-gradient(circle at 40px 13px, #28c840 3.6px, transparent 4.2px), var(--s1); }
+.appc .shot > img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top center; border-radius: 0; box-shadow: none; transition: transform .5s var(--ease); }
+/* a shot that failed to load is removed by its onerror: the window keeps its shape */
+.appc .shot:not(:has(img))::after { content: ""; display: block; aspect-ratio: 16 / 10; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, var(--s2)), color-mix(in srgb, var(--violet) 12%, var(--s2))); }
+.appc:hover .shot { transform: translateY(-4px); box-shadow: 0 0 0 1px var(--hair), var(--sh-2); }
+.appc:hover .shot > img { transform: scale(1.025); }
+.appc .b { padding: 12px 2px 0; }
+.appc .nm { font-size: 15px; font-weight: 500; letter-spacing: -.015em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appc .by { display: flex; align-items: center; gap: 7px; margin-top: 6px; min-width: 0; font-size: 13px; color: var(--ink-3); }
+.appc .by img { width: 18px; height: 18px; flex: none; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 1px var(--hair); }
+/* the size, as the .krate file chip */
+.appc .kb { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px 0 6px; border-radius: 8px; font-size: 12px; font-weight: 500; color: var(--ink-2); background: var(--s2); box-shadow: inset 0 0 0 1px var(--hair); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.appc .kb::before { content: ""; width: 13px; height: 16px; background: url("/krate-doc.png") center / contain no-repeat; }
+
+/* the loading skeleton (initial markup of #grid on the live page) */
+.sk { display: block; }
+.sk i { display: block; aspect-ratio: 16 / 11.2; border-radius: 14px; background: var(--s2); position: relative; overflow: hidden; }
+.sk b { display: block; height: 12px; width: 52%; margin-top: 14px; border-radius: 6px; background: var(--s2); }
+.sk em { display: block; height: 10px; width: 34%; margin-top: 10px; border-radius: 6px; background: var(--s2); }
+.sk i::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--s1) 70%, transparent) 50%, transparent 65%); background-size: 260% 100%; animation: cloudsweep 1.8s linear infinite; }
+@keyframes cloudsweep { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+.grid > p.loadnote { padding: 0; font-size: 13px; color: var(--ink-3); text-align: left; grid-column: 1 / -1; order: -1; }
+
+.gnote { margin-top: 44px; font-size: 13.5px; color: var(--ink-3); text-align: center; }
+.gnote a { color: var(--accent); }
+.c-acts { margin-top: 26px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 20px; }
+
+
+/* two up on a phone: a gallery is scanned, not read. The size chip goes; it is on the app's own page. */
 @media (max-width: 560px) {
-  .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .appc { border-radius: 14px; }
-  .appc .b { padding: 9px 10px 11px; }
-  .appc .nm { font-size: 12.5px; line-height: 1.3; }
-  /* At half width the author line and the size cannot share a row. The
-     size is the detail that can go: it is on the app's own page. */
-  .appc .by { font-size: 11.5px; margin-top: 4px; }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 12px; }
+  .appc .shot { padding-top: 18px; border-radius: 11px; }
+  .appc .shot::before { height: 18px; background: radial-gradient(circle at 10px 9px, #ff5f57 2.6px, transparent 3.1px), radial-gradient(circle at 19px 9px, #febc2e 2.6px, transparent 3.1px), radial-gradient(circle at 28px 9px, #28c840 2.6px, transparent 3.1px), var(--s1); }
+  .appc .b { padding-top: 9px; }
+  .appc .nm { font-size: 13.5px; }
+  .appc .by { font-size: 12px; margin-top: 3px; }
   .appc .kb { display: none; }
 }
-.appc { display: block; border-radius: 18px; overflow: hidden; background: rgba(24,24,27,0.5);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
-  opacity: 0; transform: translateY(12px); animation: rise 0.55s cubic-bezier(0.2,0.8,0.2,1) forwards;
-  transition: box-shadow 0.25s ease, translate 0.25s ease; }
-.appc:hover { translate: 0 -3px; box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 16px 40px -16px rgba(0,0,0,0.8); }
-.appc .shot { aspect-ratio: 16/10; background: #101013; overflow: hidden; }
-.appc .shot img { width: 100%; height: 100%; object-fit: cover; display: block;
-  transition: transform 0.35s cubic-bezier(0.2,0.8,0.2,1); }
-.appc:hover .shot img { transform: scale(1.035); }
-.appc .b { padding: 13px 15px 14px; }
-.appc .nm { font-size: 14px; font-weight: 500; }
-.appc .by { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 12px; color: #a1a1aa; }
-.appc .by img { width: 16px; height: 16px; border-radius: 50%; }
-.appc .kb { margin-left: auto; color: #71717a; font-size: 11px; }
-.gnote { margin-top: 26px; font-size: 12.5px; color: #71717a; text-align: center; }
-
-@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
-
-  /* Touch, not width: a thumb needs 44px whatever the screen size, and
-     these pages' nav and footer links were 19-20px tall. */
-  @media (pointer: coarse) {
-    nav a[href], .foot a[href], footer a[href] {
-      display: inline-block; padding-top: 11px; padding-bottom: 11px;
-    }
-    button, input[type=submit] { min-height: 44px; }
-    /* Buttons that are links, and the brand mark, which is a tap target
-       on every page (it goes home). */
-    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
-  }
 </style>
 </head>
 <body>
-<div class="bloom"></div>
-<div class="topblur"></div>
-<div class="brandbar">
-  <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
-  <nav class="bnav" aria-label="Primary">
-    <a href="/#receipts" >Why Krate</a>
-    <a href="/cloud/" >Apps</a>
-    <a href="/docs/" >Docs</a>
-    <a href="/account/" >Account</a>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
   </nav>
-</div>
-<div class="wrap">
-<h1 class="page">The gallery.</h1>
-<p class="pagesub">Apps people made and shared. Every one is a single file that runs in the sandbox and tells you what it wants before it starts.</p>
-<div class="grid" id="grid"><p style="color:#71717a;font-size:13px">Loading…</p></div>
-<p class="gnote">Every app opens with the same permission flow. Made something yourself? Studio's Send &rarr; Publish puts it here.</p>
-</div>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main>
+<section class="ph wrap">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Apps</span>
+  <h1 class="page">The gallery.</h1>
+  <p class="lede pagesub">Apps people made and shared. Every one is a single file that runs in the sandbox and tells you what it wants before it starts.</p>
+  <div class="c-acts"><a class="btn dark" href="/app/">Make one of your own</a><a class="btn link" href="/publish/">Publish an app <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a></div>
+</section>
+
+<section class="sec t wrap">
+  <div class="grid" id="grid"><p class="loadnote">Loading…</p><div class="sk"><i></i><b></b><em></em></div><div class="sk"><i></i><b></b><em></em></div><div class="sk"><i></i><b></b><em></em></div><div class="sk"><i></i><b></b><em></em></div><div class="sk"><i></i><b></b><em></em></div><div class="sk"><i></i><b></b><em></em></div></div>
+  <p class="gnote">Every app opens with the same permission flow. Made something yourself? Studio's Send &rarr; Publish puts it here.</p>
+</section>
+
+<div class="band rv"><div><h2>Someone sent you an app?</h2><p>Install Krate once. After that, every app anyone sends you just opens.</p></div><a class="btn dark" href="/open/">Received an app? <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a></div>
+
+
+</main>
+
 <footer class="foot">
-  <span>© 2026 Krate Labs</span>
-  <nav>
-    <a href="/">Home</a>
-    <a href="/cloud/">Gallery</a>
-    <a href="/open/">Received an app?</a>
-    <a href="/faq/">FAQ</a>
-    <a href="/contact/">Contact</a>
-    <a href="https://github.com/incyashraj/krate">GitHub</a>
-  </nav>
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
 </footer>
+<script src="/kit/site.js"></script>
 <script>
 (function () {
   function esc(s) { var d = document.createElement("i"); d.textContent = s == null ? "" : s; return d.innerHTML; }
