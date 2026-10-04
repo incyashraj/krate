@@ -44,6 +44,7 @@ on:
       - "scripts/ensure-touch-targets.py"
       - "scripts/site_kit.py"
       - "scripts/test-inline-scripts.mjs"
+      - "scripts/test-studio-redesign.mjs"
       - "scripts/install.sh"
       - "scripts/install.ps1"
       # Studio's own interface IS the web Studio: the build copies
@@ -435,6 +436,8 @@ jobs:
           # And every inline script parses: a syntax error leaves a page that
           # draws and does nothing (the support board, K-966).
           node scripts/test-inline-scripts.mjs
+          node scripts/test-studio-redesign.mjs --self-test
+          node scripts/test-studio-redesign.mjs
           python3 scripts/site_kit.py --self-test
           python3 scripts/site_kit.py --check
           python3 scripts/ensure-touch-targets.py --self-test

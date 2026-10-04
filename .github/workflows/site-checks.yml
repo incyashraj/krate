@@ -22,6 +22,7 @@ on:
       - "scripts/pages-release.py"
       - "scripts/site_kit.py"
       - "scripts/test-inline-scripts.mjs"
+      - "scripts/test-studio-redesign.mjs"
       - "scripts/fingerprint-css.py"
       - "scripts/ensure-touch-targets.py"
   push:
@@ -46,6 +47,7 @@ on:
       - "scripts/pages-release.py"
       - "scripts/site_kit.py"
       - "scripts/test-inline-scripts.mjs"
+      - "scripts/test-studio-redesign.mjs"
       - "scripts/fingerprint-css.py"
       - "scripts/ensure-touch-targets.py"
   workflow_dispatch:
@@ -80,6 +82,8 @@ jobs:
         run: python3 scripts/pages-release.py --self-test
       - name: Every inline script on every page parses
         run: node scripts/test-inline-scripts.mjs
+      - name: Studio design layer
+        run: node scripts/test-studio-redesign.mjs --self-test && node scripts/test-studio-redesign.mjs
       - name: Design kit pages share one header and footer
         run: python3 scripts/site_kit.py --self-test && python3 scripts/site_kit.py --check
       - name: Stylesheet fingerprinting and phone rules
