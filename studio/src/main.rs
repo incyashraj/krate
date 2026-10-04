@@ -19,6 +19,8 @@ use std::sync::Mutex;
 use base64::Engine as _;
 use tauri::{Emitter, Manager};
 
+mod ide;
+
 /// The one build allowed at a time, by process id, so Stop can reach it.
 ///
 /// The engine child gets its own process group (Unix) so stopping kills the
@@ -194,6 +196,7 @@ fn show_main_window(app: &tauri::AppHandle) {
 ///    shell in one directory, versioned together.
 /// 3. `krate` on PATH -- a plain CLI install, last because it is the least
 ///    certain of the three.
+///
 /// The engine that shipped with the Studio at `me`, wherever this
 /// platform's bundler put it.
 fn engine_near(me: &std::path::Path, name: &str) -> Option<PathBuf> {
@@ -640,7 +643,7 @@ fn settings_get() -> Settings {
     // someone chose themselves is their choice and is left alone, even if it
     // is inside Documents.
     let old_default = dirs_home().join("Documents").join("Krate Apps");
-    if PathBuf::from(&settings.out_dir) == old_default {
+    if Path::new(&settings.out_dir) == old_default {
         settings.out_dir = Settings::default().out_dir;
         let _ = settings_set(settings.clone());
     }
@@ -1332,20 +1335,34 @@ async fn pick_image(app: tauri::AppHandle, title: String) -> Result<Option<Strin
     Ok(picked.map(|p| p.display().to_string()))
 }
 
-#[tauri::command]
-async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+/// One native folder picker, shown on the main thread (macOS refuses a
+/// dialog from any other), with `title` and opening at `start`. None when
+/// the person cancels.
+fn pick_dir(
+    app: &tauri::AppHandle,
+    title: &'static str,
+    start: PathBuf,
+) -> Result<Option<PathBuf>, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
         let picked = rfd::FileDialog::new()
-            .set_title("Where finished apps are saved")
-            .set_directory(picker_start_dir().unwrap_or_else(dirs_home))
+            .set_title(title)
+            .set_directory(start)
             .pick_folder();
         let _ = tx.send(picked);
     })
     .map_err(|err| err.to_string())?;
-    let picked = rx
-        .recv_timeout(std::time::Duration::from_secs(300))
-        .map_err(|_| "the folder picker did not answer".to_string())?;
+    rx.recv_timeout(std::time::Duration::from_secs(300))
+        .map_err(|_| "the folder picker did not answer".to_string())
+}
+
+#[tauri::command]
+async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let picked = pick_dir(
+        &app,
+        "Where finished apps are saved",
+        picker_start_dir().unwrap_or_else(dirs_home),
+    )?;
     Ok(picked.map(|p| p.display().to_string()))
 }
 
@@ -1353,18 +1370,11 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
 /// rather than `pick_folder`, whose title promises a place to SAVE apps.
 #[tauri::command]
 async fn pick_source_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    app.run_on_main_thread(move || {
-        let picked = rfd::FileDialog::new()
-            .set_title("Choose the project folder of the app to port")
-            .set_directory(dirs_home())
-            .pick_folder();
-        let _ = tx.send(picked);
-    })
-    .map_err(|err| err.to_string())?;
-    let picked = rx
-        .recv_timeout(std::time::Duration::from_secs(300))
-        .map_err(|_| "the folder picker did not answer".to_string())?;
+    let picked = pick_dir(
+        &app,
+        "Choose the project folder of the app to port",
+        dirs_home(),
+    )?;
     Ok(picked.map(|p| p.display().to_string()))
 }
 
@@ -1551,6 +1561,7 @@ fn off_request_detail(lines: &[String]) -> Option<String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn create_app(
     app: tauri::AppHandle,
     request: String,
@@ -1992,6 +2003,60 @@ fn agent_home_env(agent_home: &Path, real_home: &Path) -> Vec<(&'static str, Pat
     env
 }
 
+/// The confined agent environment `run_author` gives every authoring child
+/// (see the notes there): the isolated config dir, the home rules above, and
+/// the USER and PATH of `engine_env`. Shared with the IDE's Ask, which runs
+/// the same agent through `krate revise`.
+fn agent_env(cmd: &mut Command) {
+    let agent_home = dirs_home().join(".krate").join("agent-home");
+    let _ = std::fs::create_dir_all(&agent_home);
+    seed_agent_config(&agent_home);
+    cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
+
+    for (key, value) in agent_home_env(&agent_home, &dirs_home()) {
+        cmd.env(key, value);
+    }
+    engine_env(cmd);
+}
+
+/// The USER and PATH an engine child needs when Studio was launched from
+/// the Finder, which hands a GUI app neither. Anything that builds a crate
+/// (create, revise, check-app) needs cargo on PATH.
+fn engine_env(cmd: &mut Command) {
+    // USER, when the launcher did not set it: a Finder-launched app does not
+    // reliably have it, and the agent needs it to resolve its account.
+    if std::env::var_os("USER").is_none() {
+        if let Some(name) = dirs_home().file_name() {
+            cmd.env("USER", name);
+            cmd.env("LOGNAME", name);
+        }
+    }
+
+    // And the PATH these tools install into, which a GUI app does not inherit.
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut dirs: Vec<PathBuf> = std::env::split_paths(&existing).collect();
+    let home = dirs_home();
+    dirs.push(home.join(".cargo/bin"));
+    dirs.push(home.join(".local/bin"));
+    dirs.push(home.join("bin"));
+    dirs.push(home.join(".bun/bin"));
+    dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    dirs.push(PathBuf::from("/usr/local/bin"));
+    if let Ok(versions) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+        let mut found: Vec<PathBuf> = versions
+            .filter_map(|e| e.ok())
+            .map(|e| e.path().join("bin"))
+            .filter(|p| p.is_dir())
+            .collect();
+        found.sort();
+        found.reverse();
+        dirs.extend(found);
+    }
+    if let Ok(joined) = std::env::join_paths(dirs) {
+        cmd.env("PATH", joined);
+    }
+}
+
 fn run_author(
     app: &tauri::AppHandle,
     mut cmd: Command,
@@ -2056,49 +2121,7 @@ fn run_author(
     // -build bug (K-190) was only half fixed, and a credential seeded by the
     // engine could never help a Studio build. One directory, one rule
     // (K-191).
-    let agent_home = dirs_home().join(".krate").join("agent-home");
-    let _ = std::fs::create_dir_all(&agent_home);
-    seed_agent_config(&agent_home);
-    cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
-
-    for (key, value) in agent_home_env(&agent_home, &dirs_home()) {
-        cmd.env(key, value);
-    }
-
-    // USER, when the launcher did not set it: a Finder-launched app does not
-    // reliably have it, and the agent needs it to resolve its account.
-    if std::env::var_os("USER").is_none() {
-        if let Some(name) = dirs_home().file_name() {
-            cmd.env("USER", name);
-            cmd.env("LOGNAME", name);
-        }
-    }
-
-    // And the PATH these tools install into, which a GUI app does not inherit.
-    {
-        let existing = std::env::var_os("PATH").unwrap_or_default();
-        let mut dirs: Vec<PathBuf> = std::env::split_paths(&existing).collect();
-        let home = dirs_home();
-        dirs.push(home.join(".cargo/bin"));
-        dirs.push(home.join(".local/bin"));
-        dirs.push(home.join("bin"));
-        dirs.push(home.join(".bun/bin"));
-        dirs.push(PathBuf::from("/opt/homebrew/bin"));
-        dirs.push(PathBuf::from("/usr/local/bin"));
-        if let Ok(versions) = std::fs::read_dir(home.join(".nvm/versions/node")) {
-            let mut found: Vec<PathBuf> = versions
-                .filter_map(|e| e.ok())
-                .map(|e| e.path().join("bin"))
-                .filter(|p| p.is_dir())
-                .collect();
-            found.sort();
-            found.reverse();
-            dirs.extend(found);
-        }
-        if let Ok(joined) = std::env::join_paths(dirs) {
-            cmd.env("PATH", joined);
-        }
-    }
+    agent_env(&mut cmd);
 
     #[cfg(unix)]
     {
@@ -3574,6 +3597,7 @@ async fn make_wrap(path: String, target: String) -> Result<String, String> {
 /// the places "send it like a photo" actually happens. macOS only today;
 /// other systems fall back to reveal, and the UI knows to.
 #[tauri::command]
+#[allow(clippy::needless_return)]
 fn share_file(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -3733,6 +3757,7 @@ fn autorun() -> Option<String> {
 ///    directory needs an administrator -- asking for a password on first
 ///    launch is worse than not having the shortcut.
 /// 3. **Record that this ran**, so it happens once rather than every launch.
+///
 /// Whether `krate` is reachable from a terminal, and where from.
 ///
 /// /usr/local/bin is the first entry in /etc/paths on a stock Mac, so a
@@ -4883,6 +4908,7 @@ fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
 /// Is `krate` reachable from a terminal, and can we fix it without a
 /// password? Read-only: this never changes the machine.
 #[tauri::command]
+#[allow(clippy::needless_return)]
 fn terminal_status() -> serde_json::Value {
     #[cfg(target_os = "macos")]
     {
@@ -5281,6 +5307,7 @@ fn main() {
                 if let Some(pid) = pid {
                     kill_tree(pid);
                 }
+                ide::stop_all();
             }
             _ => {}
         })
@@ -5357,7 +5384,18 @@ fn main() {
             restart_for_update,
             win_minimize,
             win_toggle_max,
-            win_close
+            win_close,
+            ide::ide_projects,
+            ide::ide_new,
+            ide::ide_open_folder,
+            ide::ide_tree,
+            ide::ide_read,
+            ide::ide_write,
+            ide::ide_build,
+            ide::ide_pack,
+            ide::ide_run,
+            ide::ide_ask,
+            ide::ide_stop
         ])
         .build(tauri::generate_context!())
         .expect("the studio window could not start")
@@ -5492,6 +5530,7 @@ fn main() {
                 if let Some(pid) = pid {
                     kill_tree(pid);
                 }
+                ide::stop_all();
             }
         });
 }
