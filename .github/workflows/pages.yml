@@ -253,6 +253,10 @@ jobs:
           node docs/landing/studio/frontpage-test.mjs
           # A signed-in visitor lands in Studio, never on a link's say-so.
           node docs/landing/studio/home-redirect-test.mjs
+          # And that the port door's plan message tells the truth: a plan
+          # with no blocker offers Port it, a plan with a blocker says the
+          # blocker in full and offers no button.
+          node docs/landing/studio/port-door-test.mjs
           # And that session times are seconds on every side, so a rename
           # saved from Studio is not lost to an older copy (K-938).
           node docs/landing/studio/session-time-test.mjs
