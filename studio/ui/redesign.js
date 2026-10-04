@@ -749,6 +749,17 @@
       if (!on || !on.offsetHeight) { th.style.opacity = 0; return; }
       th.style.opacity = 1; th.style.height = on.offsetHeight + "px"; th.style.transform = `translateY(${on.offsetTop}px)`;
     };
+    // An icon beside each section, as in the design. The list is built by
+    // app.js from the section headings, so they are added as it appears.
+    const ICONS = { agent: "cpu", output: "folder", updates: "refresh", gallery: "compass", support: "msg", privacy: "shield",
+      profile: "user", appearance: "paint", "sign in with": "key", account: "user", keys: "key", terminal: "term" };
+    const iconify = () => qa("button", nav2).forEach((b) => {
+      if (q(".kr-ico", b)) return;
+      const k = b.textContent.trim().toLowerCase();
+      b.insertAdjacentHTML("afterbegin", ico(ICONS[k] || "gear"));
+    });
+    watch(nav2, { childList: true }, iconify);
+    iconify();
     watch(nav2, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] }, () => requestAnimationFrame(place));
     watch($("setSheet"), { attributes: true, attributeFilter: ["class"] }, () => requestAnimationFrame(place));
   })();

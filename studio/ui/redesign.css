@@ -1118,7 +1118,8 @@ body:not(.light) .kr-thumb { background: var(--surface-3); }
 #thread .msg-tools { opacity: 0; transition: opacity .2s; }
 /* Only the newest answer keeps its copy row in the flow; an older one shows
    it on hover, floating, so answers are not spaced apart by empty rows. */
-#thread .msg.krate:not(.last) > .msg-tools { position: absolute; right: 0; bottom: -30px; z-index: 2; margin: 0; padding: 2px; border-radius: 9px; background: var(--bg); }
+@media (hover: hover) { #thread .msg.krate:not(.last) > .msg-tools { position: absolute; right: 0; bottom: -30px; z-index: 2; margin: 0; padding: 2px; border-radius: 9px; background: var(--bg); } }
+@media (hover: none) { #thread .msg.krate:not(.last) > .msg-tools { display: none; } }
 #thread .thought.live .t-now::after { display: none; }
 #thread .msg:hover .msg-tools, #thread .msg.last .msg-tools { opacity: 1; }
 #thread .msg-tools button { color: var(--ink-3); border-radius: 7px; }
@@ -1255,7 +1256,7 @@ body:not(.light) #viewSession .done-card .sheen { background: linear-gradient(10
 
 /* ---- Your apps ------------------------------------------------------------- */
 .app-card { animation: krRv .7s var(--ease) both; animation-delay: calc(var(--k, 0) * 55ms); }
-.kr-newcard { text-align: left; border: 0; background: none; padding: 0; cursor: pointer; animation: krRv .7s var(--ease) both; }
+.kr-newcard { align-self: start; text-align: left; border: 0; background: none; padding: 0; cursor: pointer; animation: krRv .7s var(--ease) both; }
 .kr-nth { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 10.5; border-radius: 16px; color: var(--ink-3); box-shadow: inset 0 0 0 1.5px var(--line-strong); transition: color .2s, box-shadow .2s; }
 .kr-nth > span { display: flex; flex-direction: column; align-items: center; gap: 10px; font: 400 13.5px var(--sans); }
 .kr-nth i { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); transition: transform .4s var(--spring); }
@@ -1279,7 +1280,9 @@ body:not(.light) #viewSession .done-card .sheen { background: linear-gradient(10
 
 /* ---- Settings: the section indicator slides ---------------------------------- */
 .set-nav { position: relative; }
-.set-nav button { position: relative; z-index: 1; }
+.set-nav button { position: relative; z-index: 1; gap: 10px; }
+.set-nav button .kr-ico { width: 15px; height: 15px; color: var(--ink-3); }
+.set-nav button.on .kr-ico { color: var(--ink-2); }
 .set-nav button.on, body.light .set-nav button.on { background: transparent; box-shadow: none; }
 .kr-nind { position: absolute; left: 0; right: 0; top: 0; height: 34px; border-radius: 10px; background: var(--surface); box-shadow: var(--sh-1); transition: transform .45s var(--ease), opacity .3s; pointer-events: none; }
 body:not(.light) .kr-nind { background: var(--surface-3); }
