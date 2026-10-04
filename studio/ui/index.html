@@ -1142,17 +1142,23 @@
 
   <div class="sheet-wrap hidden" id="planSheet">
     <div class="sheet">
+      <button class="sheet-x" data-close="planSheet" aria-label="Close"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       <h2>What is free</h2>
       <p class="sheet-sub" id="planSub">One app, and one change to it, on us.
       Every app you make is a file that is yours forever, whatever we do
       later.</p>
       <div class="plan-list">
         <div class="plan-row current" id="planRowFree">
-          <div><b>One free app</b><span>Make one app and change it once.
-          Publish it. Send it to anyone. After that, add your own API key and
-          keep making here, or use Krate Studio on your own machine, free and
-          unlimited with your own AI.</span></div>
+          <div><b>Your free app</b><span>Made by Krate's AI. Publish it, or send it to anyone.</span></div>
           <span class="plan-tag" id="planUsed">free</span>
+        </div>
+        <div class="plan-row">
+          <div><b>Your free change</b><span>Change it once more, on us.</span></div>
+          <span class="plan-tag">free</span>
+        </div>
+        <div class="plan-row">
+          <div><b>After that</b><span>Your own API key keeps you making here, or Krate Studio on your computer is free and unlimited with your own AI.</span></div>
+          <button class="btn btn-sm" id="planSetUp">Set up</button>
         </div>
       </div>
       <div class="ref-block hidden" id="refBlock">

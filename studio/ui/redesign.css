@@ -1945,3 +1945,39 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 @media (max-width: 600px) { .kr-find { width: 100%; } #viewApps .head-actions { flex-wrap: wrap; } }
 /* One gallery app: the way back reads as where you came from. */
 #viewApp #appCrumb::before { content: "Gallery  \203A  "; white-space: pre; color: var(--ink-3); }
+
+/* ---- Share: publish in the sheet ---------------------------------------- */
+.kr-frm { display: flex; flex-direction: column; gap: 12px; }
+.kr-frm label { display: flex; flex-direction: column; gap: 6px; font: 500 12.5px var(--sans); color: var(--ink-2); }
+.kr-in { height: 40px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); font: 400 14px var(--sans); color: var(--ink); outline: 0; transition: box-shadow .2s, background .2s; }
+.kr-in:focus { background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--line-strong)), 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
+.kr-tog { display: flex; align-items: center; gap: 12px; padding: 2px 0; }
+.kr-tog > span { flex: 1; font: 500 13.5px var(--sans); color: var(--ink); }
+.kr-tog small { display: block; font: 400 12px var(--sans); color: var(--ink-3); }
+.kr-pubdone { position: relative; text-align: center; padding: 8px 0 12px; }
+.kr-big { width: 54px; height: 54px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; animation: krPop .6s var(--spring) both; }
+.kr-big svg { width: 24px; height: 24px; }
+.kr-pubdone b { display: block; margin-top: 12px; font: 500 16px var(--sans); color: var(--ink); }
+.kr-pubdone p { margin: 3px 0 0; font-size: 13px; color: var(--ink-3); }
+.kr-pburst { position: absolute; left: 50%; top: 35px; width: 0; height: 0; }
+.kr-pburst i { position: absolute; width: 6px; height: 6px; border-radius: 2px; background: var(--c); animation: krPBurst .9s var(--ease) both; }
+@keyframes krPBurst { from { transform: translate(0, 0) scale(1); opacity: 1; } to { transform: translate(var(--x), var(--y)) scale(.4) rotate(220deg); opacity: 0; } }
+.kr-shacts.kr-center { justify-content: center; margin-top: 12px; }
+
+/* ---- every sheet is a modal: above the sidebar too ----------------------- */
+/* At 40 the sidebar (60) stayed bright and clickable beside an open sheet. */
+.sheet-wrap { z-index: 80; }
+/* ---- What is free, as in the design ------------------------------------- */
+#planSheet .sheet { position: relative; width: min(460px, calc(100vw - 32px)); }
+.sheet-x { position: absolute; top: 16px; right: 16px; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 9px; background: none; color: var(--ink-3); cursor: pointer; }
+.sheet-x:hover { background: var(--surface-2); color: var(--ink); }
+#planSheet h2 { padding-right: 36px; }
+#planSheet .plan-list { margin-top: 14px; border-radius: 14px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--line-strong); gap: 0; }
+#planSheet .plan-row, body.light #planSheet .plan-row { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px 14px; border: 0; border-radius: 0; background: none; box-shadow: none; }
+#planSheet .plan-row + .plan-row { border-top: 1px solid var(--line); }
+#planSheet .plan-row > div { flex: 1; min-width: 0; }
+#planSheet .plan-row b { display: block; font: 500 13.5px var(--sans); color: var(--ink); }
+#planSheet .plan-row span:not(.plan-tag) { display: block; margin-top: 1px; font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
+#planSheet .plan-tag { flex: none; padding: 2px 9px; border-radius: 99px; font: 500 11.5px var(--sans); background: var(--green-soft); color: var(--green-ink); border: 0; }
+#planSheet #planSetUp { flex: none; border-radius: 99px; }
+#planSheet .detail-actions { display: none; }

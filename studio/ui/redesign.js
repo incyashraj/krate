@@ -1418,15 +1418,63 @@
     qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
   }
   const invokeReveal = () => press($("filesSave"));
+  // Publish, in the sheet: the name, one line, and whether it is listed.
+  // The fields are app.js's own publish sheet's (it prefills them, and it
+  // does the publishing and any sign-in); this only shows them here.
   function paintPub() {
     const pane = q('.kr-wp[data-w="pub"]', shareWrap);
-    pane.innerHTML = `<p class="kr-shp">It goes in the public gallery under your name, with a picture of it running and one line about it. Publish again later to change any of that.</p>
-      <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}Publish…</button></div>`;
-    q("[data-pub]", pane).addEventListener("click", () => {
-      closeShare();
-      try { openPublishSheet(); const l = $("pubListed"); if (l) l.checked = true; } catch (e) {}
+    if (!isCurrent()) { pane.innerHTML = `<p class="kr-shp">Publishing puts the newest version in the gallery. Open it and publish from there.</p>`; return; }
+    const sheet = $("publishSheet");
+    try { openPublishSheet(); } catch (e) {}
+    if (sheet) sheet.classList.add("hidden");
+    const nameV = (($("pubName") || {}).value || ""), descV = (($("pubDesc") || {}).value || "");
+    pane.innerHTML = `<div class="kr-frm">
+        <label>Name<input class="kr-in" data-n maxlength="60"></label>
+        <label>One line about it<input class="kr-in" data-d maxlength="140" placeholder="What it does, in a sentence"></label>
+        <div class="kr-tog"><span>List it in the gallery<small>Off: only people with the link can find it.</small></span><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="List it in the gallery" data-l></button></div>
+        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}<span>Publish</span></button><button type="button" class="btn kr-ghost" data-more>Add a picture or a logo</button></div>
+        <p class="kr-sherr" hidden></p></div>`;
+    const n = q("[data-n]", pane), d = q("[data-d]", pane), l = q("[data-l]", pane), go = q("[data-pub]", pane), err = q(".kr-sherr", pane);
+    n.value = nameV; d.value = descV;
+    l.addEventListener("click", () => { const on = !l.classList.contains("on"); l.classList.toggle("on", on); l.setAttribute("aria-checked", String(on)); });
+    const handOver = () => {
+      const pn = $("pubName"), pd = $("pubDesc"), pl = $("pubListed");
+      if (pn) pn.value = n.value; if (pd) pd.value = d.value; if (pl) pl.checked = l.classList.contains("on");
+    };
+    q("[data-more]", pane).addEventListener("click", () => { handOver(); closeShare(); if (sheet) sheet.classList.remove("hidden"); });
+    go.addEventListener("click", async () => {
+      if (go.dataset.busy) return;
+      if (!n.value.trim()) { n.focus(); return; }
+      go.dataset.busy = "1"; q("span", go).textContent = "Publishing…"; err.hidden = true;
+      handOver();
+      const listed = l.classList.contains("on");
+      linking = true;
+      try { await publishFromSheet(); } catch (e) {}
+      linking = false;
+      if (sheet) sheet.classList.add("hidden");
+      const url = linkOf();
+      const signIn = $("pubSignin") && !$("pubSignin").classList.contains("hidden");
+      if (url && !signIn) return published(pane, n.value.trim(), url, listed);
+      if (signIn) { closeShare(); if (sheet) sheet.classList.remove("hidden"); return; }
+      delete go.dataset.busy; q("span", go).textContent = "Publish";
+      err.textContent = (($("pubNote") || {}).textContent || "").trim() || "It did not publish just now. Try again in a moment."; err.hidden = false;
     });
-    if (!isCurrent()) pane.innerHTML = `<p class="kr-shp">Publishing puts the newest version in the gallery. Open it and publish from there.</p>`;
+  }
+  function published(pane, name, url, listed) {
+    const burst = reduce ? "" : `<div class="kr-pburst">${Array.from({ length: 14 }, (_, i) => { const a = i / 14 * Math.PI * 2, d = 60 + (i % 3) * 18;
+      return `<i style="--c:${["#3d6df0", "#22c55e", "#e8873f", "#7c5ce8", "#d6578f"][i % 5]};--x:${Math.cos(a) * d}px;--y:${Math.sin(a) * d}px;animation-delay:${i * 8}ms"></i>`; }).join("")}</div>`;
+    pane.innerHTML = `<div class="kr-pubdone">${burst}<div class="kr-big">${ico("check", "")}</div><b></b><p>${listed ? "Anyone can find it in the gallery, and the link opens it." : "Not listed: only people with the link can find it."}</p></div>
+      <div class="kr-linkf"><span class="kr-u"></span><button type="button" class="btn kr-dark" data-copy>${ico("copy")}<span>Copy</span></button></div>
+      ${listed ? `<div class="kr-shacts kr-center"><button type="button" class="btn kr-ghost" data-gal>See it in the gallery</button></div>` : ""}`;
+    q("b", pane).textContent = listed ? `${name} is in the gallery` : `${name} has a link`;
+    q(".kr-u", pane).textContent = url.replace(/^https?:\/\//, "");
+    q("[data-copy]", pane).addEventListener("click", (e) => {
+      const b = e.currentTarget, done = () => { b.classList.add("ok"); q("span", b).textContent = "Copied"; setTimeout(() => { b.classList.remove("ok"); q("span", b).textContent = "Copy"; }, 1400); };
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(done, done);
+    });
+    const g = q("[data-gal]", pane);
+    if (g) g.addEventListener("click", () => { closeShare(); const r = q('#side .side-row[data-side="discover"]'); if (r) r.click(); });
+    paintLink(url, false);
   }
   function openShare(which, version) {
     let cur = null; try { cur = currentApp(); } catch (e) {}
@@ -1660,6 +1708,13 @@
     watch($("failTitle"), { childList: true, characterData: true, subtree: true }, paint);
     paint();
   })();
+
+  /* ---- What is free: After that, Set up ---------------------------------- */
+  const planSetUp = $("planSetUp");
+  if (planSetUp) planSetUp.addEventListener("click", () => {
+    const ps = $("planSheet"); if (ps) ps.classList.add("hidden");
+    try { openAiSheet(); } catch (e) {}
+  });
 
   /* ---- the sidebar's Port an app ---------------------------------------- */
   const sidePort = $("sidePort");
