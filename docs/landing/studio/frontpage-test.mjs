@@ -5,7 +5,7 @@
 // a page load must never start a build at somebody's expense):
 //   - only a handoff in this site's storage starts anything, never the URL
 //   - it is used once
-//   - a stale one (over ten minutes) is dropped, not started
+//   - a stale one (over thirty minutes; an email sign-in link alone lasts fifteen) is dropped, not started
 //   - signed out, it waits for sign-in instead of being used up
 // The function is lifted out of the shipped bridge and run, not re-typed.
 import { readFileSync } from "node:fs";
@@ -65,9 +65,9 @@ function world({ token = "krs_x", handoff = undefined, search = "" } = {}) {
 }
 // A stale one is dropped, not started.
 {
-  const w = world({ handoff: { text: "old", at: Date.now() - 11 * 60 * 1000 } });
+  const w = world({ handoff: { text: "old", at: Date.now() - 31 * 60 * 1000 } });
   w.go();
-  assert.deepEqual(w.sent, [], "a request from over ten minutes ago never fires");
+  assert.deepEqual(w.sent, [], "a request from over thirty minutes ago never fires");
   assert.equal(w.store.has("krate_start_request"), false, "and is cleared");
 }
 // Signed out: it waits for sign-in instead of being spent.

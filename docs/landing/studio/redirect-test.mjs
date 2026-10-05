@@ -18,10 +18,10 @@ const login = readFileSync("docs/landing/login/index.html", "utf8");
 const hasGuard = login.includes('if (next === "studio" && !fromApp)') && login.includes('location.replace("/app/")');
 
 const cases = [
-  ["signed out, plain visit", { token: null, search: "" }, "/login/?next=studio"],
+  // F-307: a signed-out visitor sees the Studio; sign-in is asked at the first send.
+  ["signed out, plain visit", { token: null, search: "" }, null],
   ["signed in", { token: "krate_tok", search: "" }, null],
-  // There is no look-around door: a signed-out visit goes to sign in, whatever the query.
-  ["signed out with a stray ?stay", { token: null, search: "?stay" }, "/login/?next=studio"],
+  ["signed out with a stray ?stay", { token: null, search: "?stay" }, null],
 ];
 let bad = 0;
 for (const [name, input, want] of cases) {

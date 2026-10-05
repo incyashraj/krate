@@ -2151,7 +2151,9 @@ async function noteStep(env, kind, step, pending) {
     record("error", 500);
     throw e;
   }
-  record(res.status >= 500 ? "error" : res.status >= 400 ? "refused" : "ok", res.status);
+  const failed = res.headers && typeof res.headers.get === "function" ? res.headers.get("x-krate-signin") : null;
+  if (failed) record(failed === "failed" ? "error" : "refused", failed === "failed" ? 502 : 400);
+  else record(res.status >= 500 ? "error" : res.status >= 400 ? "refused" : "ok", res.status);
   return res;
 }
 
@@ -2586,7 +2588,7 @@ async function googleStart(url, env) {
 async function googleCallback(url, env) {
   const state = url.searchParams.get("state") || "";
   const stored = await env.APPS.get(`login:${state}`);
-  if (!stored) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
+  if (!stored) return signInFailed(url, "expired");
   await env.APPS.delete(`login:${state}`);
   const start = readSignInStart(stored);
   const exchange = await fetch("https://oauth2.googleapis.com/token", {
@@ -2601,7 +2603,7 @@ async function googleCallback(url, env) {
     }),
   });
   const result = await exchange.json();
-  if (!result.id_token) return text("Google did not complete the sign-in. Try again.", 502);
+  if (!result.id_token) return signInFailed(url, "failed");
   // tokeninfo validates the signature and audience for us.
   const info = await fetch(
     `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(result.id_token)}`,
@@ -2864,7 +2866,7 @@ async function emailStart(request, env) {
 async function emailVerify(url, env) {
   const token = url.searchParams.get("t") || "";
   const stored = await env.APPS.get(`email:${token}`);
-  if (!stored) return text("This sign-in link expired or was already used.", 400);
+  if (!stored) return signInFailed(url, "used");
   await env.APPS.delete(`email:${token}`);
   const record = JSON.parse(stored);
   const user = await ensureUser(env, "email", record.email, { email: record.email });
@@ -2912,7 +2914,7 @@ async function loginCallback(url, env) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
   const stored = await env.APPS.get(`login:${state}`);
-  if (!stored) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
+  if (!stored) return signInFailed(url, "expired");
   // One shot: a replayed callback with the same state gets the line above.
   await env.APPS.delete(`login:${state}`);
   const start = readSignInStart(stored);
@@ -2928,7 +2930,7 @@ async function loginCallback(url, env) {
     }),
   });
   const result = await exchange.json();
-  if (!result.access_token) return text("GitHub did not complete the sign-in. Try again.", 502);
+  if (!result.access_token) return signInFailed(url, "failed");
 
   const user = await fetch("https://api.github.com/user", {
     headers: {
@@ -3722,6 +3724,20 @@ function appPage(login, channel, meta, env) {
      <footer>One sandboxed file. It reaches only what it declares, and Krate
      asks you before it does. <a href="https://krate.tech/open/">Get Krate</a></footer>`,
   );
+}
+
+/* A sign-in that did not finish goes back to the sign-in page with one
+ * line saying why, never to a bare text page with no way out (K-972).
+ * Cancelling at GitHub or Google arrives as ?error=access_denied. */
+function signInFailed(url, why) {
+  const err = url && url.searchParams && url.searchParams.get("error");
+  const code = err === "access_denied" ? "cancelled" : why;
+  // Tagged, so the sign-in counts still record it as the failure it is
+  // (noteStep reads the tag; a plain 302 would count as a success).
+  return new Response(null, {
+    status: 302,
+    headers: { location: `https://krate.tech/login/?error=${encodeURIComponent(code)}`, "x-krate-signin": code },
+  });
 }
 
 function text(body, status = 200) {

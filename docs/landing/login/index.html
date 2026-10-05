@@ -77,6 +77,7 @@ html.krate-booting .booting { display: flex; }
 @keyframes krate-dot { 0%, 60%, 100% { opacity: 0; } 30% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .booting .spin { border-top-color: var(--line-2); } .booting .dots i { opacity: 1; } }
 @media (max-width: 480px) { .panel { padding: 30px 20px 26px; margin-top: 40px; } .panel h1 { font-size: 25px; } }
+.login-sub.login-err { color: #b4532a; }
 </style>
 </head>
 <body>
@@ -205,7 +206,11 @@ html.krate-booting .booting { display: flex; }
   // Where to continue AFTER sign-in (the desk, a checkout). Kept in this
   // origin's storage so it survives the provider round trip.
   var next = new URLSearchParams(location.search).get("next") || "";
-  try { if (next) localStorage.setItem("krate_next", next); } catch (e) {}
+  // No next: a plain sign-in. An older one left behind by an abandoned
+  // sign-in (a checkout, say) must not carry this one there (K-972).
+  // A failed round trip comes back with ?error= and keeps the next it had.
+  var err = new URLSearchParams(location.search).get("error") || "";
+  try { if (next) localStorage.setItem("krate_next", next); else if (!err) localStorage.removeItem("krate_next"); } catch (e) {}
   // Already signed in and on the way somewhere? The head script has
   // already started that navigation -- before the first paint, so the
   // sign-in card never flashes. This one only has to stand down while it
@@ -219,6 +224,20 @@ html.krate-booting .booting { display: flex; }
   // origin's, written by /login/done; if it has expired the Studio's own
   // check sends them back here, and `stay` stops that becoming a loop.
   if (document.documentElement.classList.contains("krate-booting")) { return; }
+  // Back from a sign-in that did not finish: one line saying why, with the
+  // buttons right below it (K-972). A sign-in started from Krate on a
+  // computer is started again from there.
+  var WHY = {
+    cancelled: "The sign-in was cancelled. Pick a way to sign in when you are ready.",
+    expired: "That sign-in took too long and expired. Start it again below.",
+    used: "That email link was already used or has expired. Ask for a new one below.",
+    failed: "The sign-in did not finish. Try again below.",
+  };
+  if (WHY[err]) {
+    var sub = document.getElementById("loginSub");
+    sub.textContent = WHY[err] + " Started from Krate on your computer? Press Sign in there again.";
+    sub.classList.add("login-err");
+  }
   // There is no "Not now": a person is only sent here because the thing
   // they asked for needs an account. The logo is the way back to the site.
   // A referral link lands here directly. The code is noted NOW -- before

@@ -2787,17 +2787,42 @@
     const h = q("h1", g); if (h) h.textContent = "Sign in to Krate";
     const sub = q(".gate-sub", g); if (sub) sub.textContent = "To publish your apps and keep them with your account. Making apps works without it.";
     const wait = document.createElement("div"); wait.className = "kr-gwait"; wait.hidden = true;
-    wait.innerHTML = `${window.krIso ? window.krIso(30, "breathe") : ""}<span><b>Finish in your browser</b><small>This page moves on by itself once you have signed in.</small></span>`;
+    wait.innerHTML = `${window.krIso ? window.krIso(30, "breathe") : ""}<span><b>Finish in your browser</b><small>This page moves on by itself once you have signed in.</small>` +
+      `<span class="kr-gw-acts"><button type="button" class="kr-gw-a" data-gw="again" hidden>Open the browser again</button><button type="button" class="kr-gw-a" data-gw="code" hidden>Use a code instead</button><button type="button" class="kr-gw-a" data-gw="cancel">Cancel</button></span></span>`;
     const start = $("gateStart"); if (start) start.after(wait);
     const btn = $("loginBrowserBtn");
-    if (btn) btn.addEventListener("click", () => { wait.hidden = false; }, true);
+    // Never a wait with no way out (K-971): Cancel at any time, and after a
+    // minute the browser can be opened again (the earlier page still works,
+    // Studio keeps several sign-ins waiting) or a code used instead.
+    let slow = 0;
+    const showWait = (on) => {
+      wait.hidden = !on; clearTimeout(slow);
+      qa("[data-gw=again], [data-gw=code]", wait).forEach((b) => { b.hidden = true; });
+      if (on) slow = setTimeout(() => { qa("[data-gw=again], [data-gw=code]", wait).forEach((b) => { b.hidden = false; }); q("small", wait).textContent = "Taking a while? The page may be in another browser window."; }, 60000);
+      else q("small", wait).textContent = "This page moves on by itself once you have signed in.";
+    };
+    if (btn) btn.addEventListener("click", () => showWait(true), true);
+    wait.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-gw]"); if (!b) return;
+      if (b.dataset.gw === "cancel") { showWait(false); return; }
+      if (b.dataset.gw === "again") { press(btn); showWait(true); return; }
+      if (b.dataset.gw === "code") { showWait(false); const c = $("loginBtn"); if (c) { c.classList.remove("hidden"); press(c); } }
+    });
+    // The code screen gets a way back too: it hid Skip and the buttons and
+    // waited up to fifteen minutes.
+    const code = $("gateCode");
+    if (code && !q(".kr-gw-back", code)) {
+      const back = document.createElement("button"); back.type = "button"; back.className = "kr-gw-a kr-gw-back"; back.textContent = "Cancel";
+      back.addEventListener("click", () => { code.classList.add("hidden"); if (start) start.classList.remove("hidden"); });
+      code.appendChild(back);
+    }
     const err = $("gateError");
-    if (err) watch(err, { attributes: true, attributeFilter: ["class"] }, () => { if (!err.classList.contains("hidden")) wait.hidden = true; });
+    if (err) watch(err, { attributes: true, attributeFilter: ["class"] }, () => { if (!err.classList.contains("hidden")) showWait(false); });
     const sync = () => {
       const on = !g.classList.contains("hidden");
       document.body.classList.toggle("kr-gating", on);
       if (on && window.krStack) { qa(".kr-gmark .ly", g).forEach((l) => l.classList.remove("on")); window.krStack(g, 200); }
-      if (!on) wait.hidden = true;
+      if (!on) showWait(false);
     };
     watch(g, { attributes: true, attributeFilter: ["class"] }, sync); sync();
   })();

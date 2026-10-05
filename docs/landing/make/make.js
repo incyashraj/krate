@@ -538,6 +538,23 @@ function askToSignIn() {
  * never looks at a return address, so this is the only way back here. */
 function rememberWhereToComeBack() {
   try { localStorage.setItem("krate_next", "make"); } catch (e) {}
+  // The words they pressed Make on, kept for the way back: they lived only
+  // in memory and were lost on the sign-in hop (K-972). Started by itself
+  // on return, once, within thirty minutes.
+  try { if (state.request) localStorage.setItem(MAKE_AFTER_SIGNIN, JSON.stringify({ text: state.request, at: Date.now() })); } catch (e) {}
+}
+const MAKE_AFTER_SIGNIN = "krate_make_request";
+function makeAfterSignIn() {
+  let h = null;
+  try { h = JSON.parse(localStorage.getItem(MAKE_AFTER_SIGNIN) || "null"); } catch (e) {}
+  if (!h || typeof h.text !== "string" || !h.text.trim()) return false;
+  if (!state.token) return false;
+  try { localStorage.removeItem(MAKE_AFTER_SIGNIN); } catch (e) {}
+  if (!(Date.now() - Number(h.at || 0) < 30 * 60 * 1000)) return false;
+  $("prompt").value = h.text;
+  syncComposer();
+  startMake();
+  return true;
 }
 
 /* This browser's proof that it started the sign-in, which /login/done
@@ -741,6 +758,7 @@ function boot() {
     syncComposer();
   });
   syncComposer();
+  if (!pending) makeAfterSignIn();
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); startMake(); }
   });

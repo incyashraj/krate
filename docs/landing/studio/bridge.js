@@ -53,7 +53,11 @@ function goSignIn(request) {
   bridge.leaving = true;
   const typed = String(request || composerText() || "").trim();
   try {
-    if (typed) localStorage.setItem(PENDING_KEY, typed);
+    // A request that was SENT carries on by itself after sign-in (F-307):
+    // the person pressed send, so the send stands. Anything else -- words
+    // in the box when a session died at boot -- is only put back.
+    if (request && typed) localStorage.setItem(START_KEY, JSON.stringify({ text: typed, at: Date.now() }));
+    else if (typed) localStorage.setItem(PENDING_KEY, typed);
   } catch (e) {}
   location.href = "/login/?next=studio";
   return new Promise(() => {});
@@ -2206,7 +2210,8 @@ function startFromFrontPage() {
     handoff = JSON.parse(localStorage.getItem(START_KEY) || "null");
   } catch (e) {}
   if (!handoff || typeof handoff.text !== "string" || !handoff.text.trim()) return;
-  if (!(Date.now() - Number(handoff.at || 0) < 10 * 60 * 1000)) {
+  // Thirty minutes: an email sign-in link alone lasts fifteen.
+  if (!(Date.now() - Number(handoff.at || 0) < 30 * 60 * 1000)) {
     try { localStorage.removeItem(START_KEY); } catch (e) {}
     return;
   }
@@ -2660,20 +2665,19 @@ if (document.readyState === "loading") {
   speakWeb();
 }
 
-/* Sign in before the Studio, not in the middle of it.
+/* Sign in after the first send, not before the Studio (F-307).
  *
  * Every build in a browser runs on our machine, so an account is required
- * whatever happens. Asking at the moment somebody presses Make meant taking
- * away the sentence they had just written and handing back a login page --
- * the request survives (PENDING_KEY) but the interruption does not need to
- * exist. Arriving signed out now goes straight to the sign-in and comes
- * back to a Studio that is ready to work.
+ * to make anything -- but a person arriving signed out sees the Studio
+ * first and is asked at the moment they send their first prompt: Plan and
+ * Make go to goSignIn with the request, which keeps it (START_KEY) and
+ * sends it by itself once they are back. This used to send everyone to
+ * /login before the Studio had drawn.
  *
  * /login itself must never bounce: it shows its card when there is no
  * token, so a failed sign-in cannot ping-pong between the two pages. */
 function requireSignIn() {
-  if (bridge.token) return;
-  location.replace("/login/?next=studio");
+  // Nothing to do at arrival: the ask is at the first send.
 }
 requireSignIn();
 

@@ -654,6 +654,43 @@ async function login() {
   }
 }
 
+/* Every door into the browser sign-in goes through here (K-971). The
+ * krate:// hand-off is the fast path, but on Windows and Linux it lands in a
+ * second process, and a door other than the gate or Publish never looked
+ * again -- a sign-in finished in the browser showed up only after a
+ * restart. So whichever door started it, Studio looks at the account every
+ * few seconds for ten minutes and takes the person on as soon as it is
+ * there. */
+function beginBrowserSignIn() {
+  state.signInSince = Date.now();
+  clearInterval(state.signInWatch);
+  state.signInWatch = setInterval(async () => {
+    if (!state.signInSince || Date.now() - state.signInSince > 10 * 60 * 1000) {
+      clearInterval(state.signInWatch);
+      state.signInSince = 0;
+      return;
+    }
+    try {
+      const a = await invoke("account_status");
+      if (a && a.signed_in) signedInFromBrowser(a);
+    } catch {}
+  }, 3000);
+  return invoke("login_browser");
+}
+function signedInFromBrowser(a) {
+  clearInterval(state.signInWatch);
+  state.signInSince = 0;
+  state.account = a;
+  renderAccount();
+  if (state.loginSurface === "publish") {
+    if (!$("pubSignin").classList.contains("hidden")) pubSigninDone();
+    return;
+  }
+  if (!$("viewGate").classList.contains("hidden")) enterHome();
+}
+const HANDOFF_FAILED =
+  "That sign-in did not reach Krate. Press Sign in again; the browser page from before will not work now.";
+
 function onLoginStep(step) {
   // Sign-in can start from the gate OR from mid-app (the publish sheet).
   // The code and the outcome go to whichever surface asked; before this,
@@ -683,10 +720,10 @@ function onLoginStep(step) {
   } else if (step.step === "done") {
     state.account = { signed_in: true, login: step.login, name: step.name, avatar_url: step.avatar_url };
     enterHome();
-  } else if (step.step === "error") {
+  } else if (step.step === "error" || step.step === "handoff-failed") {
     $("gateStart").classList.remove("hidden");
     $("gateCode").classList.add("hidden");
-    $("gateError").textContent = step.why;
+    $("gateError").textContent = step.step === "handoff-failed" ? HANDOFF_FAILED : step.why;
     $("gateError").classList.remove("hidden");
   }
 }
@@ -5555,6 +5592,10 @@ function pubSigninDone() {
   clearInterval(state.pubSigninPoll);
   $("pubSignin").classList.add("hidden");
   $("pubForm").classList.remove("hidden");
+  // Only while the sheet is still open: a sign-in that lands after the
+  // person closed the sheet must not publish an app they walked away from
+  // (K-971).
+  if ($("publishSheet").classList.contains("hidden")) return;
   publishFromSheet();
 }
 function onPublishLoginStep(step) {
@@ -5570,14 +5611,14 @@ function onPublishLoginStep(step) {
       state.account = { signed_in: true, login: step.login, name: step.name, avatar_url: step.avatar_url };
     }
     pubSigninDone();
-  } else if (step.step === "error") {
-    $("pubSigninErr").textContent = signInWords(step.why || step);
+  } else if (step.step === "error" || step.step === "handoff-failed") {
+    $("pubSigninErr").textContent = step.step === "handoff-failed" ? HANDOFF_FAILED : signInWords(step.why || step);
     $("pubSigninErr").classList.remove("hidden");
   }
 }
 $("pubSigninGo").addEventListener("click", () => {
   state.loginSurface = "publish";
-  invoke("login_browser").catch(() => {});
+  beginBrowserSignIn().catch(() => {});
   // The browser hand-off lands as a login-step event; polling is the net
   // under it, and also catches an approval finished in another window.
   clearInterval(state.pubSigninPoll);
@@ -7172,9 +7213,9 @@ $("setOpenDocs")?.addEventListener("click", () => {
 $("loginBrowserBtn").addEventListener("click", async () => {
   $("gateError").classList.add("hidden");
   try {
-    await invoke("login_browser");
+    await beginBrowserSignIn();
     // The krate:// handoff emits the same login-step "done" the device flow
-    // uses; nothing to poll here.
+    // uses; beginBrowserSignIn also looks at the account until it lands.
   } catch (err) {
     $("gateError").textContent = signInWords(err);
     $("gateError").classList.remove("hidden");
@@ -7592,8 +7633,10 @@ async function startCheckout(plan, noteId) {
     }, 5000);
   } catch (err) {
     if (String(err).includes("Sign in")) {
-      note.textContent = "Sign in first, then hit the plan again.";
-      invoke("account_login").catch(() => {});
+      // The browser sign-in, not the code flow: the code would be written
+      // into the gate, which is not on screen here (K-971).
+      note.textContent = "Sign in in the browser page that just opened, then hit the plan again.";
+      beginBrowserSignIn().catch(() => {});
     } else {
       note.textContent = String(err);
     }
@@ -7998,14 +8041,26 @@ document.querySelectorAll("[data-close]").forEach((b) =>
   b.addEventListener("click", () => $(b.dataset.close)?.classList.add("hidden")),
 );
 document.querySelectorAll(".sheet-wrap").forEach((w) =>
-  w.addEventListener("click", (e) => { if (e.target === w) w.classList.add("hidden"); }),
+  w.addEventListener("click", (e) => { if (e.target === w) { w.classList.add("hidden"); sheetClosed(w); } }),
 );
+/* A sheet closed by a click outside or Escape ends what it started, the
+ * same as its X: a publish sign-in left running wrote a later gate code
+ * into the hidden sheet and, when the account landed, published an app the
+ * person had walked away from (K-971). */
+function sheetClosed(w) {
+  if (w && w.id === "publishSheet") {
+    state.loginSurface = "gate";
+    clearInterval(state.pubSigninPoll);
+    $("pubSignin").classList.add("hidden");
+    $("pubForm").classList.remove("hidden");
+  }
+}
 // Escape closes an open sheet, same as clicking outside it. A panel the
 // keyboard cannot back out of reads as a trap.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" && e.key !== "Esc" && e.keyCode !== 27) return;
   const open = document.querySelector(".sheet-wrap:not(.hidden)");
-  if (open) { open.classList.add("hidden"); e.preventDefault(); }
+  if (open) { open.classList.add("hidden"); sheetClosed(open); e.preventDefault(); }
 });
 
 /* Dragging the window by its title bar.
@@ -9096,7 +9151,7 @@ async function loadProfilePage() {
 document.addEventListener("click", (event) => {
   const button = event.target.closest && event.target.closest("button[data-connect]");
   if (!button) return;
-  invoke("login_browser").catch(() => {});
+  beginBrowserSignIn().catch(() => {});
 });
 
 /* Sign out, bound ONCE.
@@ -9117,9 +9172,11 @@ $("profSignOut")?.addEventListener("click", signOutToGate);
  * the dialog gets out of the way and the gate takes over. */
 $("profSignIn")?.addEventListener("click", () => {
   if (tauri) {
+    // The browser sign-in (GitHub, Google or email), with the gate's
+    // waiting card -- not the GitHub-only code flow (K-971).
     closeSettings();
     showView("gate");
-    login();
+    $("loginBrowserBtn").click();
     return;
   }
   invoke("account_login").catch(() => {});
@@ -9636,7 +9693,7 @@ $("obSkipAll")?.addEventListener("click", () => {
   paintExamples();
 });
 $("obSignIn")?.addEventListener("click", () => {
-  invoke("login_browser").catch(() => {});
+  beginBrowserSignIn().catch(() => {});
 });
 $("obName")?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") finishOnboarding();

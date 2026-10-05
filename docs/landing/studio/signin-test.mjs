@@ -196,6 +196,24 @@ const fragment = (fields) => "#" + new URLSearchParams(fields).toString();
   check(localStorage.getItem("krate_tok") === null, "signing out here signs out of the site");
 }
 
+/* ---- K-972: the desktop's email link opened in another browser ------------ */
+{
+  // No nonce from THIS browser (the link was opened elsewhere), but the
+  // desktop's own nonce is there: the desktop checks it, so the hop goes on.
+  const b = browser();
+  const page = b.visit("https://krate.tech/login/done/?app=1" + fragment({ token: "krs_mine", login: "me", app_nonce: "b".repeat(32) }), doneHtml);
+  check(String(page.location.href).startsWith("krate://signed-in"), "a desktop sign-in opened in another browser still reaches the desktop");
+  check(b.localStorage.getItem("krate_tok") === null, "and this browser keeps no copy of it");
+  check(!/signed in too/i.test((page.els.doneSub || {}).textContent || ""), "and the page does not claim the desktop is signed in");
+}
+{
+  // Nothing came back from the provider: never "You're signed in".
+  const b = browser();
+  const page = b.visit("https://krate.tech/login/done/", doneHtml);
+  check(/nothing came back/i.test((page.els.doneH || {}).textContent || ""), "a done page with no session says nothing came back");
+  check(((page.els.openApp || {}).href || "") === "/login/", "and offers Sign in");
+}
+
 /* ---- /make takes no token from its URL ---------------------------------- */
 check(!/\.get\(\s*["']token["']\s*\)/.test(makeJs), "/make has no ?token= door");
 check(/signIn\(path\)[\s\S]{0,200}nonce=/.test(makeJs), "/make's sign-in sheet sends a nonce");

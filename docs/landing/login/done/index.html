@@ -87,7 +87,27 @@
   // else's account, which would quietly sign the visitor into it. The
   // page that started the sign-in kept a nonce; the hub handed it back
   // beside the session; no match, no sign-in.
-  if (tok && !(window.KrateSignIn && window.KrateSignIn.accept(got.get("nonce") || ""))) {
+  // Nothing came back: this page must not say "You're signed in" (K-972).
+  if (!tok) {
+    document.title = "Sign in again";
+    document.getElementById("doneH").textContent = "Nothing came back from the sign-in";
+    document.getElementById("doneSub").textContent = fromApp
+      ? "Nothing changed. Press Sign in inside Krate to start again."
+      : "Nothing changed. Start the sign-in again.";
+    if (!fromApp) {
+      var retry = document.getElementById("openApp");
+      retry.textContent = "Sign in";
+      retry.href = "/login/";
+      retry.classList.remove("hidden");
+    }
+    return;
+  }
+  // A sign-in for Krate on a computer that carries the desktop's nonce
+  // (app_nonce) is checked there, and this page never keeps its token.
+  // Checking this browser's nonce as well refused an email link opened in
+  // another browser or on a phone (K-972).
+  var deskChecks = fromApp && /^[0-9a-f]{32}$/.test(got.get("app_nonce") || "");
+  if (!deskChecks && !(window.KrateSignIn && window.KrateSignIn.accept(got.get("nonce") || ""))) {
     document.title = "Sign in again";
     document.getElementById("doneH").textContent = "This sign-in did not start here";
     document.getElementById("doneSub").textContent = fromApp
@@ -198,8 +218,10 @@
     a.classList.remove("hidden");
     // Started from the desktop app: hop back automatically; the button
     // stays as the manual path if the hop is blocked.
+    // Not "signed in too": the desktop decides that when the hop arrives,
+    // and it can refuse a sign-in it did not start (K-971).
     document.getElementById("doneSub").textContent =
-      "All set. Krate on your desktop is signed in too; you can close this tab.";
+      "Switch back to Krate: it picks up the sign-in by itself. If it has not, press Open Krate.";
     location.href = target;
   } else {
     // Started on the web. The desktop is signed in from inside Krate: it

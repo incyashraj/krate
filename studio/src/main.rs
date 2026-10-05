@@ -97,32 +97,61 @@ fn sign_in_nonce() -> String {
     format!("{:016x}{:016x}", half(1), half(2))
 }
 
-/// Remember a new pending sign-in in `dir` and return its nonce.
+/// How many sign-ins may be waiting at once. Pressing Sign in again (from
+/// the gate, onboarding, Settings or Publish) used to overwrite the one
+/// waiting, so the browser tab from the first press finished into a
+/// rejection and Studio sat on "Finish in your browser" (K-971). The web's
+/// own sign-in keeps five for the same reason.
+const PENDING_SIGN_IN_KEEP: usize = 5;
+
+/// The sign-ins waiting in `dir`, oldest first, stale ones dropped.
+fn pending_sign_ins(dir: &Path) -> Vec<(String, u64)> {
+    let now = unix_now();
+    std::fs::read_to_string(dir.join(PENDING_SIGN_IN))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let nonce = parts.next()?.to_string();
+            let at = parts.next()?.parse::<u64>().ok()?;
+            (now.saturating_sub(at) <= PENDING_SIGN_IN_SECS).then_some((nonce, at))
+        })
+        .collect()
+}
+
+fn write_pending_sign_ins(dir: &Path, list: &[(String, u64)]) {
+    let path = dir.join(PENDING_SIGN_IN);
+    if list.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        return;
+    }
+    let text: String = list.iter().map(|(n, at)| format!("{n} {at}\n")).collect();
+    let _ = std::fs::write(path, text);
+}
+
+/// Remember a new pending sign-in in `dir` and return its nonce. Earlier
+/// ones that are still fresh stay valid, up to PENDING_SIGN_IN_KEEP.
 fn begin_sign_in(dir: &Path) -> String {
     let nonce = sign_in_nonce();
-    let _ = std::fs::write(dir.join(PENDING_SIGN_IN), format!("{nonce} {}", unix_now()));
+    let mut list = pending_sign_ins(dir);
+    list.push((nonce.clone(), unix_now()));
+    let skip = list.len().saturating_sub(PENDING_SIGN_IN_KEEP);
+    write_pending_sign_ins(dir, &list[skip..]);
     nonce
 }
 
-/// Is `offered` the nonce of the sign-in waiting in `dir`? A match is used
-/// up, so the same hand-off cannot be replayed.
+/// Is `offered` the nonce of a sign-in waiting in `dir`? A match is used
+/// up, so the same hand-off cannot be replayed; the others stay waiting.
 fn take_sign_in(dir: &Path, offered: &str) -> bool {
-    let path = dir.join(PENDING_SIGN_IN);
-    let Ok(stored) = std::fs::read_to_string(&path) else {
-        return false;
-    };
-    let mut parts = stored.split_whitespace();
-    let (Some(nonce), Some(at)) = (
-        parts.next(),
-        parts.next().and_then(|s| s.parse::<u64>().ok()),
-    ) else {
-        return false;
-    };
-    let fresh = unix_now().saturating_sub(at) <= PENDING_SIGN_IN_SECS;
-    if offered.is_empty() || nonce != offered || !fresh {
+    if offered.is_empty() {
         return false;
     }
-    let _ = std::fs::remove_file(&path);
+    let mut list = pending_sign_ins(dir);
+    let Some(i) = list.iter().position(|(n, _)| n == offered) else {
+        return false;
+    };
+    list.remove(i);
+    write_pending_sign_ins(dir, &list);
     true
 }
 
@@ -3269,11 +3298,12 @@ async fn billing_info() -> serde_json::Value {
             .unwrap_or_else(|| serde_json::json!({ "live": false }));
         let mut out = config;
         if let Some(token) = hub_token() {
-            if let Ok(status) = ureq::get(&format!("{base}/billing/status"))
+            if let Some(status) = ureq::get(&format!("{base}/billing/status"))
                 .set("authorization", &format!("Bearer {token}"))
                 .timeout(std::time::Duration::from_secs(10))
                 .call()
-                .and_then(|r| r.into_json::<serde_json::Value>().map_err(Into::into))
+                .ok()
+                .and_then(|r| r.into_json::<serde_json::Value>().ok())
             {
                 out["plan"] = status["plan"].clone();
                 out["active"] = status["active"].clone();
@@ -5435,10 +5465,16 @@ fn main() {
                     if url.scheme() == "krate" {
                         DOC_CLAIMED.store(true, std::sync::atomic::Ordering::SeqCst);
                         show_main_window(app);
-                        if adopt_from_uri(url.as_str()) {
-                            let _ =
-                                app.emit("login-step", serde_json::json!({ "step": "adopted" }));
-                        }
+                        // A hand-off that is refused (a nonce this Studio did
+                        // not start or that expired) or that the engine could
+                        // not store says so: the window is waiting on it, and
+                        // silence left it on "Finish in your browser" (K-971).
+                        let step = if adopt_from_uri(url.as_str()) {
+                            "adopted"
+                        } else {
+                            "handoff-failed"
+                        };
+                        let _ = app.emit("login-step", serde_json::json!({ "step": step }));
                         continue;
                     }
                     if let Ok(path) = url.to_file_path() {
@@ -5614,6 +5650,27 @@ mod tests {
         );
         assert!(super::take_sign_in(&dir, &nonce), "the one it started");
         assert!(!super::take_sign_in(&dir, &nonce), "and only once");
+
+        // K-971: pressing Sign in twice keeps the first press's tab good.
+        let first = super::begin_sign_in(&dir);
+        let second = super::begin_sign_in(&dir);
+        assert!(
+            super::take_sign_in(&dir, &first),
+            "the first press still signs in"
+        );
+        assert!(super::take_sign_in(&dir, &second), "and so does the second");
+        // Only the last few are kept.
+        let many: Vec<String> = (0..super::PENDING_SIGN_IN_KEEP + 2)
+            .map(|_| super::begin_sign_in(&dir))
+            .collect();
+        assert!(
+            !super::take_sign_in(&dir, &many[0]),
+            "the oldest beyond the limit is gone"
+        );
+        assert!(
+            super::take_sign_in(&dir, many.last().unwrap()),
+            "the newest is kept"
+        );
 
         // A stale start is not a key.
         let old = super::unix_now() - super::PENDING_SIGN_IN_SECS - 5;

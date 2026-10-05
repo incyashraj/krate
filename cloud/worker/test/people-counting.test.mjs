@@ -109,10 +109,28 @@ test("a sign-in step that fails on our side is recorded as failed", async () => 
   KV.set("login:abc", JSON.stringify({ from: "web" }));
   points.length = 0;
   const res = await req("GET", "/login/callback?code=x&state=abc");
-  assert.ok(res.status >= 500, `the stubbed GitHub failure answers ${res.status}`);
+  // K-972: a failed step goes back to the sign-in page with a reason, not a bare error page.
+  assert.equal(res.status, 302, `the stubbed GitHub failure answers ${res.status}`);
+  assert.equal(res.headers.get("location"), "https://krate.tech/login/?error=failed");
   const p = points.find((x) => x.blobs[0] === "signin");
   assert.ok(p, "the attempt left a trace");
   assert.deepEqual(p.blobs.slice(0, 3), ["signin", "github-done", "error"]);
+});
+
+test("cancelling at GitHub goes back to sign in, recorded as refused", async () => {
+  KV.set("login:can", JSON.stringify({ from: "web" }));
+  points.length = 0;
+  const res = await req("GET", "/login/callback?error=access_denied&state=can");
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get("location"), "https://krate.tech/login/?error=cancelled");
+  const p = points.find((x) => x.blobs[0] === "signin");
+  assert.deepEqual(p.blobs.slice(0, 3), ["signin", "github-done", "refused"]);
+});
+
+test("an expired sign-in goes back to sign in with a reason", async () => {
+  const res = await req("GET", "/login/callback?code=x&state=never-started");
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get("location"), "https://krate.tech/login/?error=expired");
 });
 
 test("a sign-in step that throws is still recorded before the error goes on", async () => {
