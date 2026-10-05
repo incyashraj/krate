@@ -4849,7 +4849,7 @@ function renderCloudCats() {
       state.cloudCat = cat.id;
       // Ask the hub for that category rather than filtering what is on
       // screen: the client only holds the shelves, not the whole gallery.
-      loadCloud();
+      openCloud();
     });
     box.appendChild(chip);
   }
@@ -5156,7 +5156,7 @@ function renderCloudShelves(shelves) {
       more.addEventListener("click", () => {
         state.cloudCat = shelf.id;
         $("cloudSearch").value = "";
-        loadCloud();
+        openCloud();
       });
       head.appendChild(more);
     }
@@ -7201,7 +7201,7 @@ $("cloudSearch").addEventListener("input", () => {
   cloudSearchTimer = setTimeout(() => {
     // Clearing the box goes back to the shelves rather than to an empty grid.
     if (!$("cloudSearch").value.trim()) state.cloudCat = "all";
-    loadCloud();
+    openCloud();
   }, 220);
 });
 $("appBackBtn").addEventListener("click", () => showView("cloud"));

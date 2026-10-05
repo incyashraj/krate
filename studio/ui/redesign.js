@@ -1960,6 +1960,223 @@
     setInterval(tick, 500);
   })();
 
+  /* ---- the Gallery, as the design has it ---------------------------------- */
+  // Drawn from what app.js already loaded from the hub (state.cloud, the
+  // shelves), into the design's layout: the title and search, categories as
+  // one pill row, Popular / New / Smallest, the most-opened app featured,
+  // and the rest as app windows. Every press is app.js's: a card opens its
+  // page (showCloudApp), a category or a search asks the hub (openCloud),
+  // Get the file is the hub's own download (?dl=1). Only what the hub says
+  // is shown: no prompt it does not store, no count it did not send.
+  const galView = $("viewCloud");
+  const gal = { sort: "pop", list: [], featuredTyped: "" };
+  const kb = (a) => (a.meta && a.meta.size ? Math.max(1, Math.round(a.meta.size / 1024)) + " KB" : "");
+  const fileOf = (a) => ((a.meta && a.meta.name) || "app").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + ".krate";
+  const netOf = (a) => { const c = a.meta && a.meta.capabilities; return Array.isArray(c) ? c.some((x) => /^net\./.test(String(x))) : null; };
+  const chipOf = (a) => `<span class="kr-kchip"><img src="krate-doc.png" alt="">${esc(fileOf(a))}${kb(a) ? `<em>${esc(kb(a))}</em>` : ""}</span>`;
+  const reachOf = (a) => { const n = netOf(a); return n === null ? "" : n ? `<span class="kr-kreach net">${ico("globe")}Asks for the network</span>` : `<span class="kr-kreach">${ico("lock")}Offline</span>`; };
+  const catName = (id) => { let l = id; try { l = catLabel(id); } catch (e) {} return String(l || "").replace(/^\w/, (c) => c.toUpperCase()); };
+  const getUrl = (a) => (a.url || "") + "?dl=1";
+  const keyOf = (a) => String(a.id || a.url || (a.meta && a.meta.name) || "");
+  function getFile(a, btn) {
+    if (!a || !a.url) return;
+    if (btn) { btn.classList.add("ing"); setTimeout(() => { btn.classList.remove("ing"); btn.classList.add("got"); const t = q(".gt", btn); if (t) t.textContent = "Downloading"; }, 1300); }
+    if (desktopApp()) { try { invoke("open_external", { url: getUrl(a) }); } catch (e) {} }
+    else { const l = document.createElement("a"); l.href = getUrl(a); l.download = fileOf(a); document.body.appendChild(l); l.click(); l.remove(); }
+    toast(`${fileOf(a)} is downloading`);
+  }
+  const getBtn = (a, big) => `<button type="button" class="kr-get${big ? " big" : ""}" data-get="${esc(keyOf(a))}"><span class="gt">${big ? "Get the file" : "Get"}</span>${window.krIso ? window.krIso(20, "gfill") : ""}</button>`;
+  function win(a, big) {
+    const name = esc((a.meta && a.meta.name) || "App");
+    return `<div class="kr-kwin${big ? " big" : ""}"><div class="fb"><span class="kr-lights"><i></i><i></i><i></i></span><span>${name}</span></div><div class="kb">${a.shot ? `<img src="${esc(a.shot)}" alt="" loading="lazy">` : `<span class="kb-none">${window.krIso ? window.krIso(40, "", true) : ""}</span>`}</div>${big ? "" : `<div class="khov"><button type="button" class="kr-hbtn" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button>${getBtn(a)}</div>`}</div>`;
+  }
+  function card(a, i) {
+    const m = a.meta || {};
+    return `<div class="kr-kcard" style="--k:${i}" data-app="${esc(keyOf(a))}" role="button" tabindex="0">${win(a)}
+      <div class="kmeta"><b>${esc(m.name || "Untitled app")}</b><small>${m.author ? "@" + esc(m.author) : esc(catName((a.cats && a.cats[0]) || m.category || "apps"))}</small></div>
+      ${m.description ? `<p class="ksaid">${esc(m.description)}</p>` : ""}
+      <div class="kfoot">${chipOf(a)}${reachOf(a)}</div></div>`;
+  }
+  function allApps() {
+    // What app.js was last asked to draw: the shelves (most opened first,
+    // in the hub's order) or a list of results.
+    const seen = new Set();
+    const src = gal.shown || ((app() && app().cloud) || []);
+    return src.filter((a) => { if (!a || !a.meta) return false; const k = keyOf(a); if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  function sorted(list) {
+    const l = [...list];
+    if (gal.sort === "small") l.sort((x, y) => ((x.meta.size || 1e12) - (y.meta.size || 1e12)));
+    else if (gal.sort === "new") l.sort((x, y) => (y.meta.published || 0) - (x.meta.published || 0));
+    else l.sort((x, y) => (y.opens || 0) - (x.opens || 0) || (y.meta.published || 0) - (x.meta.published || 0));
+    return l;
+  }
+  let galRoot = null;
+  function galShell() {
+    if (galRoot || !galView) return galRoot;
+    const main = q("main.cloud", galView);
+    galRoot = document.createElement("div"); galRoot.className = "kr-gal";
+    galRoot.innerHTML = `<div class="kr-galh"><div><h1>Gallery</h1><p>Apps people made with Krate and shared. Each one is a single file that opens on every desktop.</p></div>
+        <label class="kr-find kr-galq">${ico("search")}<input type="search" placeholder="Search apps" aria-label="Search the gallery" autocomplete="off" spellcheck="false"></label></div>
+      <div class="kr-galbar"><div class="kr-cats" role="tablist"></div><div class="kr-sorts" role="tablist"><button type="button" data-s="pop" class="on">Popular</button><button type="button" data-s="new">New</button><button type="button" data-s="small">Smallest</button></div></div>
+      <div class="kr-galbody"></div>`;
+    main.prepend(galRoot);
+    galView.classList.add("kr-galon");
+    const qIn = q(".kr-galq input", galRoot), real = $("cloudSearch");
+    qIn.addEventListener("input", () => { if (real) { real.value = qIn.value; real.dispatchEvent(new Event("input")); } });
+    q(".kr-sorts", galRoot).addEventListener("click", (e) => { const b = e.target.closest("[data-s]"); if (!b) return; gal.sort = b.dataset.s; qa(".kr-sorts button", galRoot).forEach((x) => x.classList.toggle("on", x === b)); paintGal(); });
+    q(".kr-cats", galRoot).addEventListener("click", (e) => {
+      const b = e.target.closest("[data-c]"); if (!b) return;
+      const st = app(); if (st) st.cloudCat = b.dataset.c;
+      try { openCloud(); } catch (err) {}
+    });
+    galRoot.addEventListener("click", (e) => {
+      const g = e.target.closest("[data-get]");
+      if (g) { e.stopPropagation(); getFile(allApps().find((a) => keyOf(a) === g.dataset.get), g); return; }
+      const r = e.target.closest("[data-remix]");
+      if (r) { e.stopPropagation(); const a = allApps().find((x) => keyOf(x) === r.dataset.remix); if (a) remix((a.meta.description || a.meta.name || ""), a.meta.name || "this app"); return; }
+      const c = e.target.closest("[data-app]");
+      if (c) { const a = allApps().find((x) => keyOf(x) === c.dataset.app); if (a) { try { showCloudApp(a); } catch (err) {} } }
+    });
+    galRoot.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-app]")) { e.preventDefault(); e.target.click(); } });
+    return galRoot;
+  }
+  function paintCats() {
+    const st = app(); const box = q(".kr-cats", galRoot); if (!st || !box) return;
+    let cats = []; try { cats = CLOUD_CATS; } catch (e) {}
+    const present = st.cloudCats || null;
+    const cur = st.cloudCat || "all";
+    box.innerHTML = cats.filter((c) => c.id === "all" || !present || present.includes(c.id))
+      .map((c) => `<button type="button" data-c="${c.id}" class="${c.id === cur ? "on" : ""}">${c.id === "all" ? "All" : esc(c.label)}</button>`).join("");
+  }
+  function skeleton() {
+    const body = q(".kr-galbody", galShell()); if (!body) return;
+    body.innerHTML = `<div class="kr-kf sk"></div><div class="kr-kgrid">${Array.from({ length: 6 }, (_, i) => `<div class="kr-skc" style="--c:${C5[i % 5]}"><div class="th">${window.krIso ? window.krIso(44, "", true) : ""}</div><span class="l1"></span><span class="l2"></span></div>`).join("")}</div>`;
+    const cards = qa(".kr-skc", body), order = [0, 4, 2, 1, 5, 3]; let n = 0;
+    clearInterval(gal.lit);
+    gal.lit = setInterval(() => { cards.forEach((c) => c.classList.remove("lit")); const c = cards[order[n++ % 6]]; if (c && c.isConnected) c.classList.add("lit"); else clearInterval(gal.lit); }, 280);
+    topBar(true);
+  }
+  async function typeSaid(el, text) {
+    gal.featuredTyped = text;
+    for (let i = 0; i <= text.length; i++) {
+      if (!el.isConnected || gal.featuredTyped !== text) return;
+      el.textContent = text.slice(0, i);
+      await new Promise((r) => setTimeout(r, reduce ? 0 : i < 2 ? 200 : 26));
+    }
+  }
+  function paintGal() {
+    const body = q(".kr-galbody", galShell()); if (!body) return;
+    clearInterval(gal.lit); topBar(false);
+    paintCats();
+    const st = app();
+    const query = ((q(".kr-galq input", galRoot) || {}).value || "").trim();
+    const list = sorted(allApps());
+    const cur = (st && st.cloudCat) || "all";
+    const pick = cur === "all" && !query && gal.sort === "pop" ? list.find((a) => a.shot && a.meta.description) : null;
+    const rest = list.filter((a) => a !== pick);
+    let html = "";
+    if (pick) {
+      const m = pick.meta;
+      // The hub counts opens over 30 days (openCounts in cloud/worker).
+      const eye = pick.opens > 0 ? "Most opened this month" : "New in the gallery";
+      html += `<div class="kr-kf" data-app="${esc(keyOf(pick))}" role="button" tabindex="0"><div class="kf-l"><span class="kf-eye">${eye}</span><p class="kf-said">“<span class="kf-tx"></span>”<i class="car"></i></p>
+        <div class="kf-by">${m.author ? `<span class="kr-av sm">${esc(m.author.charAt(0).toUpperCase())}</span>@${esc(m.author)} made ${esc(m.name || "it")} with Krate.` : `${esc(m.name || "")}`}</div>
+        <div class="kfoot">${chipOf(pick)}${reachOf(pick)}</div>
+        <div class="kf-act">${getBtn(pick, true)}<button type="button" class="btn kr-ghost2" data-remix="${esc(keyOf(pick))}">${ico("spark")}Remix it</button></div></div>
+        <div class="kf-r">${win(pick, true)}</div></div>`;
+    }
+    if (rest.length) html += `<div class="kr-kgrid">${rest.map(card).join("")}</div>`;
+    else if (!pick) html += `<div class="kr-galempty"><b>${query ? `Nothing called “${esc(query)}” yet` : "Nothing published yet"}</b><span>${query ? "Try another word, or make it." : "Yours could be first."}</span>${query ? `<button type="button" class="btn kr-dark2" data-make>${ico("spark")}Make it</button>` : ""}</div>`;
+    body.innerHTML = html;
+    const mk = q("[data-make]", body);
+    if (mk) mk.addEventListener("click", () => { const r = q('#side .side-row[data-side="home"]'); if (r) r.click(); setTimeout(() => { const ta = $("homePrompt"); if (ta) { ta.value = query; ta.dispatchEvent(new Event("input")); ta.focus(); } }, 300); });
+    const tx = q(".kf-tx", body); if (tx && pick) typeSaid(tx, pick.meta.description);
+  }
+  // A thin bar in the home page's colours while something comes from the network.
+  function topBar(on) {
+    let b = q(".kr-tbar"); if (!b) { b = document.createElement("i"); b.className = "kr-tbar"; document.body.appendChild(b); }
+    if (on) { b.style.transition = "none"; b.style.width = "0"; b.style.opacity = "1"; void b.offsetWidth; b.style.transition = "width .5s var(--ease)"; b.style.width = "30%"; setTimeout(() => { if (b.style.opacity === "1") { b.style.transition = "width 1.4s cubic-bezier(.1,.6,.3,1)"; b.style.width = "78%"; } }, 500); }
+    else if (b.style.opacity === "1") { b.style.transition = "width .3s var(--ease), opacity .4s .25s"; b.style.width = "100%"; b.style.opacity = "0"; }
+  }
+  window.krTopBar = topBar;
+  try {
+    if (galView && typeof showCloudSkeleton === "function") {
+      const sk = showCloudSkeleton; window.showCloudSkeleton = function () { sk(); skeleton(); };
+      const rs = renderCloudShelves; window.renderCloudShelves = function (sh) { rs(sh); gal.shown = (sh || []).flatMap((x) => x.apps || []); paintGal(); };
+      const rc = renderCloud; window.renderCloud = function (a, f) { rc(a, f); gal.shown = a || []; paintGal(); };
+      const fc = typeof filterCloud === "function" ? filterCloud : null;
+      if (fc) window.filterCloud = function () { fc(); paintGal(); };
+      galShell();
+      const errEl = $("cloudError");
+      watch(errEl, { attributes: true, attributeFilter: ["class"], childList: true, characterData: true, subtree: true }, () => {
+        if (!errEl.classList.contains("hidden") && errEl.textContent.trim()) {
+          clearInterval(gal.lit); topBar(false);
+          const body = q(".kr-galbody", galRoot);
+          if (body && q(".kr-skc", body)) body.innerHTML = "";
+        }
+      });
+    }
+  } catch (e) {}
+
+  /* ---- one gallery app, as the design has it ------------------------------ */
+  (function galApp() {
+    const view = $("viewApp"), main = view && q("main.detail", view);
+    if (!main || typeof showCloudApp !== "function") return;
+    view.classList.add("kr-kdon");
+    const kd = document.createElement("div"); kd.className = "kr-kd";
+    main.prepend(kd);
+    let cur = null;
+    const NOT = [[/^net\./, "No network"], [/^camera\./, "No camera"], [/^(fs\.|ui\.dialog:file|ui\.dialog:open)/, "None of your files"]];
+    function caps(list) {
+      const box = q(".kd-asks", kd); if (!box) return;
+      let words = (c) => c; try { words = capWords; } catch (e) {}
+      const yes = (list || []).map((c) => { try { return capWords(c); } catch (e) { return c; } }).filter((w, i, a) => w && a.indexOf(w) === i);
+      const no = NOT.filter(([re]) => !(list || []).some((c) => re.test(String(c)))).map(([, w]) => w);
+      box.innerHTML = yes.map((w, i) => `<span class="kr-ask y" style="--k:${i}"><i>${ico("check", "")}</i>${esc(w)}</span>`).join("") +
+        no.map((w, i) => `<span class="kr-ask n" style="--k:${yes.length + i}"><i>${ico("no", "")}</i>${esc(w)}</span>`).join("");
+    }
+    function more(a) {
+      const m = a.meta || {};
+      const all = (gal.shown || []).filter((x) => x && x.meta && keyOf(x) !== keyOf(a));
+      let list = m.author ? all.filter((x) => x.meta.author === m.author) : [];
+      let head = m.author ? `More by @${esc(m.author)}` : "";
+      if (!list.length) { const c = m.category; list = c ? all.filter((x) => x.meta.category === c) : []; head = c ? `More in ${esc(catName(c))}` : ""; }
+      return list.length ? `<div class="kd-more"><h6>${head}</h6><div class="kr-kgrid">${list.slice(0, 3).map(card).join("")}</div></div>` : "";
+    }
+    function paint(a) {
+      cur = a;
+      const m = a.meta || {};
+      const when = m.published ? (() => { try { return timeAgo(m.published); } catch (e) { return ""; } })() : "";
+      kd.innerHTML = `<div class="kd-cols"><div class="kd-l">${win(a, true)}</div>
+        <div class="kd-r"><h1>${esc(m.name || "Untitled app")}</h1>
+          <div class="kd-by">${m.author ? `<span class="kr-av sm">${esc(m.author.charAt(0).toUpperCase())}</span>` : ""}${[m.author ? "@" + esc(m.author) : "", m.category ? esc(catName(m.category)) : "", a.opens > 0 ? `${a.opens} open${a.opens === 1 ? "" : "s"} this month` : ""].filter(Boolean).join(" · ")}</div>
+          ${m.description ? `<div class="kd-said"><small>In one sentence</small><p>${esc(m.description)}</p></div>` : ""}
+          <div class="kd-file"><img src="krate-doc.png" alt=""><div><b>${esc(fileOf(a))}</b><small>${[kb(a), when ? "published " + when : "", "macOS, Windows and Linux"].filter(Boolean).join(" · ")}</small></div></div>
+          <div class="kd-act">${getBtn(a, true)}<button type="button" class="kr-ghost2" data-kd="run">${ico("play")}Run it</button><button type="button" class="kr-ghost2" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button><button type="button" class="kr-ib" data-kd="link" title="Copy the link" aria-label="Copy the link">${ico("link")}</button></div>
+          <div class="kd-note"></div>
+          <div class="kd-sec"><h6>What it asks for</h6><div class="kd-asks"><span class="kd-dim">Reading the file…</span></div><p class="kd-wall">${ico("shield")}Krate enforces this list. The app cannot do anything that is not on it, whatever its code says.</p></div>
+        </div></div>${more(a)}`;
+      const note = $("detailNote"); if (note) q(".kd-note", kd).appendChild(note);
+      if (Array.isArray(m.capabilities)) caps(m.capabilities);
+      main.scrollTop = 0;
+    }
+    kd.addEventListener("click", (e) => {
+      const k = e.target.closest("[data-kd]");
+      if (k) { if (k.dataset.kd === "run") press($("detailRun")); else press($("detailCopy")); return; }
+      const g = e.target.closest("[data-get]");
+      if (g) { getFile(cur && keyOf(cur) === g.dataset.get ? cur : allApps().find((a) => keyOf(a) === g.dataset.get), g); return; }
+      const r = e.target.closest("[data-remix]");
+      if (r) { const a = cur && keyOf(cur) === r.dataset.remix ? cur : allApps().find((x) => keyOf(x) === r.dataset.remix); if (a) remix(a.meta.description || a.meta.name || "", a.meta.name || "this app"); return; }
+      const c = e.target.closest("[data-app]");
+      if (c) { const a = allApps().find((x) => keyOf(x) === c.dataset.app); if (a) { try { showCloudApp(a); } catch (err) {} } }
+    });
+    const orig = showCloudApp;
+    window.showCloudApp = function (a) { orig(a); try { paint(a); } catch (e) {} };
+    const rcg = renderCapGroups;
+    window.renderCapGroups = function (host, list) { rcg(host, list); if (host && host.id === "detailCaps") caps(list); };
+  })();
+
   /* ---- the sidebar's Port an app ---------------------------------------- */
   const sidePort = $("sidePort");
   if (sidePort) sidePort.addEventListener("click", () => {
