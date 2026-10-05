@@ -2443,3 +2443,154 @@ body:not(.light) .kr-gwait { background: var(--surface-2); }
   body.macos.kr-rail .view > .titlebar, body.macos.kr-rail #viewSession .rail-head { padding-left: 14px; }
 }
 .kr-pop .kr-pop-head b { font: 500 13px var(--sans); color: var(--ink); letter-spacing: 0; } .kr-pop .kr-pop-head small { margin-top: 1px; }
+
+/* ---- the right side: one card, start to finish (redesign.js, forge) ------
+   A quiet grey inset with a dot grid and one thin glyph per step, one line
+   that says what Krate is doing to this app, the time. The app arrives in
+   the inset, small, then settles into the card with the file, Run and Share
+   underneath and what it may do said plainly. A failure edges the card red. */
+#stage.kr-forged > .stage-state { display: none !important; }
+#stage.kr-forged { align-content: center; }
+.kr-forge { position: relative; z-index: 1; width: min(100%, 500px); display: flex; flex-direction: column; align-items: center; gap: 12px; transition: width .8s var(--ease); }
+.kr-forge[data-st="done"], .kr-forge[data-st="arrive"] { width: min(100%, 620px); }
+.kr-fcard { position: relative; width: 100%; padding: 8px; border-radius: 22px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -34px rgba(30, 40, 90, .3), 0 2px 6px rgba(24, 24, 27, .04); transition: box-shadow .5s; }
+body:not(.light) .kr-fcard { box-shadow: 0 0 0 1px var(--hair), 0 30px 70px -34px rgba(0, 0, 0, .9); }
+.kr-forge[data-st="failed"] .kr-fcard { box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent), 0 30px 60px -34px rgba(30, 40, 90, .3); }
+.kr-fth { position: relative; aspect-ratio: 16 / 10; border-radius: 15px; overflow: hidden; display: grid; place-items: center; isolation: isolate;
+  background-color: var(--surface-2); background-image: radial-gradient(circle, color-mix(in srgb, var(--ink) 11%, transparent) 1px, transparent 1.6px); background-size: 16px 16px; background-position: 8px 8px; }
+/* the glyphs */
+.kr-fgl { position: absolute; inset: 0; display: grid; place-items: center; transition: opacity .5s var(--ease), transform .7s var(--ease); }
+.kr-fgl::before { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 50% 50%, transparent 15%, var(--surface-2) 78%); }
+.kr-gl { grid-area: 1 / 1; position: relative; width: 62px; height: 62px; overflow: visible; opacity: 0; transform: scale(.94); filter: blur(5px); transition: opacity .4s var(--ease), transform .8s var(--ease), filter .5s var(--ease); }
+.kr-gl.on { opacity: 1; transform: none; filter: blur(0); transition-delay: .14s; }
+.kr-gl path, .kr-gl circle { fill: none; stroke: var(--ink); stroke-width: 4.2; stroke-linecap: round; stroke-linejoin: round; }
+.kr-gl [pathLength] { stroke-dasharray: 1 1.5; stroke-dashoffset: 0; }
+.kr-gl g, .kr-gl .arc, .kr-gl .cur { transform-origin: 50px 50px; }
+.kr-gl .sp { stroke-width: 4.6; }
+.kr-gl .cur { fill: var(--ink); stroke: none; transform-origin: 57px 67px; }
+.kr-gl .ly, .kr-gl .ln { opacity: 0; }
+.kr-gl .trk { stroke: color-mix(in srgb, var(--ink) 9%, transparent); }
+.kr-gl .arc { stroke-dasharray: .18 .82; opacity: 0; }
+.kr-forge[data-st="building"] .kr-gl.on .ol { animation: krGlDraw 1.1s var(--ease) both; animation-delay: calc(.18s + var(--i) * .13s); }
+.kr-forge[data-st="building"] .kr-gl[data-g="think"].on .rot { animation: krGlSpin 14s linear infinite; }
+.kr-forge[data-st="building"] .kr-gl[data-g="think"].on .sp { animation: krGlSpoke 3.4s var(--io) infinite both; animation-delay: calc(var(--i) * .07s); }
+.kr-forge[data-st="building"] .kr-gl[data-g="write"].on .cur { animation: krGlCurIn .55s var(--ease) .7s both, krGlCaret 1.15s ease-in-out 1.3s infinite; }
+.kr-forge[data-st="building"] .kr-gl[data-g="write"].on .nud { animation: krGlNudge 2.3s var(--io) 1.4s infinite; }
+.kr-forge[data-st="building"] .kr-gl[data-g="build"].on .ly { animation: krGlLayer 2.9s var(--io) infinite both; animation-delay: calc(1s + var(--i) * .32s); }
+.kr-forge[data-st="building"] .kr-gl[data-g="pack"].on .ln { animation: krGlLayer 3.1s var(--io) infinite both; animation-delay: calc(.9s + var(--i) * .24s); }
+.kr-forge[data-st="building"] .kr-gl[data-g="check"].on .trk { animation: krGlFade .6s var(--ease) both; }
+.kr-forge[data-st="building"] .kr-gl[data-g="check"].on .arc { opacity: 1; animation: krGlFade .6s var(--ease) .15s both, krGlSpin 1.7s cubic-bezier(.45, .1, .55, .9) infinite; }
+@keyframes krGlSpin { to { transform: rotate(360deg); } }
+@keyframes krGlDraw { 0% { stroke-dashoffset: 1; opacity: 0; } 12% { opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 1; } }
+@keyframes krGlFade { from { opacity: 0; } }
+@keyframes krGlSpoke { 0% { stroke-dashoffset: 1; opacity: 0; } 6% { opacity: 1; } 36%, 66% { stroke-dashoffset: 0; } 94% { stroke-dashoffset: 1; opacity: 1; } 100% { stroke-dashoffset: 1; opacity: 0; } }
+@keyframes krGlCurIn { from { opacity: 0; transform: scaleX(.15); } }
+@keyframes krGlCaret { 50% { opacity: .12; } }
+@keyframes krGlNudge { 0%, 64%, 100% { transform: none; } 76% { transform: translateX(2px); } }
+@keyframes krGlLayer { 0% { stroke-dashoffset: 1; opacity: 0; } 6% { opacity: 1; } 38%, 72% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+/* not building: the asterisk rests, faint and still; nothing on a failure */
+.kr-forge:not([data-st="building"]) .kr-gl[data-g="think"] { opacity: .15; transform: none; filter: none; }
+.kr-forge:not([data-st="building"]) .kr-gl:not([data-g="think"]) { opacity: 0; }
+.kr-forge:is([data-st="failed"], [data-st="stopped"]) .kr-gl { opacity: 0 !important; }
+.kr-forge:is([data-st="arrive"], [data-st="done"]) .kr-fgl { opacity: 0; transform: scale(.92); }
+/* the app arriving, then settling in as the preview */
+.kr-flive { position: absolute; inset: 0; z-index: 3; overflow: hidden; border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 28px 48px -22px rgba(24, 24, 27, .45);
+  opacity: 0; transform: translateY(16%) scale(.58); transition: opacity .5s var(--ease), transform .9s var(--spring), border-radius .7s var(--ease), box-shadow .7s; pointer-events: none; }
+.kr-flive img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.kr-forge[data-st="arrive"] .kr-flive { opacity: 1; transform: scale(.62); }
+.kr-forge[data-st="done"] .kr-flive { opacity: 1; transform: none; border-radius: 0; box-shadow: none; pointer-events: auto; transition: opacity .3s, transform .8s var(--ease), border-radius .6s var(--ease), box-shadow .6s; }
+.kr-forge.kr-noshot .kr-flive { display: none; }
+.kr-forge.kr-noshot[data-st="done"] .kr-fgl { opacity: 1; transform: none; }
+/* the rows: the status line, and the file once it is made, in one place */
+.kr-frows { display: grid; grid-template-columns: minmax(0, 1fr); }
+.kr-frows > * { grid-area: 1 / 1; transition: opacity .4s var(--ease), transform .55s var(--ease); }
+.kr-fmeta { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 12px 10px 6px; }
+.kr-grow { flex: 1; }
+.kr-fst { display: block; min-width: 0; height: 22px; font-size: 14px; line-height: 22px; color: var(--ink-3); white-space: nowrap; overflow: visible; }
+.kr-fst > span { display: block; overflow: hidden; text-overflow: ellipsis; animation: krStin .5s var(--ease) both; }
+.kr-fst .kr-fok { color: var(--green-ink); }
+.kr-fst .kr-fbad { color: var(--danger); }
+.kr-forge[data-st="building"] .kr-fst { color: var(--ink-2); }
+.kr-fst .kr-fsnt { color: var(--ink); font-weight: 500; letter-spacing: -.01em; animation: none; overflow: visible; }
+.kr-fw { position: relative; display: inline-block; height: 22px; vertical-align: top; transition: width .5s var(--ease); }
+.kr-fw > span { position: absolute; left: 0; top: 0; display: block; line-height: 22px; white-space: nowrap; color: var(--c); opacity: 0; transform: translateY(.5em); filter: blur(3px); transition: opacity .35s var(--ease), transform .55s var(--ease), filter .4s; }
+.kr-fw > span.on { opacity: 1; transform: none; filter: none; transition-delay: .1s; }
+.kr-fw > span.out { opacity: 0; transform: translateY(-.5em); filter: blur(3px); transition-delay: 0s; }
+.kr-fw::after { content: ""; position: absolute; left: 0; right: 0; bottom: 2px; height: 1.6px; border-radius: 2px; background: currentColor; color: var(--accent); opacity: .3; }
+.kr-fmk { width: 14px; height: 14px; flex: none; display: grid; place-items: center; margin-left: 1px; }
+.kr-ast path { fill: none; stroke: var(--ink-2); stroke-width: 10; stroke-linecap: round; }
+.kr-ast g { transform-origin: 50px 50px; }
+.kr-forge[data-st="building"] .kr-fmk .kr-ast g { animation: krGlSpin 6s linear infinite; }
+.kr-forge:not([data-st="building"]) .kr-fmk { display: none; }
+.kr-fel { flex: none; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.kr-fdone { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px 6px 8px 8px; opacity: 0; transform: translateY(8px); pointer-events: none; }
+.kr-forge[data-st="done"] .kr-fmeta { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+.kr-forge[data-st="done"] .kr-fdone { opacity: 1; transform: none; pointer-events: auto; transition-delay: .25s; }
+.kr-dcic { height: 34px; width: auto; flex: none; }
+.kr-dn { flex: 1; min-width: 0; }
+.kr-dn b { display: block; font-size: 14.5px; font-weight: 500; letter-spacing: -.015em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kr-dn small { display: flex; margin-top: 1px; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.kr-dn small > span + span::before { content: "\00b7"; margin: 0 6px; color: var(--ink-4); }
+.kr-dn .kr-mono { font: 600 11.5px ui-monospace, Menlo, monospace; color: var(--ink-2); }
+.kr-da { display: flex; align-items: center; gap: 6px; flex: none; }
+.kr-da .btn { height: 32px; padding: 0 14px; border-radius: 99px; font-size: 13px; gap: 6px; display: inline-flex; align-items: center; }
+.kr-da .btn .kr-ico { width: 12px; height: 12px; }
+.kr-fmore { width: 32px; height: 32px; border: 0; border-radius: 99px; background: transparent; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; transition: background .2s, color .2s; }
+.kr-fmore:hover { background: var(--surface-2); color: var(--ink); }
+.kr-fmore .kr-ico { width: 15px; height: 15px; }
+/* what opens under the rows: a verdict, what it may do, the long-wait note */
+.kr-fx { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .55s var(--ease); }
+.kr-fx > div { overflow: hidden; min-height: 0; }
+.kr-forge[data-st="done"] .kr-fasks { grid-template-rows: 1fr; transition-delay: .35s; }
+.kr-forge[data-st="done"].kr-hasverd .kr-fverd { grid-template-rows: 1fr; }
+.kr-forge[data-st="building"].kr-long .kr-fnote { grid-template-rows: 1fr; }
+.kr-fverd p { margin: 2px 8px 8px; padding: 8px 12px; border-radius: 11px; background: color-mix(in srgb, var(--orange) 12%, var(--surface)); color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+.kr-perm { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 2px 8px 8px 10px; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); text-wrap: pretty; }
+.kr-perm .kr-ico { width: 13px; height: 13px; flex: none; margin-top: 2.5px; color: var(--green-ink); }
+.kr-perm b { color: var(--ink-2); font-weight: 500; }
+.kr-perm button { font: inherit; color: var(--ink-2); padding: 0; margin-left: 2px; border: 0; background: none; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; transition: color .2s, text-decoration-color .2s; }
+.kr-perm button:hover { color: var(--ink); text-decoration-color: currentColor; }
+.kr-fstill { display: inline-flex; align-items: center; gap: 8px; margin: 4px 10px 6px; padding: 7px 12px; border-radius: 11px; background: #fff6ec; color: #4a3a2c; font-size: 12.5px; opacity: 0; transform: translateY(-4px); transition: opacity .4s var(--ease) .15s, transform .5s var(--ease) .15s; }
+body:not(.light) .kr-fstill { background: #2a2016; color: #d6c3b0; }
+.kr-fstill .kr-ast path { stroke: #e8873f; stroke-width: 12; }
+.kr-forge.kr-long .kr-fstill { opacity: 1; transform: none; }
+/* under the card: Show the log and Stop while it works */
+.kr-facts { display: none; gap: 2px; }
+.kr-forge[data-st="building"] .kr-facts { display: flex; animation: krStin .5s var(--ease) both; }
+#stage .kr-forge .kr-plain { height: 30px; box-shadow: none; padding: 0 11px; border: 0; border-radius: 99px; background: transparent; color: var(--ink-3); font-size: 12.5px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; transition: background .2s, color .2s; }
+#stage .kr-forge .kr-plain:hover { background: var(--surface-2); color: var(--ink); }
+#stage .kr-forge .kr-plain .kr-ico { width: 13px; height: 13px; }
+.kr-flog { width: 100%; display: none; }
+.kr-forge.kr-logon .kr-flog { display: block; }
+.kr-forge:is([data-st="done"], [data-st="arrive"], [data-st="idle"], [data-st="planning"]) .kr-flog { display: none; }
+.kr-flog .build-term { position: relative; inset: auto; height: 220px; border-radius: 14px; }
+/* a failure: what happened, and what to do */
+.kr-ffail { display: none; width: 100%; text-align: left; padding: 6px 6px 0; }
+.kr-forge:is([data-st="failed"], [data-st="stopped"]) .kr-ffail { display: block; animation: krStin .5s var(--ease) both; }
+.kr-ffail h5 { margin: 0; font-size: 15.5px; font-weight: 500; letter-spacing: -.015em; color: var(--ink); display: flex; align-items: center; gap: 9px; }
+.kr-ffail h5 i { width: 20px; height: 20px; flex: none; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-style: normal; font-size: 12px; font-weight: 700; }
+.kr-forge[data-st="stopped"] .kr-ffail h5 i { display: none; }
+.kr-ffail p { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.6; }
+.kr-facts2 { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.kr-facts2 .btn { height: 34px; padding: 0 14px; border-radius: 99px; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .kr-gl, .kr-gl *, .kr-ast g { animation: none !important; } .kr-gl .ly, .kr-gl .ln, .kr-gl .arc { opacity: 1; } }
+/* a phone: the preview strip is short, so the card is too -- a wider inset,
+   tighter rows, and Run and Share stay on the file's line */
+@media (max-width: 560px) {
+  #stage.kr-forged { padding: 10px 12px; }
+  .kr-fcard { padding: 6px; border-radius: 18px; }
+  .kr-fth { aspect-ratio: 2 / 1; border-radius: 13px; }
+  .kr-gl { width: 46px; height: 46px; }
+  .kr-fmeta { padding: 9px 8px 4px; }
+  .kr-fdone { gap: 9px; padding: 9px 4px 6px 6px; }
+  .kr-dcic { height: 28px; }
+  .kr-dn small > span:nth-child(n+3) { display: none; }
+  .kr-da .btn { height: 30px; padding: 0 11px; }
+  .kr-perm { padding: 0 6px 6px 8px; font-size: 12px; }
+  .kr-forge { gap: 6px; }
+}
+#stage .kr-forge .btn.kr-dark { border: 0; background: var(--btn); color: var(--btn-ink); cursor: pointer; transition: background .2s, transform .3s var(--spring); }
+#stage .kr-forge .btn.kr-dark:hover { background: var(--btn-hover); }
+#stage .kr-forge .btn.kr-ghost { border: 0; background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: pointer; transition: background .2s; }
+#stage .kr-forge .btn.kr-ghost:hover { background: var(--surface-2); }
+.kr-forge .btn:active { transform: scale(.96); }

@@ -2206,6 +2206,245 @@
     setInterval(tick, 500);
   })();
 
+  /* ---- the right side: one card, start to finish -------------------------- */
+  // The design's card. A quiet grey inset with one glyph per step (thinking,
+  // writing, building, checking, packing), one line under it that says what
+  // Krate is doing to this app, and the time. When the app is made it
+  // arrives in the inset, small, then settles into the card as the preview,
+  // with the file, Run and Share underneath and what it may do said plainly.
+  // A failure keeps the card, edged red, with what happened and what to do.
+  //
+  // app.js still drives its own state panes (statePlanning, stateBuilding,
+  // stateDone, stateFailed) and owns every action; this card reads them and
+  // presses their buttons. The panes stay in the page, out of sight.
+  (function forge() {
+    const stage = $("stage");
+    if (!stage) return;
+    const P = (i, d, extra) => `<path class="${extra || "ol"}" pathLength="1" style="--i:${i}" d="${d}"/>`;
+    const spokes = [0, 60, 120, 180, 240, 300].map((r, i) => `<path class="sp" pathLength="1" style="--i:${i}" transform="rotate(${r} 50 50)" d="M50 50 L50 14"/>`).join("");
+    const GL = {
+      think: `<g class="rot">${spokes}</g>`,
+      write: `<g class="nud">${P(0, "M30 30 L51 50 L30 70")}</g><rect class="cur" x="57" y="64.5" width="16" height="5.5" rx="2.4"/>`,
+      build: `<g class="bob">${P(0, "M50 17 L82 33 L50 49 L18 33 Z")}${P(1, "M18 33 V67 L50 83 L82 67 V33")}${P(2, "M50 49 V83")}${P(0, "M18 44.5 L50 60.5 L82 44.5", "ly")}${P(1, "M18 56 L50 72 L82 56", "ly")}</g>`,
+      check: `<circle class="trk" cx="50" cy="50" r="34"/><circle class="arc" pathLength="1" cx="50" cy="50" r="34"/>${P(1, "M37 51 L46 60 L64 41", "ol tk")}`,
+      pack: `<g class="bob">${P(0, "M33 15 H58 L71 28 V85 H33 Z")}${P(1, "M58 15 V28 H71")}${P(0, "M42 46 H62", "ln")}${P(1, "M42 56.5 H62", "ln")}${P(2, "M42 67 H54", "ln")}</g>`,
+    };
+    const ast = `<svg class="kr-ast" width="14" height="14" viewBox="0 0 100 100" aria-hidden="true"><g>${[0, 60, 120, 180, 240, 300].map((r) => `<path transform="rotate(${r} 50 50)" d="M50 50 L50 12"/>`).join("")}</g></svg>`;
+    const f = document.createElement("div");
+    f.className = "kr-forge"; f.dataset.st = "idle"; f.dataset.ph = "";
+    f.innerHTML =
+      `<div class="kr-fcard">` +
+        `<div class="kr-fth"><div class="kr-fgl" aria-hidden="true">${Object.entries(GL).map(([k, g]) => `<svg class="kr-gl" data-g="${k}" viewBox="0 0 100 100">${g}</svg>`).join("")}</div>` +
+          `<div class="kr-flive"><img alt="Your app, as it renders"></div></div>` +
+        `<div class="kr-frows">` +
+          `<div class="kr-fmeta"><span class="kr-fst" aria-live="polite"><span></span></span><span class="kr-fmk">${ast}</span><span class="kr-grow"></span><span class="kr-fel"></span></div>` +
+          `<div class="kr-fdone"><img class="kr-dcic" src="krate-doc.png" alt=""><div class="kr-dn"><b></b><small></small></div>` +
+            `<div class="kr-da"><button type="button" class="btn kr-dark" data-fa="run">${ico("play", "kr-ico")}Run</button><button type="button" class="btn kr-ghost" data-fa="share">${ico("share", "kr-ico")}Share</button><button type="button" class="kr-fmore" data-fa="more" title="More">${ico("more", "kr-ico")}</button></div></div>` +
+        `</div>` +
+        `<div class="kr-fx kr-fverd"><div><p></p></div></div>` +
+        `<div class="kr-fx kr-fasks"><div><p class="kr-perm"></p></div></div>` +
+        `<div class="kr-fx kr-fnote"><div><p class="kr-fstill">${ast}Still going. Bigger apps take a minute.</p></div></div>` +
+      `</div>` +
+      `<div class="kr-ffail"><h5><i>!</i><span></span></h5><p></p><div class="kr-facts2"></div></div>` +
+      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Show the log</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>` +
+      `<div class="kr-flog"></div>`;
+    stage.insertBefore(f, stage.firstChild);
+    stage.classList.add("kr-forged");
+    const fst = q(".kr-fst", f), fel = q(".kr-fel", f), img = q(".kr-flive img", f);
+    const logBox = q(".kr-flog", f), term = $("buildTerm");
+    if (term) logBox.appendChild(term);
+
+    /* the glyph: one at a time, each shown long enough to be seen */
+    let glT = 0, glQ = 0;
+    function glyph(name) {
+      const on = q(".kr-gl.on", f);
+      if (on && on.dataset.g === name) { clearTimeout(glQ); return; }
+      clearTimeout(glQ);
+      const set = () => { glT = Date.now(); qa(".kr-gl", f).forEach((g) => g.classList.toggle("on", g.dataset.g === name)); };
+      const since = Date.now() - glT;
+      if (since < 1400) glQ = setTimeout(set, 1400 - since); else set();
+    }
+    const GLYPH = { "": "think", plan: "think", write: "write", build: "build", look: "check", pack: "pack", wall: "check" };
+    const WORD = { "": ["thinking about", "var(--accent)"], plan: ["planning", "var(--accent)"], write: ["writing", "var(--violet)"], build: ["building", "var(--accent)"], look: ["testing", "var(--violet)"], pack: ["packing", "var(--orange)"], wall: ["checking", "var(--violet)"] };
+
+    /* the line under the inset */
+    function plain(t, cls) {
+      fst.dataset.k = "";
+      const s = q(":scope > span", fst);
+      const head = (x) => x.split(" · ")[0];
+      if (s && !s.classList.contains("kr-fsnt") && head(s.textContent) === head(t) && (s.className || "") === (cls || "")) { s.textContent = t; return; }
+      fst.innerHTML = ""; const n = document.createElement("span"); if (cls) n.className = cls; n.textContent = t; fst.appendChild(n);
+    }
+    // The sentence is written once; after that only its word turns over.
+    function sentence(ph) {
+      const name = (appName() || "app").toLowerCase();
+      if (fst.dataset.k === ph + "|" + name) return;
+      fst.dataset.k = ph + "|" + name;
+      const w = WORD[ph] || WORD.write;
+      let fw = q(".kr-fw", fst);
+      if (!fw || fst.dataset.name !== name) {
+        fst.dataset.name = name;
+        fst.innerHTML = `<span class="kr-fsnt">Krate is <span class="kr-fw"></span> your ${esc(name)}</span>`;
+        fw = q(".kr-fw", fst);
+      }
+      const old = q("span.on", fw), n = document.createElement("span");
+      n.textContent = w[0]; n.style.setProperty("--c", w[1]); fw.appendChild(n);
+      if (old) { old.classList.remove("on"); old.classList.add("out"); setTimeout(() => old.remove(), 600); }
+      fw.style.width = n.offsetWidth + "px";
+      requestAnimationFrame(() => n.classList.add("on"));
+    }
+
+    const clock = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+    const shown = (id) => { const e = $(id); return !!e && !e.classList.contains("hidden"); };
+    let mode = "", builtSecs = null, lastSecs = 0, arriveT = 0, wasBuilding = false;
+
+    // What the app may do, said plainly: what it does, then what it cannot.
+    const DOES = {
+      "ui.window": "opens a window", "store.kv": "keeps its own data", "store.sql": "keeps its own records",
+      "store.shared": "shares its data by invite code", "store.group": "shares data with its maker's other apps",
+      "net": "reaches the internet", "fs.read": "reads files you choose", "fs.write": "saves files you choose",
+      "audio.capture": "uses the microphone", "audio.playback": "plays sound", "camera": "uses the camera",
+      "speech": "turns your speech into text", "notify": "shows notifications", "clipboard.read": "reads what you copied",
+      "clipboard.write": "copies things for you",
+    };
+    function permLine() {
+      const st = app(), res = st && st.session && st.session.result;
+      const caps = ((res && res.asks) || []).map(String);
+      if (!res) return "";
+      const does = [];
+      caps.forEach((c) => {
+        const k = Object.keys(DOES).find((x) => c === x || c.startsWith(x + ":") || c.startsWith(x + "."));
+        if (k && !does.includes(DOES[k])) does.push(DOES[k]);
+      });
+      const nots = [];
+      if (!caps.some((c) => c.startsWith("net."))) nots.push("internet");
+      if (!caps.some((c) => c.startsWith("camera."))) nots.push("camera");
+      if (!caps.some((c) => c.startsWith("fs."))) nots.push("other files");
+      const list = (a) => a.length > 1 ? a.slice(0, -1).join(", ") + " and " + a[a.length - 1] : a[0] || "";
+      const b = does.map((d) => `<b>${esc(d)}</b>`);
+      let h = does.length ? list(b) + "." : "<b>Opens a window</b> and asks for nothing else.";
+      h = h.replace(/^<b>(.)/, (m, c) => "<b>" + c.toUpperCase());
+      if (nots.length) h += ` No ${esc(nots.length > 1 ? nots.slice(0, -1).join(", ") + " or " + nots[nots.length - 1] : nots[0])}.`;
+      return `${ico("lock", "kr-ico")}<span>${h} <button type="button" data-fa="details">Details</button></span>`;
+    }
+    function doneRow() {
+      const nm = (($("doneName") || {}).textContent || "").trim();
+      q(".kr-dn b", f).textContent = nm || "your-app.krate";
+      const ver = ((q(".kr-ver") || {}).textContent || "").trim();
+      const bits = [];
+      if (/^v\d+$/.test(ver)) bits.push(`<span class="kr-mono">${esc(ver)}</span>`);
+      const size = (($("doneSize") || {}).textContent || "").trim();
+      if (size) bits.push(`<span>${esc(size)}</span>`);
+      bits.push("<span>wasm32</span>");
+      if (builtSecs != null) bits.push(`<span>built in ${clock(builtSecs)}</span>`);
+      const sm = q(".kr-dn small", f), h = bits.join("");
+      if (sm.innerHTML !== h) sm.innerHTML = h;
+      const p = q(".kr-perm", f), ph = permLine();
+      if (p.dataset.h !== ph) { p.dataset.h = ph; p.innerHTML = ph; }
+      const v = $("doneVerdict"), vp = q(".kr-fverd p", f);
+      const vt = v && !v.classList.contains("hidden") ? v.textContent.trim() : "";
+      if (vp.textContent !== vt) vp.textContent = vt;
+      f.classList.toggle("kr-hasverd", !!vt);
+      const shot = $("shot"), src = shot && !shot.classList.contains("hidden") ? shot.getAttribute("src") || "" : "";
+      if (src && img.getAttribute("src") !== src) img.setAttribute("src", src);
+      if (!src) img.removeAttribute("src");
+      f.classList.toggle("kr-noshot", !src);
+    }
+    function failBlock() {
+      const t = (($("failTitle") || {}).textContent || "").trim();
+      const why = (($("failWhy") || {}).textContent || "").trim();
+      const stopped = /stop/i.test(t);
+      q(".kr-ffail h5 span", f).textContent = t;
+      q(".kr-ffail p", f).textContent = why;
+      q(".kr-ffail p", f).hidden = !why;
+      const acts = q(".kr-facts2", f);
+      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["makeitBtn", "kr-plain", "Send this to Krate"]]
+        .filter(([id]) => { const b = $(id); return b && !b.classList.contains("hidden") && !b.hidden; });
+      const key = want.map(([id]) => id + ":" + ($(id).textContent || "")).join("|") + "|" + stopped;
+      if (acts.dataset.k !== key) {
+        acts.dataset.k = key; acts.innerHTML = "";
+        want.forEach(([id, cls, label], i) => {
+          if (stopped && i > 0) return;
+          const b = document.createElement("button"); b.type = "button"; b.className = "btn " + cls;
+          b.textContent = label || $(id).textContent.trim();
+          b.addEventListener("click", () => press($(id)));
+          acts.appendChild(b);
+        });
+        if (($("buildLog") || {}).textContent) {
+          const l = document.createElement("button"); l.type = "button"; l.className = "btn kr-plain"; l.dataset.fa = "log";
+          l.innerHTML = `${ico("term", "kr-ico")}<span>Show the log</span>`; acts.appendChild(l);
+        }
+      }
+      return stopped;
+    }
+    function logShown() { const t = $("buildTerm"); return !!t && !t.classList.contains("hidden"); }
+    function paintLogBtn() { qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logShown() ? "Hide the log" : "Show the log"; }); f.classList.toggle("kr-logon", logShown()); }
+
+    function tick() {
+      const st = app();
+      const s = shown("stateDone") ? "done" : shown("stateFailed") ? "failed" : shown("stateBuilding") ? "building" : shown("statePlanning") ? "planning" : "idle";
+      let next = s;
+      // Arriving: the app shows up small in the inset, then settles.
+      if (s === "done" && wasBuilding) { wasBuilding = false; builtSecs = lastSecs; arriveT = Date.now(); }
+      if (s === "done" && arriveT && Date.now() - arriveT < 1500) next = "arrive";
+      else if (s === "done") arriveT = 0;
+      if (s === "building") wasBuilding = true;
+      else if (s !== "done") wasBuilding = false;
+      if (s === "building" && mode !== "building" && mode !== "arrive") builtSecs = null;
+      if (s === "failed" && failBlock()) next = "stopped";
+      if (mode !== next) {
+        mode = next; f.dataset.st = next;
+        if (next !== "building") f.classList.remove("kr-long");
+      }
+      paintLogBtn();
+      if (s === "building") {
+        const r = runs.get(liveKey());
+        const last = r && r.rows.length ? r.rows[r.rows.length - 1].id : "";
+        const ph = /^w:/.test(last) ? "write" : last === "read" ? "plan" : last;
+        f.dataset.ph = ph;
+        glyph(GLYPH[ph] || "think");
+        sentence(ph);
+        const secs = st && st.startedAt ? Math.max(0, Math.floor((Date.now() - st.startedAt) / 1000)) : 0;
+        lastSecs = secs; fel.textContent = clock(secs);
+        f.classList.toggle("kr-long", secs >= 45);
+        return;
+      }
+      f.dataset.ph = "";
+      glyph("think");
+      if (next === "arrive") { doneRow(); plain(`Ready · in ${clock(builtSecs || 0)}`, "kr-fok"); return; }
+      if (s === "done") { doneRow(); fel.textContent = ""; return; }
+      if (s === "failed") { plain(next === "stopped" ? "Stopped" : /open|run|start/i.test(q(".kr-ffail h5 span", f).textContent) ? "Did not open" : "Did not finish", next === "stopped" ? "" : "kr-fbad"); fel.textContent = builtSecs == null && lastSecs ? clock(lastSecs) : ""; return; }
+      fel.textContent = "";
+      if (s === "planning") plain(shown("planAsk") ? "Waiting for your answer" : shown("planActions") ? "Waiting for your go" : "Reading what you asked for");
+      else plain((($("idleNote") || {}).textContent || "Your app will appear here.").trim().replace(/\.$/, ""));
+    }
+    setInterval(tick, 250);
+    ["statePlanning", "stateBuilding", "stateDone", "stateFailed", "stateIdle"].forEach((id) => watch($(id), { attributes: true, attributeFilter: ["class"] }, tick));
+    tick();
+
+    f.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-fa]"); if (!b) return;
+      const k = b.dataset.fa;
+      if (k === "run") return press($("openBtn"));
+      if (k === "share") return press($("barShare"));
+      if (k === "stop") return press($("stopBtn"));
+      if (k === "details") { const t = q('#panelTabs [data-pane="details"]'); return t && t.click(); }
+      if (k === "log") { press($("detailToggle")); paintLogBtn(); return; }
+      if (k === "more") {
+        let a = null; try { a = currentApp(); } catch (err) {}
+        const items = [{ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download the file", run: () => press($("filesSave")) }];
+        if (a && desktopApp() && window.krIdeOpen) items.push({ icon: "code", label: "Open in the IDE", run: async () => {
+          let dir = ""; try { dir = await sourceDirOf(a); } catch (err) {}
+          if (dir) window.krIdeOpen(dir, (a.name || "").replace(/\.krate$/, "") || undefined); else toast("This app's source is not on this computer");
+        } });
+        items.push({ icon: "file", label: "View the code", run: () => { const t = q('#panelTabs [data-pane="code"]'); if (t) t.click(); } });
+        const src = $("sourceBtn");
+        if (src && !src.classList.contains("hidden")) items.push({ icon: "folder", label: "Open the source project", run: () => press(src) });
+        openPop(b, items, { above: true, right: true });
+      }
+    });
+  })();
+
   /* ---- the Gallery, as the design has it ---------------------------------- */
   // Drawn from what app.js already loaded from the hub (state.cloud, the
   // shelves), into the design's layout: the title and search, categories as
