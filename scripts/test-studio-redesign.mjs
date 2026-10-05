@@ -9,6 +9,11 @@
 //     it renders as nothing.
 //  3. A top-level name in redesign.js: app.js and bridge.js share one global
 //     scope in a browser tab, and a clash blanks the page.
+//  4. A bare class rule in redesign.css (".live {", ".kr-in {") whose class
+//     the scripts also add as a STATE: the rule then lands on every element
+//     in that state. The IDE's ".live" badge painted a green pill behind
+//     app.js's live thinking line, and a share-sheet field's ".kr-in" put a
+//     grey 40px box round every new line of the conversation.
 //
 //   node scripts/test-studio-redesign.mjs [--self-test]
 import { readFileSync } from 'node:fs';
@@ -16,8 +21,25 @@ import vm from 'node:vm';
 
 function keyframeNames(css) { return [...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]); }
 
-export function check({ redesignCss, oldCss, redesignJs, indexHtml }) {
+// Classes a script adds or toggles at runtime: classList.add/toggle/remove("x").
+function stateClasses(js) {
+  const out = new Set();
+  for (const m of js.matchAll(/classList\.(?:add|toggle|remove)\(([^)]*)\)/g)) for (const q of m[1].matchAll(/["']([\w-]+)["']/g)) out.add(q[1]);
+  return out;
+}
+// Top-level rules that start with one bare class: ".x {", ".x.y", ".x i" ...
+function bareClassRules(css) {
+  const out = new Set();
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const m of flat.matchAll(/(^|[}\n])\s*((?:[^{}@]+))\{/g)) for (const sel of m[2].split(',')) { const t = sel.trim(); const c = t.match(/^\.([\w-]+)(?=[\s.:\[>{]|$)/); if (c) out.add(c[1]); }
+  return out;
+}
+export function check({ redesignCss, oldCss, redesignJs, indexHtml, scripts = '' }) {
   const bad = [];
+  const states = stateClasses(redesignJs + '\n' + scripts);
+  // A class the CSS styles ON PURPOSE as a state says so: /* kr-state: a b */
+  for (const m of redesignCss.matchAll(/kr-state:([^*]*)\*\//g)) for (const n of m[1].trim().split(/\s+/)) states.delete(n.replace(/--.*$/, ''));
+  for (const c of bareClassRules(redesignCss)) if (states.has(c)) bad.push(`redesign.css styles .${c} at the top level, and a script adds "${c}" as a state: scope the rule (an id or a parent) or rename it`);
   const mine = keyframeNames(redesignCss);
   const seen = new Set();
   for (const n of mine) { if (seen.has(n)) bad.push(`@keyframes ${n} is defined twice in redesign.css`); seen.add(n); }
@@ -44,6 +66,8 @@ if (process.argv.includes('--self-test')) {
     [{ oldCss: '@keyframes a{}' }, 1],
     [{ indexHtml: '<symbol id="i-y">' }, 1],
     [{ redesignJs: 'var leak = 1;\n(function () {\n})();' }, 1],
+    [{ redesignCss: '@keyframes a{} .live { background: green; }', scripts: 'el.classList.add("live");' }, 1],
+    [{ redesignCss: '@keyframes a{} #viewIde .live { background: green; }', scripts: 'el.classList.add("live");' }, 0],
   ];
   let fails = 0;
   for (const [over, want] of cases) {
@@ -60,6 +84,7 @@ const bad = check({
   oldCss: read('studio/ui/style.css') + read('studio/ui/session.css'),
   redesignJs: read('studio/ui/redesign.js'),
   indexHtml: read('studio/ui/index.html'),
+  scripts: read('studio/ui/app.js') + read('studio/ui/ide.js'),
 });
 for (const b of bad) console.log('FAIL', b);
 console.log(bad.length ? `${bad.length} problem(s) in Studio's design layer` : 'ok  Studio design layer: keyframes unique, icons defined, no global names');

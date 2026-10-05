@@ -1072,6 +1072,7 @@ body:not(.light) .kr-mode.plan .mv { color: #a891ff; }
    Empty, it is the voice button; with words, an arrow; building, a stop. */
 #homeSend { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; }
 #homeSend.ready:hover { transform: translateY(-1px); border-radius: 14px; }
+/* kr-state: kr-sending kr-micbtn -- added by redesign.js so these rules style them */
 #send, #homeSend { position: relative; }
 #send svg, #homeSend svg { position: absolute; left: 50%; top: 50%; translate: -50% -50%; transition: opacity .25s, transform .4s var(--spring); }
 .kr-wave { width: 18px; height: 18px; opacity: 0; transform: scale(.4); }
@@ -1604,9 +1605,9 @@ body:not(.light) .ide-ask { background: #1c1c1f; color: #a891ff; }
 .ip-h .grow { flex: 1; }
 .ip-h .ib { width: 30px; height: 30px; border: 0; border-radius: 9px; display: grid; place-items: center; background: none; color: var(--ink-2); cursor: pointer; }
 .ip-h .ib:hover { background: var(--surface-3); color: var(--ink); }
-.live { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font: 500 11.5px var(--sans); color: var(--green-ink); background: var(--green-soft); }
-.live.hidden { display: none; }
-.live i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: krPing 1.6s var(--ease) infinite; }
+#viewIde .live { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font: 500 11.5px var(--sans); color: var(--green-ink); background: var(--green-soft); }
+#viewIde .live.hidden { display: none; }
+#viewIde .live i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: krPing 1.6s var(--ease) infinite; }
 .ip-frame { position: relative; margin: 4px 16px 10px; border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 40px 80px -40px rgba(24, 24, 27, .3); }
 .ip-frame .fb { position: relative; height: 30px; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--line); }
 .ip-frame .lights { display: flex; gap: 6px; } .ip-frame .lights i { width: 10px; height: 10px; border-radius: 50%; }
@@ -2022,11 +2023,11 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 @keyframes krPart { 0%, 100% { transform: none; } 42% { transform: translateY(calc((1 - var(--k)) * -6px)); } }
 .iso.stack .ly { opacity: 0; transform: translateY(-34px); }
 .iso.stack .ly.on { opacity: 1; transform: none; transition: transform .62s cubic-bezier(.3, 1.45, .55, 1), opacity .2s; }
-.kr-swap { position: relative; display: inline-grid; }
-.kr-swap > span { grid-area: 1 / 1; white-space: nowrap; transition: opacity .35s var(--ease), transform .5s var(--ease), filter .35s; }
-.kr-swap > span.sw-out { opacity: 0; transform: translateY(-7px); filter: blur(2px); }
-.kr-swap > span.sw-in { animation: krSwin .5s var(--ease) both; }
-.kr-swap small { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+.kr-swp { position: relative; display: inline-grid; }
+.kr-swp > span { grid-area: 1 / 1; white-space: nowrap; transition: opacity .35s var(--ease), transform .5s var(--ease), filter .35s; }
+.kr-swp > span.sw-out { opacity: 0; transform: translateY(-7px); filter: blur(2px); }
+.kr-swp > span.sw-in { animation: krSwin .5s var(--ease) both; }
+.kr-swp small { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-3); }
 @keyframes krSwin { from { opacity: 0; transform: translateY(7px); filter: blur(2px); } }
 @media (prefers-reduced-motion: reduce) { .iso .ly { animation: none !important; } }
 
@@ -2282,7 +2283,7 @@ body:not(.light) .kr-netp { background: #1c1c1f; }
 .kr-netp.on { transform: translate(-50%, 0); opacity: 1; }
 .kr-netp b { display: block; font: 500 13.5px var(--sans); color: var(--ink); }
 .kr-netp small { display: block; font-size: 12px; color: var(--ink-3); }
-.kr-netp .kr-swap > span { white-space: nowrap; }
+.kr-netp .kr-swp > span { white-space: nowrap; }
 .kr-netp .iso { width: 30px; height: 30px; }
 .kr-netp .iso .ly { transition: transform .7s cubic-bezier(.3, 1.4, .55, 1); }
 .kr-netp .iso polygon { transition: fill .5s; }
@@ -2371,3 +2372,5 @@ body:not(.light) .kr-gwait { background: var(--surface-2); }
 .kr-tr-f .kr-dots i.on { background: var(--c); }
 /* Home's box takes the cursor on arrival, so its ring is quieter than the design's hover-focus. */
 #viewHome .bigbar:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--hair)), 0 0 0 4px color-mix(in srgb, var(--accent) 5%, transparent), 0 24px 50px -30px rgba(30, 40, 90, .32); }
+/* On a narrow window the corner hint would wrap; the tabs are enough. */
+@media (max-width: 600px) { #homeKb { display: none; } }

@@ -95,12 +95,12 @@
     b.innerHTML = `<div class="bk"><span class="bmk">${window.krIso ? window.krIso(84, "stack") : ""}</span>` +
       `<span class="bweb">${window.krIso ? window.krIso(40, "breathe") : ""}<b>Krate</b><small>Studio</small></span>` +
       `<span class="hair"><i></i></span><span class="cbar"><i></i></span>` +
-      `<p class="bt"><span class="kr-swap"><span>${web ? "Loading Studio" : "Opening Studio"}</span></span></p></div>`;
+      `<p class="bt"><span class="kr-swp"><span>${web ? "Loading Studio" : "Opening Studio"}</span></span></p></div>`;
     document.body.appendChild(b);
     void b.offsetWidth; b.classList.add("run");
     if (window.krStack) window.krStack(b, 120);
     const t0 = performance.now();
-    const why = web ? setTimeout(() => window.krSwap && window.krSwap(q(".bt .kr-swap", b), "Waking up the workshop<small>The first visit takes a few seconds.</small>"), 3000) : 0;
+    const why = web ? setTimeout(() => window.krSwap && window.krSwap(q(".bt .kr-swp", b), "Waking up the workshop<small>The first visit takes a few seconds.</small>"), 3000) : 0;
     const ready = () => ["viewHome", "viewSession", "viewGate", "viewApps", "viewCloud", "viewIde"].some((id) => { const v = $(id); return v && !v.classList.contains("hidden"); });
     const t = setInterval(() => {
       const el = performance.now() - t0;
@@ -237,6 +237,11 @@
     (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(placeInd);
     addEventListener("resize", placeInd);
     setMode("create");
+    // New app means the Create box, whichever door was open last.
+    const newRow = q('#side .side-row[data-side="home"]');
+    // Only a person's own click: the Port and IDE rows press it themselves
+    // on the way to their own door.
+    if (newRow) newRow.addEventListener("click", (e) => { if (e.isTrusted) setTimeout(() => setMode("create"), 0); });
   }
   ["homePortGo", "homePortDrop", "homePortChoose"].forEach((id) => { const el = $(id); if (el) el.addEventListener("click", startPort); });
 
@@ -679,12 +684,18 @@
       const ver = document.createElement("span");
       ver.className = "kr-ver"; ver.hidden = true;
       title.insertAdjacentElement("afterend", ver);
+      // The newest version, or "draft" before anything is built -- also for
+      // a reopened session, whose transcript has no build rows.
       const paint = () => {
         const chips = qa("#thread .vchip b");
         const last = chips[chips.length - 1];
-        ver.hidden = !last;
-        if (last && ver.textContent !== last.textContent) ver.textContent = last.textContent;
+        const st = app(), sess = st && st.session;
+        const word = last ? last.textContent : sess && sess.result ? `v${sess.builds || 1}` : sess ? "draft" : "";
+        ver.hidden = !word;
+        ver.classList.toggle("draft", word === "draft");
+        if (ver.textContent !== word) ver.textContent = word;
       };
+      setInterval(paint, 800);
       watch($("thread"), { childList: true, subtree: true }, paint);
       paint();
     }
@@ -847,7 +858,14 @@
       li.style.animationDelay = (reduce ? 0 : 120 + i * 150) + "ms";
       ul.appendChild(li);
     });
-    const acts = cardButtons(msg, card, (b, a) => settle(a, port ? "Porting this plan" : "Building this plan"));
+    const acts = cardButtons(msg, card, (b, a) => {
+      // Build this means build. In Plan mode the press used to be refused
+      // ("You are in Plan mode, so nothing was built") right under a card
+      // saying "Building this plan"; pressing it is choosing to build, so
+      // the mode follows the press, as the design's plan-then-build does.
+      if (!port && b.classList.contains("btn-primary")) { try { if (composerMode() === "plan" && window.setWebMode) window.setWebMode("build"); } catch (e) {} }
+      settle(a, port ? "Porting this plan" : "Building this plan");
+    });
     if (acts.children.length && !port) {
       // The second way out: change the plan in words. The next message is
       // the final word on it (app.js, runPlan), so the box says so.
@@ -1546,10 +1564,10 @@
       const ring = document.createElement("div"); ring.className = "kr-pubing";
       ring.innerHTML = `<div class="kr-pring"><svg class="rg" viewBox="0 0 210 210"><defs><path id="krPubR" d="M105 105 m-80 0 a80 80 0 1 1 160 0 a80 80 0 1 1 -160 0"/></defs><circle class="trk2" cx="105" cy="105" r="98"/><circle class="prog" cx="105" cy="105" r="98" pathLength="1"/><text class="rtx" font-size="14" font-weight="600"><textPath href="#krPubR" textLength="495" lengthAdjust="spacing">PUBLISHING · TO THE GALLERY · PUBLISHING · TO THE GALLERY ·</textPath></text></svg>${window.krIso ? window.krIso(46, "breathe") : ""}` +
         `<svg class="st" viewBox="0 0 210 210"><defs><path id="krPubS" d="M105 105 m-78 0 a78 78 0 1 1 156 0 a78 78 0 1 1 -156 0"/></defs><g fill="none" stroke="currentColor" stroke-width="5"><circle cx="105" cy="105" r="98"/><circle cx="105" cy="105" r="62"/></g><text font-size="15" font-weight="700" fill="currentColor"><textPath href="#krPubS" textLength="482" lengthAdjust="spacing">${listed ? "IN THE GALLERY · ANYONE CAN OPEN IT · " : "PUBLISHED · ONLY WITH THE LINK · "}</textPath></text><text x="105" y="119" text-anchor="middle" font-size="40" font-weight="700" fill="currentColor">LIVE</text></svg></div>` +
-        `<p class="pc"><span class="kr-swap"><span>Getting it ready</span></span></p>`;
+        `<p class="pc"><span class="kr-swp"><span>Getting it ready</span></span></p>`;
       frm.after(ring);
       const pr = q(".prog", ring), t0 = performance.now();
-      let upT = setTimeout(() => window.krSwap(q(".kr-swap", ring), `Uploading ${esc((shareApp && shareApp.size) || "it")}`), 900);
+      let upT = setTimeout(() => window.krSwap(q(".kr-swp", ring), `Uploading ${esc((shareApp && shareApp.size) || "it")}`), 900);
       let raf = 0; const fill = (now) => { const p = Math.min(.86, (now - t0) / 3200), e = 1 - Math.pow(1 - p, 2.2); pr.style.strokeDashoffset = 1 - e; raf = requestAnimationFrame(fill); }; raf = requestAnimationFrame(fill);
       linking = true;
       try { await publishFromSheet(); } catch (e) {}
@@ -1558,7 +1576,7 @@
       if (linkOf() && !($("pubSignin") && !$("pubSignin").classList.contains("hidden"))) {
         pr.style.transition = "stroke-dashoffset .4s var(--ease)"; pr.style.strokeDashoffset = 0;
         await new Promise((r) => setTimeout(r, 380));
-        q(".kr-pring", ring).classList.add("done"); window.krSwap(q(".kr-swap", ring), listed ? "In the gallery" : "Published");
+        q(".kr-pring", ring).classList.add("done"); window.krSwap(q(".kr-swp", ring), listed ? "In the gallery" : "Published");
         await new Promise((r) => setTimeout(r, reduce ? 0 : 1100));
       }
       ring.remove(); frm.hidden = false;
@@ -1861,9 +1879,16 @@
   (function titleMenu() {
     const t = $("sessTitleBtn");
     if (!t) return;
+    // Renaming happens inside this button, and the Enter that ends it also
+    // reached the button as a click, opening the menu again. A click while
+    // the name is being edited, or just after, is not a request for the menu.
+    let editEnd = 0;
+    const nameEl = $("railTitle");
+    if (nameEl) nameEl.addEventListener("focusout", () => { editEnd = Date.now(); });
     t.addEventListener("click", (e) => {
       if (bypass) return;
       e.stopImmediatePropagation(); e.preventDefault();
+      if ((nameEl && nameEl.isContentEditable) || Date.now() - editEnd < 500) return;
       let a = null; try { a = currentApp(); } catch (err) {}
       const st = app();
       const items = [{ icon: "pencil", label: "Rename", run: () => { try { renameSessionTitle(); } catch (err) {} } }];
@@ -2232,15 +2257,15 @@
   // A pill at the foot of the window: offline and back, an app opening.
   function pill(id) {
     let n = $(id);
-    if (!n) { n = document.createElement("div"); n.id = id; n.className = "kr-netp"; n.setAttribute("role", "status"); n.innerHTML = `${window.krIso ? window.krIso(30) : ""}<span class="kr-swap"><span></span></span>`; document.body.appendChild(n); }
+    if (!n) { n = document.createElement("div"); n.id = id; n.className = "kr-netp"; n.setAttribute("role", "status"); n.innerHTML = `${window.krIso ? window.krIso(30) : ""}<span class="kr-swp"><span></span></span>`; document.body.appendChild(n); }
     return n;
   }
   // Offline: the layers slip out of line and wobble; back online they click
   // into place and turn blue again.
   (function net() {
     let hideT = 0;
-    const off = () => { const n = pill("krNet"); clearTimeout(hideT); n.classList.add("off", "on"); q(".kr-swap", n).innerHTML = "<span><b>You're offline</b><small>Your apps still open. Trying again…</small></span>"; };
-    const back = () => { const n = $("krNet"); if (!n || !n.classList.contains("on")) return; n.classList.remove("off"); window.krSwap(q(".kr-swap", n), "<b>Back online</b><small>Everything is in sync.</small>"); hideT = setTimeout(() => n.classList.remove("on"), 2400); };
+    const off = () => { const n = pill("krNet"); clearTimeout(hideT); n.classList.add("off", "on"); q(".kr-swp", n).innerHTML = "<span><b>You're offline</b><small>Your apps still open. Trying again…</small></span>"; };
+    const back = () => { const n = $("krNet"); if (!n || !n.classList.contains("on")) return; n.classList.remove("off"); window.krSwap(q(".kr-swp", n), "<b>Back online</b><small>Everything is in sync.</small>"); hideT = setTimeout(() => n.classList.remove("on"), 2400); };
     addEventListener("offline", off); addEventListener("online", back);
     if (navigator.onLine === false) off();
   })();
@@ -2253,14 +2278,14 @@
         let a = null; try { a = (which && which.path) ? which : currentApp(); } catch (e) {}
         const name = a ? (a.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "your app";
         const n = pill("krOpen"); n.classList.remove("off", "lift"); n.classList.add("on", "opening");
-        q(".kr-swap", n).innerHTML = `<span><b>Opening ${esc(name)}</b></span>`;
+        q(".kr-swp", n).innerHTML = `<span><b>Opening ${esc(name)}</b></span>`;
         setTimeout(() => n.classList.add("lift"), 380);
         const t0 = performance.now();
         const before = (($("composerHint") || {}).textContent || "");
         try { await oa(which, version); } finally {
           const secs = ((performance.now() - t0) / 1000).toFixed(1);
           const failed = (($("composerHint") || {}).textContent || "") !== before;
-          window.krSwap(q(".kr-swap", n), failed ? `<b>${esc(name)} did not open</b><small>The reason is under the box.</small>` : `<b>${esc(name)}</b><small>${+secs >= 0.1 ? `opened in ${secs} s` : "opened"}</small>`);
+          window.krSwap(q(".kr-swp", n), failed ? `<b>${esc(name)} did not open</b><small>The reason is under the box.</small>` : `<b>${esc(name)}</b><small>${+secs >= 0.1 ? `opened in ${secs} s` : "opened"}</small>`);
           setTimeout(() => n.classList.remove("on", "opening", "lift"), 2600);
         }
       };
@@ -2286,13 +2311,13 @@
   (function saving() {
     const nick = $("profNick"); if (!nick) return;
     const sv = document.createElement("span"); sv.className = "kr-svs";
-    sv.innerHTML = '<span class="sdot"><i></i><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="7"/><path pathLength="1" d="M4 7.3l2 2 4-4.3"/></svg></span><span class="kr-swap"><span></span></span>';
+    sv.innerHTML = '<span class="sdot"><i></i><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="7"/><path pathLength="1" d="M4 7.3l2 2 4-4.3"/></svg></span><span class="kr-swp"><span></span></span>';
     nick.after(sv);
     let t1 = 0, t2 = 0;
     nick.addEventListener("input", () => {
-      sv.classList.remove("saved"); sv.classList.add("saving"); window.krSwap(q(".kr-swap", sv), "Saving");
+      sv.classList.remove("saved"); sv.classList.add("saving"); window.krSwap(q(".kr-swp", sv), "Saving");
       clearTimeout(t1); clearTimeout(t2);
-      t1 = setTimeout(() => { sv.classList.remove("saving"); sv.classList.add("saved"); window.krSwap(q(".kr-swap", sv), "Saved"); t2 = setTimeout(() => { sv.classList.remove("saved"); window.krSwap(q(".kr-swap", sv), ""); }, 1800); }, 500);
+      t1 = setTimeout(() => { sv.classList.remove("saving"); sv.classList.add("saved"); window.krSwap(q(".kr-swp", sv), "Saved"); t2 = setTimeout(() => { sv.classList.remove("saved"); window.krSwap(q(".kr-swp", sv), ""); }, 1800); }, 500);
     });
   })();
 

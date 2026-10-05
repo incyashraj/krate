@@ -7953,6 +7953,10 @@ async function signOutToGate() {
   // left floating over the gate.
   document.querySelectorAll(".sheet-wrap").forEach((w) => w.classList.add("hidden"));
   try { closeSettings(); } catch (e) {}
+  // Signed out from the drawer on a narrow window: close it, or its dimming
+  // layer stays over the sign-in page and nothing on it can be pressed.
+  const scrim = $("sideScrim");
+  if (scrim && !scrim.hidden) scrim.click();
   $("gateStart").classList.remove("hidden");
   $("gateCode").classList.add("hidden");
   renderAccount();
