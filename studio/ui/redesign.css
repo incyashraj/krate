@@ -2071,6 +2071,12 @@ body:not(.light) .kr-kdots { background: var(--surface-2); }
 /* sending: the arrow gives way to a tiny breathing mark until the message is in */
 .kr-sd { position: absolute; left: 50%; top: 50%; margin: -8px 0 0 -8px; opacity: 0; transform: scale(.5); transition: opacity .2s, transform .35s var(--ease); color: var(--btn-ink); --gap: var(--btn); pointer-events: none; }
 .kr-sending .kr-sd { opacity: 1; transform: none; }
+/* The button centres its own icons with absolute + translate; the mark is
+   inside a box of its own, so it must not be centred a second time (it sat
+   8px up and left, half off the button). */
+#send .kr-sd, #homeSend .kr-sd { width: 16px; height: 16px; display: block; line-height: 0; }
+#send .kr-sd svg, #homeSend .kr-sd svg { position: static; translate: none; display: block; }
+#send .kr-sd .iso.mono .tp, #homeSend .kr-sd .iso.mono .tp { fill-opacity: .62; } #send .kr-sd .iso.mono .rt, #homeSend .kr-sd .iso.mono .rt { fill-opacity: .82; }
 .kr-sending > svg:not(.iso), .kr-sending > .kr-ico { opacity: 0 !important; transform: scale(.4) !important; transition: opacity .2s, transform .3s var(--ease); }
 /* a page loading from the network: a thin bar in the home page's colours */
 .kr-tbar { position: fixed; left: 0; top: 0; z-index: 460; height: 2.5px; width: 0; border-radius: 0 3px 3px 0; pointer-events: none;
