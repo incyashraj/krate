@@ -129,6 +129,104 @@
       provide: (f) => CM.EditorView.decorations.from(f),
     });
   }
+  /* ---- Krate knowledge: the engine's own description of the API ---------- */
+  // `krate sdk-reference` (via ide_sdk): every guest function, the
+  // capability names, the std that is refused. Read once per Studio.
+  let SDK = null;
+  async function loadSdk() {
+    if (SDK) return SDK;
+    try { SDK = await call("ide_sdk"); } catch (e) { SDK = null; return { functions: [], capabilities: [], granted: [], leaks: [] }; }
+    return SDK;
+  }
+  const sdk = () => SDK || { functions: [], capabilities: [], granted: [], leaks: [] };
+  const fnsFree = () => sdk().functions.filter((f) => !f.method);
+  // Completion: `stdio::` lists what is in it; a word lists the modules and
+  // calls it could start; inside a manifest's quotes, the capability names.
+  function krateComplete(ctx) {
+    const rel = ide && ide.cur || "";
+    if (/manifest\.toml$/.test(rel)) {
+      const m = ctx.matchBefore(/"[a-z._:<>\-*\/]*/); if (!m) return null;
+      const opts = [...sdk().capabilities, ...sdk().granted].map((c) => ({ label: c, type: "constant", detail: sdk().granted.includes(c) ? "every app has it" : "asks the person" }));
+      return { from: m.from + 1, options: opts, validFor: /^[a-z._:<>\-*\/]*$/ };
+    }
+    if (!/\.rs$/.test(rel)) return null;
+    const m = ctx.matchBefore(/[A-Za-z_][\w]*(::[A-Za-z_]*)*:?:?/);
+    if (!m || (m.from === m.to && !ctx.explicit)) return null;
+    const text = m.text.replace(/^krate::/, "");
+    const at = text.lastIndexOf("::");
+    if (at >= 0) {
+      const prefix = text.slice(0, at), from = m.from + (m.text.length - text.length) + at + 2;
+      const mods = new Set(), opts = [];
+      for (const f of fnsFree()) {
+        if (f.module === prefix || f.module.endsWith("::" + prefix)) opts.push({ label: f.name, type: "function", detail: `(${f.params}) -> ${f.returns}`, apply: f.name + "(" });
+        const deeper = f.module.startsWith(prefix + "::") ? f.module.slice(prefix.length + 2).split("::")[0] : f.module.includes("::" + prefix + "::") ? f.module.split("::" + prefix + "::")[1].split("::")[0] : "";
+        if (deeper) mods.add(deeper);
+      }
+      for (const d of mods) opts.push({ label: d, type: "namespace", apply: d + "::" });
+      return opts.length ? { from, options: opts, validFor: /^\w*$/ } : null;
+    }
+    if (text.length < 2 && !ctx.explicit) return null;
+    const roots = new Set(fnsFree().map((f) => f.module.split("::")[0]));
+    const opts = [...roots].map((r) => ({ label: r, type: "namespace", detail: "Krate", apply: r + "::" }))
+      .concat(fnsFree().map((f) => ({ label: `${f.module}::${f.name}`, type: "function", detail: `(${f.params}) -> ${f.returns}`, apply: `${f.module}::${f.name}(` })));
+    return { from: m.from, options: opts, validFor: /^[\w:]*$/ };
+  }
+  // Hover: the signature of a Krate call under the pointer.
+  function krateHover(view, pos) {
+    if (!/\.rs$/.test(ide && ide.cur || "")) return null;
+    const line = view.state.doc.lineAt(pos), off = pos - line.from, t = line.text;
+    let a = off, z = off;
+    while (a > 0 && /[\w:]/.test(t[a - 1])) a--;
+    while (z < t.length && /\w/.test(t[z])) z++;
+    const word = t.slice(a, z).replace(/^krate::/, ""); if (!word) return null;
+    const parts = word.split("::"), name = parts.pop(), mod = parts.join("::");
+    const hits = sdk().functions.filter((f) => f.name === name && (!mod || f.module === mod || f.module.endsWith("::" + mod) || f.receiver === mod)).slice(0, 3);
+    if (!hits.length) return null;
+    return { pos: line.from + a, end: line.from + z, above: true, create() {
+      const dom = document.createElement("div"); dom.className = "kr-hov";
+      dom.innerHTML = hits.map((f) => `<code>${esc(f.signature)}</code>`).join("") + '<small>Krate API</small>';
+      return { dom };
+    } };
+  }
+  // As you type: std that reaches the operating system (the app would be
+  // refused at the import check), manifest capability names Krate does not
+  // know, and what the last build said about this file.
+  function krateLint(view) {
+    const rel = ide && ide.cur || ""; const out = [];
+    const doc = view.state.doc;
+    if (/\.rs$/.test(rel)) {
+      const leaks = sdk().leaks || [];
+      for (let n = 1; n <= doc.lines; n++) {
+        const line = doc.line(n), code = line.text.replace(/\/\/.*$/, "").replace(/"(?:[^"\\]|\\.)*"/g, (m) => " ".repeat(m.length));
+        for (const l of leaks) {
+          const rx = new RegExp((l.pattern.endsWith("!") ? "(?<![\\w:])" : "\\b") + l.pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/!$/, "!"), "g");
+          let m;
+          while ((m = rx.exec(code))) out.push({ from: line.from + m.index, to: line.from + m.index + m[0].length, severity: "error", message: `${l.pattern} reaches ${l.reaches} through the operating system, so the app would be refused at the import check. Use Krate's own API instead (the Krate API tab lists it).` });
+        }
+      }
+    } else if (/manifest\.toml$/.test(rel)) {
+      const known = new Set([...sdk().capabilities, ...sdk().granted].map((c) => c.split(":")[0]));
+      let inCaps = false;
+      for (let n = 1; n <= doc.lines && known.size; n++) {
+        const line = doc.line(n), t = line.text.replace(/#.*$/, "");
+        const h = t.match(/^\s*\[([^\]]+)\]/); if (h) { inCaps = /capabilit/i.test(h[1]); continue; }
+        if (!inCaps) continue;
+        const rx = /"([^"]*)"/g; let m;
+        while ((m = rx.exec(t))) {
+          const base = m[1].split(":")[0];
+          if (base && !known.has(base)) out.push({ from: line.from + m.index, to: line.from + m.index + m[0].length, severity: "error", message: `${base} is not a capability Krate knows, so the app would be refused when it is packed.` });
+        }
+      }
+    }
+    for (const d of (ide && ide.diags || []).filter((x) => x.file === rel)) {
+      const ln = doc.line(Math.max(1, Math.min(d.line, doc.lines)));
+      const from = Math.min(ln.from + Math.max(0, d.col - 1), ln.to);
+      const word = doc.sliceString(from, ln.to).match(/^[\w:.]+/);
+      out.push({ from, to: Math.min(ln.to, from + Math.max(1, word ? word[0].length : 1)), severity: d.sev === "warning" ? "warning" : "error", message: d.msg + (d.code ? ` (${d.code})` : "") });
+    }
+    return out;
+  }
+
   function extensionsFor(rel) {
     const K = CM; cmParts();
     const lang = /\.rs$/.test(rel) ? K.rust() : /\.toml$/.test(rel) ? K.toml : [];
@@ -136,7 +234,7 @@
       K.lintGutter(), K.lineNumbers(), K.highlightActiveLineGutter(), K.highlightSpecialChars(), K.history(),
       K.foldGutter({ openText: "▾", closedText: "▸" }), K.drawSelection(), K.dropCursor(),
       K.EditorState.allowMultipleSelections.of(true), K.indentOnInput(), K.syntaxHighlighting(hlStyle),
-      K.bracketMatching(), K.closeBrackets(), K.autocompletion(), K.rectangularSelection(), K.crosshairCursor(),
+      K.bracketMatching(), K.closeBrackets(), K.autocompletion({ override: [krateComplete], icons: false }), K.hoverTooltip(krateHover), K.linter(krateLint, { delay: 400 }), K.rectangularSelection(), K.crosshairCursor(),
       K.highlightActiveLine(), K.highlightSelectionMatches(), K.indentUnit.of("    "), K.EditorState.tabSize.of(4),
       K.search({ top: true }),
       K.keymap.of([
@@ -220,33 +318,44 @@
     edView.dispatch({ selection: { anchor: at }, scrollIntoView: true });
     edView.focus();
   }
-  // The errors drawn in the editor too: a mark in the gutter and a line
-  // under the code, for every open file the compiler named.
-  function markDiags() {
-    if (!CM || !ide) return;
-    for (const [rel, doc] of ide.docs) {
-      if (!doc.state) continue;
-      const mine = (ide.diags || []).filter((d) => d.file === rel);
-      const list = mine.map((d) => {
-        const n = doc.state.doc;
-        const ln = n.line(Math.max(1, Math.min(d.line, n.lines)));
-        const from = Math.min(ln.from + Math.max(0, d.col - 1), ln.to);
-        const word = n.sliceString(from, ln.to).match(/^[\w:.]+/);
-        return { from, to: Math.min(ln.to, from + Math.max(1, word ? word[0].length : 1)), severity: d.sev === "warning" ? "warning" : "error", message: d.msg + (d.code ? ` (${d.code})` : "") };
-      });
-      const spec = CM.setDiagnostics(doc.state, list);
-      if (edView && ide.cur === rel) edView.dispatch(spec);
-      else doc.state = doc.state.update(spec).state;
-    }
-  }
+  // The errors drawn in the editor too (a mark in the gutter, a line under
+  // the code): the linter reads ide.diags, so it only needs to run again.
+  function markDiags() { if (CM && edView) { try { CM.forceLinting(edView); } catch (e) {} } }
   function panelTab(which) {
     view.querySelectorAll(".ip-tabs button[data-ip]").forEach((b) => b.classList.toggle("on", b.dataset.ip === which));
     $("ideTerm").classList.toggle("hidden", which !== "term");
     $("ideProbs").classList.toggle("hidden", which !== "prob");
     $("ideFind").classList.toggle("hidden", which !== "find");
+    $("ideApi").classList.toggle("hidden", which !== "api");
+    if (which === "api") { paintApi(); setTimeout(() => $("ideApiIn").focus(), 30); }
     $("ideMain").classList.remove("pmin");
     if (which === "find") setTimeout(() => $("ideFindIn").focus(), 30);
   }
+
+  /* The Krate API, every call a guest can make, grouped by module; a click
+   * puts the call at the cursor. The same list the AI is handed. */
+  function paintApi() {
+    const out = $("ideApiOut"); if (!out) return;
+    const q = ($("ideApiIn").value || "").trim().toLowerCase();
+    const fns = sdk().functions.filter((f) => !q || f.signature.toLowerCase().includes(q));
+    if (!sdk().functions.length) { out.innerHTML = '<p class="ip-ok">This engine does not describe its API yet.</p>'; return; }
+    let mod = "", html = "";
+    fns.slice(0, 400).forEach((f) => {
+      const group = f.method ? `Methods on ${f.receiver}` : f.module;
+      if (group !== mod) { mod = group; html += `<div class="api-mod">${esc(group)}</div>`; }
+      html += `<button type="button" class="ip-hit api-fn" data-i="${sdk().functions.indexOf(f)}" title="Put it at the cursor"><span>${esc(f.signature)}</span></button>`;
+    });
+    out.innerHTML = html || '<p class="ip-ok">No call matches.</p>';
+  }
+  $("ideApiIn").addEventListener("input", paintApi);
+  $("ideApiOut").addEventListener("click", (e) => {
+    const b = e.target.closest(".api-fn"); if (!b || !edView) return;
+    const f = sdk().functions[+b.dataset.i]; if (!f) return;
+    const text = f.method ? `.${f.name}(` : `${f.module}::${f.name}(`;
+    const sel = edView.state.selection.main;
+    edView.dispatch({ changes: { from: sel.from, to: sel.to, insert: text }, selection: { anchor: sel.from + text.length } });
+    edView.focus();
+  });
 
   /* Search every file in the project (Cmd-Shift-F). Text files are read
    * once and kept; an open file is searched as it is now, unsaved edits
@@ -333,13 +442,18 @@
     keepDraft(rel, doc);
     if (was !== doc.dirty) { paintTabs(); paintTree(); }
   }
+  // A change to a file: through its view when it has one (the view's
+  // listener keeps doc.state), to its state when it has not been shown.
+  function applyTo(doc, spec) {
+    if (doc.view) doc.view.dispatch(spec);
+    else doc.state = doc.state.update(spec).state;
+  }
   function newState(rel, text) { return CM.EditorState.create({ doc: text, extensions: extensionsFor(rel) }); }
   // Replace a file's text without losing its undo history.
   function replaceText(rel, doc, text) {
     const len = doc.state.doc.length;
     const tr = { changes: { from: 0, to: len, insert: text } };
-    if (edView && ide.cur === rel) edView.dispatch(tr);
-    else doc.state = doc.state.update(tr).state;
+    applyTo(doc, tr);
   }
 
   /* Unsaved work is kept as a draft as you type, so closing the window, a
@@ -415,8 +529,19 @@
     msg.classList.toggle("hidden", !doc || !doc.error);
     if (!doc) return;
     if (doc.error) { msg.textContent = `${ide.cur}: ${doc.error}`; return; }
-    if (!edView) edView = new CM.EditorView({ state: doc.state, parent: code });
-    else edView.setState(doc.state);
+    // One view per open file, shown and hidden: each keeps its own scroll,
+    // and nothing from one file (a hover card, a completion) is ever laid
+    // out against another's text.
+    // Each in a box of its own: CodeMirror rewrites its editor's classes on
+    // every update and forces it to display:flex, so the box is what hides.
+    for (const d of ide.docs.values()) if (d.host && d !== doc) d.host.hidden = true;
+    if (!doc.view) {
+      doc.host = document.createElement("div"); doc.host.className = "kr-edhost";
+      code.appendChild(doc.host);
+      doc.view = new CM.EditorView({ state: doc.state, parent: doc.host });
+    }
+    doc.host.hidden = false;
+    edView = doc.view;
     requestAnimationFrame(() => { try { edView.focus(); } catch (e) {} });
   }
   function paintTabs() {
@@ -436,7 +561,7 @@
         const k = await ask(`Save your changes to ${rel.split("/").pop()} before closing it?`, [["save", "Save", true], ["drop", "Don't save"], ["cancel", "Cancel"]]);
         if (k === "cancel") return;
         if (k === "save" && !(await saveOne(rel))) return;
-        if (k === "drop") { dropDraft(rel); ide.docs.delete(rel); }
+        if (k === "drop") { dropDraft(rel); if (doc.view) { doc.view.destroy(); doc.host.remove(); } ide.docs.delete(rel); }
       }
       ide.open = ide.open.filter((r) => r !== rel);
       if (ide.cur === rel) ide.cur = ide.open[ide.open.length - 1] || null;
@@ -658,7 +783,7 @@
         if (old != null) {
           const had = new Set(old.split("\n").map((l) => l.trim()));
           const adds = text.split("\n").map((l, i) => (l.trim() && !had.has(l.trim()) ? i : -1)).filter((i) => i >= 0);
-          doc.state = doc.state.update({ effects: setAdds.of(adds) }).state;
+          applyTo(doc, { effects: setAdds.of(adds) });
         }
         if (!ide.open.includes(rel)) ide.open.push(rel);
       }
@@ -705,8 +830,9 @@
   async function openProject(p) {
     if (!p || !p.path) return;
     if (ide && ide.path !== p.path) await saveAll(false);
+    if (ide) for (const d of ide.docs.values()) if (d.view) { d.view.destroy(); d.host.remove(); }
+    edView = null;
     ide = { path: p.path, name: p.name || p.path.split(/[\\/]/).pop(), tree: [], docs: new Map(), open: [], cur: null, busy: false, built: null, collapsed: new Set(), queued: null };
-    if (edView) { edView.destroy(); edView = null; }
     $("ideName").textContent = ide.name;
     $("idePath").textContent = short(ide.path);
     $("ideFrameName").textContent = ide.name.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -719,6 +845,7 @@
     setStatus("idle", "Not built yet");
     paintAgent();
     try { showView("ide"); } catch (e) { /* app.js not loaded */ }
+    loadSdk().then(paintApi);
     term(`~ ${short(ide.path)}`, "m");
     await loadTree();
     const first = ["src/lib.rs", "src/main.rs"].find((r) => ide.tree.some((e) => e.rel === r)) || (ide.tree.find((e) => !e.dir && /\.rs$/.test(e.rel)) || {}).rel;

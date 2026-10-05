@@ -5462,6 +5462,7 @@ fn main() {
             ide::ide_run,
             ide::ide_ask,
             ide::ide_apply,
+            ide::ide_sdk,
             ide::ide_stop
         ])
         .build(tauri::generate_context!())

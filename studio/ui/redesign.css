@@ -2808,3 +2808,14 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .ip-fix { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; margin-right: 10px; padding: 0 11px; border: 0; border-radius: 99px; background: color-mix(in srgb, var(--violet) 12%, transparent); color: color-mix(in srgb, var(--violet) 80%, var(--ink)); font: 500 12px var(--sans); cursor: pointer; }
 .ip-fix:hover { background: color-mix(in srgb, var(--violet) 20%, transparent); }
 .ip-prob .ip-fix { float: right; margin: -4px 0 0; }
+/* Krate knowledge in the editor: hover, completion, the API tab */
+.kr-hov { padding: 8px 10px; max-width: 520px; display: grid; gap: 4px; }
+.kr-hov code { font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--ink); white-space: pre-wrap; }
+.kr-hov small { font: 11px var(--sans); color: var(--ink-4); }
+#ideCode .cm-tooltip-autocomplete ul li { font: 12.5px ui-monospace, Menlo, monospace; padding: 3px 10px; }
+#ideCode .cm-completionDetail { color: var(--ink-4); font-style: normal; margin-left: 10px; }
+.api-mod { padding: 10px 14px 4px; font: 500 11.5px var(--sans); letter-spacing: .03em; text-transform: uppercase; color: var(--ink-3); }
+.api-fn span { color: var(--ink-2); }
+/* one box per open file's editor; only the current one shows */
+#ideCode .kr-edhost { flex: 1; min-width: 0; height: 100%; display: flex; }
+#ideCode .kr-edhost[hidden] { display: none; }

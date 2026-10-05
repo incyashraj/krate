@@ -1351,6 +1351,26 @@ pub(crate) async fn ide_ask(
     .await
 }
 
+/// Krate's guest API for the editor (`krate sdk-reference`): every
+/// function, the capability names, the std that leaks. Read from the engine
+/// so the editor says exactly what the AI is taught.
+#[tauri::command]
+pub(crate) async fn ide_sdk() -> Result<serde_json::Value, String> {
+    blocking(move || {
+        let engine = engine()?;
+        let out = engine_cmd(&engine, false)
+            .arg("sdk-reference")
+            .output()
+            .map_err(|e| format!("could not run the Krate engine: {e}"))?;
+        if !out.status.success() {
+            return Err("this Krate engine is too old to describe its API".to_string());
+        }
+        serde_json::from_slice(&out.stdout)
+            .map_err(|e| format!("the API description did not parse: {e}"))
+    })
+    .await
+}
+
 /// Write the parts of the AI's change the person accepted.
 #[tauri::command]
 pub(crate) async fn ide_apply(path: String, files: Vec<Accepted>) -> Result<Vec<String>, String> {

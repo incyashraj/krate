@@ -512,6 +512,15 @@ enum Command {
         output: Option<PathBuf>,
     },
 
+    /// Internal: Krate's guest API as JSON, for an editor. Every function a
+    /// guest can call (from the SDK source this binary ships), the
+    /// capability names a manifest may request, and the std modules that
+    /// reach the operating system and are refused. Studio's IDE builds its
+    /// completion, hover and as-you-type checks from this, so they say what
+    /// the AI is taught.
+    #[command(hide = true)]
+    SdkReference,
+
     /// Print Krate Mode: the paste-in prompt that teaches any chat model to
     /// write correct Krate apps.
     ///
@@ -2167,6 +2176,10 @@ fn run() -> Result<u8> {
             }
             Ok(0)
         }
+        Command::SdkReference => {
+            println!("{}", sdk_reference_json());
+            Ok(0)
+        }
         Command::KrateMode { output } => {
             let prompt = krate_mode::generate();
             match output {
@@ -3455,6 +3468,60 @@ fn run_report_command(report: &Path, show_only: bool) -> Result<u8> {
 /// capability added without being listed here cannot happen. Default-granted
 /// ones are left out on purpose: declaring `io.stdout` is noise, and an app
 /// that lists it is telling a person something that is true of every app.
+/// The std modules (and printing macros) that reach the operating system
+/// from a guest and pull `wasi:*` imports, so the app is refused at the
+/// import check. The same list section 3 of the authoring pack teaches.
+const STD_THAT_LEAKS: &[(&str, &str)] = &[
+    ("std::fs", "files"),
+    ("std::io", "input and output"),
+    ("std::time", "the clock"),
+    ("std::env", "the environment"),
+    ("std::process", "processes"),
+    ("std::net", "the network"),
+    ("std::thread", "threads"),
+    ("println!", "printing"),
+    ("eprintln!", "printing"),
+    ("print!", "printing"),
+    ("eprint!", "printing"),
+    ("dbg!", "printing"),
+];
+
+fn sdk_reference_json() -> String {
+    let functions: Vec<serde_json::Value> =
+        sdk_reference::parse_sdk(sdk_reference::GUEST_SDK_SOURCE)
+            .iter()
+            .map(|f| {
+                serde_json::json!({
+                    "module": f.module,
+                    "name": f.name,
+                    "params": f.params,
+                    "returns": f.returns,
+                    "method": f.is_method,
+                    "receiver": f.receiver,
+                    "signature": f.signature(),
+                })
+            })
+            .collect();
+    let capabilities: Vec<String> = krate_manifest::supported_capability_specs()
+        .iter()
+        .filter(|spec| !spec.default_granted())
+        .map(|spec| spec.display_pattern())
+        .collect();
+    // Granted to every app without asking (a window, its own memory): a
+    // manifest may still name them, so an editor must not call them wrong.
+    let granted: Vec<String> = krate_manifest::supported_capability_specs()
+        .iter()
+        .filter(|spec| spec.default_granted())
+        .map(|spec| spec.display_pattern())
+        .collect();
+    let leaks: Vec<serde_json::Value> = STD_THAT_LEAKS
+        .iter()
+        .map(|(what, reaches)| serde_json::json!({ "pattern": what, "reaches": reaches }))
+        .collect();
+    serde_json::json!({ "functions": functions, "capabilities": capabilities, "granted": granted, "leaks": leaks })
+        .to_string()
+}
+
 fn requestable_capability_list() -> String {
     let mut out = String::from("These are the capability names a manifest may use:\n\n");
     for spec in krate_manifest::supported_capability_specs() {

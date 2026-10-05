@@ -10215,3 +10215,25 @@ fn revise_takes_a_project_folder_and_needs_an_output() {
         "says what is missing: {said}"
     );
 }
+
+/// IC-905 M4: the editor's knowledge of Krate comes from the engine, so it
+/// says what the AI is taught: real SDK functions, real capability names,
+/// and the std modules that are refused.
+#[test]
+fn sdk_reference_lists_functions_capabilities_and_leaks() {
+    let out = krate()
+        .arg("sdk-reference")
+        .output()
+        .expect("run sdk-reference");
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    let funcs = v["functions"].as_array().unwrap();
+    assert!(funcs.len() > 20, "the SDK has more than a handful of calls");
+    assert!(funcs
+        .iter()
+        .any(|f| f["signature"].as_str().unwrap_or("").contains("println")));
+    let caps = v["capabilities"].as_array().unwrap();
+    assert!(caps.iter().any(|c| c == "store.kv"), "{caps:?}");
+    let leaks = v["leaks"].as_array().unwrap();
+    assert!(leaks.iter().any(|l| l["pattern"] == "std::fs"));
+}
