@@ -2462,10 +2462,7 @@ const WEB_WORDING = [
  * itself when a build finishes (setRevisePlaceholders). */
 const TOUCH_WORDING = [
   ["↩ to make it · shift-↩ for a new line", "Describe it in a sentence"],
-  [
-    "changes edit the app in place · a few minutes, the AI reads before it edits",
-    "Changes edit the app in place · a few minutes",
-  ],
+  ["Building · the square stops it", "Building · tap ■ to stop"],
 ];
 
 /* The placeholders have the same problem for the same reason. Measured in

@@ -1050,7 +1050,10 @@ body:not(.light) .sess-row.on { background: var(--surface-2); }
 #builtByChip > b, #builtByChip .kr-lg { font-size: 13.5px; }
 #builtByChip > b { font-weight: 400; color: var(--ink-2); }
 #builtByChip > .dot, #builtByChip > .chev, #agentChip2 > .dot, #agentChip2 > .chev, #agentChip > .dot, #agentChip > .chev { display: none; }
-.kr-lg { display: inline-grid; place-items: center; width: 20px; height: 20px; }
+.kr-lg { display: inline-grid; place-items: center; width: 20px; height: 20px; position: relative; }
+.kr-lg > svg:not(.kr-lgo) { width: 15px; height: 15px; }
+/* kr-state: kr-aibad -- added by redesign.js to an AI chip whose AI needs attention */
+.kr-aibad .kr-lg::after { content: ""; position: absolute; right: 0; bottom: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 1.5px var(--surface); }
 .kr-chev { width: 12px; height: 12px; opacity: .55; }
 #viewSession #agentChip2 > span:not(.kr-lg) { display: none; }
 #viewSession #agentChip2 { padding: 0 8px; gap: 4px; }
@@ -1080,6 +1083,21 @@ body:not(.light) .kr-mode.plan .mv { color: #a891ff; }
 #send.kr-voice .send-arrow, #send.kr-listen .send-arrow { opacity: 0; transform: scale(.4) rotate(-90deg); }
 #send.kr-voice { background: var(--btn); color: var(--btn-ink); }
 #send.kr-listen { background: var(--danger); color: #fff; animation: krMic 1.2s ease-in-out infinite; }
+/* Sent: the button dips, the arrow lifts away, a soft ring goes out, the
+   mark breathes while the words land, then the stop square settles in.
+   The stop stays the dark button (style.css's .send.stopping lost to
+   .bigbar-row .send here and painted it pale grey). */
+#send.stopping, #send.stopping.ready { background: var(--btn); color: var(--btn-ink); box-shadow: none; }
+#send.stopping:hover { background: var(--btn-hover); }
+#send .send-square { display: block; width: 18px; height: 18px; opacity: 0; transform: scale(.3); }
+#send.stopping .send-square { opacity: 1; transform: none; }
+#send.stopping .send-arrow { display: block; opacity: 0; transform: scale(.4); }
+#send.kr-sending { animation: krSendDip .32s var(--spring); }
+#send.kr-sending .send-arrow { opacity: 0 !important; transform: translateY(-14px) scale(.7) !important; transition: opacity .22s, transform .3s var(--ease); }
+#send.kr-sending::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; animation: krSendRing .7s var(--ease) both; }
+@keyframes krSendDip { 40% { transform: scale(.88); } }
+@keyframes krSendRing { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); } to { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent); } }
+@media (prefers-reduced-motion: reduce) { #send.kr-sending, #send.kr-sending::before { animation: none; } }
 #homeSend .kr-wave { display: none; }
 
 /* ---- the session's header ------------------------------------------------ */
@@ -2410,3 +2428,12 @@ body:not(.light) .kr-gwait { background: var(--surface-2); }
   -webkit-background-clip: text; background-clip: text; color: transparent; animation: krThinkShim 1.8s linear infinite; }
 #thread .kr-qchip.on { background: var(--accent); color: #fff; box-shadow: none; }
 #thread .msg.kr-dup { display: none; }
+/* The note under the session's box: short, quiet, centred. */
+#viewSession .composer-hint { margin: 7px 8px 0; text-align: center; font-size: 11.5px; color: var(--ink-4); line-height: 1.4; min-height: 16px; }
+#viewSession .composer-hint:empty { visibility: hidden; }
+/* With the sidebar open or a rail, the Mac window buttons sit over the
+   sidebar, so a view's title bar starts at its own left edge, not 84px in. */
+@media (min-width: 861px) {
+  body.macos.kr-rail .view > .titlebar, body.macos.kr-rail #viewSession .rail-head { padding-left: 14px; }
+}
+.kr-pop .kr-pop-head b { font: 500 13px var(--sans); color: var(--ink); letter-spacing: 0; } .kr-pop .kr-pop-head small { margin-top: 1px; }

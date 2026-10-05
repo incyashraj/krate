@@ -2534,7 +2534,7 @@ function wallActions(err) {
 
 function setRevisePlaceholders() {
   $("prompt").placeholder = "Want it different? Say what to change…";
-  $("composerHint").textContent = "changes edit the app in place · a few minutes, the AI reads before it edits";
+  $("composerHint").textContent = "Changes edit this app in place.";
 }
 
 /// The raw engine tail is evidence, not decoration: folded away, and the
@@ -2997,7 +2997,7 @@ async function make(request, opts) {
       const from = String(new Error().stack || "").replace(/\s+/g, " ").slice(0, 400);
       invoke("dbg_log", { line: "make() BAILED: buildingSession set; from " + from }).catch(()=>{});
       const busy = clip(state.buildingSession.title || "your other app", 60);
-      const words = `"${busy}" is still being made, one app at a time. Press Stop on it first, or wait for it to finish.`;
+      const words = `One app at a time: "${busy}" is still being made.`;
       if (state.session && state.session.id !== state.buildingSession.id) say("KRATE", words);
       else if ($("composerHint")) $("composerHint").textContent = words;
       return;
@@ -3235,7 +3235,7 @@ async function runPlan() {
 }
 
 async function runPlanInner() {
-  $("composerHint").textContent = "thinking it through…";
+  $("composerHint").textContent = "";
   $("send").disabled = true;
   await ensureUsableAgent();
   try {
@@ -3291,7 +3291,16 @@ async function runPlanInner() {
         try { box.focus(); } catch (e) {}
       }
     } else if (answer.plan) {
-      state.planning.plan = answer.plan;
+      // Short points read like the design's plan card; the sentence alone was
+      // three long lines of theory. An engine from before points (or an AI
+      // that left them out) still gives a plan: the card splits the sentence.
+      const points = (Array.isArray(answer.points) ? answer.points : [])
+        .map((p) => String(p || "").replace(/\s+/g, " ").replace(/[.]$/, "").trim())
+        .filter(Boolean)
+        .slice(0, 6);
+      const named = String(answer.name || "").replace(/\s+/g, " ").trim().slice(0, 40);
+      if (named) state.planning.name = named;
+      state.planning.plan = points.length ? `${answer.plan} ${points.join(". ")}.` : answer.plan;
       state.planning.planShown = true;
       const needs = (answer.needs || []).filter(Boolean);
       // In words, not capability ids: "From you it needs: store.kv" was
@@ -3314,7 +3323,7 @@ async function runPlanInner() {
       // choosing between two live Build it buttons describing two
       // different apps.
       clearAnsweredActions();
-      say("KRATE", `Here's what I'll build: ${answer.plan}${needsLine}`, null, {
+      say("KRATE", `Here's what I'll build: ${answer.plan}${points.map((p) => `\n• ${p}`).join("")}${needsLine}`, null, {
         variant: "plan",
         actions: [
           { label: "Build it", primary: true, run: finishPlanningAndBuild },
@@ -3324,7 +3333,7 @@ async function runPlanInner() {
         const rec = state.session.messages[state.session.messages.length - 1];
         if (rec) rec.kind = "ask";
       }
-      $("prompt").placeholder = "Anything to change? Your next message starts the build";
+      $("prompt").placeholder = "Anything to change?";
       showPlanning(
         "The plan is ready",
         "read it in the conversation, or start the work from here",
@@ -3509,6 +3518,8 @@ function finishPlanningAndBuild() {
   }
   if (p.plan) {
     enriched += `\n\n(The agreed plan: ${p.plan})`;
+    // The plan card showed this name; the app it builds should carry it.
+    if (p.name) enriched += `\n\n(The app is called "${p.name}".)`;
   }
   return buildNow(enriched, p.files, false, p.agentSession || "", p.shape || "");
 }
@@ -6569,53 +6580,40 @@ async function startFromHomeInner() {
     }
     return;
   }
-  // Ask about the AI BEFORE leaving the home screen.
+  // Into the session at once; the AI check is the first step of Krate's
+  // thinking there.
   //
-  // This opened the session view and then called make(), whose first act
-  // is to re-probe the tools -- seventeen seconds cold on a machine where
-  // codex times out. So pressing Make with nothing signed in gave a blank
-  // silent session screen for those seventeen seconds, with no spinner and
-  // no session file, and only then the connect sheet. The guard was right
-  // and the person still saw a product that had hung (K-803).
-  //
-  // Staying on home while we ask means the typed words are still in the
-  // box, the screen still makes sense, and the sheet arrives over
-  // something rather than over nothing.
-  if (tauri) {
-    // The button keeps its ARROW.
-    //
-    // This set textContent on it, which deleted the two SVGs inside and
-    // left a bare blue circle with "Checking your AI..." spilling out of
-    // it and across the hint below -- a send button that stopped looking
-    // like one the moment it was pressed (K-826). The waiting state is a
-    // class, the way every other busy control here does it, so the icon
-    // survives and the word goes where words go.
-    const send = $("homeSend");
-    if (send) { send.disabled = true; send.classList.add("checking"); }
-    const hint = $("homeHint");
-    const hintWas = hint ? hint.textContent : "";
-    if (hint) hint.textContent = "checking your AI\u2026";
-    try { await refreshAgents(); } catch (e) { /* use the list we have */ }
-    if (send) { send.disabled = false; send.classList.remove("checking"); }
-    if (hint) hint.textContent = hintWas;
-    if (!(state.agents || []).some((a) => a.state === "working")) {
-      openAiSheet();
-      say(
-        "KRATE",
-        "Connect an AI first. None of the coding tools on this Mac are ready, "
-          + "and one of them is what writes the app."
-      );
-      return;
-    }
-  }
+  // It used to run on Home first (K-803): seventeen seconds cold on a
+  // machine where codex times out, with "checking your AI..." under the box
+  // and nothing else moving. Before that it ran on a blank session screen.
+  // Now the person's words are already in the conversation, and Krate is
+  // visibly thinking ("Checking your AI" is a step of that thought) while
+  // the probe runs; with no AI ready, the sheet opens over the session and
+  // their words go back into the box.
   newSession(text);
   $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
   show("idle");
   showView("session");
   $("homePrompt").value = "";
-  // The probe just ran, so make() must not repeat it.
-  make(text, { pastAgentCheck: true });
+  say("YOU", text);
+  if (tauri) {
+    say("KRATE", "Checking your AI\u2026", null, { variant: "note" });
+    try { await refreshAgents(); } catch (e) { /* use the list we have */ }
+    if (!(state.agents || []).some((a) => a.state === "working")) {
+      openAiSheet();
+      say(
+        "KRATE",
+        "Connect an AI first. None of the coding tools on this computer are ready, "
+          + "and one of them is what writes the app. Your words are back in the box.",
+      );
+      const box = $("prompt");
+      if (box) { box.value = text; box.dispatchEvent(new Event("input")); }
+      return;
+    }
+  }
+  // Said already, and the probe just ran: make() repeats neither.
+  make(text, { pastAgentCheck: true, silent: true });
 }
 
 /* ---- porting an app the person already has ----------------------------
@@ -6735,7 +6733,7 @@ function queueMidBuild(text) {
   syncSendReady();
   say("YOU", text);
   say("KRATE", "Noted. I'll do that as soon as this one is finished.", null, { variant: "note" });
-  $("composerHint").textContent = "queued · runs when this build finishes";
+  $("composerHint").textContent = "Queued for after this build";
 }
 
 /* Stop what is running and start again from the new words. The old build's
@@ -7082,15 +7080,15 @@ function syncSendMode() {
   const hint = $("composerHint");
   if (!hint || stopMode === was) return;
   if (stopMode) {
-    hint.textContent = "that button stops this build · type to send instead";
+    hint.textContent = "Building · the square stops it";
   } else if (busyHere()) {
-    hint.textContent = "↩ to send · it is still building, so you will be asked what to do";
+    hint.textContent = "Still building";
   } else {
     // The build ended. Leave a live note (queued, thinking) alone and only
     // clear the two lines this function wrote, or a stop would erase the
     // "queued - runs when this build finishes" note that is still true.
-    if (/stops this build|still building, so you will be asked/.test(hint.textContent)) {
-      hint.textContent = "↩ to make it · shift-↩ for a new line";
+    if (/the square stops it|^Still building$/.test(hint.textContent)) {
+      hint.textContent = "";
     }
   }
 }

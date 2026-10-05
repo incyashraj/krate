@@ -61,7 +61,7 @@
     document.body.appendChild(p);
     popEl = p;
     const r = anchor.getBoundingClientRect(), w = p.offsetWidth, h = p.offsetHeight;
-    let x = Math.min(Math.max(8, r.left), innerWidth - w - 8);
+    let x = Math.min(Math.max(8, opts.right ? r.right - w : r.left), innerWidth - w - 8);
     let y = r.bottom + 6;
     const above = opts.above || y + h > innerHeight - 8;
     if (above) y = r.top - h - 6;
@@ -290,7 +290,25 @@
     if (!lg) { lg = document.createElement("span"); lg.className = "kr-lg"; chip.insertBefore(lg, chip.firstChild); }
     let chev = q(".kr-chev", chip);
     if (!chev) { chip.insertAdjacentHTML("beforeend", ico("chev", "kr-ico kr-chev")); }
-    const paint = () => { const k = nameEl.textContent; if (lg.dataset.k !== k) { lg.dataset.k = k; lg.innerHTML = agentMark(k); } };
+    // The mark follows the AI that is chosen (state.agent), not the words on
+    // the chip: "engine trouble" or "no AI found" once painted a bare green
+    // dot where the session bar, which hides the words, showed nothing else.
+    // A trouble label keeps the logo and adds an amber corner; "…" (still
+    // looking) breathes the Krate mark.
+    const paint = () => {
+      const k = nameEl.textContent.trim();
+      const st = app(); const id = (st && st.agent) || "";
+      const looking = !k.replace(/[.…\s]/g, "");
+      const key = looking ? "…" : id + "|" + k;
+      if (lg.dataset.k === key) return;
+      lg.dataset.k = key;
+      const known = /claude|anthropic|codex|openai|gpt|gemini|google|krate/i.test(k);
+      lg.innerHTML = looking ? (window.krIso ? window.krIso(15, "breathe", true) : "")
+        : known ? agentMark(k)
+        : id ? (/claude|anthropic|codex|openai|gpt|gemini|google|krate/.test(id) ? agentMark(id) : (() => { try { return aiLogo(id); } catch (e) { return agentMark(id); } })())
+        : agentMark(k);
+      chip.classList.toggle("kr-aibad", !looking && /trouble|no AI|not installed|needs a fix|sign in|usage limit|paused/i.test(k));
+    };
     paint();
     watch(nameEl, { childList: true, characterData: true, subtree: true }, paint);
   }
@@ -418,10 +436,16 @@
     if (window.krIso) {
       const sd = document.createElement("span"); sd.className = "kr-sd"; sd.innerHTML = window.krIso(16, "breathe", true);
       send.appendChild(sd);
-      send.addEventListener("click", () => {
+      const kick = () => {
         if (!field.value.trim() || send.classList.contains("kr-voice") || send.classList.contains("stopping")) return;
+        send.classList.remove("kr-sending"); void send.offsetWidth;
         send.classList.add("kr-sending");
-        clearTimeout(send._sdT); send._sdT = setTimeout(() => send.classList.remove("kr-sending"), 900);
+        clearTimeout(send._sdT); send._sdT = setTimeout(() => send.classList.remove("kr-sending"), 800);
+      };
+      send.addEventListener("click", kick, true);
+      // Enter sends too; app.js clears the box in its own handler, so read it first.
+      window.addEventListener("keydown", (e) => {
+        if (e.target === field && e.key === "Enter" && !e.shiftKey && !e.isComposing) kick();
       }, true);
     }
     if (opts.voice) send.addEventListener("click", (e) => {
@@ -814,6 +838,8 @@
     const w = p.split(/\s+(?:with|that|for|which|to|where|using|so|in|on|and)\s+/i)[0].split(/\s+/).slice(0, 4).join(" ").replace(/[.,;:!?]+$/, "");
     return w ? w.replace(/\b\w/g, (c) => c.toUpperCase()) : "Your app";
   }
+  // The name the plan gave the app ("Tip Split"), while that plan is live.
+  function planName() { const st = app(); return (st && st.planning && st.planning.name) || ""; }
   function sentences(s) {
     return s.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/).map((x) => x.replace(/[.]$/, "").trim()).filter(Boolean);
   }
@@ -852,11 +878,16 @@
       if (!items.length && /Nothing in it needs changing/.test(text)) items = ["Nothing in it needs changing: it ports as it is"];
       items.push("Your original is not touched");
     } else {
-      items = sentences(text);
+      // The engine's short points come as "• " lines under one sentence;
+      // the bullets alone are the card, as the design has it. An older engine
+      // sends sentences only.
+      const pts = (text.match(/^•\s*(.+)$/gm) || []).map((l) => l.replace(/^•\s*/, "").trim());
+      if (pts.length) items = pts;
+      else items = sentences(text);
     }
     const card = document.createElement("div");
     card.className = "kr-plan";
-    card.innerHTML = `<span class="kr-ptag">${ico("spark", "kr-ico")}${port ? "Port plan" : "Plan"}</span><h4>${esc(appName())}</h4>` +
+    card.innerHTML = `<span class="kr-ptag">${ico("spark", "kr-ico")}${port ? "Port plan" : "Plan"}</span><h4>${esc(planName() || appName())}</h4>` +
       (lead ? `<p class="kr-plead">${esc(lead)}</p>` : "") + "<ul></ul>" +
       (needs.length ? `<div class="kr-pneeds"><span>It will ask first to</span>${needs.map((n) => `<em>${esc(n)}</em>`).join("")}</div>` : "");
     const ul = q("ul", card);
@@ -2484,6 +2515,27 @@
       if (!on) wait.hidden = true;
     };
     watch(g, { attributes: true, attributeFilter: ["class"] }, sync); sync();
+  })();
+
+  /* ---- typed during a build: a small menu at the send button -------------- */
+  // app.js asks with a sheet (stop and use this, or wait and do it after);
+  // the design asks where the person just pressed, like the AI picker. The
+  // rows press the sheet's own buttons, so what happens is app.js's.
+  (function midMenu() {
+    const sheet = $("midSheet"), send = $("send");
+    if (!sheet || !send) return;
+    watch(sheet, { attributes: true, attributeFilter: ["class"] }, () => {
+      if (sheet.classList.contains("hidden") || sheet.dataset.krMenu) return;
+      sheet.classList.add("hidden");
+      const words = (($("midSub") || {}).textContent || "").trim();
+      openPop(send, [
+        { head: `<span><b>Still building</b><small>${esc(words)}</small></span>` },
+        { icon: "stop", label: "Stop it and use this instead", sub: "Starts again with your new words", run: () => press($("midStopBtn")) },
+        { icon: "right", label: "Wait, then do this", sub: "Runs right after, as a change", run: () => press($("midWaitBtn")) },
+        "sep",
+        { icon: "x", label: "Never mind", sub: "Your words stay in the box", run: () => { const box = $("prompt"); if (box) box.focus(); } },
+      ], { big: true, above: true, right: true });
+    });
   })();
 
   /* ---- the sidebar's Port an app ---------------------------------------- */

@@ -8003,9 +8003,12 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          history, tax rules, layouts. The person refines by asking for changes after v1; \
          a preference quiz before the first build reads as not listening.\n\n\
          Otherwise reply:\n\
-         {{\"plan\": \"AT MOST three sentences, plain words: what will be built, what \
-         it shows, and what data it works on. Never restate their answers back at \
-         them.\", \"needs\": [\"things the person must \
+         {{\"name\": \"what the app is called, one to three words, like a real \
+         app's name (Tip Split, Chess, Habit Streaks) -- never their sentence \
+         title-cased\", \"plan\": \"ONE short sentence, plain words: what will be \
+         built\", \"points\": [\"three to five short points, each a fragment of \
+         at most eight words: what it shows, what you can do, what data it keeps. \
+         No full sentences, no rules lists, never their answers read back to them\"], \"needs\": [\"things the person must \
          supply or approve: a file to attach, a choice to make, a permission the app will \
          request\"]}} -- needs may be empty.\n\n\
          Never ask about colors, fonts, or anything with a sensible default. A Krate app \
