@@ -1050,8 +1050,13 @@
     .step::after { content: ""; }
     .decision-arrow { display: none; }
     .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
-    .controls { align-items: stretch; flex-direction: column; }
-    .scene-list { justify-content: flex-start; }
+    /* A phone: the controls are one compact row with room left for the
+       cards above them, not a tall column floating over the text (IC-907). */
+    .controls { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 8px; width: calc(100vw - 24px); bottom: 10px; padding: 8px; border-radius: 22px; }
+    .controls button { padding: 9px 13px; }
+    .scene-list { display: none; }
+    .stage { padding-bottom: 96px; overflow-x: hidden; }
+    .scene, .visual, .narration, .stage > * { min-width: 0; }
   }
 </style>
 </head>

@@ -48,7 +48,7 @@
 .cmd .cp { position: absolute; top: 9px; right: 9px; height: 28px; padding: 0 11px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #d4d4dc; background: rgba(255,255,255,.09); transition: background .2s; }
 .cmd .cp:hover { background: rgba(255,255,255,.16); }
 /* numbered steps */
-.prose ol.steps { list-style: none; padding: 0; counter-reset: st; display: grid; gap: 12px; margin-top: 22px; }
+.prose ol.steps { list-style: none; padding: 0; counter-reset: st; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 22px; }
 .prose ol.steps > li { counter-increment: st; position: relative; margin: 0; padding: 22px 24px 22px 68px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); }
 .prose ol.steps > li::before { content: counter(st); position: absolute; left: 24px; top: 22px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); }
 .prose ol.steps h3 { margin-top: 2px; font-size: 17px; }
