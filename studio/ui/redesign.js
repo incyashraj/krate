@@ -1814,19 +1814,23 @@
   const obWrap = document.createElement("div");
   obWrap.className = "kr-ob"; obWrap.id = "krOb";
   obWrap.setAttribute("role", "dialog"); obWrap.setAttribute("aria-modal", "true"); obWrap.setAttribute("aria-labelledby", "krObT");
-  // The welcome: the mark stacks in, the headline's word turns through a
-  // few apps in the home page's colours, and one small line shows the
-  // sentence for each becoming its file. Nothing else moves.
-  const OB_APPS = [["habit tracker", "a habit tracker with streaks", "var(--accent)"], ["bill splitter", "split a dinner bill, tip included", "var(--green)"], ["focus timer", "a pomodoro focus timer", "var(--orange)"], ["colour palette", "pick colours from a photo", "var(--violet)"]];
-  const fileName = (w) => w.replace(/[^a-z0-9]+/gi, "-").toLowerCase() + ".krate";
-  obWrap.innerHTML = `<div class="kr-ob-card kr-ob3" tabindex="-1">
+  // The welcome, as the first design had it: the mark, one line, one
+  // sentence, and a small Studio playing the whole thing once round --
+  // a request typed, the crate made, the real app it became.
+  obWrap.innerHTML = `<div class="kr-ob-card" tabindex="-1">
     <button type="button" class="kr-x kr-ob-x" aria-label="Close">${ico("x")}</button>
-    <span class="kr-obmk">${window.krIso ? window.krIso(38, "stack") : ""}</span>
-    <h2 id="krObT">Say what you want.<br>Get a <span class="kr-obw">${OB_APPS.map((x, i) => `<span class="w${i ? "" : " on"}" style="--c:${x[2]}">${x[0]}</span>`).join("")}</span></h2>
-    <p class="kr-ob-s">Krate Studio turns one sentence into a small app that opens on every desktop.</p>
-    <div class="kr-oblive" aria-hidden="true"><div class="kr-obcmp"><span class="tx"></span><span class="car"></span></div>
-      <div class="kr-obfile"><img src="krate-doc.png" alt=""><b></b><small>opens on every desktop</small></div></div>
-    <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots">${OB_APPS.map((x, i) => `<i${i ? "" : ' class="on"'}></i>`).join("")}</span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
+    <img class="kr-ob-mk" src="krate-logo.png" alt="">
+    <h2 id="krObT">Say what you want.<br>Get an app.</h2>
+    <p class="kr-ob-s">Take a quick tour to see how Krate Studio works, or close this and start making.</p>
+    <div class="kr-pv" data-ph="a" aria-hidden="true"><div class="kr-pv-win">
+      <div class="kr-pv-side"><b></b><i class="on"></i><i></i><i></i><i></i><span></span><span></span><span></span></div>
+      <div class="kr-pv-main">
+        <div class="kr-pv-a"><p class="kr-pv-q">What are we <em>building</em>?</p><div class="kr-pv-cmp"><span class="kr-pv-tx"></span><span class="kr-pv-car"></span><span class="kr-pv-go">${ico("up")}</span></div></div>
+        <div class="kr-pv-b"><div class="kr-pv-card"><div class="kr-pv-th"><svg viewBox="14 30 132 126">${[1, 2, 3].map((n) => { const y = [0, 104, 84, 64][n]; return `<g class="kr-sl kr-s${n}"><path class="l" d="M28 ${y} L80 ${y + 26} L80 ${y + 41} L28 ${y + 15}Z"/><path class="r" d="M80 ${y + 26} L132 ${y} L132 ${y + 15} L80 ${y + 41}Z"/><path class="t" d="M28 ${y} L80 ${y - 26} L132 ${y} L80 ${y + 26}Z"/></g>`; }).join("")}</svg></div>
+          <div class="kr-pv-nm"><b>Weather</b><small>Writing the app</small></div></div></div>
+        <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens on every desktop</small></div></div>
+      </div></div></div>
+    <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots"><i class="on"></i><i></i><i></i><i></i></span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
   </div>`;
   document.body.appendChild(obWrap);
   const tourEl = document.createElement("div");
@@ -1840,25 +1844,14 @@
   let pvT = 0, pvRun = 0;
   const sleep = (ms) => new Promise((r) => { pvT = setTimeout(r, ms); });
   async function pvPlay() {
-    const my = ++pvRun, card = q(".kr-ob3", obWrap), live = q(".kr-oblive", obWrap), tx = q(".kr-obcmp .tx", obWrap), ww = q(".kr-obw", obWrap), dots = qa(".kr-dots i", obWrap);
-    const on = () => my === pvRun && obWrap.classList.contains("on");
-    qa(".kr-obmk .ly", obWrap).forEach((l) => l.classList.remove("on")); if (window.krStack) window.krStack(obWrap, 250);
-    const word = (i) => {
-      const ws = qa(".w", ww), prev = ws.findIndex((w) => w.classList.contains("on"));
-      ws.forEach((w, k) => { w.classList.toggle("on", k === i); w.classList.toggle("out", k === prev && k !== i); });
-      ww.style.width = ws[i].offsetWidth + "px";
-    };
-    for (let i = 0; on(); i = (i + 1) % OB_APPS.length) {
-      const [w, prompt, col] = OB_APPS[i];
-      live.style.setProperty("--c", col); card.style.setProperty("--c", col); word(i);
-      dots.forEach((d, k) => d.classList.toggle("on", k === i));
-      live.classList.remove("made"); tx.textContent = "";
-      if (reduce) { tx.textContent = prompt; q(".kr-obfile b", obWrap).textContent = fileName(w); live.classList.add("made"); return; }
-      await sleep(450);
-      for (let k = 1; k <= prompt.length; k++) { if (!on()) return; tx.textContent = prompt.slice(0, k); await sleep(1400 / prompt.length); }
-      await sleep(350); if (!on()) return;
-      q(".kr-obfile b", obWrap).textContent = fileName(w); live.classList.add("made");
-      await sleep(2600);
+    const my = ++pvRun, pv = q(".kr-pv", obWrap), tx = q(".kr-pv-tx", obWrap), s = "a weather app for my cities";
+    if (reduce) { pv.dataset.ph = "c"; return; }
+    while (my === pvRun && obWrap.classList.contains("on")) {
+      pv.dataset.ph = "a"; tx.textContent = "";
+      for (let i = 1; i <= s.length; i++) { tx.textContent = s.slice(0, i); await sleep(42); if (my !== pvRun) return; }
+      await sleep(500); if (my !== pvRun) return;
+      pv.dataset.ph = "b"; await sleep(2600); if (my !== pvRun) return;
+      pv.dataset.ph = "c"; await sleep(3000);
     }
   }
   // On the web a note about what is free also opens on a first visit.

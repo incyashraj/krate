@@ -2371,24 +2371,6 @@ body:not(.light) .kr-gwait { background: var(--surface-2); }
 .kr-gwait small { display: block; font-size: 12px; color: var(--ink-3); }
 #viewGate.kr-gate #gateStart { margin-top: 24px; }
 
-/* ---- welcome: joyful, and quiet about it -------------------------------- */
-.kr-ob-card.kr-ob3 { width: min(500px, 100%); padding: 34px 32px 20px; }
-.kr-obmk { display: inline-block; } .kr-obmk .iso { width: 38px; height: 38px; }
-.kr-ob3 h2 { margin-top: 14px; font: 600 clamp(28px, 3.2vw, 36px)/1.12 var(--sans); letter-spacing: -.045em; }
-.kr-obw { position: relative; display: inline-block; height: 1.15em; vertical-align: bottom; text-align: left; white-space: nowrap; transition: width .6s var(--ease); }
-.kr-obw .w { position: absolute; left: 0; top: 0; color: var(--c); opacity: 0; transform: translateY(.45em); filter: blur(4px); transition: opacity .35s var(--ease), transform .6s var(--ease), filter .4s var(--ease); }
-.kr-obw .w.on { opacity: 1; transform: none; filter: none; transition-delay: .12s; }
-.kr-obw .w.out { opacity: 0; transform: translateY(-.45em); filter: blur(4px); transition-delay: 0s; }
-.kr-ob3 .kr-ob-s { max-width: 340px; }
-.kr-oblive { --c: var(--accent); position: relative; margin: 24px auto 0; padding: 22px 0 18px; border-radius: 20px; background: color-mix(in srgb, var(--c) 7%, var(--surface-2)); transition: background .8s var(--ease); display: grid; justify-items: center; gap: 12px; }
-.kr-obcmp { width: min(320px, 86%); height: 42px; display: flex; align-items: center; padding: 0 14px; border-radius: 14px; background: var(--surface); box-shadow: var(--sh-1); font-size: 13.5px; text-align: left; color: var(--ink); }
-.kr-obcmp .tx { white-space: nowrap; overflow: hidden; }
-.kr-obcmp .car { width: 1.5px; height: 16px; margin-left: 1px; flex: none; background: var(--c); animation: krBlink 1s steps(1) infinite; }
-.kr-obfile { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 13px 0 10px; border-radius: 12px; background: var(--surface); box-shadow: var(--sh-1); font-size: 12.5px; color: var(--ink); opacity: 0; transform: translateY(-10px) scale(.94); transition: opacity .3s, transform .3s; }
-.kr-obfile img { height: 19px; } .kr-obfile b { font-weight: 500; } .kr-obfile small { color: var(--ink-3); }
-.kr-oblive.made .kr-obfile { opacity: 1; transform: none; transition: opacity .35s var(--ease), transform .6s var(--spring); }
-.kr-ob3 .kr-ob-f { margin-top: 20px; }
-.kr-ob3 .kr-dots i.on { background: var(--c, var(--ink)); }
 /* the tour: one colour per step */
 .kr-tr-card { --c: var(--accent); }
 .kr-tr-n { color: var(--c); }
