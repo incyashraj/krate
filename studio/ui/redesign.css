@@ -1992,3 +1992,6 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 .kr-portdrop .kr-ta2 { display: block; flex: 1; min-width: 0; }
 .kr-portdrop b { display: block; font: 400 15px var(--sans); color: var(--ink-3); }
 .kr-portdrop small { display: block; margin-top: 3px; font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
+/* Chrome text is not a document: a double-click on your name no longer selects it. */
+.side, .side * { -webkit-user-select: none; user-select: none; }
+.side input, .side textarea { -webkit-user-select: text; user-select: text; }
