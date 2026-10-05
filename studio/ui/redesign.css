@@ -2490,6 +2490,15 @@ body:not(.light) .kr-fcard { box-shadow: 0 0 0 1px var(--hair), 0 30px 70px -34p
 @keyframes krGlLayer { 0% { stroke-dashoffset: 1; opacity: 0; } 6% { opacity: 1; } 38%, 72% { stroke-dashoffset: 0; opacity: 1; } 96%, 100% { stroke-dashoffset: 0; opacity: 0; } }
 /* not building: the asterisk rests, faint and still; nothing on a failure */
 .kr-forge:not([data-st="building"]) .kr-gl[data-g="think"] { opacity: .15; transform: none; filter: none; }
+/* Reading the request, checking the AI: the asterisk forms and turns, the
+   line under it shimmers and the small mark turns, as while it builds. */
+#stage .kr-forge.kr-busy .kr-gl[data-g="think"] { opacity: .85; }
+#stage .kr-forge.kr-busy .kr-gl[data-g="think"] .rot { animation: krGlSpin 14s linear infinite; }
+#stage .kr-forge.kr-busy .kr-gl[data-g="think"] .sp { animation: krGlSpoke 3.4s var(--io) infinite both; animation-delay: calc(var(--i) * .07s); }
+#stage .kr-forge.kr-busy .kr-fmk { display: grid; }
+#stage .kr-forge.kr-busy .kr-fmk .kr-ast g { animation: krGlSpin 6s linear infinite; }
+#stage .kr-forge.kr-busy .kr-fst > span { background: linear-gradient(90deg, var(--ink-3) 0%, var(--ink-3) 35%, var(--ink) 50%, var(--ink-3) 65%, var(--ink-3) 100%); background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: krStin .5s var(--ease) both, krThinkShim 1.8s linear infinite; }
 .kr-forge:not([data-st="building"]) .kr-gl:not([data-g="think"]) { opacity: 0; }
 .kr-forge:is([data-st="failed"], [data-st="stopped"]) .kr-gl { opacity: 0 !important; }
 .kr-forge:is([data-st="arrive"], [data-st="done"]) .kr-fgl { opacity: 0; transform: scale(.92); }
@@ -2560,10 +2569,19 @@ body:not(.light) .kr-fstill { background: #2a2016; color: #d6c3b0; }
 #stage .kr-forge .kr-plain { height: 30px; box-shadow: none; padding: 0 11px; border: 0; border-radius: 99px; background: transparent; color: var(--ink-3); font-size: 12.5px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; transition: background .2s, color .2s; }
 #stage .kr-forge .kr-plain:hover { background: var(--surface-2); color: var(--ink); }
 #stage .kr-forge .kr-plain .kr-ico { width: 13px; height: 13px; }
-.kr-flog { width: 100%; display: none; }
-.kr-forge.kr-logon .kr-flog { display: block; }
+/* the log: a small dark panel that opens under the card, as the design's */
+.kr-flog { width: 100%; display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s var(--ease); }
+.kr-flog > .build-term { min-height: 0; overflow: hidden; }
+.kr-forge.kr-logon .kr-flog { grid-template-rows: 1fr; }
 .kr-forge:is([data-st="done"], [data-st="arrive"], [data-st="idle"], [data-st="planning"]) .kr-flog { display: none; }
-.kr-flog .build-term { position: relative; inset: auto; height: 220px; border-radius: 14px; }
+#stage .kr-flog .build-term, #stage .kr-flog .build-term.hidden { position: relative; inset: auto; z-index: auto; display: block !important; background: none; }
+#stage .kr-flog .term-bar { position: absolute; top: 18px; right: 8px; z-index: 1; padding: 0; border: 0; background: none; }
+#stage .kr-flog .term-what, #stage .kr-flog .term-stage { display: none; }
+#stage .kr-flog .term-copy { font: 500 11px var(--sans); color: #8b8b95; padding: 3px 8px; border-radius: 6px; background: rgba(255, 255, 255, .06); }
+#stage .kr-flog .term-copy:hover { color: #e4e4ea; background: rgba(255, 255, 255, .12); }
+#stage .kr-flog .term-log { display: block; margin-top: 10px; height: 150px; padding: 12px 64px 12px 14px; border-radius: 12px; background: #0d0d10; color: #c9c9d1;
+  font: 11.5px/1.65 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; overflow-y: auto; box-shadow: 0 0 0 1px rgba(255, 255, 255, .04); }
+body:not(.light) #stage .kr-flog .term-log { box-shadow: 0 0 0 1px var(--hair); }
 /* a failure: what happened, and what to do */
 .kr-ffail { display: none; width: 100%; text-align: left; padding: 6px 6px 0; }
 .kr-forge:is([data-st="failed"], [data-st="stopped"]) .kr-ffail { display: block; animation: krStin .5s var(--ease) both; }

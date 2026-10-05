@@ -3299,7 +3299,12 @@ async function runPlanInner() {
         .filter(Boolean)
         .slice(0, 6);
       const named = String(answer.name || "").replace(/\s+/g, " ").trim().slice(0, 40);
-      if (named) state.planning.name = named;
+      if (named) {
+        state.planning.name = named;
+        // Kept with the session, so the card and the right side can call the
+        // app by its name after the plan is gone.
+        if (state.session) state.session.planName = named;
+      }
       state.planning.plan = points.length ? `${answer.plan} ${points.join(". ")}.` : answer.plan;
       state.planning.planShown = true;
       const needs = (answer.needs || []).filter(Boolean);
@@ -6597,10 +6602,21 @@ async function startFromHomeInner() {
   showView("session");
   $("homePrompt").value = "";
   say("YOU", text);
-  if (tauri) {
+  // The probe already ran at launch and on every focus. When it found an AI
+  // that works, the request goes straight on and the list is refreshed
+  // behind it; waiting on a fresh probe here was the pause that read as
+  // nothing happening (a cold codex probe alone can take many seconds).
+  // Only with no working AI on record does the session wait for one, and
+  // then the right side says so and moves while it does.
+  const ready = () => (state.agents || []).some((a) => a.state === "working");
+  if (tauri && ready()) {
+    refreshAgents().catch(() => {});
+  } else if (tauri) {
     say("KRATE", "Checking your AI\u2026", null, { variant: "note" });
+    showPlanning("Checking your AI", "a moment\u2026", "listening\u2026");
     try { await refreshAgents(); } catch (e) { /* use the list we have */ }
-    if (!(state.agents || []).some((a) => a.state === "working")) {
+    if (!ready()) {
+      show("idle");
       openAiSheet();
       say(
         "KRATE",

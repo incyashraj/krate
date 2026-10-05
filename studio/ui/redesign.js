@@ -830,16 +830,28 @@
     // is. Otherwise the request is the title, and a request reads as a
     // sentence, so the card names the thing: "a tip splitter for dinners"
     // is a Tip Splitter.
+    // The built app's own name first, then the name its plan gave it.
+    const st = app(), sess = st && st.session;
+    const built = sess && sess.result && sess.result.name ? String(sess.result.name).replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "";
+    if (built) return built;
+    const planned = planName();
+    if (planned) return planned;
     const t = (($("railTitle") || {}).textContent || "").trim();
     const first = q(".msg.you .body", thread);
     const asked = first ? first.textContent.trim() : "";
     if (t && t !== "New app" && t !== asked) return t;
-    const p = asked.replace(/^(please\s+)?(make|build|create|write)\s+(me\s+)?/i, "").replace(/^(a|an|the|my)\s+/i, "");
-    const w = p.split(/\s+(?:with|that|for|which|to|where|using|so|in|on|and)\s+/i)[0].split(/\s+/).slice(0, 4).join(" ").replace(/[.,;:!?]+$/, "");
-    return w ? w.replace(/\b\w/g, (c) => c.toUpperCase()) : "Your app";
+    // A request reads as a sentence, often after a greeting: "hi, lets make
+    // a chess game". The name is the thing after the verb; where there is
+    // no clear thing, it is just "Your app", never the greeting.
+    let p = asked.replace(/^(?:(?:hi|hey|hello|yo|ok|okay|so|please|pls)\b[\s,!.]*)+/i, "");
+    p = p.replace(/^(?:(?:can|could|would|will) you\s+|i\s+(?:want|need|would like)(?: you)?(?: to)?\s+|let'?s\s+|lets\s+)/i, "");
+    p = p.replace(/^(?:please\s+)?(?:make|build|create|write|do|code|give)\s+(?:me\s+|us\s+)?/i, "").replace(/^(?:something\s+like\s+)?(?:a|an|the|my|some)\s+/i, "");
+    const w = p.split(/\s+(?:with|that|for|which|to|where|using|so|in|on|and)\s+/i)[0].split(/\s+/).slice(0, 3).join(" ").replace(/[.,;:!?]+$/, "");
+    if (!w || /^(?:a|an|the|app|something|thing|it)$/i.test(w) || w.length > 28) return "Your app";
+    return w.replace(/\b\w/g, (c) => c.toUpperCase());
   }
   // The name the plan gave the app ("Tip Split"), while that plan is live.
-  function planName() { const st = app(); return (st && st.planning && st.planning.name) || ""; }
+  function planName() { const st = app(); return (st && st.planning && st.planning.name) || (st && st.session && st.session.planName) || ""; }
   function sentences(s) {
     return s.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/).map((x) => x.replace(/[.]$/, "").trim()).filter(Boolean);
   }
@@ -2277,7 +2289,8 @@
     }
     // The sentence is written once; after that only its word turns over.
     function sentence(ph) {
-      const name = (appName() || "app").toLowerCase();
+      const nm = appName();
+      const name = !nm || nm === "Your app" ? "app" : nm.toLowerCase();
       if (fst.dataset.k === ph + "|" + name) return;
       fst.dataset.k = ph + "|" + name;
       const w = WORD[ph] || WORD.write;
@@ -2392,6 +2405,7 @@
       else if (s !== "done") wasBuilding = false;
       if (s === "building" && mode !== "building" && mode !== "arrive") builtSecs = null;
       if (s === "failed" && failBlock()) next = "stopped";
+      if (s !== "planning") f.classList.remove("kr-busy");
       if (mode !== next) {
         mode = next; f.dataset.st = next;
         if (next !== "building") f.classList.remove("kr-long");
@@ -2415,8 +2429,15 @@
       if (s === "done") { doneRow(); fel.textContent = ""; return; }
       if (s === "failed") { plain(next === "stopped" ? "Stopped" : /open|run|start/i.test(q(".kr-ffail h5 span", f).textContent) ? "Did not open" : "Did not finish", next === "stopped" ? "" : "kr-fbad"); fel.textContent = builtSecs == null && lastSecs ? clock(lastSecs) : ""; return; }
       fel.textContent = "";
-      if (s === "planning") plain(shown("planAsk") ? "Waiting for your answer" : shown("planActions") ? "Waiting for your go" : "Reading what you asked for");
-      else plain((($("idleNote") || {}).textContent || "Your app will appear here.").trim().replace(/\.$/, ""));
+      if (s === "planning") {
+        const waiting = shown("planAsk") ? "Waiting for your answer" : shown("planActions") ? "Waiting for your go" : "";
+        const title = (($("planTitle") || {}).textContent || "").trim();
+        f.classList.toggle("kr-busy", !waiting);
+        plain(waiting || (/checking your ai/i.test(title) ? "Checking your AI" : "Reading what you asked for"));
+        return;
+      }
+      f.classList.remove("kr-busy");
+      plain((($("idleNote") || {}).textContent || "Your app will appear here.").trim().replace(/\.$/, ""));
     }
     setInterval(tick, 250);
     ["statePlanning", "stateBuilding", "stateDone", "stateFailed", "stateIdle"].forEach((id) => watch($(id), { attributes: true, attributeFilter: ["class"] }, tick));
