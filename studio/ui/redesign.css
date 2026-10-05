@@ -2374,3 +2374,39 @@ body:not(.light) .kr-gwait { background: var(--surface-2); }
 #viewHome .bigbar:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--hair)), 0 0 0 4px color-mix(in srgb, var(--accent) 5%, transparent), 0 24px 50px -30px rgba(30, 40, 90, .32); }
 /* On a narrow window the corner hint would wrap; the tabs are enough. */
 @media (max-width: 600px) { #homeKb { display: none; } }
+
+/* ================================================================ the chat, round five
+ * A question answered in its own card. */
+.kr-qrow { margin-top: 10px; animation: krItIn .5s var(--ease) both; }
+.kr-qrow .kr-qq { margin-top: 0; animation: none; }
+.kr-qchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0 26px; }
+.kr-q1 .kr-qchips, .kr-q1 .kr-qin, .kr-q1 .kr-qa { margin-left: 0 !important; width: 100%; }
+.kr-qchip { height: 30px; padding: 0 12px; border: 0; border-radius: 99px; background: none; font: 400 13px var(--sans); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: pointer; transition: background .2s, box-shadow .2s, color .2s; }
+.kr-qchip:hover { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.kr-qchip.on { background: var(--accent); color: #fff; box-shadow: none; }
+.kr-qin { display: block; width: calc(100% - 26px); margin: 8px 0 0 26px; height: 36px; padding: 0 12px; border: 0; border-radius: 10px; outline: 0; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); font: 400 13.5px var(--sans); color: var(--ink); transition: box-shadow .2s, background .2s; }
+.kr-qin:focus { background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, var(--line-strong)), 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.kr-qin.kr-need { animation: krNudge .35s var(--ease); }
+@keyframes krNudge { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.kr-qa { margin: 4px 0 0 26px; font-size: 13.5px; color: var(--ink-2); }
+.kr-qa::before { content: "→ "; color: var(--ink-3); }
+.kr-qskip { height: 32px; padding: 0 8px; border: 0; background: none; font: 400 12.5px var(--sans); color: var(--ink-3); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.kr-qskip:hover { color: var(--ink-2); }
+.kr-qc .kr-acts { align-items: center; }
+/* the stage's copy of the question has no buttons: one place to answer */
+#planAsk .plan-ask-actions, #planAsk .plan-ask-cost { display: none; }
+/* the steps, as the design draws them: the file as code, a count on the right */
+.kr-tr code { font: 12px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-3); }
+.kr-tr em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.kr-tools { margin-right: 4px; }
+.kr-add { color: var(--green-ink); } .kr-del { color: var(--danger); }
+.kr-diff { font: 500 12px var(--sans); font-variant-numeric: tabular-nums; }
+#thread .msg.kr-close { margin-top: 2px; }
+/* the AI's raw tool lines ("ran sed -n") are the log's, not the conversation's */
+#thread .vlive .vwork, #thread .msg .vwork { display: none; }
+/* the live thinking line says Thinking; what it is doing is inside the fold */
+#thread .thought.live .t-now { font-size: 0 !important; background: none !important; -webkit-background-clip: border-box; animation: none !important; }
+#thread .thought.live .t-now::before { content: "Thinking"; font-size: 13px; background: linear-gradient(90deg, var(--ink-3) 0%, var(--ink-3) 35%, var(--ink) 50%, var(--ink-3) 65%, var(--ink-3) 100%); background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: krThinkShim 1.8s linear infinite; }
+#thread .kr-qchip.on { background: var(--accent); color: #fff; box-shadow: none; }
+#thread .msg.kr-dup { display: none; }

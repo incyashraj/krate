@@ -777,6 +777,13 @@
         last = av;
       }
     }
+    // Krate explains the test windows once; said again on every change it
+    // is noise between the steps.
+    let seen = false;
+    qa(".msg.krate > .body", thread).forEach((b) => {
+      if (!/^While I work, I'll open your app/.test(b.textContent)) return;
+      b.parentElement.classList.toggle("kr-dup", seen); seen = true;
+    });
     const on = working();
     qa(".kr-tav.kwork", thread).forEach((a) => { if (a !== last || !on) a.classList.remove("kwork"); });
     if (last && on && !last.classList.contains("kwork")) last.classList.add("kwork");
@@ -880,20 +887,64 @@
     msg.classList.add("kr-carded", "kr-plan-msg");
     msg.appendChild(card);
   }
+  // A question is answered in its own card, the way the design has it.
+  // The AI's questions often carry their own examples ("For example: a
+  // game, a to-do list, a timer..."); those become chips that fill the
+  // answer. Send puts the answer through the composer (app.js's own path,
+  // continuePlanning), so it is recorded and builds exactly as a typed
+  // answer does. Skipping is a quiet link, not a button beside the answer:
+  // it was pressed by people who meant to answer.
+  function chipsOf(q) {
+    const m = q.match(/(?:for example|e\.g\.|such as|like)[:,]?\s+([^?.]+)[?.]?/i);
+    if (!m) return [];
+    return m[1].split(/,\s*(?:or\s+)?|\s+or\s+/i).map((x) => x.trim().replace(/^(a|an|the)\s+/i, "")).filter((x) => x && x.length <= 40).slice(0, 6);
+  }
   function questionCard(msg, body) {
     const qs = body.split("\n").map((l) => l.replace(/^\s*\d+\.\s*/, "").trim()).filter(Boolean);
+    const open = !!q(":scope > .msg-actions", msg);
     const card = document.createElement("div");
-    card.className = "kr-qc";
+    card.className = "kr-qc" + (qs.length === 1 ? " kr-q1" : "");
     card.innerHTML = `<span class="kr-qtag">${ico("msg", "kr-ico")}${qs.length > 1 ? `${qs.length} questions before I build` : "One question before I build"}</span>` +
-      qs.map((t, i) => `<b class="kr-qq" style="animation-delay:${reduce ? 0 : 80 + i * 120}ms">${qs.length > 1 ? `<i>${i + 1}</i>` : ""}<span>${esc(t)}</span></b>`).join("");
+      qs.map((t, i) => {
+        const chips = open ? chipsOf(t) : [];
+        return `<div class="kr-qrow" style="animation-delay:${reduce ? 0 : 80 + i * 120}ms"><b class="kr-qq">${qs.length > 1 ? `<i>${i + 1}</i>` : ""}<span>${esc(t)}</span></b>` +
+          (open ? (chips.length ? `<div class="kr-qchips">${chips.map((c) => `<button type="button" class="kr-qchip">${esc(c)}</button>`).join("")}</div>` : "") +
+          `<input class="kr-qin" type="text" placeholder="${chips.length ? "Or say it your way" : "Your answer"}" aria-label="Answer to question ${i + 1}" autocomplete="off" spellcheck="false">` : "") + `</div>`;
+      }).join("");
+    if (!open) { msg.classList.add("kr-carded", "kr-q-msg"); msg.appendChild(card); return; }
     const acts = cardButtons(msg, card, (b, a) => settle(a, "Building without an answer"));
-    const ans = document.createElement("button");
-    ans.type = "button"; ans.className = "btn kr-dark"; ans.textContent = qs.length > 1 ? "Answer them" : "Answer it";
-    ans.addEventListener("click", () => { const p = $("prompt"); if (p) { p.disabled = false; p.focus(); } });
-    acts.prepend(ans);
-    qa("button", acts).forEach((b) => { if (b._real && /^Build it$/.test(b.textContent)) { b.textContent = "Skip and build"; b.title = "Krate picks for you; you can change it after"; } });
+    const send = document.createElement("button");
+    send.type = "button"; send.className = "btn kr-dark"; send.textContent = qs.length > 1 ? "Send my answers" : "Send my answer";
+    acts.prepend(send);
+    qa("button", acts).forEach((b) => { if (b._real) { b.className = "kr-qskip"; b.textContent = "Skip, let Krate decide"; b.title = "Krate picks for you; you can change it after"; } });
+    const ins = qa(".kr-qin", card);
+    qa(".kr-qrow", card).forEach((row) => {
+      const input = q(".kr-qin", row);
+      row.addEventListener("click", (e) => {
+        const c = e.target.closest(".kr-qchip"); if (!c) return;
+        if (/something else|anything else|other/i.test(c.textContent)) { qa(".kr-qchip", row).forEach((x) => x.classList.remove("on")); input.value = ""; input.focus(); return; }
+        c.classList.toggle("on");
+        input.value = qa(".kr-qchip.on", row).map((x) => x.textContent).join(", ");
+      });
+      input.addEventListener("input", () => qa(".kr-qchip.on", row).forEach((x) => { if (!input.value.includes(x.textContent)) x.classList.remove("on"); }));
+    });
+    const submit = () => {
+      const answers = ins.map((x) => x.value.trim());
+      if (!answers.some(Boolean)) { ins[0].focus(); ins[0].classList.add("kr-need"); setTimeout(() => ins[0].classList.remove("kr-need"), 900); return; }
+      const text = qs.length > 1 ? answers.map((x, i) => x ? `${i + 1}. ${x}` : "").filter(Boolean).join("\n") : answers[0];
+      const box = $("prompt"), go = $("send");
+      if (!box || !go) return;
+      box.disabled = false; box.value = text; box.dispatchEvent(new Event("input"));
+      press(go);
+      card.classList.add("kr-answered");
+      qa(".kr-qrow", card).forEach((row, i) => { const v = answers[i]; const done = document.createElement("p"); done.className = "kr-qa"; done.textContent = v || "No preference"; qa(".kr-qchips, .kr-qin", row).forEach((x) => x.remove()); row.appendChild(done); });
+      acts.innerHTML = `<span class="kr-tr done kr-went"><span class="kr-tic"><span class="kr-ck">${ico("check", "")}</span></span>Answered</span>`;
+    };
+    send.addEventListener("click", submit);
+    ins.forEach((x, i) => x.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if (i < ins.length - 1 && !ins[i + 1].value) ins[i + 1].focus(); else submit(); } }));
     msg.classList.add("kr-carded", "kr-q-msg");
     msg.appendChild(card);
+    setTimeout(() => { if (ins[0] && document.activeElement === $("prompt")) ins[0].focus({ preventScroll: true }); }, 350);
   }
   function cardify(n) {
     if (!n.matches || !n.matches(".msg.krate") || n.classList.contains("kr-carded")) return false;
@@ -930,63 +981,146 @@
     });
   });
 
-  // The build's steps as rows under its chip: a spinner on the one being
-  // done, a tick on each one finished. Read from the build's own stage.
-  const STEP_WORDS = { read: "Reading Krate's API", write: "Writing the code", test: "Building and testing it", done: "Packing the file" };
-  let toolsFor = null, toolsHtml = "";
-  function toolRow(label, st) {
+  // The build's steps as rows under its receipt, from what really happens:
+  // the engine's own lines (authoring, "opening your app to see it",
+  // building, packing, the permission wall) and every file the AI writes or
+  // edits. A breathing mark on the step being done, a tick on each one
+  // finished. "Writing src/lib.rs" carries the real file's line count, and
+  // a change carries +added -removed against the code it started from (the
+  // card being made reads the file; see makingCard).
+  const buildText = { key: "", first: null, last: null };
+  const lineCount = (t) => (t ? t.replace(/\n+$/, "").split("\n").length : 0);
+  function diffOf(a, b) {
+    if (a == null || b == null) return null;
+    const count = (t) => { const m = new Map(); t.split("\n").forEach((l) => m.set(l, (m.get(l) || 0) + 1)); return m; };
+    const A = count(a), B = count(b); let add = 0, del = 0;
+    B.forEach((n, l) => { add += Math.max(0, n - (A.get(l) || 0)); });
+    A.forEach((n, l) => { del += Math.max(0, n - (B.get(l) || 0)); });
+    return { add, del };
+  }
+  const runs = new Map(); // build key -> { rows: [{id,label,code,em,st}], revise, checks }
+  function liveKey() { const st = app(); return st && st.buildingSession ? `${st.buildingSession.id}:${st.startedAt}` : ""; }
+  function runFor(key) {
+    if (!key) return null;
+    let r = runs.get(key);
+    if (!r) {
+      const st = app();
+      r = { rows: [], revise: !!(st && st.buildVersion > 1), checks: 0, file: "" };
+      runs.set(key, r);
+      add(r, "read", r.revise ? "Reading your app" : "Reading Krate's API");
+    }
+    return r;
+  }
+  function add(r, id, label, code) {
+    let row = r.rows.find((x) => x.id === id);
+    if (row) { if (row.st !== "now" && row.st !== "done") row.st = "now"; return row; }
+    r.rows.forEach((x) => { if (x.st === "now") x.st = "done"; });
+    row = { id, label, code: code || "", em: "", st: "now" };
+    r.rows.push(row);
+    return row;
+  }
+  const SKIP_FILE = /(bindings\.rs|Cargo\.lock|\.agent-|KRATE_AUTHORING|^\/tmp)/;
+  function onLine(line) {
+    const r = runFor(liveKey()); if (!r) return;
+    const clean = String(line).replace(/^=+>\s*/, "").trim();
+    if (/^opening your app to see|^running your app to test|^looking at how your app/i.test(clean)) {
+      r.checks += /^looking at/i.test(clean) ? 0 : 1;
+      const row = add(r, "look", "Opening it to look"); row.em = r.checks ? `${r.checks} check${r.checks === 1 ? "" : "s"}` : "";
+    } else if (/^==> building the component|^\s*Compiling /.test(line)) add(r, "build", "Building the component");
+    else if (/^==> packing /.test(line)) { const f = (line.match(/([^\\/]+\.krate)\s*$/) || [])[1] || ""; r.file = f; add(r, "pack", "Packing", f || "the file"); }
+    else if (/^==> verifying the permission wall/.test(line)) add(r, "wall", "Checking the permission wall");
+    else if (/^==> changing the app in its own source/.test(line)) add(r, "read", "Reading your app");
+  }
+  function onTool(tool, file, path) {
+    const r = runFor(liveKey()); if (!r) return;
+    const f = file || (path || "").split(/[\\/]/).pop() || "";
+    if (!/^(Write|Edit|MultiEdit)$/.test(tool) || !f || SKIP_FILE.test(path || f)) return;
+    const rel = /lib\.rs$/.test(f) ? "src/lib.rs" : f;
+    add(r, "w:" + rel, /^Edit|^MultiEdit/.test(tool) && rel !== "src/lib.rs" ? "Editing" : "Writing", rel);
+  }
+  try {
+    if (typeof onEngineLine === "function") { const ol = onEngineLine; window.onEngineLine = function (line) { try { onLine(line); } catch (e) {} return ol.apply(this, arguments); }; }
+    if (typeof addWorkTool === "function") { const aw = addWorkTool; window.addWorkTool = function (t, f, p) { try { onTool(t, f, p); } catch (e) {} return aw.apply(this, arguments); }; }
+  } catch (e) {}
+  let toolsFor = null, toolsKey = "";
+  function toolRow(row, st) {
+    st = st || row.st;
     const tic = st === "done" ? `<span class="kr-ck">${ico("check", "")}</span>` : st === "bad" ? '<span class="kr-bad">!</span>' : st === "stop" ? '<span class="kr-stp"></span>' : (window.krIso ? window.krIso(13, "breathe", true) : '<span class="kr-spin"></span>');
-    return `<div class="kr-tr${st === "done" ? " done" : ""}" data-st="${st}" data-key="${esc(st + "|" + label)}"><span class="kr-tic">${tic}</span><span>${esc(label)}</span></div>`;
+    const em = row.em ? `<em>${row.em}</em>` : "";
+    return `<div class="kr-tr${st === "done" ? " done" : ""}" data-st="${st}" data-key="${esc(st + "|" + row.label + "|" + row.code + "|" + row.em)}"><span class="kr-tic">${tic}</span><span>${esc(row.label)}</span>${row.code ? `<code>${esc(row.code)}</code>` : ""}${em}</div>`;
+  }
+  // The line counts for the file being written, from the card's reading of it.
+  function stampWriting(r) {
+    const w = r.rows.find((x) => x.id === "w:src/lib.rs");
+    if (!w || buildText.key !== liveKey() || buildText.last == null) return;
+    if (r.revise) { const d = diffOf(buildText.first, buildText.last); if (d && (d.add || d.del)) w.em = `<span class="kr-add">+${d.add}</span> <span class="kr-del">−${d.del}</span>`; }
+    else w.em = `${lineCount(buildText.last)} lines`;
+  }
+  function paintRows(box, rows, final) {
+    const html = rows.map((x) => toolRow(x, final ? final(x, rows) : null));
+    const have = qa(".kr-tr", box);
+    html.forEach((h, i) => {
+      const t = document.createElement("template"); t.innerHTML = h;
+      // Compared by state and words, not markup: a row replaced every tick
+      // restarts its breathing.
+      if (have[i] && have[i].dataset.key === t.content.firstChild.dataset.key) return;
+      if (have[i]) have[i].replaceWith(t.content.firstChild); else box.appendChild(t.content.firstChild);
+    });
+    qa(".kr-tr", box).slice(html.length).forEach((x) => x.remove());
   }
   function paintTools() {
     if (!thread) return;
     const live = q(".msg.vlive", thread);
-    const st = app();
     if (live) {
-      toolsFor = live;
-      const idx = st ? st.stageIndex : -1;
-      const list = stages();
+      const key = liveKey(); const r = runFor(key); if (!r) return;
+      // The stage machinery is the fallback for a step with no line of its own.
+      const st = app(), idx = st ? st.stageIndex : -1, keys = stages().map((x) => x.key);
+      if (keys[idx] === "write" && !r.rows.some((x) => x.id.startsWith("w:"))) add(r, "w:src/lib.rs", "Writing", "src/lib.rs");
+      if (keys[idx] === "test" && !r.rows.some((x) => /build|look|pack|wall/.test(x.id))) add(r, "build", "Building the component");
+      stampWriting(r);
+      toolsFor = live; toolsKey = key;
       let box = q(":scope > .kr-tools", live);
-      if (!box) {
-        box = document.createElement("div"); box.className = "kr-tools";
-        const chip = q(".vchip", live); (chip || live).insertAdjacentElement("afterend", box);
-      }
-      const rows = list.slice(0, Math.max(1, idx + 1)).map((s, i) => toolRow(STEP_WORDS[s.key] || s.label, i < idx ? "done" : "now"));
-      const html = rows.join("");
-      if (box.dataset.h !== html) {
-        // Only the rows that changed are replaced, so a finished row does
-        // not replay its tick every second.
-        const have = qa(".kr-tr", box);
-        rows.forEach((h, i) => {
-          const t = document.createElement("template"); t.innerHTML = h;
-          // Compared by state and words, not markup: an SVG's markup reads
-          // back differently from how it was written, and a row replaced
-          // every tick restarts its breathing.
-          if (have[i] && have[i].dataset.key === t.content.firstChild.dataset.key) return;
-          if (have[i]) have[i].replaceWith(t.content.firstChild); else box.appendChild(t.content.firstChild);
-        });
-        box.dataset.h = html;
-        toolsHtml = html;
-      }
+      if (!box) { box = document.createElement("div"); box.className = "kr-tools"; const chip = q(".vchip", live); (chip || live).insertAdjacentElement("afterend", box); }
+      paintRows(box, r.rows);
+      // The receipt says what is happening now, in the same words.
+      const now = r.rows[r.rows.length - 1];
+      const vm = q(".vchip .vm", live);
+      if (vm && now) { const words = [now.label, now.code].filter(Boolean).join(" ") + (now.em ? " · " + now.em.replace(/<[^>]+>/g, "") : ""); if (vm.textContent !== words) vm.textContent = words; }
       return;
     }
     // Settled: the chip was rewritten. Put the rows back, finished.
-    if (toolsFor && toolsFor.isConnected && !q(":scope > .kr-tools", toolsFor) && toolsHtml) {
+    if (toolsFor && toolsFor.isConnected && !q(":scope > .kr-tools", toolsFor) && toolsKey) {
+      const r = runs.get(toolsKey); if (!r) { toolsFor = null; return; }
       const ok = toolsFor.classList.contains("vok");
       const stopped = /stopped/.test(toolsFor.textContent);
+      if (ok) { const look = r.rows.find((x) => x.id === "look"); if (look) look.em = r.checks > 1 ? "all passed" : "passed"; }
       const box = document.createElement("div"); box.className = "kr-tools settled";
-      const t = document.createElement("template"); t.innerHTML = toolsHtml;
-      const rows = [...t.content.children];
-      rows.forEach((r, i) => {
-        const last = i === rows.length - 1;
-        const s = ok || !last ? "done" : stopped ? "stop" : "bad";
-        const label = r.textContent;
-        const n = document.createElement("template"); n.innerHTML = toolRow(label, s);
-        box.appendChild(n.content.firstChild);
-      });
+      paintRows(box, r.rows, (x, rows) => ok || x !== rows[rows.length - 1] ? "done" : stopped ? "stop" : "bad");
       const chip = q(".vchip", toolsFor); (chip || toolsFor).insertAdjacentElement("afterend", box);
-      toolsFor = null; toolsHtml = "";
+      if (ok) settledOk(toolsFor, r);
+      toolsFor = null; toolsKey = "";
     }
+  }
+  // Built: the change's size on the receipt, and one closing line, as the
+  // design ends a build. The words are true of what just happened.
+  function settledOk(msg, r) {
+    const chip = q(".vchip", msg); const st = app(); const res = st && st.session && st.session.result;
+    const d = r.revise ? diffOf(buildText.first, buildText.last) : null;
+    if (chip && d && (d.add || d.del) && !q(".kr-diff", chip)) {
+      const vm = q(".vm", chip); const sp = document.createElement("span"); sp.className = "kr-diff";
+      sp.innerHTML = `<span class="kr-add">+${d.add}</span> <span class="kr-del">−${d.del}</span>`;
+      (vm || chip.lastChild).before(sp);
+    }
+    if (!res || res.verdict === "off-request") return;
+    const name = appName(), size = res.size || "";
+    const words = r.revise
+      ? "Done. The change is in, and I opened it again to check it still works."
+      : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Try it with Run it, or send it to someone.`;
+    const el = document.createElement("div"); el.className = "msg krate kr-close";
+    el.innerHTML = '<span class="body"></span>'; q(".body", el).textContent = words;
+    const tools = q(":scope > .kr-tools", msg);
+    (tools || msg).after(el);
+    wordIn(el);
   }
   setInterval(() => { paintTools(); syncCards(); paintAvatars(); }, 400);
   watch(thread, { childList: true, subtree: false }, paintTools);
@@ -2028,7 +2162,12 @@
         if (!dir) dir = (await invoke("session_source_dir", { session: sessionId })) || "";
         if (dir) {
           const text = await invoke("ide_read", { path: dir, rel: "src/lib.rs" });
-          if (sessionId && typeof text === "string" && text !== lastText) { lastText = text; setText(text); card.classList.add("on"); }
+          if (sessionId && typeof text === "string" && text !== lastText) {
+            lastText = text; setText(text); card.classList.add("on");
+            const k = `${sessionId}:${startAt}`;
+            if (buildText.key !== k) { buildText.key = k; buildText.first = text; }
+            buildText.last = text;
+          }
         }
       } catch (e) { /* not there yet, or not readable: the crate stays */ }
       busy = false;

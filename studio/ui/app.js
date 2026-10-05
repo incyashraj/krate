@@ -2993,7 +2993,8 @@ async function make(request, opts) {
       // and nothing on screen said why, so each looked like a dead button.
       // The log names the caller, so the door that reached here can be
       // fixed at its own end.
-      const from = String(new Error().stack || "").split("\n").slice(2, 4).map((l) => l.trim()).join(" < ");
+      // The whole stack, short: Chromium starts it with "Error", WebKit does not.
+      const from = String(new Error().stack || "").replace(/\s+/g, " ").slice(0, 400);
       invoke("dbg_log", { line: "make() BAILED: buildingSession set; from " + from }).catch(()=>{});
       const busy = clip(state.buildingSession.title || "your other app", 60);
       const words = `"${busy}" is still being made, one app at a time. Press Stop on it first, or wait for it to finish.`;
