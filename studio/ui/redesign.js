@@ -172,7 +172,7 @@
     const kb = $("homeKb");
     if (kb) {
       kb.hidden = mode === "port";
-      kb.innerHTML = mode === "ide" ? `<kbd>${mod}I</kbd> asks your AI` : "<kbd>↵</kbd> to make";
+      kb.innerHTML = mode === "ide" ? `<kbd>${mod}I</kbd> asks your AI` : mode === "port" ? "Electron · Tauri · web" : "<kbd>↵</kbd> to make";
     }
     placeInd();
     // The question changes with the door: building, porting, working on.
@@ -213,8 +213,7 @@
     addEventListener("resize", placeInd);
     setMode("create");
   }
-  const go = $("homePortGo");
-  if (go) go.addEventListener("click", startPort);
+  ["homePortGo", "homePortDrop", "homePortChoose"].forEach((id) => { const el = $(id); if (el) el.addEventListener("click", startPort); });
 
   /* ---- Home: the shelf's head is "Your apps (n)" and a chevron ---------- */
   (function shelfHead() {

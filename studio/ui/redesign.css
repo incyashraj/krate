@@ -1981,3 +1981,14 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 #planSheet .plan-tag { flex: none; padding: 2px 9px; border-radius: 99px; font: 500 11.5px var(--sans); background: var(--green-soft); color: var(--green-ink); border: 0; }
 #planSheet #planSetUp { flex: none; border-radius: 99px; }
 #planSheet .detail-actions { display: none; }
+.kr-cmprow > .kr-sq:last-child, .kr-cmprow #homeIdeGo { margin-left: auto; }
+
+/* ---- Home: Port, in the same shape as the IDE door ---------------------- */
+#homePortPane { display: block; padding: 0; }
+#homePortPane[hidden] { display: none; }
+.kr-portdrop { width: calc(100% - 28px); background: none; font: inherit; color: inherit; cursor: pointer; }
+.kr-portdrop:hover { border-color: color-mix(in srgb, var(--violet) 45%, var(--line-strong)); background: color-mix(in srgb, var(--violet) 4%, transparent); }
+.kr-portdrop .dz-i { color: var(--violet); }
+.kr-portdrop .kr-ta2 { display: block; flex: 1; min-width: 0; }
+.kr-portdrop b { display: block; font: 400 15px var(--sans); color: var(--ink-3); }
+.kr-portdrop small { display: block; margin-top: 3px; font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
