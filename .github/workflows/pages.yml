@@ -277,8 +277,10 @@ jobs:
           s = open(p).read()
           # The bridge must be in place before app.js runs, or the first
           # command fires against a door that is not there yet.
+          # signin.js first: the sign-in popup starts a sign-in from here and
+          # needs this browser's nonce (K-909), the same as /login.
           s = s.replace('<script src="app.js"></script>',
-                        '<script src="bridge.js"></script>\n  <script src="app.js"></script>')
+                        '<script src="/login/signin.js"></script>\n  <script src="bridge.js"></script>\n  <script src="app.js"></script>')
           open(p, "w").write(s)
           print("studio bridged for the web")
           PY

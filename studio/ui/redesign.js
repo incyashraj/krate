@@ -2827,6 +2827,193 @@
     watch(g, { attributes: true, attributeFilter: ["class"] }, sync); sync();
   })();
 
+  /* ---- signing in: one small popup ---------------------------------------- */
+  // The design's sign-in (krate-signin.html): the mark stacks in over a plain
+  // question; GitHub first, then Google, then an email link, and a code for a
+  // browser somewhere else. Every door ends in the same "you're signed in".
+  // The popup keeps its place and only changes height while its inside
+  // crossfades. It drives the real sign-in: app.js's beginBrowserSignIn and
+  // watcher, `login_email`, the device-code flow, and the login-step events,
+  // which app.js sends here while the popup is the surface asking.
+  (function signInPopup() {
+    const GH = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
+    const GG = '<svg viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg>';
+    const ENV = '<div class="kr-env"><svg width="124" height="96" viewBox="0 0 124 96"><path class="back" d="M6 30 L62 2 L118 30 V88 H6 Z"/></svg><div class="lk">Sign in to Krate<i></i><i></i></div><svg width="124" height="96" viewBox="0 0 124 96"><path class="front" d="M6 30 L62 64 L118 30 V84 a6 6 0 0 1 -6 6 H12 a6 6 0 0 1 -6 -6 Z"/><path class="front2" d="M6 30 L62 64 L118 30"/></svg></div>';
+    const PROV = { github: ["GitHub", GH], google: ["Google", GG] };
+    const iso = (n, c) => (window.krIso ? window.krIso(n, c) : "");
+    const web = () => !desktopApp();
+    let LAST = ""; try { LAST = localStorage.getItem("kr-signin-last") || ""; } catch (e) {}
+    const wrapEl = document.createElement("div");
+    wrapEl.className = "kr-lgw"; wrapEl.id = "krLogin"; wrapEl.hidden = true;
+    wrapEl.setAttribute("role", "dialog"); wrapEl.setAttribute("aria-modal", "true"); wrapEl.setAttribute("aria-labelledby", "krLgH");
+    wrapEl.innerHTML = `<div class="kr-lgc" tabindex="-1"><button type="button" class="kr-x kr-lg-x" aria-label="Close">${ico("x")}</button><div class="kr-lg-wrap"><div class="kr-lg-in"></div></div></div>`;
+    document.body.appendChild(wrapEl);
+    const box = q(".kr-lg-in", wrapEl), wr = q(".kr-lg-wrap", wrapEl);
+    let opts = {}, timers = [], tick = 0, stateNow = "";
+    const later = (f, ms) => timers.push(setTimeout(f, ms));
+    const clear = () => { timers.forEach(clearTimeout); timers = []; clearInterval(tick); };
+    const subFor = () => opts.why || (web() ? "One account for everything you make and share. Making an app here needs one." : "One account for everything you make and share. You only need it to publish.");
+    const V = {
+      start: () => `<div class="kr-lg-hd"><span class="kr-lg-mk">${iso(42, "stack")}</span><h3 id="krLgH">Sign in to Krate</h3><p>${esc(subFor())}</p></div>
+        <div class="kr-lg-btns"><button type="button" class="kr-lg-b dark" data-lg="github">${GH}Continue with GitHub${LAST === "github" ? '<span class="last">Last used</span>' : ""}</button><button type="button" class="kr-lg-b" data-lg="google">${GG}Continue with Google${LAST === "google" ? '<span class="last">Last used</span>' : ""}</button></div>
+        <div class="kr-lg-or">or</div>
+        <div><form class="kr-lg-mail" novalidate><input type="email" placeholder="Continue with email" autocomplete="email" aria-label="Your email"><button type="submit" aria-label="Email me a link">${ico("arrow")}</button></form><div class="kr-lg-msg">That doesn't look like an email yet.</div></div>
+        <p class="kr-lg-fine">By continuing you agree to the <a href="https://krate.tech/terms/" target="_blank" rel="noopener">terms</a> and the <a href="https://krate.tech/privacy/" target="_blank" rel="noopener">privacy page</a>.</p>
+        <div class="kr-lg-ft">${ico("lock")}<span>Krate never sees your password</span><span class="kr-grow"></span>${web() ? "" : '<button type="button" data-lg="code">Use a code</button>'}</div>`,
+      browser: (o) => { const [n, logo] = PROV[o.via];
+        return `<div class="kr-lg-hd"><div class="kr-lg-link"><span class="t">${iso(24)}</span><span class="dots"><i></i><i></i><i></i><i></i></span><span class="t">${logo}</span></div><h3 id="krLgH">Finish in your browser</h3><p>${n} opened in your browser. Say yes there, and this moves on by itself.</p></div>
+        <div class="kr-lg-wait"><span class="kr-lg-spin"></span>Waiting for ${n}</div>
+        <div class="kr-lg-row"><button type="button" class="btn kr-ghost" data-lg="back">${ico("left")}Back</button><button type="button" class="btn kr-ghost" data-lg="reopen" data-via="${o.via}">${ico("ext")}Open it again</button></div><div class="kr-lg-pad"></div>`; },
+      email: (o) => `<div class="kr-lg-hd">${ENV}<h3 id="krLgH">Check your email</h3><p>We sent a link to <b>${esc(o.email)}</b>. Open it on this computer. It works for 15 minutes.</p></div>
+        <div class="kr-lg-wait"><span class="kr-lg-spin"></span>Waiting for you to open it</div>
+        <div class="kr-lg-row"><button type="button" class="kr-lnk" data-lg="back">Use another email</button><span>·</span><button type="button" class="kr-lnk" data-lg="resend" disabled>Send again in <span class="cnt">0:30</span></button></div><div class="kr-lg-pad"></div>`,
+      code: (o) => { const c = String(o.code || "").replace(/[^A-Za-z0-9]/g, "");
+        return `<div class="kr-lg-hd"><span class="kr-lg-mk">${iso(42)}</span><h3 id="krLgH">Sign in with a code</h3><p>${o.code ? `On any phone or computer, go to <b>${esc(String(o.url || "github.com/login/device").replace(/^https?:\/\//, ""))}</b> and type this in.` : "Getting a code from GitHub…"}</p></div>
+        <div class="kr-lg-code">${o.code ? [...c].map((ch, i) => (i === Math.floor(c.length / 2) ? '<span class="dash"></span>' : "") + `<span class="ch" style="--i:${i}">${esc(ch)}</span>`).join("") + `<button type="button" class="cp" data-lg="copy" title="Copy the code">${ico("copy")}</button>` : '<span class="kr-lg-spin"></span>'}</div>
+        <div class="kr-lg-wait"><span class="kr-lg-spin"></span><span>Waiting for the code</span></div>
+        <div class="kr-lg-row"><button type="button" class="btn kr-ghost" data-lg="back">${ico("left")}Back</button>${o.url ? `<button type="button" class="btn kr-ghost" data-lg="codeurl">${ico("ext")}Open the page</button>` : ""}</div><div class="kr-lg-pad"></div>`; },
+      done: (o) => { const a = o.account || {}, who = a.name || a.login || "you";
+        return `<div class="kr-lg-hd"><span class="kr-lg-av">${esc(who.trim().charAt(0).toUpperCase() || "K")}<span class="ok"><svg viewBox="0 0 12 12"><path d="M2.5 6.2 L5 8.6 L9.6 3.6"/></svg></span></span><h3 id="krLgH">You're signed in</h3><p>${esc(a.login ? "@" + a.login : who)}${o.via && PROV[o.via] ? " · with " + PROV[o.via][0] : o.via === "email" ? " · with an email link" : ""}</p></div>
+        <div class="kr-lg-done-bar"><i></i></div><div class="kr-lg-pad"></div>`; },
+      error: (o) => `<div class="kr-lg-hd"><span class="kr-lg-bad">!</span><h3 id="krLgH">${esc(o.title || "That sign-in did not finish")}</h3><p>${esc(o.why || "Nothing changed. Try again, or pick another way.")}</p></div>
+        <button type="button" class="kr-lg-b dark sm" data-lg="back">Try again</button><div class="kr-lg-pad"></div>`,
+    };
+    function go(st, o = {}) {
+      clear();
+      const live = !wrapEl.hidden, h0 = wr.offsetHeight;
+      stateNow = st; box.dataset.st = st; box.innerHTML = V[st](o); box._o = o;
+      if (live && h0) {
+        const h1 = box.offsetHeight; wr.style.height = h0 + "px"; void wr.offsetHeight; wr.style.height = h1 + "px";
+        later(() => { wr.style.height = ""; }, 480);
+        box.classList.remove("kr-lg-sw"); void box.offsetWidth; box.classList.add("kr-lg-sw");
+      }
+      if (st === "start" && window.krStack) window.krStack(wrapEl, live ? 120 : 260);
+      if (st === "email") {
+        let n = 30;
+        tick = setInterval(() => { n--; const b = q('[data-lg="resend"]', box); if (!b) { clearInterval(tick); return; } if (n <= 0) { clearInterval(tick); b.disabled = false; b.textContent = "Send it again"; return; } const c = q(".cnt", b); if (c) c.textContent = `0:${String(n).padStart(2, "0")}`; }, 1000);
+        // An email link lasts fifteen minutes.
+        later(() => { if (stateNow === "email") go("error", { title: "That link has run out", why: "Links work for 15 minutes, and each one only once. Send yourself a new one." }); }, 15 * 60 * 1000);
+      }
+      if (st === "browser") later(() => { if (stateNow === "browser") { const p = q(".kr-lg-wait", box); if (p) p.lastChild.textContent = " Still waiting. The page may be in another browser window."; } }, 60000);
+      if (st === "done") later(() => { close(true); }, 2000);
+      if (live && st !== "start") setTimeout(() => { const c = q(".kr-lgc", wrapEl); if (c) c.focus({ preventScroll: true }); }, 60);
+    }
+    function surface(on) { try { state.loginSurface = on ? "popup" : "gate"; } catch (e) {} }
+    function open(o = {}) {
+      opts = o; closePop();
+      if (!web()) surface(true);
+      document.body.classList.add("kr-lgopen");
+      wr.style.height = ""; wrapEl.hidden = false; wrapEl.classList.remove("out");
+      go("start");
+      // Focus inside the dialog for the keyboard, without a ring on a button
+      // nobody has chosen yet.
+      setTimeout(() => { const c = q(".kr-lgc", wrapEl); if (c) c.focus({ preventScroll: true }); }, 350);
+    }
+    function close(signedIn) {
+      if (wrapEl.hidden) return;
+      clear(); wrapEl.classList.add("out");
+      if (!web()) surface(false);
+      document.body.classList.remove("kr-lgopen");
+      setTimeout(() => { wrapEl.hidden = true; wrapEl.classList.remove("out"); }, reduce ? 0 : 260);
+      const done = opts.onDone, cancel = opts.onClose, acct = box._o && box._o.account;
+      opts = {};
+      if (signedIn) { if (acct) toast(`Signed in as ${acct.login || acct.name || "you"}`); if (done) done(acct); }
+      else if (cancel) cancel();
+    }
+    // The real sign-in, by door.
+    function startProvider(via) {
+      try { localStorage.setItem("kr-signin-last", via); LAST = via; } catch (e) {}
+      if (web()) {
+        // In a tab the sign-in page goes straight on to the provider and
+        // comes back to the Studio, where the kept request carries on.
+        try { localStorage.setItem("krate_next", "studio"); } catch (e) {}
+        location.href = "/login/?next=studio#" + via;
+        return;
+      }
+      go("browser", { via });
+      try { beginBrowserSignIn(via).catch((err) => go("error", { why: String(err && err.message || err) })); } catch (e) { go("error", {}); }
+    }
+    async function startEmail(email) {
+      if (web()) {
+        let nonce = ""; try { nonce = window.KrateSignIn ? window.KrateSignIn.begin() : ""; } catch (e) {}
+        try { localStorage.setItem("krate_next", "studio"); } catch (e) {}
+        const r = await fetch("https://hub.krate.tech/login/email", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, from: "web", nonce }) }).catch(() => null);
+        if (!r) throw new Error("Krate could not be reached. Check your connection.");
+        if (!r.ok) throw new Error(await r.text().catch(() => "The email could not be sent."));
+        return;
+      }
+      await invoke("login_email", { email });
+      try { watchSignIn(); } catch (e) {}
+    }
+    wrapEl.addEventListener("click", async (e) => {
+      if (e.target === wrapEl) { close(false); return; }
+      if (e.target.closest(".kr-lg-x")) { close(false); return; }
+      const b = e.target.closest("[data-lg]"); if (!b) return;
+      const a = b.dataset.lg, o = box._o || {};
+      if (a === "github" || a === "google") startProvider(a);
+      else if (a === "reopen") { try { beginBrowserSignIn(b.dataset.via).catch(() => {}); toast(`Opened ${PROV[b.dataset.via][0]} again`); } catch (err) {} }
+      else if (a === "back") go("start");
+      else if (a === "code") { go("code", {}); try { invoke("account_login").catch((err) => { if (stateNow === "code") go("error", { why: String(err && err.message || err) }); }); } catch (err) {} }
+      else if (a === "copy") { try { await navigator.clipboard.writeText(o.code || ""); toast("Code copied"); } catch (err) {} }
+      else if (a === "codeurl") { try { invoke("open_external", { url: o.url }).catch(() => {}); } catch (err) {} }
+      else if (a === "resend") { b.disabled = true; try { await startEmail(o.email); go("email", o); } catch (err) { go("error", { why: String(err.message || err) }); } }
+    });
+    wrapEl.addEventListener("input", (e) => {
+      const f = e.target.closest(".kr-lg-mail"); if (!f) return;
+      f.classList.toggle("ok", /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e.target.value.trim())); f.classList.remove("bad");
+    });
+    wrapEl.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target.closest(".kr-lg-mail"); if (!f) return;
+      const v = q("input", f).value.trim();
+      if (!f.classList.contains("ok")) { f.classList.remove("bad"); void f.offsetWidth; f.classList.add("bad"); q("input", f).focus(); return; }
+      const btn = q("button", f); btn.disabled = true;
+      try { await startEmail(v); try { localStorage.setItem("kr-signin-last", "email"); } catch (err) {} go("email", { email: v }); }
+      catch (err) { btn.disabled = false; const m = q(".kr-lg-msg", box); if (m) m.textContent = String(err.message || err); f.classList.add("bad"); }
+    });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !wrapEl.hidden) { e.stopPropagation(); close(false); } }, true);
+    // app.js hands the popup its events while it is the surface asking.
+    window.krLoginStep = (step) => {
+      if (step.step === "code") go("code", { code: step.code, url: step.url });
+      else if (step.step === "done") window.krLoginDone({ signed_in: true, login: step.login, name: step.name });
+      else if (step.step === "adopted") { invoke("account_status").then((a) => { if (a && a.signed_in) { try { state.account = a; renderAccount(); } catch (e) {} window.krLoginDone(a); } }).catch(() => {}); }
+      else if (step.step === "handoff-failed") go("error", { title: "That sign-in did not reach Krate", why: "The browser page from before will not work now. Try again; it only takes a moment." });
+      else if (step.step === "error") go("error", { why: String(step.why || "") });
+    };
+    window.krLoginDone = (a, via) => {
+      if (wrapEl.hidden || stateNow === "done") return;
+      try { clearInterval(state.signInWatch); state.signInSince = 0; } catch (e) {}
+      go("done", { account: a, via: via || (box._o && box._o.via) || (stateNow === "email" ? "email" : "") });
+    };
+    // The web: someone signed in from an email link in another tab.
+    window.addEventListener("storage", (e) => { if (e.key === "krate_tok" && e.newValue && !wrapEl.hidden && web()) { go("done", { account: {}, via: "email" }); later(() => location.reload(), 1600); } });
+    window.krSignIn = open;
+
+    // Where it opens. The sign-in page (after a sign-out, or Settings' Sign
+    // in) is the popup over an empty page: closing it is "skip, I just want
+    // to build". Not when the page is showing an error of its own.
+    const gate = $("viewGate");
+    if (gate && desktopApp()) {
+      watch(gate, { attributes: true, attributeFilter: ["class"] }, () => {
+        const on = !gate.classList.contains("hidden");
+        const err = $("gateError");
+        if (on && wrapEl.hidden && !(err && !err.classList.contains("hidden") && /engine|could not/i.test(err.textContent))) {
+          open({ onDone: () => { try { refreshAccountAndEnter(); } catch (e) {} }, onClose: () => { if (!gate.classList.contains("hidden")) press($("gateSkip")); } });
+        } else if (!on && !wrapEl.hidden && stateNow !== "done") close(false);
+      });
+    }
+    // Publishing: app.js asks for an account inside the publish sheet; the
+    // popup asks instead, and the publish carries on when it lands.
+    const ps = $("pubSignin");
+    if (ps && desktopApp()) {
+      watch(ps, { attributes: true, attributeFilter: ["class"] }, () => {
+        if (ps.classList.contains("hidden") || !wrapEl.hidden) return;
+        const why = "Sign in to publish. Your app stays on this computer until you do.";
+        open({ why, onDone: () => { try { pubSigninDone(); } catch (e) {} } });
+      });
+    }
+  })();
+
   /* ---- typed during a build: a small menu at the send button -------------- */
   // app.js asks with a sheet (stop and use this, or wait and do it after);
   // the design asks where the person just pressed, like the AI picker. The

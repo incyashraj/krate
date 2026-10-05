@@ -3127,14 +3127,49 @@ async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
 /// whole round trip is: button, browser, approve, and the window is signed
 /// in when they return -- no code to type.
 #[tauri::command]
-fn login_browser() -> Result<(), String> {
+fn login_browser(provider: Option<String>) -> Result<(), String> {
     // The nonce the hand-off must come back with (K-909). Plain hex, so it
     // needs no escaping in the URL. ONE parameter on purpose: on Windows
     // open_url goes through `cmd /C start`, where a bare `&` ends the
     // command and the rest of the URL is lost. The page reads `app_nonce`
     // as "from the app" by itself.
+    //
+    // A provider picked in Studio's sign-in popup rides in the fragment
+    // (no `&` to lose), and the page goes straight on to it.
     let nonce = begin_sign_in(&studio_dir());
-    open_url(&format!("https://krate.tech/login?app_nonce={nonce}"))
+    let via = match provider.as_deref() {
+        Some("github") => "#github",
+        Some("google") => "#google",
+        _ => "",
+    };
+    open_url(&format!("https://krate.tech/login?app_nonce={nonce}{via}"))
+}
+
+/// Email a sign-in link, asked for from Studio's sign-in popup. The link
+/// finishes at krate.tech/login/done like any other sign-in and hops back
+/// here through krate://, carrying the nonce started now.
+#[tauri::command]
+async fn login_email(email: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let email = email.trim().to_string();
+        if !email.contains('@') || email.len() > 254 {
+            return Err("That doesn't look like an email yet.".to_string());
+        }
+        let nonce = begin_sign_in(&studio_dir());
+        let body = serde_json::json!({ "email": email, "from": "app", "app_nonce": nonce });
+        match ureq::post(&format!("{}/login/email", hub_url()))
+            .timeout(std::time::Duration::from_secs(20))
+            .send_json(body)
+        {
+            Ok(_) => Ok(()),
+            Err(ureq::Error::Status(_, resp)) => Err(resp
+                .into_string()
+                .unwrap_or_else(|_| "The email could not be sent.".to_string())),
+            Err(_) => Err("Krate could not be reached. Check your connection.".to_string()),
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 /// The hub the studio reads and publishes to. `KRATE_HUB_URL` overrides it,
@@ -5387,6 +5422,7 @@ fn main() {
             account_logout,
             app_info,
             login_browser,
+            login_email,
             open_krate,
             install_agent,
             cloud_apps,

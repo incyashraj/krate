@@ -269,6 +269,15 @@ html.krate-booting .booting { display: flex; }
   }
   document.getElementById("ghBtn").href = door("/login/start");
   document.getElementById("googleBtn").href = door("/login/google/start");
+  // Studio's sign-in popup already asked which way: #github or #google
+  // (a fragment, so Windows' `start` keeps it) goes straight on to it.
+  var via = location.hash.replace(/^#/, "");
+  if (via === "github" || via === "google") {
+    document.getElementById("loginSub").textContent = via === "github" ? "Opening GitHub…" : "Opening Google…";
+    location.replace(door(via === "github" ? "/login/start" : "/login/google/start"));
+  } else if (via === "email") {
+    setTimeout(function () { var i = document.getElementById("emailInput"); if (i) i.focus(); }, 50);
+  }
   var form = document.getElementById("emailForm");
   var note = document.getElementById("emailNote");
   form.addEventListener("submit", function (e) {

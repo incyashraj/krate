@@ -2610,3 +2610,87 @@ body:not(.light) .kr-fstill { background: #2a2016; color: #d6c3b0; }
 .kr-gw-a:hover { color: var(--ink); text-decoration-color: currentColor; }
 .kr-gw-a[hidden] { display: none; }
 #gateCode .kr-gw-back { display: block; margin: 14px auto 0; }
+
+/* ---- signing in: one small popup (redesign.js, signInPopup) ---------------
+   The design's sign-in: the mark stacks in over a plain question; GitHub,
+   Google, an email link, a code. The popup keeps its place and only changes
+   height while its inside crossfades. */
+.kr-lgw { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, #0b0b10 38%, transparent); -webkit-backdrop-filter: blur(6px) saturate(1.1); backdrop-filter: blur(6px) saturate(1.1); animation: krWelBg .35s var(--ease) both; }
+.kr-lgw[hidden] { display: none; }
+.kr-lgw.out { animation: krWelOut .26s var(--ease) both; }
+.kr-lgc { position: relative; width: min(392px, 100%); max-height: calc(100vh - 32px); overflow: auto; border-radius: 24px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 40px 100px -30px rgba(0, 0, 0, .45); animation: krWelIn .55s var(--spring) both; }
+body:not(.light) .kr-lgc { background: #141417; }
+.kr-lgc:focus { outline: none; }
+.kr-lgw.out .kr-lgc { animation: krWelCardOut .26s var(--ease) both; }
+.kr-lg-x { position: absolute; top: 12px; right: 12px; z-index: 2; }
+.kr-lg-wrap { overflow: hidden; transition: height .45s var(--ease); }
+.kr-lg-in { padding: 34px 28px 0; }
+.kr-lg-in.kr-lg-sw > * { animation: krLgIn .5s var(--ease) both; }
+.kr-lg-in.kr-lg-sw > :nth-child(2) { animation-delay: .04s; } .kr-lg-in.kr-lg-sw > :nth-child(3) { animation-delay: .08s; } .kr-lg-in.kr-lg-sw > :nth-child(4) { animation-delay: .12s; } .kr-lg-in.kr-lg-sw > :nth-child(n+5) { animation-delay: .16s; }
+@keyframes krLgIn { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } }
+.kr-lg-hd { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.kr-lg-mk { height: 44px; display: grid; place-items: center; } .kr-lg-mk .iso { width: 42px; height: 42px; }
+.kr-lg-hd h3 { margin: 16px 0 0; font: 500 20px var(--sans); letter-spacing: -.025em; color: var(--ink); }
+.kr-lg-hd p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-3); text-wrap: balance; } .kr-lg-hd p b { color: var(--ink); font-weight: 500; }
+.kr-lg-btns { display: grid; gap: 8px; margin-top: 24px; }
+.kr-lg-b { position: relative; width: 100%; height: 44px; border: 0; border-radius: 13px; display: flex; align-items: center; justify-content: center; gap: 10px; font: 500 14px var(--sans); color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: pointer; transition: background .2s, box-shadow .2s, transform .15s; }
+.kr-lg-b:hover { background: var(--surface-2); } .kr-lg-b:active { transform: scale(.985); }
+.kr-lg-b svg { width: 17px; height: 17px; flex: none; }
+.kr-lg-b.dark { color: var(--bg); background: var(--ink); box-shadow: none; } .kr-lg-b.dark:hover { background: color-mix(in srgb, var(--ink) 88%, var(--bg)); }
+.kr-lg-b.sm { margin-top: 22px; }
+.kr-lg-b .last { position: absolute; right: 12px; font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 99px; color: var(--ink-3); background: var(--surface-2); }
+.kr-lg-b.dark .last { color: color-mix(in srgb, var(--bg) 70%, transparent); background: color-mix(in srgb, var(--bg) 14%, transparent); }
+.kr-lg-or { display: flex; align-items: center; gap: 12px; margin: 18px 0; font-size: 12px; color: var(--ink-4); } .kr-lg-or::before, .kr-lg-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.kr-lg-mail { position: relative; display: flex; margin: 0; }
+.kr-lg-mail input { flex: 1; min-width: 0; height: 44px; padding: 0 50px 0 15px; border-radius: 13px; font: 14px var(--sans); color: var(--ink); background: var(--surface-2); border: 0; outline: 0; box-shadow: inset 0 0 0 1px transparent; transition: box-shadow .2s, background .2s; }
+.kr-lg-mail input::placeholder { color: var(--ink-4); }
+.kr-lg-mail input:focus { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong), 0 0 0 4px var(--accent-soft); }
+.kr-lg-mail button { position: absolute; right: 6px; top: 6px; width: 32px; height: 32px; border: 0; border-radius: 10px; display: grid; place-items: center; color: var(--ink-4); background: transparent; cursor: pointer; transition: background .25s, color .25s, transform .3s var(--spring); }
+.kr-lg-mail button .kr-ico, .kr-lg-mail button svg { width: 15px; height: 15px; }
+.kr-lg-mail.ok button { color: var(--bg); background: var(--ink); }
+.kr-lg-mail.bad input { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 55%, transparent); animation: krLgShake .4s var(--ease); }
+@keyframes krLgShake { 20% { transform: translateX(-4px); } 45% { transform: translateX(3px); } 70% { transform: translateX(-2px); } }
+.kr-lg-msg { height: 0; overflow: hidden; font-size: 12px; color: var(--danger); transition: height .3s var(--ease); } .kr-lg-mail.bad + .kr-lg-msg { height: auto; min-height: 22px; padding-top: 6px; }
+.kr-lg-fine { margin: 14px 0 0; text-align: center; font-size: 11.5px; line-height: 1.5; color: var(--ink-4); } .kr-lg-fine a { color: var(--ink-3); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 2px; } .kr-lg-fine a:hover { color: var(--ink); }
+.kr-lg-ft { display: flex; align-items: center; gap: 7px; margin: 22px -28px 0; padding: 13px 20px 14px 22px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+.kr-lg-ft svg { width: 13px; height: 13px; color: var(--green-ink); }
+.kr-lg-ft button { border: 0; background: none; padding: 0; font: 500 12.5px var(--sans); color: var(--ink-2); cursor: pointer; } .kr-lg-ft button:hover { color: var(--ink); }
+/* waiting on the browser: the mark, a few dots walking across, the other side */
+.kr-lg-link { display: flex; align-items: center; gap: 10px; height: 44px; }
+.kr-lg-link .t { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink); } .kr-lg-link .t svg { width: 20px; height: 20px; }
+.kr-lg-link .t .iso { width: 24px; height: 24px; }
+.kr-lg-link .dots { display: flex; gap: 5px; } .kr-lg-link .dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--ink-4); animation: krLgDot 1.4s var(--ease) infinite; }
+.kr-lg-link .dots i:nth-child(2) { animation-delay: .12s; } .kr-lg-link .dots i:nth-child(3) { animation-delay: .24s; } .kr-lg-link .dots i:nth-child(4) { animation-delay: .36s; }
+@keyframes krLgDot { 0%, 60%, 100% { opacity: .35; transform: none; } 25% { opacity: 1; transform: scale(1.35); background: var(--ink-2); } }
+.kr-lg-wait { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px; min-height: 36px; padding: 0 12px; border-radius: 11px; font-size: 12.5px; color: var(--ink-3); background: var(--surface-2); text-align: center; font-variant-numeric: tabular-nums; }
+.kr-lg-spin { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 1.6px solid color-mix(in srgb, var(--ink) 14%, transparent); border-top-color: var(--ink-2); animation: krGlSpin .9s linear infinite; }
+.kr-lg-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; font-size: 12.5px; color: var(--ink-4); }
+.kr-lg-row .btn { height: 32px; font-size: 13px; padding: 0 13px; border-radius: 99px; display: inline-flex; align-items: center; gap: 6px; } .kr-lg-row .btn svg { width: 12px; height: 12px; }
+.kr-lnk { border: 0; background: none; padding: 0; font: 500 12.5px var(--sans); color: var(--ink-2); cursor: pointer; } .kr-lnk:hover { color: var(--ink); } .kr-lnk:disabled { color: var(--ink-4); font-weight: 400; cursor: default; }
+.kr-lg-pad { height: 26px; }
+/* the code, for a browser on another device */
+.kr-lg-code { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 22px; min-height: 44px; }
+.kr-lg-code .ch { width: 34px; height: 44px; border-radius: 10px; display: grid; place-items: center; font: 600 19px ui-monospace, Menlo, monospace; color: var(--ink); background: var(--surface-2); animation: krLgCh .45s var(--ease) both; animation-delay: calc(.1s + var(--i) * 45ms); }
+.kr-lg-code .dash { width: 8px; height: 2px; border-radius: 2px; background: var(--ink-4); margin: 0 2px; }
+.kr-lg-code .cp { width: 34px; height: 34px; margin-left: 6px; border: 0; border-radius: 10px; display: grid; place-items: center; color: var(--ink-3); background: none; cursor: pointer; } .kr-lg-code .cp:hover { color: var(--ink); background: var(--surface-2); } .kr-lg-code .cp svg { width: 14px; height: 14px; }
+@keyframes krLgCh { from { opacity: 0; transform: translateY(5px) scale(.96); } }
+/* the envelope, the link card peeking out while it waits */
+.kr-env { position: relative; width: 124px; height: 82px; margin: 0 auto; transform: scale(.82); transform-origin: 50% 70%; }
+.kr-env .lk { position: absolute; left: 22px; right: 22px; top: 24px; height: 50px; border-radius: 7px; background: var(--accent); color: #fff; padding: 7px 9px; font-size: 9px; font-weight: 500; text-align: left; animation: krLgPeek 2.6s var(--ease) infinite; }
+.kr-env .lk i { display: block; height: 4px; margin-top: 5px; border-radius: 3px; background: rgba(255, 255, 255, .55); width: 70%; } .kr-env .lk i + i { width: 46%; }
+.kr-env svg { position: absolute; left: 0; top: 0; overflow: visible; } .kr-env .back { fill: var(--surface-3); } .kr-env .front { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.2; } .kr-env .front2 { fill: none; stroke: var(--line-strong); stroke-width: 1.2; }
+@keyframes krLgPeek { 0%, 100% { transform: translateY(14px); } 45%, 65% { transform: translateY(-12px); } }
+/* you're in */
+.kr-lg-av { position: relative; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; font-weight: 500; color: #fff; background: linear-gradient(135deg, #6f94ff, #7c5ce8); animation: krLgPop .6s var(--spring) both; }
+.kr-lg-av .ok { position: absolute; right: -3px; bottom: -3px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--green); box-shadow: 0 0 0 3px var(--surface); animation: krLgPop .5s var(--spring) .35s both; }
+.kr-lg-av .ok svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 20; stroke-dashoffset: 20; animation: krLgTick .4s var(--ease) .6s forwards; }
+@keyframes krLgPop { from { opacity: 0; transform: scale(.6); } } @keyframes krLgTick { to { stroke-dashoffset: 0; } }
+.kr-lg-done-bar { height: 3px; margin-top: 24px; border-radius: 3px; background: var(--surface-2); overflow: hidden; } .kr-lg-done-bar i { display: block; height: 100%; width: 100%; background: var(--ink-4); transform-origin: left; animation: krLgBar 1.9s linear both; } @keyframes krLgBar { from { transform: scaleX(0); } }
+/* something went wrong */
+.kr-lg-bad { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, transparent); font-size: 18px; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .kr-lg-in *, .kr-lg-in.kr-lg-sw > * { animation: none !important; } .kr-lg-av .ok svg { stroke-dashoffset: 0; } }
+.kr-lgc .btn.kr-ghost { border: 0; background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: pointer; transition: background .2s, color .2s; }
+.kr-lgc .btn.kr-ghost:hover { background: var(--surface-2); color: var(--ink); }
+/* the sign-in page behind it: the popup is the page */
+body.kr-lgopen #viewGate .gate-body { visibility: hidden; }

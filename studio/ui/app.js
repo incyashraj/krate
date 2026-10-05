@@ -661,7 +661,11 @@ async function login() {
  * restart. So whichever door started it, Studio looks at the account every
  * few seconds for ten minutes and takes the person on as soon as it is
  * there. */
-function beginBrowserSignIn() {
+function beginBrowserSignIn(provider) {
+  watchSignIn();
+  return invoke("login_browser", provider ? { provider } : {});
+}
+function watchSignIn() {
   state.signInSince = Date.now();
   clearInterval(state.signInWatch);
   state.signInWatch = setInterval(async () => {
@@ -675,13 +679,14 @@ function beginBrowserSignIn() {
       if (a && a.signed_in) signedInFromBrowser(a);
     } catch {}
   }, 3000);
-  return invoke("login_browser");
 }
 function signedInFromBrowser(a) {
   clearInterval(state.signInWatch);
   state.signInSince = 0;
   state.account = a;
   renderAccount();
+  // The sign-in popup (redesign.js) says "you're in" and carries on itself.
+  if (state.loginSurface === "popup" && window.krLoginDone) { window.krLoginDone(a); return; }
   if (state.loginSurface === "publish") {
     if (!$("pubSignin").classList.contains("hidden")) pubSigninDone();
     return;
@@ -698,6 +703,7 @@ function onLoginStep(step) {
   // the browser opened on GitHub's code page while the code itself was
   // invisible. (K-210)
   if (state.loginSurface === "publish") { onPublishLoginStep(step); return; }
+  if (state.loginSurface === "popup" && window.krLoginStep) { window.krLoginStep(step); return; }
   if (step.step === "code") {
     $("gateStart").classList.add("hidden");
     $("gateCode").classList.remove("hidden");

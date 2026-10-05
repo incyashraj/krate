@@ -59,6 +59,20 @@ function goSignIn(request) {
     if (request && typed) localStorage.setItem(START_KEY, JSON.stringify({ text: typed, at: Date.now() }));
     else if (typed) localStorage.setItem(PENDING_KEY, typed);
   } catch (e) {}
+  // The design's sign-in popup, right here over the Studio: GitHub and
+  // Google go on through the sign-in page and come back; an email link is
+  // sent from the popup, and the tab carries on when the link is opened.
+  // Closed without signing in, the words go back in the box.
+  if (request && typed && window.krSignIn) {
+    window.krSignIn({
+      why: "Making an app here needs an account. Your words are kept, and it starts as soon as you are signed in.",
+      onClose: () => {
+        try { localStorage.removeItem(START_KEY); localStorage.setItem(PENDING_KEY, typed); } catch (e) {}
+        location.reload();
+      },
+    });
+    return new Promise(() => {});
+  }
   location.href = "/login/?next=studio";
   return new Promise(() => {});
 }
