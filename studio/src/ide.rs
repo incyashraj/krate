@@ -138,10 +138,29 @@ fn display_name(dir: &Path) -> String {
 }
 
 /// The project at `path`, canonical, or a sentence saying why not.
+/// `~/x` the way a person types it: the home folder. The IDE's box takes a
+/// pasted path, and `~/Krate Apps/x` failed as "not there" (K-973).
+fn expand_home(path: &str) -> PathBuf {
+    let home = || std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    if path == "~" {
+        if let Some(h) = home() {
+            return PathBuf::from(h);
+        }
+    }
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
+        if let Some(h) = home() {
+            return PathBuf::from(h).join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
 fn project_dir(path: &str) -> Result<PathBuf, String> {
     if path.trim().is_empty() {
         return Err("no project is open".to_string());
     }
+    let path = expand_home(path.trim());
+    let path = path.as_path();
     let canon = std::fs::canonicalize(path).map_err(|_| {
         format!(
             "{} is not there any more -- it may have been moved or deleted.",
@@ -1414,6 +1433,19 @@ mod tests {
         let src = rels.iter().position(|r| r == "src").unwrap();
         assert!(src < first_file, "dirs come first: {rels:?}");
         assert_eq!(rels[src + 1], "src/lib.rs", "children follow their dir");
+    }
+
+    #[test]
+    fn a_tilde_path_is_the_home_folder() {
+        let home = PathBuf::from(
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .expect("a home folder"),
+        );
+        assert_eq!(expand_home("~"), home);
+        assert_eq!(expand_home("~/Krate Apps/x"), home.join("Krate Apps/x"));
+        assert_eq!(expand_home("/abs/x"), PathBuf::from("/abs/x"));
+        assert_eq!(expand_home("not~/x"), PathBuf::from("not~/x"));
     }
 
     #[test]

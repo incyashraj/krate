@@ -61,26 +61,95 @@
     img.src = dataUrl;
   }
 
-  /* ---- highlighting ---------------------------------------------------- */
-  const RUST = /(\/\/.*$)|(\/\*.*?\*\/)|("(?:[^"\\]|\\.)*")|('(?:[^'\\]|\\.)')|(#!?\[[^\]]*\])|\b(fn|let|mut|use|const|static|struct|enum|impl|trait|pub|mod|if|else|match|for|while|loop|in|return|extern|crate|as|self|super|where|move|ref|true|false|break|continue|type|unsafe|dyn)\b|\b(\d[\d_]*(?:\.\d+)?(?:[a-z]\w*)?)\b|\b([A-Z][A-Za-z0-9_]*)\b|\b([a-z_][a-z0-9_]*!)|\b([a-z_][a-z0-9_]*)(?=\s*\()/g;
-  const TOML = /(#.*$)|(^\s*\[[^\]]*\])|("(?:[^"\\]|\\.)*")|\b(true|false)\b|(^\s*[A-Za-z0-9_.-]+(?=\s*=))|\b(\d[\d_.]*)\b/g;
-  function hlLine(line, lang) {
-    const rx = lang === "rs" ? RUST : lang === "toml" ? TOML : null;
-    if (!rx) return esc(line);
-    rx.lastIndex = 0;
-    let out = "", at = 0, m;
-    while ((m = rx.exec(line))) {
-      if (m[0] === "") { rx.lastIndex++; continue; }
-      out += esc(line.slice(at, m.index));
-      let cls = "";
-      if (lang === "rs") cls = m[1] || m[2] ? "c" : m[3] || m[4] ? "s" : m[5] ? "a" : m[6] ? "k" : m[7] ? "n" : m[8] ? "t" : m[9] ? "m" : "f";
-      else cls = m[1] ? "c" : m[2] ? "f" : m[3] ? "s" : m[4] ? "k" : m[5] ? "t" : "n";
-      out += `<span class="tk-${cls}">${esc(m[0])}</span>`;
-      at = m.index + m[0].length;
-    }
-    return out + esc(line.slice(at));
+  /* ---- the editor's engine: CodeMirror, loaded the first time it is needed */
+  // vendor/codemirror.js is half a megabyte, so it is fetched when a project
+  // first opens, never on the web (there is no IDE there) and never at launch.
+  let CM = null, cmLoading = null;
+  function loadCM() {
+    if (window.KrateCM) return Promise.resolve((CM = window.KrateCM));
+    if (!cmLoading) cmLoading = new Promise((res, rej) => {
+      const sc = document.createElement("script");
+      sc.src = "vendor/codemirror.js";
+      sc.onload = () => (window.KrateCM ? res((CM = window.KrateCM)) : rej(new Error("the editor did not load")));
+      sc.onerror = () => rej(new Error("the editor could not load"));
+      document.head.appendChild(sc);
+    });
+    return cmLoading;
   }
-  const langOf = (rel) => /\.rs$/.test(rel) ? "rs" : /\.toml$/.test(rel) ? "toml" : "";
+  // The same colours as the Code pane, as classes, so light and dark follow.
+  let hlStyle = null, edTheme = null, setAdds = null, addsField = null;
+  function cmParts() {
+    if (hlStyle) return;
+    const t = CM.tags;
+    hlStyle = CM.HighlightStyle.define([
+      { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.modifier, t.operatorKeyword, t.self], class: "tk-k" },
+      { tag: [t.string, t.character, t.special(t.string)], class: "tk-s" },
+      { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], class: "tk-c" },
+      { tag: [t.number, t.bool, t.atom, t.null], class: "tk-n" },
+      { tag: [t.typeName, t.className, t.namespace, t.heading, t.standard(t.typeName)], class: "tk-t" },
+      { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName], class: "tk-f" },
+      { tag: [t.meta, t.attributeName, t.annotation, t.processingInstruction], class: "tk-a" },
+    ]);
+    edTheme = CM.EditorView.theme({
+      "&": { height: "100%", fontSize: "12.5px", color: "var(--ink)", backgroundColor: "transparent" },
+      "&.cm-focused": { outline: "none" },
+      ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: "1.75" },
+      ".cm-content": { padding: "14px 0 120px", caretColor: "var(--ink)" },
+      ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "var(--ink-4)" },
+      ".cm-lineNumbers .cm-gutterElement": { padding: "0 12px 0 16px" },
+      ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--ink) 3.5%, transparent)" },
+      ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--ink-2)" },
+      ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--ink)" },
+      "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 24%, transparent) !important" },
+      ".cm-matchingBracket": { backgroundColor: "color-mix(in srgb, var(--accent) 18%, transparent)", outline: "none" },
+      ".cm-selectionMatch": { backgroundColor: "color-mix(in srgb, var(--accent) 10%, transparent)" },
+      ".cm-panels": { backgroundColor: "var(--surface)", color: "var(--ink)" },
+      ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--line)" },
+      ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--orange) 22%, transparent)" },
+      ".cm-searchMatch-selected": { backgroundColor: "color-mix(in srgb, var(--orange) 45%, transparent)" },
+      ".cm-tooltip": { backgroundColor: "var(--surface)", border: "none", borderRadius: "10px", boxShadow: "0 0 0 1px var(--hair), 0 12px 30px -12px rgba(0,0,0,.3)" },
+      ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "var(--surface-2)", color: "var(--ink)" },
+      ".cm-foldGutter .cm-gutterElement": { color: "var(--ink-4)" },
+      ".cm-line.kr-add": { backgroundColor: "color-mix(in srgb, var(--green) 12%, transparent)" },
+    });
+    // The lines the AI just added, marked where they landed.
+    setAdds = CM.StateEffect.define();
+    addsField = CM.StateField.define({
+      create: () => CM.Decoration.none,
+      update(deco, tr) {
+        for (const e of tr.effects) if (e.is(setAdds)) {
+          const b = new CM.RangeSetBuilder();
+          for (const n of [...e.value].sort((x, y) => x - y)) {
+            if (n < tr.state.doc.lines) { const line = tr.state.doc.line(n + 1); b.add(line.from, line.from, CM.Decoration.line({ class: "kr-add" })); }
+          }
+          return b.finish();
+        }
+        return tr.docChanged ? CM.Decoration.none : deco;
+      },
+      provide: (f) => CM.EditorView.decorations.from(f),
+    });
+  }
+  function extensionsFor(rel) {
+    const K = CM; cmParts();
+    const lang = /\.rs$/.test(rel) ? K.rust() : /\.toml$/.test(rel) ? K.toml : [];
+    return [
+      K.lineNumbers(), K.highlightActiveLineGutter(), K.highlightSpecialChars(), K.history(),
+      K.foldGutter({ openText: "▾", closedText: "▸" }), K.drawSelection(), K.dropCursor(),
+      K.EditorState.allowMultipleSelections.of(true), K.indentOnInput(), K.syntaxHighlighting(hlStyle),
+      K.bracketMatching(), K.closeBrackets(), K.autocompletion(), K.rectangularSelection(), K.crosshairCursor(),
+      K.highlightActiveLine(), K.highlightSelectionMatches(), K.indentUnit.of("    "), K.EditorState.tabSize.of(4),
+      K.search({ top: true }),
+      K.keymap.of([
+        { key: "Mod-s", run: () => { saveAll(true); return true; } },
+        { key: "Mod-l", run: K.gotoLine },
+        { key: "Mod-/", run: K.toggleComment },
+        ...K.closeBracketsKeymap, ...K.defaultKeymap, ...K.searchKeymap, ...K.historyKeymap,
+        ...K.foldKeymap, ...K.completionKeymap, ...K.lintKeymap, K.indentWithTab,
+      ]),
+      lang, addsField, edTheme,
+      K.EditorView.updateListener.of((u) => onEditorUpdate(rel, u)),
+    ];
+  }
 
   /* ---- the project being worked on ------------------------------------- */
   let ide = null; // { path, name, tree, docs: Map, open: [], cur, busy, built }
@@ -102,11 +171,13 @@
     while (pre.childNodes.length > 2000) pre.removeChild(pre.firstChild);
     pre.scrollTop = pre.scrollHeight;
   }
-  function problems(list) {
+  function problems(list, notes) {
     const box = $("ideProbs");
+    notes = notes || [];
     $("ideProbN").textContent = String(list.length);
-    box.innerHTML = list.length ? list.map((p) => `<div class="ip-prob"><b>${esc(p.stage)}</b><pre>${esc(p.message)}</pre></div>`).join("")
-      : '<p class="ip-ok">No problems. It builds, imports only Krate, and runs.</p>';
+    box.innerHTML = (list.length ? list.map((p) => `<div class="ip-prob"><b>${esc(p.stage)}</b><pre>${esc(p.message)}</pre></div>`).join("")
+      : '<p class="ip-ok">No problems. It builds, imports only Krate, and runs.</p>') +
+      notes.map((n) => `<div class="ip-prob ip-note"><b>note</b><pre>${esc(n)}</pre></div>`).join("");
     if (list.length) panelTab("prob");
   }
   function panelTab(which) {
@@ -120,7 +191,10 @@
     tauri.event.listen("ide-line", (e) => {
       const p = e.payload || {};
       if (!ide || !p.line) return;
-      if (p.path && p.path !== ide.path && !p.path.endsWith("/" + ide.name)) return;
+      // One project is open at a time. While it is working, its lines are
+      // its own whatever spelling of the path they carry (a project opened
+      // from an app's Code pane can arrive under another one, K-973).
+      if (!ide.busy && p.path && p.path !== ide.path && !p.path.endsWith("/" + ide.name)) return;
       term(String(p.line));
     });
   } catch (e) { /* no events: the result still arrives */ }
@@ -158,67 +232,80 @@
   });
 
   /* ---- the editor ----------------------------------------------------- */
+  // One CodeMirror view; each open file keeps its own state, so its undo
+  // history, cursor and scroll survive switching tabs (K-973).
   const ed = $("ideEd");
-  ed.insertAdjacentHTML("beforeend", '<div class="ide-code hidden" id="ideCode"><div class="ide-gut" aria-hidden="true"><div class="ide-gutin" id="ideGut"></div></div><div class="ide-cw"><pre class="ide-hl" id="ideHl" aria-hidden="true"></pre><textarea class="ide-src" id="ideSrc" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Code"></textarea></div></div><div class="ide-msg hidden" id="ideMsg"></div>');
-  const src = $("ideSrc"), hl = $("ideHl"), gut = $("ideGut");
-  let paintQueued = false;
-  function paintCode() {
-    paintQueued = false;
-    const doc = ide && ide.docs.get(ide.cur); if (!doc) return;
-    const lines = src.value.split("\n");
-    const lang = langOf(ide.cur);
-    hl.innerHTML = lines.map((l, i) => `<span class="l${doc.adds && doc.adds.has(i) ? " add" : ""}">${hlLine(l, lang) || "\u200b"}</span>`).join("");
-    if (gut.childElementCount !== lines.length) gut.innerHTML = lines.map((_, i) => `<span>${i + 1}</span>`).join("");
-    syncScroll();
-  }
-  const queuePaint = () => { if (!paintQueued) { paintQueued = true; requestAnimationFrame(paintCode); } };
-  function syncScroll() {
-    hl.style.transform = `translate(${-src.scrollLeft}px, ${-src.scrollTop}px)`;
-    gut.style.transform = `translateY(${-src.scrollTop}px)`;
-  }
-  src.addEventListener("scroll", syncScroll);
-  src.addEventListener("input", () => {
-    const doc = ide && ide.docs.get(ide.cur); if (!doc) return;
+  ed.insertAdjacentHTML("beforeend", '<div class="ide-bar hidden" id="ideBar" role="status"><span class="t"></span><span class="grow"></span></div><div class="ide-code hidden" id="ideCode"></div><div class="ide-msg hidden" id="ideMsg"></div>');
+  let edView = null;
+  const textOf = (doc) => (doc && doc.state ? doc.state.doc.toString() : (doc && doc.text) || "");
+  function onEditorUpdate(rel, u) {
+    const doc = ide && ide.docs.get(rel); if (!doc) return;
+    doc.state = u.state;
+    if (!u.docChanged) return;
     const was = doc.dirty;
-    doc.text = src.value; doc.dirty = doc.text !== doc.saved;
-    if (doc.adds) doc.adds = null;
-    queuePaint();
+    doc.dirty = textOf(doc) !== doc.saved;
+    keepDraft(rel, doc);
     if (was !== doc.dirty) { paintTabs(); paintTree(); }
-  });
-  src.addEventListener("keydown", (e) => {
-    const mod = isMac ? e.metaKey : e.ctrlKey;
-    if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveAll(true); return; }
-    if (e.key === "Tab" && !e.altKey && !mod) {
-      e.preventDefault();
-      const s = src.selectionStart, en = src.selectionEnd, v = src.value;
-      if (e.shiftKey) {
-        const ls = v.lastIndexOf("\n", s - 1) + 1;
-        const cut = v.slice(ls, ls + 4).match(/^ {1,4}/);
-        if (cut) { src.setRangeText("", ls, ls + cut[0].length, "preserve"); }
-      } else { src.setRangeText("    ", s, en, "end"); }
-      src.dispatchEvent(new Event("input")); return;
-    }
-    if (e.key === "Enter" && !mod && !e.shiftKey && !e.altKey) {
-      // Keep the indent, and step in after an opening brace.
-      const s = src.selectionStart, v = src.value;
-      const ls = v.lastIndexOf("\n", s - 1) + 1;
-      const indent = (v.slice(ls, s).match(/^\s*/) || [""])[0];
-      const more = /[{(\[]\s*$/.test(v.slice(ls, s)) ? "    " : "";
-      e.preventDefault();
-      src.setRangeText("\n" + indent + more, s, src.selectionEnd, "end");
-      src.dispatchEvent(new Event("input"));
-    }
-  });
+  }
+  function newState(rel, text) { return CM.EditorState.create({ doc: text, extensions: extensionsFor(rel) }); }
+  // Replace a file's text without losing its undo history.
+  function replaceText(rel, doc, text) {
+    const len = doc.state.doc.length;
+    const tr = { changes: { from: 0, to: len, insert: text } };
+    if (edView && ide.cur === rel) edView.dispatch(tr);
+    else doc.state = doc.state.update(tr).state;
+  }
+
+  /* Unsaved work is kept as a draft as you type, so closing the window, a
+   * crash or a reload never loses it; it comes back the next time the file
+   * opens, marked as not saved (K-973). */
+  const DRAFTS = "krate-ide-drafts";
+  const drafts = () => { try { return JSON.parse(localStorage.getItem(DRAFTS) || "{}"); } catch (e) { return {}; } };
+  let draftT = 0;
+  function keepDraft(rel, doc) {
+    clearTimeout(draftT);
+    draftT = setTimeout(() => {
+      try {
+        const all = drafts(); const mine = all[ide.path] || {};
+        if (doc.dirty) mine[rel] = textOf(doc); else delete mine[rel];
+        if (Object.keys(mine).length) all[ide.path] = mine; else delete all[ide.path];
+        localStorage.setItem(DRAFTS, JSON.stringify(all));
+      } catch (e) { /* a full or blocked store: the save is still the save */ }
+    }, 300);
+  }
+  function dropDraft(rel) {
+    try { const all = drafts(); if (all[ide.path]) { delete all[ide.path][rel]; if (!Object.keys(all[ide.path]).length) delete all[ide.path]; localStorage.setItem(DRAFTS, JSON.stringify(all)); } } catch (e) {}
+  }
+
+  /* A question above the editor, answered with one of its buttons. */
+  function ask(text, choices) {
+    const bar = $("ideBar");
+    return new Promise((res) => {
+      bar.querySelector(".t").textContent = text;
+      bar.querySelectorAll("button").forEach((b) => b.remove());
+      for (const [key, label, primary] of choices) {
+        const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+        if (primary) b.className = "pri";
+        b.addEventListener("click", () => { bar.classList.add("hidden"); res(key); });
+        bar.appendChild(b);
+      }
+      bar.classList.remove("hidden");
+    });
+  }
 
   async function openFile(rel) {
     if (!ide) return;
+    try { await loadCM(); } catch (err) { $("ideMsg").textContent = String(err.message || err); $("ideMsg").classList.remove("hidden"); return; }
     let doc = ide.docs.get(rel);
+    let recovered = false;
     if (!doc) {
       try {
         const text = await call("ide_read", { path: ide.path, rel });
-        doc = { text, saved: text, dirty: false, adds: null, error: null };
+        const draft = (drafts()[ide.path] || {})[rel];
+        recovered = typeof draft === "string" && draft !== text;
+        doc = { saved: text, dirty: recovered, error: null, state: newState(rel, recovered ? draft : text) };
       } catch (err) {
-        doc = { text: "", saved: "", dirty: false, adds: null, error: String(err) };
+        doc = { saved: "", dirty: false, error: String(err), state: null };
       }
       ide.docs.set(rel, doc);
     }
@@ -226,6 +313,12 @@
     ide.cur = rel;
     showDoc();
     paintTabs(); paintTree();
+    // Asked without holding the project up: it still opens and builds.
+    if (recovered) {
+      ask(`Your unsaved changes to ${rel.split("/").pop()} were kept from last time.`, [["keep", "Keep them", true], ["drop", "Discard"]]).then((k) => {
+        if (k === "drop") { replaceText(rel, doc, doc.saved); doc.dirty = false; dropDraft(rel); paintTabs(); paintTree(); }
+      });
+    }
   }
   function showDoc() {
     const doc = ide && ide.cur ? ide.docs.get(ide.cur) : null;
@@ -235,10 +328,9 @@
     msg.classList.toggle("hidden", !doc || !doc.error);
     if (!doc) return;
     if (doc.error) { msg.textContent = `${ide.cur}: ${doc.error}`; return; }
-    src.value = doc.text;
-    src.scrollTop = 0; src.scrollLeft = 0;
-    gut.innerHTML = "";
-    paintCode();
+    if (!edView) edView = new CM.EditorView({ state: doc.state, parent: code });
+    else edView.setState(doc.state);
+    requestAnimationFrame(() => { try { edView.focus(); } catch (e) {} });
   }
   function paintTabs() {
     const box = $("ideTabs");
@@ -252,7 +344,13 @@
     const x = e.target.closest("[data-x]");
     if (x) {
       const rel = x.dataset.x; const doc = ide.docs.get(rel);
-      if (doc && doc.dirty) await saveOne(rel);
+      // A tab with changes asks; it used to save them without a word.
+      if (doc && doc.dirty) {
+        const k = await ask(`Save your changes to ${rel.split("/").pop()} before closing it?`, [["save", "Save", true], ["drop", "Don't save"], ["cancel", "Cancel"]]);
+        if (k === "cancel") return;
+        if (k === "save" && !(await saveOne(rel))) return;
+        if (k === "drop") { dropDraft(rel); ide.docs.delete(rel); }
+      }
       ide.open = ide.open.filter((r) => r !== rel);
       if (ide.cur === rel) ide.cur = ide.open[ide.open.length - 1] || null;
       showDoc(); paintTabs(); paintTree(); return;
@@ -262,9 +360,10 @@
 
   async function saveOne(rel) {
     const doc = ide.docs.get(rel); if (!doc || !doc.dirty || doc.error) return true;
+    const text = textOf(doc);
     try {
-      await call("ide_write", { path: ide.path, rel, text: doc.text });
-      doc.saved = doc.text; doc.dirty = false; return true;
+      await call("ide_write", { path: ide.path, rel, text });
+      doc.saved = text; doc.dirty = textOf(doc) !== doc.saved; dropDraft(rel); return true;
     } catch (err) { term(`could not save ${rel}: ${err}`, "r"); return false; }
   }
   async function saveAll(thenBuild) {
@@ -276,15 +375,42 @@
     if (thenBuild && any) build("you saved");
   }
 
+  /* Files the build, the AI or another editor changed on disk come back in:
+   * a file you have not touched is reloaded; one you have changed asks. A
+   * later save used to overwrite such a change without a word (K-973). */
+  let diskBusy = false;
+  async function checkDisk() {
+    if (!ide || diskBusy) return;
+    diskBusy = true;
+    try {
+      for (const [rel, doc] of ide.docs) {
+        if (doc.error || !doc.state) continue;
+        let disk;
+        try { disk = await call("ide_read", { path: ide.path, rel }); } catch (e) { continue; }
+        if (disk === doc.saved) continue;
+        if (!doc.dirty) { replaceText(rel, doc, disk); doc.saved = disk; doc.dirty = false; term(`==> ${rel} changed on disk; reloaded it`, "m"); continue; }
+        const k = await ask(`${rel.split("/").pop()} changed on disk while you were editing it.`, [["disk", "Use the file on disk"], ["mine", "Keep mine", true]]);
+        if (k === "disk") { replaceText(rel, doc, disk); doc.saved = disk; doc.dirty = false; dropDraft(rel); }
+        else doc.saved = disk;
+        paintTabs(); paintTree();
+      }
+    } finally { diskBusy = false; }
+  }
+  window.addEventListener("focus", () => { if (ide && !view.classList.contains("hidden")) checkDisk(); });
+
   /* ---- build, run, pack, ask ------------------------------------------ */
   function busy(on, label) {
     ide.busy = on;
     ["ideRun", "ideBuild", "ideAskGo", "ideRefresh"].forEach((id) => { const b = $(id); if (b) b.disabled = on; });
     $("ideAskBar").classList.toggle("busy", on);
     if (on) setStatus("busy", label || "Working…");
+    // A save that came in while it was busy is built now (K-973: it was
+    // dropped without a word).
+    else if (ide.queued) { const why = ide.queued; ide.queued = null; setTimeout(() => build(why), 0); }
   }
   async function build(why) {
-    if (!ide || ide.busy) return;
+    if (!ide) return;
+    if (ide.busy) { ide.queued = why || "you saved"; term("==> saved; it builds when this finishes", "m"); return; }
     busy(true, "Building…");
     term(`==> ${why ? why + ": " : ""}building ${ide.name}`);
     try {
@@ -295,7 +421,12 @@
         const secs = (r.millis / 1000).toFixed(1);
         setStatus("ok", `Builds${r.size_bytes ? " · " + kb(r.size_bytes) : ""}`);
         term(`==> built in ${secs} s${r.size_bytes ? " · " + kb(r.size_bytes) : ""}${r.shot ? " · preview is live" : ""}`, "g");
-        problems([]);
+        // What the engine noticed on a good build (usability notes, files it
+        // rewrote) is shown, not dropped (K-973).
+        const notes = String(r.message || "").split("\n").filter((l) => /^note: /.test(l)).map((l) => l.slice(6));
+        notes.forEach((n) => term(`note: ${n}`, "m"));
+        problems([], notes);
+        checkDisk();
         if (r.shot) showShot(r.shot);
         panelTab("term");
       } else {
@@ -355,7 +486,7 @@
     const request = askIn.value.trim();
     if (!request) { askIn.focus(); return; }
     await saveAll(false);
-    const before = new Map([...ide.docs].map(([rel, d]) => [rel, d.text]));
+    const before = new Map([...ide.docs].map(([rel, d]) => [rel, textOf(d)]));
     askIn.value = ""; askIn.placeholder = `${agentWords()} is changing the app…`;
     busy(true, `${agentWords()} is working…`);
     term(`==> asking ${agentWords()}: ${request}`);
@@ -369,14 +500,15 @@
         let text;
         try { text = await call("ide_read", { path: ide.path, rel }); } catch (err) { continue; }
         const old = before.get(rel);
-        const doc = ide.docs.get(rel) || { text: "", saved: "", dirty: false };
+        let doc = ide.docs.get(rel);
+        if (!doc || !doc.state) { doc = { saved: text, dirty: false, error: null, state: newState(rel, text) }; ide.docs.set(rel, doc); }
+        else { replaceText(rel, doc, text); doc.saved = text; doc.dirty = false; doc.error = null; dropDraft(rel); }
         // The lines that are new, so the change can be seen where it landed.
         if (old != null) {
           const had = new Set(old.split("\n").map((l) => l.trim()));
-          doc.adds = new Set(text.split("\n").map((l, i) => (l.trim() && !had.has(l.trim()) ? i : -1)).filter((i) => i >= 0));
+          const adds = text.split("\n").map((l, i) => (l.trim() && !had.has(l.trim()) ? i : -1)).filter((i) => i >= 0);
+          doc.state = doc.state.update({ effects: setAdds.of(adds) }).state;
         }
-        doc.text = text; doc.saved = text; doc.dirty = false; doc.error = null;
-        ide.docs.set(rel, doc);
         if (!ide.open.includes(rel)) ide.open.push(rel);
       }
       if (changed.length && !changed.includes(ide.cur)) ide.cur = changed.find((c) => /\.rs$/.test(c)) || changed[0];
@@ -398,7 +530,7 @@
     if (!ide || view.classList.contains("hidden")) return;
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (mod && !e.shiftKey && e.key.toLowerCase() === "i") { e.preventDefault(); askIn.focus(); }
-    if (mod && e.key.toLowerCase() === "s" && document.activeElement !== src) { e.preventDefault(); saveAll(true); }
+    if (mod && e.key.toLowerCase() === "s" && !(edView && edView.hasFocus)) { e.preventDefault(); saveAll(true); }
   });
   $("ideAskKey").textContent = MOD + "I";
 
@@ -406,7 +538,8 @@
   async function openProject(p) {
     if (!p || !p.path) return;
     if (ide && ide.path !== p.path) await saveAll(false);
-    ide = { path: p.path, name: p.name || p.path.split(/[\\/]/).pop(), tree: [], docs: new Map(), open: [], cur: null, busy: false, built: null, collapsed: new Set() };
+    ide = { path: p.path, name: p.name || p.path.split(/[\\/]/).pop(), tree: [], docs: new Map(), open: [], cur: null, busy: false, built: null, collapsed: new Set(), queued: null };
+    if (edView) { edView.destroy(); edView = null; }
     $("ideName").textContent = ide.name;
     $("idePath").textContent = short(ide.path);
     $("ideFrameName").textContent = ide.name.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -522,6 +655,8 @@
 
   // Home tells us when its IDE tab is chosen (redesign.js setMode).
   document.addEventListener("kr-home-mode", (e) => { if (e.detail === "ide") { loadProjects(); paintAgent(); } });
+  // Closing the window: anything not saved is already kept as a draft, and
+  // comes back the next time the project opens.
   window.addEventListener("beforeunload", () => { if (ide) saveAll(false); });
   // Studio's Code pane opens a built app's own source here.
   window.krIdeOpen = (path, name) => openProject({ path, name });
