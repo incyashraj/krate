@@ -7936,15 +7936,26 @@ $("changeDirBtn").addEventListener("click", async () => {
       .catch(() => {});
   }
 });
-$("logoutBtn").addEventListener("click", async () => {
-  await invoke("account_logout");
+/* Signing out lands on the sign-in page, wherever it was pressed.
+ *
+ * The profile row used to stay on the profile page ("signing out is not
+ * leaving the app"), and the founder pressed it and saw nothing change:
+ * no way back to signing in, no sign that anything had happened. One
+ * function now, so the account sheet, the profile row and the sidebar's
+ * menu all end in the same place. */
+async function signOutToGate() {
+  try { await invoke("account_logout"); } catch (e) {}
   state.account = null;
-  // The button lives on the ACCOUNT sheet; hiding only the settings sheet
-  // left the popup floating over the sign-in gate after sign-out.
-  $("accountSheet").classList.add("hidden");
-  $("settingsSheet").classList.add("hidden");
+  // In a tab, signing out is leaving: the site's front page is where a
+  // signed-out person belongs, and it is one press from signing back in.
+  if (!tauri) { location.replace("/"); return; }
+  // The button may live on a sheet or the settings dialog; nothing may be
+  // left floating over the gate.
+  document.querySelectorAll(".sheet-wrap").forEach((w) => w.classList.add("hidden"));
+  try { closeSettings(); } catch (e) {}
   $("gateStart").classList.remove("hidden");
   $("gateCode").classList.add("hidden");
+  renderAccount();
   showView("gate");
   // One action on the first screen. The code path is the fallback for a
   // browser hand-off that is not going to arrive; it appears when the wait
@@ -7952,7 +7963,8 @@ $("logoutBtn").addEventListener("click", async () => {
   // button competing with the first before anything has gone wrong.
   clearTimeout(state.gateFallback);
   state.gateFallback = setTimeout(() => $("loginBtn").classList.remove("hidden"), 15000);
-});
+}
+$("logoutBtn").addEventListener("click", signOutToGate);
 /* Every close button, by what it DOES rather than what it looks like.
  *
  * This bound to .sheet-close, which is a styling class -- so when the AI
@@ -8284,7 +8296,12 @@ async function renderShelf() {
       .replace(/\.krate$/, "")
       .replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
-    card.innerHTML = `<span class="shot"></span><b>${escapeHtml(label || session.title || "App")}</b>`;
+    // Size and when, under the name: which of two similar apps is the one
+    // from this morning is the question the shelf is for.
+    const meta = [session.result && session.result.size, session.updated ? timeAgo(session.updated).replace(/^\w/, (c) => c.toUpperCase()) : ""]
+      .filter(Boolean).join(" · ");
+    card.innerHTML = `<span class="shot"></span><b>${escapeHtml(label || session.title || "App")}</b>` +
+      (meta ? `<small class="shelf-meta">${escapeHtml(meta)}</small>` : "");
     card.addEventListener("click", () => openSession(session));
     body.appendChild(card);
 
@@ -9072,18 +9089,8 @@ document.addEventListener("click", (event) => {
  * destinations. Bound here, at the top level, on the element that is in the
  * markup and never replaced.
  *
- * Staying on the profile page is the right end: signing out is not leaving
- * the app, and the page has something true to show afterwards -- the apps
- * are still on this computer, which is exactly what the row promises. */
-$("profSignOut")?.addEventListener("click", async () => {
-  try { await invoke("account_logout"); } catch (e) {}
-  state.account = null;
-  // In a tab, signing out is leaving: the site's front page is where a
-  // signed-out person belongs, and it is one press from signing back in.
-  if (!tauri) { location.replace("/"); return; }
-  loadProfilePage();
-  paintGreeting();
-});
+ * It ends on the sign-in page, like every other sign-out (signOutToGate). */
+$("profSignOut")?.addEventListener("click", signOutToGate);
 
 /* The way in, from the same page that says "Not signed in". In a tab the
  * shell goes to the site's sign-in page and comes back. On a desktop the

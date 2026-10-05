@@ -1175,18 +1175,9 @@ body:not(.light) #viewSession #thread .vchip { background: var(--surface-2); }
 /* a plan, and a question */
 #thread .plancard { border: 0; border-radius: 16px; padding: 14px 16px; background: var(--surface); box-shadow: var(--sh-1); }
 body:not(.light) #thread .plancard { background: var(--surface-2); }
-#thread .msg.ask { border: 0; border-radius: 16px; padding: 14px 16px; background: var(--surface);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, var(--hair)), 0 10px 30px -18px color-mix(in srgb, var(--accent) 50%, transparent); }
-body:not(.light) #thread .msg.ask { background: var(--surface-2); }
 #thread .msg.ask::before { display: none; }
-#thread .msg.plan { border: 0; border-radius: 16px; padding: 14px 16px; background: var(--surface); box-shadow: var(--sh-1); }
-body:not(.light) #thread .msg.plan { background: var(--surface-2); }
 #thread .msg.plan::before { display: none; }
 #thread .msg.plan .body, #thread .msg.ask .body { font-size: 14px; line-height: 1.6; color: var(--ink); }
-#thread .msg.plan .body::before, #thread .msg.ask .body::before { display: block; margin-bottom: 6px; font: 500 11.5px var(--sans); }
-#thread .msg.plan .body::before { content: "✦ Plan"; color: var(--violet); }
-#thread .msg.ask .body::before { content: "One thing first"; color: var(--accent); }
-body:not(.light) #thread .msg.plan .body::before { color: #a891ff; }
 #thread .msg.plan .msg-actions, #thread .msg.ask .msg-actions { display: flex; gap: 8px; margin-top: 14px; }
 #thread .msg.plan .msg-tools, #thread .msg.ask .msg-tools { display: none; }
 #thread .msg-actions .btn { height: 30px; padding: 0 12px; font-size: 13px; }
@@ -1672,7 +1663,7 @@ body:not(.light) .kr-pi .kr-lgb { background: #26262a; }
 .kr-pi .kr-lgb svg, .kr-pi .kr-lgb img { width: 17px; height: 17px; }
 .kr-pop.big .kr-pi.on .kr-lgb { background: var(--surface); }
 .kr-pop .kr-pop-head { padding: 6px 12px 4px; font: 500 11.5px var(--sans); color: var(--ink-3); letter-spacing: .01em; }
-.kr-pi em { padding: 3px 9px; border-radius: 99px; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink-2); }
+.kr-pop.big .kr-pi em { padding: 3px 9px; border-radius: 99px; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink-2); }
 .kr-pop.big .kr-pi { text-align: left; }
 
 /* ---- Share: one sheet, three ways --------------------------------------- */
@@ -1949,8 +1940,8 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 /* ---- Share: publish in the sheet ---------------------------------------- */
 .kr-frm { display: flex; flex-direction: column; gap: 12px; }
 .kr-frm label { display: flex; flex-direction: column; gap: 6px; font: 500 12.5px var(--sans); color: var(--ink-2); }
-.kr-in { height: 40px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); font: 400 14px var(--sans); color: var(--ink); outline: 0; transition: box-shadow .2s, background .2s; }
-.kr-in:focus { background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--line-strong)), 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
+.kr-field { height: 40px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); font: 400 14px var(--sans); color: var(--ink); outline: 0; transition: box-shadow .2s, background .2s; }
+.kr-field:focus { background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--line-strong)), 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
 .kr-tog { display: flex; align-items: center; gap: 12px; padding: 2px 0; }
 .kr-tog > span { flex: 1; font: 500 13.5px var(--sans); color: var(--ink); }
 .kr-tog small { display: block; font: 400 12px var(--sans); color: var(--ink-3); }
@@ -1995,3 +1986,25 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 /* Chrome text is not a document: a double-click on your name no longer selects it. */
 .side, .side * { -webkit-user-select: none; user-select: none; }
 .side input, .side textarea { -webkit-user-select: text; user-select: text; }
+
+/* ---- round five ---------------------------------------------------------- */
+.kr-panehint { margin: 0; padding: 0 16px 12px; font-size: 12.5px; line-height: 1.45; color: var(--danger); }
+.kr-panehint[hidden] { display: none; }
+
+/* Krate's plain lines (a stop, a wall, a note) read as text, like the rest of
+   what it says. Only a plan and a question are cards (kr-carded). */
+#thread .msg.krate.ask:not(.kr-carded), #thread .msg.krate.plan:not(.kr-carded) { padding: 0; border: 0; background: none; box-shadow: none; }
+#thread .msg.krate.ask:not(.kr-carded) .body, #thread .msg.krate.plan:not(.kr-carded) .body { background: none; padding: 0; }
+/* The Mac window buttons sit at x 20 and end near x 74; a 72px rail put the
+   green one on the card's edge. On macOS the rail is wide enough to hold them. */
+@media (min-width: 861px) {
+  body.macos.kr-rail .side { width: 88px; }
+  body.macos.kr-rail .view { margin-left: 88px; }
+  body.macos.kr-rail .side-nav > .side-row, body.macos.kr-rail .side-nav > .side-search { padding-left: 23px; }
+  body.macos.kr-rail .side-avatar { padding-left: 18px; }
+  body.macos.kr-rail .side-bell { margin-left: 16px; }
+}
+.kr-pop:not(.big) .kr-pi .kr-lgb { width: 18px; height: 18px; border-radius: 5px; background: none; box-shadow: none; }
+.kr-pop:not(.big) .kr-pi .kr-lgb svg, .kr-pop:not(.big) .kr-pi .kr-lgb img { width: 15px; height: 15px; }
+.kr-pi.danger, .kr-pi.danger .kr-ico { color: var(--danger); }
+#viewHome .shelf-card .shelf-meta { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-3); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

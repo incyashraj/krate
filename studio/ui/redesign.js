@@ -52,7 +52,10 @@
       b.innerHTML = (it.mark ? `<span class="kr-lgb">${it.mark}</span>` : it.icon ? ico(it.icon) : "") +
         `<span class="kr-pt">${esc(it.label)}${it.sub ? `<small>${esc(it.sub)}</small>` : ""}</span>` +
         (it.on ? ico("check", "kr-ico kr-tick") : it.em ? `<em>${esc(it.em)}</em>` : "");
-      b.addEventListener("click", (e) => { e.stopPropagation(); closePop(); it.run && it.run(); });
+      // `keep`: a row that changes in place (a remove that asks twice) runs
+      // with the menu still open; every other row closes it first, so a row
+      // may open a menu of its own.
+      b.addEventListener("click", (e) => { e.stopPropagation(); if (it.keep) { if (it.run(b) !== true) closePop(); return; } closePop(); it.run && it.run(); });
       p.appendChild(b);
     }
     document.body.appendChild(p);
@@ -205,6 +208,10 @@
       ideRow.classList.toggle("on", mode === "ide");
       homeRow.classList.toggle("on", mode !== "ide");
     }
+    // A note under the box belongs to the door it was written for; a port
+    // or IDE message must not stay under Create (or the other way round).
+    const hh = $("homeHint"); if (hh && hh.dataset.mode && hh.dataset.mode !== mode) { hh.textContent = ""; }
+    if (hh) hh.dataset.mode = mode;
     if (mode === "create") { const ta = $("homePrompt"); if (ta) ta.focus({ preventScroll: true }); }
   }
   if (tabs) {
@@ -539,6 +546,10 @@
         { icon: dark ? "sun" : "moon", label: dark ? "Light mode" : "Dark mode", run: () => press($("themeBtn")) },
         { icon: "gift", label: "Share Krate", run: () => press($("sideShare")) },
         { icon: "book", label: "Docs", em: "↗", run: () => press($("sideDocs")) },
+        "sep",
+        (app() && app().account && app().account.signed_in !== false && (app().account.login || app().account.name))
+          ? { icon: "lock", label: "Sign out", danger: true, run: () => { try { signOutToGate(); } catch (e) {} } }
+          : { icon: "user", label: "Sign in", run: () => press($("profSignIn")) },
       ];
       openPop(acct, items, { above: true });
     }, true);
@@ -1428,8 +1439,8 @@
     if (sheet) sheet.classList.add("hidden");
     const nameV = (($("pubName") || {}).value || ""), descV = (($("pubDesc") || {}).value || "");
     pane.innerHTML = `<div class="kr-frm">
-        <label>Name<input class="kr-in" data-n maxlength="60"></label>
-        <label>One line about it<input class="kr-in" data-d maxlength="140" placeholder="What it does, in a sentence"></label>
+        <label>Name<input class="kr-field" data-n maxlength="60"></label>
+        <label>One line about it<input class="kr-field" data-d maxlength="140" placeholder="What it does, in a sentence"></label>
         <div class="kr-tog"><span>List it in the gallery<small>Off: only people with the link can find it.</small></span><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="List it in the gallery" data-l></button></div>
         <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}<span>Publish</span></button><button type="button" class="btn kr-ghost" data-more>Add a picture or a logo</button></div>
         <p class="kr-sherr" hidden></p></div>`;
@@ -1503,6 +1514,7 @@
   // that points at the real box, the real AI chip and the real sidebar.
   // app.js still decides WHEN (needsOnboarding) and records that it was
   // seen (markOnboarded); this only changes what "the welcome" is.
+  const WELCOME_KEY = "krate-welcome-v3";
   const obWrap = document.createElement("div");
   obWrap.className = "kr-ob"; obWrap.id = "krOb";
   obWrap.setAttribute("role", "dialog"); obWrap.setAttribute("aria-modal", "true"); obWrap.setAttribute("aria-labelledby", "krObT");
@@ -1558,6 +1570,7 @@
   function obClose(tour) {
     if (!obWrap.classList.contains("on")) return;
     try { markOnboarded(); } catch (e) {}
+    try { localStorage.setItem(WELCOME_KEY, "1"); } catch (e) {}
     obWrap.classList.add("out"); pvRun++; clearTimeout(pvT);
     setTimeout(() => {
       obWrap.classList.remove("on", "out");
@@ -1669,6 +1682,23 @@
       if (old && !old.classList.contains("hidden")) window.showView("onboard");
     }
   } catch (e) {}
+  // The welcome is new, so everyone sees it once -- not only a first run.
+  // Somebody who onboarded before it existed has never seen it, and the
+  // only other way to it was a row in Settings. Shown on Home, never over
+  // work in progress, and then never again on this computer.
+  (function welcomeOnce() {
+    const seen = () => { try { return localStorage.getItem(WELCOME_KEY) === "1"; } catch (e) { return true; } };
+    if (seen()) return;
+    let tries = 0;
+    const t = setInterval(() => {
+      // Closed by the first-run path meanwhile: that was this welcome.
+      if (seen()) { clearInterval(t); return; }
+      const home = $("viewHome");
+      const busy = qa(".sheet-wrap:not(.hidden)").length || obWrap.classList.contains("on") || tourEl.classList.contains("on");
+      if (home && !home.classList.contains("hidden") && !busy) { clearInterval(t); obOpen(); }
+      else if (++tries > 40) clearInterval(t);
+    }, 250);
+  })();
 
   /* ---- the Code pane: open the app's source in the IDE ------------------- */
   (function codeToIde() {
@@ -1714,6 +1744,31 @@
     const ps = $("planSheet"); if (ps) ps.classList.add("hidden");
     try { openAiSheet(); } catch (e) {}
   });
+
+  /* ---- the app's name in the session: its menu ---------------------------- */
+  (function titleMenu() {
+    const t = $("sessTitleBtn");
+    if (!t) return;
+    t.addEventListener("click", (e) => {
+      if (bypass) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      let a = null; try { a = currentApp(); } catch (err) {}
+      const st = app();
+      const items = [{ icon: "pencil", label: "Rename", run: () => { try { renameSessionTitle(); } catch (err) {} } }];
+      if (a && desktopApp() && window.krIdeOpen) items.push({ icon: "code", label: "Open in the IDE", run: async () => {
+        let dir = ""; try { dir = await sourceDirOf(a); } catch (err) {}
+        if (dir) window.krIdeOpen(dir, (a.name || "").replace(/\.krate$/, "") || undefined); else toast("This app's source is not on this computer");
+      } });
+      let label = ""; try { label = agentLabel(); } catch (err) {}
+      items.push({ mark: logo(st && st.agent), label: "Change the AI", em: label, run: () => agentPicker(t) });
+      if (a) items.push({ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download", run: () => press($("filesSave")) });
+      items.push("sep", { icon: "trash", label: "Remove this app", danger: true, keep: true, run: (row) => {
+        if (!row.dataset.armed) { row.dataset.armed = "1"; q(".kr-pt", row).firstChild.textContent = "Click again to remove it"; return true; }
+        try { removeCurrentSession(); } catch (err) {}
+      } });
+      openPop(t, items);
+    }, true);
+  })();
 
   /* ---- the sidebar's Port an app ---------------------------------------- */
   const sidePort = $("sidePort");

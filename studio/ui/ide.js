@@ -487,7 +487,7 @@
     catch (err) { hint(String(err)); }
   });
   $("homeIdeNew").addEventListener("click", newProject);
-  function hint(text) { const h = $("homeHint"); if (h) h.textContent = text; }
+  function hint(text) { const h = $("homeIdeHint"); if (h) { h.textContent = text; h.hidden = !text; } }
 
   // A new project: a name, then a working starter made by the engine's own
   // template, opened straight away.
