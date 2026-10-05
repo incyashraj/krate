@@ -2369,3 +2369,5 @@ body:not(.light) .kr-gwait { background: var(--surface-2); }
 .kr-tr-n { color: var(--c); }
 .kr-tr-hole::after { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c, var(--accent)) 60%, transparent); }
 .kr-tr-f .kr-dots i.on { background: var(--c); }
+/* Home's box takes the cursor on arrival, so its ring is quieter than the design's hover-focus. */
+#viewHome .bigbar:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--hair)), 0 0 0 4px color-mix(in srgb, var(--accent) 5%, transparent), 0 24px 50px -30px rgba(30, 40, 90, .32); }

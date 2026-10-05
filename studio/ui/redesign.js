@@ -249,7 +249,10 @@
     tog.innerHTML = `<span>Your apps</span><em class="kr-shct"></em>${ico("chev", "kr-ico kr-shchev")}`;
     grip.insertAdjacentElement("afterend", tog);
     const sync = () => tog.setAttribute("aria-expanded", shelf.classList.contains("shut") ? "false" : "true");
-    tog.addEventListener("click", () => {
+    tog.addEventListener("click", (e) => {
+      // The shelf's head toggles it too; without this one click opened the
+      // shelf and the same click, bubbling, shut it again.
+      e.stopPropagation();
       // Your apps, not Examples: the design's shelf is only what you made.
       const mine = $("tabMine"); if (mine && !mine.classList.contains("on")) press(mine);
       press(grip);
