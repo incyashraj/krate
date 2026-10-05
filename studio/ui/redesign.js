@@ -81,16 +81,34 @@
   let bypass = false;
   function press(el) { if (!el) return; bypass = true; try { el.click(); } finally { bypass = false; } }
 
-  /* ---- the boot mark ---------------------------------------------------- */
+  /* ---- Studio opening -------------------------------------------------- */
+  // The desktop: the mark's three layers drop in and stack, bottom first,
+  // while a hairline fills underneath. The web: the mark breathes beside
+  // the name and a short bar runs through the five colours; after 3 s a
+  // line says why. It leaves once a screen is really there, and not before
+  // the layers have landed.
   (function boot() {
     if (reduce) return;
+    const web = !desktopApp();
     const b = document.createElement("div");
-    b.className = "kr-boot"; b.setAttribute("aria-hidden", "true");
-    b.innerHTML = '<span class="kr-bm"><img src="krate-logo.png" alt=""></span>';
+    b.className = "kr-boot" + (web ? " web" : ""); b.setAttribute("aria-hidden", "true");
+    b.innerHTML = `<div class="bk"><span class="bmk">${window.krIso ? window.krIso(84, "stack") : ""}</span>` +
+      `<span class="bweb">${window.krIso ? window.krIso(40, "breathe") : ""}<b>Krate</b><small>Studio</small></span>` +
+      `<span class="hair"><i></i></span><span class="cbar"><i></i></span>` +
+      `<p class="bt"><span class="kr-swap"><span>${web ? "Loading Studio" : "Opening Studio"}</span></span></p></div>`;
     document.body.appendChild(b);
+    void b.offsetWidth; b.classList.add("run");
+    if (window.krStack) window.krStack(b, 120);
     const t0 = performance.now();
-    const gone = () => setTimeout(() => { b.classList.add("gone"); setTimeout(() => b.remove(), 700); }, Math.max(0, 650 - (performance.now() - t0)));
-    if (document.readyState === "complete") gone(); else addEventListener("load", gone, { once: true });
+    const why = web ? setTimeout(() => window.krSwap && window.krSwap(q(".bt .kr-swap", b), "Waking up the workshop<small>The first visit takes a few seconds.</small>"), 3000) : 0;
+    const ready = () => ["viewHome", "viewSession", "viewGate", "viewApps", "viewCloud", "viewIde"].some((id) => { const v = $(id); return v && !v.classList.contains("hidden"); });
+    const t = setInterval(() => {
+      const el = performance.now() - t0;
+      if ((ready() && el > (web ? 700 : 1300)) || el > 20000) {
+        clearInterval(t); clearTimeout(why);
+        b.classList.add("gone"); setTimeout(() => b.remove(), 700);
+      }
+    }, 100);
   })();
 
   /* ---- Home: the word in the title, building then shipping -------------- */
@@ -1450,7 +1468,7 @@
     b.addEventListener("click", async () => {
       if (b.dataset.busy) return;
       b.dataset.busy = "1"; b.classList.add("busy");
-      q(".kr-lb", b).textContent = `Uploading ${(shareApp && shareApp.size) || "the app"}…`;
+      q(".kr-lb", b).innerHTML = `${window.krIso ? window.krIso(15, "breathe", true) : ""}Uploading ${esc((shareApp && shareApp.size) || "the app")}`;
       const sheet = $("publishSheet");
       linking = true;
       try {
@@ -1516,12 +1534,31 @@
     go.addEventListener("click", async () => {
       if (go.dataset.busy) return;
       if (!n.value.trim()) { n.focus(); return; }
-      go.dataset.busy = "1"; q("span", go).textContent = "Publishing…"; err.hidden = true;
+      go.dataset.busy = "1"; err.hidden = true;
       handOver();
       const listed = l.classList.contains("on");
+      // A ring fills around the mark while it uploads; done, it comes down
+      // as the home page's stamp.
+      const frm = q(".kr-frm", pane); frm.hidden = true;
+      const ring = document.createElement("div"); ring.className = "kr-pubing";
+      ring.innerHTML = `<div class="kr-pring"><svg class="rg" viewBox="0 0 210 210"><defs><path id="krPubR" d="M105 105 m-80 0 a80 80 0 1 1 160 0 a80 80 0 1 1 -160 0"/></defs><circle class="trk2" cx="105" cy="105" r="98"/><circle class="prog" cx="105" cy="105" r="98" pathLength="1"/><text class="rtx" font-size="14" font-weight="600"><textPath href="#krPubR" textLength="495" lengthAdjust="spacing">PUBLISHING · TO THE GALLERY · PUBLISHING · TO THE GALLERY ·</textPath></text></svg>${window.krIso ? window.krIso(46, "breathe") : ""}` +
+        `<svg class="st" viewBox="0 0 210 210"><defs><path id="krPubS" d="M105 105 m-78 0 a78 78 0 1 1 156 0 a78 78 0 1 1 -156 0"/></defs><g fill="none" stroke="currentColor" stroke-width="5"><circle cx="105" cy="105" r="98"/><circle cx="105" cy="105" r="62"/></g><text font-size="15" font-weight="700" fill="currentColor"><textPath href="#krPubS" textLength="482" lengthAdjust="spacing">${listed ? "IN THE GALLERY · ANYONE CAN OPEN IT · " : "PUBLISHED · ONLY WITH THE LINK · "}</textPath></text><text x="105" y="119" text-anchor="middle" font-size="40" font-weight="700" fill="currentColor">LIVE</text></svg></div>` +
+        `<p class="pc"><span class="kr-swap"><span>Getting it ready</span></span></p>`;
+      frm.after(ring);
+      const pr = q(".prog", ring), t0 = performance.now();
+      let upT = setTimeout(() => window.krSwap(q(".kr-swap", ring), `Uploading ${esc((shareApp && shareApp.size) || "it")}`), 900);
+      let raf = 0; const fill = (now) => { const p = Math.min(.86, (now - t0) / 3200), e = 1 - Math.pow(1 - p, 2.2); pr.style.strokeDashoffset = 1 - e; raf = requestAnimationFrame(fill); }; raf = requestAnimationFrame(fill);
       linking = true;
       try { await publishFromSheet(); } catch (e) {}
       linking = false;
+      cancelAnimationFrame(raf); clearTimeout(upT);
+      if (linkOf() && !($("pubSignin") && !$("pubSignin").classList.contains("hidden"))) {
+        pr.style.transition = "stroke-dashoffset .4s var(--ease)"; pr.style.strokeDashoffset = 0;
+        await new Promise((r) => setTimeout(r, 380));
+        q(".kr-pring", ring).classList.add("done"); window.krSwap(q(".kr-swap", ring), listed ? "In the gallery" : "Published");
+        await new Promise((r) => setTimeout(r, reduce ? 0 : 1100));
+      }
+      ring.remove(); frm.hidden = false;
       if (sheet) sheet.classList.add("hidden");
       const url = linkOf();
       const signIn = $("pubSignin") && !$("pubSignin").classList.contains("hidden");
@@ -1579,20 +1616,19 @@
   const obWrap = document.createElement("div");
   obWrap.className = "kr-ob"; obWrap.id = "krOb";
   obWrap.setAttribute("role", "dialog"); obWrap.setAttribute("aria-modal", "true"); obWrap.setAttribute("aria-labelledby", "krObT");
-  obWrap.innerHTML = `<div class="kr-ob-card" tabindex="-1">
+  // The welcome: the mark stacks in, the headline's word turns through a
+  // few apps in the home page's colours, and one small line shows the
+  // sentence for each becoming its file. Nothing else moves.
+  const OB_APPS = [["habit tracker", "a habit tracker with streaks", "var(--accent)"], ["bill splitter", "split a dinner bill, tip included", "var(--green)"], ["focus timer", "a pomodoro focus timer", "var(--orange)"], ["colour palette", "pick colours from a photo", "var(--violet)"]];
+  const fileName = (w) => w.replace(/[^a-z0-9]+/gi, "-").toLowerCase() + ".krate";
+  obWrap.innerHTML = `<div class="kr-ob-card kr-ob3" tabindex="-1">
     <button type="button" class="kr-x kr-ob-x" aria-label="Close">${ico("x")}</button>
-    <img class="kr-ob-mk" src="krate-logo.png" alt="">
-    <h2 id="krObT">Say what you want.<br>Get an app.</h2>
-    <p class="kr-ob-s">Take a quick tour to see how Krate Studio works, or close this and start making.</p>
-    <div class="kr-pv" data-ph="a" aria-hidden="true"><div class="kr-pv-win">
-      <div class="kr-pv-side"><b></b><i class="on"></i><i></i><i></i><i></i><span></span><span></span><span></span></div>
-      <div class="kr-pv-main">
-        <div class="kr-pv-a"><p class="kr-pv-q">What are we <em>building</em>?</p><div class="kr-pv-cmp"><span class="kr-pv-tx"></span><span class="kr-pv-car"></span><span class="kr-pv-go">${ico("up")}</span></div></div>
-        <div class="kr-pv-b"><div class="kr-pv-card"><div class="kr-pv-th"><svg viewBox="14 30 132 126">${[1, 2, 3].map((n) => { const y = [0, 104, 84, 64][n]; return `<g class="kr-sl kr-s${n}"><path class="l" d="M28 ${y} L80 ${y + 26} L80 ${y + 41} L28 ${y + 15}Z"/><path class="r" d="M80 ${y + 26} L132 ${y} L132 ${y + 15} L80 ${y + 41}Z"/><path class="t" d="M28 ${y} L80 ${y - 26} L132 ${y} L80 ${y + 26}Z"/></g>`; }).join("")}</svg></div>
-          <div class="kr-pv-nm"><b>Weather</b><small>Writing the app</small></div></div></div>
-        <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens on every desktop</small></div></div>
-      </div></div></div>
-    <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots"><i class="on"></i><i></i><i></i><i></i></span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
+    <span class="kr-obmk">${window.krIso ? window.krIso(38, "stack") : ""}</span>
+    <h2 id="krObT">Say what you want.<br>Get a <span class="kr-obw">${OB_APPS.map((x, i) => `<span class="w${i ? "" : " on"}" style="--c:${x[2]}">${x[0]}</span>`).join("")}</span></h2>
+    <p class="kr-ob-s">Krate Studio turns one sentence into a small app that opens on every desktop.</p>
+    <div class="kr-oblive" aria-hidden="true"><div class="kr-obcmp"><span class="tx"></span><span class="car"></span></div>
+      <div class="kr-obfile"><img src="krate-doc.png" alt=""><b></b><small>opens on every desktop</small></div></div>
+    <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots">${OB_APPS.map((x, i) => `<i${i ? "" : ' class="on"'}></i>`).join("")}</span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
   </div>`;
   document.body.appendChild(obWrap);
   const tourEl = document.createElement("div");
@@ -1606,14 +1642,25 @@
   let pvT = 0, pvRun = 0;
   const sleep = (ms) => new Promise((r) => { pvT = setTimeout(r, ms); });
   async function pvPlay() {
-    const my = ++pvRun, pv = q(".kr-pv", obWrap), tx = q(".kr-pv-tx", obWrap), s = "a weather app for my cities";
-    if (reduce) { pv.dataset.ph = "c"; return; }
-    while (my === pvRun && obWrap.classList.contains("on")) {
-      pv.dataset.ph = "a"; tx.textContent = "";
-      for (let i = 1; i <= s.length; i++) { tx.textContent = s.slice(0, i); await sleep(42); if (my !== pvRun) return; }
-      await sleep(500); if (my !== pvRun) return;
-      pv.dataset.ph = "b"; await sleep(2600); if (my !== pvRun) return;
-      pv.dataset.ph = "c"; await sleep(3000);
+    const my = ++pvRun, card = q(".kr-ob3", obWrap), live = q(".kr-oblive", obWrap), tx = q(".kr-obcmp .tx", obWrap), ww = q(".kr-obw", obWrap), dots = qa(".kr-dots i", obWrap);
+    const on = () => my === pvRun && obWrap.classList.contains("on");
+    qa(".kr-obmk .ly", obWrap).forEach((l) => l.classList.remove("on")); if (window.krStack) window.krStack(obWrap, 250);
+    const word = (i) => {
+      const ws = qa(".w", ww), prev = ws.findIndex((w) => w.classList.contains("on"));
+      ws.forEach((w, k) => { w.classList.toggle("on", k === i); w.classList.toggle("out", k === prev && k !== i); });
+      ww.style.width = ws[i].offsetWidth + "px";
+    };
+    for (let i = 0; on(); i = (i + 1) % OB_APPS.length) {
+      const [w, prompt, col] = OB_APPS[i];
+      live.style.setProperty("--c", col); card.style.setProperty("--c", col); word(i);
+      dots.forEach((d, k) => d.classList.toggle("on", k === i));
+      live.classList.remove("made"); tx.textContent = "";
+      if (reduce) { tx.textContent = prompt; q(".kr-obfile b", obWrap).textContent = fileName(w); live.classList.add("made"); return; }
+      await sleep(450);
+      for (let k = 1; k <= prompt.length; k++) { if (!on()) return; tx.textContent = prompt.slice(0, k); await sleep(1400 / prompt.length); }
+      await sleep(350); if (!on()) return;
+      q(".kr-obfile b", obWrap).textContent = fileName(w); live.classList.add("made");
+      await sleep(2600);
     }
   }
   // On the web a note about what is free also opens on a first visit.
@@ -1645,11 +1692,11 @@
 
   const firstVisible = (...els) => els.find((el) => el && el.offsetParent !== null && el.getBoundingClientRect().width > 0) || null;
   const TOUR = [
-    { el: () => firstVisible(q("#viewHome .composer-shell .bigbar"), q("#viewHome .composer-shell")), t: "Say what you want",
+    { c: "var(--accent)", el: () => firstVisible(q("#viewHome .composer-shell .bigbar"), q("#viewHome .composer-shell")), t: "Say what you want",
       p: () => desktopApp() ? "Describe an app in a sentence, like “a habit tracker with streaks”. Your AI writes it, and Krate builds it, opens it and checks it." : "Describe an app in a sentence, like “a habit tracker with streaks”. Krate’s AI writes it, builds it, opens it and checks it." },
-    { el: () => firstVisible($("builtByChip"), $("agentChip")), t: () => desktopApp() ? "Use the AI you already have" : "Krate’s AI does the writing",
+    { c: "var(--violet)", el: () => firstVisible($("builtByChip"), $("agentChip")), t: () => desktopApp() ? "Use the AI you already have" : "Krate’s AI does the writing",
       p: () => desktopApp() ? "Claude, Codex, Gemini and others. Krate works with whichever one you pick, and you can change it here at any time." : "Here it is Krate’s own. In Studio on your computer you can pick Claude, Codex or Gemini instead." },
-    { el: () => firstVisible(q("#side .side-nav")), can: () => !!q("#side .side-nav"), side: "right", before: () => openSide(true), t: "Every app is one small file",
+    { c: "var(--orange)", el: () => firstVisible(q("#side .side-nav")), can: () => !!q("#side .side-nav"), side: "right", before: () => openSide(true), t: "Every app is one small file",
       p: "What you make lands in Your apps as a single .krate file you can send to anyone. Find more, or remix one, in the Gallery." },
   ];
   let trI = -1, sideOpened = false;
@@ -1687,6 +1734,7 @@
     const el = st.el();
     if (!el) { if (trI < steps.length - 1) { trI++; return tourShow(); } return tourEnd(true); }
     const r = el.getBoundingClientRect(), pad = 8, hole = q(".kr-tr-hole", tourEl), card = q(".kr-tr-card", tourEl);
+    card.style.setProperty("--c", st.c || "var(--accent)"); hole.style.setProperty("--c", st.c || "var(--accent)");
     const rad = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 12;
     Object.assign(hole.style, { left: r.left - pad + "px", top: r.top - pad + "px", width: r.width + pad * 2 + "px", height: r.height + pad * 2 + "px", borderRadius: rad + pad + "px" });
     q(".kr-tr-n", tourEl).textContent = `${trI + 1} of ${steps.length}`;
@@ -2175,6 +2223,100 @@
     window.showCloudApp = function (a) { orig(a); try { paint(a); } catch (e) {} };
     const rcg = renderCapGroups;
     window.renderCapGroups = function (host, list) { rcg(host, list); if (host && host.id === "detailCaps") caps(list); };
+  })();
+
+  /* ---- loaders: lists, the network, opening an app, saving ---------------- */
+  // A pill at the foot of the window: offline and back, an app opening.
+  function pill(id) {
+    let n = $(id);
+    if (!n) { n = document.createElement("div"); n.id = id; n.className = "kr-netp"; n.setAttribute("role", "status"); n.innerHTML = `${window.krIso ? window.krIso(30) : ""}<span class="kr-swap"><span></span></span>`; document.body.appendChild(n); }
+    return n;
+  }
+  // Offline: the layers slip out of line and wobble; back online they click
+  // into place and turn blue again.
+  (function net() {
+    let hideT = 0;
+    const off = () => { const n = pill("krNet"); clearTimeout(hideT); n.classList.add("off", "on"); q(".kr-swap", n).innerHTML = "<span><b>You're offline</b><small>Your apps still open. Trying again…</small></span>"; };
+    const back = () => { const n = $("krNet"); if (!n || !n.classList.contains("on")) return; n.classList.remove("off"); window.krSwap(q(".kr-swap", n), "<b>Back online</b><small>Everything is in sync.</small>"); hideT = setTimeout(() => n.classList.remove("on"), 2400); };
+    addEventListener("offline", off); addEventListener("online", back);
+    if (navigator.onLine === false) off();
+  })();
+  // Opening an app: the top layer lifts like a lid, and the line says how
+  // long it really took.
+  try {
+    if (typeof openApp === "function") {
+      const oa = openApp;
+      window.openApp = async function (which, version) {
+        let a = null; try { a = (which && which.path) ? which : currentApp(); } catch (e) {}
+        const name = a ? (a.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "your app";
+        const n = pill("krOpen"); n.classList.remove("off", "lift"); n.classList.add("on", "opening");
+        q(".kr-swap", n).innerHTML = `<span><b>Opening ${esc(name)}</b></span>`;
+        setTimeout(() => n.classList.add("lift"), 380);
+        const t0 = performance.now();
+        const before = (($("composerHint") || {}).textContent || "");
+        try { await oa(which, version); } finally {
+          const secs = ((performance.now() - t0) / 1000).toFixed(1);
+          const failed = (($("composerHint") || {}).textContent || "") !== before;
+          window.krSwap(q(".kr-swap", n), failed ? `<b>${esc(name)} did not open</b><small>The reason is under the box.</small>` : `<b>${esc(name)}</b><small>${+secs >= 0.1 ? `opened in ${secs} s` : "opened"}</small>`);
+          setTimeout(() => n.classList.remove("on", "opening", "lift"), 2600);
+        }
+      };
+    }
+  } catch (e) {}
+  // Your apps, the first time: cards shaped like the real ones with a quiet
+  // breathing mark -- only when the list takes longer than 0.4 s.
+  try {
+    if (typeof loadAppsPage === "function") {
+      const lp = loadAppsPage;
+      window.loadAppsPage = async function () {
+        const grid = $("appsGrid");
+        const t = setTimeout(() => {
+          if (!grid || q(".app-card", grid)) return;
+          grid.innerHTML = Array.from({ length: 4 }, (_, i) => `<div class="kr-skapp" style="--k:${i}"><div class="th">${window.krIso ? window.krIso(40, "breathe", true) : ""}</div><span class="l1"></span><span class="l2"></span></div>`).join("");
+        }, 400);
+        try { return await lp(); } finally { clearTimeout(t); qa(".kr-skapp", grid || document).forEach((x) => x.remove()); }
+      };
+    }
+  } catch (e) {}
+  // Saving the name: an orange dot beats, then grows into a green circle
+  // and a tick draws itself. (The name is written as you type.)
+  (function saving() {
+    const nick = $("profNick"); if (!nick) return;
+    const sv = document.createElement("span"); sv.className = "kr-svs";
+    sv.innerHTML = '<span class="sdot"><i></i><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="7"/><path pathLength="1" d="M4 7.3l2 2 4-4.3"/></svg></span><span class="kr-swap"><span></span></span>';
+    nick.after(sv);
+    let t1 = 0, t2 = 0;
+    nick.addEventListener("input", () => {
+      sv.classList.remove("saved"); sv.classList.add("saving"); window.krSwap(q(".kr-swap", sv), "Saving");
+      clearTimeout(t1); clearTimeout(t2);
+      t1 = setTimeout(() => { sv.classList.remove("saving"); sv.classList.add("saved"); window.krSwap(q(".kr-swap", sv), "Saved"); t2 = setTimeout(() => { sv.classList.remove("saved"); window.krSwap(q(".kr-swap", sv), ""); }, 1800); }, 500);
+    });
+  })();
+
+  /* ---- the sign-in page ---------------------------------------------------- */
+  // A page of its own: no workspace beside it, the mark stacking in, and a
+  // breathing mark while the browser does the signing in.
+  (function gate() {
+    const g = $("viewGate"); if (!g) return;
+    g.classList.add("kr-gate");
+    const mark = q(".gate-mark", g);
+    if (mark && window.krIso) { const sp = document.createElement("span"); sp.className = "kr-gmark"; sp.innerHTML = window.krIso(56, "stack"); mark.replaceWith(sp); }
+    const h = q("h1", g); if (h) h.textContent = "Sign in to Krate";
+    const sub = q(".gate-sub", g); if (sub) sub.textContent = "To publish your apps and keep them with your account. Making apps works without it.";
+    const wait = document.createElement("div"); wait.className = "kr-gwait"; wait.hidden = true;
+    wait.innerHTML = `${window.krIso ? window.krIso(30, "breathe") : ""}<span><b>Finish in your browser</b><small>This page moves on by itself once you have signed in.</small></span>`;
+    const start = $("gateStart"); if (start) start.after(wait);
+    const btn = $("loginBrowserBtn");
+    if (btn) btn.addEventListener("click", () => { wait.hidden = false; }, true);
+    const err = $("gateError");
+    if (err) watch(err, { attributes: true, attributeFilter: ["class"] }, () => { if (!err.classList.contains("hidden")) wait.hidden = true; });
+    const sync = () => {
+      const on = !g.classList.contains("hidden");
+      document.body.classList.toggle("kr-gating", on);
+      if (on && window.krStack) { qa(".kr-gmark .ly", g).forEach((l) => l.classList.remove("on")); window.krStack(g, 200); }
+      if (!on) wait.hidden = true;
+    };
+    watch(g, { attributes: true, attributeFilter: ["class"] }, sync); sync();
   })();
 
   /* ---- the sidebar's Port an app ---------------------------------------- */

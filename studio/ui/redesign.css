@@ -2256,3 +2256,116 @@ body:not(.light) .kr-kf { background: var(--surface-2); }
 .kd-more .kr-kgrid { margin-top: 0; }
 @media (max-width: 1100px) { .kd-cols { grid-template-columns: 1fr; } .kd-l { position: static; } }
 @media (max-width: 600px) { #viewApp.kr-kdon main.detail { padding: 12px 16px 40px; } }
+
+/* ---- Studio opening ------------------------------------------------------ */
+.kr-boot .bk { position: relative; display: grid; justify-items: center; }
+.kr-boot .bmk .iso { width: 84px; height: 84px; }
+.kr-boot .bweb { display: none; align-items: center; gap: 10px; height: 84px; }
+.kr-boot .bweb b { font: 600 28px var(--sans); letter-spacing: -.04em; color: var(--ink); }
+.kr-boot .bweb small { margin-top: 7px; font-size: 13px; color: var(--ink-3); }
+.kr-boot .hair { width: 120px; height: 2px; margin-top: 22px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.kr-boot .hair i { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--ink); }
+.kr-boot.run .hair i { width: 100%; transition: width 1.4s cubic-bezier(.3, .6, .2, 1) .15s; }
+.kr-boot .cbar { display: none; position: relative; width: 160px; height: 3px; margin-top: 24px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.kr-boot .cbar i { position: absolute; top: 0; bottom: 0; width: 46px; border-radius: 3px; animation: krRun 1.25s var(--ease) infinite, krHue5 6.25s steps(1) infinite; }
+@keyframes krRun { from { left: -46px; } to { left: 160px; } }
+@keyframes krHue5 { 0% { background: var(--accent); } 20% { background: var(--violet); } 40% { background: var(--pink); } 60% { background: var(--orange); } 80% { background: var(--green); } }
+.kr-boot .bt { margin: 14px 0 0; font-size: 13px; color: var(--ink-2); text-align: center; }
+.kr-boot.web .bmk, .kr-boot.web .hair { display: none; }
+.kr-boot.web .bweb { display: flex; }
+.kr-boot.web .cbar { display: block; }
+
+/* ---- a pill at the foot: offline and back, an app opening ---------------- */
+.kr-netp { position: fixed; left: 50%; bottom: 26px; z-index: 340; display: flex; align-items: center; gap: 12px; padding: 10px 18px 10px 12px; border-radius: 18px; background: var(--surface); box-shadow: var(--sh-pop);
+  transform: translate(-50%, 20px); opacity: 0; transition: transform .5s var(--spring), opacity .3s; pointer-events: none; }
+body:not(.light) .kr-netp { background: #1c1c1f; }
+.kr-netp.on { transform: translate(-50%, 0); opacity: 1; }
+.kr-netp b { display: block; font: 500 13.5px var(--sans); color: var(--ink); }
+.kr-netp small { display: block; font-size: 12px; color: var(--ink-3); }
+.kr-netp .kr-swap > span { white-space: nowrap; }
+.kr-netp .iso { width: 30px; height: 30px; }
+.kr-netp .iso .ly { transition: transform .7s cubic-bezier(.3, 1.4, .55, 1); }
+.kr-netp .iso polygon { transition: fill .5s; }
+.kr-netp.off .iso .ly:nth-child(1) { transform: translateX(5px); }
+.kr-netp.off .iso .ly:nth-child(3) { transform: translateX(-7px) translateY(-2px); }
+.kr-netp.off .iso { animation: krJig 1.6s ease-in-out infinite; }
+@keyframes krJig { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-3deg); } 60% { transform: rotate(2.5deg); } }
+.kr-netp.off .iso polygon { fill: var(--ink-4); }
+.kr-netp.off .iso .tp { fill: color-mix(in srgb, var(--ink-4) 55%, var(--surface)); }
+.kr-netp.opening .iso .ly:last-child { transition: transform .5s var(--ease); }
+.kr-netp.opening.lift .iso .ly:last-child { transform: translate(-6px, -22px) rotate(-12deg); }
+/* Your apps, first time */
+.kr-skapp { animation: krFadeUp .4s var(--ease) both; animation-delay: calc(var(--k) * 60ms); }
+.kr-skapp .th { aspect-ratio: 16 / 10; border-radius: 16px; display: grid; place-items: center; background: var(--surface-2); }
+.kr-skapp .th .iso { color: var(--ink-4); --gap: var(--surface-2); }
+.kr-skapp .l1, .kr-skapp .l2 { display: block; height: 10px; width: 62%; margin-top: 12px; border-radius: 5px; background: var(--surface-2); }
+.kr-skapp .l2 { height: 8px; width: 40%; margin-top: 7px; }
+/* saving a field */
+.kr-svs { display: inline-flex; align-items: center; gap: 6px; min-width: 64px; margin-left: 8px; font-size: 12px; color: var(--ink-3); }
+.kr-svs .sdot { position: relative; width: 14px; height: 14px; flex: none; }
+.kr-svs .sdot i { position: absolute; left: 3.5px; top: 3.5px; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); transform: scale(0); transition: transform .3s var(--spring); }
+.kr-svs.saving .sdot i { transform: scale(1); animation: krBeat .9s ease-in-out infinite; }
+@keyframes krBeat { 50% { transform: scale(.6); opacity: .55; } }
+.kr-svs .sdot svg { position: absolute; inset: 0; }
+.kr-svs .sdot circle { fill: var(--green); transform: scale(0); transform-origin: 7px 7px; transition: transform .4s var(--spring); }
+.kr-svs .sdot path { fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .35s var(--ease) .2s; }
+.kr-svs.saved .sdot circle { transform: scale(1); }
+.kr-svs.saved .sdot path { stroke-dashoffset: 0; }
+.kr-svs.saved { color: var(--green-ink); }
+
+/* ---- publishing: a ring fills around the mark, then comes down as a stamp */
+.kr-pubing { text-align: center; padding: 6px 0 2px; }
+.kr-pring { position: relative; width: 150px; height: 150px; margin: 0 auto; }
+.kr-pring .rg { position: absolute; inset: 0; overflow: visible; transition: opacity .15s; font-family: var(--sans); }
+.kr-pring .trk2 { fill: none; stroke: var(--surface-3); stroke-width: 5; }
+.kr-pring .prog { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; transform: rotate(-90deg); transform-origin: 105px 105px; }
+.kr-pring .rtx { fill: var(--ink-3); }
+.kr-pring > .iso { position: absolute; left: 50%; top: 50%; margin: -23px 0 0 -23px; transition: opacity .15s; }
+.kr-pring .st { position: absolute; inset: 4px; opacity: 0; transform: rotate(-14deg) scale(1.6); color: #c2457d; font-family: var(--sans); }
+body:not(.light) .kr-pring .st { color: #ee7cad; }
+.kr-pring.done .st { opacity: 1; transform: rotate(-14deg) scale(1); transition: transform .42s cubic-bezier(.3, 1.45, .55, 1), opacity .12s; }
+.kr-pring.done .rg, .kr-pring.done > .iso { opacity: 0; }
+.kr-pubing .pc { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
+.kr-make .kr-lb { display: inline-flex; align-items: center; gap: 8px; }
+.kr-make .iso { color: var(--btn-ink); --gap: var(--btn); }
+.kr-frm[hidden] { display: none; }
+
+/* ---- the sign-in page: a page of its own -------------------------------- */
+body.kr-gating .side, body.kr-gating .kr-sidetoggle, body.kr-gating .side-grip { display: none !important; }
+body.kr-gating #viewGate.view { margin-left: 8px !important; }
+#viewGate.kr-gate .titlebar .brand { display: none; }
+#viewGate.kr-gate .gate-card { max-width: 420px; text-align: center; }
+.kr-gmark { display: inline-block; margin-bottom: 18px; }
+.kr-gmark .iso { width: 56px; height: 56px; }
+#viewGate.kr-gate h1 { font: 600 32px/1.1 var(--sans); letter-spacing: -.045em; color: var(--ink); }
+#viewGate.kr-gate .gate-sub { max-width: 340px; margin: 10px auto 0; font-size: 15px; line-height: 1.5; color: var(--ink-3); }
+.kr-gwait { display: inline-flex; align-items: center; gap: 12px; margin-top: 22px; padding: 12px 18px 12px 14px; border-radius: 18px; background: var(--surface); box-shadow: var(--sh-1); text-align: left; animation: krFadeUp .45s var(--ease) both; }
+body:not(.light) .kr-gwait { background: var(--surface-2); }
+.kr-gwait[hidden] { display: none; }
+.kr-gwait b { display: block; font: 500 13.5px var(--sans); color: var(--ink); }
+.kr-gwait small { display: block; font-size: 12px; color: var(--ink-3); }
+#viewGate.kr-gate #gateStart { margin-top: 24px; }
+
+/* ---- welcome: joyful, and quiet about it -------------------------------- */
+.kr-ob-card.kr-ob3 { width: min(500px, 100%); padding: 34px 32px 20px; }
+.kr-obmk { display: inline-block; } .kr-obmk .iso { width: 38px; height: 38px; }
+.kr-ob3 h2 { margin-top: 14px; font: 600 clamp(28px, 3.2vw, 36px)/1.12 var(--sans); letter-spacing: -.045em; }
+.kr-obw { position: relative; display: inline-block; height: 1.15em; vertical-align: bottom; text-align: left; white-space: nowrap; transition: width .6s var(--ease); }
+.kr-obw .w { position: absolute; left: 0; top: 0; color: var(--c); opacity: 0; transform: translateY(.45em); filter: blur(4px); transition: opacity .35s var(--ease), transform .6s var(--ease), filter .4s var(--ease); }
+.kr-obw .w.on { opacity: 1; transform: none; filter: none; transition-delay: .12s; }
+.kr-obw .w.out { opacity: 0; transform: translateY(-.45em); filter: blur(4px); transition-delay: 0s; }
+.kr-ob3 .kr-ob-s { max-width: 340px; }
+.kr-oblive { --c: var(--accent); position: relative; margin: 24px auto 0; padding: 22px 0 18px; border-radius: 20px; background: color-mix(in srgb, var(--c) 7%, var(--surface-2)); transition: background .8s var(--ease); display: grid; justify-items: center; gap: 12px; }
+.kr-obcmp { width: min(320px, 86%); height: 42px; display: flex; align-items: center; padding: 0 14px; border-radius: 14px; background: var(--surface); box-shadow: var(--sh-1); font-size: 13.5px; text-align: left; color: var(--ink); }
+.kr-obcmp .tx { white-space: nowrap; overflow: hidden; }
+.kr-obcmp .car { width: 1.5px; height: 16px; margin-left: 1px; flex: none; background: var(--c); animation: krBlink 1s steps(1) infinite; }
+.kr-obfile { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 13px 0 10px; border-radius: 12px; background: var(--surface); box-shadow: var(--sh-1); font-size: 12.5px; color: var(--ink); opacity: 0; transform: translateY(-10px) scale(.94); transition: opacity .3s, transform .3s; }
+.kr-obfile img { height: 19px; } .kr-obfile b { font-weight: 500; } .kr-obfile small { color: var(--ink-3); }
+.kr-oblive.made .kr-obfile { opacity: 1; transform: none; transition: opacity .35s var(--ease), transform .6s var(--spring); }
+.kr-ob3 .kr-ob-f { margin-top: 20px; }
+.kr-ob3 .kr-dots i.on { background: var(--c, var(--ink)); }
+/* the tour: one colour per step */
+.kr-tr-card { --c: var(--accent); }
+.kr-tr-n { color: var(--c); }
+.kr-tr-hole::after { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c, var(--accent)) 60%, transparent); }
+.kr-tr-f .kr-dots i.on { background: var(--c); }
