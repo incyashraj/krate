@@ -176,6 +176,7 @@
    *     --> src/lib.rs:88:52
    * and each becomes a problem with a file and a line (K-973: the whole
    * output used to sit in one block nobody could click). */
+  const FIX = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 1.6l1.4 3.5 3.5 1.4-3.5 1.4L8 11.4 6.6 7.9 3.1 6.5l3.5-1.4z" fill="currentColor"/></svg>';
   function parseDiags(text) {
     const out = [];
     const rx = /^(error|warning)(\[[A-Z]\d+\])?: (.+)\n\s*--> ([^\s:][^:\n]*):(\d+):(\d+)/gm;
@@ -196,9 +197,10 @@
     ide.diags = diags;
     const errs = diags.filter((d) => d.sev === "error").length;
     $("ideProbN").textContent = String(diags.length ? errs || diags.length : list.length);
-    const row = (d, i) => `<div class="ip-diag ${d.sev}"><button type="button" class="ip-go" data-d="${i}"><i></i><b>${esc(d.file)}:${d.line}</b><span>${esc(d.msg)}</span>${d.code ? `<em>${esc(d.code)}</em>` : ""}</button><details><summary>What the compiler said</summary><pre>${esc(d.text)}</pre></details></div>`;
+    const row = (d, i) => `<div class="ip-diag ${d.sev}"><div class="ip-row"><button type="button" class="ip-go" data-d="${i}"><i></i><b>${esc(d.file)}:${d.line}</b><span>${esc(d.msg)}</span>${d.code ? `<em>${esc(d.code)}</em>` : ""}</button>${d.sev === "error" ? `<button type="button" class="ip-fix" data-fix="${i}">${FIX}Fix with AI</button>` : ""}</div><details><summary>What the compiler said</summary><pre>${esc(d.text)}</pre></details></div>`;
+    ide.lastFail = list.map((p) => p.message).join("\n");
     box.innerHTML = (diags.length ? diags.map(row).join("")
-      : list.length ? list.map((p) => `<div class="ip-prob"><b>${esc(p.stage)}</b><pre>${esc(p.message)}</pre></div>`).join("")
+      : list.length ? list.map((p) => `<div class="ip-prob"><b>${esc(p.stage)}</b>${p.stage !== "ask" ? `<button type="button" class="ip-fix" data-fix="-1">${FIX}Fix with AI</button>` : ""}<pre>${esc(p.message)}</pre></div>`).join("")
       : '<p class="ip-ok">No problems. It builds, imports only Krate, and runs.</p>') +
       notes.map((n) => `<div class="ip-prob ip-note"><b>note</b><pre>${esc(n)}</pre></div>`).join("");
     markDiags();
@@ -565,30 +567,94 @@
   const askIn = $("ideAskIn");
   const askPh = askIn.placeholder;
   $("ideAsk").addEventListener("click", () => askIn.focus());
-  $("ideAskBar").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  /* A line diff, small and exact enough to review a change by: the longest
+   * common run of lines, then the hunks with three lines either side. */
+  function diffLines(a, b) {
+    const A = a.split("\n"), B = b.split("\n");
+    if (A.length * B.length > 4e6) return B.map((l) => ["+", l]).concat(A.map((l) => ["-", l]));
+    const n = A.length, m = B.length;
+    const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const ops = []; let i = 0, j = 0;
+    while (i < n && j < m) { if (A[i] === B[j]) { ops.push([" ", A[i], i + 1, j + 1]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) { ops.push(["-", A[i], i + 1, 0]); i++; } else { ops.push(["+", B[j], 0, j + 1]); j++; } }
+    while (i < n) { ops.push(["-", A[i], i + 1, 0]); i++; }
+    while (j < m) { ops.push(["+", B[j], 0, j + 1]); j++; }
+    return ops;
+  }
+  function hunksHtml(ops) {
+    const show = new Set();
+    ops.forEach((o, k) => { if (o[0] !== " ") for (let d = -3; d <= 3; d++) show.add(k + d); });
+    let out = "", last = -2;
+    ops.forEach((o, k) => {
+      if (!show.has(k)) return;
+      if (k !== last + 1) out += `<div class="rv-gap">${o[2] || o[3] ? `line ${o[3] || o[2]}` : ""}</div>`;
+      out += `<div class="rv-l ${o[0] === "+" ? "add" : o[0] === "-" ? "del" : ""}"><i>${o[0] === " " ? "" : o[0] === "+" ? "+" : "−"}</i><code>${esc(o[1]) || " "}</code></div>`;
+      last = k;
+    });
+    return out;
+  }
+  /* The AI's change, shown before it lands: each file as a diff, each one
+   * accepted or not. Only what is accepted is written (ide_apply), and the
+   * editor's own undo still takes it back afterwards. */
+  function review(files) {
+    return new Promise((resolve) => {
+      const box = document.createElement("div");
+      box.className = "ide-review"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Review the change");
+      const items = files.map((f, k) => {
+        const ops = f.after != null ? diffLines(f.before || "", f.after) : [];
+        const add = ops.filter((o) => o[0] === "+").length, del = ops.filter((o) => o[0] === "-").length;
+        return `<section class="rv-f" data-k="${k}"><label class="rv-h"><input type="checkbox" checked data-k="${k}"><b>${esc(f.rel)}</b>${f.before == null ? '<span class="rv-new">new</span>' : ""}<span class="rv-n"><span class="a">+${add}</span> <span class="d">−${del}</span></span></label>${f.after != null ? `<div class="rv-d">${hunksHtml(ops)}</div>` : '<p class="rv-bin">Not text; it is replaced whole.</p>'}</section>`;
+      }).join("");
+      box.innerHTML = `<div class="rv-top"><b>${esc(agentWords())} changed ${files.length} file${files.length === 1 ? "" : "s"}</b><span class="grow"></span><button type="button" class="rv-no">Reject</button><button type="button" class="rv-yes pri">Accept</button></div><div class="rv-body">${items}</div>`;
+      $("ideEd").appendChild(box);
+      const done = (ok) => {
+        const keep = ok ? [...box.querySelectorAll("input[data-k]")].filter((c) => c.checked).map((c) => files[+c.dataset.k]) : [];
+        box.remove(); resolve(keep);
+      };
+      box.querySelector(".rv-yes").addEventListener("click", () => done(true));
+      box.querySelector(".rv-no").addEventListener("click", () => done(false));
+      box.addEventListener("change", () => {
+        const n = [...box.querySelectorAll("input[data-k]")].filter((c) => c.checked).length;
+        box.querySelector(".rv-yes").textContent = n === files.length ? "Accept" : n ? `Accept ${n}` : "Accept none";
+      });
+    });
+  }
+  // The file and lines the person is looking at go with the request, so
+  // "make this faster" means this.
+  function askContext() {
+    if (!edView || !ide.cur) return "";
+    const st = edView.state, sel = st.selection.main;
+    if (sel.empty) return `\n\n(I am looking at ${ide.cur}, around line ${st.doc.lineAt(sel.head).number}.)`;
+    const a = st.doc.lineAt(sel.from).number, z = st.doc.lineAt(sel.to).number;
+    const text = st.sliceDoc(sel.from, sel.to).slice(0, 6000);
+    return `\n\n(This is about ${ide.cur}, lines ${a}–${z}:\n\`\`\`\n${text}\n\`\`\`)`;
+  }
+  async function askAI(request, opts = {}) {
     if (!ide || ide.busy) return;
-    const request = askIn.value.trim();
-    if (!request) { askIn.focus(); return; }
     await saveAll(false);
     const before = new Map([...ide.docs].map(([rel, d]) => [rel, textOf(d)]));
-    askIn.value = ""; askIn.placeholder = `${agentWords()} is changing the app…`;
+    askIn.value = ""; askIn.placeholder = `${agentWords()} is working on it…`;
     busy(true, `${agentWords()} is working…`);
-    term(`==> asking ${agentWords()}: ${request}`);
+    term(`==> asking ${agentWords()}: ${request.split("\n")[0]}`);
     try {
-      const r = await call("ide_ask", { path: ide.path, request, agent: agentName() });
+      const r = await call("ide_ask", { path: ide.path, request: request + (opts.noContext ? "" : askContext()), agent: agentName() });
+      const files = (r && r.files) || [];
       busy(false);
-      const changed = (r && r.changed) || [];
-      term(changed.length ? `==> changed ${changed.join(", ")}` : "==> nothing needed changing", "g");
+      if (!files.length) { term("==> nothing needed changing", "g"); setStatus(ide.built ? "ok" : "idle", ide.built ? "Builds" : "Not built yet"); return; }
+      term(`==> ${files.length} file${files.length === 1 ? "" : "s"} to review`, "m");
+      setStatus("idle", "Review the change");
+      const keep = await review(files);
+      if (!keep.length) { term("==> the change was not applied; nothing was written", "m"); setStatus(ide.built ? "ok" : "idle", ide.built ? "Builds" : "Not built yet"); return; }
+      const changed = await call("ide_apply", { path: ide.path, files: keep.map((f) => ({ rel: f.rel, text: f.after, b64: f.b64 })) });
+      term(`==> changed ${changed.join(", ")}`, "g");
       await loadTree();
       for (const rel of changed) {
-        let text;
-        try { text = await call("ide_read", { path: ide.path, rel }); } catch (err) { continue; }
-        const old = before.get(rel);
+        const f = keep.find((x) => x.rel === rel); if (!f || f.after == null) continue;
+        const text = f.after, old = before.get(rel);
         let doc = ide.docs.get(rel);
         if (!doc || !doc.state) { doc = { saved: text, dirty: false, error: null, state: newState(rel, text) }; ide.docs.set(rel, doc); }
         else { replaceText(rel, doc, text); doc.saved = text; doc.dirty = false; doc.error = null; dropDraft(rel); }
-        // The lines that are new, so the change can be seen where it landed.
+        findCache.delete(rel);
         if (old != null) {
           const had = new Set(old.split("\n").map((l) => l.trim()));
           const adds = text.split("\n").map((l, i) => (l.trim() && !had.has(l.trim()) ? i : -1)).filter((i) => i >= 0);
@@ -598,8 +664,7 @@
       }
       if (changed.length && !changed.includes(ide.cur)) ide.cur = changed.find((c) => /\.rs$/.test(c)) || changed[0];
       showDoc(); paintTabs(); paintTree();
-      if (changed.length) build(`${changed[0]} changed`);
-      else setStatus(ide.built ? "ok" : "idle", ide.built ? "Builds" : "Not built yet");
+      build(`${changed[0]} changed`);
     } catch (err) {
       busy(false);
       setStatus("bad", "The change did not land");
@@ -608,7 +673,23 @@
     } finally {
       askIn.placeholder = askPh;
     }
+  }
+  $("ideAskBar").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const request = askIn.value.trim();
+    if (!request) { askIn.focus(); return; }
+    askAI(request);
   });
+  // Fix with AI: the error, where it is, and what the compiler said.
+  $("ideProbs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-fix]"); if (!b || !ide) return;
+    e.stopPropagation();
+    const d = ide.diags && ide.diags[+b.dataset.fix];
+    const req = d ? `Fix this build error in ${d.file} at line ${d.line}: ${d.msg}\n\nWhat the compiler said:\n${d.text}`
+      : `Fix why the app does not build. The build said:\n${(ide.lastFail || "").slice(0, 4000)}`;
+    askAI(req, { noContext: true });
+  }, true);
+
   $("ipTog").addEventListener("click", () => $("ideMain").classList.toggle("pmin"));
   view.querySelectorAll(".ip-tabs button[data-ip]").forEach((b) => b.addEventListener("click", () => panelTab(b.dataset.ip)));
   document.addEventListener("keydown", (e) => {

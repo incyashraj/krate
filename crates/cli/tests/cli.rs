@@ -10177,3 +10177,41 @@ fn pack_says_when_one_picture_is_most_of_the_app() {
         "an ordinary icon must say nothing, or the note stops being read: {quiet}",
     );
 }
+
+/// K-973: `krate revise` takes a project folder as well as a .krate -- the
+/// IDE asks for a change to source that may never have built -- and it
+/// writes the change to --output, never into the folder.
+#[test]
+fn revise_takes_a_project_folder_and_needs_an_output() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+    std::fs::write(dir.path().join("manifest.toml"), "[app]\n").unwrap();
+    let out = krate()
+        .args(["revise", "--agent", "claude", "--"])
+        .arg(dir.path())
+        .arg("make it blue")
+        .output()
+        .expect("run revise");
+    assert!(!out.status.success());
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        said.contains("--output"),
+        "names the missing --output: {said}"
+    );
+
+    let not_a_project = tempfile::tempdir().unwrap();
+    let out = krate()
+        .args(["revise", "--agent", "claude", "--output"])
+        .arg(not_a_project.path().join("out.krate"))
+        .arg("--")
+        .arg(not_a_project.path())
+        .arg("make it blue")
+        .output()
+        .expect("run revise");
+    assert!(!out.status.success());
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        said.contains("is not a Krate project"),
+        "says what is missing: {said}"
+    );
+}

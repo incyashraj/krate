@@ -1173,7 +1173,8 @@ enum Command {
     /// description -- "make the button blue" touches one function, not the
     /// whole app. The file is updated in place unless --output names a copy.
     Revise {
-        /// The .krate to change.
+        /// The .krate to change, or a Krate project folder (then --output
+        /// names the changed app and the folder itself is left as it is).
         bundle: PathBuf,
 
         /// What to change, in plain words.
@@ -4531,6 +4532,11 @@ fn revise_cli(
     if !bundle.exists() {
         anyhow::bail!("{} does not exist", bundle.display());
     }
+    // A project folder rather than a .krate: Studio's IDE asks for a change
+    // to source that may never have built (K-973).
+    if bundle.is_dir() {
+        return revise_project_dir(bundle, change, agent, attachments, output);
+    }
     let provider = resolve_agent(agent)?;
     let out = output.unwrap_or(bundle);
     // Held until this returns, so two changes to one file cannot both
@@ -4616,6 +4622,82 @@ fn revise_cli(
         println!("{}", unsigned_fork_note(signer, kept.as_deref()));
     }
     Ok(0)
+}
+
+/// `krate revise <project-folder> CHANGE --output out.krate`: change a Krate
+/// project's source and write the changed app to `out`, leaving the folder
+/// itself untouched -- the caller (Studio's IDE) shows the change and
+/// writes back only what the person accepts.
+///
+/// It works on a project that has never built, which is when somebody most
+/// needs the AI's help: there is no .krate to revise from, so the AI edits
+/// a copy of the folder. The copy sits beside the project (hidden, removed
+/// afterwards) so path dependencies like `../../crates/bindings-rust` still
+/// resolve from it.
+fn revise_project_dir(
+    project: &Path,
+    change: &str,
+    agent: &str,
+    attachments: &[PathBuf],
+    output: Option<&Path>,
+) -> Result<u8> {
+    let Some(out) = output else {
+        anyhow::bail!("changing a project folder needs --output for the changed app; the folder itself is not touched");
+    };
+    if !(project.join("Cargo.toml").is_file() && project.join("manifest.toml").is_file()) {
+        anyhow::bail!(
+            "{} is not a Krate project: it needs Cargo.toml and manifest.toml side by side",
+            project.display()
+        );
+    }
+    let provider = resolve_agent(agent)?;
+    let _claim = claim_destination(out)?;
+    let parent = project
+        .canonicalize()?
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(std::env::temp_dir);
+    let copy = parent.join(format!(
+        ".krate-change-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    copy_project(project, &copy)?;
+    println!("==> changing the project in a working copy");
+    let result = revise_app_for_tui(&copy, change, provider, out, attachments, None);
+    let _ = fs::remove_dir_all(&copy);
+    match result {
+        Ok(()) => {
+            println!("Changed {}", out.display());
+            Ok(0)
+        }
+        Err(err) if err.downcast_ref::<ChangeNotApplied>().is_some() => Ok(6),
+        Err(err) => Err(err),
+    }
+}
+
+/// A project's own files, without its build output or hidden folders.
+fn copy_project(from: &Path, to: &Path) -> Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str == "target" || name_str.starts_with('.') {
+            continue;
+        }
+        let source = entry.path();
+        let destination = to.join(&name);
+        if source.is_dir() {
+            copy_project(&source, &destination)?;
+        } else {
+            fs::copy(&source, &destination)?;
+        }
+    }
+    Ok(())
 }
 
 /// Change an app that already exists, in place.
@@ -10063,7 +10145,10 @@ fn run_provider_author(
     } else {
         "src/lib.rs"
     };
-    let starter_lib = fs::read_to_string(Path::new(app_dir).join(watched_file)).unwrap_or_default();
+    // The whole source, not one file: a change that lands in manifest.toml
+    // or another .rs file is a change (K-949). The same fingerprint a
+    // revision is compared by (comments aside, bindings left out).
+    let starter_lib = source_fingerprint(Path::new(app_dir));
     let file = fs::File::create(&transcript).ok();
 
     // Resolve to a full path the same way the readiness probe does, so an
@@ -10603,7 +10688,7 @@ fn run_provider_author(
         // marker still failed the whole create. The artifact outranks the
         // remark: only honor a refusal when there is no working app to hand
         // over.
-        let lib_now = fs::read_to_string(Path::new(app_dir).join(watched_file)).unwrap_or_default();
+        let lib_now = source_fingerprint(Path::new(app_dir));
         let delivered = lib_now != starter_lib && check_app_verdict(app_dir).is_ok();
         if delivered {
             eprintln!(
@@ -10707,7 +10792,7 @@ fn run_provider_author(
             }
         }
     }
-    let lib_after = fs::read_to_string(Path::new(app_dir).join(watched_file)).unwrap_or_default();
+    let lib_after = source_fingerprint(Path::new(app_dir));
     if lib_after == starter_lib {
         // An untouched app usually means the agent explained instead of
         // writing -- but it is also exactly what an agent leaves behind when
@@ -10726,8 +10811,8 @@ fn run_provider_author(
             );
         }
         anyhow::bail!(
-            "the agent finished without changing the app: {watched_file} is byte-identical \
-             to the starter, so this would package an empty app as if it were \
+            "the agent finished without changing the app: its source ({watched_file} and the \
+             rest) is byte-identical to the starter, so this would package an empty app as if it were \
              \"{request}\". The agent's transcript is at {} -- it usually means the \
              agent explained the app instead of writing it.",
             transcript.display()

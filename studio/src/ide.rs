@@ -98,9 +98,27 @@ pub(crate) struct PackResult {
     size_bytes: u64,
 }
 
+/// One file the AI's change would write: what is there now and what it
+/// would be. Text both ways for a file that is text; `b64` for one that is
+/// not. Nothing is written until the person accepts it (ide_apply).
 #[derive(serde::Serialize, Debug)]
-pub(crate) struct AskResult {
-    changed: Vec<String>,
+pub(crate) struct Proposed {
+    rel: String,
+    before: Option<String>,
+    after: Option<String>,
+    b64: Option<String>,
+}
+
+#[derive(serde::Serialize, Debug)]
+pub(crate) struct AskPreview {
+    files: Vec<Proposed>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub(crate) struct Accepted {
+    rel: String,
+    text: Option<String>,
+    b64: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -981,12 +999,12 @@ fn sdk_root_of(project: &Path) -> Option<String> {
     })
 }
 
-/// Copy the revised bundle's source into the project. Only files that
-/// differ are written, and nothing the person has is ever deleted -- a file
-/// the bundle does not carry (bindings.rs, notes, assets the pack skipped)
-/// stays exactly as it was. Every entry is checked before anything is
-/// written, so a bundle with one bad path changes nothing at all.
-fn copy_back(project: &Path, bundle: &Path) -> Result<Vec<String>, String> {
+/// The revised bundle's source, as it would land in the project. Only files
+/// that differ are planned, and nothing the person has is ever deleted -- a
+/// file the bundle does not carry (bindings.rs, notes, assets the pack
+/// skipped) stays exactly as it was. Every entry is checked first, so a
+/// bundle with one bad path plans nothing at all.
+fn plan_back(project: &Path, bundle: &Path) -> Result<Vec<(String, PathBuf, Vec<u8>)>, String> {
     let sdk_root = sdk_root_of(project);
     let mut planned: Vec<(String, PathBuf, Vec<u8>)> = Vec::new();
     for (rel, mut bytes) in source_files_of(bundle)? {
@@ -1017,13 +1035,8 @@ fn copy_back(project: &Path, bundle: &Path) -> Result<Vec<String>, String> {
         }
         planned.push((rel, dest, bytes));
     }
-    let mut changed = Vec::new();
-    for (rel, dest, bytes) in planned {
-        write_atomic(&dest, &bytes)?;
-        changed.push(rel.replace('\\', "/"));
-    }
-    changed.sort();
-    Ok(changed)
+    planned.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(planned)
 }
 
 fn valid_agent(agent: &str) -> bool {
@@ -1040,46 +1053,34 @@ fn ask(
     request: &str,
     agent: &str,
     sink: Sink,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<Proposed>, String> {
     if request.trim().is_empty() {
         return Err("Say what to change.".to_string());
     }
     if !valid_agent(agent) {
         return Err(format!("{agent} is not an AI Krate knows"));
     }
-    // A project that does not build right now is exactly when somebody asks
-    // the AI for help, so the last good component is packed beside the
-    // current source; revise works on the source and builds it itself.
-    let wasm = match ensure_built(engine, project, sink) {
-        Ok(wasm) => wasm,
-        Err(why) => {
-            let last = wasm_path(project);
-            if why == "stopped" || !last.is_file() {
-                return Err(why);
-            }
-            sink("==> the project does not build yet; asking the AI with its current source");
-            last
-        }
-    };
+    // The engine changes a copy of the folder and writes the changed app
+    // to `after`; nothing in the project is touched here. That works on a
+    // project that has never built -- when somebody most needs the help --
+    // which packing the last build first could not (K-973).
     let work =
         studio_dir()
             .join("work")
             .join(format!("ide-ask-{}-{}", std::process::id(), unix_now()));
     std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
     let result = (|| {
-        let before = work.join("before.krate");
         let after = work.join("after.krate");
-        pack_to(engine, project, &wasm, &before, sink)?;
         let mut cmd = engine_cmd(engine, true);
         cmd.arg("revise")
             .args(["--agent", agent, "--output"])
             .arg(&after)
             .arg("--")
-            .arg(&before)
+            .arg(project)
             .arg(request);
         let ran = run_streamed(cmd, project, sink)?;
-        // Exit 6: the AI's change did not do what was asked, and revise
-        // kept the app it started from (see is_off_request).
+        // Exit 6: the AI's change did not do what was asked (see
+        // is_off_request); the project is untouched either way.
         if ran.code == Some(6) {
             let mut lines = ran.out.clone();
             lines.extend(ran.err.iter().cloned());
@@ -1094,10 +1095,72 @@ fn ask(
         if !after.is_file() {
             return Err("the AI finished but no changed app was written".to_string());
         }
-        copy_back(project, &after)
+        let planned = plan_back(project, &after)?;
+        Ok(planned
+            .into_iter()
+            .map(|(rel, dest, bytes)| {
+                let before = std::fs::read(&dest).ok();
+                let (after_text, b64) = match String::from_utf8(bytes) {
+                    Ok(text) => (Some(text), None),
+                    Err(e) => (
+                        None,
+                        Some(base64::engine::general_purpose::STANDARD.encode(e.into_bytes())),
+                    ),
+                };
+                Proposed {
+                    rel: rel.replace('\\', "/"),
+                    before: before.and_then(|b| String::from_utf8(b).ok()),
+                    after: after_text,
+                    b64,
+                }
+            })
+            .collect())
     })();
     let _ = std::fs::remove_dir_all(&work);
     result
+}
+
+/// Write the files the person accepted from the AI's change. Every path is
+/// checked before anything is written, and what each file held before is
+/// kept in Studio's own folder, so an accepted change can still be undone
+/// by hand as well as in the editor.
+fn apply(project: &Path, files: &[Accepted]) -> Result<Vec<String>, String> {
+    apply_keeping(project, files, &studio_dir().join("ide-backups"))
+}
+
+fn apply_keeping(
+    project: &Path,
+    files: &[Accepted],
+    backups: &Path,
+) -> Result<Vec<String>, String> {
+    let mut planned = Vec::new();
+    for f in files {
+        let dest = inside_for_write(project, &f.rel)
+            .map_err(|why| format!("{}: {why}; nothing was written", f.rel))?;
+        let bytes = match (&f.text, &f.b64) {
+            (Some(text), _) => text.clone().into_bytes(),
+            (None, Some(b64)) => base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|_| format!("{} did not arrive whole; nothing was written", f.rel))?,
+            _ => return Err(format!("{} has no contents; nothing was written", f.rel)),
+        };
+        planned.push((f.rel.clone(), dest, bytes));
+    }
+    let backup = backups.join(format!("{}-{}", display_name(project), unix_now()));
+    let mut changed = Vec::new();
+    for (rel, dest, bytes) in planned {
+        if let Ok(old) = std::fs::read(&dest) {
+            let keep = backup.join(&rel);
+            if let Some(dir) = keep.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&keep, old);
+        }
+        write_atomic(&dest, &bytes)?;
+        changed.push(rel);
+    }
+    changed.sort();
+    Ok(changed)
 }
 
 /* ---- the commands ------------------------------------------------------ */
@@ -1263,7 +1326,7 @@ pub(crate) async fn ide_ask(
     path: String,
     request: String,
     agent: Option<String>,
-) -> Result<AskResult, String> {
+) -> Result<AskPreview, String> {
     blocking(move || {
         let project = project_dir(&path)?;
         let _job = claim(&project)?;
@@ -1276,14 +1339,24 @@ pub(crate) async fn ide_ask(
         } else {
             agent
         };
-        let changed = ask(
+        let files = ask(
             &engine,
             &project,
             &request,
             &agent,
             &line_sink(app, &project),
         )?;
-        Ok(AskResult { changed })
+        Ok(AskPreview { files })
+    })
+    .await
+}
+
+/// Write the parts of the AI's change the person accepted.
+#[tauri::command]
+pub(crate) async fn ide_apply(path: String, files: Vec<Accepted>) -> Result<Vec<String>, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        apply(&project, &files)
     })
     .await
 }
@@ -1487,7 +1560,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_back_writes_changes_restores_the_sdk_and_deletes_nothing() {
+    fn the_change_lands_with_the_sdk_restored_and_nothing_deleted() {
         let tmp = tempfile::tempdir().unwrap();
         let p = project(tmp.path());
         std::fs::write(p.join("NOTES.md"), "mine").unwrap();
@@ -1508,7 +1581,26 @@ mod tests {
                 ("source/.last-full-check", b""),
             ],
         );
-        let changed = copy_back(&p, &bundle).unwrap();
+        let planned = plan_back(&p, &bundle).unwrap();
+        let rels: Vec<String> = planned.iter().map(|(r, _, _)| r.clone()).collect();
+        assert_eq!(
+            rels,
+            vec!["src/extra.rs", "src/lib.rs"],
+            "Cargo.toml round-trips, so it is not a change"
+        );
+        let changed = apply_keeping(
+            &p,
+            &planned
+                .into_iter()
+                .map(|(rel, _, bytes)| Accepted {
+                    rel,
+                    text: String::from_utf8(bytes).ok(),
+                    b64: None,
+                })
+                .collect::<Vec<_>>(),
+            &tmp.path().join("backups"),
+        )
+        .unwrap();
         assert_eq!(changed, vec!["src/extra.rs", "src/lib.rs"]);
         assert_eq!(
             std::fs::read_to_string(p.join("Cargo.toml")).unwrap(),
@@ -1520,7 +1612,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_back_refuses_a_bundle_with_a_path_out_and_writes_nothing() {
+    fn a_bundle_with_a_path_out_plans_nothing() {
         let tmp = tempfile::tempdir().unwrap();
         let p = project(tmp.path());
         let bundle = tmp.path().join("evil.krate");
@@ -1531,10 +1623,82 @@ mod tests {
                 ("source/../../evil.rs", b"evil"),
             ],
         );
-        assert!(copy_back(&p, &bundle).is_err());
+        assert!(plan_back(&p, &bundle).is_err());
         assert_eq!(
             std::fs::read_to_string(p.join("src/lib.rs")).unwrap(),
             "// hi\n"
+        );
+        assert!(!tmp.path().join("evil.rs").exists());
+    }
+
+    #[test]
+    fn plan_back_writes_nothing_and_apply_writes_only_what_is_accepted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = project(tmp.path());
+        let bundle = tmp.path().join("after.krate");
+        zip_with(
+            &bundle,
+            &[
+                ("source/src/lib.rs", b"// changed\n"),
+                ("source/src/extra.rs", b"// new\n"),
+            ],
+        );
+        let planned = plan_back(&p, &bundle).unwrap();
+        let rels: Vec<&str> = planned.iter().map(|(r, _, _)| r.as_str()).collect();
+        assert_eq!(rels, vec!["src/extra.rs", "src/lib.rs"]);
+        assert_eq!(
+            std::fs::read_to_string(p.join("src/lib.rs")).unwrap(),
+            "// hi\n",
+            "a plan is not a write"
+        );
+        assert!(!p.join("src/extra.rs").exists());
+        // Accept one of the two.
+        let changed = apply_keeping(
+            &p,
+            &[Accepted {
+                rel: "src/lib.rs".into(),
+                text: Some("// changed\n".into()),
+                b64: None,
+            }],
+            &tmp.path().join("backups"),
+        )
+        .unwrap();
+        assert_eq!(changed, vec!["src/lib.rs"]);
+        assert_eq!(
+            std::fs::read_to_string(p.join("src/lib.rs")).unwrap(),
+            "// changed\n"
+        );
+        assert!(
+            !p.join("src/extra.rs").exists(),
+            "a file not accepted is not written"
+        );
+    }
+
+    #[test]
+    fn apply_refuses_a_path_out_and_writes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = project(tmp.path());
+        let bad = apply_keeping(
+            &p,
+            &[
+                Accepted {
+                    rel: "src/lib.rs".into(),
+                    text: Some("// changed\n".into()),
+                    b64: None,
+                },
+                Accepted {
+                    rel: "../evil.rs".into(),
+                    text: Some("evil".into()),
+                    b64: None,
+                },
+            ],
+            &tmp.path().join("backups"),
+        );
+        assert!(bad.is_err());
+        assert_eq!(
+            std::fs::read_to_string(p.join("src/lib.rs")).unwrap(),
+            "// hi\n",
+            "nothing was written"
         );
         assert!(!tmp.path().join("evil.rs").exists());
     }
@@ -1626,7 +1790,16 @@ mod tests {
                 .collect();
             zip_with(&revised, &refs);
         }
-        let changed = copy_back(&p, &revised).unwrap();
+        let planned = plan_back(&p, &revised).unwrap();
+        let accepted: Vec<Accepted> = planned
+            .into_iter()
+            .map(|(rel, _, bytes)| Accepted {
+                rel,
+                text: String::from_utf8(bytes).ok(),
+                b64: None,
+            })
+            .collect();
+        let changed = apply_keeping(&p, &accepted, &tmp.path().join("backups")).unwrap();
         assert_eq!(changed, vec!["src/lib.rs"]);
         assert!(read_text(&p, "src/lib.rs")
             .unwrap()
