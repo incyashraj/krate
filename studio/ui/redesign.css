@@ -2819,3 +2819,29 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 /* one box per open file's editor; only the current one shows */
 #ideCode .kr-edhost { flex: 1; min-width: 0; height: 100%; display: flex; }
 #ideCode .kr-edhost[hidden] { display: none; }
+/* the IDE's tree menu, inline names, quick open and starters */
+.ide-tree .th2 { display: flex; align-items: center; }
+.ide-tree .th2 span { flex: 1; }
+.th-new { width: 22px; height: 22px; border: 0; border-radius: 6px; display: grid; place-items: center; background: none; color: var(--ink-3); cursor: pointer; }
+.th-new:hover { background: var(--surface-2); color: var(--ink); }
+.ide-menu { position: fixed; z-index: 400; min-width: 180px; padding: 5px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 18px 40px -14px rgba(0, 0, 0, .35); animation: krPopIn .18s var(--ease) both; }
+.ide-menu button { display: block; width: 100%; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: none; text-align: left; font: 13px var(--sans); color: var(--ink); cursor: pointer; }
+.ide-menu button:hover { background: var(--surface-2); }
+.ide-menu button.danger { color: var(--danger); }
+.ide-menu .sep { height: 1px; margin: 4px 6px; background: var(--line); }
+.tn-in { padding: 2px 8px; }
+.tn-in input { width: 100%; height: 28px; padding: 0 9px; border: 0; border-radius: 7px; background: var(--surface); color: var(--ink); font: 12.5px ui-monospace, Menlo, monospace; outline: 0; box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
+.ide-qo { position: absolute; left: 50%; top: 14px; z-index: 7; width: min(520px, calc(100% - 32px)); transform: translateX(-50%); border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 24px 60px -20px rgba(0, 0, 0, .4); overflow: hidden; animation: krPopIn .2s var(--ease) both; }
+.ide-qo input { width: 100%; height: 44px; padding: 0 16px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); font: 14px var(--sans); outline: 0; }
+.qo-list { max-height: 320px; overflow: auto; padding: 5px; }
+.qo-list button { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 7px 11px; border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; }
+.qo-list button.on, .qo-list button:hover { background: var(--surface-2); }
+.qo-list b { font: 500 13px var(--sans); color: var(--ink); } .qo-list small { font: 12px ui-monospace, Menlo, monospace; color: var(--ink-3); }
+.qo-list p { margin: 10px 12px; font-size: 12.5px; color: var(--ink-3); }
+.kr-np-kinds { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.kr-np-kinds label { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; }
+.kr-np-kinds label:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.kr-np-kinds input { position: absolute; opacity: 0; pointer-events: none; }
+.kr-np-kinds b { font: 500 13px var(--sans); color: var(--ink); } .kr-np-kinds small { font-size: 12px; color: var(--ink-3); }
+@media (max-width: 560px) { .kr-np-kinds { grid-template-columns: 1fr; } }
+.kr-newp .kr-np-kinds { flex-basis: 100%; }

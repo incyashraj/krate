@@ -58,6 +58,8 @@ const SKIP: [&str; 5] = [
 const SDK_PLACEHOLDER: &str = "{KRATE_SDK}";
 /// The starter `ide_new` makes: the built-in checklist, no AI involved.
 const STARTER_KIND: &str = "checklist";
+/// The starters a new project may begin from, the engine's own templates.
+const STARTERS: &[&str] = &["checklist", "word-frequency", "voice-prompter"];
 const STARTER_REQUEST: &str = "a checklist that saves locally";
 
 /* ---- shapes the UI reads ---------------------------------------------- */
@@ -725,8 +727,19 @@ fn tail_of(ran: &Ran, fallback: &str) -> String {
 
 /* ---- new project ------------------------------------------------------- */
 
-fn new_project(engine: &Path, root: &Path, name: &str, sink: Sink) -> Result<PathBuf, String> {
+fn new_project(
+    engine: &Path,
+    root: &Path,
+    name: &str,
+    kind: &str,
+    sink: Sink,
+) -> Result<PathBuf, String> {
     let kebab = kebab(name)?;
+    let kind = if STARTERS.contains(&kind) {
+        kind
+    } else {
+        STARTER_KIND
+    };
     std::fs::create_dir_all(root).map_err(|e| format!("could not make {}: {e}", root.display()))?;
     let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
     let dest = root.join(&kebab);
@@ -744,7 +757,7 @@ fn new_project(engine: &Path, root: &Path, name: &str, sink: Sink) -> Result<Pat
     ));
     let mut cmd = engine_cmd(engine, false);
     cmd.arg("create")
-        .args(["--kind", STARTER_KIND, "--name", &kebab, "--work-dir"])
+        .args(["--kind", kind, "--name", &kebab, "--work-dir"])
         .arg(&staging)
         .arg("--output")
         .arg(root.join(format!("{kebab}.krate")))
@@ -1192,13 +1205,18 @@ pub(crate) async fn ide_projects() -> Result<Vec<ProjectEntry>, String> {
 }
 
 #[tauri::command]
-pub(crate) async fn ide_new(app: tauri::AppHandle, name: String) -> Result<ProjectRef, String> {
+pub(crate) async fn ide_new(
+    app: tauri::AppHandle,
+    name: String,
+    kind: Option<String>,
+) -> Result<ProjectRef, String> {
     blocking(move || {
         let engine = engine()?;
         let root = ide_root();
         let target = root.join(kebab(&name)?);
         let sink = line_sink(app, &target);
-        let made = new_project(&engine, &root, &name, &sink)?;
+        let kind = kind.unwrap_or_else(|| STARTER_KIND.to_string());
+        let made = new_project(&engine, &root, &name, &kind, &sink)?;
         recent_record(&recent_file(), &made);
         Ok(ProjectRef {
             name: display_name(&made),
@@ -1242,6 +1260,73 @@ pub(crate) async fn ide_tree(path: String) -> Result<Vec<TreeEntry>, String> {
 #[tauri::command]
 pub(crate) async fn ide_read(path: String, rel: String) -> Result<String, String> {
     blocking(move || read_text(&project_dir(&path)?, &rel)).await
+}
+
+/// Rename or move a file or folder inside the project. Both ends are
+/// checked, and an existing file is never overwritten.
+fn rename_in(project: &Path, from: &str, to: &str) -> Result<(), String> {
+    let src = inside_existing(project, from)?;
+    let dest = inside_for_write(project, to).map_err(|e| {
+        if e.ends_with("is a folder") {
+            format!("{to} already exists")
+        } else {
+            e
+        }
+    })?;
+    if std::fs::symlink_metadata(&dest).is_ok() {
+        return Err(format!("{to} already exists"));
+    }
+    if let Some(dir) = dest.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&src, &dest).map_err(|e| format!("could not rename {from}: {e}"))
+}
+
+/// Delete by moving the file or folder into Studio's own ide-backups, so a
+/// delete can still be undone by hand.
+fn delete_in(project: &Path, rel: &str, backups: &Path) -> Result<(), String> {
+    let src = inside_existing(project, rel)?;
+    let clean = clean_rel(rel)?;
+    for keep in ["Cargo.toml", "manifest.toml"] {
+        if clean == Path::new(keep) {
+            return Err(format!(
+                "{keep} is what makes this a Krate project; it stays"
+            ));
+        }
+    }
+    let dest = backups
+        .join(format!("{}-{}-deleted", display_name(project), unix_now()))
+        .join(&clean);
+    if let Some(dir) = dest.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    if std::fs::rename(&src, &dest).is_err() {
+        // Another volume: copy a file, then remove it.
+        if src.is_file() {
+            std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+            std::fs::remove_file(&src).map_err(|e| e.to_string())?;
+        } else {
+            return Err(format!("could not move {rel} aside"));
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn ide_rename(path: String, from: String, to: String) -> Result<(), String> {
+    blocking(move || rename_in(&project_dir(&path)?, &from, &to)).await
+}
+
+#[tauri::command]
+pub(crate) async fn ide_delete(path: String, rel: String) -> Result<(), String> {
+    blocking(move || {
+        delete_in(
+            &project_dir(&path)?,
+            &rel,
+            &studio_dir().join("ide-backups"),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1724,6 +1809,52 @@ mod tests {
     }
 
     #[test]
+    fn rename_and_delete_stay_inside_and_delete_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = project(tmp.path());
+        let p = std::fs::canonicalize(&p).unwrap();
+        std::fs::write(p.join("src/extra.rs"), "// x\n").unwrap();
+        rename_in(&p, "src/extra.rs", "src/helpers.rs").unwrap();
+        assert!(p.join("src/helpers.rs").is_file() && !p.join("src/extra.rs").exists());
+        assert!(
+            rename_in(&p, "src/helpers.rs", "src/lib.rs").is_err(),
+            "never over an existing file"
+        );
+        assert!(
+            rename_in(&p, "src/helpers.rs", "../out.rs").is_err(),
+            "never out of the project"
+        );
+        let backups = tmp.path().join("backups");
+        delete_in(&p, "src/helpers.rs", &backups).unwrap();
+        assert!(!p.join("src/helpers.rs").exists());
+        let kept: Vec<_> = walk_files(&backups);
+        assert!(
+            kept.iter().any(|f| f.ends_with("src/helpers.rs")),
+            "kept in the backups: {kept:?}"
+        );
+        assert!(
+            delete_in(&p, "manifest.toml", &backups).is_err(),
+            "the project's own files stay"
+        );
+        assert!(delete_in(&p, "../x", &backups).is_err());
+    }
+
+    fn walk_files(dir: &Path) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Ok(read) = std::fs::read_dir(dir) {
+            for e in read.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    out.extend(walk_files(&p));
+                } else {
+                    out.push(p.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
     fn one_job_per_project() {
         let tmp = tempfile::tempdir().unwrap();
         let p = project(tmp.path());
@@ -1756,12 +1887,14 @@ mod tests {
         let lines = Mutex::new(Vec::<String>::new());
         let sink = |l: &str| lines.lock().unwrap().push(l.to_string());
 
-        let made = new_project(&engine, &root, "Shop List", &sink).unwrap();
+        let made = new_project(&engine, &root, "Shop List", STARTER_KIND, &sink).unwrap();
         assert_eq!(display_name(&made), "shop-list");
         assert!(is_project(&made));
-        assert!(new_project(&engine, &root, "shop list", &sink)
-            .unwrap_err()
-            .contains("already exists"));
+        assert!(
+            new_project(&engine, &root, "shop list", STARTER_KIND, &sink)
+                .unwrap_err()
+                .contains("already exists")
+        );
         let p = project_dir(&made.display().to_string()).unwrap();
 
         let tree = tree_of(&p);

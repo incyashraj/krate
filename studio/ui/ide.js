@@ -409,7 +409,7 @@
   function paintTree() {
     const box = $("ideTree");
     const hiddenUnder = [...ide.collapsed];
-    box.innerHTML = `<div class="th2">${esc(ide.name.toUpperCase())}</div>` + ide.tree.map((e) => {
+    box.innerHTML = `<div class="th2"><span>${esc(ide.name.toUpperCase())}</span><button type="button" class="th-new" data-tnew="" title="New file">${PLUS}</button></div>` + ide.tree.map((e) => {
       const depth = e.rel.split("/").length - 1;
       const gone = hiddenUnder.some((d) => e.rel.startsWith(d + "/"));
       if (gone) return "";
@@ -420,11 +420,159 @@
     }).join("");
   }
   $("ideTree").addEventListener("click", (e) => {
+    const nb = e.target.closest("[data-tnew]"); if (nb && ide) { newFileIn(nb.dataset.tnew); return; }
     const b = e.target.closest(".tn"); if (!b || !ide) return;
     const rel = b.dataset.rel;
     if (b.dataset.dir) { ide.collapsed.has(rel) ? ide.collapsed.delete(rel) : ide.collapsed.add(rel); paintTree(); return; }
     openFile(rel);
   });
+
+  /* ---- files: new, rename, delete ---------------------------------------- */
+  const PLUS = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  // A small menu at the pointer, for a file or folder in the tree.
+  let menuEl = null;
+  function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+  document.addEventListener("pointerdown", (e) => { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }, true);
+  function menu(x, y, items) {
+    closeMenu();
+    menuEl = document.createElement("div"); menuEl.className = "ide-menu"; menuEl.setAttribute("role", "menu");
+    for (const it of items) {
+      if (it === "sep") { menuEl.appendChild(Object.assign(document.createElement("div"), { className: "sep" })); continue; }
+      const b = document.createElement("button"); b.type = "button"; b.textContent = it.label; b.setAttribute("role", "menuitem");
+      if (it.danger) b.className = "danger";
+      b.addEventListener("click", () => { closeMenu(); it.run(); });
+      menuEl.appendChild(b);
+    }
+    document.body.appendChild(menuEl);
+    const w = menuEl.offsetWidth, h = menuEl.offsetHeight;
+    menuEl.style.left = Math.min(x, innerWidth - w - 8) + "px"; menuEl.style.top = Math.min(y, innerHeight - h - 8) + "px";
+  }
+  $("ideTree").addEventListener("contextmenu", (e) => {
+    const b = e.target.closest(".tn"); if (!b || !ide) return;
+    e.preventDefault();
+    const rel = b.dataset.rel, dir = !!b.dataset.dir;
+    const folder = dir ? rel : rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+    menu(e.clientX, e.clientY, [
+      { label: "New file here", run: () => newFileIn(folder) },
+      { label: "Rename", run: () => renameIn(rel) },
+      "sep",
+      { label: "Delete", danger: true, run: () => deleteIn(rel, dir) },
+    ]);
+  });
+  // A name typed right in the tree, where the file will be.
+  function inlineName(placeholder, value, after) {
+    return new Promise((resolve) => {
+      const box = $("ideTree");
+      const f = document.createElement("form"); f.className = "tn-in"; f.autocomplete = "off";
+      f.innerHTML = `<input type="text" spellcheck="false" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}">`;
+      const input = f.querySelector("input"); input.value = value || "";
+      if (after) after.after(f); else box.appendChild(f);
+      input.focus(); if (value) input.setSelectionRange(0, value.lastIndexOf(".") > 0 ? value.lastIndexOf(".") : value.length);
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; f.remove(); resolve(v); };
+      f.addEventListener("submit", (e) => { e.preventDefault(); finish(input.value.trim()); });
+      input.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); finish(""); } });
+      input.addEventListener("blur", () => setTimeout(() => finish(""), 120));
+    });
+  }
+  async function newFileIn(folder) {
+    if (!ide) return;
+    const anchor = folder ? $("ideTree").querySelector(`.tn[data-rel="${CSS.escape(folder)}"]`) : null;
+    const name = await inlineName(folder ? `New file in ${folder}/` : "New file, like src/helpers.rs", "", anchor);
+    if (!name) return;
+    const rel = (folder && !name.includes("/") ? folder + "/" : "") + name.replace(/^\/+/, "");
+    if (ide.tree.some((t) => t.rel === rel)) { term(`${rel} already exists`, "r"); openFile(rel); return; }
+    try { await call("ide_write", { path: ide.path, rel, text: "" }); }
+    catch (err) { term(`could not make ${rel}: ${err}`, "r"); return; }
+    term(`==> made ${rel}`, "m");
+    await loadTree(); await openFile(rel);
+    // A new Rust file is only built once lib.rs names it.
+    const m = rel.match(/^src\/(?:.*\/)?([a-z_][a-z0-9_]*)\.rs$/);
+    if (m && !/^src\/(lib|main|bindings)\.rs$/.test(rel) && rel.split("/").length === 2 && ide.tree.some((t) => t.rel === "src/lib.rs")) {
+      const k = await ask(`Add mod ${m[1]}; to src/lib.rs, so this file is part of the build?`, [["add", "Add it", true], ["no", "Not now"]]);
+      if (k === "add") await addMod(m[1]);
+    }
+  }
+  async function addMod(name) {
+    let doc = ide.docs.get("src/lib.rs");
+    if (!doc || !doc.state) { await openFile("src/lib.rs"); doc = ide.docs.get("src/lib.rs"); }
+    if (!doc || !doc.state) return;
+    const text = textOf(doc);
+    if (new RegExp(`^\\s*(pub\\s+)?mod\\s+${name}\\s*;`, "m").test(text)) return;
+    // After the last mod line; else after the attributes and uses at the top.
+    const lines = text.split("\n"); let at = -1;
+    lines.forEach((l, i) => { if (/^\s*(pub\s+)?mod\s+\w+\s*;/.test(l)) at = i; });
+    if (at < 0) lines.forEach((l, i) => { if (i < 60 && /^\s*(#!\[|extern crate|use )/.test(l)) at = i; });
+    const pos = at < 0 ? 0 : doc.state.doc.line(at + 1).to;
+    applyTo(doc, { changes: { from: pos, insert: (at < 0 ? "" : "\n") + `mod ${name};` + (at < 0 ? "\n" : "") } });
+    await saveOne("src/lib.rs"); paintTabs(); paintTree();
+    build(`mod ${name} added`);
+  }
+  async function renameIn(rel) {
+    const b = $("ideTree").querySelector(`.tn[data-rel="${CSS.escape(rel)}"]`);
+    const base = rel.split("/").pop();
+    const name = await inlineName("New name", base, b);
+    if (!name || name === base) return;
+    const to = name.includes("/") ? name : (rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "") + name;
+    await saveAll(false);
+    try { await call("ide_rename", { path: ide.path, from: rel, to }); }
+    catch (err) { term(String(err), "r"); return; }
+    term(`==> renamed ${rel} to ${to}`, "m");
+    // Open files follow the rename (a folder takes its files with it).
+    for (const [r, d] of [...ide.docs]) {
+      const moved = r === rel ? to : r.startsWith(rel + "/") ? to + r.slice(rel.length) : null;
+      if (!moved) continue;
+      ide.docs.delete(r); ide.docs.set(moved, d); dropDraft(r);
+      ide.open = ide.open.map((o) => (o === r ? moved : o));
+      if (ide.cur === r) ide.cur = moved;
+    }
+    await loadTree(); paintTabs(); showCur();
+  }
+  async function deleteIn(rel, dir) {
+    const k = await ask(`Delete ${rel}${dir ? " and everything in it" : ""}? It is moved to Studio's backups, so it can be got back.`, [["del", "Delete", true], ["no", "Cancel"]]);
+    if (k !== "del") return;
+    try { await call("ide_delete", { path: ide.path, rel }); }
+    catch (err) { term(String(err), "r"); return; }
+    term(`==> deleted ${rel} (kept in Studio's ide-backups)`, "m");
+    for (const [r, d] of [...ide.docs]) {
+      if (r !== rel && !r.startsWith(rel + "/")) continue;
+      if (d.view) { d.view.destroy(); d.host.remove(); }
+      ide.docs.delete(r); dropDraft(r);
+      ide.open = ide.open.filter((o) => o !== r);
+      if (ide.cur === r) ide.cur = ide.open[ide.open.length - 1] || null;
+    }
+    await loadTree(); paintTabs(); showCur();
+  }
+
+  /* Quick open (Cmd-P): any file in the project by a few letters of its name. */
+  function quickOpen() {
+    if (!ide) return;
+    const files = ide.tree.filter((t) => !t.dir).map((t) => t.rel);
+    const box = document.createElement("div"); box.className = "ide-qo";
+    box.innerHTML = '<input type="text" placeholder="Go to a file" spellcheck="false" aria-label="Go to a file"><div class="qo-list" role="listbox"></div>';
+    $("ideEd").appendChild(box);
+    const input = box.querySelector("input"), list = box.querySelector(".qo-list");
+    let hits = [], sel = 0;
+    const score = (rel, q) => { let i = 0, s = 0; const r = rel.toLowerCase(); for (const ch of q) { const j = r.indexOf(ch, i); if (j < 0) return -1; s += j - i; i = j + 1; } return s + rel.length / 100; };
+    const paint = () => {
+      const q = input.value.trim().toLowerCase();
+      hits = files.map((f) => [f, q ? score(f, q) : 0]).filter((x) => x[1] >= 0).sort((a, b) => a[1] - b[1]).slice(0, 12).map((x) => x[0]);
+      sel = Math.min(sel, Math.max(0, hits.length - 1));
+      list.innerHTML = hits.map((f, i) => `<button type="button" class="${i === sel ? "on" : ""}" data-i="${i}"><b>${esc(f.split("/").pop())}</b><small>${esc(f)}</small></button>`).join("") || '<p>No file matches.</p>';
+    };
+    const close = () => box.remove();
+    const go = (i) => { const f = hits[i]; close(); if (f) openFile(f); };
+    input.addEventListener("input", () => { sel = 0; paint(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); close(); if (edView) edView.focus(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(hits.length - 1, sel + 1); paint(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(0, sel - 1); paint(); }
+      else if (e.key === "Enter") { e.preventDefault(); go(sel); }
+    });
+    input.addEventListener("blur", () => setTimeout(close, 150));
+    list.addEventListener("mousedown", (e) => { const b = e.target.closest("[data-i]"); if (b) { e.preventDefault(); go(+b.dataset.i); } });
+    paint(); input.focus();
+  }
 
   /* ---- the editor ----------------------------------------------------- */
   // One CodeMirror view; each open file keeps its own state, so its undo
@@ -521,6 +669,12 @@
       });
     }
   }
+  // The current tab, loaded if it was listed but never opened (manifest.toml
+  // joins the tabs when a project opens, before anyone looks at it).
+  function showCur() {
+    if (ide && ide.cur && !ide.docs.get(ide.cur)) { openFile(ide.cur); return; }
+    showDoc();
+  }
   function showDoc() {
     const doc = ide && ide.cur ? ide.docs.get(ide.cur) : null;
     const code = $("ideCode"), msg = $("ideMsg"), empty = $("ideEmpty");
@@ -565,7 +719,7 @@
       }
       ide.open = ide.open.filter((r) => r !== rel);
       if (ide.cur === rel) ide.cur = ide.open[ide.open.length - 1] || null;
-      showDoc(); paintTabs(); paintTree(); return;
+      showCur(); paintTabs(); paintTree(); return;
     }
     const t = e.target.closest("[data-rel]"); if (t && t.dataset.rel !== ide.cur) openFile(t.dataset.rel);
   });
@@ -822,9 +976,14 @@
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (mod && !e.shiftKey && e.key.toLowerCase() === "i") { e.preventDefault(); askIn.focus(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === "f") { e.preventDefault(); panelTab("find"); }
+    if (mod && !e.shiftKey && e.key.toLowerCase() === "p") { e.preventDefault(); quickOpen(); }
+    if (mod && !e.shiftKey && e.key.toLowerCase() === "r") { e.preventDefault(); $("ideRun").click(); }
+    if (mod && e.shiftKey && e.key.toLowerCase() === "b") { e.preventDefault(); $("ideBuild").click(); }
     if (mod && e.key.toLowerCase() === "s" && !(edView && edView.hasFocus)) { e.preventDefault(); saveAll(true); }
   });
   $("ideAskKey").textContent = MOD + "I";
+  // The shortcuts, where the buttons are.
+  [["ideRun", `Run it (${MOD}R)`], ["ideBuild", `Build the .krate (${MOD}⇧B)`]].forEach(([id, t]) => { const b = $(id); if (b) b.title = t; });
 
   /* ---- opening and leaving a project ------------------------------------ */
   async function openProject(p) {
@@ -923,7 +1082,12 @@
     if (pane.querySelector(".kr-newp")) { pane.querySelector(".kr-newp input").focus(); return; }
     const f = document.createElement("form");
     f.className = "kr-newp"; f.autocomplete = "off";
-    f.innerHTML = '<input type="text" maxlength="40" placeholder="Name your project, like habit tracker" aria-label="Project name" required><button type="submit" class="kr-mk">Make it</button><button type="button" class="kr-cx">Cancel</button><p class="kr-np-line" aria-live="polite"></p>';
+    // Which of the engine's own starters to begin from.
+    f.innerHTML = '<input type="text" maxlength="40" placeholder="Name your project, like habit tracker" aria-label="Project name" required><button type="submit" class="kr-mk">Make it</button><button type="button" class="kr-cx">Cancel</button>' +
+      '<div class="kr-np-kinds" role="radiogroup" aria-label="Start from">' +
+      [["checklist", "A window app", "a checklist that saves"], ["word-frequency", "A command-line tool", "reads a file, prints words"], ["voice-prompter", "A voice app", "listens to the microphone"]]
+        .map(([k, t, d], i) => `<label><input type="radio" name="kind" value="${k}"${i ? "" : " checked"}><b>${t}</b><small>${d}</small></label>`).join("") +
+      '</div><p class="kr-np-line" aria-live="polite"></p>';
     pane.appendChild(f);
     const input = f.querySelector("input"), line = f.querySelector(".kr-np-line");
     input.focus();
@@ -936,7 +1100,8 @@
       line.textContent = "Making a working starter…";
       try { off = await tauri.event.listen("ide-line", (ev) => { const l = ev.payload && ev.payload.line; if (l && l.trim()) line.textContent = l.trim().slice(0, 140); }); } catch (err) { off = null; }
       try {
-        const p = await call("ide_new", { name });
+        const kind = (f.querySelector('input[name="kind"]:checked') || {}).value || "checklist";
+        const p = await call("ide_new", { name, kind });
         f.remove();
         await loadProjects();
         openProject(p);
