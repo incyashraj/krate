@@ -2569,19 +2569,29 @@ body:not(.light) .kr-fstill { background: #2a2016; color: #d6c3b0; }
 #stage .kr-forge .kr-plain { height: 30px; box-shadow: none; padding: 0 11px; border: 0; border-radius: 99px; background: transparent; color: var(--ink-3); font-size: 12.5px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; transition: background .2s, color .2s; }
 #stage .kr-forge .kr-plain:hover { background: var(--surface-2); color: var(--ink); }
 #stage .kr-forge .kr-plain .kr-ico { width: 13px; height: 13px; }
-/* the log: a small dark panel that opens under the card, as the design's */
-.kr-flog { width: 100%; display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s var(--ease); }
-.kr-flog > .build-term { min-height: 0; overflow: hidden; }
-.kr-forge.kr-logon .kr-flog { grid-template-rows: 1fr; }
-.kr-forge:is([data-st="done"], [data-st="arrive"], [data-st="idle"], [data-st="planning"]) .kr-flog { display: none; }
-#stage .kr-flog .build-term, #stage .kr-flog .build-term.hidden { position: relative; inset: auto; z-index: auto; display: block !important; background: none; }
-#stage .kr-flog .term-bar { position: absolute; top: 18px; right: 8px; z-index: 1; padding: 0; border: 0; background: none; }
-#stage .kr-flog .term-what, #stage .kr-flog .term-stage { display: none; }
-#stage .kr-flog .term-copy { font: 500 11px var(--sans); color: #8b8b95; padding: 3px 8px; border-radius: 6px; background: rgba(255, 255, 255, .06); }
-#stage .kr-flog .term-copy:hover { color: #e4e4ea; background: rgba(255, 255, 255, .12); }
-#stage .kr-flog .term-log { display: block; margin-top: 10px; height: 150px; padding: 12px 64px 12px 14px; border-radius: 12px; background: #0d0d10; color: #c9c9d1;
-  font: 11.5px/1.65 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; overflow-y: auto; box-shadow: 0 0 0 1px rgba(255, 255, 255, .04); }
-body:not(.light) #stage .kr-flog .term-log { box-shadow: 0 0 0 1px var(--hair); }
+/* Details: the engine's lines inside the card's grey panel, where the glyph
+   was. Small, light and quiet; the newest line darkest at the bottom, the
+   oldest fading out at the top, a dot on each step. The card keeps its size. */
+.kr-flg { position: absolute; inset: 0; z-index: 4; opacity: 0; pointer-events: none; background: color-mix(in srgb, var(--surface-2) 96%, transparent); transition: opacity .45s var(--ease); }
+#stage .kr-forge.kr-logon:is([data-st="building"], [data-st="failed"], [data-st="stopped"]) .kr-flg { opacity: 1; pointer-events: auto; }
+#stage .kr-forge.kr-logon:is([data-st="building"], [data-st="failed"], [data-st="stopped"]) .kr-fgl { opacity: 0; transform: scale(.96); }
+.kr-flg-in { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 22px 16px; scrollbar-width: none;
+  font: 11px/1.8 ui-monospace, Menlo, monospace; color: var(--ink-4);
+  -webkit-mask-image: linear-gradient(transparent, #000 46px, #000); mask-image: linear-gradient(transparent, #000 46px, #000); outline: none; }
+.kr-flg-in::-webkit-scrollbar { display: none; }
+.kr-flg-in { display: flex; flex-direction: column; } .kr-flg-in > :first-child { margin-top: auto; }
+.kr-ll { position: relative; white-space: pre-wrap; word-break: break-word; }
+.kr-ll.kr-ls { color: var(--ink-3); padding-left: 13px; }
+.kr-ll.kr-ls::before { content: ""; position: absolute; left: 1px; top: .78em; width: 5px; height: 5px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 70%, transparent); }
+.kr-ll.kr-le { color: var(--danger); }
+.kr-ll:last-child { color: var(--ink-2); }
+.kr-ll.kr-ls:last-child::before { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.kr-ll.kr-lnew { animation: krStin .45s var(--ease) both; }
+.kr-ll.kr-lq { color: var(--ink-4); font-family: var(--sans); font-size: 12px; }
+.kr-flg-copy { position: absolute; top: 9px; right: 10px; z-index: 1; height: 24px; padding: 0 9px; border: 0; border-radius: 7px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair);
+  color: var(--ink-3); font: 500 11px var(--sans); cursor: pointer; opacity: 0; transition: opacity .25s, color .2s; }
+.kr-flg:hover .kr-flg-copy, .kr-flg-copy:focus-visible { opacity: 1; }
+.kr-flg-copy:hover { color: var(--ink); }
 /* a failure: what happened, and what to do */
 .kr-ffail { display: none; width: 100%; text-align: left; padding: 6px 6px 0; }
 .kr-forge:is([data-st="failed"], [data-st="stopped"]) .kr-ffail { display: block; animation: krStin .5s var(--ease) both; }

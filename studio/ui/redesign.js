@@ -2247,7 +2247,8 @@
     f.innerHTML =
       `<div class="kr-fcard">` +
         `<div class="kr-fth"><div class="kr-fgl" aria-hidden="true">${Object.entries(GL).map(([k, g]) => `<svg class="kr-gl" data-g="${k}" viewBox="0 0 100 100">${g}</svg>`).join("")}</div>` +
-          `<div class="kr-flive"><img alt="Your app, as it renders"></div></div>` +
+          `<div class="kr-flive"><img alt="Your app, as it renders"></div>` +
+          `<div class="kr-flg"><div class="kr-flg-in" tabindex="0" aria-label="What Krate is doing, line by line"></div><button type="button" class="kr-flg-copy">Copy</button></div></div>` +
         `<div class="kr-frows">` +
           `<div class="kr-fmeta"><span class="kr-fst" aria-live="polite"><span></span></span><span class="kr-fmk">${ast}</span><span class="kr-grow"></span><span class="kr-fel"></span></div>` +
           `<div class="kr-fdone"><img class="kr-dcic" src="krate-doc.png" alt=""><div class="kr-dn"><b></b><small></small></div>` +
@@ -2258,13 +2259,42 @@
         `<div class="kr-fx kr-fnote"><div><p class="kr-fstill">${ast}Still going. Bigger apps take a minute.</p></div></div>` +
       `</div>` +
       `<div class="kr-ffail"><h5><i>!</i><span></span></h5><p></p><div class="kr-facts2"></div></div>` +
-      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Show the log</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>` +
-      `<div class="kr-flog"></div>`;
+      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Show details</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>`;
     stage.insertBefore(f, stage.firstChild);
     stage.classList.add("kr-forged");
     const fst = q(".kr-fst", f), fel = q(".kr-fel", f), img = q(".kr-flive img", f);
-    const logBox = q(".kr-flog", f), term = $("buildTerm");
-    if (term) logBox.appendChild(term);
+    // Details: the engine's own lines, quietly, inside the card's grey
+    // panel where the glyph was -- small and light, the newest at the
+    // bottom, the oldest fading out at the top, each step marked with a dot.
+    // Read from app.js's log (buildLog), which keeps every line.
+    const lg = q(".kr-flg-in", f), lgLog = $("buildLog");
+    let logOn = false; try { logOn = localStorage.getItem("kr-forge-details") === "1"; } catch (e) {}
+    let lgKey = "", lgQ = 0;
+    function paintLog() {
+      lgQ = 0;
+      const text = (lgLog && lgLog.textContent) || "";
+      const lines = text.replace(/\n+$/, "").split("\n").filter((l) => l.trim()).slice(-80);
+      const key = lines.length + "|" + (lines[lines.length - 1] || "");
+      if (key === lgKey) return;
+      const atEnd = lg.scrollHeight - lg.scrollTop - lg.clientHeight < 24;
+      const had = lg.children.length && lgKey ? lg.querySelectorAll(".kr-ll").length : 0;
+      lgKey = key; lg.innerHTML = "";
+      if (!lines.length) { lg.innerHTML = '<div class="kr-ll kr-lq">Nothing yet. Lines appear here as Krate works.</div>'; return; }
+      lines.forEach((l, i) => {
+        const d = document.createElement("div");
+        const step = /^=+>/.test(l), bad = /\b(error|failed|refused|panicked)\b/i.test(l);
+        d.className = "kr-ll" + (step ? " kr-ls" : "") + (bad ? " kr-le" : "") + (i >= had && had ? " kr-lnew" : "");
+        d.textContent = step ? l.replace(/^=+>\s*/, "") : l.replace(/\t/g, "  ");
+        lg.appendChild(d);
+      });
+      if (atEnd || !had) lg.scrollTop = lg.scrollHeight;
+    }
+    if (lgLog) watch(lgLog, { childList: true, characterData: true, subtree: true }, () => { if (!lgQ) lgQ = requestAnimationFrame(paintLog); });
+    q(".kr-flg-copy", f).addEventListener("click", (e) => {
+      const b = e.currentTarget;
+      press($("termCopy"));
+      b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1400);
+    });
 
     /* the glyph: one at a time, each shown long enough to be seen */
     let glT = 0, glQ = 0;
@@ -2385,13 +2415,15 @@
         });
         if (($("buildLog") || {}).textContent) {
           const l = document.createElement("button"); l.type = "button"; l.className = "btn kr-plain"; l.dataset.fa = "log";
-          l.innerHTML = `${ico("term", "kr-ico")}<span>Show the log</span>`; acts.appendChild(l);
+          l.innerHTML = `${ico("term", "kr-ico")}<span>Show details</span>`; acts.appendChild(l);
         }
       }
       return stopped;
     }
-    function logShown() { const t = $("buildTerm"); return !!t && !t.classList.contains("hidden"); }
-    function paintLogBtn() { qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logShown() ? "Hide the log" : "Show the log"; }); f.classList.toggle("kr-logon", logShown()); }
+    function paintLogBtn() {
+      qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logOn ? "Hide details" : "Show details"; });
+      if (f.classList.contains("kr-logon") !== logOn) { f.classList.toggle("kr-logon", logOn); if (logOn) { lgKey = ""; paintLog(); } }
+    }
 
     function tick() {
       const st = app();
@@ -2450,7 +2482,7 @@
       if (k === "share") return press($("barShare"));
       if (k === "stop") return press($("stopBtn"));
       if (k === "details") { const t = q('#panelTabs [data-pane="details"]'); return t && t.click(); }
-      if (k === "log") { press($("detailToggle")); paintLogBtn(); return; }
+      if (k === "log") { logOn = !logOn; try { localStorage.setItem("kr-forge-details", logOn ? "1" : "0"); } catch (err) {} paintLogBtn(); return; }
       if (k === "more") {
         let a = null; try { a = currentApp(); } catch (err) {}
         const items = [{ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download the file", run: () => press($("filesSave")) }];
