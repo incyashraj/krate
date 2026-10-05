@@ -2008,3 +2008,119 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 .kr-pop:not(.big) .kr-pi .kr-lgb svg, .kr-pop:not(.big) .kr-pi .kr-lgb img { width: 15px; height: 15px; }
 .kr-pi.danger, .kr-pi.danger .kr-ico { color: var(--danger); }
 #viewHome .shelf-card .shelf-meta { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-3); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ================================================================ loading, in Krate's own motion
+ * From krate-studio-loading.html. The mark is three layers in a box; loaders move the layers.
+ * Names carry kr- where the design's own would meet app.js's. */
+:root { --danger-soft: color-mix(in srgb, var(--danger) 14%, transparent); --line-2: var(--line-strong); }
+.iso { display: block; overflow: visible; flex: none; }
+.iso polygon { stroke: rgba(255, 255, 255, .95); stroke-width: 1.4; stroke-linejoin: round; }
+.iso .tp { fill: #5b9dff; } .iso .lf { fill: #1f74f0; } .iso .rt { fill: #0f59d4; }
+.iso.mono polygon { stroke: var(--gap, var(--surface)); }
+.iso.mono .tp { fill: currentColor; fill-opacity: .42; } .iso.mono .lf { fill: currentColor; } .iso.mono .rt { fill: currentColor; fill-opacity: .7; }
+.iso.breathe .ly, .kr-tav.kwork .iso .ly { animation: krPart 1.5s var(--ease) infinite; animation-delay: calc(var(--k) * 70ms); }
+@keyframes krPart { 0%, 100% { transform: none; } 42% { transform: translateY(calc((1 - var(--k)) * -6px)); } }
+.iso.stack .ly { opacity: 0; transform: translateY(-34px); }
+.iso.stack .ly.on { opacity: 1; transform: none; transition: transform .62s cubic-bezier(.3, 1.45, .55, 1), opacity .2s; }
+.kr-swap { position: relative; display: inline-grid; }
+.kr-swap > span { grid-area: 1 / 1; white-space: nowrap; transition: opacity .35s var(--ease), transform .5s var(--ease), filter .35s; }
+.kr-swap > span.sw-out { opacity: 0; transform: translateY(-7px); filter: blur(2px); }
+.kr-swap > span.sw-in { animation: krSwin .5s var(--ease) both; }
+.kr-swap small { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-3); }
+@keyframes krSwin { from { opacity: 0; transform: translateY(7px); filter: blur(2px); } }
+@media (prefers-reduced-motion: reduce) { .iso .ly { animation: none !important; } }
+
+/* ---- the conversation: the avatar breathes while that turn is working ---- */
+#thread .msg.you + .msg.krate::before, #thread .msg.you + .thought::before, #thread > :first-child.krate::before { display: none; }
+.kr-tav { position: absolute; left: -26px; top: 4px; width: 16px; height: 16px; }
+#thread .thought > .kr-tav { top: 2px; }
+.kr-tav .iso { width: 16px; height: 16px; }
+/* the first beat of a reply: three dots in blue, violet and pink, with a little squash */
+.kr-kdots { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 14px 14px 14px 5px; background: var(--surface); box-shadow: var(--sh-2); animation: krItIn .4s var(--ease) both; }
+body:not(.light) .kr-kdots { background: var(--surface-2); }
+.kr-kdots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: krSq 1.15s var(--ease) infinite; }
+.kr-kdots i:nth-child(2) { background: var(--violet); animation-delay: .14s; }
+.kr-kdots i:nth-child(3) { background: var(--pink); animation-delay: .28s; }
+@keyframes krSq { 0%, 62%, 100% { transform: none; } 22% { transform: translateY(-5px) scale(.88, 1.12); } 44% { transform: translateY(0) scale(1.18, .84); } }
+#thread .kr-beat { position: relative; margin-left: 26px; }
+/* the words of a reply, led by a small dot that takes the next colour each sentence */
+.kr-bk { display: inline-block; width: 7px; height: 7px; margin-left: 4px; border-radius: 50%; vertical-align: 1px; background: var(--c, var(--accent)); transition: background .2s, opacity .4s; }
+#thread .kr-w.kr-wait { opacity: 0; animation: none; }
+#thread .kr-w.kr-on { animation: krWord .4s var(--ease) both; }
+/* a step that is working: a tiny breathing mark */
+.kr-tic .iso { color: var(--accent); --gap: var(--bg); }
+/* sending: the arrow gives way to a tiny breathing mark until the message is in */
+.kr-sd { position: absolute; left: 50%; top: 50%; margin: -8px 0 0 -8px; opacity: 0; transform: scale(.5); transition: opacity .2s, transform .35s var(--ease); color: var(--btn-ink); --gap: var(--btn); pointer-events: none; }
+.kr-sending .kr-sd { opacity: 1; transform: none; }
+.kr-sending > svg:not(.iso), .kr-sending > .kr-ico { opacity: 0 !important; transform: scale(.4) !important; transition: opacity .2s, transform .3s var(--ease); }
+/* a page loading from the network: a thin bar in the home page's colours */
+.kr-tbar { position: fixed; left: 0; top: 0; z-index: 460; height: 2.5px; width: 0; border-radius: 0 3px 3px 0; pointer-events: none;
+  background: linear-gradient(90deg, var(--accent), var(--violet) 40%, var(--pink) 70%, var(--orange)); background-size: 100vw 100%;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--violet) 45%, transparent); opacity: 0; }
+#send, #homeSend { position: relative; }
+/* the live thinking line shimmers, the way the design's does */
+#thread .thought.live .t-now { background: linear-gradient(90deg, var(--ink-3) 0%, var(--ink-3) 35%, var(--ink) 50%, var(--ink-3) 65%, var(--ink-3) 100%); background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: krThinkShim 1.8s linear infinite; }
+@keyframes krThinkShim { from { background-position: 100% 0; } to { background-position: 0 0; } }
+#thread .thought-head .kr-kdots { height: 24px; padding: 0 10px; margin-right: 8px; box-shadow: none; background: var(--surface-2); }
+
+/* ---- the receipt row, as the design has it ----------------------------- */
+#viewSession #thread .vchip { height: 40px; padding: 0 5px 0 11px; gap: 8px; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: 13px; color: var(--ink-2); }
+body:not(.light) #viewSession #thread .vchip { background: var(--surface-2); }
+#viewSession #thread .vok .vchip::before { display: none; }
+#viewSession #thread .vchip.vbadc { box-shadow: inset 0 0 0 1px var(--line); }
+#viewSession #thread .vchip .vbar { display: none; }
+#viewSession #thread .vchip > b { padding: 1px 6px; border-radius: 6px; background: var(--surface-2); font: 600 11.5px var(--sans); color: var(--ink-2); }
+body:not(.light) #viewSession #thread .vchip > b { background: var(--surface-3); }
+#viewSession #thread .vchip .vm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); margin: 0; }
+.kr-re { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.kr-ri { width: 16px; height: 16px; flex: none; display: grid; place-items: center; }
+.kr-ri .ok { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--green-soft); color: var(--green-ink); animation: krPop .45s var(--spring) both; }
+.kr-ri .ok svg { width: 9px; height: 9px; }
+.kr-ri .no { width: 8px; height: 8px; border-radius: 2px; background: var(--ink-4); }
+.kr-ri .bad { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--danger-soft); color: var(--danger); font: 700 10px var(--sans); font-style: normal; }
+#viewSession #thread .vchip .vact { height: 28px; padding: 0 13px; border-radius: 99px; font: 500 12.5px var(--sans); }
+#viewSession #thread .vchip .vact.vg { padding: 0 10px; background: transparent; color: var(--ink-2); }
+#viewSession #thread .vchip .vact.vg:hover { background: var(--surface-2); color: var(--ink); }
+#viewSession #thread .vbad .vchip .vact { background: transparent; color: var(--danger); padding: 0 10px; }
+#viewSession #thread .vbad .vchip .vact:hover { background: var(--danger-soft); }
+
+/* ---- the card being made: the code streaming in ------------------------- */
+.kr-code { --code-bg: #fdfdfe; position: absolute; inset: 0; z-index: 3; display: none; background: var(--code-bg); }
+body:not(.light) .kr-code { --code-bg: #111114; }
+.kr-code.on { display: block; animation: krFadeUp .45s var(--ease) both; }
+.kr-cw { position: absolute; inset: 0; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 78%, transparent); mask-image: linear-gradient(transparent, #000 12px, #000 78%, transparent); }
+.kr-wc { position: absolute; left: 0; right: 0; top: 12px; transition: transform .7s var(--ease); }
+.kr-wl { position: relative; display: flex; height: 18px; max-height: 18px; overflow: hidden; font: 11.5px/18px ui-monospace, "SF Mono", Menlo, monospace; white-space: pre; color: var(--ink); transition: opacity .3s; }
+.kr-wl.kr-wait { max-height: 0; opacity: 0; }
+.kr-wn { width: 38px; flex: none; padding-right: 14px; text-align: right; color: color-mix(in srgb, var(--ink) 22%, transparent); font-variant-numeric: tabular-nums; }
+.kr-wk { display: inline-block; white-space: pre; opacity: 0; filter: blur(2.5px); transition: opacity .4s var(--ease), filter .4s var(--ease); }
+.kr-wk.shown { opacity: 1; filter: none; }
+.kr-hlb { position: absolute; left: 0; right: 0; top: 0; height: 18px; background: color-mix(in srgb, var(--accent) 7%, transparent); transition: transform .3s var(--ease), opacity .4s; }
+.kr-hlb::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 2px; border-radius: 2px; background: var(--accent); }
+.kr-car { display: inline-block; width: 1.5px; height: 13px; margin-left: 1px; vertical-align: -2px; border-radius: 1px; background: var(--accent); box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent); }
+.kr-code .tk-c { color: #8a8f98; font-style: italic; } .kr-code .tk-s { color: #1a7f4b; } .kr-code .tk-k { color: #7c3aed; }
+.kr-code .tk-t { color: #b45309; } .kr-code .tk-f { color: #2563eb; } .kr-code .tk-n { color: #c2410c; }
+body:not(.light) .kr-code .tk-s { color: #6ee7a8; } body:not(.light) .kr-code .tk-k { color: #c4a5ff; } body:not(.light) .kr-code .tk-t { color: #fbbf72; }
+body:not(.light) .kr-code .tk-f { color: #8ab4ff; } body:not(.light) .kr-code .tk-n { color: #fda47a; }
+/* past 30 s: the home page's sentence, its word turning per step */
+.kr-snt { margin: 2px 0 0; font: 500 14px var(--sans); letter-spacing: -.01em; color: var(--ink); animation: krSwin .5s var(--ease) both; }
+.kr-snt .w { color: var(--c); border-bottom: 1.6px solid color-mix(in srgb, var(--c) 35%, transparent); }
+.kr-snt[hidden] { display: none; }
+#stateBuilding:has(.kr-snt:not([hidden])) .bpeek { display: none; }
+/* past 45 s: a peach note */
+.kr-still { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .55s var(--ease); }
+.kr-still > div { overflow: hidden; min-height: 0; }
+.kr-still.on { grid-template-rows: 1fr; }
+.kr-still p { display: inline-flex; align-items: center; gap: 8px; margin: 8px 0 2px; padding: 7px 12px; border-radius: 11px; background: #fff6ec; color: #4a3a2c; font-size: 12.5px; opacity: 0; transform: translateY(-4px); transition: opacity .4s var(--ease) .15s, transform .5s var(--ease) .15s; }
+body:not(.light) .kr-still p { background: #2a2016; color: #d6c3b0; }
+.kr-still.on p { opacity: 1; transform: none; }
+.kr-still .iso { color: #e8873f; --gap: #fff6ec; }
+body:not(.light) .kr-still .iso { --gap: #2a2016; }
+@media (min-width: 0px) {
+  #viewSession .brail .kr-snt { grid-column: 1; grid-row: 3; margin: 2px 0 0 24px; min-width: 0; }
+  #viewSession .brail .kr-still { grid-column: 1 / -1; grid-row: 4; margin: 0 16px; }
+}
+#viewSession .brail .build-detail-toggle, #viewSession .build-card.brail .bfoot { grid-row: 5; }
+#viewSession .brail .kr-snt { grid-column: 1 / -1; grid-row: 3; margin: 2px 24px 0; }
+#stateBuilding:has(.kr-snt:not([hidden])) .brail .build-elapsed { grid-row: 2; }

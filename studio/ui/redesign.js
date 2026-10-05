@@ -387,6 +387,17 @@
     watch(send, { attributes: true, attributeFilter: ["class"] }, () => { if (!send._p) { send._p = 1; paint(); send._p = 0; } });
     if (voice) watch(voice, { attributes: true, attributeFilter: ["class"] }, paint);
     paint();
+    // Sending: the arrow gives way to a tiny breathing mark until the words
+    // are in the conversation.
+    if (window.krIso) {
+      const sd = document.createElement("span"); sd.className = "kr-sd"; sd.innerHTML = window.krIso(16, "breathe", true);
+      send.appendChild(sd);
+      send.addEventListener("click", () => {
+        if (!field.value.trim() || send.classList.contains("kr-voice") || send.classList.contains("stopping")) return;
+        send.classList.add("kr-sending");
+        clearTimeout(send._sdT); send._sdT = setTimeout(() => send.classList.remove("kr-sending"), 900);
+      }, true);
+    }
     if (opts.voice) send.addEventListener("click", (e) => {
       if (bypass || !send.classList.contains("kr-voice") && !send.classList.contains("kr-listen")) return;
       e.stopImmediatePropagation(); e.preventDefault();
@@ -684,6 +695,12 @@
   // Krate's words arrive a word at a time, the way they are being said.
   // Only a message that arrives on its own: a reopened session appends its
   // whole history in one go, and replaying that would be a slow show.
+  // Krate's words arrive one after another, each settling out of a soft
+  // blur, led by a small dot that takes the next of the five colours with
+  // every sentence. Only a message that arrives on its own: a reopened
+  // session appends its whole history in one go, and replaying that would
+  // be a slow show.
+  const C5 = ["var(--accent)", "var(--violet)", "var(--pink)", "var(--orange)", "var(--green)"];
   function wordIn(msg) {
     const body = q(":scope > .body", msg);
     if (!body || reduce || body.dataset.krw) return;
@@ -691,12 +708,52 @@
     if (!text || text.length > 900) return;
     body.dataset.krw = "1";
     body.textContent = "";
-    text.split(/(\s+)/).forEach((part, i) => {
+    const words = [];
+    text.split(/(\s+)/).forEach((part) => {
       if (!part) return;
       if (/^\s+$/.test(part)) { body.appendChild(document.createTextNode(part)); return; }
       const s = document.createElement("span");
-      s.className = "kr-w"; s.style.animationDelay = Math.min(i, 160) * 12 + "ms";
-      s.textContent = part; body.appendChild(s);
+      s.className = "kr-w kr-wait"; s.textContent = part; body.appendChild(s); words.push(s);
+    });
+    const dot = document.createElement("i"); dot.className = "kr-bk";
+    let t = 120, sn = 0;
+    words.forEach((w) => {
+      t += 26 + Math.min(w.textContent.length, 12) * 4 + (/[.,?!:]$/.test(w.textContent) ? 90 : 0);
+      const col = C5[sn % 5];
+      if (/[.?!:]$/.test(w.textContent)) sn++;
+      setTimeout(() => { if (!w.isConnected) return; w.classList.remove("kr-wait"); w.classList.add("kr-on"); w.after(dot); dot.style.setProperty("--c", col); }, t);
+    });
+    setTimeout(() => { dot.style.opacity = "0"; setTimeout(() => dot.remove(), 450); }, t + 500);
+  }
+  // The mark beside each of Krate's turns, breathing while that turn is
+  // working: planning, or this session's build. Read from app.js's state.
+  const working = () => {
+    const st = app(); if (!st) return false;
+    let plan = false; try { plan = planning; } catch (e) {}
+    const bs = st.buildingSession;
+    return !!plan || !!(bs && st.session && bs.id === st.session.id && !st.buildSettled);
+  };
+  function paintAvatars() {
+    if (!thread) return;
+    let afterYou = true, last = null;
+    for (const el of thread.children) {
+      if (el.classList.contains("you")) { afterYou = true; continue; }
+      if (afterYou && (el.classList.contains("krate") || el.classList.contains("thought") || el.classList.contains("msg"))) {
+        afterYou = false;
+        let av = q(":scope > .kr-tav", el);
+        if (!av) { av = document.createElement("span"); av.className = "kr-tav"; av.setAttribute("aria-hidden", "true"); av.innerHTML = window.krIso ? window.krIso(16) : ""; el.prepend(av); }
+        last = av;
+      }
+    }
+    const on = working();
+    qa(".kr-tav.kwork", thread).forEach((a) => { if (a !== last || !on) a.classList.remove("kwork"); });
+    if (last && on && !last.classList.contains("kwork")) last.classList.add("kwork");
+    // The first beat: three dots in the live thinking line, for a moment.
+    qa(".thought.live > .thought-head", thread).forEach((h) => {
+      if (h.dataset.krd) return;
+      h.dataset.krd = "1";
+      const d = document.createElement("span"); d.className = "kr-kdots kr-kd-in"; d.innerHTML = "<i></i><i></i><i></i>";
+      h.prepend(d); setTimeout(() => d.remove(), 1100);
     });
   }
   // A plan and a question are cards, not lines. The words are app.js's own
@@ -826,6 +883,7 @@
     recs.forEach((r) => r.addedNodes.forEach((n) => { if (n.nodeType === 1) added.push(n); }));
     added.forEach(cardify);
     syncCards();
+    paintAvatars();
     if (added.length > 2) return;
     added.forEach((n) => {
       n.classList.add("kr-in");
@@ -838,8 +896,8 @@
   const STEP_WORDS = { read: "Reading Krate's API", write: "Writing the code", test: "Building and testing it", done: "Packing the file" };
   let toolsFor = null, toolsHtml = "";
   function toolRow(label, st) {
-    const tic = st === "done" ? `<span class="kr-ck">${ico("check", "")}</span>` : st === "bad" ? '<span class="kr-bad">!</span>' : st === "stop" ? '<span class="kr-stp"></span>' : '<span class="kr-spin"></span>';
-    return `<div class="kr-tr${st === "done" ? " done" : ""}" data-st="${st}"><span class="kr-tic">${tic}</span><span>${esc(label)}</span></div>`;
+    const tic = st === "done" ? `<span class="kr-ck">${ico("check", "")}</span>` : st === "bad" ? '<span class="kr-bad">!</span>' : st === "stop" ? '<span class="kr-stp"></span>' : (window.krIso ? window.krIso(13, "breathe", true) : '<span class="kr-spin"></span>');
+    return `<div class="kr-tr${st === "done" ? " done" : ""}" data-st="${st}" data-key="${esc(st + "|" + label)}"><span class="kr-tic">${tic}</span><span>${esc(label)}</span></div>`;
   }
   function paintTools() {
     if (!thread) return;
@@ -861,8 +919,11 @@
         // not replay its tick every second.
         const have = qa(".kr-tr", box);
         rows.forEach((h, i) => {
-          if (have[i] && have[i].outerHTML === h) return;
           const t = document.createElement("template"); t.innerHTML = h;
+          // Compared by state and words, not markup: an SVG's markup reads
+          // back differently from how it was written, and a row replaced
+          // every tick restarts its breathing.
+          if (have[i] && have[i].dataset.key === t.content.firstChild.dataset.key) return;
           if (have[i]) have[i].replaceWith(t.content.firstChild); else box.appendChild(t.content.firstChild);
         });
         box.dataset.h = html;
@@ -888,7 +949,7 @@
       toolsFor = null; toolsHtml = "";
     }
   }
-  setInterval(() => { paintTools(); syncCards(); }, 400);
+  setInterval(() => { paintTools(); syncCards(); paintAvatars(); }, 400);
   watch(thread, { childList: true, subtree: false }, paintTools);
 
   /* ---- the card being made: the crate ----------------------------------- */
@@ -1768,6 +1829,135 @@
       } });
       openPop(t, items);
     }, true);
+  })();
+
+  /* ---- the receipt row: the build as a file, with what happened to it ----- */
+  // app.js draws the row (vlive, then vok or vbad) and keeps its words and
+  // buttons; this adds the design's mark at the start and the running time.
+  const clockOf = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+  function paintChips() {
+    if (!thread) return;
+    qa(".msg.vlive > .vchip, .msg.vok > .vchip, .msg.vbad > .vchip", thread).forEach((c) => {
+      const kind = c.parentElement.classList.contains("vlive") ? "live" : c.parentElement.classList.contains("vok") ? "ok" : /stopped/.test(c.textContent) ? "stop" : "bad";
+      let ri = q(":scope > .kr-ri", c);
+      if (!ri || ri.dataset.k !== kind) {
+        if (ri) ri.remove();
+        ri = document.createElement("span"); ri.className = "kr-ri"; ri.dataset.k = kind;
+        ri.innerHTML = kind === "live" ? (window.krIso ? window.krIso(14, "breathe") : "") : kind === "ok" ? `<i class="ok">${ico("check", "")}</i>` : kind === "stop" ? '<i class="no"></i>' : '<i class="bad">!</i>';
+        c.prepend(ri);
+      }
+      if (kind === "live") {
+        let re = q(":scope > .kr-re", c);
+        if (!re) { re = document.createElement("span"); re.className = "kr-re"; const vm = q(".vm", c); (vm || c.lastChild).after(re); }
+        const st = app(); const t0 = st && st.startedAt;
+        re.textContent = t0 ? clockOf(Math.max(0, Math.floor((Date.now() - t0) / 1000))) : "";
+      }
+    });
+  }
+  setInterval(paintChips, 500);
+  watch(thread, { childList: true, subtree: true }, () => requestAnimationFrame(paintChips));
+
+  /* ---- the card being made: the code, as the AI writes it ----------------- */
+  // While an app is being made, Studio reads the build's own src/lib.rs and
+  // shows it on the card: the starter first, then each change the AI makes,
+  // streaming in a few characters at a time. Lines already on the card stay;
+  // only what changed is written. Where the file cannot be read (the web
+  // Studio, or before the project exists) the crate stays. After 30 s the
+  // status is the home page's sentence; after 45 s a note says bigger apps
+  // take a minute.
+  (function makingCard() {
+    const box = $("buildShotBox"), view = $("stateBuilding");
+    if (!box || !view) return;
+    const card = document.createElement("div");
+    card.className = "kr-code"; card.setAttribute("aria-hidden", "true");
+    card.innerHTML = '<div class="kr-cw"><div class="kr-wc"><div class="kr-hlb"></div></div></div>';
+    box.appendChild(card);
+    const wc = q(".kr-wc", card), hlb = q(".kr-hlb", card);
+    const title = $("buildTitle"), peek = $("peekBox");
+    const snt = document.createElement("p"); snt.className = "kr-snt"; snt.hidden = true;
+    if (peek) peek.after(snt);
+    const still = document.createElement("div"); still.className = "kr-still";
+    still.innerHTML = `<div><p>${window.krIso ? window.krIso(16, "breathe", true) : ""}Still going. Bigger apps take a minute.</p></div>`;
+    (q(".build-elapsed", view) || view).before(still);
+    const KW = /\b(use|struct|enum|fn|let|mut|impl|pub|for|in|if|else|match|const|static|self|Self|return|true|false|Some|None|Ok|Err|mod|crate|extern|as|where|while|loop|break|continue|move|ref|type|trait)\b/;
+    const TOK = /(\/\/.*$)|("(?:[^"\\]|\\.)*")|\b(use|struct|enum|fn|let|mut|impl|pub|for|in|if|else|match|const|static|self|Self|return|true|false|Some|None|Ok|Err|mod|crate|extern|as|where|while|loop|break|continue|move|ref|type|trait)\b|\b(u8|u16|u32|u64|usize|i32|i64|f32|f64|bool|str|char|[A-Z][A-Za-z0-9_]*)\b|\b([a-z_][a-z0-9_]*)(?=\(|!)|\b(\d+(?:\.\d+)?)\b|(\s+|[A-Za-z_][A-Za-z0-9_]*|::|->|=>|[^\sA-Za-z0-9_])/g;
+    const NAMES = ["tk-c", "tk-s", "tk-k", "tk-t", "tk-f", "tk-n", ""];
+    const tokens = (l) => { const out = []; let m; TOK.lastIndex = 0; while ((m = TOK.exec(l))) { const g = m.slice(1).findIndex((x) => x !== undefined); out.push([m[0], NAMES[g]]); } return out; };
+    let lines = [], rows = [], queue = [], sessionId = null, dir = "", busy = false, lastText = null, lastAt = 0, startAt = 0;
+    const LH = 18;
+    function reset() { lines = []; rows = []; queue = []; wc.querySelectorAll(".kr-wl").forEach((r) => r.remove()); lastText = null; dir = ""; card.classList.remove("on", "built"); wc.style.transform = ""; }
+    function row(i) {
+      const r = document.createElement("div"); r.className = "kr-wl kr-wait";
+      r.innerHTML = `<span class="kr-wn">${i + 1}</span><span class="kr-wt"></span>`; return r;
+    }
+    function setText(text) {
+      const next = text.replace(/\r/g, "").split("\n");
+      let same = 0; while (same < lines.length && same < next.length && lines[same] === next[same]) same++;
+      // Lines past the first difference are rewritten.
+      // Lines that stay but were still waiting to appear keep their place in
+      // the queue; dropping them left gaps the highlight then drifted past.
+      const kept = new Set(rows.slice(0, same));
+      rows.slice(same).forEach((r) => r.remove()); rows = rows.slice(0, same);
+      queue = queue.filter((it) => kept.has(it.r));
+      for (let i = same; i < next.length; i++) {
+        const r = row(i); wc.appendChild(r); rows.push(r);
+        const tx = q(".kr-wt", r);
+        if (!next[i].trim()) { queue.push({ r, el: null }); continue; }
+        tokens(next[i]).forEach(([t, cls]) => {
+          const el = document.createElement("span"); el.className = "kr-wk" + (cls ? " " + cls : ""); el.textContent = t; tx.appendChild(el);
+          if (t.trim()) queue.push({ r, el }); else el.classList.add("shown");
+        });
+      }
+      lines = next;
+      // Line numbers follow the rows that stayed.
+      rows.forEach((r, i) => { q(".kr-wn", r).textContent = i + 1; });
+    }
+    let car = document.createElement("i"); car.className = "kr-car";
+    function step() {
+      if (!queue.length) return;
+      // Faster when there is a lot still to write, so a whole file never
+      // takes longer than a few seconds to appear.
+      const n = Math.max(1, Math.ceil(queue.length / 90));
+      for (let k = 0; k < n && queue.length; k++) {
+        const it = queue.shift();
+        it.r.classList.remove("kr-wait");
+        if (it.el) { it.el.classList.add("shown"); it.el.after(car); }
+        const i = rows.indexOf(it.r);
+        hlb.style.transform = `translateY(${i * LH}px)`;
+        const H = card.clientHeight, V = Math.floor((H - 12) / LH), a = Math.floor(V * 0.5);
+        wc.style.transform = `translateY(${-Math.max(0, i - a) * LH}px)`;
+      }
+    }
+    setInterval(() => { if (card.classList.contains("on")) step(); }, 38);
+    const PHW = { read: ["planning", "var(--ink-2)"], write: ["writing", "var(--accent)"], test: ["building", "var(--accent)"], done: ["packing", "var(--orange)"] };
+    async function tick() {
+      const st = app();
+      const live = st && st.buildingSession && !view.classList.contains("hidden");
+      if (!live) { if (sessionId) { sessionId = null; reset(); } snt.hidden = true; still.classList.remove("on"); return; }
+      if (sessionId !== st.buildingSession.id || startAt !== st.startedAt) { sessionId = st.buildingSession.id; startAt = st.startedAt; reset(); }
+      if (title) { const nm = appName(); if (nm && title.textContent !== nm) title.textContent = nm; }
+      const secs = st.startedAt ? (Date.now() - st.startedAt) / 1000 : 0;
+      // Past 30 s: the sentence, its word turning with each step.
+      const stage = (stages()[st.stageIndex] || {}).key || "read";
+      const w = PHW[stage] || PHW.write;
+      if (secs >= 30) {
+        snt.hidden = false;
+        const h = `Krate is <span class="w" style="--c:${w[1]}">${w[0]}</span> your ${esc(appName().toLowerCase())}`;
+        if (snt.dataset.k !== stage) { snt.dataset.k = stage; snt.innerHTML = h; }
+      } else snt.hidden = true;
+      still.classList.toggle("on", secs >= 45);
+      if (!desktopApp() || busy || Date.now() - lastAt < 1400) return;
+      busy = true; lastAt = Date.now();
+      try {
+        if (!dir) dir = (await invoke("session_source_dir", { session: sessionId })) || "";
+        if (dir) {
+          const text = await invoke("ide_read", { path: dir, rel: "src/lib.rs" });
+          if (sessionId && typeof text === "string" && text !== lastText) { lastText = text; setText(text); card.classList.add("on"); }
+        }
+      } catch (e) { /* not there yet, or not readable: the crate stays */ }
+      busy = false;
+    }
+    setInterval(tick, 500);
   })();
 
   /* ---- the sidebar's Port an app ---------------------------------------- */
