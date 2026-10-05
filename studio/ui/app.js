@@ -2989,7 +2989,16 @@ async function make(request, opts) {
       state.buildingSession = null;
       renderBuilding();
     } else {
-      invoke("dbg_log", { line: "make() BAILED: buildingSession set" }).catch(()=>{});
+      // Never silent. Nine presses in a row hit this return on 2026-10-05
+      // and nothing on screen said why, so each looked like a dead button.
+      // The log names the caller, so the door that reached here can be
+      // fixed at its own end.
+      const from = String(new Error().stack || "").split("\n").slice(2, 4).map((l) => l.trim()).join(" < ");
+      invoke("dbg_log", { line: "make() BAILED: buildingSession set; from " + from }).catch(()=>{});
+      const busy = clip(state.buildingSession.title || "your other app", 60);
+      const words = `"${busy}" is still being made, one app at a time. Press Stop on it first, or wait for it to finish.`;
+      if (state.session && state.session.id !== state.buildingSession.id) say("KRATE", words);
+      else if ($("composerHint")) $("composerHint").textContent = words;
       return;
     }
   }
