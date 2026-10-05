@@ -5982,12 +5982,12 @@ async function fillPane(name) {
 }
 
 const FILE_NOTES = {
-  "manifest.toml": "what it is and what it may use",
-  "code.wasm": "the app itself, compiled",
-  "closure.json": "the interfaces it was built against",
-  "derived-from.json": "what it was made from",
-  "signature": "who made it",
-  "assets/icon.png": "its icon",
+  "manifest.toml": "Name, version and what it may touch",
+  "code.wasm": "The app itself, compiled",
+  "closure.json": "The interfaces it was built against",
+  "derived-from.json": "What it was made from",
+  "signature": "Who made it",
+  "assets/icon.png": "The icon",
 };
 
 function prettyBytes(n) {
@@ -5997,22 +5997,33 @@ function prettyBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function fileRow(icon, name, note, action) {
+/* One file: its icon, its name with a line saying what it is under it,
+ * its size on the right, and at most one action. */
+function fileRow(icon, name, note, action, size) {
   const row = document.createElement("div");
   row.className = "f-row";
   const ico = document.createElement("span");
   ico.className = "f-ico";
   ico.innerHTML = icon;
+  const tx = document.createElement("span");
+  tx.className = "f-tx";
   const n = document.createElement("span");
   n.className = "f-name";
   n.textContent = name;
   n.title = name;
-  row.append(ico, n);
+  tx.appendChild(n);
   if (note) {
     const t = document.createElement("span");
     t.className = "f-note";
     t.textContent = note;
-    row.appendChild(t);
+    tx.appendChild(t);
+  }
+  row.append(ico, tx);
+  if (size) {
+    const z = document.createElement("span");
+    z.className = "f-size";
+    z.textContent = size;
+    row.appendChild(z);
   }
   if (action) {
     const b = document.createElement("button");
@@ -6027,6 +6038,8 @@ function fileRow(icon, name, note, action) {
 const ICON_FILE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3.6 2.4h5.6l3.2 3.2v8H3.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2.6v3.2h3.2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
 const ICON_APP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.4" y="2.4" width="11.2" height="11.2" rx="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M2.6 5.8h10.8" stroke="currentColor" stroke-width="1.3"/></svg>';
 const ICON_CODE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M5.6 4.4L2 8l3.6 3.6M10.4 4.4L14 8l-3.6 3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_CHIP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="4" y="4" width="8" height="8" rx="1.6"/><path d="M6.5 2v2M9.5 2v2M6.5 12v2M9.5 12v2M2 6.5h2M2 9.5h2M12 6.5h2M12 9.5h2" stroke-linecap="round"/></svg>';
+const ICON_KRATE = '<img src="krate-doc.png" alt="" width="18" height="22">';
 const ICON_CLIP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13 7.5l-4.9 4.9a3.2 3.2 0 01-4.5-4.5l5.3-5.3a2.1 2.1 0 013 3l-5.3 5.3a1 1 0 01-1.5-1.5L9.8 4.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
 function group(label, rows) {
@@ -6058,22 +6071,23 @@ async function fillFiles(app) {
     return;
   }
   host.appendChild(group("Your app", [
-    fileRow(ICON_APP, app.name || baseName(app.path), app.size || "", {
-      label: tauri ? "Show in folder" : "Download",
+    fileRow(ICON_KRATE, app.name || baseName(app.path), "Opens on macOS, Windows and Linux", {
+      label: tauri ? "Show" : "Download",
       run: () => invoke("reveal", { path: app.path }).catch((e) => toastish(e)),
-    }),
+    }, app.size || ""),
   ]));
   const list = await appContents(app);
   const inside = list.filter((e) => !e.name.startsWith("source/") && e.name !== "krate-profile" && !e.name.endsWith("/"));
   const source = list.filter((e) => e.name.startsWith("source/") && !e.name.endsWith("/") && !baseName(e.name).startsWith("."));
-  const rows = inside.map((e) => fileRow(ICON_FILE, e.name, FILE_NOTES[e.name] ? `${FILE_NOTES[e.name]} · ${prettyBytes(e.size)}` : prettyBytes(e.size)));
+  const rows = inside.map((e) => fileRow(/\.wasm$/.test(e.name) ? ICON_CHIP : ICON_FILE, e.name, FILE_NOTES[e.name] || "", null, prettyBytes(e.size)));
   if (source.length) {
-    rows.push(fileRow(ICON_CODE, "source/", `${source.length} file${source.length === 1 ? "" : "s"} · the Rust project it was built from`, {
+    const bytes = source.reduce((n, e) => n + (Number(e.size) || 0), 0);
+    rows.push(fileRow(ICON_CODE, "source/", `The Rust project it was built from, so it can be changed later · ${source.length} file${source.length === 1 ? "" : "s"}`, {
       label: "View code",
       run: () => setPane("code"),
-    }));
+    }, prettyBytes(bytes)));
   }
-  host.appendChild(group("Inside the .krate", rows));
+  host.appendChild(group("Inside the krate", rows));
   if (given.length) host.appendChild(group("You gave the AI", given.map((f) => fileRow(ICON_CLIP, baseName(f)))));
 }
 
@@ -6112,6 +6126,11 @@ async function fillCode(app) {
   }
   empty.classList.add("hidden");
   wrap.classList.remove("hidden");
+  // A search box for a project worth searching; a few files read at a glance.
+  $("codeSearch").hidden = files.length <= 8;
+  // On a desktop the IDE is where the project opens (its button sits here);
+  // in a tab the project is a download.
+  $("codeProject").classList.toggle("hidden", !!tauri);
   panel.codeFiles = files;
   if (!files.some((f) => f.rel === panel.codeFile)) {
     panel.codeFile = (files.find((f) => f.rel === "src/lib.rs") || files.find((f) => f.rel.startsWith("src/")) || files[0]).rel;
@@ -6144,13 +6163,18 @@ function paintCodeTree() {
       if (d) {
         const label = document.createElement("div");
         label.className = "code-dir";
-        label.textContent = d;
+        label.innerHTML = '<svg class="cf-ico" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2.5 4.6c0-.6.5-1.1 1.1-1.1h2.8l1.4 1.5h4.6c.6 0 1.1.5 1.1 1.1v5.8c0 .6-.5 1.1-1.1 1.1H3.6c-.6 0-1.1-.5-1.1-1.1z"/></svg>';
+        label.appendChild(document.createTextNode(d.replace(/\/$/, "")));
         host.appendChild(label);
       }
     }
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "code-file" + (f.rel === panel.codeFile ? " on" : "");
+    b.className = "code-file" + (f.rel === panel.codeFile ? " on" : "") + (d ? " in" : "");
+    const ic = document.createElement("span");
+    ic.className = "cf-ico";
+    ic.innerHTML = /\.rs$/.test(f.rel) ? ICON_CODE : ICON_FILE;
+    b.appendChild(ic);
     const name = document.createElement("span");
     name.className = "cf-name";
     name.textContent = baseName(f.rel);
@@ -6199,7 +6223,7 @@ function showCodeFile(rel) {
   pre.appendChild(frag);
   pre.scrollTop = 0;
   if (stats) {
-    stats.textContent = `${lines.length} line${lines.length === 1 ? "" : "s"} · ${LANG_NAME[lang] || "text"}` + (q ? ` · ${hits} match${hits === 1 ? "" : "es"}` : "");
+    stats.textContent = `${lines.length} line${lines.length === 1 ? "" : "s"}` + (q ? ` · ${hits} match${hits === 1 ? "" : "es"}` : "");
   }
   if (firstHit) firstHit.scrollIntoView({ block: "center" });
 }
@@ -6208,7 +6232,6 @@ function showCodeFile(rel) {
  * Source is data. Every token becomes a span holding a text node; nothing
  * from the file is ever parsed as markup. Block comments carry over lines
  * through `st.block`. Three grammars, which is what a .krate holds. */
-const LANG_NAME = { rust: "Rust", toml: "TOML", json: "JSON", md: "Markdown", text: "text" };
 function codeLang(rel) {
   const n = (rel || "").toLowerCase();
   if (n.endsWith(".rs")) return "rust";
@@ -6304,6 +6327,11 @@ function markHits(root, q) {
  * facts the info sheet reads: what it asks for, what it imports, where it
  * lives, how to build it again. Text nodes only -- the manifest is the
  * app's own, so its words are untrusted. */
+/* Details: the facts about the file, in one table, as the design has it.
+ * Every row is read from the file or the session -- the name, the file,
+ * the version, the size, which AI wrote it, where it runs, what it may and
+ * may not touch, and its fingerprint -- with the run command one click
+ * away. Where the source lives and how to build it again stay as rows. */
 async function fillDetails(app) {
   const host = $("detailsHost");
   host.replaceChildren();
@@ -6312,29 +6340,8 @@ async function fillDetails(app) {
     host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, where it is, and how to build it again from a terminal."));
     return;
   }
-  const wrap = el("div", "dt");
-  const head = el("div", "dt-head");
-  head.appendChild(el("h2", "dt-name", app.name || "Your app"));
-  const trust = el("p", "dt-trust", "Reading the app…");
-  head.appendChild(trust);
-  const chips = el("div", "dt-chips");
-  head.appendChild(chips);
-  wrap.appendChild(head);
-  const grid = el("div", "dt-grid");
-  wrap.appendChild(grid);
-  host.appendChild(wrap);
-
-  const card = (title, note) => {
-    const c = el("section", "dt-card");
-    const h = el("div", "dt-card-head");
-    h.appendChild(el("h3", "", title));
-    if (note !== undefined) h.appendChild(el("span", "dt-count", note));
-    c.appendChild(h);
-    grid.appendChild(c);
-    return c;
-  };
-  const copyBtn = (label, text) => {
-    const b = el("button", "btn btn-sm", label);
+  const copyBtn = (label, text, cls) => {
+    const b = el("button", cls || "btn btn-sm", label);
     b.type = "button";
     b.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch (e) {}
@@ -6342,79 +6349,109 @@ async function fillDetails(app) {
     });
     return b;
   };
+  const wrap = el("div", "dt2");
+  const head = el("div", "pane-head dt2-head");
+  head.appendChild(el("p", "pane-title", "Details"));
+  head.appendChild(el("span", "grow"));
+  wrap.appendChild(head);
+  const table = el("dl", "dt2-rows");
+  table.appendChild(el("dt", "", "Name"));
+  table.appendChild(el("dd", "", "Reading the app…"));
+  wrap.appendChild(table);
+  host.appendChild(wrap);
 
   let info = null;
-  try { info = await invoke("app_info", { path: app.path }); } catch (err) { trust.textContent = plainWords(err); return; }
-  const asks = info.asks || [];
-  trust.textContent = trustLine(asks.map((a) => a.cap || a.words));
-  const kb = Math.round((info.size || 0) / 1024);
+  try { info = await invoke("app_info", { path: app.path }); } catch (err) { table.lastChild.textContent = plainWords(err); return; }
+  table.replaceChildren();
+  const row = (k, v, cls) => {
+    table.appendChild(el("dt", "", k));
+    const d = el("dd", cls || "");
+    if (v instanceof Node) d.appendChild(v); else d.textContent = v;
+    table.appendChild(d);
+    return d;
+  };
+  const caps = (info.asks || []).map((x) => String(x.cap || ""));
+  const kb = Math.max(1, Math.round((info.size || 0) / 1024));
   const builds = state.session && state.session.builds;
-  for (const t of [`${kb} KB`, "Mac · Windows · Linux", builds ? `v${builds}` : null, "one file"].filter(Boolean)) chips.appendChild(el("span", "dt-chip", t));
-
-  // Permissions: what the app asked for, by name.
-  const perm = card("Permissions", asks.length ? `${asks.length}` : "none");
-  const ul = el("ul", "dt-list");
-  if (!asks.length) {
-    const li = el("li", "", "Nothing beyond drawing its own window.");
-    li.prepend(el("i", "dt-dot ok"));
-    ul.appendChild(li);
+  // The version the project declares, when its source is in the file.
+  let version = "";
+  try {
+    const list = await appContents(app);
+    const man = (list || []).find((e) => e.name === "source/manifest.toml" || e.name === "source/Cargo.toml");
+    const m = man && typeof man.text === "string" && man.text.match(/^\s*version\s*=\s*"([^"]+)"/m);
+    if (m) version = m[1];
+  } catch (e) {}
+  const display = (app.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  row("Name", display || "Your app");
+  row("File", app.name || baseName(info.path || app.path), "mono");
+  row("Version", [version, builds ? `v${builds} in this session` : ""].filter(Boolean).join(" · ") || "v1");
+  row("Size", `${kb} KB · needs the Krate runtime, installed once`);
+  // Which AI wrote it: the session's own record when it has one.
+  const agentId = (state.session && state.session.agent) || state.agent || "";
+  const agentName = (AGENT_ORDER.find((x) => x.name === agentId) || {}).label || agentLabel();
+  const by = el("span", "dt2-by");
+  const mark = el("span", "dt2-mk"); mark.innerHTML = aiLogo(agentId); by.appendChild(mark);
+  by.appendChild(document.createTextNode(`${agentName}, ${tauri ? "on this computer" : "on Krate's build service"}`));
+  row("Built by", by);
+  const os = el("span", "dt2-os");
+  for (const n of ["macOS", "Windows", "Linux"]) { const i = el("span", "", n); os.appendChild(i); }
+  row("Runs on", os);
+  // What it may touch, in words, and what it may not.
+  const words = [];
+  for (const c of caps) {
+    if (ASK_PLUMBING.test(c)) continue;
+    const w = friendlyAsk(c);
+    if (w && !words.includes(w)) words.push(w);
   }
-  for (const a of asks) {
-    const li = el("li", "", a.words);
-    li.title = a.cap || "";
-    li.prepend(el("i", "dt-dot"));
-    ul.appendChild(li);
+  const may = ["A window", ...words.map((w) => (w === "save your data on this computer" ? "its own saved data" : w))];
+  const list = (a) => (a.length > 1 ? a.slice(0, -1).join(", ") + ", and " + a[a.length - 1] : a[0]);
+  row("May touch", may.length > 2 ? list(may) : may.join(", and "));
+  const not = [];
+  if (!caps.some((c) => c.startsWith("net."))) not.push("the network");
+  if (!caps.some((c) => c.startsWith("camera."))) not.push("the camera");
+  if (!caps.some((c) => c.startsWith("audio.capture"))) not.push("the microphone");
+  if (!caps.some((c) => c.startsWith("fs."))) not.push("your other files");
+  if (not.length) row("May not touch", (not[0].charAt(0).toUpperCase() + not[0].slice(1)) + (not.length > 1 ? ", " + not.slice(1).join(", ") : ""));
+  // Where it is, and where its source is.
+  if (tauri && info.path) {
+    const w = el("span", "dt2-act");
+    w.appendChild(el("span", "mono dt2-path", info.path));
+    const show = el("button", "dt2-link", "Show"); show.type = "button";
+    show.addEventListener("click", () => invoke("reveal", { path: info.path }).catch((e) => toastish(e)));
+    w.appendChild(show);
+    row("Where", w);
   }
-  perm.appendChild(ul);
-  perm.appendChild(el("p", "dt-note", "Declared in the manifest, enforced by the runtime. Nothing else reaches your computer."));
-
-  // Interfaces: the krate:* world it imports.
-  const caps = info.capabilities || [];
-  const ifc = card("Imported interfaces", `${caps.length}`);
-  const cl = el("ul", "dt-list dt-mono");
-  for (const c of caps) { const li = el("li", "", capWords(c)); li.title = c; cl.appendChild(li); }
-  if (!caps.length) cl.appendChild(el("li", "", "None listed."));
-  ifc.appendChild(cl);
-  ifc.appendChild(el("p", "dt-note", "Only krate:* interfaces. A build that reaches wasi:* is refused before it packs."));
-
-  // Source: the Rust project it was built from.
   const src = await sourceDirOf(app);
-  const sc = card("Source");
-  sc.appendChild(el("p", "dt-note", tauri
-    ? (src ? "The Rust project it was built from, on this computer." : "No source folder for this app.")
-    : "The Rust project it was built from, ready to download."));
-  const sa = el("div", "dt-actions");
   if (tauri && src) {
-    const open = el("button", "btn btn-sm", "Open the folder"); open.type = "button";
+    const w = el("span", "dt2-act");
+    w.appendChild(el("span", "mono dt2-path", src));
+    const open = el("button", "dt2-link", "Open"); open.type = "button";
     open.addEventListener("click", () => openSourceFolder());
-    sa.appendChild(open);
-    sa.appendChild(copyBtn("Copy the path", src));
+    w.appendChild(open);
+    row("Source", w);
   } else if (!tauri) {
-    const dl = el("button", "btn btn-sm", "Download the project"); dl.type = "button";
+    const dl = el("button", "dt2-link", "Download the project"); dl.type = "button";
     dl.addEventListener("click", () => openSourceFolder());
-    sa.appendChild(dl);
+    row("Source", dl);
   }
-  if (sa.children.length) sc.appendChild(sa);
-
-  // Build it again from a terminal.
-  const cmdText = buildCommandFor(state.session, app);
-  const bc = card("Build it from the terminal");
-  bc.appendChild(el("pre", "dt-cmd", cmdText));
-  const ba = el("div", "dt-actions");
-  ba.appendChild(copyBtn("Copy the command", cmdText));
-  bc.appendChild(ba);
-
-  // The file itself.
-  const fc = card("The file");
-  const dl = el("dl", "dt-rows");
-  for (const [k, v] of [["Name", app.name || ""], ["Size", `${kb} KB`], ["Where", info.path || ""], ["Fingerprint", (info.identity || "").slice(0, 16) || "unknown"]]) {
-    dl.appendChild(el("dt", "", k));
-    dl.appendChild(el("dd", "", v));
+  if (info.identity) {
+    const f = el("span", "dt2-act");
+    f.appendChild(el("span", "mono dt2-hash", info.identity));
+    f.appendChild(copyBtn("Copy", info.identity, "dt2-link"));
+    row("Fingerprint", f);
   }
-  fc.appendChild(dl);
-  const fa = el("div", "dt-actions");
-  if (info.path) fa.appendChild(copyBtn("Copy the file path", info.path));
-  fc.appendChild(fa);
+  // The header's one action: run it from a terminal. Building it again is
+  // a second, smaller one beside it.
+  const run = tauri && info.path ? `krate launch "${info.path}"` : `krate launch ${app.name || "app.krate"}`;
+  const runBtn = copyBtn("Copy the run command", run, "btn btn-sm dt2-run");
+  runBtn.title = run;
+  head.appendChild(runBtn);
+  const build = buildCommandFor(state.session, app);
+  if (build) {
+    const bb = copyBtn("Copy the build command", build, "btn btn-sm dt2-run ghost");
+    bb.title = build;
+    head.insertBefore(bb, runBtn);
+  }
 }
 
 function setupPanel() {

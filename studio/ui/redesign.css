@@ -2694,3 +2694,55 @@ body:not(.light) .kr-lgc { background: #141417; }
 .kr-lgc .btn.kr-ghost:hover { background: var(--surface-2); color: var(--ink); }
 /* the sign-in page behind it: the popup is the page */
 body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
+
+/* ---- Files, Code and Details, as the design has them -------------------- */
+#paneFiles .pane-head, #paneDetails .dt2-head { padding: 18px 24px 4px; display: flex; align-items: center; gap: 8px; }
+#paneFiles .pane-title, #paneDetails .pane-title { margin: 0; font: 500 15px var(--sans); color: var(--ink); }
+#paneFiles .pane-head .btn, #paneDetails .dt2-head .btn { height: 34px; padding: 0 15px; border-radius: 99px; font: 500 13.5px var(--sans); display: inline-flex; align-items: center; gap: 7px; }
+#filesAttach { background: var(--surface); color: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); }
+#filesSave, #paneDetails .dt2-run:not(.ghost) { background: var(--btn); color: var(--btn-ink); border: 0; box-shadow: none; }
+#paneDetails .dt2-run.ghost { background: var(--surface); color: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); }
+#filesList { padding: 14px 24px 24px; }
+#paneFiles .f-label { margin: 6px 0 9px 2px; font-size: 11.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+#paneFiles .f-group { margin-bottom: 22px; border-radius: 14px; }
+#paneFiles .f-group > .f-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 58px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair); transition: background .2s; }
+#paneFiles .f-row .f-ico { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--surface-2); color: var(--ink-2); }
+#paneFiles .f-row .f-ico img { width: 18px; height: auto; }
+#paneFiles .f-row .f-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+#paneFiles .f-row .f-name { font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#paneFiles .f-row .f-note { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#paneFiles .f-row .f-size { flex: none; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+#paneFiles .f-row button { flex: none; height: 30px; padding: 0 13px; border: 0; border-radius: 99px; background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); font: 500 12.5px var(--sans); cursor: pointer; }
+#paneFiles .f-row button:hover { background: var(--surface-2); }
+/* Code: a quiet tree, the file's path, its line count, Open in the IDE and Copy */
+#paneCode .code-tree { padding: 12px 10px; }
+#paneCode .code-search[hidden] { display: none; }
+#paneCode .code-dir { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 10px; margin: 0; font: 400 13px var(--sans); color: var(--ink-2); }
+#paneCode .code-file { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: none; text-align: left; cursor: pointer; }
+#paneCode .code-file.in { padding-left: 26px; }
+#paneCode .cf-ico { display: inline-grid; place-items: center; flex: none; color: var(--ink-3); }
+#paneCode .cf-ico svg, svg.cf-ico { width: 14px; height: 14px; }
+#paneCode .code-dir svg.cf-ico { color: var(--ink-3); }
+#paneCode .code-file.on .cf-ico { color: var(--ink-2); }
+#paneCode .code-ro { display: none; }
+#paneCode .code-head { gap: 6px; }
+#paneCode .code-path { font: 400 13px ui-monospace, Menlo, monospace; color: var(--ink-2); }
+#paneCode .code-stats { font-size: 12.5px; margin-right: 6px; }
+#paneCode .code-head .btn { height: 32px; border: 0; background: none; box-shadow: none; color: var(--ink-2); font: 400 13px ui-monospace, Menlo, monospace; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border-radius: 9px; }
+#paneCode .code-head .btn:hover { background: var(--surface-2); color: var(--ink); }
+#codeCopy::before { content: ""; width: 13px; height: 13px; background: currentColor; -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.3"><rect x="5.2" y="5.2" width="8" height="8" rx="1.6"/><path d="M10.8 5.2V3.9a1.3 1.3 0 00-1.3-1.3H3.9a1.3 1.3 0 00-1.3 1.3v5.6a1.3 1.3 0 001.3 1.3h1.3"/></svg>') center / contain no-repeat; mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.3"><rect x="5.2" y="5.2" width="8" height="8" rx="1.6"/><path d="M10.8 5.2V3.9a1.3 1.3 0 00-1.3-1.3H3.9a1.3 1.3 0 00-1.3 1.3v5.6a1.3 1.3 0 001.3 1.3h1.3"/></svg>') center / contain no-repeat; }
+/* Details: one table of facts */
+#detailsHost { padding: 0; }
+.dt2-rows { margin: 14px 24px 24px; border-radius: 16px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--hair); display: grid; grid-template-columns: minmax(110px, 34%) minmax(0, 1fr); }
+.dt2-rows dt, .dt2-rows dd { margin: 0; min-height: 46px; display: flex; align-items: center; padding: 11px 16px; font-size: 13.5px; border-top: 1px solid var(--line); }
+.dt2-rows dt:first-child, .dt2-rows dt:first-child + dd { border-top: 0; }
+.dt2-rows dt { color: var(--ink-3); }
+.dt2-rows dd { color: var(--ink); min-width: 0; }
+.dt2-rows dd.mono, .dt2-rows .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.dt2-by { display: inline-flex; align-items: center; gap: 8px; } .dt2-mk { display: inline-grid; place-items: center; width: 18px; height: 18px; } .dt2-mk svg { width: 16px; height: 16px; }
+.dt2-os { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; } .dt2-os span { display: inline-flex; align-items: center; gap: 6px; } .dt2-os span::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.dt2-act { display: flex; align-items: center; gap: 10px; min-width: 0; width: 100%; }
+.dt2-path, .dt2-hash { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.dt2-link { flex: none; padding: 0; border: 0; background: none; font: 500 12.5px var(--sans); color: var(--ink-2); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.dt2-link:hover { color: var(--ink); text-decoration-color: currentColor; }
+@media (max-width: 560px) { .dt2-rows { grid-template-columns: 1fr; } .dt2-rows dt { min-height: 0; padding-bottom: 0; } .dt2-rows dd { border-top: 0; padding-top: 4px; } #paneFiles .pane-head, #paneDetails .dt2-head { flex-wrap: wrap; } }
