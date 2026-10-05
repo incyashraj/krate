@@ -133,7 +133,7 @@
     const K = CM; cmParts();
     const lang = /\.rs$/.test(rel) ? K.rust() : /\.toml$/.test(rel) ? K.toml : [];
     return [
-      K.lineNumbers(), K.highlightActiveLineGutter(), K.highlightSpecialChars(), K.history(),
+      K.lintGutter(), K.lineNumbers(), K.highlightActiveLineGutter(), K.highlightSpecialChars(), K.history(),
       K.foldGutter({ openText: "▾", closedText: "▸" }), K.drawSelection(), K.dropCursor(),
       K.EditorState.allowMultipleSelections.of(true), K.indentOnInput(), K.syntaxHighlighting(hlStyle),
       K.bracketMatching(), K.closeBrackets(), K.autocompletion(), K.rectangularSelection(), K.crosshairCursor(),
@@ -171,21 +171,105 @@
     while (pre.childNodes.length > 2000) pre.removeChild(pre.firstChild);
     pre.scrollTop = pre.scrollHeight;
   }
+  /* The compiler's own errors, read from a failed build: rustc prints
+   *   error[E0425]: cannot find value `x` in this scope
+   *     --> src/lib.rs:88:52
+   * and each becomes a problem with a file and a line (K-973: the whole
+   * output used to sit in one block nobody could click). */
+  function parseDiags(text) {
+    const out = [];
+    const rx = /^(error|warning)(\[[A-Z]\d+\])?: (.+)\n\s*--> ([^\s:][^:\n]*):(\d+):(\d+)/gm;
+    let m;
+    while ((m = rx.exec(String(text || "")))) {
+      // The snippet rustc drew under it, up to the next blank line.
+      const rest = String(text).slice(m.index);
+      const end = rest.search(/\n\s*\n/);
+      out.push({ sev: m[1], code: (m[2] || "").replace(/[[\]]/g, ""), msg: m[3], file: m[4].replace(/^\.\//, ""), line: +m[5], col: +m[6], text: end > 0 ? rest.slice(0, end) : rest });
+    }
+    return out;
+  }
   function problems(list, notes) {
     const box = $("ideProbs");
     notes = notes || [];
-    $("ideProbN").textContent = String(list.length);
-    box.innerHTML = (list.length ? list.map((p) => `<div class="ip-prob"><b>${esc(p.stage)}</b><pre>${esc(p.message)}</pre></div>`).join("")
+    const diags = [];
+    for (const p of list) for (const d of parseDiags(p.message)) diags.push(d);
+    ide.diags = diags;
+    const errs = diags.filter((d) => d.sev === "error").length;
+    $("ideProbN").textContent = String(diags.length ? errs || diags.length : list.length);
+    const row = (d, i) => `<div class="ip-diag ${d.sev}"><button type="button" class="ip-go" data-d="${i}"><i></i><b>${esc(d.file)}:${d.line}</b><span>${esc(d.msg)}</span>${d.code ? `<em>${esc(d.code)}</em>` : ""}</button><details><summary>What the compiler said</summary><pre>${esc(d.text)}</pre></details></div>`;
+    box.innerHTML = (diags.length ? diags.map(row).join("")
+      : list.length ? list.map((p) => `<div class="ip-prob"><b>${esc(p.stage)}</b><pre>${esc(p.message)}</pre></div>`).join("")
       : '<p class="ip-ok">No problems. It builds, imports only Krate, and runs.</p>') +
       notes.map((n) => `<div class="ip-prob ip-note"><b>note</b><pre>${esc(n)}</pre></div>`).join("");
+    markDiags();
     if (list.length) panelTab("prob");
+  }
+  $("ideProbs").addEventListener("click", (e) => {
+    const b = e.target.closest(".ip-go"); if (!b || !ide || !ide.diags) return;
+    const d = ide.diags[+b.dataset.d]; if (d) goTo(d.file, d.line, d.col);
+  });
+  async function goTo(rel, line, col) {
+    if (!ide.tree.some((t) => t.rel === rel)) { term(`${rel} is not in this project`, "r"); return; }
+    if (ide.cur !== rel || !edView) await openFile(rel);
+    if (!edView) return;
+    const doc = edView.state.doc;
+    const ln = doc.line(Math.max(1, Math.min(line || 1, doc.lines)));
+    const at = Math.min(ln.from + Math.max(0, (col || 1) - 1), ln.to);
+    edView.dispatch({ selection: { anchor: at }, scrollIntoView: true });
+    edView.focus();
+  }
+  // The errors drawn in the editor too: a mark in the gutter and a line
+  // under the code, for every open file the compiler named.
+  function markDiags() {
+    if (!CM || !ide) return;
+    for (const [rel, doc] of ide.docs) {
+      if (!doc.state) continue;
+      const mine = (ide.diags || []).filter((d) => d.file === rel);
+      const list = mine.map((d) => {
+        const n = doc.state.doc;
+        const ln = n.line(Math.max(1, Math.min(d.line, n.lines)));
+        const from = Math.min(ln.from + Math.max(0, d.col - 1), ln.to);
+        const word = n.sliceString(from, ln.to).match(/^[\w:.]+/);
+        return { from, to: Math.min(ln.to, from + Math.max(1, word ? word[0].length : 1)), severity: d.sev === "warning" ? "warning" : "error", message: d.msg + (d.code ? ` (${d.code})` : "") };
+      });
+      const spec = CM.setDiagnostics(doc.state, list);
+      if (edView && ide.cur === rel) edView.dispatch(spec);
+      else doc.state = doc.state.update(spec).state;
+    }
   }
   function panelTab(which) {
     view.querySelectorAll(".ip-tabs button[data-ip]").forEach((b) => b.classList.toggle("on", b.dataset.ip === which));
     $("ideTerm").classList.toggle("hidden", which !== "term");
     $("ideProbs").classList.toggle("hidden", which !== "prob");
+    $("ideFind").classList.toggle("hidden", which !== "find");
     $("ideMain").classList.remove("pmin");
+    if (which === "find") setTimeout(() => $("ideFindIn").focus(), 30);
   }
+
+  /* Search every file in the project (Cmd-Shift-F). Text files are read
+   * once and kept; an open file is searched as it is now, unsaved edits
+   * and all. */
+  const findCache = new Map();
+  let findT = 0;
+  async function findAll(q) {
+    const out = $("ideFindOut");
+    if (!ide || !q) { out.innerHTML = ""; return; }
+    const files = ide.tree.filter((e) => !e.dir && /\.(rs|toml|md|txt|json|wit)$/i.test(e.rel) && (e.size || 0) < 400000);
+    const needle = q.toLowerCase(); const hits = [];
+    for (const f of files) {
+      let text = ide.docs.get(f.rel) && ide.docs.get(f.rel).state ? textOf(ide.docs.get(f.rel)) : findCache.get(f.rel);
+      if (text == null) { try { text = await call("ide_read", { path: ide.path, rel: f.rel }); findCache.set(f.rel, text); } catch (e) { continue; } }
+      text.split("\n").forEach((l, i) => { const at = l.toLowerCase().indexOf(needle); if (at >= 0 && hits.length < 300) hits.push({ rel: f.rel, line: i + 1, col: at + 1, l }); });
+    }
+    if ($("ideFindIn").value.trim() !== q) return;
+    out.innerHTML = hits.length ? hits.map((h, i) => {
+      const a = Math.max(0, h.col - 41), s = h.l.slice(a, h.col - 1), m = h.l.slice(h.col - 1, h.col - 1 + q.length), r = h.l.slice(h.col - 1 + q.length, h.col + 80);
+      return `<button type="button" class="ip-hit" data-h="${i}"><b>${esc(h.rel)}:${h.line}</b><span>${a ? "…" : ""}${esc(s.trimStart())}<mark>${esc(m)}</mark>${esc(r)}</span></button>`;
+    }).join("") + (hits.length >= 300 ? '<p class="ip-ok">The first 300 matches.</p>' : "") : '<p class="ip-ok">Nothing matches.</p>';
+    out._hits = hits;
+  }
+  $("ideFindIn").addEventListener("input", () => { clearTimeout(findT); findT = setTimeout(() => findAll($("ideFindIn").value.trim()), 180); });
+  $("ideFindOut").addEventListener("click", (e) => { const b = e.target.closest(".ip-hit"); if (!b) return; const h = $("ideFindOut")._hits[+b.dataset.h]; if (h) goTo(h.rel, h.line, h.col); });
 
   try {
     tauri.event.listen("ide-line", (e) => {
@@ -312,6 +396,7 @@
     if (!ide.open.includes(rel)) ide.open.push(rel);
     ide.cur = rel;
     showDoc();
+    if (ide.diags && ide.diags.some((d) => d.file === rel)) markDiags();
     paintTabs(); paintTree();
     // Asked without holding the project up: it still opens and builds.
     if (recovered) {
@@ -363,7 +448,7 @@
     const text = textOf(doc);
     try {
       await call("ide_write", { path: ide.path, rel, text });
-      doc.saved = text; doc.dirty = textOf(doc) !== doc.saved; dropDraft(rel); return true;
+      doc.saved = text; doc.dirty = textOf(doc) !== doc.saved; dropDraft(rel); findCache.delete(rel); return true;
     } catch (err) { term(`could not save ${rel}: ${err}`, "r"); return false; }
   }
   async function saveAll(thenBuild) {
@@ -530,6 +615,7 @@
     if (!ide || view.classList.contains("hidden")) return;
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (mod && !e.shiftKey && e.key.toLowerCase() === "i") { e.preventDefault(); askIn.focus(); }
+    if (mod && e.shiftKey && e.key.toLowerCase() === "f") { e.preventDefault(); panelTab("find"); }
     if (mod && e.key.toLowerCase() === "s" && !(edView && edView.hasFocus)) { e.preventDefault(); saveAll(true); }
   });
   $("ideAskKey").textContent = MOD + "I";
