@@ -29,7 +29,15 @@
 .prod .lead .eye { display: flex; margin-bottom: 8px; }
 .term { margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .term small { display: block; margin-bottom: 6px; font-size: 12.5px; color: var(--ink-3); }
-.term pre.k { padding: 12px 14px; border-radius: 12px; font-size: 12.5px; white-space: pre; }
+.term .cmd { position: relative; }
+.term pre.k { padding: 12px 52px 12px 14px; border-radius: 12px; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 0 0 1px var(--hair); }
+.term .cp { position: absolute; top: 50%; right: 7px; width: 34px; height: 34px; margin-top: -17px; display: grid; place-items: center; border-radius: 9px; color: #9a9aa6; transition: color .2s, background .2s; }
+.term .cp:hover { color: #fff; background: rgba(255,255,255,.09); }
+.term .cp svg { width: 15px; height: 15px; }
+@media (max-width: 480px) { .term pre.k { font-size: 11px; padding-right: 46px; } .term .cp { right: 5px; } .term pre.k .u { white-space: nowrap; } }
+@media (max-width: 360px) { .term pre.k .u { white-space: inherit; } }
+.term .cp .ok { display: none; color: #4ade80; }
+.term .cp.done .ok { display: block; } .term .cp.done .cpy { display: none; }
 .term pre.k::before { content: "$ "; color: #6b6b75; }
 .files { list-style: none; display: grid; gap: 6px; align-content: start; }
 .files li { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 0 16px 0 6px; border-radius: 14px; background: var(--soft); transition: background .2s; }
@@ -121,8 +129,8 @@
         <h2>Command line</h2>
         <p>The <code class="k">krate</code> tool on its own, for developers and scripts. Or in a terminal:</p>
         <div class="term">
-          <div><small>On Mac and Linux</small><pre class="k">curl -fsSL https://krate.tech/install.sh | sh</pre></div>
-          <div><small>On Windows</small><pre class="k">irm https://krate.tech/install.ps1 | iex</pre></div>
+          <div><small>On Mac and Linux</small><div class="cmd"><pre class="k">curl -fsSL <span class="u">https://krate.tech/install.sh | sh</span></pre><button class="cp" type="button" aria-label="Copy command"><svg class="cpy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 5.5v-1a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h1"/></svg><svg class="ok" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg></button></div></div>
+          <div><small>On Windows</small><div class="cmd"><pre class="k">irm <span class="u">https://krate.tech/install.ps1 | iex</span></pre><button class="cp" type="button" aria-label="Copy command"><svg class="cpy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 5.5v-1a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h1"/></svg><svg class="ok" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg></button></div></div>
         </div>
       </div>
       <ul class="files">
@@ -151,6 +159,14 @@
   <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
 </footer>
 <script src="/kit/site.js"></script>
+<script>
+document.querySelectorAll('.term .cp').forEach((b) => b.addEventListener('click', async () => {
+  const text = b.parentElement.querySelector('pre').textContent;
+  try { await navigator.clipboard.writeText(text); } catch (e) { return; }
+  b.classList.add('done'); b.setAttribute('aria-label', 'Copied');
+  setTimeout(() => { b.classList.remove('done'); b.setAttribute('aria-label', 'Copy command'); }, 1600);
+}));
+</script>
 <script>
 /* One button for this computer, then every file with its real link and size
    from the latest release. The rows are written out, so the page works

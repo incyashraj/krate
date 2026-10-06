@@ -32,6 +32,8 @@ run "studio hooks" node scripts/check-studio-hooks.mjs
 run "studio design layer (self-test)" node scripts/test-studio-redesign.mjs --self-test
 run "studio design layer" node scripts/test-studio-redesign.mjs
 run "inline scripts parse" node scripts/test-inline-scripts.mjs
+run "html balance self-test" python3 scripts/check-html-balance.py --self-test
+run "html balance" python3 scripts/check-html-balance.py
 run "public facts" python3 scripts/test-public-facts.py
 run "contributor docs" python3 scripts/test-contributor-docs.py
 run "answer pages self-test" python3 scripts/build-answer-pages.py --self-test
