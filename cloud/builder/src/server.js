@@ -619,7 +619,13 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // the hub the moment the free app was used -- so the one thing the wall
   // offers, "add your own API key and keep building here", was refused on
   // every build after the first (K-924).
-  job.caseId = revise ? revise.caseId : byok ? null : await caseOpen(token, device, request);
+  try {
+    job.caseId = revise ? revise.caseId : byok ? null : await caseOpen(token, device, request);
+  } catch (err) {
+    // Refused by the hub's free-tier limits: nothing started, nothing kept.
+    jobs.delete(id);
+    throw err;
+  }
   // No case, no build: an unrecorded build is a funded build nobody counts
   // (K-888). The dev builder has no ledger and is exempt, and so is a build
   // on the person's own key.
@@ -735,8 +741,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
 
     if (job.state === "stopped") {
       await persistJob(job);
-      await audit({ action: "stopped", account, job: job.id });
+      await audit({ action: "stopped", account, job: job.id, ...(job.spend ? { usd: job.spend.usd, rounds: job.spend.rounds } : {}) });
       await caseAttempt(token, device, job.caseId, "stopped");
+      // A stopped build spent what it spent before the stop. It was left out
+      // of the ledger, so three killed builds cost $5 of the Krate key and
+      // showed nowhere (2026-10-06); the free-tier ceiling reads this ledger.
+      await noteSpend(token, job.spend && {
+        ...job.spend,
+        app: "",
+        paid_by: job.paidBy || "krate",
+      });
       return cleanup(job);
     }
     // Exit 6 is the engine's own request verdict: the app built, runs, and
@@ -1118,10 +1132,22 @@ async function caseOpen(token, device, request, edit = false) {
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify({ device: device || "", request, edit }),
     });
+    // A wall (the free tries or the free spending used up) is an answer for
+    // the person, not "no ledger": it stops the build and is shown as is.
+    if (res.status === 402 || res.status === 429) {
+      const body = await res.json().catch(() => ({}));
+      if (body && body.wall) {
+        const err = new Error(body.message || "The free building is used up.");
+        err.status = res.status;
+        err.wall = body;
+        throw err;
+      }
+    }
     if (!res.ok) return null;
     const body = await res.json();
     return body.id || null;
   } catch (e) {
+    if (e && e.wall) throw e;
     return null;
   }
 }
@@ -1390,6 +1416,9 @@ const server = createServer(async (req, res) => {
         // The slot is ours until a job owns it; a start that threw must
         // not lock the account out of building.
         activeByAccount.delete(allowed.account);
+        // The hub's wall, in the same JSON shape as the one-app wall, so
+        // Studio shows its sentence and the ways on.
+        if (err && err.wall) return json(res, err.status, { wall: true, ...err.wall, message: err.message });
         if (err && err.status) return send(res, err.status, err.message);
         throw err;
       }
@@ -1457,6 +1486,9 @@ const server = createServer(async (req, res) => {
         job.sourceDir = holding;
       } catch (err) {
         activeByAccount.delete(allowed.account);
+        // The hub's wall, in the same JSON shape as the one-app wall, so
+        // Studio shows its sentence and the ways on.
+        if (err && err.wall) return json(res, err.status, { wall: true, ...err.wall, message: err.message });
         if (err && err.status) return send(res, err.status, err.message);
         throw err;
       }

@@ -4331,6 +4331,43 @@ async function caseOpen(request, env) {
     }
   }
 
+  // What a free person's tries may cost us, whatever they produced
+  // (2026-10-06). The allowance counts only "made", so failed tries were
+  // unlimited, and one person's builds took about $5 of the Krate key in
+  // half an hour without an app. Two limits, both lifted by a paid plan and
+  // neither touching a build on the person's own key (those open no case):
+  //   - FREE_TRIES_PER_DAY cases opened in 24 hours that made nothing
+  //     (5: four failures on a bad provider afternoon must still leave room
+  //     to make the app, which failure-keeps-the-free-app.test.mjs holds);
+  //   - FREE_SPEND_CEILING_USD of Krate-paid spend on the account in all,
+  //     enough for the free app and its free change at a normal cost.
+  // Both are settings, because they are the founder's money to decide.
+  {
+    const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
+    if (!entitlementActive(ent)) {
+      const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      const unmade = [...byId.values()].filter((c) => c && !c.made && Date.parse(c.opened || "") > dayAgo).length;
+      const triesPerDay = Number(env.FREE_TRIES_PER_DAY || 5);
+      if (unmade >= triesPerDay) {
+        return json({
+          wall: true, tries: true, n: unmade, limit: triesPerDay, edit: isEdit,
+          message: "Today's free tries are used. Try again tomorrow, or keep going now: add your own API key in Settings, or use Krate Studio on your computer, free with your own AI.",
+        }, 429);
+      }
+      if (user) {
+        const log = JSON.parse((await env.APPS.get(`spend:${user.id}`)) || "[]");
+        const ours = log.filter((r) => r.paid_by !== "own").reduce((t, r) => t + (r.usd || 0), 0);
+        const ceiling = Number(env.FREE_SPEND_CEILING_USD || 6);
+        if (ours >= ceiling) {
+          return json({
+            wall: true, spend: true, edit: isEdit,
+            message: "The free building on this account is used up. Add your own API key in Settings to keep going here, or use Krate Studio on your computer, free with your own AI.",
+          }, 402);
+        }
+      }
+    }
+  }
+
   // An EDIT with no app to edit is a make, whatever the caller said. A
   // client that sent `edit: true` first would otherwise get a free app out
   // of the edit allowance and keep its make allowance untouched.

@@ -1015,6 +1015,21 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
             );
         }
 
+        // The running cost after every paid round, on the same line the end
+        // of the run prints. The build service keeps the LAST such line, so
+        // a run that is cut off (a stopped machine, a timeout, a kill) still
+        // says what it spent instead of nothing: on 2026-10-06 three web
+        // builds were killed mid-run and their cost appeared nowhere.
+        announce_spend_detailed(
+            spend.dollars(&model),
+            &model,
+            round + 1,
+            spend.input,
+            spend.output,
+            spend.cache_write,
+            spend.cache_read,
+        );
+
         // Checked after the call that was already paid for as well: the
         // ceiling is about not STARTING more work once the build has clearly
         // stopped converging, and the round just spent must be admitted.
