@@ -521,6 +521,19 @@ enum Command {
     #[command(hide = true)]
     SdkReference,
 
+    /// Internal: ask your AI a question about Krate code and print its
+    /// answer as {"answer": "..."}. Nothing is changed: the AI runs in a
+    /// scratch folder, the way `plan` does. Studio's IDE "Explain" uses it.
+    #[command(hide = true)]
+    Explain {
+        /// The question, with the code it is about.
+        question: String,
+
+        /// Which installed AI answers. Same names as `krate create --agent`.
+        #[arg(long)]
+        agent: Option<String>,
+    },
+
     /// Print Krate Mode: the paste-in prompt that teaches any chat model to
     /// write correct Krate apps.
     ///
@@ -2176,6 +2189,7 @@ fn run() -> Result<u8> {
             }
             Ok(0)
         }
+        Command::Explain { question, agent } => explain_command(&question, agent.as_deref()),
         Command::SdkReference => {
             println!("{}", sdk_reference_json());
             Ok(0)
@@ -8311,10 +8325,110 @@ fn finish_plan(
     Ok(0)
 }
 
+/// `krate explain`: one question about Krate code, one answer, nothing
+/// changed. The same way of asking as `plan` -- a scratch folder, a
+/// two-minute limit, the provider's one-shot form or the API -- with
+/// Krate's rules and the guest API in the prompt, so the answer is about a
+/// Krate app and names calls that exist.
+fn explain_command(question: &str, agent: Option<&str>) -> Result<u8> {
+    if question.trim().is_empty() {
+        anyhow::bail!("ask a question");
+    }
+    let api_vendor = agent.and_then(api_key::ApiVendor::parse);
+    let provider = match agent {
+        _ if api_vendor.is_some() => agent_provider::PROVIDERS[0],
+        Some(name) => resolve_agent(name)?,
+        None => agent_provider::first_installed().ok_or_else(|| {
+            anyhow::anyhow!("no AI is installed to ask; run `krate ai` to see the options")
+        })?,
+    };
+    let reference =
+        sdk_reference::render_reference(&sdk_reference::parse_sdk(sdk_reference::GUEST_SDK_SOURCE));
+    let prompt = format!(
+        "Someone writing a Krate app asked you a question about their code. A Krate app is a \
+         WebAssembly component written in Rust against Krate's own `krate::*` API. Reaching the \
+         operating system through std (std::fs, std::io and println!, std::time, std::env, \
+         std::process, std::net, std::thread) is refused at the import check, so never suggest it.\n\n\
+         Answer in plain words and keep it short: a few sentences or a short list. Quote code only \
+         when it helps, and only Krate calls that exist (the list is below). Do not write or change \
+         any file: this is a question, not a change.\n\n\
+         Reply with EXACTLY ONE json object and nothing else -- no prose around it, no code fences:\n\
+         {{\"answer\": \"your answer as plain text; it may contain newlines and `code`\"}}\n\n\
+         The question:\n\n{question}\n\n{reference}"
+    );
+    let text = if let Some(vendor) = api_vendor {
+        api_author::ask_once(vendor, &prompt)?
+    } else {
+        let program = agent_provider::which_on_path(provider.program())
+            .unwrap_or_else(|| PathBuf::from(provider.program()));
+        let mut command = ProcessCommand::new(program);
+        agent_provider::with_tool_path(&mut command);
+        command.args(provider.plan_args(&prompt));
+        provider.configure(&mut command);
+        agent_provider::with_sign_in(provider.name(), &mut command);
+        let scratch = std::env::temp_dir().join(format!("krate-explain-{}", std::process::id()));
+        let _ = fs::create_dir_all(&scratch);
+        command.current_dir(&scratch);
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+        let started = std::time::Instant::now();
+        let mut child = command.spawn().context("start the AI")?;
+        let output = loop {
+            if child.try_wait().context("wait for the AI")?.is_some() {
+                break child.wait_with_output().context("read the answer")?;
+            }
+            if started.elapsed() > std::time::Duration::from_secs(120) {
+                let _ = child.kill();
+                let _ = fs::remove_dir_all(&scratch);
+                anyhow::bail!(
+                    "the AI took over two minutes to answer; try again or pick another AI"
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        };
+        let _ = fs::remove_dir_all(&scratch);
+        format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    };
+    println!("{}", explain_answer(&text, provider.name())?);
+    Ok(0)
+}
+
+/// The answer an AI gave, as {"answer": "..."}: the JSON it was asked for
+/// in whatever wrapping its tool uses, or -- for a tool that answered in
+/// plain prose anyway -- the prose itself. A tool that failed says why.
+fn explain_answer(text: &str, provider: &str) -> Result<String> {
+    if let Some(found) = extract_json_with(text, &["answer"]) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&found) {
+            if let Some(a) = v["answer"].as_str() {
+                return Ok(serde_json::json!({ "answer": a.trim() }).to_string());
+            }
+        }
+    }
+    if let Some(reason) = agent_failure_reason_in(text) {
+        anyhow::bail!("{provider} could not answer:\n\n  {reason}");
+    }
+    let prose = text.trim();
+    if prose.is_empty() || prose.starts_with('{') {
+        anyhow::bail!("{provider} gave no answer Krate could read; try again or pick another AI");
+    }
+    Ok(serde_json::json!({ "answer": prose }).to_string())
+}
+
 /// The first balanced JSON object in the text that carries an "ask" or
 /// "plan" key. Agents wrap answers in prose and code fences no matter what
 /// the prompt says; the contract survives by extraction, not by trust.
 fn extract_plan_json(text: &str) -> Option<String> {
+    extract_json_with(text, &["ask", "plan"])
+}
+
+/// The first JSON object in an AI's output that carries one of `keys`, in
+/// any of the shapes providers wrap their answers in (described below).
+/// Shared by `plan` and `explain`.
+fn extract_json_with(text: &str, keys: &[&str]) -> Option<String> {
     // The plan can arrive in any of three shapes, because every provider frames
     // its output differently and the plan gate has to read all of them:
     //
@@ -8342,11 +8456,11 @@ fn extract_plan_json(text: &str) -> Option<String> {
             // plan is buried in an envelope do we hand back the re-serialized
             // inner object, since its original bytes were an escaped string.
             if let serde_json::Value::Object(map) = &value {
-                if map.contains_key("ask") || map.contains_key("plan") {
+                if keys.iter().any(|k| map.contains_key(*k)) {
                     return Some(candidate);
                 }
             }
-            if let Some(found) = plan_within(&value) {
+            if let Some(found) = json_within(&value, keys) {
                 return Some(found);
             }
         }
@@ -8357,14 +8471,14 @@ fn extract_plan_json(text: &str) -> Option<String> {
 /// Search a parsed JSON value for the plan contract, descending into nested
 /// objects/arrays AND into strings that are themselves JSON (the escaped plan a
 /// provider buries in a `text` field). Returns the matching object re-serialized.
-fn plan_within(value: &serde_json::Value) -> Option<String> {
+fn json_within(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
     match value {
         serde_json::Value::Object(map) => {
-            if map.contains_key("ask") || map.contains_key("plan") {
+            if keys.iter().any(|k| map.contains_key(*k)) {
                 return serde_json::to_string(value).ok();
             }
             for v in map.values() {
-                if let Some(found) = plan_within(v) {
+                if let Some(found) = json_within(v, keys) {
                     return Some(found);
                 }
             }
@@ -8372,7 +8486,7 @@ fn plan_within(value: &serde_json::Value) -> Option<String> {
         }
         serde_json::Value::Array(items) => {
             for v in items {
-                if let Some(found) = plan_within(v) {
+                if let Some(found) = json_within(v, keys) {
                     return Some(found);
                 }
             }
@@ -8380,7 +8494,7 @@ fn plan_within(value: &serde_json::Value) -> Option<String> {
         }
         serde_json::Value::String(s) => {
             let inner: serde_json::Value = serde_json::from_str(s.trim()).ok()?;
-            plan_within(&inner)
+            json_within(&inner, keys)
         }
         _ => None,
     }
@@ -22604,6 +22718,25 @@ again: {} -> {}",
         assert_eq!(extract_plan_json(tricky).as_deref(), Some(tricky));
         // JSON without the contract keys is not an answer.
         assert_eq!(extract_plan_json("{\"other\": 1}"), None);
+        // explain reads the same shapes for its own key.
+        let bare = r#"{"answer": "It saves each habit with store.kv."}"#;
+        assert!(crate::explain_answer(bare, "claude")
+            .unwrap()
+            .contains("store.kv"));
+        let grok = r#"{"text": "{\"answer\": \"Use ui::window.\"}", "sessionId": "x"}"#;
+        assert!(crate::explain_answer(grok, "grok")
+            .unwrap()
+            .contains("ui::window"));
+        let codex = "{\"type\":\"item.completed\",\"item\":{\"text\":\"{\\\"answer\\\": \\\"Short.\\\"}\"}}\n";
+        assert!(crate::explain_answer(codex, "codex")
+            .unwrap()
+            .contains("Short."));
+        assert!(
+            crate::explain_answer("It draws the list each frame.", "claude")
+                .unwrap()
+                .contains("each frame")
+        );
+        assert!(crate::explain_answer("", "claude").is_err());
         assert_eq!(extract_plan_json("no json at all"), None);
     }
 

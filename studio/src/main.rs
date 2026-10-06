@@ -5464,6 +5464,7 @@ fn main() {
             ide::ide_apply,
             ide::ide_sdk,
             ide::ide_rename,
+            ide::ide_explain,
             ide::ide_delete,
             ide::ide_stop
         ])

@@ -327,6 +327,7 @@
     $("ideProbs").classList.toggle("hidden", which !== "prob");
     $("ideFind").classList.toggle("hidden", which !== "find");
     $("ideApi").classList.toggle("hidden", which !== "api");
+    $("ideAns").classList.toggle("hidden", which !== "ans");
     if (which === "api") { paintApi(); setTimeout(() => $("ideApiIn").focus(), 30); }
     $("ideMain").classList.remove("pmin");
     if (which === "find") setTimeout(() => $("ideFindIn").focus(), 30);
@@ -795,6 +796,7 @@
         checkDisk();
         if (r.shot) showShot(r.shot);
         panelTab("term");
+        if (runSave() && why && (why === "you saved" || / changed$/.test(why))) setTimeout(() => runApp("you saved"), 0);
       } else {
         setStatus("bad", "Does not build");
         term(`==> ${r.stage}: ${r.message.split("\n")[0]}`, "r");
@@ -819,14 +821,35 @@
   }
   $("ideRefresh").addEventListener("click", () => saveAll(false).then(() => build("reload")));
   $("ideStop").addEventListener("click", () => { if (ide) call("ide_stop", { path: ide.path }).catch(() => {}); });
-  $("ideRun").addEventListener("click", async () => {
+  async function runApp(why) {
     if (!ide || ide.busy) return;
     await saveAll(false);
     busy(true, "Opening…");
-    term(`==> packing ${ide.name} and opening it`);
-    try { await call("ide_run", { path: ide.path }); busy(false); setStatus("ok", ide.built && ide.built.size_bytes ? `Builds · ${kb(ide.built.size_bytes)}` : "Opened"); term("==> opened it in its own window", "g"); }
-    catch (err) { busy(false); setStatus("bad", "Could not open it"); term(String(err), "r"); problems([{ stage: "run", message: String(err) }]); }
+    term(`==> ${why ? why + ": " : ""}packing ${ide.name} and opening it`);
+    try {
+      const replaced = await call("ide_run", { path: ide.path });
+      busy(false);
+      setStatus("ok", ide.built && ide.built.size_bytes ? `Builds · ${kb(ide.built.size_bytes)}` : "Opened");
+      term(replaced ? "==> closed the copy that was running and opened this one" : "==> opened it in its own window", "g");
+    } catch (err) { busy(false); setStatus("bad", "Could not open it"); term(String(err), "r"); problems([{ stage: "run", message: String(err) }]); }
+  }
+  $("ideRun").addEventListener("click", () => runApp());
+  /* Run on save: every save that builds clean opens the new version in
+   * place of the one that is running. Remembered on this computer. */
+  const RUN_SAVE = "krate-ide-runsave";
+  const runSave = () => { try { return localStorage.getItem(RUN_SAVE) === "1"; } catch (e) { return false; } };
+  function paintRunSave() {
+    const b = $("ideRunSave"), on = runSave();
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.title = on ? "Runs again every time you save · click to stop" : "Run it again every time you save";
+  }
+  $("ideRunSave").addEventListener("click", () => {
+    const on = !runSave();
+    try { localStorage.setItem(RUN_SAVE, on ? "1" : "0"); } catch (e) {}
+    paintRunSave();
+    if (ide) term(on ? "==> it opens again every time you save" : "==> saving builds it and leaves the window alone", "m");
   });
+  paintRunSave();
   $("ideBuild").addEventListener("click", async () => {
     if (!ide || ide.busy) return;
     await saveAll(false);
@@ -953,6 +976,48 @@
       askIn.placeholder = askPh;
     }
   }
+  /* Explain: a question about the code, answered in the panel. Nothing in
+   * the project changes, so it runs beside a build. The AI is handed the
+   * code itself: the selection, or else the open file. */
+  function explainContext() {
+    if (!edView || !ide.cur) return "";
+    const st = edView.state, sel = st.selection.main;
+    if (!sel.empty) {
+      const a = st.doc.lineAt(sel.from).number, z = st.doc.lineAt(sel.to).number;
+      return `\n\nThe code, ${ide.cur} lines ${a}–${z}:\n\`\`\`\n${st.sliceDoc(sel.from, sel.to).slice(0, 12000)}\n\`\`\``;
+    }
+    const files = ide.tree.filter((e) => !e.dir).map((e) => e.rel).join(", ");
+    return `\n\nThe project's files: ${files}\n\nThe open file, ${ide.cur} (the cursor is on line ${st.doc.lineAt(sel.head).number}):\n\`\`\`\n${st.doc.toString().slice(0, 30000)}\n\`\`\``;
+  }
+  // Plain words with `code` and fenced blocks; everything else escaped.
+  function answerHtml(text) {
+    return String(text).split(/```[a-z]*\n?/).map((part, i) => i % 2
+      ? `<pre>${esc(part.replace(/\n$/, ""))}</pre>`
+      : part.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+        .map((p) => `<p>${esc(p).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>")}</p>`).join("")).join("");
+  }
+  async function explain(question) {
+    if (!ide || ide.explaining) return;
+    const sel = edView && !edView.state.selection.main.empty;
+    const q = (question || "").trim() || (sel ? "Explain what this code does." : `Explain what ${ide.cur || "this app"} does.`);
+    const path = ide.path, out = $("ideAns");
+    ide.explaining = true; $("ideExplain").disabled = true;
+    askIn.value = "";
+    $("ideAnsTab").classList.remove("hidden"); panelTab("ans");
+    out.innerHTML = `<div class="ia-q">${esc(q)}</div><div class="ia-wait"><i></i><i></i><i></i><span>${esc(agentWords())} is reading the code…</span></div>`;
+    try {
+      const a = await call("ide_explain", { path, question: q + explainContext(), agent: agentName() });
+      if (!ide || ide.path !== path) return;
+      out.innerHTML = `<div class="ia-q">${esc(q)}</div><div class="ia-a">${answerHtml(a || "No answer came back.")}</div><div class="ia-foot">Nothing in the project was changed.</div>`;
+    } catch (err) {
+      if (!ide || ide.path !== path) return;
+      out.innerHTML = `<div class="ia-q">${esc(q)}</div><div class="ia-bad">${esc(String(err))}</div>`;
+    } finally {
+      if (ide) ide.explaining = false;
+      $("ideExplain").disabled = false;
+    }
+  }
+  $("ideExplain").addEventListener("click", () => explain(askIn.value));
   $("ideAskBar").addEventListener("submit", (e) => {
     e.preventDefault();
     const request = askIn.value.trim();
@@ -979,11 +1044,12 @@
     if (mod && !e.shiftKey && e.key.toLowerCase() === "p") { e.preventDefault(); quickOpen(); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === "r") { e.preventDefault(); $("ideRun").click(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === "b") { e.preventDefault(); $("ideBuild").click(); }
+    if (mod && e.shiftKey && e.key.toLowerCase() === "e") { e.preventDefault(); explain(askIn.value); }
     if (mod && e.key.toLowerCase() === "s" && !(edView && edView.hasFocus)) { e.preventDefault(); saveAll(true); }
   });
   $("ideAskKey").textContent = MOD + "I";
   // The shortcuts, where the buttons are.
-  [["ideRun", `Run it (${MOD}R)`], ["ideBuild", `Build the .krate (${MOD}⇧B)`]].forEach(([id, t]) => { const b = $(id); if (b) b.title = t; });
+  [["ideRun", `Run it (${MOD}R)`], ["ideBuild", `Build the .krate (${MOD}⇧B)`], ["ideExplain", `Explain it, change nothing (${MOD}⇧E)`]].forEach(([id, t]) => { const b = $(id); if (b) b.title = t; });
 
   /* ---- opening and leaving a project ------------------------------------ */
   async function openProject(p) {
@@ -1000,6 +1066,7 @@
     $("ideAppNone").classList.remove("hidden"); $("ideLive").classList.add("hidden");
     const cached = shots()[ide.path];
     if (cached) { $("ideShot").src = cached.src; $("ideShot").classList.remove("hidden"); $("ideAppNone").classList.add("hidden"); }
+    $("ideAns").textContent = ""; $("ideAnsTab").classList.add("hidden");
     problems([]); panelTab("term");
     setStatus("idle", "Not built yet");
     paintAgent();

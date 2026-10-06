@@ -728,7 +728,7 @@
       <span class="spacer"></span>
       <span class="ide-st" id="ideSt"><i></i><span id="ideStT">Not built yet</span></span>
       <button class="ide-btn" id="ideAsk" title="Ask your AI to change this file"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l1.3 3.7L13 6.5 9.3 7.8 8 11.5 6.7 7.8 3 6.5l3.7-1.3z"/><path d="M12.5 10.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" opacity=".6"/></svg>Ask AI<kbd id="ideAskKey">⌘I</kbd></button>
-      <button class="ide-btn" id="ideRun" title="Pack it and open it"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.6v8.8c0 .5.5.8.9.5l6.6-4.4a.6.6 0 0 0 0-1L5.9 3.1c-.4-.3-.9 0-.9.5z"/></svg>Run</button>
+      <span class="ide-runs"><button class="ide-btn" id="ideRun" title="Pack it and open it"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.6v8.8c0 .5.5.8.9.5l6.6-4.4a.6.6 0 0 0 0-1L5.9 3.1c-.4-.3-.9 0-.9.5z"/></svg>Run</button><button class="ide-btn ide-rs" id="ideRunSave" type="button" aria-pressed="false" title="Run it again every time you save"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.8v2.6h-2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
       <button class="ide-btn dark" id="ideBuild" title="Pack it into one .krate file"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2.8v8M4.6 7.6L8 11l3.4-3.4M3 13.2h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Build .krate</button>
     </header>
     <div class="ide-body">
@@ -742,6 +742,7 @@
           <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5l1.3 3.7L13 6.5 9.3 7.8 8 11.5 6.7 7.8 3 6.5l3.7-1.3z"/></svg>
           <input id="ideAskIn" placeholder="Ask your AI to change this app…" aria-label="Ask your AI to change this app" maxlength="2000" />
           <span class="lg-s" id="ideAskAgent"></span>
+          <button class="ide-why" id="ideExplain" type="button" title="Explain it, change nothing">Explain</button>
           <button class="ide-go" id="ideAskGo" type="submit" title="Ask"><svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.6M4.2 7.4L8 3.6l3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </form>
         <div class="ide-panel" id="idePanel">
@@ -750,6 +751,7 @@
             <button type="button" data-ip="prob">Problems <em id="ideProbN">0</em></button>
             <button type="button" data-ip="find">Search</button>
             <button type="button" data-ip="api">Krate API</button>
+            <button type="button" data-ip="ans" class="hidden" id="ideAnsTab">Answer</button>
             <span class="grow"></span>
             <button type="button" class="ip-stop hidden" id="ideStop">Stop</button>
             <button type="button" class="ib" id="ipTog" title="Hide the panel"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6.2L8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -757,6 +759,7 @@
           <pre class="ide-term" id="ideTerm" tabindex="0"></pre>
           <div class="ide-probs hidden" id="ideProbs"></div>
           <div class="ide-find hidden" id="ideFind"><input type="search" id="ideFindIn" placeholder="Search every file in the project" autocomplete="off" spellcheck="false" aria-label="Search every file"><div class="ide-find-out" id="ideFindOut"></div></div>
+          <div class="ide-ans hidden" id="ideAns" tabindex="0"></div>
           <div class="ide-find hidden" id="ideApi"><input type="search" id="ideApiIn" placeholder="Find a call: window, store, draw…" autocomplete="off" spellcheck="false" aria-label="Find a Krate call"><div class="ide-find-out" id="ideApiOut"></div></div>
         </div>
       </div>

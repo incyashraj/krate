@@ -28,7 +28,7 @@ use tauri::Emitter;
 
 use crate::{
     agent_env, dirs_home, engine, engine_env, follow_lines, kill_tree, off_request_detail,
-    open_app, pick_dir, picker_start_dir, settings_get, silent_cmd, studio_dir, unix_now,
+    pick_dir, picker_start_dir, settings_get, silent_cmd, studio_dir, unix_now,
     write_private_atomic, Settings,
 };
 
@@ -1394,15 +1394,126 @@ pub(crate) async fn ide_pack(app: tauri::AppHandle, path: String) -> Result<Pack
 }
 
 #[tauri::command]
-pub(crate) async fn ide_run(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let krate = blocking(move || {
+pub(crate) async fn ide_run(app: tauri::AppHandle, path: String) -> Result<bool, String> {
+    blocking(move || {
         let project = project_dir(&path)?;
         let _job = claim(&project)?;
         let engine = engine()?;
-        pack_project(&engine, &ide_root(), &project, &line_sink(app, &project))
+        let sink = line_sink(app, &project);
+        let krate = pack_project(&engine, &ide_root(), &project, &sink)?;
+        // Run is "run this version": the copy this IDE opened last time is
+        // closed first, so a save can bring the app back up as it now is
+        // instead of stacking windows of old versions.
+        let replaced = ran_before(&project) && stop_running(&project, &krate);
+        if replaced {
+            sink("==> closed the copy that was running");
+        }
+        let out = engine_cmd(&engine, false)
+            .current_dir(studio_dir())
+            .arg("launch")
+            .arg(&krate)
+            .output()
+            .map_err(|e| format!("could not run the Krate engine: {e}"))?;
+        if !out.status.success() {
+            let why = String::from_utf8_lossy(&out.stderr);
+            return Err(format!("could not open the app: {}", why.trim()));
+        }
+        remember_run(&project);
+        Ok(replaced)
     })
-    .await?;
-    open_app(krate.display().to_string())
+    .await
+}
+
+/// The projects this Studio has opened an app for, so Run only ever closes
+/// a copy it opened itself.
+fn runs() -> &'static Mutex<std::collections::HashSet<PathBuf>> {
+    static RUNS: OnceLock<Mutex<std::collections::HashSet<PathBuf>>> = OnceLock::new();
+    RUNS.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+}
+fn ran_before(project: &Path) -> bool {
+    runs().lock().map(|r| r.contains(project)).unwrap_or(false)
+}
+fn remember_run(project: &Path) {
+    if let Ok(mut r) = runs().lock() {
+        r.insert(project.to_path_buf());
+    }
+}
+
+/// The app's name as its manifest gives it (`[app] name = "..."`), which is
+/// what macOS's per-app wrapper is named after.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn manifest_app_name(project: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(project.join("manifest.toml")).ok()?;
+    let mut in_app = false;
+    for line in text.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_app = t == "[app]";
+            continue;
+        }
+        if in_app {
+            if let Some(rest) = t.strip_prefix("name") {
+                let v = rest.trim_start().strip_prefix('=')?.trim();
+                return Some(v.trim_matches('"').to_string());
+            }
+        }
+    }
+    None
+}
+
+/// A literal for `pkill -f`, which reads a regular expression.
+#[cfg(unix)]
+fn regex_literal(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        if "\\.+*?()|[]{}^$".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Close the copy of this app that is running: on macOS the process inside
+/// its ~/.krate/launchers wrapper, elsewhere the `krate run` of its packed
+/// file. True when something was asked to close.
+fn stop_running(project: &Path, krate: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    let pattern = match manifest_app_name(project) {
+        Some(name) => regex_literal(&format!("/.krate/launchers/{name}.app/Contents/MacOS/")),
+        None => return false,
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let pattern = {
+        let _ = project;
+        regex_literal(&krate.display().to_string())
+    };
+    #[cfg(unix)]
+    {
+        let _ = krate;
+        let stopped = Command::new("pkill")
+            .args(["-TERM", "-f", &pattern])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if stopped {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+        stopped
+    }
+    #[cfg(windows)]
+    {
+        let _ = project;
+        let path = krate.display().to_string().replace('\'', "''");
+        let script = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{path}*' -and $_.ProcessId -ne $PID }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force; 'x' }}"
+        );
+        silent_cmd(Path::new("powershell"))
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false)
+    }
 }
 
 #[tauri::command]
@@ -1452,6 +1563,47 @@ pub(crate) async fn ide_sdk() -> Result<serde_json::Value, String> {
         }
         serde_json::from_slice(&out.stdout)
             .map_err(|e| format!("the API description did not parse: {e}"))
+    })
+    .await
+}
+
+/// Ask the person's AI a question about the code and get one answer back
+/// (`krate explain`): nothing in the project is touched, so it can run
+/// beside a build.
+#[tauri::command]
+pub(crate) async fn ide_explain(
+    path: String,
+    question: String,
+    agent: Option<String>,
+) -> Result<String, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let engine = engine()?;
+        let agent = agent
+            .filter(|a| valid_agent(a))
+            .unwrap_or_else(|| settings_get().agent);
+        let mut cmd = engine_cmd(&engine, true);
+        cmd.current_dir(&project).arg("explain");
+        if valid_agent(&agent) {
+            cmd.args(["--agent", &agent]);
+        }
+        let out = cmd
+            .arg("--")
+            .arg(&question)
+            .output()
+            .map_err(|e| format!("could not run the Krate engine: {e}"))?;
+        if !out.status.success() {
+            let why = String::from_utf8_lossy(&out.stderr);
+            let why = why.trim().trim_start_matches("error: ");
+            return Err(if why.is_empty() {
+                "the AI could not answer".to_string()
+            } else {
+                why.to_string()
+            });
+        }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .map_err(|_| "the answer did not come back whole".to_string())?;
+        Ok(v["answer"].as_str().unwrap_or("").to_string())
     })
     .await
 }
@@ -1852,6 +2004,26 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn the_app_name_comes_from_the_manifest_app_table() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("manifest.toml"),
+            "[package]\nname = \"no\"\n\n[app]\nid = \"x\"\nname = \"Habit Tracker\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            manifest_app_name(tmp.path()).as_deref(),
+            Some("Habit Tracker")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_is_a_literal_for_pkill() {
+        assert_eq!(regex_literal("a.b (1)/x+y"), "a\\.b \\(1\\)/x\\+y");
     }
 
     #[test]
