@@ -102,4 +102,20 @@ const e = env();
   assert.strictEqual(people.accounts_total, 2, "accounts are people: one record each");
 }
 
+/* ---- the welcome is remembered on the account, written once ------------- */
+{
+  const before = JSON.parse((await (await worker.fetch(as("krs_sam", "/me"), e)).text())).user.onboarded;
+  assert.strictEqual(before, false);
+  let writes = 0;
+  const put = e.APPS.put;
+  e.APPS.put = async (k, v) => { if (k === "user:u7") writes++; return put(k, v); };
+  assert.strictEqual((await worker.fetch(as("krs_sam", "/me/onboarded", { method: "POST", body: "{}" }), e)).status, 200);
+  assert.strictEqual((await worker.fetch(as("krs_sam", "/me/onboarded", { method: "POST", body: "{}" }), e)).status, 200);
+  assert.strictEqual(writes, 1, "one write, the first time only");
+  const after = JSON.parse((await (await worker.fetch(as("krs_sam", "/me"), e)).text())).user.onboarded;
+  assert.strictEqual(after, true);
+  assert.strictEqual((await worker.fetch(req("/me/onboarded", { method: "POST" }), e)).status, 401, "only for a signed-in person");
+  e.APPS.put = put;
+}
+
 console.log("desk reports and sessions: all checks passed");

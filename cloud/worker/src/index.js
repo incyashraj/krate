@@ -506,6 +506,9 @@ export default {
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
       }
+      if (request.method === "POST" && pathname === "/me/onboarded") {
+        return cors(await markAccountOnboarded(request, env));
+      }
       if (request.method === "GET" && pathname === "/my/apps") {
         return cors(await myApps(request, env));
       }
@@ -4867,6 +4870,19 @@ async function spendReport(request, env) {
   });
 }
 
+/// The welcome is shown once per person, not once per browser: a new
+/// browser, a private window or cleared site data showed it again. One write,
+/// the first time only (KV writes are a daily budget, K-952).
+async function markAccountOnboarded(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  if (!user.onboarded) {
+    user.onboarded = true;
+    await env.APPS.put(`user:${user.id}`, JSON.stringify(user));
+  }
+  return json({ ok: true });
+}
+
 async function meProfile(request, env) {
   const user = await authedUser(request, env);
   if (!user) return text("Sign in first.", 401);
@@ -4877,6 +4893,8 @@ async function meProfile(request, env) {
     user: {
       name: user.name, login: user.login, email: user.email,
       avatar_url: user.avatar_url, created: user.created,
+      // Studio's welcome has been seen on this account, on any device.
+      onboarded: Boolean(user.onboarded),
     },
     plan: {
       plan: ent ? ent.plan : "free",

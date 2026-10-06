@@ -416,6 +416,10 @@ function maybeWelcome(name) {
   // that opts in -- a future third shell should have to say what it wants
   // here rather than inheriting the web's pricing story by default.
   if (tauri) return;
+  // The welcome card (redesign.js) says this now, once per person: on a
+  // first visit this note opened as a second popup on top of it. The card
+  // marks this key when it closes, so an older cached page agrees.
+  if (typeof window.krAccountOnboarded === "function") return;
   let seen = false;
   try {
     seen = localStorage.getItem(WELCOME_SEEN) === "1";
@@ -9909,6 +9913,13 @@ async function needsOnboarding() {
     if (await invoke("onboarded_get")) return false;
   } catch (err) {
     return !lsGet(ONBOARD_KEY);
+  }
+  // Seen in this browser, by the welcome card (redesign.js): either record
+  // saying so is the answer, and the shell's is brought in line. The
+  // welcome is for a first-time user only (2026-10-06).
+  if (lsGet("krate-welcome-v3") === "1") {
+    await markOnboarded();
+    return false;
   }
   if (lsGet(ONBOARD_KEY)) {
     await markOnboarded();

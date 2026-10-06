@@ -1943,6 +1943,10 @@
     if (!obWrap.classList.contains("on")) return;
     try { markOnboarded(); } catch (e) {}
     try { localStorage.setItem(WELCOME_KEY, "1"); } catch (e) {}
+    // The web's separate "first app is on us" note is in this card now.
+    try { localStorage.setItem("krate.welcome.seen.v1", "1"); } catch (e) {}
+    // Signed in on the web: the account remembers it, for every browser.
+    try { if (window.krAccountMarkOnboarded) window.krAccountMarkOnboarded(); } catch (e) {}
     obWrap.classList.add("out"); pvRun++; clearTimeout(pvT);
     setTimeout(() => {
       obWrap.classList.remove("on", "out");
@@ -1950,6 +1954,13 @@
     }, reduce ? 0 : 280);
   }
   q(".kr-ob-x", obWrap).addEventListener("click", () => obClose(false));
+  // On the web the first app is free, and this card is the one place that
+  // says so on a first visit (the separate note it replaces was a second
+  // popup on top of this one).
+  if (!desktopApp()) {
+    const sub = q(".kr-ob-s", obWrap);
+    if (sub) sub.textContent = "Your first app is on us: no API key, nothing to install. Take a quick tour, or close this and start making.";
+  }
   q(".kr-ob-skip", obWrap).addEventListener("click", () => obClose(false));
   q(".kr-ob-go", obWrap).addEventListener("click", () => obClose(true));
   obWrap.addEventListener("click", (e) => { if (e.target === obWrap) obClose(false); });
@@ -2059,8 +2070,22 @@
   // Somebody who onboarded before it existed has never seen it, and the
   // only other way to it was a row in Settings. Shown on Home, never over
   // work in progress, and then never again on this computer.
-  (function welcomeOnce() {
+  (async function welcomeOnce() {
     const seen = () => { try { return localStorage.getItem(WELCOME_KEY) === "1"; } catch (e) { return true; } };
+    if (seen()) return;
+    // Once per person, not once per browser store (2026-10-06): the desktop
+    // keeps its own durable record (~/.krate), and a signed-in web account
+    // keeps one on the hub. Either one saying "seen" is the answer, and this
+    // browser learns it so the question is not asked again.
+    try {
+      const elsewhere = desktopApp()
+        ? await invoke("onboarded_get")
+        : (window.krAccountOnboarded ? await window.krAccountOnboarded() : false);
+      if (elsewhere) {
+        try { localStorage.setItem(WELCOME_KEY, "1"); } catch (e) {}
+        return;
+      }
+    } catch (e) {}
     if (seen()) return;
     let tries = 0;
     const t = setInterval(() => {

@@ -300,6 +300,37 @@ async function hub(path, opts = {}) {
   return (res.headers.get("content-type") || "").includes("json") ? res.json() : res.text();
 }
 
+/* The welcome, once per person (2026-10-06).
+ *
+ * It was remembered only in this browser, so a new browser, a private
+ * window or cleared site data showed it again to someone who had seen it.
+ * Signed in, the account remembers it too; redesign.js asks before showing
+ * it and tells it once it closes. */
+window.krAccountOnboarded = async () => {
+  if (!bridge.token) return false;
+  try {
+    const me = await hub("/me");
+    return Boolean(me && me.user && me.user.onboarded);
+  } catch (e) {
+    return false;
+  }
+};
+window.krAccountMarkOnboarded = async () => {
+  if (!bridge.token) return;
+  try {
+    await hub("/me/onboarded", { method: "POST", body: "{}" });
+    try { localStorage.setItem("krate-welcome-acct", "1"); } catch (e) {}
+  } catch (e) {}
+};
+// Seen here before signing in: the account learns it once, after sign-in.
+setTimeout(() => {
+  try {
+    if (bridge.token && localStorage.getItem("krate-welcome-v3") === "1" && localStorage.getItem("krate-welcome-acct") !== "1") {
+      window.krAccountMarkOnboarded();
+    }
+  } catch (e) {}
+}, 3000);
+
 /* Carry the HTTP status on the error.
  *
  * Without it every refusal is just a string, and two very different things
