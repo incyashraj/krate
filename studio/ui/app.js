@@ -5723,9 +5723,15 @@ async function makeWrap(app, os, label) {
   try {
     const wrapPath = await invoke("make_wrap", { path: app.path, target: os });
     const name = wrapPath.split(/[\\/]/).pop();
-    // The Mac gift is a FOLDER -- an opener Apple has notarized, with the
-    // app beside it, because a downloaded script cannot pass Gatekeeper.
-    label.textContent = os === "mac" ? `${name} · send the whole folder` : `${name} · in the folder that opened`;
+    // The Mac gift is one disk image: an opener Apple has notarized, the app
+    // and the player it installs. A folder only when no image could be made.
+    // The player rides inside a Mac gift, and inside a Linux gift made on
+    // Linux. Anything else still sends the friend to krate.tech first, and
+    // says so rather than promising an install it cannot do.
+    const carries = os === "mac" || (os === "linux" && /linux/i.test(navigator.platform || ""));
+    label.textContent = os === "mac" && !/\.dmg$/i.test(name) ? `${name} · send the whole folder`
+      : carries ? `${name} · send this one file, Krate comes with it`
+      : `${name} · your friend gets Krate from krate.tech first`;
     try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
   } catch (err) {
     label.textContent = plainWords(err);

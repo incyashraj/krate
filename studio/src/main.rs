@@ -3701,16 +3701,24 @@ async fn make_wrap(path: String, target: String) -> Result<String, String> {
         });
     }
     // Two shapes, because the two platforms need different things. Windows
-    // and Linux get one self-installing file -- "Wrap written: <path> (34
-    // KB)". macOS gets a folder holding a notarized opener and the app
-    // beside it -- "Gift written: <path>" -- because a downloaded script
-    // can never pass Gatekeeper (K-211), and a folder has no single size
-    // worth printing.
+    // and Linux get one file -- "Wrap written: <path> (34 KB)". macOS gets a
+    // disk image holding a notarized opener, the app and the player --
+    // "Gift written: <path> (26 MB)" -- because a downloaded script can never
+    // pass Gatekeeper (K-211); or a folder with no size, when no disk image
+    // could be made.
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .find_map(|line| {
             line.strip_prefix("Gift written: ")
-                .map(|rest| rest.trim().to_string())
+                .map(|rest| {
+                    let rest = rest.trim();
+                    match rest.rsplit_once(" (") {
+                        Some((path, size)) if size.ends_with(" MB)") || size.ends_with(" KB)") => {
+                            path.to_string()
+                        }
+                        _ => rest.to_string(),
+                    }
+                })
                 .or_else(|| {
                     line.strip_prefix("Wrap written: ")
                         .and_then(|rest| rest.rsplit_once(" (").map(|(path, _)| path.to_string()))

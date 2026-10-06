@@ -2645,6 +2645,18 @@ echo '   '"#,
             "/out/Tip for Mac ü"
         );
         assert_eq!(t.args(), vec!["wrap", path.as_str(), "--for", "mac"]);
+        // The disk image says its size; a path with brackets of its own
+        // keeps them.
+        t.engine("echo 'Gift written: /out/Tip (1)-for-Mac.dmg (26 MB)'");
+        assert_eq!(
+            block(make_wrap(path.clone(), "mac".into())).unwrap(),
+            "/out/Tip (1)-for-Mac.dmg"
+        );
+        t.engine("echo 'Gift written: /out/Tip (1)-for-Mac'");
+        assert_eq!(
+            block(make_wrap(path.clone(), "mac".into())).unwrap(),
+            "/out/Tip (1)-for-Mac"
+        );
         t.engine("echo 'Wrap written: /out/Tip (1).exe (34 KB)'");
         assert_eq!(
             block(make_wrap(path.clone(), "windows".into())).unwrap(),

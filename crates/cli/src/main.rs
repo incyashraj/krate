@@ -25,6 +25,7 @@ mod github_auth;
 mod krate_mode;
 mod lineedit;
 mod mcp;
+mod player;
 mod port_report;
 mod progress;
 mod sdk;
@@ -904,6 +905,20 @@ enum Command {
     /// the script Apple notarized are the same text by construction.
     #[command(hide = true)]
     GiftOpener,
+
+    /// Install this binary as the Krate player for this person.
+    ///
+    /// Run by a gift's opener from the engine the gift carries: on macOS it
+    /// assembles ~/Applications/Krate Player.app and registers .krate with
+    /// Launch Services; on Linux it installs under ~/.local/share/krate and
+    /// registers the per-user MIME type. No administrator password, nothing
+    /// downloaded. Prints `Player: <path>` last.
+    #[command(hide = true, name = "player-install")]
+    PlayerInstall {
+        /// A stand-in for the home folder (tests).
+        #[arg(long)]
+        home: Option<PathBuf>,
+    },
 
     /// Upload a .krate to a hub and print a URL anyone can `krate run`.
     ///
@@ -2009,6 +2024,7 @@ fn run() -> Result<u8> {
             print!("{}", mac_opener_script());
             Ok(0)
         }
+        Command::PlayerInstall { home } => player::install(home.as_deref()),
         Command::UsageFlush => {
             usage::flush_spool_now();
             Ok(0)
@@ -6262,8 +6278,10 @@ exit /b %STATUS%
 /// and the sender's laptop has no certificate.
 fn mac_opener_script() -> String {
     r#"#!/bin/sh
-# The opener for a Krate gift. It installs the free player once if it is
-# missing, then opens the app file sitting next to this bundle.
+# The opener for a Krate gift. It opens the app file sitting next to this
+# bundle. On a Mac with no Krate it first installs the player the gift
+# carries -- after checking that Krate signed it -- so the app opens now and
+# every later .krate opens on a double-click (IC-381, IC-383).
 set -u
 here="$(cd "$(dirname "$0")/../../.." && pwd)"
 # The gift's app file is whichever .krate shares this folder. Named by
@@ -6274,24 +6292,53 @@ for candidate in "$here"/*.krate; do
 done
 find_krate() {
   command -v krate 2>/dev/null && return 0
-  for c in /usr/local/bin/krate "$HOME/.local/bin/krate"; do
+  for c in /usr/local/bin/krate "$HOME/.local/bin/krate" \
+      "$HOME/Applications/Krate Player.app/Contents/MacOS/krate-cli" \
+      "/Applications/Krate Player.app/Contents/MacOS/krate-cli" \
+      "/Applications/Krate.app/Contents/Resources/bin/krate"; do
     if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
   done
   return 1
 }
-krate_bin="$(find_krate || true)"
-if [ -z "$krate_bin" ]; then
-  # No player yet. Say so in a window -- there is no console behind a
-  # double-clicked .app, so a printed line would go nowhere.
-  # This offered to install Krate by piping a remote script into a shell
-  # (IC-381). Whatever the server returned would have run, unsigned and
-  # unseen. Sending someone to the signed installer is slower by one click
-  # and is the difference between "install this" and "run whatever this
-  # server says today".
-  osascript -e 'display dialog "This app runs on Krate, a small free player (about 24 MB).\n\nInstall it once from krate.tech, then open this file again." buttons {"Not now","Get Krate"} default button "Get Krate" with title "Krate"' \
+# Krate's own signature: a Developer ID certificate of team DBYD4AW5Q8.
+# Whatever else sits beside this opener is never installed, whoever put it
+# there -- the gift is made on a sender's laptop, so its contents are only
+# as trustworthy as this check.
+signed_by_krate() {
+  codesign --verify --strict \
+    -R='anchor apple generic and certificate leaf[subject.OU] = "DBYD4AW5Q8"' \
+    "$1" >/dev/null 2>&1
+}
+get_krate() {
+  osascript -e "display dialog \"$1\" buttons {\"Not now\",\"Get Krate\"} default button \"Get Krate\" with title \"Krate\"" \
     | grep -q "Get Krate" || exit 0
   open "https://krate.tech/open"
   exit 0
+}
+krate_bin="$(find_krate || true)"
+if [ -z "$krate_bin" ]; then
+  # No player yet. A double-clicked .app has no console, so every word is
+  # said in a window.
+  player="$here/.player/krate"
+  if [ ! -f "$player" ] || ! signed_by_krate "$player"; then
+    get_krate "This app runs on Krate, a small free player.\n\nInstall it once from krate.tech, then open this file again."
+  fi
+  osascript -e 'display dialog "This app runs on Krate, a free player that comes with it.\n\nInstall it now? It goes in your own Applications folder and needs no password. After this, every Krate app anyone sends you opens with a double-click." buttons {"Not now","Install"} default button "Install" with title "Krate"' \
+    | grep -q "Install" || exit 0
+  # A private folder, never a guessable name (IC-384). The copy loses the
+  # download's quarantine flag only after the same signature check passes
+  # on the copy itself.
+  work="$(mktemp -d "${TMPDIR:-/tmp}/krate-gift.XXXXXX")" || exit 1
+  installed=""
+  if cp "$player" "$work/krate" && signed_by_krate "$work/krate"; then
+    xattr -d com.apple.quarantine "$work/krate" 2>/dev/null
+    installed="$("$work/krate" player-install 2>/dev/null | sed -n 's/^Player: //p' | tail -n 1)"
+  fi
+  rm -rf "$work"
+  if [ -z "$installed" ] || [ ! -x "$installed" ]; then
+    get_krate "Krate could not be installed from this gift.\n\nGet it from krate.tech instead, then open this file again."
+  fi
+  krate_bin="$installed"
 fi
 if [ ! -f "$app" ]; then
   osascript -e 'display dialog "The app file is missing.\n\nKeep this opener and the .krate file together in the same folder." buttons {"OK"} with title "Krate"' >/dev/null 2>&1
@@ -6316,7 +6363,13 @@ exec "$krate_bin" run "$app" --consent
 ///
 /// An `.app` is a shape Apple will notarize, so this one can be signed in
 /// CI and trusted on arrival.
-fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Path>) -> Result<u8> {
+fn wrap_mac_folder(
+    bundle: &Path,
+    app_name: &str,
+    stem: &str,
+    output: Option<&Path>,
+    announce: bool,
+) -> Result<u8> {
     // Both of these are filesystem names, so both come from the safe form.
     //
     // `stem` was already alphanumeric-only, but `app_name` was not, and the
@@ -6371,7 +6424,7 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
             .arg(&opener)
             .status();
         if matches!(status, Ok(s) if s.success()) {
-            return finish_mac_gift(bundle, &out_dir, &app_file, app_name, true);
+            return finish_mac_gift(bundle, &out_dir, &app_file, app_name, true, announce);
         }
         // A failed copy is not a reason to refuse the gift; fall through and
         // write the plain opener, which works but shows the warning.
@@ -6421,7 +6474,7 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
         fs::set_permissions(&exe, perms)?;
     }
 
-    finish_mac_gift(bundle, &out_dir, &app_file, app_name, false)
+    finish_mac_gift(bundle, &out_dir, &app_file, app_name, false, announce)
 }
 
 /// The notarized opener that shipped with this install, if it is there.
@@ -6442,16 +6495,25 @@ fn shipped_gift_opener() -> Option<PathBuf> {
 }
 
 /// The half of a Mac gift that is the same whichever opener it got: the app
-/// file beside it, a read-me, and the sender's summary.
+/// file beside it, the player it installs, a read-me, and the sender's
+/// summary.
 fn finish_mac_gift(
     bundle: &Path,
     out_dir: &Path,
     app_file: &str,
     app_name: &str,
     notarized: bool,
+    announce: bool,
 ) -> Result<u8> {
     fs::copy(bundle, out_dir.join(app_file))
         .with_context(|| format!("could not copy {}", bundle.display()))?;
+
+    // The player rides along: this very engine, which on a Mac that got
+    // Krate from krate.tech is the notarized universal binary inside Krate
+    // Studio. The opener installs it only after checking Krate signed it, so
+    // carrying one that is not signed would only add weight -- it is left
+    // out, and the friend is sent to krate.tech instead (IC-381).
+    let carried = carry_mac_player(out_dir)?;
 
     // One line the receiver can read without opening anything.
     fs::write(
@@ -6459,26 +6521,125 @@ fn finish_mac_gift(
         format!(
             "{app_name}\n\n\
              Double-click the opener and the app opens.\n\n\
-             The first time, it installs Krate -- a small free player, about\n\
-             24 MB, the same idea as a video player. After that, every Krate\n\
-             app anyone sends you just opens.\n\n\
-             Keep these two files together in this folder.\n\n\
+             The first time, it installs Krate -- a free player, the same idea\n\
+             as a video player -- into your own Applications folder. No password.\n\
+             After that, every Krate app anyone sends you just opens.\n\n\
              More at krate.tech/open\n"
         ),
     )
     .context("could not write the read-me")?;
 
+    if !announce {
+        return Ok(0);
+    }
     println!("Gift written: {}", out_dir.display());
+    mac_gift_summary(app_name, notarized, carried);
+    Ok(0)
+}
+
+/// What the sender is told about a Mac gift, whichever shape it took.
+fn mac_gift_summary(app_name: &str, notarized: bool, carried: bool) {
     println!("  for a friend on Mac who does not have Krate yet.");
-    println!("  Double-clicking the opener installs the player once, then opens {app_name}.");
-    println!("  The player is planted, never bundled: their next .krate just opens too.");
-    println!("  Send the whole folder (zip it, or drop it in a shared drive).");
+    if carried {
+        println!("  The Krate player is inside: the first open installs it, no download and");
+        println!("  no password, then {app_name} opens. Their next .krate just opens too.");
+    } else {
+        println!("  This Krate is not one Krate signed, so the gift cannot carry the player:");
+        println!("  your friend is sent to krate.tech to get it, then {app_name} opens.");
+    }
     if !notarized {
         println!();
         println!("  Note: this opener is not notarized, so your friend will see one");
         println!("  security warning. A Krate installed from krate.tech ships the");
         println!("  notarized opener and this note goes away.");
     }
+}
+
+/// Krate's Developer ID team. The opener installs only a player signed by
+/// it, and the sender's side checks the same thing before carrying one.
+const KRATE_TEAM_ID: &str = "DBYD4AW5Q8";
+
+/// Put this engine in `<gift>/.player/krate` if Krate signed it. Returns
+/// whether it went in. KRATE_GIFT_ANY_PLAYER carries it regardless, for a
+/// test that drives the whole gift with a local build (the receiving opener
+/// still refuses it unless the test removes that check too).
+fn carry_mac_player(out_dir: &Path) -> Result<bool> {
+    let Ok(engine) = std::env::current_exe() else {
+        return Ok(false);
+    };
+    let signed = std::process::Command::new("codesign")
+        .args(["--verify", "--strict"])
+        .arg(format!(
+            "-R=anchor apple generic and certificate leaf[subject.OU] = \"{KRATE_TEAM_ID}\""
+        ))
+        .arg(&engine)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !signed && std::env::var_os("KRATE_GIFT_ANY_PLAYER").is_none() {
+        return Ok(false);
+    }
+    let dir = out_dir.join(".player");
+    fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
+    fs::copy(&engine, dir.join("krate")).context("could not copy the player into the gift")?;
+    Ok(true)
+}
+
+/// The Mac gift as ONE file: a disk image holding the opener, the app and
+/// the player (IC-383 -- one transit artifact, not a folder to zip). A disk
+/// image needs no signature of its own: Gatekeeper judges the stapled
+/// opener inside it, which is the part Apple notarized.
+fn wrap_mac_dmg(bundle: &Path, app_name: &str, stem: &str, dmg: &Path) -> Result<u8> {
+    let parent = dmg
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let staging = tempfile::Builder::new()
+        .prefix(".krate-gift-")
+        .tempdir_in(parent)
+        .with_context(|| format!("could not make a working folder in {}", parent.display()))?;
+    let folder = staging.path().join(safe_path_name(stem));
+    wrap_mac_folder(bundle, app_name, stem, Some(&folder), false)?;
+    let notarized = fs::read_dir(&folder)?
+        .filter_map(|e| e.ok())
+        .find(|e| e.path().extension().map(|x| x == "app").unwrap_or(false))
+        .map(|e| {
+            std::process::Command::new("xcrun")
+                .args(["stapler", "validate", "-q"])
+                .arg(e.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    let carried = folder.join(".player/krate").is_file();
+    if dmg.is_file() {
+        fs::remove_file(dmg).with_context(|| format!("could not replace {}", dmg.display()))?;
+    }
+    let out = std::process::Command::new("hdiutil")
+        .args([
+            "create", "-quiet", "-fs", "HFS+", "-format", "ULFO", "-volname",
+        ])
+        .arg(script_safe_text(app_name))
+        .arg("-srcfolder")
+        .arg(&folder)
+        .arg(dmg)
+        .output()
+        .context("could not run hdiutil")?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "could not make the disk image: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let mb = fs::metadata(dmg).map(|m| m.len()).unwrap_or(0) as f64 / 1_048_576.0;
+    println!("Gift written: {} ({mb:.0} MB)", dmg.display());
+    mac_gift_summary(app_name, notarized, carried);
+    println!("  Send this one file. Your friend double-clicks it, then the opener inside.");
     Ok(0)
 }
 
@@ -6498,7 +6659,25 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
     // macOS gets a folder with a notarizable opener, not a script: a
     // downloaded .command cannot be made to pass Gatekeeper at all (K-211).
     if target == WrapTarget::Mac {
-        return wrap_mac_folder(bundle, &app_name, &stem, output);
+        // One disk image when this Mac can make one and no folder was asked
+        // for; a folder otherwise (another system, or `-o some/folder`).
+        let dmg = match output {
+            Some(path) if path.extension().map(|e| e == "dmg").unwrap_or(false) => {
+                Some(path.to_path_buf())
+            }
+            Some(_) => None,
+            None if cfg!(target_os = "macos") && Path::new("/usr/bin/hdiutil").exists() => Some(
+                bundle
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(format!("{}-for-Mac.dmg", safe_path_name(&stem))),
+            ),
+            None => None,
+        };
+        if let Some(dmg) = dmg {
+            return wrap_mac_dmg(bundle, &app_name, &stem, &dmg);
+        }
+        return wrap_mac_folder(bundle, &app_name, &stem, output, true);
     }
 
     let (prefix, suffix, friend) = match target {
@@ -6517,6 +6696,16 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
 
     let bundle_bytes =
         fs::read(bundle).with_context(|| format!("could not read {}", bundle.display()))?;
+    // On Linux the gift carries the player: this engine, which is a Linux
+    // program of this machine's architecture. A Mac or Windows sender has no
+    // Linux engine to give, so their Linux gift still points at krate.tech.
+    if target == WrapTarget::Linux
+        && (cfg!(target_os = "linux") || std::env::var_os("KRATE_GIFT_ANY_PLAYER").is_some())
+    {
+        if let Ok(engine) = std::env::current_exe() {
+            return wrap_linux_with_player(&engine, &bundle_bytes, &app_name, &stem, &out_path);
+        }
+    }
     let mut wrap_bytes = prefix.into_bytes();
     wrap_bytes.extend_from_slice(&bundle_bytes);
     fs::write(&out_path, &wrap_bytes)
@@ -6546,10 +6735,11 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
     let kb = (wrap_bytes.len() as f64 / 1024.0).ceil() as u64;
     println!("Wrap written: {} ({kb} KB)", out_path.display());
     println!("  for a friend on {friend} who does not have Krate yet.");
-    println!(
-        "  First open installs Krate once (a small verified download), then {app_name} opens."
-    );
-    println!("  The player is planted, never bundled: their next .krate just opens too.");
+    println!("  This one does not carry the player: the first open sends them to krate.tech/open");
+    println!("  to get Krate once, then {app_name} opens. Their next .krate just opens.");
+    if target == WrapTarget::Linux {
+        println!("  (A Linux gift made on Linux carries the player and installs it itself.)");
+    }
     match target {
         WrapTarget::Mac => {
             println!("  Heads up: macOS may want one right-click -> Open on a downloaded script.")
@@ -6560,6 +6750,169 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
         WrapTarget::Linux => {}
     }
     Ok(0)
+}
+
+/// The Linux gift with the player inside: one shell file, then the
+/// player's bytes, then the app's.
+///
+/// First run with no Krate: it asks, copies the player out by byte offset
+/// into a private folder, checks it against the digest written into the
+/// header (a damaged download stops here), and runs `player-install`, which
+/// installs under ~/.local/share/krate and registers .krate for this person.
+/// Then, and on every later run, it copies the app out the same way and
+/// opens it. Nothing is downloaded and nothing needs root (IC-381).
+fn wrap_linux_with_player(
+    engine: &Path,
+    bundle_bytes: &[u8],
+    app_name: &str,
+    stem: &str,
+    out_path: &Path,
+) -> Result<u8> {
+    use sha2::{Digest, Sha256};
+    let raw = fs::read(engine).context("could not read this Krate to put it in the gift")?;
+    // The digest is of the player as it will run, checked after unpacking.
+    let digest = format!("{:x}", Sha256::digest(&raw));
+    // Packed with the system's gzip, which every Linux has for unpacking:
+    // 28 MB becomes about 12. (Not the flate2 crate: adding it here would
+    // change which deflate backend the bundle writer gets -- K-335.)
+    let player = std::process::Command::new("gzip")
+        .args(["-9", "-c"])
+        .arg(engine)
+        .output()
+        .ok()
+        .filter(|o| o.status.success() && !o.stdout.is_empty())
+        .map(|o| o.stdout)
+        .context("could not compress the player with gzip")?;
+    let arch = std::env::consts::ARCH;
+    // The offsets are written into the header, which changes the header's
+    // length: settle it by writing it until the length stops moving.
+    let mut header = String::new();
+    let mut len = 0usize;
+    for _ in 0..4 {
+        let player_start = len;
+        let app_start = len + player.len();
+        header = linux_player_header(
+            app_name,
+            stem,
+            player_start,
+            player.len(),
+            &digest,
+            arch,
+            app_start,
+        );
+        if header.len() == len {
+            break;
+        }
+        len = header.len();
+    }
+    anyhow::ensure!(header.len() == len, "could not settle the gift's header");
+    let mut bytes = Vec::with_capacity(len + player.len() + bundle_bytes.len());
+    bytes.extend_from_slice(header.as_bytes());
+    bytes.extend_from_slice(&player);
+    bytes.extend_from_slice(bundle_bytes);
+    fs::write(out_path, &bytes)
+        .with_context(|| format!("could not write {}", out_path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(out_path)?.permissions();
+        perms.set_mode(perms.mode() | 0o755);
+        fs::set_permissions(out_path, perms)?;
+    }
+    let mb = bytes.len() as f64 / 1_048_576.0;
+    println!("Wrap written: {} ({mb:.0} MB)", out_path.display());
+    println!("  for a friend on Linux ({arch}) who does not have Krate yet.");
+    println!("  The Krate player is inside: the first run installs it for them, no");
+    println!("  download and no root, then {app_name} opens. Their next .krate just opens too.");
+    println!(
+        "  They run it with: sh {}",
+        out_path.file_name().unwrap_or_default().to_string_lossy()
+    );
+    Ok(0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn linux_player_header(
+    app_name: &str,
+    stem: &str,
+    player_start: usize,
+    player_size: usize,
+    digest: &str,
+    arch: &str,
+    app_start: usize,
+) -> String {
+    let app_name = script_safe_text(app_name);
+    let stem = script_safe_text(stem).replace(' ', "-");
+    format!(
+        r#"#!/bin/sh
+# {app_name} -- a Krate app, sent with the Krate player inside.
+#
+# Run me: sh this-file. If this computer has no Krate, I install the free
+# player for you first -- into your home folder, no root, nothing downloaded
+# -- and then the app opens. Every later .krate file anyone sends you opens
+# with a double-click.
+set -u
+player_start={player_start}
+player_size={player_size}
+player_sha256={digest}
+player_arch={arch}
+app_start={app_start}
+self="$0"
+ask() {{
+  if [ -t 0 ]; then
+    printf '%s [Y/n] ' "$1"
+    read -r answer || answer=n
+    case "$answer" in n*|N*) return 1 ;; esac
+    return 0
+  fi
+  if command -v zenity >/dev/null 2>&1; then zenity --question --title=Krate --text="$1"; return; fi
+  if command -v kdialog >/dev/null 2>&1; then kdialog --title Krate --yesno "$1"; return; fi
+  return 0
+}}
+digest() {{
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}}
+find_krate() {{
+  command -v krate 2>/dev/null && return 0
+  for c in "$HOME/.local/bin/krate" "${{XDG_DATA_HOME:-$HOME/.local/share}}/krate/bin/krate"; do
+    if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
+  done
+  return 1
+}}
+krate_bin="$(find_krate || true)"
+if [ -z "$krate_bin" ]; then
+  machine="$(uname -m)"
+  if [ "$machine" != "$player_arch" ] && ! {{ [ "$machine" = arm64 ] && [ "$player_arch" = aarch64 ]; }}; then
+    echo "{app_name} runs on Krate. The player inside this file is for $player_arch computers, and this one is $machine."
+    echo "Get Krate once from https://krate.tech/open, then run this file again."
+    exit 1
+  fi
+  ask "{app_name} runs on Krate, a free player that comes with it. Install it now? (your home folder, no password)" || exit 0
+  work="$(mktemp -d "${{TMPDIR:-/tmp}}/krate-gift.XXXXXX")" || exit 1
+  tail -c +$((player_start + 1)) "$self" | head -c "$player_size" | gzip -dc > "$work/krate"
+  if [ "$(digest "$work/krate")" != "$player_sha256" ]; then
+    rm -rf "$work"
+    echo "This file is damaged: the player inside it does not match. Ask for it again."
+    exit 1
+  fi
+  chmod 755 "$work/krate"
+  krate_bin="$("$work/krate" player-install | sed -n 's/^Player: //p' | tail -n 1)"
+  rm -rf "$work"
+  if [ -z "$krate_bin" ] || [ ! -x "$krate_bin" ]; then
+    echo "Krate could not be installed from this file. Get it from https://krate.tech/open"
+    exit 1
+  fi
+fi
+appdir="$(mktemp -d "${{TMPDIR:-/tmp}}/krate-app.XXXXXX")" || exit 1
+tail -c +$((app_start + 1)) "$self" > "$appdir/{stem}.krate"
+"$krate_bin" run "$appdir/{stem}.krate" --consent
+status=$?
+rm -rf "$appdir"
+exit $status
+# ---- the player and the app follow; nothing below this line is a script ----
+"#
+    )
 }
 
 /// One sentence of trust for the card's caption: what the app may touch, in

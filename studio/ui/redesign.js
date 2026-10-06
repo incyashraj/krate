@@ -1773,7 +1773,7 @@
     pane.innerHTML = `<div class="kr-shacts"><button type="button" class="btn kr-dark" data-send>${ico("share")}<span>Send it</span></button>
         <button type="button" class="btn kr-ghost" data-show>${ico("folder")}Show in folder</button></div>
       <p class="kr-shst" data-st>A card with the app inside: Mail, Messages and AirDrop are one click away.</p>
-      <div class="kr-new"><b>For someone new to Krate</b><small>A file that installs Krate once, then opens the app.</small>
+      <div class="kr-new"><b>For someone new to Krate</b><small>One file with Krate inside: it installs once, then opens the app.</small>
         <div class="kr-os"><button type="button" class="btn kr-ghost" data-os="mac">Mac</button><button type="button" class="btn kr-ghost" data-os="windows">Windows</button><button type="button" class="btn kr-ghost" data-os="linux">Linux</button></div>
         <p class="kr-shst" data-wst></p></div>`;
     const st = q("[data-st]", pane), wst = q("[data-wst]", pane);

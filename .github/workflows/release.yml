@@ -914,6 +914,24 @@ jobs:
           # a file nothing reads again.
           bash scripts/package.sh "${{ matrix.target }}" tar.gz
 
+          # The gift opener rides inside Studio too, beside its engine,
+          # because that is where `shipped_gift_opener()` looks -- and most
+          # people make gifts from Studio, not from a CLI install. Without it
+          # every Mac gift made in Studio fell back to an opener signed by
+          # nobody, and the friend met a Gatekeeper warning on the very file
+          # meant to welcome them (IC-383). Copied in before Studio is
+          # notarized; the outer signature is re-applied so it seals the new
+          # nested app, whose own signature and stapled ticket are untouched.
+          if [ -d "$STUDIO_APP" ] && [ -d "$opener" ]; then
+            rm -rf "$STUDIO_APP/Contents/Resources/bin/Krate Opener.app"
+            ditto "$opener" "$STUDIO_APP/Contents/Resources/bin/Krate Opener.app"
+            codesign --force --options runtime --timestamp \
+              --entitlements studio/Entitlements.plist \
+              --sign "$IDENTITY" "$STUDIO_APP"
+            codesign --verify --deep --strict "$STUDIO_APP" \
+              || { echo "::error::Studio's seal broke when the gift opener went in"; exit 1; }
+          fi
+
           # Krate Studio: notarize the signed bundle, then package the .dmg
           # around it. This order matters -- a .dmg built before notarization
           # carries an un-stapled app, and the person who downloads it is
@@ -1426,6 +1444,12 @@ jobs:
           #    cleanly and cannot build anything.
           test -f "$app/Contents/Resources/bin/krate" \
             || { echo "::error::the studio ships no engine"; hdiutil detach "$mp"; exit 1; }
+
+          # 2b. The notarized gift opener sits beside the engine, so a Mac
+          #     gift made in Studio opens on a friend's Mac with no warning.
+          if ! xcrun stapler validate "$app/Contents/Resources/bin/Krate Opener.app" >/dev/null 2>&1; then
+            echo "::warning::Studio carries no stapled gift opener; Mac gifts made in Studio will meet a Gatekeeper warning"
+          fi
 
           # 3. It MUST claim .krate. Krate is the one app now -- it makes
           #    apps and it opens them -- so a bundle that does not declare the

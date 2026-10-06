@@ -1114,6 +1114,26 @@ fn looks_like_bundle_file(path: &Path) -> bool {
         Err(_) => return false,
     };
     let head = &head[..n];
+    // A gift that carries the player (IC-381) has the player's megabytes
+    // between its script and the app, so the app's header is far past this
+    // window. Its script names where the app starts (`app_start=<bytes>`):
+    // look there instead, with the same two checks.
+    if head.starts_with(b"#!/bin/sh") {
+        if let Some(at) = gift_app_start(head) {
+            let mut there = [0u8; 512];
+            let read = std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(at))
+                .ok()
+                .and_then(|_| std::io::Read::read(&mut file, &mut there).ok());
+            if let Some(m) = read {
+                let there = &there[..m];
+                return there.starts_with(&[0x50, 0x4B, 0x03, 0x04])
+                    && there
+                        .windows(b"manifest.toml".len())
+                        .any(|w| w == b"manifest.toml");
+            }
+            return false;
+        }
+    }
     // Find a ZIP local file header, then confirm the entry it names. Both
     // parts matter: the magic alone would claim any zip, and "manifest.toml"
     // alone would claim a text file that merely mentions it.
@@ -1126,6 +1146,16 @@ fn looks_like_bundle_file(path: &Path) -> bool {
     head[start..]
         .windows(b"manifest.toml".len())
         .any(|w| w == b"manifest.toml")
+}
+
+/// The `app_start=<bytes>` line of a player-carrying gift's script, if the
+/// window holds one.
+fn gift_app_start(head: &[u8]) -> Option<u64> {
+    let text = std::str::from_utf8(&head[..head.len().min(4096)])
+        .unwrap_or_else(|e| std::str::from_utf8(&head[..e.valid_up_to()]).unwrap_or(""));
+    text.lines()
+        .find_map(|line| line.strip_prefix("app_start="))
+        .and_then(|digits| digits.trim().parse().ok())
 }
 
 /// Whether a run target is a URL rather than a filesystem path.

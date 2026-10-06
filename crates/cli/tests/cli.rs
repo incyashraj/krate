@@ -8914,6 +8914,21 @@ fn a_mac_gift_is_a_notarizable_app_with_the_payload_beside_it() {
         script.contains("*.krate"),
         "the opener should find the app file beside it",
     );
+    // A Mac without Krate installs the player the gift carries -- only if
+    // Krate's own Developer ID signed it, and never by running something
+    // fetched from the network (IC-381).
+    assert!(
+        script.contains("DBYD4AW5Q8") && script.contains("signed_by_krate \"$work/krate\""),
+        "the opener must check Krate signed the player, on the copy it runs",
+    );
+    assert!(
+        script.contains("player-install"),
+        "the opener installs the carried player"
+    );
+    assert!(
+        !script.contains("curl") && !script.contains("| sh"),
+        "the opener must never run what a server sends",
+    );
 
     // And the copy is still a readable app: --dump-caps opens the bundle
     // and reports its identity without running it.
@@ -8970,6 +8985,274 @@ fn a_linux_wrap_is_one_file_that_is_still_a_bundle() {
         read.status.success(),
         "krate must still read the app out of its own wrap: {}",
         String::from_utf8_lossy(&read.stderr),
+    );
+}
+
+/// `krate player-install` puts the player where the person owns it and
+/// declares `.krate` for it -- the step a gift's first open runs. A second
+/// run keeps what is there.
+#[test]
+fn player_install_puts_a_registered_player_in_the_home_folder() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let run = || {
+        krate()
+            .arg("player-install")
+            .arg("--home")
+            .arg(home.path())
+            .env("KRATE_PLAYER_NO_REGISTER", "1")
+            .output()
+            .expect("run krate player-install")
+    };
+    let out = run();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    let engine = text
+        .lines()
+        .rev()
+        .find_map(|l| l.strip_prefix("Player: "))
+        .expect("it says where the player is");
+    let engine = std::path::Path::new(engine.trim());
+    assert!(
+        engine.starts_with(home.path()),
+        "inside the home folder: {}",
+        engine.display()
+    );
+    assert!(engine.is_file(), "the player is there");
+    #[cfg(target_os = "macos")]
+    {
+        let app = home.path().join("Applications/Krate Player.app");
+        let plist = std::fs::read_to_string(app.join("Contents/Info.plist")).expect("plist");
+        assert!(
+            plist.contains("dev.krate.bundle"),
+            "the player declares .krate"
+        );
+        assert!(
+            plist.contains("<string>Krate</string>"),
+            "and starts through its shim"
+        );
+        assert!(app.join("Contents/MacOS/Krate").is_file());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let data = home.path().join(".local/share");
+        assert!(
+            data.join("mime/packages/krate.xml").is_file(),
+            "the .krate MIME type"
+        );
+        let desktop = std::fs::read_to_string(data.join("applications/dev.krate.open.desktop"))
+            .expect("the launcher");
+        assert!(desktop.contains("MimeType=application/x-krate;"));
+        assert!(
+            desktop.contains(&engine.display().to_string()),
+            "it runs the installed player"
+        );
+    }
+    let again = run();
+    assert!(again.status.success());
+    assert!(String::from_utf8_lossy(&again.stdout).contains(&engine.display().to_string()));
+}
+
+/// The Mac gift is ONE file: a disk image with the opener, the app and the
+/// player inside (IC-383). Mounting it shows exactly that.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_mac_gift_is_one_disk_image_carrying_the_player() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let dmg = dir.path().join("gift.dmg");
+    let out = krate()
+        .args(["wrap", "--for", "mac"])
+        .arg(&bundle)
+        .arg("-o")
+        .arg(&dmg)
+        .env("KRATE_GIFT_ANY_PLAYER", "1")
+        .output()
+        .expect("run krate wrap");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(dmg.is_file(), "one file, not a folder");
+    let mnt = dir.path().join("mnt");
+    std::fs::create_dir_all(&mnt).unwrap();
+    let attached = std::process::Command::new("hdiutil")
+        .args(["attach", "-nobrowse", "-readonly", "-quiet", "-mountpoint"])
+        .arg(&mnt)
+        .arg(&dmg)
+        .status()
+        .expect("hdiutil attach");
+    assert!(attached.success());
+    let names: Vec<String> = std::fs::read_dir(&mnt)
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+        .collect();
+    let player = std::fs::read(mnt.join(".player/krate"));
+    let _ = std::process::Command::new("hdiutil")
+        .args(["detach", "-quiet"])
+        .arg(&mnt)
+        .status();
+    assert!(
+        names.iter().any(|n| n.ends_with(".app")),
+        "the opener: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.ends_with(".krate")),
+        "the app: {names:?}"
+    );
+    let engine = std::fs::read(env!("CARGO_BIN_EXE_krate")).expect("this krate");
+    assert!(
+        player.expect("the player rides inside") == engine,
+        "the player is this engine, byte for byte"
+    );
+}
+
+/// The Linux gift carries the player too: run on a machine with no Krate,
+/// it installs the player into the home folder and opens the app; run again
+/// it just opens; a damaged copy installs nothing. And it is still a bundle
+/// to anyone who already has Krate.
+#[cfg(unix)]
+#[test]
+fn a_linux_gift_installs_the_player_it_carries_then_opens_the_app() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let gift = dir.path().join("gift.sh");
+    let out = krate()
+        .args(["wrap", "--for", "linux"])
+        .arg(&bundle)
+        .arg("-o")
+        .arg(&gift)
+        .env("KRATE_GIFT_ANY_PLAYER", "1")
+        .output()
+        .expect("run krate wrap");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let read = krate()
+        .arg("run")
+        .arg(&gift)
+        .arg("--dump-caps")
+        .output()
+        .unwrap();
+    assert!(
+        read.status.success(),
+        "krate still reads the app out of the gift: {}",
+        String::from_utf8_lossy(&read.stderr)
+    );
+
+    // The test opens the app with --dump-caps instead of the consent window,
+    // keeping every byte offset the same length.
+    let mut bytes = std::fs::read(&gift).unwrap();
+    let swap = |bytes: &mut Vec<u8>, from: &[u8], to: &[u8]| {
+        let at = bytes
+            .windows(from.len())
+            .position(|w| w == from)
+            .expect("marker in the script");
+        bytes.splice(at..at + from.len(), to.iter().copied());
+    };
+    swap(&mut bytes, b"\" --consent\n", b"\" --dump-caps\n");
+    swap(&mut bytes, b" a script ----\n", b" a script --\n");
+    let test_gift = dir.path().join("test-gift.sh");
+    std::fs::write(&test_gift, &bytes).unwrap();
+
+    let home = dir.path().join("home");
+    let tmp = dir.path().join("tmp");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&tmp).unwrap();
+    let open = |script: &std::path::Path, home: &std::path::Path| {
+        std::process::Command::new("sh")
+            .arg(script)
+            .env_clear()
+            .env("HOME", home)
+            .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+            .env("TMPDIR", &tmp)
+            .env("KRATE_PLAYER_NO_REGISTER", "1")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("run the gift")
+    };
+    let first = open(&test_gift, &home);
+    let said = String::from_utf8_lossy(&first.stdout).to_string()
+        + &String::from_utf8_lossy(&first.stderr);
+    assert!(first.status.success(), "the first open: {said}");
+    assert!(said.contains("ui.window"), "the app opened: {said}");
+    let installed = if cfg!(target_os = "macos") {
+        home.join("Applications/Krate Player.app/Contents/MacOS/krate-cli")
+    } else {
+        home.join(".local/share/krate/bin/krate")
+    };
+    assert!(
+        installed.is_file(),
+        "the player was installed at {}",
+        installed.display()
+    );
+    assert_eq!(
+        std::fs::read_dir(&tmp).unwrap().count(),
+        0,
+        "nothing left in the temp folder"
+    );
+    let second = open(&test_gift, &home);
+    assert!(second.status.success(), "the second open");
+
+    // One flipped byte inside the player: refused, nothing installed.
+    let start: usize = String::from_utf8_lossy(&bytes[..4096])
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("player_start=")
+                .map(|d| d.trim().parse().unwrap())
+        })
+        .expect("player_start");
+    let mut bad = bytes.clone();
+    bad[start + 4000] ^= 0xff;
+    let bad_gift = dir.path().join("bad.sh");
+    std::fs::write(&bad_gift, &bad).unwrap();
+    let fresh = dir.path().join("fresh-home");
+    std::fs::create_dir_all(&fresh).unwrap();
+    let refused = open(&bad_gift, &fresh);
+    assert!(!refused.status.success(), "a damaged gift must not open");
+    assert_eq!(
+        std::fs::read_dir(&fresh).unwrap().count(),
+        0,
+        "and must install nothing"
+    );
+
+    // An intact player that is not the one the header names: only the
+    // digest can catch this (gzip's own check passes), so it bites the
+    // digest check itself.
+    let mut wrong = bytes.clone();
+    let key = b"player_sha256=";
+    let at = wrong
+        .windows(key.len())
+        .position(|w| w == key)
+        .expect("digest line")
+        + key.len();
+    wrong[at] = if wrong[at] == b'0' { b'1' } else { b'0' };
+    let wrong_gift = dir.path().join("wrong.sh");
+    std::fs::write(&wrong_gift, &wrong).unwrap();
+    let other = dir.path().join("other-home");
+    std::fs::create_dir_all(&other).unwrap();
+    let refused = open(&wrong_gift, &other);
+    assert!(
+        !refused.status.success(),
+        "a player that does not match its digest must not install"
+    );
+    assert_eq!(
+        std::fs::read_dir(&other).unwrap().count(),
+        0,
+        "and must install nothing"
     );
 }
 
