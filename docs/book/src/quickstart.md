@@ -402,3 +402,10 @@ app identity, granted capabilities with boundaries, denials, exit class,
 duration, and captured output. This is the same report AI agents receive
 through `krate mcp`; see
 [Embedding & JSON Runs](phase3/embedding.md).
+
+## Shipping it
+
+Once the app works, the questions are about getting it to people: what they
+install, signing, and how this compares with Electron or Tauri. Start with
+[how to distribute a desktop app](https://krate.tech/how-to-distribute-a-desktop-app.html),
+or see [all answers about shipping desktop apps](https://krate.tech/answers/).

@@ -84,3 +84,10 @@ if the two ever disagree, the command is right.
 
 If a capability you need is missing, that is worth telling us: what dies
 weekly is what gets built next.
+
+## Choosing a tool
+
+If a limit here rules Krate out for now, the
+[Electron alternatives](https://krate.tech/electron-alternatives.html) and
+[cross-platform frameworks](https://krate.tech/cross-platform-desktop-app-frameworks.html)
+pages compare the other options fairly, with links to their own docs.
