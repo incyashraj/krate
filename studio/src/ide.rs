@@ -1229,6 +1229,22 @@ pub(crate) async fn ide_new(
     .await
 }
 
+/// A project typed or pasted as a path (`~/Krate Apps/x`, a trailing
+/// slash, spaces around it): the same canonical path every other door
+/// uses, so its drafts, picture and running jobs are found under one name.
+#[tauri::command]
+pub(crate) async fn ide_resolve(path: String) -> Result<ProjectRef, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        recent_record(&recent_file(), &project);
+        Ok(ProjectRef {
+            name: display_name(&project),
+            path: project.display().to_string(),
+        })
+    })
+    .await
+}
+
 #[tauri::command]
 pub(crate) async fn ide_open_folder(app: tauri::AppHandle) -> Result<Option<ProjectRef>, String> {
     let root = ide_root();

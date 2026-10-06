@@ -2873,3 +2873,15 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891ff 16%, transparent); }
 .home-tabs .kr-beta { margin-left: 5px; }
 .ide-proj .kr-beta { margin-left: 0; }
+
+/* Home's Port and IDE panes come in the way the design's do (facein). */
+.home-idepane:not([hidden]) { animation: krPaneIn .35s var(--ease) both; }
+.kr-ide-none, .kr-ide-more { grid-column: 1 / -1; margin: 4px 2px; font: 400 12.5px var(--sans); color: var(--ink-3); }
+
+/* Reduced motion, everywhere: nothing loops and nothing travels. One rule
+ * for the whole UI, so a new animation cannot forget it (the busy dot, the
+ * Live dot and the thinking dots each did). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+.ip-miss { margin: 2px 0 8px 22px; font: 400 12px var(--sans); color: var(--ink-3); }

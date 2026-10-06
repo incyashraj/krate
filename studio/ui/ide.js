@@ -74,6 +74,8 @@
       sc.onerror = () => rej(new Error("the editor could not load"));
       document.head.appendChild(sc);
     });
+    // A failure is not kept: the next file opened tries again.
+    cmLoading.catch(() => { cmLoading = null; });
     return cmLoading;
   }
   // The same colours as the Code pane, as classes, so light and dark follow.
@@ -134,7 +136,8 @@
   // capability names, the std that is refused. Read once per Studio.
   let SDK = null;
   async function loadSdk() {
-    if (SDK) return SDK;
+    // A failure is not kept: the next open asks the engine again.
+    if (SDK && SDK.functions && SDK.functions.length) return SDK;
     try { SDK = await call("ide_sdk"); } catch (e) { SDK = null; return { functions: [], capabilities: [], granted: [], leaks: [] }; }
     return SDK;
   }
@@ -142,8 +145,15 @@
   const fnsFree = () => sdk().functions.filter((f) => !f.method);
   // Completion: `stdio::` lists what is in it; a word lists the modules and
   // calls it could start; inside a manifest's quotes, the capability names.
+  // The file a view shows. Asked of the view, not of the tab in front: a
+  // view keeps working on its file after a rename, and a background view's
+  // linter runs too.
+  function relOfView(view) {
+    if (ide && view) for (const [r, d] of ide.docs) if (d.view === view) return r;
+    return ide && ide.cur || "";
+  }
   function krateComplete(ctx) {
-    const rel = ide && ide.cur || "";
+    const rel = relOfView(ctx.view);
     if (/manifest\.toml$/.test(rel)) {
       const m = ctx.matchBefore(/"[a-z._:<>\-*\/]*/); if (!m) return null;
       const opts = [...sdk().capabilities, ...sdk().granted].map((c) => ({ label: c, type: "constant", detail: sdk().granted.includes(c) ? "every app has it" : "asks the person" }));
@@ -173,7 +183,7 @@
   }
   // Hover: the signature of a Krate call under the pointer.
   function krateHover(view, pos) {
-    if (!/\.rs$/.test(ide && ide.cur || "")) return null;
+    if (!/\.rs$/.test(relOfView(view))) return null;
     const line = view.state.doc.lineAt(pos), off = pos - line.from, t = line.text;
     let a = off, z = off;
     while (a > 0 && /[\w:]/.test(t[a - 1])) a--;
@@ -192,7 +202,7 @@
   // refused at the import check), manifest capability names Krate does not
   // know, and what the last build said about this file.
   function krateLint(view) {
-    const rel = ide && ide.cur || ""; const out = [];
+    const rel = relOfView(view); const out = [];
     const doc = view.state.doc;
     if (/\.rs$/.test(rel)) {
       const leaks = sdk().leaks || [];
@@ -245,7 +255,7 @@
         ...K.foldKeymap, ...K.completionKeymap, ...K.lintKeymap, K.indentWithTab,
       ]),
       lang, addsField, edTheme,
-      K.EditorView.updateListener.of((u) => onEditorUpdate(rel, u)),
+      K.EditorView.updateListener.of((u) => onEditorUpdate(relOfView(u.view), u)),
     ];
   }
 
@@ -306,10 +316,17 @@
   }
   $("ideProbs").addEventListener("click", (e) => {
     const b = e.target.closest(".ip-go"); if (!b || !ide || !ide.diags) return;
-    const d = ide.diags[+b.dataset.d]; if (d) goTo(d.file, d.line, d.col);
+    const d = ide.diags[+b.dataset.d]; if (!d) return;
+    // A file the compiler named that is not in the project: said right on
+    // the row, where the person is looking.
+    if (!ide.tree.some((t) => t.rel === d.file)) {
+      const row = b.closest(".ip-diag");
+      if (row && !row.querySelector(".ip-miss")) row.insertAdjacentHTML("beforeend", `<p class="ip-miss">${esc(d.file)} is not in this project, so it cannot be opened here.</p>`);
+    }
+    goTo(d.file, d.line, d.col);
   });
   async function goTo(rel, line, col) {
-    if (!ide.tree.some((t) => t.rel === rel)) { term(`${rel} is not in this project`, "r"); return; }
+    if (!ide.tree.some((t) => t.rel === rel)) { term(`${rel} is not in this project`, "r"); toast(`${rel} is not in this project`); return; }
     if (ide.cur !== rel || !edView) await openFile(rel);
     if (!edView) return;
     const doc = edView.state.doc;
@@ -320,7 +337,12 @@
   }
   // The errors drawn in the editor too (a mark in the gutter, a line under
   // the code): the linter reads ide.diags, so it only needs to run again.
-  function markDiags() { if (CM && edView) { try { CM.forceLinting(edView); } catch (e) {} } }
+  // forceLinting only hurries a run that is already due, so the marks are
+  // set directly: a failed build shows its errors before anyone types.
+  function markDiags() {
+    if (!CM || !ide) return;
+    for (const d of ide.docs.values()) if (d.view) { try { d.view.dispatch(CM.setDiagnostics(d.view.state, krateLint(d.view))); } catch (e) {} }
+  }
   function panelTab(which) {
     view.querySelectorAll(".ip-tabs button[data-ip]").forEach((b) => b.classList.toggle("on", b.dataset.ip === which));
     $("ideTerm").classList.toggle("hidden", which !== "term");
@@ -340,12 +362,18 @@
     const q = ($("ideApiIn").value || "").trim().toLowerCase();
     const fns = sdk().functions.filter((f) => !q || f.signature.toLowerCase().includes(q));
     if (!sdk().functions.length) { out.innerHTML = '<p class="ip-ok">This engine does not describe its API yet.</p>'; return; }
-    let mod = "", html = "";
-    fns.slice(0, 400).forEach((f) => {
+    // Grouped by module, each heading once, in the order modules first appear.
+    const groups = new Map();
+    for (const f of fns.slice(0, 400)) {
       const group = f.method ? `Methods on ${f.receiver}` : f.module;
-      if (group !== mod) { mod = group; html += `<div class="api-mod">${esc(group)}</div>`; }
-      html += `<button type="button" class="ip-hit api-fn" data-i="${sdk().functions.indexOf(f)}" title="Put it at the cursor"><span>${esc(f.signature)}</span></button>`;
-    });
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(f);
+    }
+    let html = "";
+    for (const [group, list] of groups) {
+      html += `<div class="api-mod">${esc(group)}</div>`;
+      for (const f of list) html += `<button type="button" class="ip-hit api-fn" data-i="${sdk().functions.indexOf(f)}" title="Put it at the cursor"><span>${esc(f.signature)}</span></button>`;
+    }
     out.innerHTML = html || '<p class="ip-ok">No call matches.</p>';
   }
   $("ideApiIn").addEventListener("input", paintApi);
@@ -361,16 +389,20 @@
   /* Search every file in the project (Cmd-Shift-F). Text files are read
    * once and kept; an open file is searched as it is now, unsaved edits
    * and all. */
-  const findCache = new Map();
   let findT = 0;
   async function findAll(q) {
     const out = $("ideFindOut");
     if (!ide || !q) { out.innerHTML = ""; return; }
-    const files = ide.tree.filter((e) => !e.dir && /\.(rs|toml|md|txt|json|wit)$/i.test(e.rel) && (e.size || 0) < 400000);
+    const isOpen = (rel) => !!(ide.docs.get(rel) && ide.docs.get(rel).state);
+    const text = ide.tree.filter((e) => !e.dir && /\.(rs|toml|md|txt|json|wit)$/i.test(e.rel));
+    const files = text.filter((e) => isOpen(e.rel) || (e.size || 0) < 400000);
+    const skipped = text.length - files.length;
     const needle = q.toLowerCase(); const hits = [];
     for (const f of files) {
-      let text = ide.docs.get(f.rel) && ide.docs.get(f.rel).state ? textOf(ide.docs.get(f.rel)) : findCache.get(f.rel);
-      if (text == null) { try { text = await call("ide_read", { path: ide.path, rel: f.rel }); findCache.set(f.rel, text); } catch (e) { continue; } }
+      // Closed files are read as they are now: a cached copy went stale when
+      // the AI or another editor changed one.
+      let text = ide.docs.get(f.rel) && ide.docs.get(f.rel).state ? textOf(ide.docs.get(f.rel)) : null;
+      if (text == null) { try { text = await call("ide_read", { path: ide.path, rel: f.rel }); } catch (e) { continue; } }
       text.split("\n").forEach((l, i) => { const at = l.toLowerCase().indexOf(needle); if (at >= 0 && hits.length < 300) hits.push({ rel: f.rel, line: i + 1, col: at + 1, l }); });
     }
     if ($("ideFindIn").value.trim() !== q) return;
@@ -378,6 +410,7 @@
       const a = Math.max(0, h.col - 41), s = h.l.slice(a, h.col - 1), m = h.l.slice(h.col - 1, h.col - 1 + q.length), r = h.l.slice(h.col - 1 + q.length, h.col + 80);
       return `<button type="button" class="ip-hit" data-h="${i}"><b>${esc(h.rel)}:${h.line}</b><span>${a ? "…" : ""}${esc(s.trimStart())}<mark>${esc(m)}</mark>${esc(r)}</span></button>`;
     }).join("") + (hits.length >= 300 ? '<p class="ip-ok">The first 300 matches.</p>' : "") : '<p class="ip-ok">Nothing matches.</p>';
+    if (skipped) out.insertAdjacentHTML("beforeend", `<p class="ip-ok">${skipped} file${skipped === 1 ? " is" : "s are"} over 400 KB and ${skipped === 1 ? "was" : "were"} not searched; open ${skipped === 1 ? "it" : "one"} to search it.</p>`);
     out._hits = hits;
   }
   $("ideFindIn").addEventListener("input", () => { clearTimeout(findT); findT = setTimeout(() => findAll($("ideFindIn").value.trim()), 180); });
@@ -404,7 +437,9 @@
   };
   const iconFor = (e) => e.dir ? ICON.dir : /\.rs$/.test(e.rel) ? ICON.rs : /\.(png|jpe?g|gif|webp|svg|ico)$/i.test(e.rel) ? ICON.img : ICON.file;
   async function loadTree() {
-    try { ide.tree = (await call("ide_tree", { path: ide.path })) || []; } catch (e) { ide.tree = []; term(String(e), "r"); }
+    const empty = $("ideEmpty");
+    try { ide.tree = (await call("ide_tree", { path: ide.path })) || []; empty.textContent = "Choose a file on the left."; }
+    catch (e) { ide.tree = []; term(String(e), "r"); empty.textContent = String(e); setStatus("bad", "Project not found"); }
     paintTree();
   }
   function paintTree() {
@@ -417,7 +452,7 @@
       const name = e.rel.split("/").pop();
       const doc = ide.docs.get(e.rel);
       const on = !e.dir && e.rel === ide.cur;
-      return `<button type="button" class="tn${on ? " on" : ""}${e.dir ? " dir" : ""}${e.dir && ide.collapsed.has(e.rel) ? " shut" : ""}" style="--lv:${depth}" data-rel="${esc(e.rel)}" data-dir="${e.dir ? 1 : ""}" title="${esc(e.rel)}">${iconFor(e)}<span>${esc(name)}</span>${doc && doc.dirty ? '<i class="md" title="Not saved"></i>' : ""}</button>`;
+      return `<button type="button" class="tn${on ? " on" : ""}${e.dir ? " dir" : ""}${e.dir && ide.collapsed.has(e.rel) ? " shut" : ""}" style="--lv:${depth}" data-rel="${esc(e.rel)}" data-dir="${e.dir ? 1 : ""}" title="${esc(e.rel)}"${e.dir ? ` aria-expanded="${!ide.collapsed.has(e.rel)}"` : ""}>${iconFor(e)}<span>${esc(name)}</span>${doc && doc.dirty ? '<i class="md" title="Not saved"></i>' : ""}</button>`;
     }).join("");
   }
   $("ideTree").addEventListener("click", (e) => {
@@ -434,6 +469,7 @@
   let menuEl = null;
   function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
   document.addEventListener("pointerdown", (e) => { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }, true);
+  document.addEventListener("keydown", (e) => { if (menuEl && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); } }, true);
   function menu(x, y, items) {
     closeMenu();
     menuEl = document.createElement("div"); menuEl.className = "ide-menu"; menuEl.setAttribute("role", "menu");
@@ -447,19 +483,44 @@
     document.body.appendChild(menuEl);
     const w = menuEl.offsetWidth, h = menuEl.offsetHeight;
     menuEl.style.left = Math.min(x, innerWidth - w - 8) + "px"; menuEl.style.top = Math.min(y, innerHeight - h - 8) + "px";
+    const first = menuEl.querySelector("button"); if (first) first.focus();
+    menuEl.addEventListener("keydown", (e) => {
+      const items = [...menuEl.querySelectorAll("button")], at = items.indexOf(document.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+    });
   }
   $("ideTree").addEventListener("contextmenu", (e) => {
     const b = e.target.closest(".tn"); if (!b || !ide) return;
     e.preventDefault();
     const rel = b.dataset.rel, dir = !!b.dataset.dir;
     const folder = dir ? rel : rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-    menu(e.clientX, e.clientY, [
+    treeMenu(rel, dir, e.clientX, e.clientY);
+  });
+  function treeMenu(rel, dir, x, y) {
+    const folder = dir ? rel : rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+    menu(x, y, [
       { label: "New file here", run: () => newFileIn(folder) },
+      { label: "New folder here", run: () => newFolderIn(folder) },
       { label: "Rename", run: () => renameIn(rel) },
       "sep",
       { label: "Delete", danger: true, run: () => deleteIn(rel, dir) },
     ]);
+  }
+  // The tree by keyboard: arrows move, left and right fold, Enter opens,
+  // F2 renames, Delete deletes, the menu key (or Shift+F10) opens the menu.
+  $("ideTree").addEventListener("keydown", (e) => {
+    const b = e.target.closest(".tn"); if (!b || !ide) return;
+    const rows = [...$("ideTree").querySelectorAll(".tn")], at = rows.indexOf(b);
+    const rel = b.dataset.rel, dir = !!b.dataset.dir;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); const n = rows[at + (e.key === "ArrowDown" ? 1 : -1)]; if (n) n.focus(); }
+    else if (e.key === "ArrowRight" && dir && ide.collapsed.has(rel)) { e.preventDefault(); ide.collapsed.delete(rel); paintTree(); focusRow(rel); }
+    else if (e.key === "ArrowLeft" && dir && !ide.collapsed.has(rel)) { e.preventDefault(); ide.collapsed.add(rel); paintTree(); focusRow(rel); }
+    else if (e.key === "ArrowLeft" && rel.includes("/")) { e.preventDefault(); focusRow(rel.slice(0, rel.lastIndexOf("/"))); }
+    else if (e.key === "F2") { e.preventDefault(); renameIn(rel); }
+    else if (e.key === "Delete" || (e.key === "Backspace" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); deleteIn(rel, dir); }
+    else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) { e.preventDefault(); const r = b.getBoundingClientRect(); treeMenu(rel, dir, r.left + 24, r.bottom); }
   });
+  function focusRow(rel) { const r = $("ideTree").querySelector(`.tn[data-rel="${CSS.escape(rel)}"]`); if (r) r.focus(); }
   // A name typed right in the tree, where the file will be.
   function inlineName(placeholder, value, after) {
     return new Promise((resolve) => {
@@ -473,7 +534,8 @@
       const finish = (v) => { if (done) return; done = true; f.remove(); resolve(v); };
       f.addEventListener("submit", (e) => { e.preventDefault(); finish(input.value.trim()); });
       input.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); finish(""); } });
-      input.addEventListener("blur", () => setTimeout(() => finish(""), 120));
+      // Clicking away keeps what was typed, like pressing Enter.
+      input.addEventListener("blur", () => setTimeout(() => finish(input.value.trim()), 120));
     });
   }
   async function newFileIn(folder) {
@@ -493,6 +555,16 @@
       const k = await ask(`Add mod ${m[1]}; to src/lib.rs, so this file is part of the build?`, [["add", "Add it", true], ["no", "Not now"]]);
       if (k === "add") await addMod(m[1]);
     }
+  }
+  // A folder holds files, so a new folder starts with its first file.
+  async function newFolderIn(parent) {
+    if (!ide) return;
+    const anchor = parent ? $("ideTree").querySelector(`.tn[data-rel="${CSS.escape(parent)}"]`) : null;
+    const name = await inlineName(parent ? `New folder in ${parent}/` : "New folder, like src/ui", "", anchor);
+    if (!name) return;
+    const folder = ((parent && !name.includes("/") ? parent + "/" : "") + name).replace(/^\/+|\/+$/g, "");
+    if (ide.tree.some((t) => t.rel === folder)) { term(`${folder} already exists`, "r"); toast(`${folder} already exists`); return; }
+    await newFileIn(folder);
   }
   async function addMod(name) {
     let doc = ide.docs.get("src/lib.rs");
@@ -528,6 +600,31 @@
       if (ide.cur === r) ide.cur = moved;
     }
     await loadTree(); paintTabs(); showCur();
+
+    // src/a.rs named in lib.rs as `mod a;`: offer to follow the rename, or
+    // the next build fails on a module that is not there.
+    const was = rel.match(/^src\/([a-z_][a-z0-9_]*)\.rs$/), now = to.match(/^src\/([a-z_][a-z0-9_]*)\.rs$/);
+    const lib = ide.docs.get("src/lib.rs");
+    let libText = lib && lib.state ? textOf(lib) : null;
+    if (was && libText == null) { try { libText = await call("ide_read", { path: ide.path, rel: "src/lib.rs" }); } catch (e) { libText = null; } }
+    const modRx = was ? new RegExp(`^(\\s*(?:pub\\s+)?mod\\s+)${was[1]}(\\s*;)`, "m") : null;
+    if (was && libText != null && modRx.test(libText)) {
+      const k = await ask(now ? `Change mod ${was[1]}; to mod ${now[1]}; in src/lib.rs, so it still builds?` : `src/lib.rs still says mod ${was[1]};. Take that line out, so it still builds?`, [["fix", now ? "Change it" : "Take it out", true], ["no", "Not now"]]);
+      if (k === "fix") {
+        // In the editor when lib.rs is open, on disk when it is not: the
+        // renamed file stays the one in front.
+        const d = ide.docs.get("src/lib.rs");
+        const t = d && d.state ? textOf(d) : libText, m = t.match(modRx);
+        if (m) {
+          const from = m.index, end = from + m[0].length, cut = now ? end : Math.min(t.length, end + (t[end] === "\n" ? 1 : 0));
+          const insert = now ? `${m[1]}${now[1]}${m[2]}` : "";
+          if (d && d.state) { applyTo(d, { changes: { from, to: cut, insert } }); await saveOne("src/lib.rs"); }
+          else { try { await call("ide_write", { path: ide.path, rel: "src/lib.rs", text: t.slice(0, from) + insert + t.slice(cut) }); } catch (err) { term(`could not change src/lib.rs: ${err}`, "r"); return; } }
+          paintTabs(); paintTree();
+          build("mod line changed");
+        }
+      }
+    }
   }
   async function deleteIn(rel, dir) {
     const k = await ask(`Delete ${rel}${dir ? " and everything in it" : ""}? It is moved to Studio's backups, so it can be got back.`, [["del", "Delete", true], ["no", "Cancel"]]);
@@ -610,32 +707,40 @@
    * opens, marked as not saved (K-973). */
   const DRAFTS = "krate-ide-drafts";
   const drafts = () => { try { return JSON.parse(localStorage.getItem(DRAFTS) || "{}"); } catch (e) { return {}; } };
-  let draftT = 0;
+  const draftT = new Map();
   function keepDraft(rel, doc) {
-    clearTimeout(draftT);
-    draftT = setTimeout(() => {
+    clearTimeout(draftT.get(rel));
+    const path = ide.path;
+    draftT.set(rel, setTimeout(() => {
+      draftT.delete(rel);
+      if (!ide || ide.path !== path) return;
       try {
         const all = drafts(); const mine = all[ide.path] || {};
         if (doc.dirty) mine[rel] = textOf(doc); else delete mine[rel];
         if (Object.keys(mine).length) all[ide.path] = mine; else delete all[ide.path];
         localStorage.setItem(DRAFTS, JSON.stringify(all));
       } catch (e) { /* a full or blocked store: the save is still the save */ }
-    }, 300);
+    }, 300));
   }
   function dropDraft(rel) {
     try { const all = drafts(); if (all[ide.path]) { delete all[ide.path][rel]; if (!Object.keys(all[ide.path]).length) delete all[ide.path]; localStorage.setItem(DRAFTS, JSON.stringify(all)); } } catch (e) {}
   }
 
   /* A question above the editor, answered with one of its buttons. */
+  let askOpen = null;
   function ask(text, choices) {
     const bar = $("ideBar");
+    // A question replaced by another is answered "nothing chosen", so
+    // whoever waits on it moves on (the disk check stopped for good, K-985).
+    if (askOpen) { const r = askOpen; askOpen = null; r(null); }
     return new Promise((res) => {
+      askOpen = res;
       bar.querySelector(".t").textContent = text;
       bar.querySelectorAll("button").forEach((b) => b.remove());
       for (const [key, label, primary] of choices) {
         const b = document.createElement("button"); b.type = "button"; b.textContent = label;
         if (primary) b.className = "pri";
-        b.addEventListener("click", () => { bar.classList.add("hidden"); res(key); });
+        b.addEventListener("click", () => { if (askOpen === res) askOpen = null; bar.classList.add("hidden"); res(key); });
         bar.appendChild(b);
       }
       bar.classList.remove("hidden");
@@ -644,7 +749,7 @@
 
   async function openFile(rel) {
     if (!ide) return;
-    try { await loadCM(); } catch (err) { $("ideMsg").textContent = String(err.message || err); $("ideMsg").classList.remove("hidden"); return; }
+    try { await loadCM(); } catch (err) { $("ideMsg").textContent = `${String(err.message || err)}. Open the file again to retry.`; $("ideMsg").classList.remove("hidden"); $("ideEmpty").classList.add("hidden"); return; }
     let doc = ide.docs.get(rel);
     let recovered = false;
     if (!doc) {
@@ -714,7 +819,7 @@
       // A tab with changes asks; it used to save them without a word.
       if (doc && doc.dirty) {
         const k = await ask(`Save your changes to ${rel.split("/").pop()} before closing it?`, [["save", "Save", true], ["drop", "Don't save"], ["cancel", "Cancel"]]);
-        if (k === "cancel") return;
+        if (k === "cancel" || !k) return;
         if (k === "save" && !(await saveOne(rel))) return;
         if (k === "drop") { dropDraft(rel); if (doc.view) { doc.view.destroy(); doc.host.remove(); } ide.docs.delete(rel); }
       }
@@ -730,15 +835,18 @@
     const text = textOf(doc);
     try {
       await call("ide_write", { path: ide.path, rel, text });
-      doc.saved = text; doc.dirty = textOf(doc) !== doc.saved; dropDraft(rel); findCache.delete(rel); return true;
-    } catch (err) { term(`could not save ${rel}: ${err}`, "r"); return false; }
+      doc.saved = text; doc.dirty = textOf(doc) !== doc.saved; dropDraft(rel); return true;
+    } catch (err) { term(`could not save ${rel}: ${err}`, "r"); setStatus("bad", `Could not save ${rel.split("/").pop()}`); toast(`Could not save ${rel.split("/").pop()}`); return false; }
   }
   async function saveAll(thenBuild) {
     if (!ide) return;
-    let any = false;
-    for (const [rel, doc] of ide.docs) if (doc.dirty) { any = true; await saveOne(rel); }
+    let any = false, failed = false;
+    for (const [rel, doc] of ide.docs) if (doc.dirty) { any = true; if (!(await saveOne(rel))) failed = true; }
     paintTabs(); paintTree();
+    // A save that failed is not built over: the status keeps saying so.
+    if (failed) return;
     if (any) term("==> saved");
+    else if (thenBuild) { term("==> nothing to save; every file is saved", "m"); toast("Nothing to save"); }
     if (thenBuild && any) build("you saved");
   }
 
@@ -755,10 +863,18 @@
         let disk;
         try { disk = await call("ide_read", { path: ide.path, rel }); } catch (e) { continue; }
         if (disk === doc.saved) continue;
+        // The editor already holds what is on disk, or holds what disk had
+        // when a question went unanswered: nothing of the person's is lost.
+        if (textOf(doc) === disk || (doc.diskSeen != null && textOf(doc) === doc.diskSeen)) {
+          if (textOf(doc) !== disk) replaceText(rel, doc, disk);
+          doc.saved = disk; doc.dirty = false; doc.diskSeen = null; dropDraft(rel); paintTabs(); paintTree(); continue;
+        }
         if (!doc.dirty) { replaceText(rel, doc, disk); doc.saved = disk; doc.dirty = false; term(`==> ${rel} changed on disk; reloaded it`, "m"); continue; }
         const k = await ask(`${rel.split("/").pop()} changed on disk while you were editing it.`, [["disk", "Use the file on disk"], ["mine", "Keep mine", true]]);
         if (k === "disk") { replaceText(rel, doc, disk); doc.saved = disk; doc.dirty = false; dropDraft(rel); }
-        else doc.saved = disk;
+        else if (k === "mine") doc.saved = disk;
+        // No answer (another question came first): asked again next time.
+        else doc.diskSeen = disk;
         paintTabs(); paintTree();
       }
     } finally { diskBusy = false; }
@@ -798,6 +914,7 @@
         panelTab("term");
         if (runSave() && why && (why === "you saved" || / changed$/.test(why))) setTimeout(() => runApp("you saved"), 0);
       } else {
+        ide.built = null;
         setStatus("bad", "Does not build");
         term(`==> ${r.stage}: ${r.message.split("\n")[0]}`, "r");
         problems([{ stage: r.stage, message: r.message }]);
@@ -806,6 +923,7 @@
     } catch (err) {
       busy(false);
       const s = String(err);
+      if (!/stopped/.test(s)) ide.built = null;
       setStatus(/stopped/.test(s) ? "idle" : "bad", /stopped/.test(s) ? "Stopped" : "Could not build");
       term(s, "r");
       if (!/stopped/.test(s)) problems([{ stage: "engine", message: s }]);
@@ -862,7 +980,8 @@
       const pre = $("ideTerm");
       const b = document.createElement("button"); b.type = "button"; b.className = "ip-act"; b.textContent = "Show it in its folder";
       b.addEventListener("click", () => call("reveal", { path: r.krate }).catch(() => {}));
-      pre.appendChild(b); pre.appendChild(document.createTextNode("\n")); pre.scrollTop = pre.scrollHeight;
+      pre.appendChild(b); pre.appendChild(document.createTextNode("\n"));
+      panelTab("term"); pre.scrollTop = pre.scrollHeight;
       toast(`Built ${r.krate.split(/[\\/]/).pop()}`);
     } catch (err) { busy(false); setStatus("bad", "Could not pack it"); term(String(err), "r"); problems([{ stage: "pack", message: String(err) }]); }
   });
@@ -872,16 +991,48 @@
   /* A line diff, small and exact enough to review a change by: the longest
    * common run of lines, then the hunks with three lines either side. */
   function diffLines(a, b) {
-    const A = a.split("\n"), B = b.split("\n");
-    if (A.length * B.length > 4e6) return B.map((l) => ["+", l]).concat(A.map((l) => ["-", l]));
-    const n = A.length, m = B.length;
-    const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
-    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
-    const ops = []; let i = 0, j = 0;
-    while (i < n && j < m) { if (A[i] === B[j]) { ops.push([" ", A[i], i + 1, j + 1]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) { ops.push(["-", A[i], i + 1, 0]); i++; } else { ops.push(["+", B[j], 0, j + 1]); j++; } }
-    while (i < n) { ops.push(["-", A[i], i + 1, 0]); i++; }
-    while (j < m) { ops.push(["+", B[j], 0, j + 1]); j++; }
-    return ops;
+    const A0 = a.split("\n"), B0 = b.split("\n");
+    // The lines both start and end with are the same; only the middle is
+    // compared, so a one-line change in a 3,000-line file is one line.
+    let pre = 0; while (pre < A0.length && pre < B0.length && A0[pre] === B0[pre]) pre++;
+    let suf = 0; while (suf < A0.length - pre && suf < B0.length - pre && A0[A0.length - 1 - suf] === B0[B0.length - 1 - suf]) suf++;
+    const head = A0.slice(0, pre).map((l, k) => [" ", l, k + 1, k + 1]);
+    const tail = A0.slice(A0.length - suf).map((l, k) => [" ", l, A0.length - suf + k + 1, B0.length - suf + k + 1]);
+    const A = A0.slice(pre, A0.length - suf), B = B0.slice(pre, B0.length - suf);
+    const shift = (o) => [o[0], o[1], o[2] ? o[2] + pre : 0, o[3] ? o[3] + pre : 0];
+    return head.concat(diffMiddle(A, B).map(shift), tail);
+  }
+  // Myers' O(ND) diff: fast when the change is small, whatever the size
+  // of the file. A change too large to trace is shown as a replacement.
+  function diffMiddle(A, B) {
+    const n = A.length, m = B.length, max = n + m, off = max;
+    if (!n) return B.map((l, j) => ["+", l, 0, j + 1]);
+    if (!m) return A.map((l, i) => ["-", l, i + 1, 0]);
+    const v = new Int32Array(2 * max + 2), trace = [];
+    let found = -1;
+    for (let d = 0; d <= Math.min(max, 3000); d++) {
+      trace.push(v.slice(off - d, off + d + 2));
+      for (let k = -d; k <= d; k += 2) {
+        let x = k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]) ? v[off + k + 1] : v[off + k - 1] + 1;
+        let y = x - k;
+        while (x < n && y < m && A[x] === B[y]) { x++; y++; }
+        v[off + k] = x;
+        if (x >= n && y >= m) { found = d; break; }
+      }
+      if (found >= 0) break;
+    }
+    if (found < 0) return A.map((l, i) => ["-", l, i + 1, 0]).concat(B.map((l, j) => ["+", l, 0, j + 1]));
+    const ops = []; let x = n, y = m;
+    for (let d = found; d > 0; d--) {
+      const t = trace[d], at = (k) => t[k + d];
+      const k = x - y;
+      const prevK = k === -d || (k !== d && at(k - 1) < at(k + 1)) ? k + 1 : k - 1;
+      const px = at(prevK), py = px - prevK;
+      while (x > px && y > py) { x--; y--; ops.push([" ", A[x], x + 1, y + 1]); }
+      if (x === px) { y--; ops.push(["+", B[y], 0, y + 1]); } else { x--; ops.push(["-", A[x], x + 1, 0]); }
+    }
+    while (x > 0 && y > 0) { x--; y--; ops.push([" ", A[x], x + 1, y + 1]); }
+    return ops.reverse();
   }
   function hunksHtml(ops) {
     const show = new Set();
@@ -909,10 +1060,23 @@
       }).join("");
       box.innerHTML = `<div class="rv-top"><b>${esc(agentWords())} changed ${files.length} file${files.length === 1 ? "" : "s"}</b><span class="grow"></span><button type="button" class="rv-no">Reject</button><button type="button" class="rv-yes pri">Accept</button></div><div class="rv-body">${items}</div>`;
       $("ideEd").appendChild(box);
+      // While the change is reviewed the code stays as it is: typing into
+      // it was lost when the change was accepted (K-986).
+      const hold = (e) => { if (!box.contains(e.target) && e.target.closest && e.target.closest("#ideCode")) { e.preventDefault(); e.stopPropagation(); } };
+      const keys = (e) => {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); return; }
+        hold(e);
+      };
+      ["beforeinput", "paste", "drop", "cut"].forEach((t) => document.addEventListener(t, hold, true));
+      document.addEventListener("keydown", keys, true);
       const done = (ok) => {
+        ["beforeinput", "paste", "drop", "cut"].forEach((t) => document.removeEventListener(t, hold, true));
+        document.removeEventListener("keydown", keys, true);
         const keep = ok ? [...box.querySelectorAll("input[data-k]")].filter((c) => c.checked).map((c) => files[+c.dataset.k]) : [];
         box.remove(); resolve(keep);
       };
+      box.tabIndex = -1;
+      requestAnimationFrame(() => { const y = box.querySelector(".rv-yes"); (y || box).focus(); });
       box.querySelector(".rv-yes").addEventListener("click", () => done(true));
       box.querySelector(".rv-no").addEventListener("click", () => done(false));
       box.addEventListener("change", () => {
@@ -935,18 +1099,34 @@
     if (!ide || ide.busy) return;
     await saveAll(false);
     const before = new Map([...ide.docs].map(([rel, d]) => [rel, textOf(d)]));
+    const typed = askIn.value;
     askIn.value = ""; askIn.placeholder = `${agentWords()} is working on it…`;
     busy(true, `${agentWords()} is working…`);
     term(`==> asking ${agentWords()}: ${request.split("\n")[0]}`);
     try {
       const r = await call("ide_ask", { path: ide.path, request: request + (opts.noContext ? "" : askContext()), agent: agentName() });
       const files = (r && r.files) || [];
-      busy(false);
-      if (!files.length) { term("==> nothing needed changing", "g"); setStatus(ide.built ? "ok" : "idle", ide.built ? "Builds" : "Not built yet"); return; }
+      const settled = () => setStatus(ide.built ? "ok" : ide.lastFail ? "bad" : "idle", ide.built ? "Builds" : ide.lastFail ? "Does not build" : "Not built yet");
+      if (!files.length) { busy(false); term("==> nothing needed changing", "g"); settled(); return; }
       term(`==> ${files.length} file${files.length === 1 ? "" : "s"} to review`, "m");
-      setStatus("idle", "Review the change");
+      // Still busy while it is reviewed: Run, Build and a second Ask wait.
+      setStatus("busy", "Review the change");
       const keep = await review(files);
-      if (!keep.length) { term("==> the change was not applied; nothing was written", "m"); setStatus(ide.built ? "ok" : "idle", ide.built ? "Builds" : "Not built yet"); return; }
+      busy(false);
+      if (!keep.length) { term("==> the change was not applied; nothing was written", "m"); settled(); return; }
+      // A file that changed in the editor since the request (anything that
+      // got past the review's hold): the person chooses, nothing is lost.
+      const touched = keep.filter((f) => ide.docs.get(f.rel) && ide.docs.get(f.rel).state && before.has(f.rel) && textOf(ide.docs.get(f.rel)) !== before.get(f.rel));
+      if (touched.length) {
+        setStatus("idle", "Waiting for your answer");
+        const k = await ask(`You edited ${touched.map((f) => f.rel.split("/").pop()).join(", ")} while the AI worked. Use the AI's version, or keep your edits?`, [["ai", "Use the AI's"], ["mine", "Keep my edits", true]]);
+        if (k !== "ai") {
+          const skip = new Set(touched.map((f) => f.rel));
+          keep.splice(0, keep.length, ...keep.filter((f) => !skip.has(f.rel)));
+          term(`==> kept your edits to ${[...skip].join(", ")}`, "m");
+          if (!keep.length) { setStatus(ide.built ? "ok" : "idle", ide.built ? "Builds" : "Not built yet"); return; }
+        }
+      }
       const changed = await call("ide_apply", { path: ide.path, files: keep.map((f) => ({ rel: f.rel, text: f.after, b64: f.b64 })) });
       term(`==> changed ${changed.join(", ")}`, "g");
       await loadTree();
@@ -956,7 +1136,7 @@
         let doc = ide.docs.get(rel);
         if (!doc || !doc.state) { doc = { saved: text, dirty: false, error: null, state: newState(rel, text) }; ide.docs.set(rel, doc); }
         else { replaceText(rel, doc, text); doc.saved = text; doc.dirty = false; doc.error = null; dropDraft(rel); }
-        findCache.delete(rel);
+       
         if (old != null) {
           const had = new Set(old.split("\n").map((l) => l.trim()));
           const adds = text.split("\n").map((l, i) => (l.trim() && !had.has(l.trim()) ? i : -1)).filter((i) => i >= 0);
@@ -972,6 +1152,8 @@
       setStatus("bad", "The change did not land");
       term(String(err), "r");
       problems([{ stage: "ask", message: String(err) }]);
+      // The words typed come back, to send again or change.
+      if (!opts.noContext && !askIn.value) askIn.value = typed || request;
     } finally {
       askIn.placeholder = askPh;
     }
@@ -1054,7 +1236,17 @@
   /* ---- opening and leaving a project ------------------------------------ */
   async function openProject(p) {
     if (!p || !p.path) return;
-    if (ide && ide.path !== p.path) await saveAll(false);
+    // Every door names a project by the same canonical path, so its drafts,
+    // picture and jobs are found whichever way it was opened (K-985).
+    try { const r = await call("ide_resolve", { path: p.path }); if (r && r.path) p = { path: r.path, name: p.name || r.name }; } catch (e) { /* the tree says why */ }
+    // The project already open: back to it as it is, unsaved edits and all.
+    if (ide && ide.path === p.path) {
+      try { showView("ide"); } catch (e) {}
+      loadSdk().then(paintApi);
+      requestAnimationFrame(() => { try { if (edView) edView.focus(); } catch (e) {} });
+      return;
+    }
+    if (ide) await saveAll(false);
     if (ide) for (const d of ide.docs.values()) if (d.view) { d.view.destroy(); d.host.remove(); }
     edView = null;
     ide = { path: p.path, name: p.name || p.path.split(/[\\/]/).pop(), tree: [], docs: new Map(), open: [], cur: null, busy: false, built: null, collapsed: new Set(), queued: null };
@@ -1089,21 +1281,29 @@
     const tab = $("homeIdeTab");
     const home = document.querySelector('#side .side-row[data-side="home"]');
     if (home) home.click();
-    setTimeout(() => { if (tab) tab.click(); }, 50);
+    // Through Home's own mode switch, so its hint, search and the lit
+    // sidebar row are reset (a click on a tab already on did nothing).
+    setTimeout(() => { if (window.krHomeMode) window.krHomeMode("ide"); else if (tab) tab.click(); }, 50);
   });
 
   /* ---- the doors: the sidebar row and Home's IDE tab ------------------ */
   const sideRow = $("sideIde");
   if (sideRow) sideRow.addEventListener("click", () => {
-    if (ide) { try { showView("ide"); } catch (e) {} return; }
+    if (ide) { try { showView("ide"); } catch (e) {} requestAnimationFrame(() => { try { if (edView) edView.focus(); } catch (e) {} }); return; }
     const home = document.querySelector('#side .side-row[data-side="home"]');
     if (home && $("viewHome").classList.contains("hidden")) home.click();
-    setTimeout(() => { const t = $("homeIdeTab"); if (t) t.click(); }, 50);
+    setTimeout(() => { if (window.krHomeMode) window.krHomeMode("ide"); else { const t = $("homeIdeTab"); if (t) t.click(); } }, 50);
   });
 
-  let projects = [];
+  let projects = [], projectsAsked = 0;
   async function loadProjects() {
-    try { projects = (await call("ide_projects")) || []; } catch (e) { projects = []; }
+    // Only the newest answer is drawn: a slow first one does not paint over it.
+    const mine = ++projectsAsked;
+    let list = [], why = "";
+    try { list = (await call("ide_projects")) || []; } catch (e) { why = String(e); }
+    if (mine !== projectsAsked) return;
+    projects = (Array.isArray(list) ? list : []).filter((p) => p && typeof p.path === "string" && p.path).map((p) => ({ ...p, name: typeof p.name === "string" && p.name ? p.name : p.path.split(/[\\/]/).filter(Boolean).pop() }));
+    if (why) hint(`Could not list your projects: ${why}`);
     paintProjects();
   }
   function paintProjects() {
@@ -1111,7 +1311,11 @@
     const q = ($("homeIdeFind").value || "").trim().toLowerCase();
     const list = projects.filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q));
     const pics = shots();
-    box.innerHTML = list.slice(0, 7).map((p, i) => `<button type="button" class="kr-start" style="--k:${i}" data-path="${esc(p.path)}" data-name="${esc(p.name)}"><span class="th">${pics[p.path] ? `<img src="${esc(pics[p.path].src)}" alt="">` : `<span class="th-none">${ICON.rs}</span>`}</span><b>${esc(p.name)}</b><small>${esc(short(p.path))}${p.updated ? " · " + esc(ago(p.updated)) : ""}</small></button>`).join("") +
+    // Seven at a glance; a search shows every match.
+    const shown = q ? list.slice(0, 40) : list.slice(0, 7);
+    box.innerHTML = shown.map((p, i) => `<button type="button" class="kr-start" style="--k:${i}" data-path="${esc(p.path)}" data-name="${esc(p.name)}"><span class="th">${pics[p.path] ? `<img src="${esc(pics[p.path].src)}" alt="">` : `<span class="th-none">${ICON.rs}</span>`}</span><b>${esc(p.name)}</b><small>${esc(short(p.path))}${p.updated ? " · " + esc(ago(p.updated)) : ""}</small></button>`).join("") +
+      (q && !list.length ? `<p class="kr-ide-none">No project called “${esc(q)}”. Press Enter to open it as a path, or start a new one.</p>` : "") +
+      (!q && list.length > 7 ? `<p class="kr-ide-more">${list.length - 7} more · type a name to find one</p>` : "") +
       (q ? "" : `<button type="button" class="kr-start newp" style="--k:${Math.min(list.length, 7)}" data-new="1"><span class="th"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><b>New project</b><small>A working starter to build on</small></button>`);
   }
   $("homeIdeRows").addEventListener("click", (e) => {
@@ -1126,7 +1330,9 @@
     const hit = projects.find((p) => p.name.toLowerCase() === v.toLowerCase());
     if (hit) { openProject(hit); return; }
     if (/^[~/\\]|^[A-Za-z]:\\/.test(v)) {
-      try { await call("ide_tree", { path: v }); openProject({ path: v, name: v.split(/[\\/]/).filter(Boolean).pop() }); }
+      // Resolved to the one path every door uses (a typed ~/ path was filed
+      // under its spelling, so its drafts and picture went missing).
+      try { openProject(await call("ide_resolve", { path: v })); }
       catch (err) { hint(String(err)); }
       return;
     }
@@ -1150,7 +1356,7 @@
     const f = document.createElement("form");
     f.className = "kr-newp"; f.autocomplete = "off";
     // Which of the engine's own starters to begin from.
-    f.innerHTML = '<input type="text" maxlength="40" placeholder="Name your project, like habit tracker" aria-label="Project name" required><button type="submit" class="kr-mk">Make it</button><button type="button" class="kr-cx">Cancel</button>' +
+    f.innerHTML = '<input type="text" maxlength="40" placeholder="Name your project, like habit tracker" aria-label="Project name"><button type="submit" class="kr-mk">Make it</button><button type="button" class="kr-cx">Cancel</button>' +
       '<div class="kr-np-kinds" role="radiogroup" aria-label="Start from">' +
       [["checklist", "A window app", "a checklist that saves"], ["word-frequency", "A command-line tool", "reads a file, prints words"], ["voice-prompter", "A voice app", "listens to the microphone"]]
         .map(([k, t, d], i) => `<label><input type="radio" name="kind" value="${k}"${i ? "" : " checked"}><b>${t}</b><small>${d}</small></label>`).join("") +
@@ -1159,10 +1365,12 @@
     const input = f.querySelector("input"), line = f.querySelector(".kr-np-line");
     input.focus();
     f.querySelector(".kr-cx").addEventListener("click", () => f.remove());
+    f.addEventListener("keydown", (e) => { if (e.key === "Escape" && !f.classList.contains("busy")) { e.preventDefault(); f.remove(); } });
     let off = null;
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const name = input.value.trim(); if (!name) return;
+      const name = input.value.trim();
+      if (!name) { line.textContent = "Give it a name first."; input.value = ""; input.focus(); return; }
       f.classList.add("busy"); f.querySelectorAll("button, input").forEach((x) => (x.disabled = true));
       line.textContent = "Making a working starter…";
       try { off = await tauri.event.listen("ide-line", (ev) => { const l = ev.payload && ev.payload.line; if (l && l.trim()) line.textContent = l.trim().slice(0, 140); }); } catch (err) { off = null; }
@@ -1175,12 +1383,14 @@
       } catch (err) {
         f.classList.remove("busy"); f.querySelectorAll("button, input").forEach((x) => (x.disabled = false));
         line.textContent = String(err);
+        input.focus(); input.select();
       } finally { if (off) try { off(); } catch (err) {} }
     });
   }
 
   // Home tells us when its IDE tab is chosen (redesign.js setMode).
-  document.addEventListener("kr-home-mode", (e) => { if (e.detail === "ide") { loadProjects(); paintAgent(); } });
+  // Each visit starts clean: no old hint, no old search.
+  document.addEventListener("kr-home-mode", (e) => { if (e.detail === "ide") { hint(""); $("homeIdeFind").value = ""; loadProjects(); paintAgent(); } });
   // Closing the window: anything not saved is already kept as a draft, and
   // comes back the next time the project opens.
   window.addEventListener("beforeunload", () => { if (ide) saveAll(false); });

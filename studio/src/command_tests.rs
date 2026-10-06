@@ -2786,3 +2786,24 @@ echo '   '"#,
         );
     }
 }
+
+#[test]
+fn ide_resolve_names_a_typed_project_by_its_one_canonical_path() {
+    let t = TestHome::new();
+    let proj = make_project(&t.home().join("Krate Apps"), "mön app");
+    let canon = std::fs::canonicalize(&proj).unwrap().display().to_string();
+    for typed in [
+        "~/Krate Apps/mön app",
+        "  ~/Krate Apps/mön app/  ",
+        canon.as_str(),
+    ] {
+        let r = serde_json::to_value(block(ide::ide_resolve(typed.to_string())).unwrap()).unwrap();
+        assert_eq!(r["path"], canon.as_str(), "typed {typed:?}");
+        assert_eq!(r["name"], "mön app");
+    }
+    let not = t.home().join("plain folder");
+    std::fs::create_dir_all(&not).unwrap();
+    let err = block(ide::ide_resolve(not.display().to_string())).unwrap_err();
+    assert!(err.contains("is not a Krate project"), "{err}");
+    assert!(block(ide::ide_resolve("   ".to_string())).is_err());
+}

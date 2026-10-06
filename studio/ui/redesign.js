@@ -221,10 +221,11 @@
     document.dispatchEvent(new CustomEvent("kr-home-mode", { detail: mode }));
     if (mode === "ide") { const f = $("homeIdeFind"); if (f) setTimeout(() => f.focus({ preventScroll: true }), 120); }
     // The sidebar lights the door that is open.
-    const ideRow = $("sideIde"), homeRow = q('#side .side-row[data-side="home"]');
-    if (ideRow && homeRow && !$("viewHome").classList.contains("hidden")) {
-      ideRow.classList.toggle("on", mode === "ide");
-      homeRow.classList.toggle("on", mode !== "ide");
+    const ideRow = $("sideIde"), homeRow = q('#side .side-row[data-side="home"]'), portRow = $("sidePort");
+    if (homeRow && !$("viewHome").classList.contains("hidden")) {
+      if (ideRow) ideRow.classList.toggle("on", mode === "ide");
+      if (portRow) portRow.classList.toggle("on", mode === "port");
+      homeRow.classList.toggle("on", mode === "create");
     }
     // A note under the box belongs to the door it was written for; a port
     // or IDE message must not stay under Create (or the other way round).
@@ -234,6 +235,8 @@
   }
   if (tabs) {
     tabs.addEventListener("click", (e) => { const b = e.target.closest("button[data-mode]"); if (b && !b.classList.contains("on")) setMode(b.dataset.mode); });
+    // The IDE's Back and the sidebar doors pick a tab through here.
+    window.krHomeMode = (m) => setMode(m);
     (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(placeInd);
     addEventListener("resize", placeInd);
     setMode("create");
