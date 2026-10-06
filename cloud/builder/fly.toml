@@ -21,7 +21,10 @@ primary_region = "iad"
   KRATE_AGENT = "anthropic"
   KRATE_HUB = "https://hub.krate.tech"
   KRATE_ORIGIN = "https://krate.tech"
-  KRATE_BUILD_TIMEOUT_MS = "900000"
+  # 45 minutes: a bigger app can take more than 15 to build and check. The
+  # money is capped per build by the engine (KRATE_BUILD_BUDGET_USD) and per
+  # free person by the hub, so a longer clock cannot spend more than those.
+  KRATE_BUILD_TIMEOUT_MS = "2700000"
 
   # Opus, chosen by building the same app on all three and looking at what
   # came out. Same request, same engine, same machine:
