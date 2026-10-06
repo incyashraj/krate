@@ -121,15 +121,23 @@
   const rw = $("homeRw");
   if (rw) {
     const words = qa(".w", rw).map((w) => w.textContent.trim()).filter(Boolean);
+    // The "?" is typed too, last, so the caret always sits at the end of
+    // the line, where a person typing the question would have it.
+    const after = rw.nextSibling;
+    let mark = "";
+    if (after && after.nodeType === 3 && after.textContent.trim().startsWith("?")) {
+      mark = "?"; after.textContent = after.textContent.replace("?", "");
+    }
     const said = document.createElement("span");
-    said.className = "kr-sr"; said.textContent = words[0] || "";
+    said.className = "kr-sr"; said.textContent = (words[0] || "") + mark;
     rw.parentNode.insertBefore(said, rw);
     rw.setAttribute("aria-hidden", "true");
     rw.classList.add("kr-typed");
     rw.textContent = "";
     const tw = document.createElement("span"); tw.className = "tw"; tw.textContent = words[0] || "";
+    const tq = document.createElement("span"); tq.className = "tq"; tq.textContent = mark;
     const car = document.createElement("span"); car.className = "car";
-    rw.append(tw, car);
+    rw.append(tw, tq, car);
     rw.dataset.i = "0";
     if (!reduce && words.length > 1) {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -141,11 +149,13 @@
           await wait(2600);
           if (!onScreen()) continue;
           rw.classList.add("busy");
+          if (tq.textContent) { tq.textContent = ""; await wait(90); }
           for (let n = tw.textContent.length; n > 0; n--) { tw.textContent = tw.textContent.slice(0, -1); await wait(55); }
           i = (i + 1) % words.length; rw.dataset.i = String(i);
           await wait(260);
           const next = words[i];
           for (let n = 1; n <= next.length; n++) { tw.textContent = next.slice(0, n); await wait(80 + Math.random() * 60); }
+          if (mark) { await wait(120); tq.textContent = mark; }
           rw.classList.remove("busy");
         }
       })();

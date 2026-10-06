@@ -1038,6 +1038,7 @@ body:not(.light) .sess-row.on { background: var(--surface-2); }
 #viewHome .home-title .rw.kr-typed { display: inline-block; width: auto; transition: none; white-space: nowrap; }
 #viewHome .home-title .rw.kr-typed .tw { color: color-mix(in srgb, var(--accent) 42%, var(--ink)); transition: color .3s var(--ease); }
 #viewHome .home-title .rw.kr-typed[data-i="1"] .tw { color: color-mix(in srgb, var(--violet) 46%, var(--ink)); }
+#viewHome .home-title .rw.kr-typed .tq { color: var(--ink); }
 #viewHome .home-title .rw.kr-typed .car { display: inline-block; width: .07em; height: .86em; margin-left: .05em; vertical-align: -.06em; border-radius: 2px; background: color-mix(in srgb, var(--accent) 70%, var(--ink)); animation: krBlink 1.06s steps(1) infinite; }
 #viewHome .home-title .rw.kr-typed.busy .car { animation: none; }
 .kr-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
