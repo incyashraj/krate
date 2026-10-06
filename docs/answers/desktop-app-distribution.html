@@ -20,7 +20,7 @@
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/desktop-app-distribution.html#webpage", "url": "https://krate.tech/desktop-app-distribution.html", "name": "Krate vs Electron vs Tauri: desktop app distribution", "description": "Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/desktop-app-distribution.html#webpage", "url": "https://krate.tech/desktop-app-distribution.html", "name": "Krate vs Electron vs Tauri: desktop app distribution", "description": "Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -126,6 +126,7 @@
       <a href="#how-to-decide-for-your-project">How to decide for your project</a>
       <a href="#compare-costs-at-the-same-boundary">Compare costs at the same boundary</a>
       <a href="#what-happens-when-the-app-changes">What happens when the app changes?</a>
+      <a href="#more-answers">More answers</a>
     </nav>
     <article class="prose">
       <section id="one-app-two-shipping-workflows">
@@ -181,6 +182,20 @@
 <p>Build the next .krate file and distribute it to your users. They can open that file with a compatible runtime; using the format does not require a hosted app store. Updates to the native runtime are separate from updates to your app.</p>
 <p>Compatibility, user-data migration and testing remain part of releasing software. Krate changes the artifact you distribute, not those responsibilities. Start with a representative feature and real data, then use the <a href="/docs/porting.html">porting checklist</a> to work through the rest of your application.</p>
       </section>
+    <section id="more-answers">
+      <h2>More answers about shipping desktop apps</h2>
+      <ul class="answer-related">
+        <li><a href="/portable-desktop-app-format.html">One desktop app file, three operating systems</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share the app, not your development setup</a></li>
+        <li><a href="/run-ai-generated-code-safely.html">Inspect what an app built with AI can access</a></li>
+        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one app file instead of a browser in every app</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>
+        <li><a href="/desktop-app-code-signing.html">Do you need code signing to ship a desktop app?</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>
+      </ul>
+    </section>
     </article>
   </div>
 </section>

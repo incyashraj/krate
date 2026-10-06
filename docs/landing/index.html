@@ -26,9 +26,9 @@
 <meta name="description" content="Krate turns a sentence into a real desktop app: one small file that runs on Mac, Windows and Linux. Make it in your browser or in Krate Studio with your own AI, then send it to anyone." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/" />
-  <meta property="og:title" content="Krate: build desktop apps once, ship one file" />
+  <meta property="og:title" content="Krate: ship one app file to Mac, Windows and Linux" />
   <meta property="og:site_name" content="Krate" />
-  <meta property="og:description" content="One .krate application file for macOS, Windows and Linux, running through native Krate runtimes. Build with your editor or with AI in Krate Studio." />
+  <meta property="og:description" content="One .krate app file for macOS, Windows and Linux: no build per system, sandboxed, and sent like a document. Build with your editor or with AI in Krate Studio." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
   <meta property="og:image" content="https://krate.tech/og-v4.png" />
@@ -36,6 +36,9 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Krate: build once and share one desktop application file across Mac, Windows and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Krate: ship one app file to Mac, Windows and Linux" />
+  <meta name="twitter:description" content="One .krate app file for macOS, Windows and Linux: no build per system, sandboxed, and sent like a document." />
+  <meta name="twitter:image" content="https://krate.tech/og-v4.png" />
   <script id="krate-identity" type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -47,7 +50,7 @@
         "alternateName": "Krate",
         "url": "https://krate.tech/",
         "logo": "https://krate.tech/krate-logo.png",
-        "description": "Krate Labs makes Krate: describe an app and get one small file that runs on Mac, Windows and Linux.",
+        "description": "Krate Labs makes Krate, an open-source runtime that lets developers ship an app as one sandboxed .krate file for Mac, Windows and Linux, and Krate Studio, which builds those apps with AI.",
         "founder": {"@type": "Person", "name": "Yashraj Pardeshi"},
         "sameAs": ["https://www.wikidata.org/wiki/Q141595600", "https://github.com/incyashraj/krate"]
       },
@@ -56,7 +59,7 @@
         "@id": "https://krate.tech/#website",
         "name": "Krate",
         "url": "https://krate.tech/",
-        "description": "Describe an app and get one file that runs on Mac, Windows and Linux.",
+        "description": "Ship one app file to Mac, Windows and Linux. Krate apps run sandboxed, with only the access people grant.",
         "publisher": {"@id": "https://krate.tech/#organization"}
       },
       {
@@ -68,8 +71,22 @@
         "url": "https://krate.tech/studio/",
         "downloadUrl": "https://krate.tech/download/",
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+        "publisher": {"@id": "https://krate.tech/#organization"}
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://krate.tech/#runtime",
+        "name": "Krate",
+        "alternateName": "Krate runtime",
+        "description": "Open-source app runtime, built in Rust on Wasmtime, that runs one sandboxed .krate app file on macOS, Windows and Linux. Apps get only the file and network access the person running them grants.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Windows, Linux",
+        "url": "https://krate.tech/",
+        "downloadUrl": "https://krate.tech/download/",
+        "license": "https://github.com/incyashraj/krate#license",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
         "publisher": {"@id": "https://krate.tech/#organization"},
-        "sameAs": ["https://www.wikidata.org/wiki/Q141595622"]
+        "sameAs": ["https://www.wikidata.org/wiki/Q141595622", "https://github.com/incyashraj/krate"]
       },
       {
         "@type": "SoftwareSourceCode",
@@ -79,7 +96,8 @@
         "programmingLanguage": "Rust",
         "runtimePlatform": "WebAssembly",
         "url": "https://krate.tech/docs/",
-        "sameAs": ["https://www.wikidata.org/wiki/Q141595622"],
+        "license": "https://github.com/incyashraj/krate#license",
+        "targetProduct": {"@id": "https://krate.tech/#runtime"},
         "isPartOf": {"@id": "https://krate.tech/#website"}
       }
     ]

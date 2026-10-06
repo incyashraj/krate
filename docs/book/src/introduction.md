@@ -10,8 +10,9 @@ does not need a separate package for each operating system. Existing desktop
 binaries do not become portable without adapting them to supported Krate APIs.
 
 Apps begin without file or network access. Capabilities are declared in the
-manifest and approved through the runtime. This is an enforced boundary, not
-a promise of bug-free or harmless software. Read the [threat model](phase2/threat-model-v0-2.md)
+manifest and approved through the runtime, which checks them before many
+host calls; the [limits page](limits.md) lists the gaps. This is not a promise
+of bug-free or harmless software. Read the [threat model](phase2/threat-model-v0-2.md)
 and only run apps you trust. You can inspect an app's requests without running it:
 
 ```sh
@@ -28,9 +29,11 @@ krate run app.krate --dump-caps
 
 ## What is real today
 
-Desktop, on Intel and ARM: macOS, Windows and Linux, from byte-identical
-artifacts. Components run through the CLI or the embedding API, GUI apps open
-real native windows, and capabilities are enforced before any host access.
+Desktop: runtimes are published for macOS, Windows and Linux on Intel and
+ARM, and the same app files run on all three. The automated cross-platform
+replay checks cover macOS on Apple silicon and Windows and Ubuntu on x86_64.
+Components run through the CLI or the embedding API, GUI apps open real native
+windows, and the runtime checks capabilities before many host calls.
 Agents can drive the whole thing through `krate run --json` and an MCP server,
 receiving permission decisions as data.
 

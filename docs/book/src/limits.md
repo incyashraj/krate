@@ -49,7 +49,9 @@ These are the wall. A capability that could be added later is listed under
 
 ## The honest state of the sandbox
 
-The capability boundary is enforced in code and it works. Krate is young,
+The runtime checks capabilities before many host calls, and a few
+capability names only describe what is available rather than gating a call.
+Krate is young,
 and we do not claim production hardening against deliberately hostile
 third-party code today. Run apps from people you know, or from the
 gallery, or ones you built.
@@ -60,8 +62,13 @@ gallery, or ones you built.
   the tree, but they are early CLI-shaped work with no UI bindings, so
   nothing you can ship a window from. The guest is a WebAssembly
   component, so other languages are possible; none are finished.
-- **Desktop only.** macOS, Windows and Linux, on Intel and ARM. iOS and
-  Android exist in the tree as reference ports and are not shipping.
+- **Desktop only.** Runtimes are published for macOS, Windows and Linux,
+  on Intel and ARM. The same ten ported `.krate` files passed automated
+  replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows
+  (x86_64) with runtime 0.5.4
+  ([records](https://github.com/incyashraj/krate/tree/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3));
+  the other published targets are not in those checks yet. iOS and Android
+  exist in the tree as reference ports and are not shipping.
 - **Heavy GPU work is early.** The renderer draws real scenes, but a
   demanding 3D game is not what this runs well today.
 

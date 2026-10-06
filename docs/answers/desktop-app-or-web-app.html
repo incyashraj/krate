@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>How to share an AI-built desktop app | Krate</title>
-<meta name="description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
-<link rel="canonical" href="https://krate.tech/share-an-app-made-with-ai.html">
+<title>Desktop app or hosted web app? Ship without a server | Krate</title>
+<meta name="description" content="Hosting a web app avoids installers but needs a server and a browser. A .krate is a desktop app in one file that works offline and asks before it uses your files.">
+<link rel="canonical" href="https://krate.tech/desktop-app-or-web-app.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
-<meta property="og:title" content="How to share an AI-built desktop app | Krate">
-<meta property="og:description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
-<meta property="og:url" content="https://krate.tech/share-an-app-made-with-ai.html">
+<meta property="og:title" content="Desktop app or hosted web app? Ship without a server | Krate">
+<meta property="og:description" content="Hosting a web app avoids installers but needs a server and a browser. A .krate is a desktop app in one file that works offline and asks before it uses your files.">
+<meta property="og:url" content="https://krate.tech/desktop-app-or-web-app.html">
 <meta property="og:image" content="https://krate.tech/og-v4.png">
 <meta property="og:image:alt" content="Krate desktop application runtime">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="How to share an AI-built desktop app | Krate">
-<meta name="twitter:description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
+<meta name="twitter:title" content="Desktop app or hosted web app? Ship without a server | Krate">
+<meta name="twitter:description" content="Hosting a web app avoids installers but needs a server and a browser. A .krate is a desktop app in one file that works offline and asks before it uses your files.">
 <meta name="twitter:image" content="https://krate.tech/og-v4.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/share-an-app-made-with-ai.html#webpage", "url": "https://krate.tech/share-an-app-made-with-ai.html", "name": "How to share an AI-built desktop app | Krate", "description": "Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/desktop-app-or-web-app.html#webpage", "url": "https://krate.tech/desktop-app-or-web-app.html", "name": "Desktop app or hosted web app? Ship without a server | Krate", "description": "Hosting a web app avoids installers but needs a server and a browser. A .krate is a desktop app in one file that works offline and asks before it uses your files.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Can I turn my website into a desktop app?", "acceptedAnswer": {"@type": "Answer", "text": "You can wrap it with Electron or Tauri, which gives you a package per OS to build and sign. Krate doesn't wrap websites: a Krate app is written against Krate's interfaces, and Krate Studio can port a web project by rewriting it."}}, {"@type": "Question", "name": "Do Krate apps need an internet connection?", "acceptedAnswer": {"@type": "Answer", "text": "No, unless the app itself uses the network, and then only to the hosts the person allows."}}, {"@type": "Question", "name": "Can people open a .krate on their phone?", "acceptedAnswer": {"@type": "Answer", "text": "Not yet. iOS and Android exist in Krate's source as reference ports and are not shipping."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -107,73 +107,78 @@
 <main id="main">
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
-  <h1>Share the app, not your development setup</h1>
-  <p class="lede">If an AI-built application uses Krate's interfaces, you can package it as one .krate file and send it to someone on macOS, Windows or Linux. They need a compatible Krate runtime.</p>
-  <p class="meta">2 min read</p>
+  <h1>Ship a desktop app or host a web app?</h1>
+  <p class="lede">Host a web app when people need it on phones or without installing anything. Ship a desktop app when it should open like a program, work offline and handle local files. A <code>.krate</code> gives you the desktop option without a package per OS: one file that opens on macOS, Windows and Linux, at the cost of a one-time Krate runtime install for each person.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 2 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
-    <a class="btn dark" href="#send-the-file-directly">Share a .krate file <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
-    <a class="btn ghost" href="/studio/">Make one in Studio</a>
+    <a class="btn dark" href="#side-by-side">See the comparison <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app</a>
   </nav>
-  <p class="ent">Already have a <code>.krate</code> file? Jump to the handoff steps. If your AI generated a website, Python script or another kind of app, start with the <a href="/docs/porting.html">porting guide</a>; renaming the file does not convert it.</p>
 </section>
 
 <section class="art-body wrap">
   <div class="doc">
     <nav class="toc" aria-label="On this page">
       <h6>On this page</h6>
-      <a href="#choose-the-authoring-path">Choose the authoring path</a>
-      <a href="#test-before-you-send-it">Test before you send it</a>
-      <a href="#send-the-file-directly">Send the file directly</a>
-      <a href="#publishing-is-an-optional-separate-step">Publishing is an optional separate step</a>
-      <a href="#what-the-recipient-can-trust">What the recipient can trust</a>
+      <a href="#side-by-side">Side by side</a>
+      <a href="#hosting-has-running-costs-too">Hosting has running costs too</a>
+      <a href="#apps-made-with-lovable-bolt-v0-and-similar-tools">Apps made with Lovable, Bolt, v0 and similar tools</a>
+      <a href="#when-the-web-is-the-right-answer">When the web is the right answer</a>
+      <a href="#questions">Questions</a>
       <a href="#more-answers">More answers</a>
     </nav>
     <article class="prose">
-      <section id="choose-the-authoring-path">
-        <h2>Choose the authoring path</h2>
-<p><a href="/studio/">Krate Studio</a> provides a graphical way to make and revise apps with AI. Developers can also use the CLI or write the code themselves. AI is an authoring option, not a runtime requirement.</p>
-<p>The local CLI example below requires Rust/component build tools and an installed, authenticated Claude Code CLI. Your provider's subscription or API charges are separate. Check the <a href="/docs/quickstart.html">quickstart</a> for installation and platform requirements.</p>
-<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate doctor
-krate ai
-krate create "a regex tester with a pattern box and live matches" --agent claude --output regex.krate</pre>
-<p>Use <code>krate create --help</code> for your installed version's options.</p>
+      <section id="side-by-side">
+        <h2>Side by side</h2>
+<div class="answer-table-wrap" role="region" aria-label="Web app and Krate app compared" tabindex="0"><table class="answer-table">
+<caption>A hosted web app and a .krate desktop app, reviewed 6 October 2026</caption>
+<thead><tr><th scope="col">Question</th><th scope="col">Hosted web app</th><th scope="col">Krate app</th></tr></thead>
+<tbody>
+<tr><th scope="row">What people get</th><td>A page in a browser tab, or an installed web app where the browser supports it.</td><td>A desktop app in its own window.</td></tr>
+<tr><th scope="row">What you run</th><td>A server or hosting account, for as long as people use the app.</td><td>Nothing. The file runs on their computer. Publishing to a hub is optional.</td></tr>
+<tr><th scope="row">Offline</th><td>Only with extra work, such as a service worker.</td><td>Works without a connection unless the app itself needs the network.</td></tr>
+<tr><th scope="row">Local files</th><td>Depends on the browser. The File System Access picker is <a href="https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker">not available in all major browsers</a>.</td><td>Through a file dialog or a folder the person grants.</td></tr>
+<tr><th scope="row">Updates</th><td>Every visitor gets the new version on reload.</td><td>You send or publish a new file.</td></tr>
+<tr><th scope="row">Phones</th><td>Yes.</td><td>Not yet. Desktop only today.</td></tr>
+<tr><th scope="row">What people install</th><td>Nothing.</td><td>The Krate runtime, once.</td></tr>
+</tbody></table></div>
       </section>
-      <section id="test-before-you-send-it">
-        <h2>Test before you send it</h2>
-<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate run regex.krate --dump-caps
-krate run regex.krate --prompt</pre>
-<p>The first command inspects capabilities without executing the component. The second runs it after permission review. Try valid and invalid inputs, resizing, save/reopen behavior and permission denial. Build and first-frame checks cannot establish that every feature works.</p>
-<p>The normal authoring path includes editable source. Review the bundle for secrets, private sample data and third-party licensing obligations before sharing. Do not assume that generated code is correct or appropriately licensed just because it compiles.</p>
+      <section id="hosting-has-running-costs-too">
+        <h2>Hosting has running costs too</h2>
+<p>A hosted app needs a domain, a hosting bill, uptime, sign-in and storage for user data, and it keeps people's data on your server, which brings privacy duties. A Krate app keeps its saved data on the person's computer unless it is granted network access and sends it somewhere. If it needs a service, you still run that service, but the app itself does not need hosting.</p>
       </section>
-      <section id="send-the-file-directly">
-        <h2>Send the file directly</h2>
-<p>Once you have <a href="#test-before-you-send-it">tested the app</a>, email the <code>.krate</code> file, put it in a shared folder or send it through a chat that accepts files. Include the runtime version you tested, a short description and the task the recipient can try. Optional hosted publishing is not required.</p>
-<p>The recipient follows <a href="/open/">the open-a-file instructions</a>, installs the runtime for their own system, then inspects and opens the file. They do not need your AI account, source checkout or Rust toolchain. GUI file association depends on the installed runtime/opener; the CLI provides an explicit path:</p>
-<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate run regex.krate --dump-caps
-krate run regex.krate --prompt</pre>
-<p>Sending an app does not automatically send its separate saved data, copy credentials or synchronize accounts. If it needs a network service, document that dependency.</p>
+      <section id="apps-made-with-lovable-bolt-v0-and-similar-tools">
+        <h2>Apps made with Lovable, Bolt, v0 and similar tools</h2>
+<p>These tools mostly produce web apps. You can host the published URL, or wrap it with Electron, Tauri or a wrapper service, which gives you a package per OS to build, sign and host. Krate does not wrap websites. To ship such an app as a <code>.krate</code>, open the project in Krate Studio and port it: the AI rewrites it against Krate's interfaces and shows its plan first. The DOM does not carry over. See <a href="/share-an-app-made-with-ai.html">how to share an AI-built desktop app</a>.</p>
       </section>
-      <section id="publishing-is-an-optional-separate-step">
-        <h2>Publishing is an optional separate step</h2>
-<p>A hub can host the bundle so you share a URL. Publishing uploads the file and may list it publicly, depending on the selected options. Read the current command's authentication, hub and listing requirements first:</p>
-<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate publish --help
-krate publish regex.krate</pre>
-<p>Do not publish private code or user data by accident. Direct file sharing remains available without a hosted publishing service.</p>
+      <section id="when-the-web-is-the-right-answer">
+        <h2>When the web is the right answer</h2>
+<ul>
+<li>People need it on phones, or cannot install anything.</li>
+<li>Many people work on the same live data.</li>
+<li>Search engines need to index the content.</li>
+<li>Your team and your code are already on the web.</li>
+</ul>
       </section>
-      <section id="what-the-recipient-can-trust">
-        <h2>What the recipient can trust</h2>
-<p>A capability declaration describes requested access, not a guarantee of good behavior. Approved file or network access can still be misused within its scope. Review the source and permissions and start with apps from people you trust. See <a href="/run-ai-generated-code-safely.html">the security boundaries</a> and <a href="/portable-desktop-app-format.html">how to verify the same artifact across systems</a>.</p>
-      </section>
+    <section id="questions">
+      <h2>Questions</h2>
+      <h3>Can I turn my website into a desktop app?</h3>
+<p>You can wrap it with Electron or Tauri, which gives you a package per OS to build and sign. Krate doesn't wrap websites: a Krate app is written against Krate's interfaces, and Krate Studio can port a web project by rewriting it.</p>
+      <h3>Do Krate apps need an internet connection?</h3>
+<p>No, unless the app itself uses the network, and then only to the hosts the person allows.</p>
+      <h3>Can people open a .krate on their phone?</h3>
+<p>Not yet. iOS and Android exist in Krate's source as reference ports and are not shipping.</p>
+    </section>
     <section id="more-answers">
       <h2>More answers about shipping desktop apps</h2>
       <ul class="answer-related">
         <li><a href="/portable-desktop-app-format.html">One desktop app file, three operating systems</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share the app, not your development setup</a></li>
         <li><a href="/run-ai-generated-code-safely.html">Inspect what an app built with AI can access</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
         <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
         <li><a href="/krate-vs-electron.html">Krate vs Electron: one app file instead of a browser in every app</a></li>
         <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
-        <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>
         <li><a href="/desktop-app-code-signing.html">Do you need code signing to ship a desktop app?</a></li>
         <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>
       </ul>

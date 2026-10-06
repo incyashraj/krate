@@ -24,6 +24,7 @@
 .qa summary:hover { color: var(--accent); }
 .qa summary:hover .n { color: var(--accent); }
 .qa-wrap { margin-top: 8px; }
+.ph .lede a { color: var(--accent); }
 .qnav { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 22px; }
 .qnav .tag { height: 32px; padding: 0 13px; font-size: 13px; background: var(--s1); box-shadow: 0 0 0 1px var(--hair); transition: color .2s, box-shadow .2s; }
 .qnav .tag:hover { color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -316,7 +317,7 @@
    "name": "Can an app hide what it accesses or ignore the permission screen?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Krate checks every operation at the boundary, so the list is not something the app writes about itself: if the app tries something that was not granted, the call is denied before it reaches the operating system.<\/p><p>If a required permission is denied, the app refuses to start and explains what is missing.<\/p>"
+    "text": "<p>The runtime checks protected calls at the boundary, so the list is not only something the app writes about itself: if the app tries a checked call that was not granted, the call is denied before it reaches the operating system. The <a href=\"https://krate.tech/docs/limits.html\">limits page<\/a> lists the gaps.<\/p><p>If a required permission is denied, the app refuses to start and explains what is missing.<\/p>"
    }
   },
   {
@@ -428,7 +429,7 @@
 <section class="ph wrap n">
   <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Questions</span>
   <h1>Questions</h1>
-  <p class="lede">What people ask about Krate, answered short. Each answer links to where it goes deeper.</p>
+  <p class="lede">What people ask about Krate, the app runtime, answered short. Shipping questions (code signing, Electron and Tauri alternatives, sharing an app made with AI) have their own <a href="/desktop-app-shipping-faq.html">shipping FAQ</a>.</p>
 </section>
 
 <nav class="qnav wrap n" aria-label="Topics"><a class="tag" href="#basics">The basics</a><a class="tag" href="#compare">How it compares</a><a class="tag" href="#inside">Under the hood</a><a class="tag" href="#making">Making apps</a><a class="tag" href="#sharing">Sharing and opening</a><a class="tag" href="#safety">Safety</a><a class="tag" href="#cost">Cost and accounts</a></nav>
@@ -500,7 +501,7 @@
   <h2 class="qh rv" id="safety">Safety</h2>
   <div class="qa qa-wrap rv">
     <details id="without-asking"><summary><span class="n">34</span>What can an app do without asking?</summary><div class="ans"><p>Only harmless things: open its window, draw, play sound, read the clock and your language settings, and show a dialog. Your files, the network, the camera, the microphone and its own storage each have to be declared by the app, and you see that list before it opens.</p></div></details>
-    <details id="hide-access"><summary><span class="n">35</span>Can an app hide what it accesses or ignore the permission screen?</summary><div class="ans"><p>Krate checks every operation at the boundary, so the list is not something the app writes about itself: if the app tries something that was not granted, the call is denied before it reaches the operating system.</p><p>If a required permission is denied, the app refuses to start and explains what is missing.</p></div></details>
+    <details id="hide-access"><summary><span class="n">35</span>Can an app hide what it accesses or ignore the permission screen?</summary><div class="ans"><p>The runtime checks protected calls at the boundary, so the list is not only something the app writes about itself: if the app tries a checked call that was not granted, the call is denied before it reaches the operating system. The <a href="/docs/limits.html">limits page</a> lists the gaps.</p><p>If a required permission is denied, the app refuses to start and explains what is missing.</p></div></details>
     <details id="files"><summary><span class="n">36</span>Can an app read my files?</summary><div class="ans"><p>Only what it was granted, such as a folder of its own, and any file you choose for it in a dialog. There is no way for an app to read everything, by design.</p></div></details>
     <details id="file-manager"><summary><span class="n">37</span>Could I make a file manager, like a Finder alternative?</summary><div class="ans"><p>Not a full one today. An app works inside a folder of its own and with files you choose for it; it cannot browse your whole disk, by design. A file tool that works in the folders you hand it is fine.</p></div></details>
     <details id="network-hosts"><summary><span class="n">38</span>How does network permission work for an app that talks to several servers?</summary><div class="ans"><p>Each server is declared with its port, such as <code class="k">api.example.com:443</code>, and an app can list as many as it needs. A wildcard like <code class="k">*.example.com</code> covers one level of subdomain: <code class="k">api.example.com</code>, not <code class="k">a.b.example.com</code>.</p><p>WebSockets use the same grant. Redirects are not followed, so a granted server cannot send the request somewhere you did not approve. An app cannot ask for more while it runs; anything new comes in its next version, and you see it before that version opens.</p></div></details>

@@ -109,6 +109,17 @@ def render_llms():
               "- [Measurements](https://krate.tech/reports/)",
               "- [Repository inventory](https://krate.tech/progress/)",
               "- [FAQ](https://krate.tech/faq/)",
+              "- [Download Krate](https://krate.tech/download/)",
+              "- [How to distribute a desktop app to Windows, macOS and Linux](https://krate.tech/how-to-distribute-a-desktop-app.html)",
+              "- [Krate vs Electron](https://krate.tech/krate-vs-electron.html)",
+              "- [Krate vs Tauri](https://krate.tech/krate-vs-tauri.html)",
+              "- [Desktop app or hosted web app](https://krate.tech/desktop-app-or-web-app.html)",
+              "- [Code signing and Krate](https://krate.tech/desktop-app-code-signing.html)",
+              "- [Shipping a desktop app: questions and answers](https://krate.tech/desktop-app-shipping-faq.html)",
+              "- [One desktop app file for three operating systems](https://krate.tech/portable-desktop-app-format.html)",
+              "- [Share an app made with AI](https://krate.tech/share-an-app-made-with-ai.html)",
+              "- [Inspect an app before you run it](https://krate.tech/run-ai-generated-code-safely.html)",
+              "- [Full text of these pages](https://krate.tech/llms-full.txt)",
               f"- [Latest published release]({facts['latest_release_url']})",
               f"- [Source]({facts['repository']})", ""]
     return "\n".join(lines)
