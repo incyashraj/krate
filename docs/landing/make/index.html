@@ -16,7 +16,7 @@
 .hidden, [hidden] { display: none !important; }
 
 /* ---- the room: one question, one box ---- */
-.room { position: relative; isolation: isolate; min-height: calc(100vh - var(--hd) - 40px); padding: 0 0 40px; overflow: hidden; }
+.room { position: relative; isolation: isolate; min-height: calc(100vh - var(--hd) - 40px); padding: 0 0 40px; overflow: hidden; overflow: clip; }
 .mk-aura { position: absolute; z-index: -1; inset: -120px -10% auto; height: 640px; pointer-events: none; filter: blur(70px); opacity: .55;
   background: radial-gradient(34% 40% at 30% 40%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%),
               radial-gradient(30% 36% at 70% 32%, color-mix(in srgb, var(--violet) 26%, transparent), transparent 70%),

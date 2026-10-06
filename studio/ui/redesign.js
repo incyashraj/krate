@@ -101,7 +101,10 @@
     if (window.krStack) window.krStack(b, 120);
     const t0 = performance.now();
     const why = web ? setTimeout(() => window.krSwap && window.krSwap(q(".bt .kr-swp", b), "Waking up the workshop<small>The first visit takes a few seconds.</small>"), 3000) : 0;
-    const ready = () => ["viewHome", "viewSession", "viewGate", "viewApps", "viewCloud", "viewIde"].some((id) => { const v = $(id); return v && !v.classList.contains("hidden"); });
+    // A view counts once it can be SEEN: the web keeps the sign-in page
+    // invisible while it asks the hub who this is, and the loader left on
+    // that, over a blank page, for as long as the hub took.
+    const ready = () => ["viewHome", "viewSession", "viewGate", "viewApps", "viewCloud", "viewIde"].some((id) => { const v = $(id); return v && !v.classList.contains("hidden") && getComputedStyle(v).visibility !== "hidden"; });
     const t = setInterval(() => {
       const el = performance.now() - t0;
       if ((ready() && el > (web ? 700 : 1300)) || el > 20000) {
@@ -1760,6 +1763,10 @@
       let upT = setTimeout(() => window.krSwap(q(".kr-swp", ring), `Uploading ${esc((shareApp && shareApp.size) || "it")}`), 900);
       let raf = 0; const fill = (now) => { const p = Math.min(.86, (now - t0) / 3200), e = 1 - Math.pow(1 - p, 2.2); pr.style.strokeDashoffset = 1 - e; raf = requestAnimationFrame(fill); }; raf = requestAnimationFrame(fill);
       linking = true;
+      // Signed out: the popup asks, and when it lands this same button
+      // publishes again here, ring and stamp and all (it finished behind the
+      // old sheet with only a toast).
+      window.__krPubAgain = () => { delete go.dataset.busy; q("span", go).textContent = "Publish"; go.click(); };
       try { await publishFromSheet(); } catch (e) {}
       linking = false;
       cancelAnimationFrame(raf); clearTimeout(upT);
@@ -1773,8 +1780,10 @@
       if (sheet) sheet.classList.add("hidden");
       const url = linkOf();
       const signIn = $("pubSignin") && !$("pubSignin").classList.contains("hidden");
-      if (url && !signIn) return published(pane, n.value.trim(), url, listed);
-      if (signIn) { closeShare(); if (sheet) sheet.classList.remove("hidden"); return; }
+      if (url && !signIn) { window.__krPubAgain = null; return published(pane, n.value.trim(), url, listed); }
+      // Waiting on the sign-in popup, which is already open over this pane.
+      if (signIn) { delete go.dataset.busy; q("span", go).textContent = "Publish"; return; }
+      window.__krPubAgain = null;
       delete go.dataset.busy; q("span", go).textContent = "Publish";
       err.textContent = (($("pubNote") || {}).textContent || "").trim() || "It did not publish just now. Try again in a moment."; err.hidden = false;
     });
@@ -2008,8 +2017,11 @@
       if (seen()) { clearInterval(t); return; }
       const home = $("viewHome");
       const busy = qa(".sheet-wrap:not(.hidden)").length || obWrap.classList.contains("on") || tourEl.classList.contains("on");
-      if (home && !home.classList.contains("hidden") && !busy) { clearInterval(t); obOpen(); }
-      else if (++tries > 40) clearInterval(t);
+      // After Studio's opening, not under it: the welcome's entrance played
+      // unseen behind the loader (the design opens it once the loader goes).
+      const boot = q(".kr-boot"), booting = boot && !boot.classList.contains("gone");
+      if (home && !home.classList.contains("hidden") && !busy && !booting) { clearInterval(t); obOpen(); }
+      else if (++tries > 80) clearInterval(t);
     }, 250);
   })();
 
@@ -2313,7 +2325,7 @@
       if (since < 1400) glQ = setTimeout(set, 1400 - since); else set();
     }
     const GLYPH = { "": "think", plan: "think", write: "write", build: "build", look: "check", pack: "pack", wall: "check" };
-    const WORD = { "": ["thinking about", "var(--accent)"], plan: ["planning", "var(--accent)"], write: ["writing", "var(--violet)"], build: ["building", "var(--accent)"], look: ["testing", "var(--violet)"], pack: ["packing", "var(--orange)"], wall: ["checking", "var(--violet)"] };
+    const WORD = { "": ["thinking about", "var(--accent)"], plan: ["planning", "var(--accent)"], write: ["writing", "var(--violet)"], build: ["building", "var(--accent)"], look: ["checking", "var(--violet)"], pack: ["packing", "var(--orange)"], wall: ["still checking", "var(--violet)"] };
 
     /* the line under the inset */
     function plain(t, cls) {
@@ -2329,7 +2341,9 @@
       const name = !nm || nm === "Your app" ? "app" : nm.toLowerCase();
       if (fst.dataset.k === ph + "|" + name) return;
       fst.dataset.k = ph + "|" + name;
-      const w = WORD[ph] || WORD.write;
+      // A port is "porting" while it writes; every other step is the same.
+      const st0 = app(), porting = !!(st0 && st0.session && st0.session.portSource && !(st0.session.result && st0.session.result.path));
+      const w = porting && (ph === "write" || ph === "plan" || ph === "") ? ["porting", "var(--violet)"] : WORD[ph] || WORD.write;
       let fw = q(".kr-fw", fst);
       if (!fw || fst.dataset.name !== name) {
         fst.dataset.name = name;
@@ -2861,7 +2875,13 @@
       const b = e.target.closest("[data-gw]"); if (!b) return;
       if (b.dataset.gw === "cancel") { showWait(false); return; }
       if (b.dataset.gw === "again") { press(btn); showWait(true); return; }
-      if (b.dataset.gw === "code") { showWait(false); const c = $("loginBtn"); if (c) { c.classList.remove("hidden"); press(c); } }
+      if (b.dataset.gw === "code") {
+        const c = $("loginBtn");
+        // With the engine missing the code cannot be fetched either: said,
+        // instead of a button that did nothing.
+        if (c && c.disabled) { toast("A code needs Krate's engine too. Reinstall Krate from krate.tech."); return; }
+        showWait(false); if (c) { c.classList.remove("hidden"); press(c); }
+      }
     });
     // The code screen gets a way back too: it hid Skip and the buttons and
     // waited up to fifteen minutes.
@@ -2931,7 +2951,14 @@
         return `<div class="kr-lg-hd"><span class="kr-lg-av">${esc(who.trim().charAt(0).toUpperCase() || "K")}<span class="ok"><svg viewBox="0 0 12 12"><path d="M2.5 6.2 L5 8.6 L9.6 3.6"/></svg></span></span><h3 id="krLgH">You're signed in</h3><p>${esc(a.login ? "@" + a.login : who)}${o.via && PROV[o.via] ? " · with " + PROV[o.via][0] : o.via === "email" ? " · with an email link" : ""}</p></div>
         <div class="kr-lg-done-bar"><i></i></div><div class="kr-lg-pad"></div>`; },
       error: (o) => `<div class="kr-lg-hd"><span class="kr-lg-bad">!</span><h3 id="krLgH">${esc(o.title || "That sign-in did not finish")}</h3><p>${esc(o.why || "Nothing changed. Try again, or pick another way.")}</p></div>
-        <button type="button" class="kr-lg-b dark sm" data-lg="back">Try again</button><div class="kr-lg-pad"></div>`,
+        ${o.email ? `<button type="button" class="kr-lg-b dark sm" data-lg="resend">Send a new link</button><button type="button" class="kr-lnk" data-lg="back">Use another way</button>` : '<button type="button" class="kr-lg-b dark sm" data-lg="back">Try again</button>'}<div class="kr-lg-pad"></div>`,
+    };
+    // Studio stops looking after ten minutes; the wait line stops saying it
+    // moves on by itself, and offers to look again.
+    window.krLoginStale = () => {
+      if (wrapEl.hidden || !(stateNow === "browser" || stateNow === "email")) return;
+      const p = q(".kr-lg-wait", box);
+      if (p) p.innerHTML = `Stopped waiting. Signed in already? <button type="button" class="kr-lnk" data-lg="look">Check again</button>`;
     };
     function go(st, o = {}) {
       clear();
@@ -2947,7 +2974,9 @@
         let n = 30;
         tick = setInterval(() => { n--; const b = q('[data-lg="resend"]', box); if (!b) { clearInterval(tick); return; } if (n <= 0) { clearInterval(tick); b.disabled = false; b.textContent = "Send it again"; return; } const c = q(".cnt", b); if (c) c.textContent = `0:${String(n).padStart(2, "0")}`; }, 1000);
         // An email link lasts fifteen minutes.
-        later(() => { if (stateNow === "email") go("error", { title: "That link has run out", why: "Links work for 15 minutes, and each one only once. Send yourself a new one." }); }, 15 * 60 * 1000);
+        // The address goes with it, so a new link is one press.
+        const email = o.email;
+        later(() => { if (stateNow === "email") go("error", { title: "That link has run out", why: "Links work for 15 minutes, and each one only once. Send yourself a new one.", email }); }, 15 * 60 * 1000);
       }
       if (st === "browser") later(() => { if (stateNow === "browser") { const p = q(".kr-lg-wait", box); if (p) p.lastChild.textContent = " Still waiting. The page may be in another browser window."; } }, 60000);
       if (st === "done") later(() => { close(true); }, 2000);
@@ -3008,6 +3037,7 @@
       if (a === "github" || a === "google") startProvider(a);
       else if (a === "reopen") { try { beginBrowserSignIn(b.dataset.via).catch(() => {}); toast(`Opened ${PROV[b.dataset.via][0]} again`); } catch (err) {} }
       else if (a === "back") go("start");
+      else if (a === "look") { try { watchSignIn(); const r = await invoke("account_status"); if (r && r.signed_in) signedInFromBrowser(r); else { const p = q(".kr-lg-wait", box); if (p) p.innerHTML = '<span class="kr-lg-spin"></span>Not yet. Waiting again'; } } catch (err) {} }
       else if (a === "code") { go("code", {}); try { invoke("account_login").catch((err) => { if (stateNow === "code") go("error", { why: String(err && err.message || err) }); }); } catch (err) {} }
       else if (a === "copy") { try { await navigator.clipboard.writeText(o.code || ""); toast("Code copied"); } catch (err) {} }
       else if (a === "codeurl") { try { invoke("open_external", { url: o.url }).catch(() => {}); } catch (err) {} }
@@ -3063,8 +3093,19 @@
     if (ps && desktopApp()) {
       watch(ps, { attributes: true, attributeFilter: ["class"] }, () => {
         if (ps.classList.contains("hidden") || !wrapEl.hidden) return;
-        const why = "Sign in to publish. Your app stays on this computer until you do.";
-        open({ why, onDone: () => { try { pubSigninDone(); } catch (e) {} } });
+        // app.js's own reason when it has one ("Your sign-in expired…").
+        const said = (($("pubSigninWhy") || {}).textContent || "").trim();
+        const why = /expired|again/i.test(said) ? said : "Sign in to publish. Your app stays on this computer until you do.";
+        const back = () => { ps.classList.add("hidden"); const f = $("pubForm"); if (f) f.classList.remove("hidden"); try { state.loginSurface = "gate"; } catch (e) {} };
+        open({
+          why,
+          // Finished where it started: the share pane publishes again with
+          // its ring; the publish sheet publishes from its form.
+          onDone: () => { const again = window.__krPubAgain; if (again) { window.__krPubAgain = null; back(); again(); return; } try { pubSigninDone(); } catch (e) {} },
+          // Closed: back to the form, never left on a sign-in step with no
+          // way out (K-995).
+          onClose: () => { window.__krPubAgain = null; back(); },
+        });
       });
     }
   })();
@@ -3106,4 +3147,26 @@
     setMode("port");
     startPort();
   });
+})();
+
+/* The conversation keeps its newest words in view. Cards are dressed and
+ * grow after they are appended (a question's chips and answer box, a
+ * plan's buttons), so a scroll at append time stopped short: on a phone the
+ * question's Send and Skip sat under the box. While the person is at the
+ * bottom it follows the bottom; once they scroll up to read, it lets them. */
+(function stickThread() {
+  const th = document.getElementById("thread");
+  if (!th || !window.MutationObserver) return;
+  let stick = true;
+  th.addEventListener("scroll", () => { stick = th.scrollTop + th.clientHeight >= th.scrollHeight - 48; }, { passive: true });
+  const follow = () => { if (stick) th.scrollTop = th.scrollHeight; };
+  new MutationObserver(() => requestAnimationFrame(follow)).observe(th, { childList: true, subtree: true });
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => follow());
+    const watchLast = () => { const l = th.lastElementChild; if (l && !l.dataset.krObs) { l.dataset.krObs = "1"; ro.observe(l); } };
+    new MutationObserver(watchLast).observe(th, { childList: true });
+    watchLast();
+  }
+  // A session opened or a new one started: begin at the bottom again.
+  document.addEventListener("click", (e) => { if (e.target.closest && e.target.closest(".sess-row, #homeSend")) stick = true; }, true);
 })();

@@ -673,6 +673,8 @@ function watchSignIn() {
   state.signInWatch = setInterval(async () => {
     if (!state.signInSince || Date.now() - state.signInSince > 10 * 60 * 1000) {
       clearInterval(state.signInWatch);
+      // The popup stops promising to move on by itself.
+      if (state.signInSince && window.krLoginStale) window.krLoginStale();
       state.signInSince = 0;
       return;
     }
@@ -1211,6 +1213,9 @@ function openSession(s) {
       "Nothing was lost, your words are kept, ready to send again.";
     $("retryBtn").textContent = "Resume build";
     setFailRaw("");
+    // An interruption is not a fault to report, nor a reason to change AI.
+    showFailReporting(false);
+    $("switchAiBtn")?.classList.add("hidden");
     show("failed");
     unlockComposer("Hit Resume build, or say what to do differently…");
   } else {
@@ -2683,6 +2688,7 @@ function failBuild(why, request) {
     $("retryBtn").textContent = "Try again";
     unlockComposer("Say it another way, or hit Try again");
     showFailReporting(true);
+    $("switchAiBtn")?.classList.remove("hidden");
     $("failTitle").textContent = "That one didn't come together.";
     $("failWhy").textContent = why;
     // The raw engine tail rides under the plain-words line, folded. Two
@@ -3767,6 +3773,9 @@ async function buildNow(request, files, revising, planSession, starterShape, por
   // session must know a build ran even when the process, the result, and
   // this window are all gone.
   state.session.buildStarted = true;
+  // Written down now: a reload or a restart mid-build must find it, or the
+  // session reopened as "never got going" about a build that ran.
+  persist();
   renderBuilding();
   startBuildWatchdog();
   // The rail is a conversation: it should answer. Without this the left
@@ -4124,6 +4133,9 @@ function plainWords(err) {
   // on a screen with no Details and a build that never ran. Somebody asking
   // why their app would not open was told their app had failed to build.
   if (err && err.refusal) return raw;
+  // Already plain words (the build service's own sentence for a build it
+  // stopped or let expire): said as they are, not as "the build failed".
+  if (err && err.plain) return raw;
   // Classify on what the PROVIDER said, never on what Krate said about it.
   const text = providerWords(raw);
   // The engine's summary when it gave one, else everything. The keyword
@@ -4393,22 +4405,25 @@ async function paintApiKeys() {
     rows.innerHTML = `<p class="ai-keys-note">Could not check for API keys.</p>`;
     return;
   }
-  rows.innerHTML = keys
+  // Escaped like everything else drawn from an answer, and an empty answer
+  // is an empty list (it threw "reading 'map'").
+  const h = (v) => escapeHtml(String(v == null ? "" : v));
+  rows.innerHTML = (Array.isArray(keys) ? keys : [])
     .map((k) => {
       if (k.set) {
-        return `<div class="ai-key-row" data-vendor="${k.vendor}">
-          <span class="ai-key-name">${k.label}</span>
-          <span class="ai-key-state ok">${k.where_kept}</span>
+        return `<div class="ai-key-row" data-vendor="${h(k.vendor)}">
+          <span class="ai-key-name">${h(k.label)}</span>
+          <span class="ai-key-state ok">${h(k.where_kept)}</span>
           ${k.from_env
             ? '<span class="ai-key-env">set outside Krate</span>'
-            : `<button class="btn btn-ghost ai-key-forget" data-forget="${k.vendor}">Remove</button>`}
+            : `<button class="btn btn-ghost ai-key-forget" data-forget="${h(k.vendor)}">Remove</button>`}
         </div>`;
       }
-      return `<div class="ai-key-row" data-vendor="${k.vendor}">
-        <span class="ai-key-name">${k.label}</span>
+      return `<div class="ai-key-row" data-vendor="${h(k.vendor)}">
+        <span class="ai-key-name">${h(k.label)}</span>
         <input class="ai-key-input" type="password" autocomplete="off"
-               spellcheck="false" placeholder="Paste a key" data-key="${k.vendor}" />
-        <button class="btn ai-key-save" data-save="${k.vendor}">Save</button>
+               spellcheck="false" placeholder="Paste a key" data-key="${h(k.vendor)}" />
+        <button class="btn ai-key-save" data-save="${h(k.vendor)}">Save</button>
       </div>`;
     })
     .join("");
@@ -4674,6 +4689,15 @@ async function refreshAccountAndEnter() {
   try {
     const account = await invoke("account_status");
     if (account && account.signed_in) {
+      // The popup is showing: it says "You're signed in" and moves on
+      // itself. Entering Home here closed it mid-wait on Windows and Linux,
+      // where no krate:// event arrives first.
+      if (state.loginSurface === "popup" && window.krLoginDone && !state.popupDoneSaid) {
+        state.popupDoneSaid = true;
+        setTimeout(() => { state.popupDoneSaid = false; }, 5000);
+        signedInFromBrowser(account);
+        return true;
+      }
       state.account = account;
       enterHome();
       return true;
@@ -6290,8 +6314,14 @@ async function fillFiles(app) {
 }
 
 function toastish(err) {
+  const text = clip(err && err.message ? err.message : String(err), 160);
+  // Under the box in a session, where the person is looking; anywhere else
+  // a toast, or the line was written into a box nobody could see.
+  const inSession = !$("viewSession").classList.contains("hidden");
   const hint = $("composerHint");
-  if (hint) hint.textContent = clip(err && err.message ? err.message : String(err), 160);
+  if (inSession && hint) { hint.textContent = text; return; }
+  if (window.krToast) window.krToast(text);
+  else if (hint) hint.textContent = text;
 }
 
 /* The source, in the order a person reads it: the code first, the
@@ -6680,7 +6710,9 @@ function setupPanel() {
   });
   $("barRun")?.addEventListener("click", () => $("openBtn").click());
   $("barShare")?.addEventListener("click", () => openSendSheet(null, null, $("barShare")));
-  $("filesAttach")?.addEventListener("click", () => $("attachBtn").click());
+  // Straight to the file picker: clicking the box's + opened its menu at
+  // the foot of the window, far from the button that was pressed.
+  $("filesAttach")?.addEventListener("click", () => attach());
   $("filesSave")?.addEventListener("click", () => {
     const app = currentApp();
     if (app) invoke("reveal", { path: app.path }).catch((e) => toastish(e));
@@ -6947,9 +6979,17 @@ async function startPortFromHome() {
     return;
   }
   let source = null;
-  try { source = await invoke("pick_source_folder"); } catch (err) { console.warn("picker:", err); }
+  try { source = await invoke("pick_source_folder"); } catch (err) {
+    // Said under the box: the reason only reached the console.
+    const hint = $("homeHint");
+    if (hint) hint.textContent = String(err && err.message ? err.message : err).replace(/^error:\s*/i, "");
+    return;
+  }
   if (!source) return;
   const name = baseName(source) || source;
+  // The app is called by its folder's name everywhere it is shown (the
+  // card said "Port My App" and the header "New app").
+  const pretty = name.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   if (tauri) {
     try { await refreshAgents(); } catch (e) { /* use the list we have */ }
     if (!(state.agents || []).some((a) => a.state === "working")) {
@@ -6958,6 +6998,8 @@ async function startPortFromHome() {
     }
   }
   newSession(`Port ${name}`);
+  state.session.planName = pretty;
+  $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
   show("idle");
   showView("session");
@@ -6968,7 +7010,10 @@ async function startPortFromHome() {
   try {
     plan = JSON.parse(await invoke("port_plan", { source }));
   } catch (err) {
-    say("KRATE", `I couldn't read that folder: ${plainWords(err)}`, null, { variant: "ask" });
+    // The engine's own reason: plainWords is for builds, and turned a
+    // folder Krate could not read into "pick another folder in Settings".
+    const why = String(err && err.message ? err.message : err || "").replace(/^error:\s*/i, "").split("\n")[0].trim();
+    say("KRATE", `I couldn't read that folder${why ? `: ${why}` : "."}${/permission denied|operation not permitted/i.test(why) ? " Krate needs to be allowed to read it; check the folder's permissions, or copy the project somewhere it can read." : ""}`, null, { variant: "ask" });
     return;
   }
   showPortPlan(plan, source, name);
@@ -8164,6 +8209,10 @@ $("retryBtn").addEventListener("click", () => {
 function retryFailed(again) {
   if (!again || state.buildingSession) return;
   show("idle");
+  // A failed port is ported again, from its folder (it went down the
+  // make path and built a new app from the words "Port todo-app").
+  const portSource = state.session && !(state.session.result && state.session.result.path) && state.session.portSource;
+  if (portSource) { buildNow(again, [], false, "", "", portSource); return; }
   const revising = !!(state.session && state.session.result && state.session.result.path);
   buildNow(again, [], revising, "", "");
 }
@@ -8802,6 +8851,14 @@ function setShelfOpen(open) {
     }
   }
 
+  // A window made narrow with the drawer open: the drawer now covers the
+  // page, so it closes (without forgetting the wide window's choice).
+  // It stayed open over Home with nothing to dismiss it.
+  try {
+    const narrow = window.matchMedia("(max-width: 760px)");
+    narrow.addEventListener("change", (e) => { if (e.matches && side.dataset.open === "true") setOpen(false, false); });
+  } catch (e) {}
+
   // Restore it before anything paints, so the window does not open closed
   // and then visibly slide the rail in.
   try {
@@ -8908,7 +8965,20 @@ function setShelfOpen(open) {
     setOpen(false);
     invoke("open_external", { url: "https://krate.tech/docs/" }).catch(() => {});
   });
-  $("sideShare")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
+  $("sideShare")?.addEventListener("click", () => {
+    setOpen(false);
+    // On a desktop, sharing Krate is its link. The sheet behind this button
+    // is the browser's free-app plan, whose words are about Krate's own AI
+    // and were wrong here.
+    if (tauri) {
+      const link = "https://krate.tech";
+      (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject())
+        .then(() => toastish("Copied krate.tech. Send it to someone who builds things."))
+        .catch(() => toastish("krate.tech is the link to send."));
+      return;
+    }
+    openPlanSheet();
+  });
   $("sideHome")?.addEventListener("click", () => setOpen(false));
 })();
 
@@ -9160,7 +9230,11 @@ $("setOutBtn")?.addEventListener("click", async () => {
     await invoke("settings_set", { settings: { out_dir: dir, agent: state.agent } });
     const el = $("setOutDir");
     if (el) el.textContent = dir.replace(/^\/Users\/[^/]+/, "~");
-  } catch (e) { /* cancelled */ }
+  } catch (e) {
+    // A cancel returns nothing and never lands here; this is a real
+    // failure, and it was silent.
+    toastish(`Could not use that folder: ${String(e && e.message ? e.message : e).replace(/^error:\s*/i, "")}`);
+  }
 });
 
 $("setAgentBtn")?.addEventListener("click", () => {
@@ -10068,7 +10142,17 @@ async function paintTerminalSetting() {
     return;
   }
   if (!info || !info.supported) return;
+  const was = group.classList.contains("hidden");
   group.classList.remove("hidden");
+  // The nav was built before this answer came back, so it left Terminal
+  // out on the first open: built again, on the section that was showing.
+  if (was) {
+    try {
+      const on = (($("setNav") || {}).querySelector?.(".on") || {}).textContent || "";
+      dressSettings();
+      if (on) [...($("setNav")?.children || [])].find((b) => b.textContent.trim() === on.trim())?.click();
+    } catch (e) {}
+  }
   const hint = $("setTermHint");
   const btn = $("setTermBtn");
   if (info.linked) {

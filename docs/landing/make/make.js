@@ -442,7 +442,7 @@ function finished(result) {
     // name and buttons stay, which is what a person came for.
     frame.classList.add("hidden");
   }
-  $("doneNote").textContent = "";
+  $("doneNote").className = "note"; $("doneNote").textContent = "";
   show("viewDone");
 }
 
@@ -821,10 +821,10 @@ function boot() {
     if (!state.result) return;
     if (state.result.share) {
       await copy(state.result.share);
-      $("doneNote").textContent = "Link copied. Anyone who opens it gets the app.";
+      $("doneNote").className = "note"; $("doneNote").textContent = "Link copied. Anyone who opens it gets the app.";
       return;
     }
-    $("doneNote").textContent = "Publishing…";
+    $("doneNote").className = "note"; $("doneNote").textContent = "Publishing…";
     try {
       // The hub's publish door takes the bundle bytes, the same way `krate
       // publish` sends them. There was never a "publish this build" route:
@@ -851,7 +851,7 @@ function boot() {
       const out = await res.json();
       state.result.share = out.full_url || out.url;
       await copy(out.url);
-      $("doneNote").textContent = "Link copied. Anyone who opens it gets the app.";
+      $("doneNote").className = "note"; $("doneNote").textContent = "Link copied. Anyone who opens it gets the app.";
     } catch (err) {
       $("doneNote").className = "note bad";
       $("doneNote").textContent = String(err.message || err);

@@ -37,6 +37,16 @@ const TOKEN_KEY = "krate_tok";
 const PENDING_KEY = "krate_pending_request";
 
 try { bridge.token = localStorage.getItem(TOKEN_KEY); } catch (e) {}
+// Signed in (or out) in another tab: this tab knows at once, so its next
+// send does not ask again (the token was read once, at load).
+try {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== TOKEN_KEY) return;
+    bridge.token = e.newValue || null;
+    if (!bridge.token) bridge.me = null;
+    try { if (typeof refreshAccountAndEnter === "function" && bridge.token) invoke("account_status").then((a) => { if (a && a.signed_in && typeof renderAccount === "function") { state.account = a; renderAccount(); } }).catch(() => {}); } catch (err) {}
+  });
+} catch (e) {}
 
 /* Leave for the sign-in page, once.
  *
@@ -70,6 +80,15 @@ function goSignIn(request) {
         try { localStorage.removeItem(START_KEY); localStorage.setItem(PENDING_KEY, typed); } catch (e) {}
         location.reload();
       },
+    });
+    return new Promise(() => {});
+  }
+  // Any other sign-in (the account menu, Port an app, a build whose sign-in
+  // ran out) is the same popup, not a jump to the sign-in page.
+  if (window.krSignIn) {
+    window.krSignIn({
+      why: "Sign in to carry on. Everything here is kept.",
+      onClose: () => { bridge.leaving = false; },
     });
     return new Promise(() => {});
   }
@@ -645,11 +664,22 @@ function refuse(message) {
  * file answers 401 -- both surfaces used to set `location.href` to it and
  * nothing happened. The bytes are fetched with the token and handed over
  * as an object URL under the app's own file name. */
+/* A file the build service would not hand over, in words: its own word
+ * for a missing file is "not ready", which is not a sentence. */
+async function fileFetchError(res) {
+  const said = (await res.text().catch(() => "")).trim();
+  const out = new Error(res.status === 404 || /^not ready$/i.test(said)
+    ? "That file is not on the build service any more. Make it again to get a fresh one."
+    : said || "The file could not be fetched just now. Try again in a moment.");
+  out.refusal = true;
+  return out;
+}
+
 async function downloadApp(url, fileName) {
   const headers = {};
   if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
   const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")) || "the file is not there any more; make it again");
+  if (!res.ok) throw await fileFetchError(res);
   const blob = await res.blob();
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -755,6 +785,12 @@ function currentWebApp(path, version) {
   // Only when a version is named AND it is not the one the page is showing:
   // the common case is one app with one name, and putting "v3" on that
   // would be noise.
+  // A reopened session's app keeps its name: the URL alone downloaded as
+  // "app.krate".
+  if (!name) {
+    const mine = localSessions().find((s) => s && s.result && String(s.result.path || "") === url);
+    if (mine) name = String(mine.result.name || (mine.title ? `${mine.title}.krate` : ""));
+  }
   const base = name || "app.krate";
   if (version && version > 1) {
     const dot = base.lastIndexOf(".krate");
@@ -777,7 +813,7 @@ async function publishWebApp({ path, name, description, shot, unlisted } = {}, t
   const headers = {};
   if (token) headers.authorization = `Bearer ${token}`;
   const got = await fetch(app.url, { headers });
-  if (!got.ok) throw new Error((await got.text().catch(() => "")) || "the file is not there any more; make it again");
+  if (!got.ok) throw await fileFetchError(got);
   const bytes = await got.arrayBuffer();
   const publishHeaders = { ...headers, "content-type": "application/octet-stream" };
   const title = String(name || app.name.replace(/\.krate$/, "") || "").trim();
@@ -947,7 +983,7 @@ async function downloadSource(path, appName) {
   const headers = {};
   if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
   const res = await fetch(app.url, { headers });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")) || "the file is not there any more; make it again");
+  if (!res.ok) throw await fileFetchError(res);
   const bytes = new Uint8Array(await res.arrayBuffer());
 
   const wanted = zipEntries(bytes).filter((e) => e.name.startsWith("source/") && !e.name.endsWith("/"));
@@ -983,7 +1019,7 @@ async function appContentsOf(path) {
   const headers = {};
   if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
   const res = await fetch(app.url, { headers });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")) || "the file is not there any more; make it again");
+  if (!res.ok) throw await fileFetchError(res);
   const bytes = new Uint8Array(await res.arrayBuffer());
   const dec = new TextDecoder("utf-8", { fatal: true });
   const out = [];
@@ -1151,6 +1187,10 @@ function watchJob(jobId, request, sessionId) {
   let inFlight = false;
   let failingSince = 0;
   return new Promise((resolve, reject) => {
+    // Stop settles this promise too. It only cleared the poll, so the build
+    // that was stopped stayed pending for ever, and anything waiting on it
+    // waited with it (K-996).
+    bridge.stopWatch = () => { clearInterval(bridge.poll); forgetRunningJob(); reject(new Error("stopped")); };
     const tick = async () => {
       // One question at a time: on a hanging network, ticks every 1.5 s
       // would otherwise pile up behind each other.
@@ -1161,9 +1201,27 @@ function watchJob(jobId, request, sessionId) {
         job = await builder(`/build/${jobId}`);
       } catch (err) {
         inFlight = false;
+        // The sign-in ran out while the build kept going on the service: the
+        // job is kept, so signing in again picks it back up where it is.
+        // It said "Your AI is not signed in" and offered no sign-in.
+        if (err && err.status === 401) {
+          clearInterval(bridge.poll);
+          // Kept on purpose: the record is how the build is picked up again.
+          bridge.token = null;
+          try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+          try { goSignIn(""); } catch (e) {}
+          const out = new Error("Your sign-in ran out. Sign in again and this build carries on where it is.");
+          out.refusal = true;
+          return reject(out);
+        }
         if (isFinalPollError(err)) {
           clearInterval(bridge.poll);
           forgetRunningJob();
+          if (err && err.status === 404) {
+            const gone = new Error("The build service no longer has this build. Press Try again to make it again.");
+            gone.plain = true;
+            return reject(gone);
+          }
           return reject(err);
         }
         if (!failingSince) {
@@ -1201,7 +1259,14 @@ function watchJob(jobId, request, sessionId) {
       if (job.state === "failed" || job.state === "stopped" || job.state === "expired") {
         clearInterval(bridge.poll);
         forgetRunningJob();
-        return reject(new Error(job.error || "that build stopped"));
+        // A failed build carries the engine's log, which Studio reads. A
+        // build the SERVICE ended says so in its own sentence, kept whole.
+        if (job.state === "failed") return reject(new Error(job.error || "that build stopped"));
+        const said = new Error(job.error || (job.state === "expired"
+          ? "The build service ended this build before it finished. Press Try again to make it again."
+          : "The build service stopped this build. Press Try again to make it again."));
+        said.plain = true;
+        return reject(said);
       }
     };
     bridge.poll = setInterval(tick, 1500);
@@ -1223,10 +1288,9 @@ const COMMANDS = {
       if (e && (e.status === 401 || e.status === 403)) {
         bridge.token = null;
         try { localStorage.removeItem(TOKEN_KEY); } catch (e2) {}
-        // An expired session goes to sign in once, here, instead of
-        // running the whole Studio signed out and bouncing on the first
-        // Make (K-793).
-        goSignIn();
+        // Signed out now, quietly: the sign-in comes right after the first
+        // send (F-307), as the popup over the Studio, with the words kept.
+        // It used to leave for the sign-in page before anything was asked.
         return { signed_in: false };
       }
       return { signed_in: false, offline: true };
@@ -1463,6 +1527,7 @@ const COMMANDS = {
       }).catch(() => {});
     }
 
+    bridge.stopAsked = false;
     let started;
     try {
       started = await builder("/build", {
@@ -1498,6 +1563,11 @@ const COMMANDS = {
       const over = sessionOver(err, request, sessionId);
       if (over) return over;  // the page is navigating away
       throw err;
+    }
+    if (bridge.stopAsked) {
+      bridge.stopAsked = false;
+      await builder(`/build/${started.id}/stop`, { method: "POST" }).catch(() => {});
+      throw new Error("stopped");
     }
     return watchJob(started.id, request, sessionId);
   },
@@ -1603,8 +1673,14 @@ const COMMANDS = {
   },
 
   async stop_build() {
-    if (!bridge.job) return;
+    // Pressed while the build is still being asked for: remembered, and the
+    // build is stopped the moment the service names it (it ran on, and
+    // counted against the free app, behind a card that said Stopped).
+    if (!bridge.job) { bridge.stopAsked = true; return; }
     clearInterval(bridge.poll);
+    forgetRunningJob();
+    const settle = bridge.stopWatch; bridge.stopWatch = null;
+    if (settle) settle();
     // Somebody who stopped a build must not be offered it again on their
     // next visit. Every other exit from the poll forgets it; this one was
     // missed, and the test that counts them is what found it.
@@ -1742,6 +1818,15 @@ const COMMANDS = {
    * bring-your-own-key account at the person's expense (K-885). */
   async autorun() {
     return null;
+  },
+  // Desktop-only answers a tab gives quietly, so a load and a build do not
+  // each print "no browser answer" in the console: the hub already merges
+  // sessions here, and there is no local AI conversation to resume.
+  async sessions_pull() {
+    return 0;
+  },
+  async agent_session_tag() {
+    return "";
   },
   pick_folder() {
     return refuse("A browser chooses where downloads go, not this page.");
@@ -2563,6 +2648,11 @@ function speakWebSource() {
  * source's newlines and indentation, and the table compares whole nodes.
  */
 const WEB_AI_WORDING = [
+  // Settings > Your AI. "Never holds their keys" is a desktop fact.
+  [
+    /^Who writes your apps\. Krate works with the AI tools you already have, and never holds their keys\.$/,
+    "Who writes your apps. Here in the browser, Krate's own AI builds them; on your own machine, Krate Studio drives the AI you already have.",
+  ],
   [
     /^Krate works with the AI you already have\. Pick one\s+that is ready, or follow its one-line fix\. Its sign-in stays with\s+that tool, and Krate never holds its keys\.$/,
     "Krate's own AI builds your app here. Nothing to install, and no key of yours is ever held.",

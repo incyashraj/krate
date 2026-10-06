@@ -57,11 +57,8 @@ const DESKTOP_ONLY = {
   // and says so instead (K-902).
   stash_pasted_text: "writes a pasted file to local disk; a tab stops the paste instead",
   terminal_status: "reports on a local terminal install",
-  // Tags the local session directory the desktop keeps beside the app.
-  agent_session_tag: "tags a local session directory",
-  // Pulls sessions into the desktop's own store; the browser reads the
-  // hub directly in sessions_list.
-  sessions_pull: "pulls into the desktop store; the web reads the hub live",
+  // agent_session_tag and sessions_pull are bridged now, as quiet no-ops:
+  // every load and build printed "no browser answer" for them.
 };
 
 const missing = [...asked].filter((c) => !answered.has(c)).sort();
@@ -887,7 +884,9 @@ assert.match(bridge, /const RUNNING_KEY = "krate\.web\.running\.v1";/,
       + `chases a build that is over`,
   );
   const kept = clears.filter((m) => bridge.slice(m.index, m.index + 320).includes("Kept on purpose"));
-  assert.equal(kept.length, 1, "exactly one exit keeps the record: the long network outage");
+  // Two exits keep it, each marked: the long network outage, and a sign-in
+  // that ran out mid-build (signing in again picks the build back up).
+  assert.equal(kept.length, 2, "exactly two exits keep the record: the long outage and an expired sign-in");
 }
 // K-886: a network blip is not the end of a build. A failed poll that is
 // not 401/403/404 keeps polling, and a job that finished while the tab was

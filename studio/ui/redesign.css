@@ -2889,3 +2889,32 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
 .sess-more:hover { color: var(--ink); background: var(--surface-2); }
 /* The gallery's own empty state says "nothing matches"; app.js's line would say it twice. */
 #viewCloud.kr-galon #cloudError[data-kind="empty"] { display: none !important; }
+/* A phone's panel bar: the four tabs, Run it and Share must fit side by
+ * side (Run it sat under Share at 390, and Share ran off the edge at 320).
+ * Run it keeps its play mark; at the narrowest Share keeps its icon. */
+/* The panel bar is a row at every width: the narrow-window grid meant for
+ * the conversation's title bar (three columns) put its four items on top
+ * of each other. */
+#viewSession .titlebar.panel-bar { display: flex; }
+@media (max-width: 480px) {
+  #viewSession #barRun { font-size: 0; gap: 0; padding: 0 11px; }
+  #viewSession #barRun, #viewSession #barShare { flex: none; }
+  #viewSession .panel-bar .ptabs { flex: none; }
+  /* Only the open tab carries its word; the others are their icons. */
+  #viewSession .ptabs button:not(.on) span { display: none; }
+  #viewSession .ptabs button:not(.on) svg { display: inline-block; }
+}
+@media (max-width: 360px) {
+  #viewSession #barShare { font-size: 0; gap: 0; padding: 0 11px; }
+  #viewSession .ptabs button.on span { display: none; }
+  #viewSession .ptabs button svg { display: inline-block; }
+}
+/* The Details and Files headers wrap whenever their buttons need the room,
+ * not only on a phone: at 900 wide the two buttons spilled 7px past the panel. */
+#paneFiles .pane-head, #paneDetails .dt2-head { flex-wrap: wrap; row-gap: 8px; }
+/* A long name with no spaces wraps inside its gallery card instead of
+ * widening it past a phone's screen. */
+.kr-kcard, .kr-kcard .kmeta { min-width: 0; }
+.kr-kcard .kmeta b, .kr-kcard .ksaid { overflow-wrap: anywhere; }
+/* A long address wraps in "Check your email" rather than running out of the card. */
+.kr-lg-hd p b { overflow-wrap: anywhere; }
