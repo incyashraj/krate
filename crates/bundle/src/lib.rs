@@ -6404,8 +6404,12 @@ required = true
             text.contains("https://hub.example/takedown/abc"),
             "the notice URL is the way to appeal: {text}"
         );
+        // The URL is in the sentence, and a random port can contain 451
+        // (CI drew :34451); the claim is about the status code, so the
+        // address is taken out before looking for it.
+        let words = text.replace(&format!("127.0.0.1:{port}"), "");
         assert!(
-            !text.contains("451"),
+            !words.contains("451"),
             "a status code is not what a person needs: {text}"
         );
     }
