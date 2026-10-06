@@ -3113,14 +3113,34 @@
       if (signedIn) { if (acct) toast(`Signed in as ${acct.login || acct.name || "you"}`); if (done) done(acct); }
       else if (cancel) cancel();
     }
+    // The Studio's loader (the breathing mark, the bar), saying where the
+    // page is going while it goes there.
+    function leaving(words) {
+      const b = document.createElement("div");
+      b.className = "kr-boot web run kr-leaving"; b.setAttribute("role", "status");
+      b.innerHTML = `<div class="bk"><span class="bweb">${window.krIso ? window.krIso(40, "breathe") : ""}<b>Krate</b><small>Studio</small></span>` +
+        `<span class="cbar"><i></i></span><p class="bt"><span class="kr-swp"><span>${esc(words)}</span></span></p></div>`;
+      document.body.appendChild(b);
+      // Back from the provider without signing in (the browser's Back
+      // button restores this page from its cache): the loader goes.
+      addEventListener("pageshow", (e) => { if (e.persisted) b.remove(); }, { once: true });
+    }
     // The real sign-in, by door.
     function startProvider(via) {
       try { localStorage.setItem("kr-signin-last", via); LAST = via; } catch (e) {}
       if (web()) {
-        // In a tab the sign-in page goes straight on to the provider and
-        // comes back to the Studio, where the kept request carries on.
+        // In a tab: straight on to the provider, which comes back to the
+        // Studio, where the kept request carries on. It used to pass through
+        // the sign-in page, which drew a second, different card ("Opening
+        // GitHub...") for the moment it took to leave. Now the Studio's own
+        // loader covers the page until the provider's page arrives.
         try { localStorage.setItem("krate_next", "studio"); } catch (e) {}
-        location.href = "/login/?next=studio#" + via;
+        let nonce = "";
+        try { nonce = window.KrateSignIn ? window.KrateSignIn.begin() : ""; } catch (e) {}
+        if (!nonce) { location.href = "/login/?next=studio#" + via; return; }
+        leaving(via === "github" ? "Opening GitHub" : "Opening Google");
+        const path = via === "github" ? "/login/start" : "/login/google/start";
+        location.href = "https://hub.krate.tech" + path + "?nonce=" + encodeURIComponent(nonce);
         return;
       }
       go("browser", { via });

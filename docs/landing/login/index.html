@@ -274,7 +274,12 @@ html.krate-booting .booting { display: flex; }
   // (a fragment, so Windows' `start` keeps it) goes straight on to it.
   var via = location.hash.replace(/^#/, "");
   if (via === "github" || via === "google") {
-    document.getElementById("loginSub").textContent = via === "github" ? "Opening GitHub…" : "Opening Google…";
+    // The loader, not the card: the page is only passing through.
+    document.querySelector(".booting-main").firstChild.textContent = via === "github" ? "Opening GitHub" : "Opening Google";
+    document.querySelector(".booting-sub").textContent = "";
+    document.documentElement.classList.add("krate-booting");
+    // Back from the provider without signing in: the card again, not the loader.
+    addEventListener("pageshow", function (e) { if (e.persisted) document.documentElement.classList.remove("krate-booting"); });
     location.replace(door(via === "github" ? "/login/start" : "/login/google/start"));
   } else if (via === "email") {
     setTimeout(function () { var i = document.getElementById("emailInput"); if (i) i.focus(); }, 50);
