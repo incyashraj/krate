@@ -41,6 +41,8 @@ primary_region = "iad"
   # and until now nothing was watching. This is four times a normal build --
   # unreachable by an honest one, firm on a runaway.
   KRATE_BUILD_BUDGET_USD = "3.50"
+  # Stop when idle: no build working and no request for 10 minutes.
+  KRATE_IDLE_EXIT_MS = "600000"
 
 [http_service]
   internal_port = 8080
@@ -49,7 +51,12 @@ primary_region = "iad"
   # Off when idle, on when someone builds. The wake is a few seconds, which
   # lands inside the "reading what Krate can do" stage the page already
   # shows, so nobody sees a spinner that means nothing.
-  auto_stop_machines = "stop"
+  # Off: Fly judged "idle" from HTTP traffic, and a build is a child process,
+  # so it stopped the machine mid-build and every build in flight ended as
+  # "stopped" (three of one person's builds on 2026-10-06). The builder stops
+  # itself instead, only when no build runs (KRATE_IDLE_EXIT_MS); a request
+  # starts it again.
+  auto_stop_machines = "off"
   auto_start_machines = true
 
   # Zero, not one. A machine kept warm is a machine billed all night for
@@ -87,3 +94,9 @@ primary_region = "iad"
 [[mounts]]
   source = "krate_build_cache"
   destination = "/work"
+
+# An idle exit is exit 0 and must leave the machine stopped, not restart it;
+# a crash still restarts.
+[[restart]]
+  policy = "on-failure"
+  retries = 10

@@ -40,6 +40,17 @@ const HUB = process.env.KRATE_HUB || "https://hub.krate.tech";
  * minutes; a run past this is stuck, and a stuck run holds a queue slot
  * that a paying person is waiting on. */
 const BUILD_TIMEOUT_MS = Number(process.env.KRATE_BUILD_TIMEOUT_MS || 15 * 60 * 1000);
+// Leave when idle, never mid-build (2026-10-06). Fly's own auto-stop judged
+// "idle" from HTTP traffic, and a build is a child process, not traffic: a
+// page that polls briefly (or a tab Chrome throttles to once a minute) left
+// gaps, Fly stopped the machine, and the SIGTERM handler below ended every
+// build in flight as "stopped". One real person lost three builds that way,
+// at 3, 6 and 8 minutes. So Fly's auto-stop is off (fly.toml) and the
+// builder stops itself: no build working and no request for this long.
+// 0 (the default, and every test that does not set it) never exits.
+const IDLE_EXIT_MS = Number(process.env.KRATE_IDLE_EXIT_MS || 0);
+let lastActivity = Date.now();
+let leaving = false; // set once a shutdown starts (a signal, or idle)
 const PLAN_TIMEOUT_MS = Number(process.env.KRATE_PLAN_TIMEOUT_MS || 90 * 1000);
 
 /* One at a time per account. Not politeness -- the difference between a
@@ -1300,6 +1311,7 @@ function prettySize(bytes) {
 /* ---- the doors ----------------------------------------------------------- */
 
 const server = createServer(async (req, res) => {
+  lastActivity = Date.now();
   const url = new URL(req.url, `http://${req.headers.host}`);
   const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
 
@@ -1720,6 +1732,23 @@ server.listen(PORT, () => {
   console.log(`krate builder on :${PORT} (engine: ${KRATE}, agent: ${AGENT})`);
 });
 
+if (IDLE_EXIT_MS > 0) {
+  setInterval(() => {
+    // A build in flight is activity: the idle clock starts when it ends.
+    if ([...jobs.values()].some((job) => job.state === "working")) {
+      lastActivity = Date.now();
+      return;
+    }
+    if (leaving || Date.now() - lastActivity < IDLE_EXIT_MS) return;
+    // Exit 0 stops the machine (restart policy on-failure); the next request
+    // starts it again (auto_start_machines). Nothing is running to lose.
+    console.log(`idle for ${Math.round((Date.now() - lastActivity) / 1000)}s with no build running; stopping`);
+    leaving = true;
+    server.close();
+    setTimeout(() => process.exit(0), 500).unref();
+  }, Math.max(250, Math.min(30000, Math.floor(IDLE_EXIT_MS / 4)))).unref();
+}
+
 /* Shut down when told to.
  *
  * This process is PID 1 in its container, and PID 1 does NOT get the default
@@ -1732,7 +1761,6 @@ server.listen(PORT, () => {
  * work, end the builds in flight (their compilers are children and would
  * otherwise be orphaned), and go.
  */
-let leaving = false;
 for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, () => {
     if (leaving) return;
