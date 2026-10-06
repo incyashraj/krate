@@ -22,22 +22,22 @@
 })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Krate: Describe an app. Get one file.</title>
-<meta name="description" content="Krate turns a sentence into a real desktop app: one small file that runs on Mac, Windows and Linux. Make it in your browser or in Krate Studio with your own AI, then send it to anyone." />
+<title>Krate: ship your app as one file, native on every desktop</title>
+<meta name="description" content="Ship your application faster as one file that works natively on every desktop. Fast, secure, efficient, sandboxed, and sent in one click. Open source." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/" />
-  <meta property="og:title" content="Krate: ship one app file to Mac, Windows and Linux" />
+  <meta property="og:title" content="Krate: ship your app as one file, native on every desktop" />
   <meta property="og:site_name" content="Krate" />
-  <meta property="og:description" content="One .krate app file for macOS, Windows and Linux: no build per system, sandboxed, and sent like a document. Build with your editor or with AI in Krate Studio." />
+  <meta property="og:description" content="AI made building apps easy. Krate makes shipping easy: one fast, secure .krate file that runs natively on every desktop, sandboxed, sent in one click." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
   <meta property="og:image" content="https://krate.tech/og-v4.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Krate: build once and share one desktop application file across Mac, Windows and Linux." />
+  <meta property="og:image:alt" content="Krate: one app file that runs natively on every desktop" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate: ship one app file to Mac, Windows and Linux" />
-  <meta name="twitter:description" content="One .krate app file for macOS, Windows and Linux: no build per system, sandboxed, and sent like a document." />
+  <meta name="twitter:title" content="Krate: ship your app as one file, native on every desktop" />
+  <meta name="twitter:description" content="AI made building apps easy. Krate makes shipping easy: one fast, secure .krate file that runs natively on every desktop, sandboxed, sent in one click." />
   <meta name="twitter:image" content="https://krate.tech/og-v4.png" />
   <script id="krate-identity" type="application/ld+json">
   {
@@ -50,43 +50,72 @@
         "alternateName": "Krate",
         "url": "https://krate.tech/",
         "logo": "https://krate.tech/krate-logo.png",
-        "description": "Krate Labs makes Krate, an open-source runtime that lets developers ship an app as one sandboxed .krate file for Mac, Windows and Linux, and Krate Studio, which builds those apps with AI.",
-        "founder": {"@type": "Person", "name": "Yashraj Pardeshi"},
-        "sameAs": ["https://www.wikidata.org/wiki/Q141595600", "https://github.com/incyashraj/krate"]
+        "description": "Krate Labs makes the Krate app runtime and Krate Studio.",
+        "founder": {
+          "@type": "Person",
+          "name": "Yashraj Pardeshi"
+        },
+        "sameAs": [
+          "https://www.wikidata.org/wiki/Q141595600",
+          "https://github.com/incyashraj/krate"
+        ]
       },
       {
         "@type": "WebSite",
         "@id": "https://krate.tech/#website",
         "name": "Krate",
         "url": "https://krate.tech/",
-        "description": "Ship one app file to Mac, Windows and Linux. Krate apps run sandboxed, with only the access people grant.",
-        "publisher": {"@id": "https://krate.tech/#organization"}
-      },
-      {
-        "@type": "SoftwareApplication",
-        "@id": "https://krate.tech/#studio",
-        "name": "Krate Studio",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS, Windows, Linux",
-        "url": "https://krate.tech/studio/",
-        "downloadUrl": "https://krate.tech/download/",
-        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
-        "publisher": {"@id": "https://krate.tech/#organization"}
+        "description": "Ship your application faster as one file that works natively on every desktop.",
+        "publisher": {
+          "@id": "https://krate.tech/#organization"
+        }
       },
       {
         "@type": "SoftwareApplication",
         "@id": "https://krate.tech/#runtime",
         "name": "Krate",
-        "alternateName": "Krate runtime",
-        "description": "Open-source app runtime, built in Rust on Wasmtime, that runs one sandboxed .krate app file on macOS, Windows and Linux. Apps get only the file and network access the person running them grants.",
+        "alternateName": [
+          "Krate runtime",
+          "Krate app runtime"
+        ],
+        "description": "Krate is an open-source app runtime that ships an application as one sandboxed .krate file that runs natively on every desktop.",
+        "disambiguatingDescription": "The Krate app runtime (krate.tech), built in Rust on Wasmtime. Not a Rust crate and not related to krate.com or KrateSoft.",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Windows, Linux",
         "url": "https://krate.tech/",
         "downloadUrl": "https://krate.tech/download/",
         "license": "https://github.com/incyashraj/krate#license",
-        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
-        "publisher": {"@id": "https://krate.tech/#organization"},
-        "sameAs": ["https://www.wikidata.org/wiki/Q141595622", "https://github.com/incyashraj/krate"]
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "publisher": {
+          "@id": "https://krate.tech/#organization"
+        },
+        "sameAs": [
+          "https://www.wikidata.org/wiki/Q141595622",
+          "https://github.com/incyashraj/krate"
+        ]
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://krate.tech/#studio",
+        "name": "Krate Studio",
+        "description": "Krate Studio builds Krate apps with AI.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Windows, Linux",
+        "url": "https://krate.tech/studio/",
+        "downloadUrl": "https://krate.tech/download/",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "publisher": {
+          "@id": "https://krate.tech/#organization"
+        }
       },
       {
         "@type": "SoftwareSourceCode",
@@ -95,10 +124,13 @@
         "codeRepository": "https://github.com/incyashraj/krate",
         "programmingLanguage": "Rust",
         "runtimePlatform": "WebAssembly",
-        "url": "https://krate.tech/docs/",
         "license": "https://github.com/incyashraj/krate#license",
-        "targetProduct": {"@id": "https://krate.tech/#runtime"},
-        "isPartOf": {"@id": "https://krate.tech/#website"}
+        "targetProduct": {
+          "@id": "https://krate.tech/#runtime"
+        },
+        "isPartOf": {
+          "@id": "https://krate.tech/#website"
+        }
       }
     ]
   }
@@ -279,7 +311,8 @@ h1 .ln { display: block; }
 .why { background: var(--soft); text-align: center; padding: 40px 24px 150px; }
 .why .big { font-size: clamp(28px, 3.4vw, 46px); line-height: 1.14; font-weight: 500; letter-spacing: -.04em; color: var(--ink); text-wrap: balance; }
 .why .big span { color: #a1a1aa; }
-.why .small { margin: 28px auto 0; max-width: 520px; font-size: 15px; line-height: 1.65; color: #52525b; text-wrap: balance; }
+.why .small { margin: 28px auto 0; max-width: 580px; font-size: 15px; line-height: 1.65; color: #52525b; text-wrap: balance; }
+.why .small + .small { margin-top: 14px; }
 
 /* ---------------------------------------------------------------- pinned story */
 .story { position: relative; height: 320vh; background: var(--soft); margin-top: -1px; }
@@ -723,7 +756,7 @@ h1 .ln { display: block; }
 /* the first paint */
 .hero h1 .ln, .hero .acts, .scene { animation: homeUp 1s var(--ease) both; }
 .hero h1 .ln:nth-child(2) { animation-delay: .06s; } .hero h1 .ln:nth-child(3) { animation-delay: .12s; }
-.hero .acts, .hero .sub { animation: homeUp 1s var(--ease) both; animation-delay: .22s; } .scene { animation-delay: .32s; }
+.hero .acts, .hero .sub, .hero .proof { animation: homeUp 1s var(--ease) both; animation-delay: .22s; } .scene { animation-delay: .32s; }
 @keyframes homeUp { from { opacity: 0; transform: translateY(22px); } }
 
 @media (max-width: 1240px) { .objs { display: none; } }
@@ -745,12 +778,15 @@ html:not(.js) .view .vw:first-child { opacity: 1; }
 
 /* hero type: one big, heavy line pair and one line under it */
 .hero { padding-top: 88px; }
-.hero h1 { font-size: clamp(44px, 7.3vw, 112px); line-height: .98; font-weight: 600; letter-spacing: -.052em; max-width: none; }
+.hero h1 { font-size: clamp(38px, 6.4vw, 96px); line-height: .98; font-weight: 600; letter-spacing: -.052em; max-width: none; }
 .hero h1 .u { position: relative; display: inline-block; }
 .hero h1 .ul { position: absolute; left: -.02em; right: -.02em; bottom: -.1em; width: calc(100% + .04em); height: .13em; overflow: visible; }
 .hero h1 .ul path { fill: none; stroke: url(#ulg); stroke-width: 5.5; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: ulDraw 1.1s var(--ease) .55s forwards; }
 @keyframes ulDraw { to { stroke-dashoffset: 0; } }
-.hero .sub { margin-top: 30px; font-size: clamp(18px, 1.55vw, 22px); }
+.hero .sub { margin: 30px auto 0; max-width: 640px; font-size: clamp(16px, 1.3vw, 19px); line-height: 1.55; letter-spacing: -.012em; text-wrap: balance; }
+.hero .sub a { color: var(--ink); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--ink) 25%, transparent); text-underline-offset: 3px; }
+.hero .proof { margin: 22px auto 0; max-width: 560px; font-size: 13px; line-height: 1.55; color: var(--ink-3); text-wrap: balance; }
+.hero .proof a { color: var(--ink-2); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--ink-2) 30%, transparent); text-underline-offset: 3px; }
 .hero .acts { margin-top: 36px; }
 .every::after { display: none; }
 @media (max-width: 680px) { .hero { padding-top: 64px; } .hero h1 { letter-spacing: -.045em; } .hero h1 .ul path { stroke-width: 7.5; } .hero .sub { margin-top: 22px; } .hero .acts { margin-top: 28px; } }
@@ -838,9 +874,10 @@ main img, main svg { max-width: none; }
 
 <main class="home">
 <section class="hero" id="start">
-  <h1><span class="ln">A new way to</span> <span class="ln"><span class="u">ship<svg class="ul" viewBox="0 0 200 12" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ulg" x1="0" x2="1"><stop offset="0" stop-color="#3d6df0"/><stop offset=".38" stop-color="#7c5ce8"/><stop offset=".7" stop-color="#d6578f"/><stop offset="1" stop-color="#e8873f"/></linearGradient></defs><path pathLength="1" d="M3 8.5 C 50 4.2, 120 3.6, 197 6"/></svg></span> software.</span></h1>
-  <p class="sub">Send it like a doc. It opens on <span class="every c0" id="every"><span class="w on">macOS</span><span class="w">Windows</span><span class="w">Linux</span><span class="w">phones<em class="soonb">soon</em></span></span>.<sup class="fn" aria-hidden="true">*</sup></p>
+  <h1><span class="ln">Ship it as <span class="u">one file<svg class="ul" viewBox="0 0 200 12" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ulg" x1="0" x2="1"><stop offset="0" stop-color="#3d6df0"/><stop offset=".38" stop-color="#7c5ce8"/><stop offset=".7" stop-color="#d6578f"/><stop offset="1" stop-color="#e8873f"/></linearGradient></defs><path pathLength="1" d="M3 8.5 C 50 4.2, 120 3.6, 197 6"/></svg></span>.</span> <span class="ln">Native on every desktop.</span></h1>
+  <p class="sub">AI made building apps easy. Krate makes shipping them easy: one fast, secure, efficient .krate file that runs natively on every desktop,<sup class="fn" aria-hidden="true">*</sup> asks before it touches your files or the network, and is <a href="/publish/">sent in one click</a>.</p>
   <div class="acts"><a class="btn dark" href="/app/">Try Krate now</a><a class="btn link" href="/download/">Download the app <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l6-6M4 3h5v5"/></svg></a></div>
+  <p class="proof">Open-source runtime. The same .krate file runs on macOS, Windows and Linux: <a href="/how-to-distribute-a-desktop-app.html">10 apps pass on all three in CI</a> at Krate 0.5.4.</p>
 
 </section>
 <div class="band0">
@@ -937,7 +974,8 @@ linux   = true</div></div></div>
 
 <section class="why" id="how">
   <p class="big rv">AI makes an app in minutes.<br><span>Getting it to people still takes weeks.</span></p>
-  <p class="small rv">A build for every system, installers, signing, a browser inside every app. Krate is the shipping side: one file that opens natively on macOS, Windows and Linux. Desktop software, finally like a document.</p>
+  <p class="small rv">Shipping used to mean developer licences, a build and a signature for every OS, a different download for each, and an .exe that gets your whole PC when someone double-clicks it. Hosting a web app instead never feels native. Krate replaces all of that with one file.</p>
+  <p class="small rv">Natively means this: the Krate runtime is a native app on each system, and your app runs inside it with no browser or WebView. People install the runtime once; after that, every Krate app is just a file.</p>
 </section>
 
 <section class="story" id="story">
@@ -1091,16 +1129,19 @@ linux   = true</div></div></div>
 
   // ---------------------------------------------------------------- hero verbs
   // no tabs: the word in the line under the title names the desktop on show
-  const every = document.getElementById('every'), words = [...every.querySelectorAll('.w')];
+  // The scene cycles macOS, Windows, Linux, then phones. The hero once named
+  // each in a rotating word (#every); the scene runs the same without it.
+  const every = document.getElementById('every'), words = every ? [...every.querySelectorAll('.w')] : [];
   const shots = [...document.querySelectorAll('.shot .sl')];
   const objs = [...document.querySelectorAll('.obj')];
-  const N = words.length;
+  const N = words.length || 4;
   let cur = 0;
-  const fit = () => { every.style.width = words[cur].offsetWidth + 'px'; };
+  const fit = () => { if (every) every.style.width = words[cur].offsetWidth + 'px'; };
   const show = i => {
     const prev = cur; cur = i;
     words.forEach((w, k) => { w.classList.toggle('on', k === i); w.classList.toggle('out', k === prev && k !== i); });
-    every.className = 'every c' + i; fit();
+    if (every) every.className = 'every c' + i;
+    fit();
     document.getElementById('scene').classList.toggle('phones-on', i === 3);
     shots.forEach((s, k) => s.classList.toggle('on', k === i));
     objs.forEach(o => o.classList.toggle('on', +o.dataset.v === i));
