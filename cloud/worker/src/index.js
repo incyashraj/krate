@@ -5081,6 +5081,9 @@ async function supportNew(request, env) {
   const subject = String(body.subject || "").trim().slice(0, 140);
   const first = String(body.text || "").trim().slice(0, 4000);
   if (!subject || !first) return text("Say what it is about, and what happened.", 400);
+  // The Studio session the ticket is about, when it came from inside one:
+  // the desk opens that conversation beside the ticket.
+  const session = /^[A-Za-z0-9_-]{1,64}$/.test(String(body.session || "")) ? String(body.session) : "";
   if (!user && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
     return text("An email address, so the answer can reach you.", 400);
   }
@@ -5096,6 +5099,7 @@ async function supportNew(request, env) {
     login: user ? user.login : "",
     email,
     subject,
+    session,
     priority: entitlementActive(ent),
     status: "open",
     created: Date.now(),
@@ -5167,9 +5171,11 @@ async function adminApi(request, pathname, env) {
     const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
     const ticks = await env.APPS.list({ prefix: "tick:", limit: 1000 });
     const pays = await env.APPS.list({ prefix: "pay:", limit: 1000 });
+    const reps = await env.APPS.list({ prefix: "report:", limit: 1000 });
     return json({
       users: users.keys.length,
       tickets: ticks.keys.length,
+      reports: reps.keys.length,
       payments: pays.keys.length,
       billing_live: billingLive(env),
     });
@@ -5265,7 +5271,64 @@ async function adminApi(request, pathname, env) {
     await env.APPS.delete(String(body.key || ""));
     return json({ ok: true });
   }
+  // Studio's "send a report": a zip of evidence plus who, which session,
+  // which Krate and which OS. Stored since the hub began taking reports,
+  // but the desk had no place that listed them, so a report someone sent
+  // was invisible unless you already knew its id.
+  if (route === "reports") {
+    const listing = await env.APPS.list({ prefix: "report:", limit: 300 });
+    const reports = [];
+    for (const k of listing.keys) {
+      const r = JSON.parse((await env.APPS.get(k.name)) || "null");
+      if (r) reports.push(r);
+    }
+    reports.sort((a, b) => (b.received || 0) - (a.received || 0));
+    return json({ reports });
+  }
+  if (route === "report/state" && request.method === "POST") {
+    const id = String(body.id || "");
+    if (!/^[0-9a-f]{16}$/.test(id)) return text("no such report", 404);
+    const r = JSON.parse((await env.APPS.get(`report:${id}`)) || "null");
+    if (!r) return text("no such report", 404);
+    if (!["new", "seen", "done"].includes(body.state)) return text("state is new, seen or done", 400);
+    r.state = body.state;
+    await env.APPS.put(`report:${id}`, JSON.stringify(r));
+    return json({ ok: true });
+  }
+  // A person's Studio sessions, so a ticket or a report can be read beside
+  // the conversation it is about. By account id (tickets carry it) or by
+  // login (reports carry that), resolved to the same key Studio saves under.
+  if (route === "person/sessions") {
+    const q = new URL(request.url).searchParams;
+    const owner = await adminSessionOwner(env, q.get("id") || "", q.get("login") || "");
+    if (!owner) return json({ sessions: [], note: "no account found for that sender" });
+    const listing = await env.APPS.list({ prefix: `sess:${owner}:`, limit: 200 });
+    const sessions = [];
+    for (const k of listing.keys) {
+      const sess = JSON.parse((await env.APPS.get(k.name)) || "null");
+      if (sess) sessions.push(sess);
+    }
+    sessions.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    return json({ sessions });
+  }
   return text("not found", 404);
+}
+
+// The key a person's sessions are saved under, from what the desk has:
+// an account id from a ticket, or a GitHub login from a report.
+async function adminSessionOwner(env, id, login) {
+  if (id) {
+    const u = JSON.parse((await env.APPS.get(`user:${id}`)) || "null");
+    return sessionOwner(u || { id });
+  }
+  if (!login) return "";
+  const want = login.toLowerCase();
+  const listing = await env.APPS.list({ prefix: "user:", limit: 1000 });
+  for (const k of listing.keys) {
+    const u = JSON.parse((await env.APPS.get(k.name)) || "null");
+    if (u && String(u.login || "").toLowerCase() === want) return sessionOwner(u);
+  }
+  return sessionOwner({ login });
 }
 
 /// The admin desk page. One file, no build step; signs in through the same
@@ -5396,6 +5459,7 @@ input,textarea{background:#0e1118;border:1px solid var(--line);color:var(--ink);
 textarea{min-height:70px;resize:vertical}
 .msg{padding:8px 12px;border-radius:10px;margin:6px 0;max-width:640px;white-space:pre-wrap}
 .msg.user{background:#1a2233}.msg.krate{background:#15251c;margin-left:32px}
+.sbox{margin-top:8px}.sess{border-top:1px solid var(--line);padding:8px 0}.sess summary{cursor:pointer}
 .pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--mut)}
 .pill.open{color:var(--warn);border-color:#5a4636}.pill.active{color:var(--ok);border-color:#2c5243}
 #login{max-width:420px}
@@ -5409,6 +5473,7 @@ textarea{min-height:70px;resize:vertical}
 <nav>
   <button data-t="people" class="on">People</button>
   <button data-t="tickets">Tickets</button>
+  <button data-t="reports">Reports</button>
   <button data-t="users">Users</button>
   <button data-t="payments">Payments</button>
   <button data-t="makeit">Make-it queue</button>
@@ -5425,10 +5490,22 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.payments} payments · billing \${o.billing_live?"LIVE":"not configured"}\`;el("#app").style.display="";show("people");}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.payments} payments · billing \${o.billing_live?"LIVE":"not configured"}\`;el("#app").style.display="";show("people");}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
+// A person's Studio sessions with the whole conversation, newest first; the
+// one the ticket or report names is opened and marked.
+async function sessionsInto(box,q,want){
+  box.innerHTML='<p class="mut">loading sessions…</p>';
+  let r;try{r=await api("person/sessions?"+q);}catch(e){box.innerHTML='<p class="mut">Could not load sessions ('+esc(e.message)+').</p>';return;}
+  const S=r.sessions||[];
+  if(!S.length){box.innerHTML='<p class="mut">'+esc(r.note||"No Studio sessions saved for this person.")+'</p>';return;}
+  box.innerHTML=S.map(x=>{const msgs=x.messages||x.thread||[];const hit=want&&x.id===want;
+    return '<details class="sess"'+(hit||S.length===1?' open':'')+'><summary>'+(hit?'<span class="pill open">this one</span> ':'')+'<b>'+esc(x.title||x.id)+'</b> <span class="mut">'+esc(x.id)+' · '+msgs.length+' messages · '+when((x.updated||0)*(x.updated>1e12?1:1000))+'</span></summary>'
+      +msgs.map(m=>'<div class="msg '+(/you|user/i.test(m.who||m.role||"")?"user":"krate")+'">'+esc(m.body??m.text??m.content??JSON.stringify(m))+'<div class="mut">'+esc(m.who||m.role||"")+(m.when||m.at?' · '+when((m.when||m.at)*((m.when||m.at)>1e12?1:1000)):'')+'</div></div>').join("")
+      +'</details>';}).join("");
+}
 async function show(tab){
   const v=el("#view");v.innerHTML='<p class="mut">loading…</p>';
   if(tab==="people"){
@@ -5460,13 +5537,33 @@ async function show(tab){
     const {tickets}=await api("tickets");
     v.innerHTML=tickets.length?"":'<p class="mut">No tickets.</p>';
     for(const t of tickets){
+      // Tickets sent before the session was its own field name it in the
+      // words Studio adds: "[Studio web · ... · session s-123]".
+      if(!t.session){const m=/session ([A-Za-z0-9_-]{1,64})\]/.exec((t.messages[0]||{}).text||"");if(m)t.session=m[1];}
       const d=document.createElement("div");d.className="card";
       d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b>\${t.priority?'<span class="pill" style="border-color:#5a4a17;background:#2b2410;color:#e7c766">priority</span>':''}<span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
       <div>\${t.messages.map(m=>\`<div class="msg \${m.who}">\${esc(m.text)}<div class="mut">\${m.who==="krate"?"you":"them"} · \${when(m.at)}</div></div>\`).join("")}</div>
       <div class="row" style="margin-top:8px"><textarea placeholder="Reply…"></textarea></div>
-      <div class="row" style="margin-top:8px"><button class="act">Send reply</button><button class="ghost">\${t.status==="open"?"Close":"Reopen"}</button></div>\`;
+      <div class="row" style="margin-top:8px"><button class="act">Send reply</button><button class="ghost">\${t.status==="open"?"Close":"Reopen"}</button><button class="ghost sbtn">\${t.session?"Open the session":"Their sessions"}</button>\${t.session?'<span class="mut">session '+esc(t.session)+'</span>':''}</div>
+      <div class="sbox"></div>\`;
+      d.querySelector(".sbtn").onclick=()=>sessionsInto(d.querySelector(".sbox"),t.userId?"id="+encodeURIComponent(t.userId):"login="+encodeURIComponent(t.login||""),t.session);
       d.querySelector(".act").onclick=async()=>{const x=d.querySelector("textarea").value.trim();if(!x)return;await api("ticket/reply",{method:"POST",body:JSON.stringify({id:t.id,text:x})});show("tickets");};
       d.querySelector(".ghost").onclick=async()=>{await api("ticket/status",{method:"POST",body:JSON.stringify({id:t.id,status:t.status==="open"?"closed":"open"})});show("tickets");};
+      v.appendChild(d);
+    }
+  }
+  if(tab==="reports"){
+    const {reports}=await api("reports");
+    v.innerHTML=reports.length?'<p class="mut" style="margin-bottom:10px">Sent from Studio with its evidence. Newest first.</p>':'<p class="mut">No reports.</p>';
+    for(const r of reports){
+      const d=document.createElement("div");d.className="card";
+      d.innerHTML='<div class="row"><b>'+esc(r.name||r.from)+'</b> <span class="mut">@'+esc(r.from)+'</span><span class="pill '+(r.state==="done"?"closed":"open")+'">'+esc(r.state||"new")+'</span><span class="grow"></span><span class="mut">'+when((r.received||0)*1000)+'</span></div>'
+        +'<div class="mut" style="margin:6px 0">session '+esc(r.session||"none")+' · Krate '+esc(r.krate||"?")+' · '+esc(r.os||"?")+' · '+Math.round((r.size||0)/1024)+' KB · id '+esc(r.id)+'</div>'
+        +(r.note?'<div class="msg user">'+esc(r.note)+'</div>':'')
+        +'<div class="row" style="margin-top:8px"><button class="act dl">Download evidence</button><button class="ghost ses">'+(r.session?"Open the session":"Their sessions")+'</button><button class="ghost st">'+(r.state==="done"?"Reopen":"Mark done")+'</button></div><div class="sbox"></div>';
+      d.querySelector(".dl").onclick=async()=>{const res=await fetch(HUB+"/admin/report/"+r.id,{headers:{authorization:"Bearer "+TOKEN}});if(!res.ok){alert("Download failed: "+res.status);return;}const b=await res.blob();const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="krate-report-"+r.id+".zip";a.click();if(!r.state||r.state==="new")api("report/state",{method:"POST",body:JSON.stringify({id:r.id,state:"seen"})});};
+      d.querySelector(".ses").onclick=()=>sessionsInto(d.querySelector(".sbox"),"login="+encodeURIComponent(r.from||""),r.session);
+      d.querySelector(".st").onclick=async()=>{await api("report/state",{method:"POST",body:JSON.stringify({id:r.id,state:r.state==="done"?"seen":"done"})});show("reports");};
       v.appendChild(d);
     }
   }

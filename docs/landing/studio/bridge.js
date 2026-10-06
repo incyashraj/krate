@@ -2148,10 +2148,12 @@ const COMMANDS = {
    * The desktop renames one field on its way out (`message` -> `text`);
    * that rename lives here too, because the hub's contract is the hub's.
    */
-  async support_new({ subject, message, email } = {}) {
+  async support_new({ subject, message, email, session } = {}) {
+    // The session travels as its own field as well as in the words, so the
+    // desk can open the conversation beside the ticket.
     return hub("/support/new", {
       method: "POST",
-      body: JSON.stringify({ subject: subject || "", text: message || "", email: email || "" }),
+      body: JSON.stringify({ subject: subject || "", text: message || "", email: email || "", session: session || "" }),
     });
   },
   /* ---- a report, from a tab --------------------------------------------

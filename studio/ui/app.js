@@ -8187,7 +8187,7 @@ $("supSend")?.addEventListener("click", async () => {
   }
   const where = `\n[${tauri ? "Studio desktop" : "Studio web"} · ${navigator.platform || ""}` + (state.session ? ` · session ${state.session.id}` : "") + "]";
   try {
-    const out = await invoke("support_new", { subject, message: body + attached + where, email });
+    const out = await invoke("support_new", { subject, message: body + attached + where, email, session: state.session ? state.session.id : "" });
     if (out && out.id) rememberSupKey({ id: out.id, key: out.key });
     $("supSubject").value = ""; $("supBody").value = "";
     $("supNote").textContent = supportSignedIn()
