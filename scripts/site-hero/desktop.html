@@ -1,0 +1,102 @@
+<!doctype html>
+<!-- One desktop for the homepage's hero: a real Krate app's own frame
+     (shot by `krate run --shoot`) in a window on macOS, Windows or Linux,
+     light or dark. render.mjs fills the query and screenshots it at 2x.
+     ?os=mac|win|linux&theme=light|dark&shot=<png>&name=Editor&file=Editor.krate&size=294%20KB -->
+<html><head><meta charset="utf-8">
+<style>
+@font-face { font-family: "Geist"; src: url("../../docs/landing/fonts/geist-var-latin.woff2") format("woff2"); font-weight: 100 900; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 1200px; height: 760px; overflow: hidden; }
+body { font-family: "Geist", system-ui, sans-serif; position: relative; color: #1b1b1f; -webkit-font-smoothing: antialiased; }
+.wall { position: absolute; inset: 0; }
+/* wallpapers, as the design's */
+.mac.light .wall { background: radial-gradient(80% 70% at 12% 8%, #c9d6ff 0%, transparent 60%), radial-gradient(70% 70% at 95% 100%, #f3d4fb 0%, transparent 60%), linear-gradient(160deg, #e3e8ff, #f4ecfb); }
+.mac.dark .wall { background: radial-gradient(80% 70% at 15% 10%, #26346b 0%, transparent 60%), radial-gradient(70% 70% at 90% 100%, #432a63 0%, transparent 60%), linear-gradient(160deg, #10142a, #1b1430); }
+.win.light .wall { background: radial-gradient(90% 60% at 50% 110%, #a9c4ff 0%, transparent 70%), linear-gradient(180deg, #eef2fb, #dfe7fa); }
+.win.dark .wall { background: radial-gradient(90% 60% at 50% 110%, #2347a8 0%, transparent 70%), linear-gradient(180deg, #0b1020, #0e1630); }
+.linux.light .wall { background: radial-gradient(70% 70% at 15% 15%, #ffd9bf 0%, transparent 60%), radial-gradient(70% 70% at 95% 95%, #e2d2fb 0%, transparent 60%), linear-gradient(160deg, #f8eee9, #efe7fa); }
+.linux.dark .wall { background: radial-gradient(70% 70% at 15% 15%, #5a3424 0%, transparent 60%), radial-gradient(70% 70% at 95% 95%, #3a2c5a 0%, transparent 60%), linear-gradient(160deg, #1d1716, #1a1724); }
+
+/* the window: the app's own pixels under each system's frame */
+.win-frame { position: absolute; left: 50%; top: 86px; width: 790px; transform: translateX(-50%); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.14), 0 30px 70px -20px rgba(20,24,60,.45), 0 12px 30px -12px rgba(20,24,60,.25); background: #0f1217; }
+.dark .win-frame { box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 30px 80px -20px rgba(0,0,0,.7); }
+.bar { height: 30px; display: flex; align-items: center; position: relative; font-size: 12.5px; font-weight: 500; letter-spacing: .01em; }
+.app { display: block; width: 100%; height: auto; }
+/* macOS: lights at the left, the title centred */
+.mac .bar { background: #1b1f27; color: #c9cfdb; border-bottom: 1px solid #0a0c10; }
+.mac .bar .lights { position: absolute; left: 12px; display: flex; gap: 8px; }
+.mac .bar .lights i { width: 12px; height: 12px; border-radius: 50%; }
+.mac .bar .lights i:nth-child(1) { background: #ff5f57; } .mac .bar .lights i:nth-child(2) { background: #febc2e; } .mac .bar .lights i:nth-child(3) { background: #28c840; }
+.mac .bar .t { width: 100%; text-align: center; }
+/* Windows: icon and title left, three buttons right */
+.win .win-frame { border-radius: 8px; }
+.win .bar { background: #1b1f27; color: #d6dbe5; padding-left: 12px; gap: 8px; }
+.win .bar img { width: 16px; height: 16px; }
+.win .bar .btns { margin-left: auto; display: flex; height: 100%; }
+.win .bar .btns span { width: 46px; display: grid; place-items: center; color: #c9cfdb; font-size: 13px; }
+/* GNOME: title centred, a round close at the right */
+.linux .win-frame { border-radius: 12px; }
+.linux .bar { background: #1b1f27; color: #d6dbe5; height: 34px; }
+.linux .bar .t { width: 100%; text-align: center; font-weight: 600; }
+.linux .bar .x { position: absolute; right: 9px; width: 22px; height: 22px; border-radius: 50%; background: #2b303a; display: grid; place-items: center; color: #d6dbe5; font-size: 11px; }
+
+/* the system around it */
+.menubar { position: absolute; left: 0; right: 0; top: 0; height: 26px; display: flex; align-items: center; gap: 22px; padding: 0 16px; font-size: 13px; font-weight: 500; backdrop-filter: blur(20px); }
+.mac.light .menubar { background: rgba(255,255,255,.45); color: #1b1b1f; } .mac.dark .menubar { background: rgba(10,12,24,.45); color: #eef0f6; }
+.menubar b { font-weight: 650; } .menubar .r { margin-left: auto; display: flex; gap: 14px; }
+.dock { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; gap: 8px; padding: 7px; border-radius: 18px; backdrop-filter: blur(20px); }
+.mac.light .dock { background: rgba(255,255,255,.4); box-shadow: inset 0 0 0 1px rgba(255,255,255,.6); } .mac.dark .dock { background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+.dock i { width: 34px; height: 34px; border-radius: 9px; }
+.mac.light .dock i { background: rgba(255,255,255,.75); } .mac.dark .dock i { background: rgba(255,255,255,.14); }
+.dock i.krate { background: center / 26px no-repeat url("../../docs/landing/krate-mark-3d-96.png"), #fff; }
+.mac.dark .dock i.krate { background: center / 26px no-repeat url("../../docs/landing/krate-mark-3d-96.png"), #2a2d38; }
+.dock i.on::after { content: ""; display: block; width: 4px; height: 4px; border-radius: 50%; margin: 38px auto 0; background: currentColor; opacity: .5; }
+.taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; backdrop-filter: blur(30px); }
+.win.light .taskbar { background: rgba(240,243,250,.82); border-top: 1px solid rgba(0,0,0,.06); } .win.dark .taskbar { background: rgba(20,22,30,.82); border-top: 1px solid rgba(255,255,255,.06); }
+.taskbar i { width: 30px; height: 30px; border-radius: 6px; }
+.win.light .taskbar i { background: rgba(0,0,0,.07); } .win.dark .taskbar i { background: rgba(255,255,255,.1); }
+.taskbar i.krate { background: center / 22px no-repeat url("../../docs/landing/krate-mark-3d-96.png"), rgba(127,127,127,.18); box-shadow: inset 0 -2px 0 #4c8dff; }
+.taskbar .clock { position: absolute; right: 14px; text-align: right; font-size: 11px; line-height: 1.35; }
+.win.dark .taskbar .clock { color: #eef0f6; }
+.topbar { position: absolute; left: 0; right: 0; top: 0; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; background: #232326; color: #f4f4f6; }
+.topbar .a { position: absolute; left: 14px; font-weight: 500; }
+.dash { position: absolute; left: 0; top: 28px; bottom: 0; width: 60px; display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 14px; }
+.linux.light .dash { background: rgba(80,74,80,.62); } .linux.dark .dash { background: rgba(0,0,0,.45); }
+.dash i { width: 38px; height: 38px; border-radius: 10px; background: rgba(255,255,255,.18); }
+.dash i.krate { background: center / 28px no-repeat url("../../docs/landing/krate-mark-3d-96.png"), rgba(255,255,255,.88); }
+/* the file on the desktop, with its true size */
+.file { position: absolute; width: 110px; text-align: center; font-size: 12.5px; line-height: 1.35; }
+.file .ic { width: 62px; height: 62px; margin: 0 auto 6px; border-radius: 14px; display: grid; place-items: center; }
+.light .file .ic { background: #fff; box-shadow: 0 6px 16px -6px rgba(30,30,80,.3), 0 0 0 1px rgba(0,0,0,.05); }
+.dark .file .ic { background: #2a2d38; box-shadow: 0 6px 16px -6px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.06); }
+.file .ic img { width: 38px; }
+.file small { display: block; opacity: .7; }
+.dark .file { color: #eef0f6; }
+.mac .file { right: 26px; top: 56px; } .win .file { left: 18px; top: 22px; } .linux .file { right: 26px; top: 56px; }
+</style></head><body>
+<div class="wall"></div>
+<div id="sys"></div>
+<div class="file"><div class="ic"><img src="../../docs/landing/krate-mark-3d-96.png" alt=""></div><span id="fname"></span><small id="fsize"></small></div>
+<div class="win-frame"><div class="bar" id="bar"></div><img class="app" id="app" alt=""></div>
+<script>
+const q = new URLSearchParams(location.search);
+const os = q.get("os") || "mac", theme = q.get("theme") || "light", name = q.get("name") || "Editor";
+document.body.className = `${os} ${theme}`;
+document.getElementById("app").src = q.get("shot");
+document.getElementById("fname").textContent = q.get("file") || `${name}.krate`;
+document.getElementById("fsize").textContent = q.get("size") || "";
+const bar = document.getElementById("bar"), sys = document.getElementById("sys");
+if (os === "mac") {
+  bar.innerHTML = `<span class="lights"><i></i><i></i><i></i></span><span class="t">${name}</span>`;
+  sys.innerHTML = `<div class="menubar"><b>${name}</b><span>File</span><span>Edit</span><span>View</span><span class="r"><span>Tue 6 Oct</span><span>10:42</span></span></div>
+    <div class="dock"><i></i><i></i><i></i><i class="krate on"></i><i></i><i></i></div>`;
+} else if (os === "win") {
+  bar.innerHTML = `<img src="../../docs/landing/krate-mark-3d-96.png" alt=""><span>${name}</span><span class="btns"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></span>`;
+  sys.innerHTML = `<div class="taskbar"><i></i><i></i><i class="krate"></i><i></i><i></i><span class="clock">10:42<br>06/10/2026</span></div>`;
+} else {
+  bar.innerHTML = `<span class="t">${name}</span><span class="x">&#10005;</span>`;
+  sys.innerHTML = `<div class="topbar"><span class="a">Activities</span>Tue 6 Oct 10:42</div><div class="dash"><i></i><i></i><i class="krate"></i><i></i></div>`;
+}
+</script></body></html>

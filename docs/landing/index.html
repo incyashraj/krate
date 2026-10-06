@@ -687,6 +687,25 @@ html:not(.js) .view .vw:first-child { opacity: 1; }
 main img, main svg { max-width: none; }
 .ucard { padding: 0; box-shadow: none; }
 
+
+/* The example app is a real one: Editor.krate, a code editor shot by the
+   engine (scripts/site-hero renders the desktops and app-frame.webp). */
+.note.code { width: 330px; background: #12151c; color: #c9d1e0; box-shadow: 0 0 0 1px rgba(120,140,200,.16), 0 30px 50px -28px rgba(10,14,40,.55); }
+.note.code .when { color: #7d879c; font: 500 11px ui-monospace, Menlo, monospace; }
+.note.code h5 { color: #e6ebf5; font: 600 19px ui-monospace, Menlo, monospace; letter-spacing: -.01em; }
+.note.code pre { margin: 6px 0 0; font: 12px/1.7 ui-monospace, Menlo, monospace; color: #c9d1e0; white-space: pre; }
+.note.code .k { color: #c792ea; } .note.code .f { color: #82aaff; } .note.code .n { color: #f78c6c; } .note.code .t { color: #ffcb6b; } .note.code .c { color: #6c7790; font-style: italic; }
+.note.code .car { display: inline-block; width: 2px; height: 14px; margin-left: 1px; vertical-align: -2px; background: #82aaff; animation: krCar 1.06s steps(1) infinite; }
+@keyframes krCar { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .note.code .car { animation: none; } }
+:root[data-theme="dark"] .note.code { background: #0e1117; }
+.nw.ed { background: #0f1217; }
+.nw.ed .nwb { background: #1b1f27; color: #c9cfdb; border-bottom-color: #0a0c10; }
+.nwc .nwi, .twc .nwi { display: block; width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+.nw.ed .nwc { display: block; }
+.twc.ed { display: block; background: #0f1217; }
+.tw:has(.twc.ed) { background: #0f1217; }
+.tw:has(.twc.ed) .twb { background: #1b1f27; color: #c9cfdb; border-bottom-color: #0a0c10; }
 </style>
 </head>
 <body>
@@ -728,33 +747,37 @@ main img, main svg { max-width: none; }
 </section>
 <div class="band0">
   <div class="scene" id="scene">
-    <div class="shot"><div class="in"><span class="sl on"><img class="lt" src="/os-mac.webp" alt="Notes.krate open on a Mac"><img class="dk" src="/os-mac-dark.webp" alt=""></span><span class="sl"><img class="lt" src="/os-win.webp" alt="The same Notes.krate open on Windows"><img class="dk" src="/os-win-dark.webp" alt=""></span><span class="sl"><img class="lt" src="/os-linux.webp" alt="The same Notes.krate open on Linux"><img class="dk" src="/os-linux-dark.webp" alt=""></span></div></div>
-    <div class="pstage" id="pstage" aria-label="Notes.krate on phones, coming soon">
+    <div class="shot"><div class="in"><span class="sl on"><img class="lt" src="/os-mac.webp" alt="Editor.krate, a code editor, open on a Mac"><img class="dk" src="/os-mac-dark.webp" alt=""></span><span class="sl"><img class="lt" src="/os-win.webp" alt="The same Editor.krate open on Windows"><img class="dk" src="/os-win-dark.webp" alt=""></span><span class="sl"><img class="lt" src="/os-linux.webp" alt="The same Editor.krate open on Linux"><img class="dk" src="/os-linux-dark.webp" alt=""></span></div></div>
+    <div class="pstage" id="pstage" aria-label="Editor.krate on phones, coming soon">
       <svg class="parrow" width="210" height="110" viewBox="0 0 210 110"><path pathLength="1" d="M8 96 C 50 28, 126 16, 192 50"/><path pathLength="1" d="M172 30 L 194 50 L 170 64"/></svg>
       <div class="phone p1"><div class="scr"><div class="sbar"><b>9:41</b><span class="isl"></span><i class="sig"><s></s><s></s><s></s><s></s></i></div>
   <div class="chat-hd"><span class="av">S</span><b>Sam</b></div>
-  <div class="bub me">made the notes app, try it</div>
-  <div class="att"><span class="fi"><img src="/krate-mark-3d-96.png" width="28" height="28" alt=""></span><span><b>Notes.krate</b><small>37 KB · Krate app</small></span></div>
+  <div class="bub me">made a code editor, try it</div>
+  <div class="att"><span class="fi"><img src="/krate-mark-3d-96.png" width="28" height="28" alt=""></span><span><b>Editor.krate</b><small>294 KB · Krate app</small></span></div>
   <div class="bub them">opening it on my phone</div>
   <div class="tap"><i></i>Tap to open</div></div></div>
 <div class="phone p3"><div class="scr"><div class="sbar"><b>9:41</b><span class="isl"></span><i class="sig"><s></s><s></s><s></s><s></s></i></div>
-  <div class="splash"><img src="/krate-mark-3d-96.png" width="64" height="64" alt=""><b>Notes</b></div>
-  <div class="sheet"><div class="sh-hd">Notes wants to</div><div class="sh-row">Save notes on this phone<i class="sw on"></i></div><div class="sh-row">Use the network<i class="sw"></i></div><div class="sh-btn">Allow</div><div class="sh-no">Don't allow</div></div></div></div>
+  <div class="splash"><img src="/krate-mark-3d-96.png" width="64" height="64" alt=""><b>Editor</b></div>
+  <div class="sheet"><div class="sh-hd">Editor can</div><div class="sh-row">Open a window<i class="sw on"></i></div><div class="sh-row">Your files<i class="sw"></i></div><div class="sh-row">Use the network<i class="sw"></i></div><div class="sh-btn">Open</div><div class="sh-no">Not now</div></div></div></div>
 <div class="phone p2"><div class="scr"><div class="sbar"><b>9:41</b><span class="isl"></span><i class="sig"><s></s><s></s><s></s><s></s></i></div>
-  <div class="app-hd"><b>Notes</b><span class="new">+</span></div>
-  <div class="search">Search</div>
-  <div class="it on"><b>Ship the demo</b><small>Record the run-through, tighten the intro…</small></div>
-  <div class="it"><b>Groceries</b><small>Limes, garlic, rice</small></div>
-  <div class="it"><b>Ideas</b><small>A cron explainer that stays offline</small></div>
-  <div class="it"><b>Reading list</b><small>Three essays on small software</small></div>
-  <div class="hint">Notes.krate · 37 KB · same file as desktop</div></div></div>
+  <div class="app-hd"><b>Editor</b><span class="new">+</span></div>
+  <div class="search">Search files</div>
+  <div class="it on"><b>lib.rs</b><small>src · 1 unsaved change</small></div>
+  <div class="it"><b>window.rs</b><small>src/ui · the window and its tabs</small></div>
+  <div class="it"><b>Cargo.toml</b><small>the build setup</small></div>
+  <div class="it"><b>README.md</b><small>what the editor does</small></div>
+  <div class="hint">Editor.krate · 294 KB · same file as desktop</div></div></div>
     </div>
     <div class="objs" id="objs">
       <!-- macOS: the file and the note from the screen, blown up -->
-      <div class="obj slide on" data-v="0" style="left:-46px;top:330px;--r:-8deg;--r0:-2deg;--fx:-180px"><div class="par" style="--d:26"><div class="fcard"><span class="ficon"><img src="/krate-mark-3d-96.png" width="34" height="34" alt=""></span><span><b>Notes.krate</b><small>Krate app · 37 KB</small></span></div></div></div>
-      <div class="obj slide on" data-v="0" style="right:52px;top:150px;--r:9deg;--r0:16deg;--fx:180px;--dl:.06s"><div class="par" style="--d:20"><div class="note"><div class="when">Edited today</div><h5>Ship the demo</h5>
-  <p>Record the run-through, tighten the intro, and send the link before Friday.</p>
-  <ul><li class="done">Record the run-through</li><li class="done">Tighten the intro</li><li>Send it to Sam</li><li>Send it to the team</li></ul></div></div></div>
+      <div class="obj slide on" data-v="0" style="left:-46px;top:330px;--r:-8deg;--r0:-2deg;--fx:-180px"><div class="par" style="--d:26"><div class="fcard"><span class="ficon"><img src="/krate-mark-3d-96.png" width="34" height="34" alt=""></span><span><b>Editor.krate</b><small>Krate app · 294 KB</small></span></div></div></div>
+      <div class="obj slide on" data-v="0" style="right:52px;top:150px;--r:9deg;--r0:16deg;--fx:180px;--dl:.06s"><div class="par" style="--d:20"><div class="note code"><div class="when">src/lib.rs · line 41</div><h5>impl Card</h5>
+  <pre><span class="c">/// Advance one frame.</span>
+<span class="k">pub fn</span> <span class="f">tick</span>(&amp;<span class="k">mut</span> self, dt: <span class="t">f32</span>) {
+    <span class="k">let</span> dt = dt.<span class="f">min</span>(<span class="n">0.05</span>);
+    self.level.<span class="f">tick</span>(dt);
+    self.frames += <span class="n">1</span>;<i class="car"></i>
+}</pre></div></div></div>
       <div class="obj pop on" data-v="0" style="left:120px;top:120px;--dl:.16s"><div class="par" style="--d:10"><svg class="ast" width="92" height="92" viewBox="0 0 100 100" style="--k:0"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
       <div class="obj pop on" data-v="0" style="right:110px;top:520px;--dl:.22s"><div class="par" style="--d:8"><svg class="ast" width="70" height="70" viewBox="0 0 100 100" style="--k:1"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
       <div class="obj pop soft on" data-v="0" style="left:70px;top:520px;--dl:.12s"><div class="par" style="--d:16"><svg class="blob" width="150" height="150" viewBox="0 0 200 200"><path fill="#f6b585" d="M100 14c22 0 30 18 48 24s40 8 38 34-22 30-18 52 10 46-16 54-38-12-54-12-34 26-56 10-6-42-14-60-30-28-18-50 36-14 52-28S78 14 100 14z"/></svg></div></div>
@@ -785,17 +808,18 @@ ooaaaaaa...aaaaaaaaa.......########....#######
       <div class="obj draw" data-v="1" style="right:60px;top:470px;--dl:.2s"><div class="par" style="--d:12"><svg class="swoosh" width="300" height="230" viewBox="0 0 300 230"><path pathLength="1" d="M18 212 C 60 120, 92 60, 120 92 S 118 190, 160 150 S 220 40, 284 18"/></svg></div></div>
       <!-- Linux: the crate in pixels, what it asks, what it is -->
       <div class="obj pixels" data-v="2" style="left:90px;top:120px;--dl:.06s"><div class="par" style="--d:16"><svg class="pix" width="140" height="140" viewBox="0 0 13 13" shape-rendering="crispEdges"><rect x="6" y="0" width="1" height="1" fill="#c8b4fc" style="--i:6"/><rect x="4" y="1" width="1" height="1" fill="#c8b4fc" style="--i:5"/><rect x="5" y="1" width="1" height="1" fill="#c8b4fc" style="--i:6"/><rect x="6" y="1" width="1" height="1" fill="#c8b4fc" style="--i:7"/><rect x="7" y="1" width="1" height="1" fill="#c8b4fc" style="--i:8"/><rect x="8" y="1" width="1" height="1" fill="#c8b4fc" style="--i:0"/><rect x="2" y="2" width="1" height="1" fill="#c8b4fc" style="--i:4"/><rect x="3" y="2" width="1" height="1" fill="#c8b4fc" style="--i:5"/><rect x="4" y="2" width="1" height="1" fill="#c8b4fc" style="--i:6"/><rect x="5" y="2" width="1" height="1" fill="#c8b4fc" style="--i:7"/><rect x="6" y="2" width="1" height="1" fill="#c8b4fc" style="--i:8"/><rect x="7" y="2" width="1" height="1" fill="#c8b4fc" style="--i:0"/><rect x="8" y="2" width="1" height="1" fill="#c8b4fc" style="--i:1"/><rect x="9" y="2" width="1" height="1" fill="#c8b4fc" style="--i:2"/><rect x="10" y="2" width="1" height="1" fill="#c8b4fc" style="--i:3"/><rect x="0" y="3" width="1" height="1" fill="#c8b4fc" style="--i:3"/><rect x="1" y="3" width="1" height="1" fill="#c8b4fc" style="--i:4"/><rect x="2" y="3" width="1" height="1" fill="#c8b4fc" style="--i:5"/><rect x="3" y="3" width="1" height="1" fill="#c8b4fc" style="--i:6"/><rect x="4" y="3" width="1" height="1" fill="#c8b4fc" style="--i:7"/><rect x="5" y="3" width="1" height="1" fill="#c8b4fc" style="--i:8"/><rect x="6" y="3" width="1" height="1" fill="#c8b4fc" style="--i:0"/><rect x="7" y="3" width="1" height="1" fill="#c8b4fc" style="--i:1"/><rect x="8" y="3" width="1" height="1" fill="#c8b4fc" style="--i:2"/><rect x="9" y="3" width="1" height="1" fill="#c8b4fc" style="--i:3"/><rect x="10" y="3" width="1" height="1" fill="#c8b4fc" style="--i:4"/><rect x="11" y="3" width="1" height="1" fill="#c8b4fc" style="--i:5"/><rect x="12" y="3" width="1" height="1" fill="#c8b4fc" style="--i:6"/><rect x="0" y="4" width="1" height="1" fill="#a084f0" style="--i:4"/><rect x="1" y="4" width="1" height="1" fill="#a084f0" style="--i:5"/><rect x="2" y="4" width="1" height="1" fill="#c8b4fc" style="--i:6"/><rect x="3" y="4" width="1" height="1" fill="#c8b4fc" style="--i:7"/><rect x="4" y="4" width="1" height="1" fill="#c8b4fc" style="--i:8"/><rect x="5" y="4" width="1" height="1" fill="#c8b4fc" style="--i:0"/><rect x="6" y="4" width="1" height="1" fill="#c8b4fc" style="--i:1"/><rect x="7" y="4" width="1" height="1" fill="#c8b4fc" style="--i:2"/><rect x="8" y="4" width="1" height="1" fill="#c8b4fc" style="--i:3"/><rect x="9" y="4" width="1" height="1" fill="#c8b4fc" style="--i:4"/><rect x="10" y="4" width="1" height="1" fill="#c8b4fc" style="--i:5"/><rect x="11" y="4" width="1" height="1" fill="#7c5ce8" style="--i:6"/><rect x="12" y="4" width="1" height="1" fill="#7c5ce8" style="--i:7"/><rect x="0" y="5" width="1" height="1" fill="#a084f0" style="--i:5"/><rect x="1" y="5" width="1" height="1" fill="#a084f0" style="--i:6"/><rect x="2" y="5" width="1" height="1" fill="#a084f0" style="--i:7"/><rect x="3" y="5" width="1" height="1" fill="#a084f0" style="--i:8"/><rect x="4" y="5" width="1" height="1" fill="#c8b4fc" style="--i:0"/><rect x="5" y="5" width="1" height="1" fill="#c8b4fc" style="--i:1"/><rect x="6" y="5" width="1" height="1" fill="#c8b4fc" style="--i:2"/><rect x="7" y="5" width="1" height="1" fill="#c8b4fc" style="--i:3"/><rect x="8" y="5" width="1" height="1" fill="#c8b4fc" style="--i:4"/><rect x="9" y="5" width="1" height="1" fill="#7c5ce8" style="--i:5"/><rect x="10" y="5" width="1" height="1" fill="#7c5ce8" style="--i:6"/><rect x="11" y="5" width="1" height="1" fill="#7c5ce8" style="--i:7"/><rect x="12" y="5" width="1" height="1" fill="#7c5ce8" style="--i:8"/><rect x="0" y="6" width="1" height="1" fill="#ece4ff" style="--i:6"/><rect x="1" y="6" width="1" height="1" fill="#ece4ff" style="--i:7"/><rect x="2" y="6" width="1" height="1" fill="#a084f0" style="--i:8"/><rect x="3" y="6" width="1" height="1" fill="#a084f0" style="--i:0"/><rect x="4" y="6" width="1" height="1" fill="#a084f0" style="--i:1"/><rect x="5" y="6" width="1" height="1" fill="#a084f0" style="--i:2"/><rect x="6" y="6" width="1" height="1" fill="#c8b4fc" style="--i:3"/><rect x="7" y="6" width="1" height="1" fill="#7c5ce8" style="--i:4"/><rect x="8" y="6" width="1" height="1" fill="#7c5ce8" style="--i:5"/><rect x="9" y="6" width="1" height="1" fill="#7c5ce8" style="--i:6"/><rect x="10" y="6" width="1" height="1" fill="#7c5ce8" style="--i:7"/><rect x="11" y="6" width="1" height="1" fill="#ece4ff" style="--i:8"/><rect x="12" y="6" width="1" height="1" fill="#ece4ff" style="--i:0"/><rect x="0" y="7" width="1" height="1" fill="#a084f0" style="--i:7"/><rect x="1" y="7" width="1" height="1" fill="#a084f0" style="--i:8"/><rect x="2" y="7" width="1" height="1" fill="#ece4ff" style="--i:0"/><rect x="3" y="7" width="1" height="1" fill="#ece4ff" style="--i:1"/><rect x="4" y="7" width="1" height="1" fill="#a084f0" style="--i:2"/><rect x="5" y="7" width="1" height="1" fill="#a084f0" style="--i:3"/><rect x="6" y="7" width="1" height="1" fill="#7c5ce8" style="--i:4"/><rect x="7" y="7" width="1" height="1" fill="#7c5ce8" style="--i:5"/><rect x="8" y="7" width="1" height="1" fill="#7c5ce8" style="--i:6"/><rect x="9" y="7" width="1" height="1" fill="#ece4ff" style="--i:7"/><rect x="10" y="7" width="1" height="1" fill="#ece4ff" style="--i:8"/><rect x="11" y="7" width="1" height="1" fill="#7c5ce8" style="--i:0"/><rect x="12" y="7" width="1" height="1" fill="#7c5ce8" style="--i:1"/><rect x="0" y="8" width="1" height="1" fill="#a084f0" style="--i:8"/><rect x="1" y="8" width="1" height="1" fill="#a084f0" style="--i:0"/><rect x="2" y="8" width="1" height="1" fill="#a084f0" style="--i:1"/><rect x="3" y="8" width="1" height="1" fill="#a084f0" style="--i:2"/><rect x="4" y="8" width="1" height="1" fill="#ece4ff" style="--i:3"/><rect x="5" y="8" width="1" height="1" fill="#ece4ff" style="--i:4"/><rect x="6" y="8" width="1" height="1" fill="#7c5ce8" style="--i:5"/><rect x="7" y="8" width="1" height="1" fill="#ece4ff" style="--i:6"/><rect x="8" y="8" width="1" height="1" fill="#ece4ff" style="--i:7"/><rect x="9" y="8" width="1" height="1" fill="#7c5ce8" style="--i:8"/><rect x="10" y="8" width="1" height="1" fill="#7c5ce8" style="--i:0"/><rect x="11" y="8" width="1" height="1" fill="#7c5ce8" style="--i:1"/><rect x="12" y="8" width="1" height="1" fill="#7c5ce8" style="--i:2"/><rect x="0" y="9" width="1" height="1" fill="#ece4ff" style="--i:0"/><rect x="1" y="9" width="1" height="1" fill="#ece4ff" style="--i:1"/><rect x="2" y="9" width="1" height="1" fill="#a084f0" style="--i:2"/><rect x="3" y="9" width="1" height="1" fill="#a084f0" style="--i:3"/><rect x="4" y="9" width="1" height="1" fill="#a084f0" style="--i:4"/><rect x="5" y="9" width="1" height="1" fill="#a084f0" style="--i:5"/><rect x="6" y="9" width="1" height="1" fill="#ece4ff" style="--i:6"/><rect x="7" y="9" width="1" height="1" fill="#7c5ce8" style="--i:7"/><rect x="8" y="9" width="1" height="1" fill="#7c5ce8" style="--i:8"/><rect x="9" y="9" width="1" height="1" fill="#7c5ce8" style="--i:0"/><rect x="10" y="9" width="1" height="1" fill="#7c5ce8" style="--i:1"/><rect x="11" y="9" width="1" height="1" fill="#ece4ff" style="--i:2"/><rect x="12" y="9" width="1" height="1" fill="#ece4ff" style="--i:3"/><rect x="2" y="10" width="1" height="1" fill="#ece4ff" style="--i:3"/><rect x="3" y="10" width="1" height="1" fill="#ece4ff" style="--i:4"/><rect x="4" y="10" width="1" height="1" fill="#a084f0" style="--i:5"/><rect x="5" y="10" width="1" height="1" fill="#a084f0" style="--i:6"/><rect x="6" y="10" width="1" height="1" fill="#7c5ce8" style="--i:7"/><rect x="7" y="10" width="1" height="1" fill="#7c5ce8" style="--i:8"/><rect x="8" y="10" width="1" height="1" fill="#7c5ce8" style="--i:0"/><rect x="9" y="10" width="1" height="1" fill="#ece4ff" style="--i:1"/><rect x="10" y="10" width="1" height="1" fill="#ece4ff" style="--i:2"/><rect x="4" y="11" width="1" height="1" fill="#ece4ff" style="--i:6"/><rect x="5" y="11" width="1" height="1" fill="#ece4ff" style="--i:7"/><rect x="6" y="11" width="1" height="1" fill="#7c5ce8" style="--i:8"/><rect x="7" y="11" width="1" height="1" fill="#ece4ff" style="--i:0"/><rect x="8" y="11" width="1" height="1" fill="#ece4ff" style="--i:1"/><rect x="6" y="12" width="1" height="1" fill="#ece4ff" style="--i:0"/></svg></div></div>
-      <div class="obj slide" data-v="2" style="left:-15px;top:400px;--r:-7deg;--r0:0deg;--fx:-180px;--dl:.1s"><div class="par" style="--d:24"><div class="askc"><div class="ah"><img src="/krate-mark-3d-96.png" width="34" height="34" alt=""><span><b>Notes wants to</b><small>first open</small></span></div>
-  <div class="row">Save notes on this computer<i class="sw on"></i></div><div class="row">Use the network<i class="sw"></i></div></div></div></div>
+      <div class="obj slide" data-v="2" style="left:-15px;top:400px;--r:-7deg;--r0:0deg;--fx:-180px;--dl:.1s"><div class="par" style="--d:24"><div class="askc"><div class="ah"><img src="/krate-mark-3d-96.png" width="34" height="34" alt=""><span><b>Editor can</b><small>before it opens</small></span></div>
+  <div class="row">Open a window<i class="sw on"></i></div><div class="row">Your files<i class="sw"></i></div><div class="row">Use the network<i class="sw"></i></div></div></div></div>
       <div class="obj slide" data-v="2" style="right:72px;top:170px;--r:8deg;--r0:14deg;--fx:180px;--dl:.04s"><div class="par" style="--d:20"><div class="print"><span class="cm"># krate.toml</span>
 <span class="k">[app]</span>
-name    = <span class="s">"Notes"</span>
-version = <span class="s">"1.0.0"</span>
-size    = <span class="s">"37 KB"</span>
+name    = <span class="s">"Editor"</span>
+version = <span class="s">"0.1.0"</span>
+size    = <span class="s">"294 KB"</span>
 
 <span class="k">[capabilities]</span>
 window  = true
-storage = <span class="s">"this computer"</span>
+clock   = true
+files   = false
 network = false
 
 <span class="k">[targets]</span>
@@ -805,7 +829,7 @@ linux   = true</div></div></div>
       <div class="obj pop" data-v="2" style="right:130px;top:560px;--dl:.2s"><div class="par" style="--d:8"><svg class="ast" width="78" height="78" viewBox="0 0 100 100" style="--k:1"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
       <div class="obj pop" data-v="2" style="left:240px;top:330px;--dl:.24s"><div class="par" style="--d:6"><svg class="ast" width="56" height="56" viewBox="0 0 100 100" style="--k:2"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
       <!-- Phones: the file arriving, and a card that says when -->
-      <div class="obj slide" data-v="3" style="left:-40px;top:330px;--r:-6deg;--r0:0deg;--fx:-180px"><div class="par" style="--d:24"><div class="notif"><span class="ap"><img src="/krate-mark-3d-96.png" width="30" height="30" alt=""></span><span class="tx"><span class="top"><b>Sam</b><em>now</em></span><span>made the notes app, try it</span><span class="fl">Notes.krate · 37 KB</span></span></div></div></div>
+      <div class="obj slide" data-v="3" style="left:-40px;top:330px;--r:-6deg;--r0:0deg;--fx:-180px"><div class="par" style="--d:24"><div class="notif"><span class="ap"><img src="/krate-mark-3d-96.png" width="30" height="30" alt=""></span><span class="tx"><span class="top"><b>Sam</b><em>now</em></span><span>made a code editor, try it</span><span class="fl">Editor.krate · 294 KB</span></span></div></div></div>
       <div class="obj pop" data-v="3" style="right:110px;top:170px;--r:4deg;--dl:.08s"><div class="par" style="--d:20"><div class="soonc"><span class="sic"><svg width="22" height="32" viewBox="0 0 22 32" fill="none" stroke="currentColor" stroke-width="2"><rect x="1.5" y="1.5" width="19" height="29" rx="4.5"/><path d="M8.5 26h5" stroke-linecap="round"/></svg></span><span class="stx"><b>Phones and tablets</b><span>Coming soon, from the same one file</span></span><span class="sdot"></span></div></div></div>
       <div class="obj pop" data-v="3" style="left:150px;top:110px;--dl:.16s"><div class="par" style="--d:10"><svg class="ast" width="86" height="86" viewBox="0 0 100 100" style="--k:0"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
       <div class="obj pop" data-v="3" style="right:150px;top:520px;--dl:.22s"><div class="par" style="--d:8"><svg class="ast" width="66" height="66" viewBox="0 0 100 100" style="--k:2"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
@@ -826,27 +850,27 @@ linux   = true</div></div></div>
       <div class="step"><span class="bar"></span><h3>Trust it</h3><div class="body"><b>It asks before it touches anything.</b><p>A Krate app starts with no access to your files or the network. It asks for what it needs, and you decide.</p></div></div>
     </div>
     <div class="view" id="view" data-illustration>
-    <div class="vw live send" id="sendv" data-ch="0" aria-label="Sending Notes.krate by link, message, email and nearby share">
+    <div class="vw live send" id="sendv" data-ch="0" aria-label="Sending Editor.krate by link, message, email and nearby share">
       <div class="chs"><span class="cind" id="cind"></span><button class="ch" data-k="0" style="--c:#3d6df0;--cb:#e7efff"><i><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 9.5l3-3M5.5 7L4 8.5a2.5 2.5 0 0 0 3.5 3.5L9 10.5M10.5 9L12 7.5a2.5 2.5 0 0 0-3.5-3.5L7 5.5"/></svg></i>Link</button><button class="ch" data-k="1" style="--c:#22a35a;--cb:#e5f8ec"><i><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 12.5V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H6z"/></svg></i>Messages</button><button class="ch" data-k="2" style="--c:#7c5ce8;--cb:#f1ebff"><i><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="2"/><path d="M2.5 4.5l5.5 4 5.5-4"/></svg></i>Email</button><button class="ch" data-k="3" style="--c:#e8763a;--cb:#fff0e6"><i><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="1.4"/><path d="M5 11a4.2 4.2 0 0 1 0-6M11 5a4.2 4.2 0 0 1 0 6M3 13a7 7 0 0 1 0-10M13 3a7 7 0 0 1 0 10"/></svg></i>Nearby</button></div>
       <div class="stg">
         <div class="sc" data-k="0"><div class="ssh"><i style="color:#3d6df0;background:#e7efff"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 9.5l3-3M5.5 7L4 8.5a2.5 2.5 0 0 0 3.5 3.5L9 10.5M10.5 9L12 7.5a2.5 2.5 0 0 0-3.5-3.5L7 5.5"/></svg></i>Share a link</div>
           <div class="urlf s1"><span class="u">krate.link/n/7f3a</span><b class="cp">Copy</b></div>
           <div class="ok s2"><span><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>Link copied</div>
-          <div class="unf s3"><div class="un-ic"><img src="/krate-mark-3d-96.png" width="26" height="26" alt=""></div><div><b>Notes.krate</b><small>Krate app · 37 KB · opens on any desktop</small></div></div>
+          <div class="unf s3"><div class="un-ic"><img src="/krate-mark-3d-96.png" width="26" height="26" alt=""></div><div><b>Editor.krate</b><small>Krate app · 294 KB · opens on any desktop</small></div></div>
           <div class="seen s4"><span class="av" style="background:#ffe2cc;color:#b8561a">S</span><b>Sam</b>&nbsp;opened it · just now</div></div>
         <div class="sc" data-k="1"><div class="ssh"><span class="av" style="background:#ffe2cc;color:#b8561a">S</span>Sam</div>
-          <div class="cv"><div class="b them s0">did you finish the notes app?</div>
-          <div class="b me s1">yes, try it</div><div class="att s1"><span class="mchip"><i><img src="/krate-mark-3d-96.png" width="14" height="14" alt=""></i>Notes.krate</span><small>37 KB</small></div>
+          <div class="cv"><div class="b them s0">is the editor ready?</div>
+          <div class="b me s1">yes, try it</div><div class="att s1"><span class="mchip"><i><img src="/krate-mark-3d-96.png" width="14" height="14" alt=""></i>Editor.krate</span><small>294 KB</small></div>
           <div class="rd s2"><span class="r-a">Delivered</span><span class="r-b">Read 9:41</span></div>
           <div class="b them s4">it just opened. on my linux box too</div></div></div>
         <div class="sc" data-k="2"><div class="mailw"><div class="ssh"><i style="color:#7c5ce8;background:#f1ebff"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="2"/><path d="M2.5 4.5l5.5 4 5.5-4"/></svg></i>New message</div>
-          <div class="fl"><em>To</em>maya@studio.co</div><div class="fl"><em>Subject</em>the notes app</div>
+          <div class="fl"><em>To</em>maya@studio.co</div><div class="fl"><em>Subject</em>the code editor</div>
           <p class="bd">Here it is. Double-click and it opens, nothing to install per app.</p>
-          <div class="atr s1"><span class="mchip"><i><img src="/krate-mark-3d-96.png" width="14" height="14" alt=""></i>Notes.krate</span><small>37 KB</small></div>
+          <div class="atr s1"><span class="mchip"><i><img src="/krate-mark-3d-96.png" width="14" height="14" alt=""></i>Editor.krate</span><small>294 KB</small></div>
           <div class="mrow"><b class="sendb s2">Send</b></div></div>
           <div class="ok big"><span><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>Sent to Maya</div></div>
         <div class="sc" data-k="3"><div class="ssh"><i style="color:#e8763a;background:#fff0e6"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="1.4"/><path d="M5 11a4.2 4.2 0 0 1 0-6M11 5a4.2 4.2 0 0 1 0 6M3 13a7 7 0 0 1 0-10M13 3a7 7 0 0 1 0 10"/></svg></i>Nearby</div>
-          <div class="nfile s0"><span class="mchip"><i><img src="/krate-mark-3d-96.png" width="14" height="14" alt=""></i>Notes.krate</span><small>37 KB</small></div>
+          <div class="nfile s0"><span class="mchip"><i><img src="/krate-mark-3d-96.png" width="14" height="14" alt=""></i>Editor.krate</span><small>294 KB</small></div>
           <div class="nlab s0">Share with a device nearby</div>
           <div class="ndevs"><span class="nwave"></span><span class="nwave w2"></span>
             <div class="nd sel s1"><span class="nav" style="--c:#3d6df0;--cb:#e7efff"><svg class="dvi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="4.5" y="5.5" width="15" height="10" rx="1.6"/><path d="M2.5 18.5h19" stroke-linecap="round"/></svg><svg class="ring" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18.5" pathLength="1"/></svg><em class="dn"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></em></span><b>Maya's laptop</b>
@@ -855,54 +879,51 @@ linux   = true</div></div></div>
             <div class="nd s1"><span class="nav" style="--c:#22a35a;--cb:#e5f8ec"><svg class="dvi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6M12 16.5V20" stroke-linecap="round"/></svg></span><b>Ana's desktop</b><small class="st"><span class="w1">Available</span></small></div>
           </div></div>
       </div>
-      <p class="cap">Send it the way you send anything. At 37 KB, it fits everywhere.</p>
+      <p class="cap">Send it the way you send anything. A whole code editor in 294 KB fits everywhere.</p>
     </div>
-    <div class="vw live openv" aria-label="The same Notes.krate double-clicked and opening on macOS, Windows and Linux">
+    <div class="vw live openv" aria-label="The same Editor.krate double-clicked and opening on macOS, Windows and Linux">
       <div class="devs">
         <div class="dev laptop mac" style="--k:0">
-          <div class="scr2"><div class="wall"></div><div class="mbar"><b>Notes</b><span>File</span><span>Edit</span><span>View</span><em>10:42</em></div>
-            <div class="dico" style="right:5%;top:16%"><span class="di"><img src="/krate-mark-3d-96.png" width="18" height="18" alt=""></span><span class="dn2">Notes.krate</span><i class="rp"></i></div>
-            <div class="nw mac"><div class="nwb"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="tt">Notes</span></div><div class="nwc"><div class="nws"><b>Notes</b><span class="on">Ship the demo</span><span>Groceries</span><span>Ideas</span><span>Reading list</span></div>
-      <div class="nwd"><small>Edited today</small><b>Ship the demo</b><p>Record the run-through, tighten the intro, and send the link before Friday.</p><p class="d2">Cut the settings tour.</p></div></div></div><svg class="cur" viewBox="0 0 26 34"><path d="M3 2v25l6.4-6 4.3 10 4.4-1.9-4.3-9.8H22z" fill="#1c1c1e" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>
+          <div class="scr2"><div class="wall"></div><div class="mbar"><b>Editor</b><span>File</span><span>Edit</span><span>View</span><em>10:42</em></div>
+            <div class="dico" style="right:5%;top:16%"><span class="di"><img src="/krate-mark-3d-96.png" width="18" height="18" alt=""></span><span class="dn2">Editor.krate</span><i class="rp"></i></div>
+            <div class="nw mac ed"><div class="nwb"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="tt">Editor</span></div><div class="nwc"><img class="nwi" src="/app-frame.webp" alt=""></div></div><svg class="cur" viewBox="0 0 26 34"><path d="M3 2v25l6.4-6 4.3 10 4.4-1.9-4.3-9.8H22z" fill="#1c1c1e" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>
           <div class="base"></div>
           <div class="lb"><span class="ok2"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>macOS</div></div>
         <div class="dev monitor win" style="--k:1">
           <div class="scr2"><div class="wall"></div><div class="tbar"><i></i><i></i><i class="hl"></i><i></i><em>10:42</em></div>
-            <div class="dico" style="left:5%;top:7%"><span class="di"><img src="/krate-mark-3d-96.png" width="18" height="18" alt=""></span><span class="dn2">Notes.krate</span><i class="rp"></i></div>
-            <div class="nw win"><div class="nwb"><span class="tt l"><img src="/krate-mark-3d-96.png" width="10" height="10" alt="">Notes</span><span class="wc"><i>–</i><i>▢</i><i>✕</i></span></div><div class="nwc"><div class="nws"><b>Notes</b><span class="on">Ship the demo</span><span>Groceries</span><span>Ideas</span><span>Reading list</span></div>
-      <div class="nwd"><small>Edited today</small><b>Ship the demo</b><p>Record the run-through, tighten the intro, and send the link before Friday.</p><p class="d2">Cut the settings tour.</p></div></div></div><svg class="cur" viewBox="0 0 26 34"><path d="M3 2v25l6.4-6 4.3 10 4.4-1.9-4.3-9.8H22z" fill="#1c1c1e" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>
+            <div class="dico" style="left:5%;top:7%"><span class="di"><img src="/krate-mark-3d-96.png" width="18" height="18" alt=""></span><span class="dn2">Editor.krate</span><i class="rp"></i></div>
+            <div class="nw win ed"><div class="nwb"><span class="tt l"><img src="/krate-mark-3d-96.png" width="10" height="10" alt="">Editor</span><span class="wc"><i>–</i><i>▢</i><i>✕</i></span></div><div class="nwc"><img class="nwi" src="/app-frame.webp" alt=""></div></div><svg class="cur" viewBox="0 0 26 34"><path d="M3 2v25l6.4-6 4.3 10 4.4-1.9-4.3-9.8H22z" fill="#1c1c1e" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>
           <div class="base"></div>
           <div class="lb"><span class="ok2"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>Windows</div></div>
         <div class="dev laptop dark lin" style="--k:2">
           <div class="scr2"><div class="wall"></div><div class="gbar"><span>Activities</span><b>Sun 10:42</b></div>
-            <div class="dico" style="right:5%;top:16%"><span class="di"><img src="/krate-mark-3d-96.png" width="18" height="18" alt=""></span><span class="dn2">Notes.krate</span><i class="rp"></i></div>
-            <div class="nw lin"><div class="nwb"><span class="tt">Notes</span><span class="lc">✕</span></div><div class="nwc"><div class="nws"><b>Notes</b><span class="on">Ship the demo</span><span>Groceries</span><span>Ideas</span><span>Reading list</span></div>
-      <div class="nwd"><small>Edited today</small><b>Ship the demo</b><p>Record the run-through, tighten the intro, and send the link before Friday.</p><p class="d2">Cut the settings tour.</p></div></div></div><svg class="cur" viewBox="0 0 26 34"><path d="M3 2v25l6.4-6 4.3 10 4.4-1.9-4.3-9.8H22z" fill="#1c1c1e" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>
+            <div class="dico" style="right:5%;top:16%"><span class="di"><img src="/krate-mark-3d-96.png" width="18" height="18" alt=""></span><span class="dn2">Editor.krate</span><i class="rp"></i></div>
+            <div class="nw lin ed"><div class="nwb"><span class="tt">Editor</span><span class="lc">✕</span></div><div class="nwc"><img class="nwi" src="/app-frame.webp" alt=""></div></div><svg class="cur" viewBox="0 0 26 34"><path d="M3 2v25l6.4-6 4.3 10 4.4-1.9-4.3-9.8H22z" fill="#1c1c1e" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>
           <div class="base"></div>
           <div class="lb"><span class="ok2"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>Linux</div></div>
       </div>
       <p class="cap">The same file on each desktop. Double-click, and it opens as a native window.</p>
     </div>
-    <div class="vw live trustv" aria-label="Notes.krate asking for permission on first open, then running with only what was allowed">
+    <div class="vw live trustv" aria-label="Editor.krate showing what it can do before it opens, then running with only that">
       <div class="wall"></div>
-      <div class="mbar2"><b>Notes</b><span>File</span><span>Edit</span><span>View</span><em>Sun 4 Oct</em><em>10:42</em></div>
+      <div class="mbar2"><b>Editor</b><span>File</span><span>Edit</span><span>View</span><em>Tue 6 Oct</em><em>10:42</em></div>
       <div class="tw">
-        <div class="twb"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>Notes<span class="saved"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg>Saved</span></div>
-        <div class="twc"><div class="nws"><b>Notes</b><span class="on">Ship the demo</span><span>Groceries</span><span>Ideas</span><span>Reading list</span></div>
-          <div class="twd"><small>Edited today</small><b>Ship the demo</b><p>Record the run-through, tighten the intro, and send the link before Friday.</p><p class="typ"><span>Saved on this computer, nowhere else.</span><i class="caret"></i></p></div></div>
-        <div class="caps"><span class="cl"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="2.5" y="5.2" width="7" height="5" rx="1.2"/><path d="M4 5.2V3.9a2 2 0 0 1 4 0v1.3"/></svg>Notes can</span>
-          <span class="cpc y" style="--k:0"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg>Show a window</span><span class="cpc y" style="--k:1"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg>Save its notes</span><span class="cpc n" style="--k:2"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.6 2.6l3.8 3.8M6.4 2.6L2.6 6.4"/></svg>Network</span><span class="cpc n" style="--k:3"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.6 2.6l3.8 3.8M6.4 2.6L2.6 6.4"/></svg>Camera</span><span class="cpc n" style="--k:4"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.6 2.6l3.8 3.8M6.4 2.6L2.6 6.4"/></svg>Your other files</span></div>
+        <div class="twb"><span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>Editor</div>
+        <div class="twc ed"><img class="nwi" src="/app-frame.webp" alt=""></div>
+        <div class="caps"><span class="cl"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="2.5" y="5.2" width="7" height="5" rx="1.2"/><path d="M4 5.2V3.9a2 2 0 0 1 4 0v1.3"/></svg>Editor can</span>
+          <span class="cpc y" style="--k:0"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg>Show a window</span><span class="cpc y" style="--k:1"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg>Read the clock</span><span class="cpc n" style="--k:2"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.6 2.6l3.8 3.8M6.4 2.6L2.6 6.4"/></svg>Your files</span><span class="cpc n" style="--k:3"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.6 2.6l3.8 3.8M6.4 2.6L2.6 6.4"/></svg>Network</span></div>
         <div class="dim"></div>
       </div>
       <div class="ask">
-        <div class="akh"><img src="/krate-mark-3d-96.png" width="40" height="40" alt=""><div><b>Notes wants to</b><small>Notes.krate · 37 KB · first open</small></div></div>
+        <div class="akh"><img src="/krate-mark-3d-96.png" width="40" height="40" alt=""><div><b>Editor can</b><small>Editor.krate · 294 KB · before it opens</small></div></div>
         <div class="ar" style="--k:0"><span class="ck on"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>Open a window<em>needed</em></div>
-        <div class="ar" style="--k:1"><span class="ck tg"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>Save notes on this computer<em>asked</em></div>
-        <div class="ar" style="--k:2"><span class="ck"></span>Use the network<em>not asked</em></div>
-        <div class="abt"><span class="no">Don't allow</span><span class="yes">Allow</span></div>
+        <div class="ar" style="--k:1"><span class="ck on"><svg viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.7l1.6 1.6L7 2.8"/></svg></span>Read the clock<em>needed</em></div>
+        <div class="ar" style="--k:2"><span class="ck"></span>Your files<em>not asked</em></div>
+        <div class="ar" style="--k:3"><span class="ck"></span>Use the network<em>not asked</em></div>
+        <div class="abt"><span class="no">Not now</span><span class="yes">Open</span></div>
       </div>
       <svg class="cur tcur" viewBox="0 0 26 34"><path d="M3 2v25l6.4-6 4.3 10 4.4-1.9-4.3-9.8H22z" fill="#1c1c1e" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
-      <p class="cap"><span>On first open it asks, and you decide. Everything else stays closed.</span></p>
+      <p class="cap"><span>Before it opens, you see what it can do. Everything else stays closed.</span></p>
     </div></div>
   </div>
 </section>
