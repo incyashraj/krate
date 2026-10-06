@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Krate, the app runtime: the facts</title>
+<meta name="description" content="Facts about Krate, the open-source app runtime: what it is and is not, the current release, platforms, licences, the sandbox, and what people install." />
+<link rel="canonical" href="https://krate.tech/facts/" />
+<meta property="og:title" content="Krate, the app runtime: the facts" />
+<meta property="og:description" content="Facts about Krate, the open-source app runtime: what it is and is not, the current release, platforms, licences, the sandbox, and what people install." />
+<meta property="og:url" content="https://krate.tech/facts/" />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="https://krate.tech/og-v4.png" />
+<meta property="og:image:alt" content="Krate: one app file that runs natively on every desktop" />
+<meta name="twitter:card" content="summary_large_image" />
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "AboutPage", "@id": "https://krate.tech/facts/#webpage", "url": "https://krate.tech/facts/", "name": "Krate, the app runtime: the facts", "description": "Facts about Krate, the open-source app runtime: what it is and is not, the current release, platforms, licences, the sandbox, and what people install.", "inLanguage": "en", "dateModified": "2026-10-06", "isPartOf": {"@id": "https://krate.tech/#website"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
+<link rel="icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+.facts { margin-top: 8px; display: grid; }
+.facts .frow { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; padding: 18px 0; border-top: 1px solid var(--line); }
+.facts dt { font-size: 14px; font-weight: 500; color: var(--ink-3); }
+.facts dd { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); }
+.facts dd a, .fprose a { color: var(--accent); }
+.facts code, .fprose code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 1px 5px; border-radius: 5px; background: var(--s2); color: var(--ink); overflow-wrap: anywhere; }
+.fprose p { margin-top: 14px; font-size: 16px; line-height: 1.65; color: var(--ink-2); }
+.fprose h2 { margin-top: 56px; font-size: 22px; letter-spacing: -.02em; font-weight: 600; }
+.fprose ul { margin-top: 14px; padding-left: 20px; display: grid; gap: 8px; color: var(--ink-2); }
+.ph .meta { margin-top: 14px; font-size: 13px; color: var(--ink-3); }
+@media (max-width: 680px) { .facts .frow { grid-template-columns: 1fr; gap: 6px; } }
+</style>
+</head>
+<body>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main>
+<section class="ph wrap n">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Facts</span>
+  <h1>Krate, the app runtime: the facts</h1>
+  <p class="lede">Krate is an open-source app runtime, built in Rust on Wasmtime, that runs one sandboxed .krate application file natively on every desktop (macOS, Windows and Linux); Krate Studio builds those apps with AI.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4.</p>
+</section>
+
+<section class="sec t wrap n fprose">
+  <p>Krate (krate.tech) is the Krate app runtime. It is not a Rust crate or crates.io package, and it is not related to krate.com, KrateSoft or the JavaScript project of the same name.</p>
+  <dl class="facts">
+    <div class="frow"><dt>What it is</dt><dd>An app runtime, the <code>.krate</code> app file format and the <code>krate</code> command line. Krate Studio, a separate product, builds Krate apps with AI.</dd></div>
+    <div class="frow"><dt>Current release</dt><dd>Krate 0.5.4, published 30 September 2026. <a href="https://github.com/incyashraj/krate/releases/latest">Release notes and downloads</a>.</dd></div>
+    <div class="frow"><dt>Runtimes published</dt><dd>macOS (Apple silicon and Intel), Windows (x64 and ARM64) and Linux (x86_64 and arm64).</dd></div>
+    <div class="frow"><dt>Tested in CI</dt><dd>The same <code>.krate</code> files: 10 apps pass on macOS arm64, Ubuntu x86_64 and Windows x86_64 at Krate 0.5.4 (<a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a> records). These are automated checks, not hands-on tests of every feature.</dd></div>
+    <div class="frow"><dt>What people install</dt><dd>The Krate runtime, once for their system. After that every <code>.krate</code> app opens from its file.</dd></div>
+    <div class="frow"><dt>Native</dt><dd>The runtime is a native app on each system, and an app runs inside it with no browser or WebView. On the desktop, Wasmtime compiles the app's WebAssembly to machine code before it runs.</dd></div>
+    <div class="frow"><dt>Sandbox</dt><dd>An app starts with no file or network access. It declares what it needs in its manifest, the person sees that list before it opens, and the runtime checks every protected call against what was granted.</dd></div>
+    <div class="frow"><dt>App languages</dt><dd>Rust today. Krate Studio writes the Rust for you with Claude, Codex, Grok or Gemini on your computer, or Krate's own AI in the browser for a first app.</dd></div>
+    <div class="frow"><dt>Licences</dt><dd>The runtime, format and command line: MIT OR Apache-2.0. Krate Studio and the hub: Business Source License 1.1, converting to Apache 2.0 in 2030. <a href="https://github.com/incyashraj/krate#license">Details</a>.</dd></div>
+    <div class="frow"><dt>Price</dt><dd>The runtime is free and open source. Studio on your computer is free with the AI you already use. In the browser, the first app is free.</dd></div>
+    <div class="frow"><dt>Not yet</dt><dd>Phones, multiple windows, printing and a few other capabilities. The <a href="/docs/limits.html">limits page</a> has the full list.</dd></div>
+    <div class="frow"><dt>Example file</dt><dd><a href="https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate">chart.krate</a>, a bar chart app, is 11,455 bytes (SHA-256 <code>3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3</code>).</dd></div>
+    <div class="frow"><dt>Made by</dt><dd>Krate Labs. Founder: Yashraj Pardeshi.</dd></div>
+    <div class="frow"><dt>Links</dt><dd>Source: <a href="https://github.com/incyashraj/krate">github.com/incyashraj/krate</a>. Wikidata: <a href="https://www.wikidata.org/wiki/Q141595622">Q141595622</a> (Krate), <a href="https://www.wikidata.org/wiki/Q141595600">Q141595600</a> (Krate Labs).</dd></div>
+  </dl>
+
+  <h2>Not to be confused with</h2>
+  <ul>
+    <li>Rust crates, the packages on crates.io. A <code>.krate</code> file is an application, not a Rust package.</li>
+    <li>krate.com and KrateSoft, which are unrelated companies.</li>
+    <li>The JavaScript project of the same name.</li>
+  </ul>
+
+  <h2>Answers about shipping desktop apps</h2>
+  <ul>
+      <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
+      <li><a href="/krate-vs-electron.html">Krate vs Electron</a></li>
+      <li><a href="/krate-vs-tauri.html">Krate vs Tauri</a></li>
+      <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
+      <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not a hosted web app</a></li>
+      <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
+      <li><a href="/portable-desktop-app-format.html">The .krate format</a></li>
+      <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one file</a></li>
+      <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely</a></li>
+      <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>
+  </ul>
+</section>
+
+<div class="band rv"><div><h2>Try it</h2><p>Install the runtime once, then open any .krate file.</p></div><div class="acts" style="margin-top:0;gap:10px;justify-content:flex-start"><a class="btn ghost" href="/docs/quickstart.html">Developer quickstart</a><a class="btn dark" href="/download/">Download Krate</a></div></div>
+
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+</footer>
+<script src="/kit/site.js"></script>
+<script>
+// Count the visit, and nothing about the visitor: the page and the site
+// you came from, by name only. No cookie, nothing stored (see /privacy/).
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname, ref: document.referrer }),
+      keepalive: true,
+      mode: "cors",
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+<script>
+// A click on a download link, counted like a page view: which page, which
+// system. Nothing about the person (see /privacy/).
+(function () {
+  try {
+    document.addEventListener("click", function (e) {
+      var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+      if (!a) return;
+      var h = a.getAttribute("href") || "";
+      if (!/releases\/(download|latest)|\.(dmg|exe|msi|AppImage|zip|tar\.gz)(\?|$)/i.test(h)) return;
+      var os = /\.dmg|darwin|mac/i.test(h) ? "mac" : /\.exe|\.msi|windows/i.test(h) ? "windows" : /AppImage|linux/i.test(h) ? "linux" : "-";
+      fetch("https://hub.krate.tech/view", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: location.pathname, event: "download", os: os }),
+        keepalive: true, mode: "cors",
+      }).catch(function () {});
+    }, true);
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

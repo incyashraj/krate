@@ -30,7 +30,8 @@ PRIORITY_PATHS = {"/", "/studio/", "/download/", "/about/", "/faq/", "/docs/", "
                   "/run-ai-generated-code-safely.html", "/share-an-app-made-with-ai.html",
                   "/desktop-app-distribution.html", "/how-to-distribute-a-desktop-app.html",
                   "/krate-vs-electron.html", "/krate-vs-tauri.html", "/desktop-app-or-web-app.html",
-                  "/desktop-app-code-signing.html", "/desktop-app-shipping-faq.html"}
+                  "/desktop-app-code-signing.html", "/desktop-app-shipping-faq.html",
+                  "/facts/", "/answers/"}
 # Narrow editorial summaries for search entry points whose opening paragraph
 # is setup text, an old size claim or a phase-status snapshot. Summarize the
 # actual page rather than turning historical prose into a current promise.
@@ -281,6 +282,24 @@ def canonical_urls(root):
     return sorted(urls)
 
 
+DATE_MODIFIED = re.compile(r'"dateModified"\s*:\s*"(\d{4}-\d{2}-\d{2})"')
+
+
+def sitemap_entry(root, url):
+    """A <url> entry; <lastmod> only when the page states its own dateModified.
+
+    The date is the page's real last review (the same value it shows as
+    "Reviewed ..."), never the build time: a lastmod that moves on every
+    deploy tells crawlers nothing and teaches them to ignore it."""
+    entry = f"<loc>{html.escape(url)}</loc>"
+    file = local_file(root, url[len(ORIGIN):] or "/")
+    if file is not None:
+        found = DATE_MODIFIED.search(file.read_text())
+        if found:
+            entry += f"<lastmod>{found.group(1)}</lastmod>"
+    return f"  <url>{entry}</url>"
+
+
 def finalize(root):
     if not (root / "index.html").is_file():
         raise ValueError("site root must contain index.html")
@@ -297,7 +316,7 @@ def finalize(root):
                              page.noindex or is_utility(canonical_path))
         source = normalize_links(source, path, root)
         file.write_text(source)
-    entries = "\n".join(f"  <url><loc>{html.escape(url)}</loc></url>" for url in canonical_urls(root))
+    entries = "\n".join(sitemap_entry(root, url) for url in canonical_urls(root))
     sitemap = f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="{NS}">\n{entries}\n</urlset>\n'
     (root / "sitemap.xml").write_text(sitemap)
     # mdBook copies its source sitemap. Keep that legacy secondary URL from

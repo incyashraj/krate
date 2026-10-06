@@ -1,14 +1,23 @@
 # Krate
 
-Krate lets developers ship an app as one .krate file that runs through native Krate runtimes on macOS, Windows and Linux, instead of building, signing and hosting a separate package for each operating system.
+> Krate is an open-source app runtime, built in Rust on Wasmtime. Developers ship an application as one .krate file that runs natively on every desktop (macOS, Windows and Linux) through the Krate runtime, instead of building, signing and hosting a separate package for each operating system. Apps are small, sandboxed with the permissions the user grants, and shared in one click. Krate Studio builds Krate apps with AI. Not to be confused with Rust crates (crates.io), krate.com or KrateSoft.
 
-The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.
+Krate is an open-source app runtime that ships an application as one sandboxed .krate file that runs natively on every desktop.
 
-The Krate runtime is free and open source (MIT OR Apache-2.0). Studio has separate licensing; see the repository license details. Krate Studio provides AI-assisted app creation and revision. Developers can also build against the Rust SDK. Optional hosted services are separate from the local runtime and file format.
+## Facts
 
-A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.
+- Current release: Krate 0.5.4 (2026-09-30).
+- Runtimes: macOS (Apple silicon, Intel), Windows (x64, ARM64), Linux (x86_64, arm64).
+- What the recipient installs: The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.
+- Sandbox: Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.
+- Licences: the Krate runtime, format and CLI are free and open source (MIT OR Apache-2.0). Studio has separate licensing (Business Source License 1.1); see the repository license details.
+- Studio: Krate Studio provides AI-assisted app creation and revision. Developers can also build against the Rust SDK. Optional hosted services are separate from the local runtime and file format.
+- Bundles: A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.
+- Facts page: https://krate.tech/facts/
 
-Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.
+## Not to be confused with
+
+Krate (krate.tech) is the Krate app runtime. It is not a Rust crate or crates.io package, and it is not related to krate.com, KrateSoft or the JavaScript project of the same name.
 
 ## Scoped benchmark
 
@@ -36,16 +45,19 @@ The public benchmark kit contains the protocol, analysis and seal. Retained raw 
 - [Measurements](https://krate.tech/reports/)
 - [Repository inventory](https://krate.tech/progress/)
 - [FAQ](https://krate.tech/faq/)
+- [Krate facts](https://krate.tech/facts/)
+- [All answers about shipping desktop apps](https://krate.tech/answers/)
 - [Download Krate](https://krate.tech/download/)
-- [How to distribute a desktop app to Windows, macOS and Linux](https://krate.tech/how-to-distribute-a-desktop-app.html)
+- [How to distribute a desktop app: ship one file](https://krate.tech/how-to-distribute-a-desktop-app.html)
 - [Krate vs Electron](https://krate.tech/krate-vs-electron.html)
 - [Krate vs Tauri](https://krate.tech/krate-vs-tauri.html)
 - [Desktop app or hosted web app](https://krate.tech/desktop-app-or-web-app.html)
 - [Code signing and Krate](https://krate.tech/desktop-app-code-signing.html)
 - [Shipping a desktop app: questions and answers](https://krate.tech/desktop-app-shipping-faq.html)
-- [One desktop app file for three operating systems](https://krate.tech/portable-desktop-app-format.html)
+- [The .krate format: one app file for every desktop](https://krate.tech/portable-desktop-app-format.html)
 - [Share an app made with AI](https://krate.tech/share-an-app-made-with-ai.html)
-- [Inspect an app before you run it](https://krate.tech/run-ai-generated-code-safely.html)
+- [Run an AI-built app safely](https://krate.tech/run-ai-generated-code-safely.html)
+- [Krate vs Electron vs Tauri: what do you ship?](https://krate.tech/desktop-app-distribution.html)
 - [Full text of these pages](https://krate.tech/llms-full.txt)
 - [Latest published release](https://github.com/incyashraj/krate/releases/latest)
 - [Source](https://github.com/incyashraj/krate)

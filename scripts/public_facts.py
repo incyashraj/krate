@@ -88,9 +88,20 @@ def render_llms():
     runtime_size = re.search(r"installed once at ([\d.]+ MiB)", claims[0]["caveat"])
     if not runtime_size:
         raise ValueError("The payload comparison must account for its shared runtime")
-    lines = ["# Krate", "", facts["description"], "", facts["prerequisite"], "",
-             "The Krate runtime is free and open source (MIT OR Apache-2.0). Studio has separate licensing; see the repository license details. " + facts["studio"], "", facts["bundle_accounting"],
-             "", facts["security"], "", "## Scoped benchmark", "",
+    # The release comes from the facts file, not the network: this file is
+    # checked in CI, where the releases API may not answer.
+    lines = ["# Krate", "", "> " + facts["summary"], "",
+             facts["description"], "", "## Facts", "",
+             f"- Current release: Krate {facts['current_release']} ({facts['current_release_date']}).",
+             "- Runtimes: macOS (Apple silicon, Intel), Windows (x64, ARM64), Linux (x86_64, arm64).",
+             "- What the recipient installs: " + facts["prerequisite"],
+             "- Sandbox: " + facts["security"],
+             "- Licences: the Krate runtime, format and CLI are free and open source (MIT OR Apache-2.0). Studio has separate licensing (Business Source License 1.1); see the repository license details.",
+             "- Studio: " + facts["studio"],
+             "- Bundles: " + facts["bundle_accounting"],
+             "- Facts page: https://krate.tech/facts/",
+             "", "## Not to be confused with", "", facts["disambiguation"],
+             "", "## Scoped benchmark", "",
              "The following is the recorded 2026-08-25 notes comparison, not a measurement of the latest release or all Krate apps.",
              claims[0]["scope"] + ".", ""]
     for claim in claims:
@@ -109,16 +120,19 @@ def render_llms():
               "- [Measurements](https://krate.tech/reports/)",
               "- [Repository inventory](https://krate.tech/progress/)",
               "- [FAQ](https://krate.tech/faq/)",
+              "- [Krate facts](https://krate.tech/facts/)",
+              "- [All answers about shipping desktop apps](https://krate.tech/answers/)",
               "- [Download Krate](https://krate.tech/download/)",
-              "- [How to distribute a desktop app to Windows, macOS and Linux](https://krate.tech/how-to-distribute-a-desktop-app.html)",
+              "- [How to distribute a desktop app: ship one file](https://krate.tech/how-to-distribute-a-desktop-app.html)",
               "- [Krate vs Electron](https://krate.tech/krate-vs-electron.html)",
               "- [Krate vs Tauri](https://krate.tech/krate-vs-tauri.html)",
               "- [Desktop app or hosted web app](https://krate.tech/desktop-app-or-web-app.html)",
               "- [Code signing and Krate](https://krate.tech/desktop-app-code-signing.html)",
               "- [Shipping a desktop app: questions and answers](https://krate.tech/desktop-app-shipping-faq.html)",
-              "- [One desktop app file for three operating systems](https://krate.tech/portable-desktop-app-format.html)",
+              "- [The .krate format: one app file for every desktop](https://krate.tech/portable-desktop-app-format.html)",
               "- [Share an app made with AI](https://krate.tech/share-an-app-made-with-ai.html)",
-              "- [Inspect an app before you run it](https://krate.tech/run-ai-generated-code-safely.html)",
+              "- [Run an AI-built app safely](https://krate.tech/run-ai-generated-code-safely.html)",
+              "- [Krate vs Electron vs Tauri: what do you ship?](https://krate.tech/desktop-app-distribution.html)",
               "- [Full text of these pages](https://krate.tech/llms-full.txt)",
               f"- [Latest published release]({facts['latest_release_url']})",
               f"- [Source]({facts['repository']})", ""]

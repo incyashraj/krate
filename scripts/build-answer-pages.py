@@ -930,7 +930,8 @@ class MetadataTests(unittest.TestCase):
     def test_every_page_links_every_other_answer(self):
         for page in PAGES:
             result = render(page)
-            related = result[result.index('<section id="more-answers">'):]
+            start = result.index('<section id="more-answers">')
+            related = result[start:result.index('</section>', start)]
             for other in PAGES:
                 if other is not page:
                     self.assertIn(f'href="/{other["slug"]}"', related, page["slug"])
@@ -995,12 +996,98 @@ class MetadataTests(unittest.TestCase):
             self.assertIn(K.HEAD_THEME, result)
         self.assertIn('location.replace("/app/")', LANDING.read_text())
 
+    def test_answers_index_lists_every_page_and_is_current(self):
+        result = render_index()
+        for page in PAGES:
+            self.assertIn(f'href="/{page["slug"]}"', result)
+            self.assertIn(html.escape(first_sentence(page["lead"])), result)
+        self.assertIn('<link rel="canonical" href="https://krate.tech/answers/">', result)
+        self.assertEqual(INDEX.read_text(), result, "stale docs/landing/answers/index.html: run scripts/build-answer-pages.py")
+
     def test_metadata_is_escaped(self):
         page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')
         result = page_head(page)
         self.assertIn("&quot;quoted&quot; &lt;title&gt; &amp; more", result)
         schemas = re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)
         self.assertEqual(json.loads(schemas[0])["description"], page["description"])
+
+
+# The answers index: served at /answers/ from docs/landing, never from
+# docs/answers (the deploy copies docs/answers/*.html to the site root, so an
+# index.html there would replace the homepage).
+INDEX = ROOT / "docs" / "landing" / "answers" / "index.html"
+
+
+def first_sentence(fragment):
+    text = plain_text(fragment)
+    cut = re.search(r"(?<=\.)\s", text)
+    return text[:cut.start()] if cut else text
+
+
+def render_index():
+    title = "Shipping desktop apps: answers | Krate"
+    description = ("Straight answers about shipping a desktop app with Krate, the app runtime: distribution, "
+                   "Electron and Tauri, code signing, safety, and apps built with AI.")
+    url = "https://krate.tech/answers/"
+    schema = json.dumps({
+        "@context": "https://schema.org", "@type": "CollectionPage", "@id": url + "#webpage", "url": url,
+        "name": title, "description": description, "inLanguage": "en",
+        "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"},
+        "publisher": PUBLISHER, "about": RUNTIME,
+        "hasPart": [{"@type": "WebPage", "url": "https://krate.tech/" + p["slug"], "name": p["h1"]} for p in PAGES],
+    }, ensure_ascii=False).replace("<", "\\u003c")
+    items = "\n".join(f'''    <a class="card link ans-item" href="/{p["slug"]}"><b>{html.escape(p["h1"])}</b><span>{html.escape(first_sentence(p["lead"]))}</span></a>''' for p in PAGES)
+    return f'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{title}</title>
+<meta name="description" content="{html.escape(description, quote=True)}">
+<link rel="canonical" href="{url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Krate">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{html.escape(description, quote=True)}">
+<meta property="og:url" content="{url}">
+<meta property="og:image" content="https://krate.tech/og-v4.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/krate-favicon.png">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script type="application/ld+json">{schema}</script>
+{K.HEAD_THEME}
+{K.KIT_LINKS}
+<style>
+.ans-list {{ display: grid; gap: 12px; margin-top: 8px; }}
+.ans-item {{ display: grid; gap: 6px; padding: 22px 24px; }}
+.ans-item b {{ font-size: 17px; font-weight: 600; letter-spacing: -.015em; color: var(--ink); }}
+.ans-item span {{ font-size: 14.5px; line-height: 1.6; color: var(--mute); }}
+.ph .lede a {{ color: var(--accent); }}
+</style>
+</head>
+<body>
+{K.HEADER}
+{K.MNAV}
+
+<main id="main">
+<section class="ph wrap n">
+  <span class="eye">Answers</span>
+  <h1>Shipping desktop apps: answers</h1>
+  <p class="lede">Straight answers about getting a desktop app to people with Krate, the app runtime: one .krate file that runs natively on every desktop, sandboxed. The <a href="/facts/">facts page</a> has the short version of what Krate is.</p>
+</section>
+<section class="sec t wrap n">
+  <div class="ans-list">
+{items}
+  </div>
+</section>
+</main>
+
+{K.FOOTER}
+{K.KIT_SCRIPT}
+</body>
+</html>
+'''
 
 
 def load_public_facts():
@@ -1044,6 +1131,9 @@ def main() -> int:
         print(f"  wrote docs/answers/{page['slug']}")
     LLMS_FULL.write_text(render_llms_full())
     print("  wrote docs/landing/llms-full.txt")
+    INDEX.parent.mkdir(parents=True, exist_ok=True)
+    INDEX.write_text(render_index())
+    print("  wrote docs/landing/answers/index.html")
     return 0
 
 
