@@ -42,7 +42,7 @@
 .prose em { font-style: italic; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
 :root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
-.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 /* the comparison table */
 .answer-table-wrap { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow-x: auto; }
 .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14.5px; }
@@ -107,7 +107,7 @@
 <main id="main">
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
-  <h1>Inspect what an AI-built app can access</h1>
+  <h1>Inspect what an app built with AI can access</h1>
   <p class="lede">Krate applications start without file or network access. They use Krate interfaces and receive approved capabilities. That narrows host access; it does not prove the code is correct or harmless.</p>
   <p class="meta">2 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">

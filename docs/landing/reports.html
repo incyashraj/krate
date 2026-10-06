@@ -51,8 +51,9 @@
 .prose .steps li + li { margin-top: 0; }
 .pl { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; }
 .tbl .fn { white-space: nowrap; }
+@media (max-width: 680px) { .tbl.cmp { min-width: 0; font-size: 13px; } .tbl.cmp td:first-child { min-width: 0; } .tbl.cmp th, .tbl.cmp td { padding-left: 10px; padding-right: 10px; } }
 @media (max-width: 680px) { .doc .stats { gap: 10px; } .doc .stat { padding: 18px 16px 16px; } .doc .stat b { font-size: 25px; white-space: nowrap; } .doc .stat span { font-size: 13px; } .steps li { padding-left: 52px; } .steps li::before { left: 12px; } .tblw.tall { max-height: 480px; } }
-@media (max-width: 680px) { .prose .tbl:not(.cmp) { font-size: 13px; } .prose .tbl:not(.cmp) th { white-space: normal; padding: 10px 8px; } .prose .tbl:not(.cmp) td { padding: 12px 8px; } .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child { padding-left: 14px; } .prose .tbl:not(.cmp) td:first-child { white-space: normal; } .prose .tbl:not(.cmp) code { white-space: normal; overflow-wrap: break-word; font-size: 11.5px; } }
+@media (max-width: 680px) { .prose .tbl:not(.cmp) { font-size: 13px; } .prose .tbl:not(.cmp) th { white-space: normal; padding: 10px 8px; } .prose .tbl:not(.cmp) td { padding: 12px 8px; } .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child { padding-left: 14px; } .prose .tbl:not(.cmp) td:first-child { white-space: normal; } .prose .tbl:not(.cmp) code { white-space: normal; overflow-wrap: anywhere; font-size: 11.5px; } }
 </style>
 </head>
 <body>
@@ -88,7 +89,7 @@
   <span class="eye">Reports</span>
   <h1>Measurements you can inspect.</h1>
   <p class="lede">A notes workload compared on the same machine, plus an inventory of application files in this checkout. These are different kinds of evidence: neither establishes a performance result for every Krate app or for the latest release.</p>
-  <p class="meta">Page generated 2026-10-04 from commit <code class="k">9d406c48b</code>. Benchmark measured 2026-08-25. Building this page does not run a new benchmark.</p>
+  <p class="meta">Page generated 2026-10-06 from commit <code class="k">db2e02ce4</code>. Benchmark measured 2026-08-25. Building this page does not run a new benchmark.</p>
 </section>
 
 <div class="sec t wrap">
@@ -108,7 +109,7 @@
         <div class="stats">
           <div class="stat"><b>237.1 ms</b><span>Warm open, 50,000 lines, median</span><span class="vs">MarkText: 611.5 ms median</span></div>
           <div class="stat"><b>178.5 MiB</b><span>Memory, 50,000 lines, one process</span><span class="vs">MarkText: 2,299.4 MiB across four processes</span></div>
-          <div class="stat"><b>88.6 MiB</b><span>Shared Krate runtime, installed once</span><span class="vs">Per-app payload: 36.6 KiB</span></div>
+          <div class="stat"><b>88.6 MiB</b><span>Shared Krate runtime, installed once</span><span class="vs">Per-app payload: 36.6 KiB</span></div>
           <div class="stat"><b>3.21x</b><span>First-app disk ratio</span><span class="vs">Not 7,961x</span></div>
         </div>
         <div class="tblw">

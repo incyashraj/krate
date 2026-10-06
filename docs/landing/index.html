@@ -100,7 +100,8 @@ h1 { font-size: clamp(38px, 4.6vw, 62px); line-height: 1.05; font-weight: 500; l
 .every .w.on { position: relative; opacity: 1; transform: none; filter: none; transition-delay: .12s; }
 .every .w.out { opacity: 0; transform: translateY(-.45em); filter: blur(3px); }
 .every::after { content: ""; position: absolute; left: 0; right: 0; bottom: .02em; height: 2px; border-radius: 2px; background: currentColor; opacity: .35; }
-.every.c0 { color: #e8873f; } .every.c1 { color: #3d6df0; } .every.c2 { color: #7c5ce8; } .every.c3 { color: #d6578f; }
+.every.c0 { color: #b4560f; } .every.c1 { color: #3d6df0; } .every.c2 { color: #7c5ce8; } .every.c3 { color: #c2457d; }
+.sub .fn { font-size: .6em; color: var(--ink-3); margin-left: 1px; }
 .soonb { font-style: normal; vertical-align: .35em; font-size: 11px; letter-spacing: 0; font-weight: 500; color: #c2457d; background: rgba(214,87,143,.12); padding: 2px 7px; border-radius: 999px; margin-left: 6px; }
 h1 .ln { display: block; }
 
@@ -510,7 +511,7 @@ h1 .ln { display: block; }
 @media (max-width: 560px) { .ngrid { grid-template-columns: 1fr; width: calc(100% - 32px); } .nums { padding-top: 110px; } }
 
 .uses { padding: 120px 0 40px; }
-.uses h2 { text-align: center; font-size: clamp(28px, 3vw, 42px); line-height: 1.12; font-weight: 500; letter-spacing: -.04em; max-width: 760px; margin: 0 auto; text-wrap: balance; }
+.uses h2 { text-align: center; font-size: clamp(28px, 3vw, 42px); line-height: 1.12; font-weight: 500; letter-spacing: -.04em; max-width: 760px; margin: 0 auto; padding: 0 24px; text-wrap: balance; }
 .arrows { margin-top: 38px; display: flex; justify-content: center; gap: 10px; }
 .arrows button { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: #2b2b2b; transition: background .2s, opacity .2s; }
 .arrows button:hover { background: #f2f2f2; }
@@ -773,7 +774,7 @@ main img, main svg { max-width: none; }
 <main class="home">
 <section class="hero" id="start">
   <h1><span class="ln">A new way to</span> <span class="ln"><span class="u">ship<svg class="ul" viewBox="0 0 200 12" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ulg" x1="0" x2="1"><stop offset="0" stop-color="#3d6df0"/><stop offset=".38" stop-color="#7c5ce8"/><stop offset=".7" stop-color="#d6578f"/><stop offset="1" stop-color="#e8873f"/></linearGradient></defs><path pathLength="1" d="M3 8.5 C 50 4.2, 120 3.6, 197 6"/></svg></span> software.</span></h1>
-  <p class="sub">Send it like a doc. It opens on <span class="every c0" id="every"><span class="w on">macOS</span><span class="w">Windows</span><span class="w">Linux</span><span class="w">phones<em class="soonb">soon</em></span></span>.</p>
+  <p class="sub">Send it like a doc. It opens on <span class="every c0" id="every"><span class="w on">macOS</span><span class="w">Windows</span><span class="w">Linux</span><span class="w">phones<em class="soonb">soon</em></span></span>.<sup class="fn" aria-hidden="true">*</sup></p>
   <div class="acts"><a class="btn dark" href="/app/">Try Krate now</a><a class="btn link" href="/download/">Download the app <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l6-6M4 3h5v5"/></svg></a></div>
 
 </section>

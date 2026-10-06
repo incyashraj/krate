@@ -246,7 +246,7 @@
       const root = document.getElementById("app");
       const id = new URLSearchParams(location.search).get("id") || "";
       if (!/^[0-9a-f]{64}$/.test(id)) {
-        root.innerHTML = '<p class="missing">No app named.<br /><a href="/cloud/">Browse all apps</a>.</p>';
+        root.innerHTML = '<p class="missing">This link does not name an app.<br /><a href="/cloud/">Browse all apps</a>.</p>';
         return;
       }
 

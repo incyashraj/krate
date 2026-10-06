@@ -54,7 +54,7 @@ ANSWER_CSS = """<style>
 .prose em { font-style: italic; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
 :root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
-.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 /* the comparison table */
 .answer-table-wrap { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow-x: auto; }
 .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14.5px; }
@@ -280,7 +280,7 @@ krate publish regex.krate</pre>
         "slug": "run-ai-generated-code-safely.html",
         "title": "Inspect permissions before running AI-built apps | Krate",
         "description": "How Krate's capability model limits host access, how to inspect an app before running it, and what permissions cannot prove about AI-generated software.",
-        "h1": "Inspect what an AI-built app can access",
+        "h1": "Inspect what an app built with AI can access",
         "lead": "Krate applications start without file or network access. They use Krate interfaces and receive approved capabilities. That narrows host access; it does not prove the code is correct or harmless.",
         "entry_actions": [("Inspect an app's permissions", "#read-the-permission-request-before-execution"),
                           ("Install the runtime", "/docs/quickstart.html#get-krate")],
@@ -465,11 +465,12 @@ class MetadataTests(unittest.TestCase):
 
     def test_article_shell_is_the_kit_and_commands_never_widen_the_page(self):
         # The shell is the design kit's; the page adds only what its own
-        # content needs. A command block scrolls in its own box (at 390px
-        # one long line once made every answer page scroll sideways).
+        # content needs. A command block wraps inside its own box (at 390px
+        # one long line once made every answer page scroll sideways, and a
+        # scrolling box hid the end of a long command even at 1440).
         self.assertIn(".prose pre.answer-cmd", ANSWER_CSS)
         self.assertIn("overflow-x: auto", ANSWER_CSS)
-        self.assertIn("white-space: pre;", ANSWER_CSS)
+        self.assertIn("white-space: pre-wrap;", ANSWER_CSS)
         self.assertIn("max-width: 100%", ANSWER_CSS)
         self.assertIn("overflow-wrap: anywhere", ANSWER_CSS)
         for page in PAGES:

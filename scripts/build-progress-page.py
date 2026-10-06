@@ -90,7 +90,7 @@ def main():
 .back .btn svg {{ transform: scaleX(-1); }}
 .tbl .fn {{ white-space: nowrap; }}
 @media (max-width: 680px) {{ .prose .links {{ grid-template-columns: 1fr; }} .stats-sec .stats {{ gap: 10px; }} .stats-sec .stat {{ padding: 18px 16px 16px; }} .stats-sec .stat b {{ font-size: 27px; }} }}
-@media (max-width: 680px) {{ .prose .tbl {{ font-size: 13px; }} .prose .tbl th {{ white-space: normal; padding: 10px 8px; }} .prose .tbl td {{ padding: 12px 8px; }} .prose .tbl th:first-child, .prose .tbl td:first-child {{ padding-left: 14px; }} .prose .tbl td:first-child {{ white-space: normal; }} .prose .tbl code {{ white-space: normal; overflow-wrap: break-word; font-size: 11.5px; }} }}
+@media (max-width: 680px) {{ .prose .tbl {{ font-size: 13px; }} .prose .tbl th {{ white-space: normal; padding: 10px 6px; }} .prose .tbl td {{ padding: 12px 6px; }} .prose .tbl th:first-child, .prose .tbl td:first-child {{ padding-left: 14px; }} .prose .tbl td:first-child {{ white-space: normal; }} .prose .tbl code {{ white-space: normal; overflow-wrap: anywhere; font-size: 11.5px; }} }}
 </style>
 </head>
 <body>

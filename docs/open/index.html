@@ -77,6 +77,8 @@
   /* the command gets the whole width; Copy below it, 44px tall */
   .termbox { flex-direction: column; align-items: stretch; gap: 6px; padding: 10px 12px; }
   .termbox button { align-self: flex-start; min-height: 44px; }
+  .termbox code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+  .termbox code .u { white-space: nowrap; }
 }
 @media (pointer: coarse) { .termbox button { min-height: 44px; } }
 </style>
@@ -140,8 +142,8 @@
         <p class="dlnote" id="dlNote"></p>
         <div id="terminal">
           <p class="term-h">Comfortable in a terminal instead?</p>
-          <div class="termbox"><code>curl -fsSL https://krate.tech/install.sh | sh</code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
-          <div class="termbox"><code>irm https://krate.tech/install.ps1 | iex</code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
+          <div class="termbox"><code>curl -fsSL <span class="u">https://krate.tech/install.sh | sh</span></code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
+          <div class="termbox"><code>irm <span class="u">https://krate.tech/install.ps1 | iex</span></code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
         </div>
       </div>
     </div>

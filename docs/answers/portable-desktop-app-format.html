@@ -42,7 +42,7 @@
 .prose em { font-style: italic; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
 :root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
-.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 /* the comparison table */
 .answer-table-wrap { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow-x: auto; }
 .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14.5px; }
