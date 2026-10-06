@@ -2569,12 +2569,11 @@ const TOUCH_WORDING = [
   ["Building · the square stops it", "Building · tap ■ to stop"],
 ];
 
-/* The placeholders have the same problem for the same reason. Measured in
- * the phone composer: the field is 249px wide and "Want it different? Say
- * what to change…" needs 252, so it was cut mid-sentence -- the screenshot
- * showed "Say what to" and nothing after it. */
+/* The placeholders have the same problem for the same reason. The session
+ * one was "Want it different? Say what to change…", which needed 252px in a
+ * 249px phone field; it is now short enough everywhere, desktop included,
+ * so only the home one is swapped here. */
 const TOUCH_PLACEHOLDERS = [
-  ["Want it different? Say what to change…", "What should change?"],
   ["Describe the app you want…", "Describe your app…"],
 ];
 

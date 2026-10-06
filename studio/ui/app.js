@@ -1000,7 +1000,7 @@ function renderSessions(sessions) {
     }
     const fileName = ((s.result && s.result.name) || s.title || "")
       .replace(/\.krate$/, "")
-      .replace(/[-_]+/g, " ")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     card.querySelector(".name").textContent = fileName || s.title;
     card.querySelector(".meta").textContent =
@@ -2446,7 +2446,7 @@ function unlockComposer(placeholder) {
 }
 
 function fillDone(result, opts) {
-  unlockComposer("Want it different? Say what to change…");
+  unlockComposer("Say what to change…");
   try { lsSet("krateMadeOnce", "1"); } catch (e) {}
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
@@ -2624,7 +2624,7 @@ function wallActions(err) {
 }
 
 function setRevisePlaceholders() {
-  $("prompt").placeholder = "Want it different? Say what to change…";
+  $("prompt").placeholder = "Say what to change…";
   $("composerHint").textContent = "Changes edit this app in place.";
 }
 
@@ -6643,7 +6643,7 @@ async function fillDetails(app) {
     const m = man && typeof man.text === "string" && man.text.match(/^\s*version\s*=\s*"([^"]+)"/m);
     if (m) version = m[1];
   } catch (e) {}
-  const display = (app.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const display = (app.name || "").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   row("Name", display || "Your app");
   row("File", app.name || baseName(info.path || app.path), "mono");
   row("Version", [version, builds ? `v${builds} in this session` : ""].filter(Boolean).join(" · ") || "v1");
@@ -7010,7 +7010,7 @@ async function startPortFromHome() {
   const name = baseName(source) || source;
   // The app is called by its folder's name everywhere it is shown (the
   // card said "Port My App" and the header "New app").
-  const pretty = name.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const pretty = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   if (tauri) {
     try { await refreshAgents(); } catch (e) { /* use the list we have */ }
     if (!(state.agents || []).some((a) => a.state === "working")) {
@@ -8726,7 +8726,7 @@ async function renderShelf() {
     card.className = "shelf-card building";
     const label = (live.title || "New app")
       .replace(/\.krate$/, "")
-      .replace(/[-_]+/g, " ")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     card.innerHTML =
       `<span class="shot"><span class="shot-working" aria-hidden="true"></span></span>` +
@@ -8743,7 +8743,7 @@ async function renderShelf() {
     // different things on two screens.
     const label = ((session.result && session.result.name) || session.title || "")
       .replace(/\.krate$/, "")
-      .replace(/[-_]+/g, " ")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
     // Size and when, under the name: which of two similar apps is the one
     // from this morning is the question the shelf is for.

@@ -636,7 +636,7 @@
     let items = [], hl = 0, mine = [], drafts0 = [];
     const isOn = () => pal.classList.contains("on");
     const rowClick = (sel) => () => { const r = q(sel); if (r) r.click(); };
-    const appName = (s) => ((s.result && s.result.name) || s.title || "App").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const appName = (s) => ((s.result && s.result.name) || s.title || "App").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
     const shotOf = new Map();
     async function loadMine() {
       let list = [];
@@ -843,7 +843,7 @@
     // is a Tip Splitter.
     // The built app's own name first, then the name its plan gave it.
     const st = app(), sess = st && st.session;
-    const built = sess && sess.result && sess.result.name ? String(sess.result.name).replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "";
+    const built = sess && sess.result && sess.result.name ? String(sess.result.name).replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "";
     if (built) return built;
     const planned = planName();
     if (planned) return planned;
@@ -1829,7 +1829,7 @@
     if (!shareApp) return;
     shareVer = version || null;
     const s = app();
-    const name = (shareApp.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "your app";
+    const name = (shareApp.name || "").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "your app";
     q("[data-n]", shareWrap).textContent = name;
     q("[data-f]", shareWrap).textContent = shareApp.name || "app.krate";
     q("[data-s]", shareWrap).textContent = [shareApp.size, "opens on macOS, Windows and Linux"].filter(Boolean).join(" · ");
@@ -2823,7 +2823,7 @@
         if (opening) return { kind: "busy" };
         opening = true;
         let a = null; try { a = (which && which.path) ? which : currentApp(); } catch (e) {}
-        const name = a ? (a.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "your app";
+        const name = a ? (a.name || "").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "your app";
         const n = pill("krOpen"); n.classList.remove("off", "lift"); n.classList.add("on", "opening");
         q(".kr-swp", n).innerHTML = `<span><b>Opening ${esc(name)}</b></span>`;
         setTimeout(() => n.classList.add("lift"), 380);

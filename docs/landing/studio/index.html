@@ -51,13 +51,13 @@ code.k { font-size: .86em; }
 /* four steps, on one line */
 .loop { margin-top: 40px; padding: 48px 32px 40px; border-radius: 26px; background: var(--soft); }
 .rail { list-style: none; position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.rail::before { content: ""; position: absolute; left: 12.5%; right: 12.5%; top: 7px; height: 1.5px; background: var(--line-2); }
+.rail::before { content: ""; position: absolute; left: 12.5%; right: 12.5%; top: 17px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--green)); opacity: .35; }
 .rail li { position: relative; text-align: center; }
-.rail .dot { display: block; width: 16px; height: 16px; margin: 0 auto 18px; border-radius: 50%; background: var(--soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
-.rail .dot.done { background: var(--green); box-shadow: 0 0 0 5px var(--green-soft); }
-.rail .n { display: block; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.rail b { display: block; margin-top: 4px; font-size: 19px; font-weight: 500; letter-spacing: -.02em; }
-.rail .t { display: inline-block; margin-top: 10px; }
+.rail .dot { position: relative; display: grid; place-items: center; width: 36px; height: 36px; margin: 0 auto 18px; border-radius: 50%; background: var(--s1); box-shadow: var(--sh-1); color: var(--accent); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rail .dot.done { background: var(--green); color: var(--bg); box-shadow: 0 0 0 6px var(--green-soft); }
+.rail b { display: block; font-size: 19px; font-weight: 500; letter-spacing: -.02em; }
+.rail .t { margin-top: 12px; background: var(--s1); box-shadow: 0 0 0 1px var(--hair); }
+.rail .t.ok { background: var(--green-soft); box-shadow: none; }
 /* apps made with it */
 .app { padding: 8px 8px 18px; }
 .app .frame { aspect-ratio: 4 / 3; border-radius: 15px; overflow: hidden; background: var(--s2); box-shadow: 0 0 0 1px var(--hair); }
@@ -73,10 +73,10 @@ code.k { font-size: .86em; }
   .loop { padding: 32px 24px 12px; }
   .rail { grid-template-columns: 1fr; }
   .rail::before { display: none; }
-  .rail li:not(:last-child)::after { content: ""; position: absolute; left: 7px; top: 18px; bottom: -2px; width: 1.5px; background: var(--line-2); }
-  .rail li { display: grid; grid-template-columns: 16px 1fr auto; column-gap: 18px; align-items: start; text-align: left; padding-bottom: 26px; }
-  .rail .dot { margin: 2px 0 0; grid-row: 1 / span 2; }
-  .rail .t { margin-top: 0; grid-column: 3; grid-row: 1 / span 2; align-self: center; }
+  .rail li:not(:last-child)::after { content: ""; position: absolute; left: 17px; top: 42px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--accent); opacity: .3; }
+  .rail li { display: grid; grid-template-columns: 36px 1fr auto; column-gap: 16px; align-items: center; text-align: left; padding-bottom: 26px; }
+  .rail .dot { margin: 0; }
+  .rail .t { margin-top: 0; }
   .apps.g4 { grid-template-columns: 1fr; }
   .band .acts { justify-content: flex-start; }
   .hero-shot { margin-top: 40px; }
@@ -126,7 +126,7 @@ code.k { font-size: .86em; }
   <p class="meta" id="webLine">Not ready to install? <a href="/app/">Make an app in your browser</a>: your first one is on us, and with your own API key you can keep going. On your computer, Studio uses the AI you already have, as much as you like.</p>
   <!-- Studio, doing its job. Recaptured from the real app after the 2026-09 redesign (K-217). -->
   <div class="shot hero-shot">
-    <picture><source srcset="/app-shots/studio-home.webp" type="image/webp"><img src="/app-shots/studio-home.png" width="2536" height="1656" alt="Krate Studio, ready to build, with previously built apps along the bottom"></picture>
+    <picture><source srcset="/app-shots/studio-home.webp" type="image/webp"><img src="/app-shots/studio-home.png" width="2536" height="1656" alt="Krate Studio home: describe an app and it builds it, with six apps made in Studio along the bottom"></picture>
   </div>
 </section>
 
@@ -152,10 +152,10 @@ code.k { font-size: .86em; }
   <div class="sh rv"><span class="eye">The loop</span><h2>Four steps</h2><p>Real timings on an M4.</p></div>
   <div class="loop rv">
     <ol class="rail">
-      <li><span class="dot"></span><span class="n">01</span><b>Say what it is</b><span class="t tag">seconds</span></li>
-      <li><span class="dot"></span><span class="n">02</span><b>It builds</b><span class="t tag">minutes</span></li>
-      <li><span class="dot"></span><span class="n">03</span><b>It runs</b><span class="t tag">~2s</span></li>
-      <li><span class="dot done"></span><span class="n">04</span><b>One file</b><span class="t tag ok">instant</span></li>
+      <li><span class="dot">1</span><b>Say what it is</b><span class="t tag">seconds</span></li>
+      <li><span class="dot">2</span><b>It builds</b><span class="t tag">minutes</span></li>
+      <li><span class="dot">3</span><b>It runs</b><span class="t tag">~2s</span></li>
+      <li><span class="dot done">4</span><b>One file</b><span class="t tag ok">instant</span></li>
     </ol>
   </div>
 </section>
