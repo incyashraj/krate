@@ -1322,7 +1322,10 @@
     const grid = $("appsGrid");
     if (!grid) return;
     const add = () => {
-      if (q(".kr-newcard", grid) || !q(".app-card", grid)) return;
+      // With apps, and also on the first visit's empty page: an empty grid
+      // had only a sentence, with no way to start from it.
+      const empty = q(".apps-empty", grid) && /Nothing yet/.test(q(".apps-empty", grid).textContent);
+      if (q(".kr-newcard", grid) || !(q(".app-card", grid) || empty)) return;
       const b = document.createElement("button");
       b.type = "button"; b.className = "kr-newcard";
       b.innerHTML = `<span class="kr-nth"><span><i>${ico("plus")}</i>New app</span></span>`;
@@ -1388,11 +1391,18 @@
       h.className = "kr-hov";
       h.innerHTML = `<span class="kr-hb dark" role="button" tabindex="0" data-a="run">${ico("play")}Run</span>` +
         `<span class="kr-hb" role="button" tabindex="0" data-a="share">${ico("share")}Share</span>`;
+      const go = (b) => { card.click(); thenPress(b.dataset.a === "run" ? "barRun" : "barShare"); };
       h.addEventListener("click", (e) => {
         const b = e.target.closest("[data-a]"); if (!b) return;
         e.stopPropagation(); e.preventDefault();
-        card.click();
-        thenPress(b.dataset.a === "run" ? "barRun" : "barShare");
+        go(b);
+      });
+      // By keyboard too: Enter or Space on Run or Share does that, and does
+      // not fall through to the card (which only opened the session).
+      h.addEventListener("keydown", (e) => {
+        const b = e.target.closest("[data-a]"); if (!b || (e.key !== "Enter" && e.key !== " ")) return;
+        e.stopPropagation(); e.preventDefault();
+        go(b);
       });
       well.appendChild(h);
     });
@@ -1685,6 +1695,9 @@
       q(".kr-lb", b).innerHTML = `${window.krIso ? window.krIso(15, "breathe", true) : ""}Uploading ${esc((shareApp && shareApp.size) || "the app")}`;
       const sheet = $("publishSheet");
       linking = true;
+      // Signed out: the popup asks, and when it lands this button makes the
+      // link again, right here (as Publish does).
+      window.__krPubAgain = () => { delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link"; b.click(); };
       try {
         openPublishSheet();
         if (sheet) sheet.classList.add("hidden");
@@ -1693,9 +1706,15 @@
       } catch (e) { /* app.js says why in the publish sheet's note */ }
       linking = false;
       const url = linkOf();
-      if (url) { paintLink(url, true); toast("Link made and copied", true); return; }
-      // Publishing needs an account: the publish sheet carries that step.
-      if ($("pubSignin") && !$("pubSignin").classList.contains("hidden")) { closeShare(); if (sheet) sheet.classList.remove("hidden"); return; }
+      if (url) { window.__krPubAgain = null; paintLink(url, true); toast("Link made and copied", true); return; }
+      // Waiting on the sign-in popup, already open over this pane; the old
+      // publish sheet stays shut (it was left behind on its sign-in step).
+      if ($("pubSignin") && !$("pubSignin").classList.contains("hidden")) {
+        if (sheet) sheet.classList.add("hidden");
+        delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link";
+        return;
+      }
+      window.__krPubAgain = null;
       delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link";
       const why = (($("pubNote") || {}).textContent || "").trim();
       const err = q(".kr-sherr", pane); err.textContent = why || "The link could not be made just now. Try again in a moment."; err.hidden = false;
@@ -1747,7 +1766,7 @@
     q("[data-more]", pane).addEventListener("click", () => { handOver(); closeShare(); if (sheet) sheet.classList.remove("hidden"); });
     go.addEventListener("click", async () => {
       if (go.dataset.busy) return;
-      if (!n.value.trim()) { n.focus(); return; }
+      if (!n.value.trim()) { n.focus(); err.textContent = "Give it a name first."; err.hidden = false; return; }
       go.dataset.busy = "1"; err.hidden = true;
       handOver();
       const listed = l.classList.contains("on");
@@ -1782,7 +1801,7 @@
       const signIn = $("pubSignin") && !$("pubSignin").classList.contains("hidden");
       if (url && !signIn) { window.__krPubAgain = null; return published(pane, n.value.trim(), url, listed); }
       // Waiting on the sign-in popup, which is already open over this pane.
-      if (signIn) { delete go.dataset.busy; q("span", go).textContent = "Publish"; return; }
+      if (signIn) { if (sheet) sheet.classList.add("hidden"); delete go.dataset.busy; q("span", go).textContent = "Publish"; return; }
       window.__krPubAgain = null;
       delete go.dataset.busy; q("span", go).textContent = "Publish";
       err.textContent = (($("pubNote") || {}).textContent || "").trim() || "It did not publish just now. Try again in a moment."; err.hidden = false;
@@ -1852,7 +1871,7 @@
           <div class="kr-pv-nm"><b>Weather</b><small>Writing the app</small></div></div></div>
         <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens on every desktop</small></div></div>
       </div></div></div>
-    <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots"><i class="on"></i><i></i><i></i><i></i></span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
+    <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots"><i class="on"></i><i></i><i></i></span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
   </div>`;
   document.body.appendChild(obWrap);
   const tourEl = document.createElement("div");
@@ -1865,15 +1884,18 @@
   const homeBox = () => $("homePrompt");
   let pvT = 0, pvRun = 0;
   const sleep = (ms) => new Promise((r) => { pvT = setTimeout(r, ms); });
+  // The dots follow the preview: one per scene (four dots that never moved
+  // promised pages that were not there).
+  const pvDot = (i) => qa(".kr-ob-f .kr-dots i", obWrap).forEach((d, k) => d.classList.toggle("on", k === i));
   async function pvPlay() {
     const my = ++pvRun, pv = q(".kr-pv", obWrap), tx = q(".kr-pv-tx", obWrap), s = "a weather app for my cities";
-    if (reduce) { pv.dataset.ph = "c"; return; }
+    if (reduce) { pv.dataset.ph = "c"; pvDot(2); return; }
     while (my === pvRun && obWrap.classList.contains("on")) {
-      pv.dataset.ph = "a"; tx.textContent = "";
+      pv.dataset.ph = "a"; pvDot(0); tx.textContent = "";
       for (let i = 1; i <= s.length; i++) { tx.textContent = s.slice(0, i); await sleep(42); if (my !== pvRun) return; }
       await sleep(500); if (my !== pvRun) return;
-      pv.dataset.ph = "b"; await sleep(2600); if (my !== pvRun) return;
-      pv.dataset.ph = "c"; await sleep(3000);
+      pv.dataset.ph = "b"; pvDot(1); await sleep(2600); if (my !== pvRun) return;
+      pv.dataset.ph = "c"; pvDot(2); await sleep(3000);
     }
   }
   // On the web a note about what is free also opens on a first visit.
@@ -1882,6 +1904,9 @@
   const holdNote = () => { const n = $("welcomeSheet"); if (n && !n.classList.contains("hidden")) { n.classList.add("hidden"); heldNote = n; } };
   const releaseNote = () => { if (heldNote) { heldNote.classList.remove("hidden"); heldNote = null; return true; } return false; };
   function obOpen() {
+    // After Studio's opening, not under it, whichever door asked.
+    const boot = q(".kr-boot");
+    if (boot && !boot.classList.contains("gone")) { setTimeout(obOpen, 150); return; }
     closePop();
     obWrap.classList.remove("out"); obWrap.classList.add("on");
     holdNote(); setTimeout(holdNote, 600);
@@ -2425,7 +2450,9 @@
       q(".kr-ffail p", f).textContent = why;
       q(".kr-ffail p", f).hidden = !why;
       const acts = q(".kr-facts2", f);
-      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["makeitBtn", "kr-plain", "Send this to Krate"]]
+      // Report an issue rides along: it lived only on the old failure pane,
+      // which this card hides, so a failed build could not be reported.
+      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["makeitBtn", "kr-plain", "Send this to Krate"], ["reportBtn", "kr-plain", "Report an issue"]]
         .filter(([id]) => { const b = $(id); return b && !b.classList.contains("hidden") && !b.hidden; });
       const key = want.map(([id]) => id + ":" + ($(id).textContent || "")).join("|") + "|" + stopped;
       if (acts.dataset.k !== key) {
@@ -2622,7 +2649,11 @@
   function paintCats() {
     const st = app(); const box = q(".kr-cats", galRoot); if (!st || !box) return;
     let cats = []; try { cats = CLOUD_CATS; } catch (e) {}
-    const present = st.cloudCats || null;
+    // The hub says which categories have apps; an older hub does not, and
+    // then they come from the apps themselves (every pill showed, empty ones
+    // too). "More" (apps) stays: it holds whatever fits nowhere else.
+    const fromApps = Array.isArray(st.cloud) && st.cloud.length ? [...new Set(st.cloud.flatMap((a) => a.cats || (a.meta && a.meta.category ? [a.meta.category] : [])))].concat(["apps"]) : null;
+    const present = st.cloudCats || fromApps;
     const cur = st.cloudCat || "all";
     box.innerHTML = cats.filter((c) => c.id === "all" || !present || present.includes(c.id))
       .map((c) => `<button type="button" data-c="${c.id}" class="${c.id === cur ? "on" : ""}">${c.id === "all" ? "All" : esc(c.label)}</button>`).join("");
@@ -2760,7 +2791,7 @@
     });
     const orig = showCloudApp;
     window.showCloudApp = function (a) { orig(a); try { paint(a); } catch (e) {} };
-    window.krGalCapsFailed = () => { const box = q(".kd-asks", kd); if (box) box.innerHTML = '<span class="kd-dim">Could not read what it asks for just now. Krate still checks it when the app opens.</span>'; };
+    window.krGalCapsFailed = (why) => { const box = q(".kd-asks", kd); if (box) box.innerHTML = `<span class="kd-dim">${esc(why || "Could not read what it asks for just now. Krate still checks it when the app opens.")}</span>`; };
     const rcg = renderCapGroups;
     window.renderCapGroups = function (host, list) { rcg(host, list); if (host && host.id === "detailCaps") caps(list); };
   })();
@@ -2877,9 +2908,10 @@
       if (b.dataset.gw === "again") { press(btn); showWait(true); return; }
       if (b.dataset.gw === "code") {
         const c = $("loginBtn");
-        // With the engine missing the code cannot be fetched either: said,
-        // instead of a button that did nothing.
-        if (c && c.disabled) { toast("A code needs Krate's engine too. Reinstall Krate from krate.tech."); return; }
+        // The code button is switched off while the engine did not answer at
+        // boot; this asks anyway (it may be back) and says why if not,
+        // instead of a press that did nothing.
+        if (c && c.disabled) { showWait(false); try { login(); } catch (e) {} return; }
         showWait(false); if (c) { c.classList.remove("hidden"); press(c); }
       }
     });
@@ -2953,12 +2985,22 @@
       error: (o) => `<div class="kr-lg-hd"><span class="kr-lg-bad">!</span><h3 id="krLgH">${esc(o.title || "That sign-in did not finish")}</h3><p>${esc(o.why || "Nothing changed. Try again, or pick another way.")}</p></div>
         ${o.email ? `<button type="button" class="kr-lg-b dark sm" data-lg="resend">Send a new link</button><button type="button" class="kr-lnk" data-lg="back">Use another way</button>` : '<button type="button" class="kr-lg-b dark sm" data-lg="back">Try again</button>'}<div class="kr-lg-pad"></div>`,
     };
+    // Tab stays inside the popup while it is open: it walked out to the
+    // page underneath, which the dialog covers.
+    wrapEl.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab" || wrapEl.hidden) return;
+      const items = [...wrapEl.querySelectorAll('button, a[href], input, [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !wrapEl.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
     // Studio stops looking after ten minutes; the wait line stops saying it
     // moves on by itself, and offers to look again.
     window.krLoginStale = () => {
       if (wrapEl.hidden || !(stateNow === "browser" || stateNow === "email")) return;
       const p = q(".kr-lg-wait", box);
-      if (p) p.innerHTML = `Stopped waiting. Signed in already? <button type="button" class="kr-lnk" data-lg="look">Check again</button>`;
+      if (p) p.innerHTML = `<span class="kr-lg-spin"></span>Still looking, every few seconds. Signed in already? <button type="button" class="kr-lnk" data-lg="look">Check now</button>`;
     };
     function go(st, o = {}) {
       clear();
@@ -3104,7 +3146,7 @@
           onDone: () => { const again = window.__krPubAgain; if (again) { window.__krPubAgain = null; back(); again(); return; } try { pubSigninDone(); } catch (e) {} },
           // Closed: back to the form, never left on a sign-in step with no
           // way out (K-995).
-          onClose: () => { window.__krPubAgain = null; back(); },
+          onClose: () => { const fromPane = !!window.__krPubAgain; window.__krPubAgain = null; back(); if (fromPane) { const sh = $("publishSheet"); if (sh) sh.classList.add("hidden"); } },
         });
       });
     }

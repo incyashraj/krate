@@ -673,9 +673,18 @@ function watchSignIn() {
   state.signInWatch = setInterval(async () => {
     if (!state.signInSince || Date.now() - state.signInSince > 10 * 60 * 1000) {
       clearInterval(state.signInWatch);
-      // The popup stops promising to move on by itself.
-      if (state.signInSince && window.krLoginStale) window.krLoginStale();
+      const was = state.signInSince;
       state.signInSince = 0;
+      if (was && window.krLoginStale) window.krLoginStale();
+      // The popup still open: keep looking, every 15 s, until it closes. A
+      // sign-in finished after ten minutes never landed on Windows and
+      // Linux, where no krate:// event arrives.
+      if (was && document.body.classList.contains("kr-lgopen")) {
+        state.signInWatch = setInterval(async () => {
+          if (!document.body.classList.contains("kr-lgopen")) { clearInterval(state.signInWatch); return; }
+          try { const a = await invoke("account_status"); if (a && a.signed_in) signedInFromBrowser(a); } catch {}
+        }, 15000);
+      }
       return;
     }
     try {
@@ -3182,7 +3191,8 @@ async function openReportSheet() {
     $("repSend").disabled = false;
   } catch (err) {
     $("repList").innerHTML = "";
-    $("repResult").textContent = plainWords(err);
+    // Its own words: plainWords is for builds ("the build failed").
+    $("repResult").textContent = `Could not gather the report: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}`;
   }
 }
 
@@ -3199,7 +3209,7 @@ async function sendReport() {
     $("reportSheet").classList.add("hidden");
     say("KRATE", `Sent to Krate support (${said}). Thank you. This is how the next person avoids it.`, null, { variant: "ask" });
   } catch (err) {
-    $("repResult").textContent = plainWords(err);
+    $("repResult").textContent = `It did not send: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Try again, or save it and email it.`;
     $("repSend").disabled = false;
   } finally {
     $("repSend").textContent = "Send to support";
@@ -5237,16 +5247,27 @@ function showCloudApp(app) {
   count.textContent = "";
   invoke("app_info", { path: app.url })
     .then((info) => {
-      const list = info.capabilities || [];
+      // No list at all is not an empty list: an app published before the
+      // list was kept would otherwise read "No network, no camera", which
+      // nobody knows.
+      if (!info || !Array.isArray(info.capabilities)) {
+        caps.innerHTML = '<p class="cap-dim">This app was published before Krate kept a list of what it asks for. Krate still checks it when it opens.</p>';
+        if (window.krGalCapsFailed) window.krGalCapsFailed("This app was published before Krate kept a list of what it asks for. Krate still checks it when it opens.");
+        return;
+      }
+      const list = info.capabilities;
       count.textContent = list.length
         ? `${list.length} permission${list.length === 1 ? "" : "s"}`
         : "";
       renderCapGroups(caps, list);
     })
-    .catch(() => {
-      caps.innerHTML = '<p class="cap-dim">Could not read this app right now.</p>';
+    .catch((err) => {
+      // A refusal carries the true reason ("published before Krate recorded
+      // what apps ask for"); anything else is a plain could-not-read.
+      const why = err && err.refusal && err.message ? String(err.message) : "";
+      caps.innerHTML = `<p class="cap-dim">${escapeHtml(why || "Could not read this app right now.")}</p>`;
       // The redesigned page says it too (it waited on "Reading the file…").
-      if (window.krGalCapsFailed) window.krGalCapsFailed();
+      if (window.krGalCapsFailed) window.krGalCapsFailed(why ? `${why} Krate still checks it when the app opens.` : "");
     });
 }
 
@@ -5775,7 +5796,7 @@ async function pickPublishImage(kind) {
   try {
     path = await invoke("pick_image", { title });
   } catch (err) {
-    $("pubNote").textContent = publishWords(err);
+    $("pubNote").textContent = `${kind === "shot" ? "That screenshot" : "That logo"} could not be used: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}`;
     return;
   }
   if (!path) return;
@@ -5794,7 +5815,7 @@ async function pickPublishImage(kind) {
     }
     $("pubNote").textContent = "";
   } catch (err) {
-    $("pubNote").textContent = publishWords(err);
+    $("pubNote").textContent = `${kind === "shot" ? "That screenshot" : "That logo"} could not be used: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}`;
   }
 }
 
@@ -7012,7 +7033,9 @@ async function startPortFromHome() {
   } catch (err) {
     // The engine's own reason: plainWords is for builds, and turned a
     // folder Krate could not read into "pick another folder in Settings".
-    const why = String(err && err.message ? err.message : err || "").replace(/^error:\s*/i, "").split("\n")[0].trim();
+    let why = String(err && err.message ? err.message : err || "").replace(/^error:\s*/i, "").split("\n")[0].trim();
+    // A service page (502, an HTML error) is not a reason a person can read.
+    if (/<\/?(html|body|head)\b|bad gateway|service unavailable|gateway time-?out/i.test(why)) why = "the build service did not answer just now. Try again in a moment";
     say("KRATE", `I couldn't read that folder${why ? `: ${why}` : "."}${/permission denied|operation not permitted/i.test(why) ? " Krate needs to be allowed to read it; check the folder's permissions, or copy the project somewhere it can read." : ""}`, null, { variant: "ask" });
     return;
   }
@@ -7829,9 +7852,7 @@ async function openPlanSheet() {
   // The referral block is the part worth keeping, so on desktop the sheet
   // still opens -- with the prices structurally unreachable.
   if (tauri) {
-    $("planNote").textContent = "";
-    $("planSheet").classList.remove("hidden");
-    fillReferral();
+    openShareOnly();
     return;
   }
   renderFreeCount();
@@ -7841,6 +7862,22 @@ async function openPlanSheet() {
   fillReferral();
   await loadBilling();
   dressPlanSheet();
+}
+
+/* Share Krate on a desktop: only the sharing part. The free-app rows are the
+ * browser's plan ("Made by Krate's AI") and were wrong here. Signed out, the
+ * link is krate.tech itself; signed in, their own invite link. */
+function openShareOnly() {
+  const sheet = $("planSheet");
+  sheet.classList.add("kr-shareonly");
+  const h = sheet.querySelector("h2"); if (h) h.textContent = "Share Krate";
+  $("planSub").textContent = "Send it to someone who builds things. Krate Studio is free on their computer with their own AI.";
+  $("refLink").value = "https://krate.tech";
+  $("refStat").textContent = "Sign in to get your own link and see who joined through it.";
+  $("refBlock").classList.remove("hidden");
+  $("planNote").textContent = "";
+  sheet.classList.remove("hidden");
+  fillReferral();
 }
 
 /// The referral corner of the plan sheet: your link, and how far you are
@@ -8967,16 +9004,6 @@ function setShelfOpen(open) {
   });
   $("sideShare")?.addEventListener("click", () => {
     setOpen(false);
-    // On a desktop, sharing Krate is its link. The sheet behind this button
-    // is the browser's free-app plan, whose words are about Krate's own AI
-    // and were wrong here.
-    if (tauri) {
-      const link = "https://krate.tech";
-      (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject())
-        .then(() => toastish("Copied krate.tech. Send it to someone who builds things."))
-        .catch(() => toastish("krate.tech is the link to send."));
-      return;
-    }
     openPlanSheet();
   });
   $("sideHome")?.addEventListener("click", () => setOpen(false));
@@ -9233,7 +9260,11 @@ $("setOutBtn")?.addEventListener("click", async () => {
   } catch (e) {
     // A cancel returns nothing and never lands here; this is a real
     // failure, and it was silent.
-    toastish(`Could not use that folder: ${String(e && e.message ? e.message : e).replace(/^error:\s*/i, "")}`);
+    // Said on the row itself, where the button was pressed.
+    const why = `Could not use that folder: ${String(e && e.message ? e.message : e).replace(/^error:\s*/i, "")}`;
+    const hint = $("setOutBtn")?.closest(".set-row")?.querySelector(".hint");
+    if (hint) { const was = hint.dataset.was || hint.textContent; hint.dataset.was = was; hint.textContent = why; setTimeout(() => { hint.textContent = was; }, 8000); }
+    else toastish(why);
   }
 });
 
@@ -9537,7 +9568,7 @@ function signInHere(why) {
 document.addEventListener("click", (event) => {
   const button = event.target.closest && event.target.closest("button[data-connect]");
   if (!button) return;
-  signInHere("Sign in to publish to Krate Cloud. Everything else works without it.");
+  signInHere("You only need it to publish your apps to Krate Cloud. Making and running them works without signing in.");
 });
 
 /* Sign out, bound ONCE.
@@ -9565,7 +9596,7 @@ $("profSignIn")?.addEventListener("click", () => {
     // anything opens. This went to the gate and pressed its browser button,
     // which opened a browser before any choice, then a second one (K-992).
     if (window.krSignIn) {
-      window.krSignIn({ why: "Sign in to publish to Krate Cloud. Everything else works without it.", onDone: () => { try { renderAccount(); } catch (e) {} } });
+      window.krSignIn({ why: "You only need it to publish your apps to Krate Cloud. Making and running them works without signing in.", onDone: () => { try { renderAccount(); } catch (e) {} } });
       return;
     }
     showView("gate");
@@ -10090,7 +10121,7 @@ $("obSkipAll")?.addEventListener("click", () => {
   paintExamples();
 });
 $("obSignIn")?.addEventListener("click", () => {
-  signInHere("Sign in to publish to Krate Cloud. Everything else works without it.");
+  signInHere("You only need it to publish your apps to Krate Cloud. Making and running them works without signing in.");
 });
 $("obName")?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") finishOnboarding();

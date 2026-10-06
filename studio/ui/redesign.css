@@ -1443,7 +1443,7 @@ body:not(.light) #viewOnboard .fan-card { box-shadow: 0 0 0 1px var(--hair), 0 4
 #viewSession .build-card.flashing .forming-ghost[data-rev="1"] .kr-face { filter: blur(5px) saturate(.75); }
 /* The open shelf has to fit the 232px Home keeps for it (style.css .home),
    or it covers the bottom of the composer on an ordinary laptop window. */
-#viewHome .shelf-body { max-height: 150px; }
+#viewHome .shelf-body { max-height: 164px; }
 #viewHome .shelf-card .shot { aspect-ratio: auto; height: clamp(64px, 12vh, 104px); }
 /* On a Mac the traffic lights sit in the rail's top corner: the toggle goes under them. */
 @media (min-width: 861px) {
@@ -2918,3 +2918,22 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
 .kr-kcard .kmeta b, .kr-kcard .ksaid { overflow-wrap: anywhere; }
 /* A long address wraps in "Check your email" rather than running out of the card. */
 .kr-lg-hd p b { overflow-wrap: anywhere; }
+/* Share Krate on a desktop: the invite link, without the browser's free-app rows. */
+#planSheet.kr-shareonly .plan-list { display: none; }
+#planSheet.kr-shareonly .ref-block > b { display: none; }
+/* Reduced motion: the offline pill's mark stands still (it wobbled on). */
+@media (prefers-reduced-motion: reduce) { .kr-netp .iso, .kr-netp.off .iso { animation: none !important; } }
+/* The pills stay on a phone's screen: a long app name pushed one 27px past each edge at 390. */
+.kr-netp { max-width: calc(100vw - 32px); box-sizing: border-box; }
+.kr-netp .kr-swp, .kr-netp .kr-swp > span { min-width: 0; }
+.kr-netp .kr-swp b, .kr-netp .kr-swp small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* No apps yet: no "Your apps" handle over an empty shelf. */
+.shelf[data-empty="true"] .kr-shtog { display: none; }
+/* A phone's done row: the file's name and line on top, Run, Share and More
+ * under them (at 320 the name was squeezed to its first letter). */
+@media (max-width: 420px) {
+  .kr-fdone { flex-wrap: wrap; row-gap: 8px; }
+  .kr-fdone .kr-dn { flex: 1 1 calc(100% - 46px); }
+  .kr-fdone .kr-da { flex: 1 1 100%; display: flex; gap: 8px; }
+  .kr-fdone .kr-da .btn { flex: 1; justify-content: center; }
+}
