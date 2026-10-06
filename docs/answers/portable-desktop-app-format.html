@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>One desktop app file for macOS, Windows and Linux | Krate</title>
-<meta name="description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
+<title>The .krate format: one app file for every desktop | Krate</title>
+<meta name="description" content="A .krate file holds your app as a WebAssembly component plus a manifest, and the same bytes open on macOS, Windows and Linux through the native runtime.">
 <link rel="canonical" href="https://krate.tech/portable-desktop-app-format.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
-<meta property="og:title" content="One desktop app file for macOS, Windows and Linux | Krate">
-<meta property="og:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
+<meta property="og:title" content="The .krate format: one app file for every desktop | Krate">
+<meta property="og:description" content="A .krate file holds your app as a WebAssembly component plus a manifest, and the same bytes open on macOS, Windows and Linux through the native runtime.">
 <meta property="og:url" content="https://krate.tech/portable-desktop-app-format.html">
 <meta property="og:image" content="https://krate.tech/og-v4.png">
 <meta property="og:image:alt" content="Krate desktop application runtime">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="One desktop app file for macOS, Windows and Linux | Krate">
-<meta name="twitter:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
+<meta name="twitter:title" content="The .krate format: one app file for every desktop | Krate">
+<meta name="twitter:description" content="A .krate file holds your app as a WebAssembly component plus a manifest, and the same bytes open on macOS, Windows and Linux through the native runtime.">
 <meta name="twitter:image" content="https://krate.tech/og-v4.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/portable-desktop-app-format.html#webpage", "url": "https://krate.tech/portable-desktop-app-format.html", "name": "One desktop app file for macOS, Windows and Linux | Krate", "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/portable-desktop-app-format.html#webpage", "url": "https://krate.tech/portable-desktop-app-format.html", "name": "The .krate format: one app file for every desktop | Krate", "description": "A .krate file holds your app as a WebAssembly component plus a manifest, and the same bytes open on macOS, Windows and Linux through the native runtime.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "What does the person opening a .krate need?", "acceptedAnswer": {"@type": "Answer", "text": "The Krate runtime, installed once for their system. After that every .krate opens from the file; they do not need Rust, your source or your build tools."}}, {"@type": "Question", "name": "Can a .krate file run on a phone?", "acceptedAnswer": {"@type": "Answer", "text": "Not today. Krate publishes runtimes for macOS, Windows and Linux, on Intel and ARM. Phones are not supported yet."}}, {"@type": "Question", "name": "Is a .krate the same as a Rust crate?", "acceptedAnswer": {"@type": "Answer", "text": "No. A crate is a Rust package on crates.io. A .krate file is a packaged application: a WebAssembly component, its manifest, and optional source and assets, opened by the Krate runtime."}}, {"@type": "Question", "name": "How do I check that two copies are the same file?", "acceptedAnswer": {"@type": "Answer", "text": "Compare SHA-256 hashes: shasum -a 256 on macOS, sha256sum on Linux, Get-FileHash in Windows PowerShell. Matching hashes mean identical bytes, not that the app is correct."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -40,6 +40,7 @@
 .answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
 .answer-table tbody th { min-width: 150px; }
 .prose em { font-style: italic; }
+.ph.art h1 .nw { white-space: nowrap; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
 :root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
 .prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
@@ -107,9 +108,9 @@
 <main id="main">
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
-  <h1>One desktop app file, three operating systems</h1>
-  <p class="lede">Build against Krate's interfaces and distribute one .krate artifact. Each recipient runs it through a compatible native Krate runtime on macOS, Windows or Linux.</p>
-  <p class="meta">3 min read</p>
+  <h1>The .krate format: one app file for every desktop</h1>
+  <p class="lede">A <code>.krate</code> file holds your app as a WebAssembly component plus a manifest, and the same bytes open on macOS, Windows and Linux through the native Krate app runtime. Each person installs that runtime once; the app starts with no file or network access and asks for what it needs.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 3 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
     <a class="btn dark" href="/docs/quickstart.html">Try the same-file workflow <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
     <a class="btn ghost" href="/docs/porting.html">Check your project&#x27;s fit</a>
@@ -127,6 +128,7 @@
       <a href="#does-one-file-remove-all-platform-work">Does one file remove all platform work?</a>
       <a href="#what-about-size-and-performance">What about size and performance?</a>
       <a href="#check-whether-your-project-fits">Check whether your project fits</a>
+      <a href="#questions">Questions</a>
       <a href="#more-answers">More answers</a>
     </nav>
     <article class="prose">
@@ -175,18 +177,29 @@ krate run app.krate --prompt</pre>
         <h2>Check whether your project fits</h2>
 <p>Krate's aim is software distribution for developers, not a fixed list of toy apps. What determines today's fit is the available API surface: UI, data, networking, media and OS integration. Check the <a href="/docs/limits.html">current limits</a> and use the <a href="/docs/porting.html">porting guide</a> to inventory dependencies before committing to a migration.</p>
       </section>
+    <section id="questions">
+      <h2>Questions</h2>
+      <h3>What does the person opening a .krate need?</h3>
+<p>The Krate runtime, installed once for their system. After that every <code>.krate</code> opens from the file; they do not need Rust, your source or your build tools.</p>
+      <h3>Can a .krate file run on a phone?</h3>
+<p>Not today. Krate publishes runtimes for macOS, Windows and Linux, on Intel and ARM. Phones are not supported yet.</p>
+      <h3>Is a .krate the same as a Rust crate?</h3>
+<p>No. A crate is a Rust package on crates.io. A <code>.krate</code> file is a packaged application: a WebAssembly component, its manifest, and optional source and assets, opened by the Krate runtime.</p>
+      <h3>How do I check that two copies are the same file?</h3>
+<p>Compare SHA-256 hashes: <code>shasum -a 256</code> on macOS, <code>sha256sum</code> on Linux, <code>Get-FileHash</code> in Windows PowerShell. Matching hashes mean identical bytes, not that the app is correct.</p>
+    </section>
     <section id="more-answers">
       <h2>More answers about shipping desktop apps</h2>
       <ul class="answer-related">
-        <li><a href="/share-an-app-made-with-ai.html">Share the app, not your development setup</a></li>
-        <li><a href="/run-ai-generated-code-safely.html">Inspect what an app built with AI can access</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one file</a></li>
+        <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely: see what it can touch first</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
-        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
-        <li><a href="/krate-vs-electron.html">Krate vs Electron: one app file instead of a browser in every app</a></li>
-        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
-        <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>
-        <li><a href="/desktop-app-code-signing.html">Do you need code signing to ship a desktop app?</a></li>
-        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>
+        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one native file instead of a browser in every app</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
+        <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
       </ul>
     </section>
     </article>

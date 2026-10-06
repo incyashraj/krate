@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Krate vs Electron: an Electron alternative that ships one file</title>
-<meta name="description" content="Electron packages Chromium and Node.js into each app, per OS. Krate ships one .krate file that a shared runtime opens on Mac, Windows and Linux. Where each fits.">
+<title>Krate vs Electron: one native file, no browser inside</title>
+<meta name="description" content="Electron puts Chromium and Node.js in every app and ships a package per OS. Krate ships one .krate file that runs natively on every desktop, sandboxed.">
 <link rel="canonical" href="https://krate.tech/krate-vs-electron.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
-<meta property="og:title" content="Krate vs Electron: an Electron alternative that ships one file">
-<meta property="og:description" content="Electron packages Chromium and Node.js into each app, per OS. Krate ships one .krate file that a shared runtime opens on Mac, Windows and Linux. Where each fits.">
+<meta property="og:title" content="Krate vs Electron: one native file, no browser inside">
+<meta property="og:description" content="Electron puts Chromium and Node.js in every app and ships a package per OS. Krate ships one .krate file that runs natively on every desktop, sandboxed.">
 <meta property="og:url" content="https://krate.tech/krate-vs-electron.html">
 <meta property="og:image" content="https://krate.tech/og-v4.png">
 <meta property="og:image:alt" content="Krate desktop application runtime">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Krate vs Electron: an Electron alternative that ships one file">
-<meta name="twitter:description" content="Electron packages Chromium and Node.js into each app, per OS. Krate ships one .krate file that a shared runtime opens on Mac, Windows and Linux. Where each fits.">
+<meta name="twitter:title" content="Krate vs Electron: one native file, no browser inside">
+<meta name="twitter:description" content="Electron puts Chromium and Node.js in every app and ships a package per OS. Krate ships one .krate file that runs natively on every desktop, sandboxed.">
 <meta name="twitter:image" content="https://krate.tech/og-v4.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/krate-vs-electron.html#webpage", "url": "https://krate.tech/krate-vs-electron.html", "name": "Krate vs Electron: an Electron alternative that ships one file", "description": "Electron packages Chromium and Node.js into each app, per OS. Krate ships one .krate file that a shared runtime opens on Mac, Windows and Linux. Where each fits.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Is Krate a drop-in replacement for Electron?", "acceptedAnswer": {"@type": "Answer", "text": "No. Electron runs your HTML, CSS and JavaScript as they are. A Krate app is written against Krate's interfaces, in Rust today, so moving an Electron app is a port, not a repackage."}}, {"@type": "Question", "name": "Do Krate users need Chromium?", "acceptedAnswer": {"@type": "Answer", "text": "No. Krate apps don't run in a browser engine. Users install the Krate runtime once, and every Krate app shares it."}}, {"@type": "Question", "name": "Can I keep writing JavaScript?", "acceptedAnswer": {"@type": "Answer", "text": "Not for a shipped Krate app today: Rust is the only finished SDK. Krate Studio can write the Rust for you from a description, or port a JavaScript project by rewriting it."}}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/krate-vs-electron.html#webpage", "url": "https://krate.tech/krate-vs-electron.html", "name": "Krate vs Electron: one native file, no browser inside", "description": "Electron puts Chromium and Node.js in every app and ships a package per OS. Krate ships one .krate file that runs natively on every desktop, sandboxed.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Is Krate a drop-in replacement for Electron?", "acceptedAnswer": {"@type": "Answer", "text": "No. Electron runs your HTML, CSS and JavaScript as they are. A Krate app is written against Krate's interfaces, in Rust today, so moving an Electron app is a port, not a repackage."}}, {"@type": "Question", "name": "Do Krate users need Chromium?", "acceptedAnswer": {"@type": "Answer", "text": "No. Krate apps don't run in a browser engine. Users install the Krate runtime once, and every Krate app shares it."}}, {"@type": "Question", "name": "Can I keep writing JavaScript?", "acceptedAnswer": {"@type": "Answer", "text": "Not for a shipped Krate app today: Rust is the only finished SDK. Krate Studio can write the Rust for you from a description, or port a JavaScript project by rewriting it."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -40,6 +40,7 @@
 .answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
 .answer-table tbody th { min-width: 150px; }
 .prose em { font-style: italic; }
+.ph.art h1 .nw { white-space: nowrap; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
 :root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
 .prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
@@ -107,8 +108,8 @@
 <main id="main">
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
-  <h1>Krate vs Electron: one app file instead of a browser in every app</h1>
-  <p class="lede">Krate is an Electron alternative for desktop apps you want to ship as one file. Electron packages Chromium and Node.js into a separate app for each operating system. Krate ships one <code>.krate</code> file that the Krate runtime, installed once, opens on macOS, Windows and Linux. Electron is far more mature and runs your existing web code; Krate apps are written against Krate's own interfaces, in Rust today.</p>
+  <h1>Krate vs Electron: one native file instead of a browser in every app</h1>
+  <p class="lede">Electron puts Chromium and Node.js inside every app and ships a package for each operating system; Krate, the app runtime, ships one <code>.krate</code> file that runs natively on every desktop through one shared runtime, with no browser inside and no file or network access until the user allows it. People install the Krate runtime once. Electron is far more mature and runs your existing web code; Krate apps are written in Rust today.</p>
   <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 3 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
     <a class="btn dark" href="#side-by-side">See the comparison <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
@@ -181,15 +182,15 @@
     <section id="more-answers">
       <h2>More answers about shipping desktop apps</h2>
       <ul class="answer-related">
-        <li><a href="/portable-desktop-app-format.html">One desktop app file, three operating systems</a></li>
-        <li><a href="/share-an-app-made-with-ai.html">Share the app, not your development setup</a></li>
-        <li><a href="/run-ai-generated-code-safely.html">Inspect what an app built with AI can access</a></li>
+        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every desktop</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one file</a></li>
+        <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely: see what it can touch first</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
-        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
-        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
-        <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>
-        <li><a href="/desktop-app-code-signing.html">Do you need code signing to ship a desktop app?</a></li>
-        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>
+        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
+        <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
       </ul>
     </section>
     </article>

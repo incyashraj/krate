@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>How to share an AI-built desktop app | Krate</title>
-<meta name="description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
+<title>Share an app made with AI as one file | Krate</title>
+<meta name="description" content="To share an app you built with AI, package it as one .krate file and send it. The other person installs the Krate runtime once and sees what it asks for.">
 <link rel="canonical" href="https://krate.tech/share-an-app-made-with-ai.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
-<meta property="og:title" content="How to share an AI-built desktop app | Krate">
-<meta property="og:description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
+<meta property="og:title" content="Share an app made with AI as one file | Krate">
+<meta property="og:description" content="To share an app you built with AI, package it as one .krate file and send it. The other person installs the Krate runtime once and sees what it asks for.">
 <meta property="og:url" content="https://krate.tech/share-an-app-made-with-ai.html">
 <meta property="og:image" content="https://krate.tech/og-v4.png">
 <meta property="og:image:alt" content="Krate desktop application runtime">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="How to share an AI-built desktop app | Krate">
-<meta name="twitter:description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
+<meta name="twitter:title" content="Share an app made with AI as one file | Krate">
+<meta name="twitter:description" content="To share an app you built with AI, package it as one .krate file and send it. The other person installs the Krate runtime once and sees what it asks for.">
 <meta name="twitter:image" content="https://krate.tech/og-v4.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/share-an-app-made-with-ai.html#webpage", "url": "https://krate.tech/share-an-app-made-with-ai.html", "name": "How to share an AI-built desktop app | Krate", "description": "Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/share-an-app-made-with-ai.html#webpage", "url": "https://krate.tech/share-an-app-made-with-ai.html", "name": "Share an app made with AI as one file | Krate", "description": "To share an app you built with AI, package it as one .krate file and send it. The other person installs the Krate runtime once and sees what it asks for.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Can I change the app after I send it?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Ask for the change, then send the new .krate. Studio keeps each version, so you can go back if a change goes wrong."}}, {"@type": "Question", "name": "Does the person I send it to need my AI tool or an account?", "acceptedAnswer": {"@type": "Answer", "text": "No. They install the Krate runtime once and open the file. An account is only needed to publish an app to the gallery."}}, {"@type": "Question", "name": "Which AI tools can make a .krate?", "acceptedAnswer": {"@type": "Answer", "text": "Krate Studio on your computer works with Claude, Codex, Grok or Gemini. In the browser, Krate's own AI makes your first app."}}, {"@type": "Question", "name": "Can I send it by email or chat?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. A .krate is one file, so it goes anywhere a document goes: an email attachment, a chat, a shared drive or a link."}}, {"@type": "Question", "name": "What if my app needs the internet?", "acceptedAnswer": {"@type": "Answer", "text": "It declares each host it talks to, and the person opening it sees that list and approves it before the app runs. Hosts it did not declare stay unreachable."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -40,6 +40,7 @@
 .answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
 .answer-table tbody th { min-width: 150px; }
 .prose em { font-style: italic; }
+.ph.art h1 .nw { white-space: nowrap; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
 :root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
 .prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
@@ -107,9 +108,9 @@
 <main id="main">
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
-  <h1>Share the app, not your development setup</h1>
-  <p class="lede">If an AI-built application uses Krate's interfaces, you can package it as one .krate file and send it to someone on macOS, Windows or Linux. They need a compatible Krate runtime.</p>
-  <p class="meta">2 min read</p>
+  <h1>Share an app made with AI as one file</h1>
+  <p class="lede">To share an app you built with AI, package it for Krate, the app runtime, as one <code>.krate</code> file and send it: the person on the other end installs a compatible Krate runtime once, sees what the app asks for, and opens it on macOS, Windows or Linux.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 2 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
     <a class="btn dark" href="#send-the-file-directly">Share a .krate file <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
     <a class="btn ghost" href="/studio/">Make one in Studio</a>
@@ -126,6 +127,7 @@
       <a href="#send-the-file-directly">Send the file directly</a>
       <a href="#publishing-is-an-optional-separate-step">Publishing is an optional separate step</a>
       <a href="#what-the-recipient-can-trust">What the recipient can trust</a>
+      <a href="#questions">Questions</a>
       <a href="#more-answers">More answers</a>
     </nav>
     <article class="prose">
@@ -164,18 +166,31 @@ krate publish regex.krate</pre>
         <h2>What the recipient can trust</h2>
 <p>A capability declaration describes requested access, not a guarantee of good behavior. Approved file or network access can still be misused within its scope. Review the source and permissions and start with apps from people you trust. See <a href="/run-ai-generated-code-safely.html">the security boundaries</a> and <a href="/portable-desktop-app-format.html">how to verify the same artifact across systems</a>.</p>
       </section>
+    <section id="questions">
+      <h2>Questions</h2>
+      <h3>Can I change the app after I send it?</h3>
+<p>Yes. Ask for the change, then send the new <code>.krate</code>. Studio keeps each version, so you can go back if a change goes wrong.</p>
+      <h3>Does the person I send it to need my AI tool or an account?</h3>
+<p>No. They install the Krate runtime once and open the file. An account is only needed to publish an app to the gallery.</p>
+      <h3>Which AI tools can make a .krate?</h3>
+<p>Krate Studio on your computer works with Claude, Codex, Grok or Gemini. In the browser, Krate's own AI makes your first app.</p>
+      <h3>Can I send it by email or chat?</h3>
+<p>Yes. A <code>.krate</code> is one file, so it goes anywhere a document goes: an email attachment, a chat, a shared drive or a link.</p>
+      <h3>What if my app needs the internet?</h3>
+<p>It declares each host it talks to, and the person opening it sees that list and approves it before the app runs. Hosts it did not declare stay unreachable.</p>
+    </section>
     <section id="more-answers">
       <h2>More answers about shipping desktop apps</h2>
       <ul class="answer-related">
-        <li><a href="/portable-desktop-app-format.html">One desktop app file, three operating systems</a></li>
-        <li><a href="/run-ai-generated-code-safely.html">Inspect what an app built with AI can access</a></li>
+        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every desktop</a></li>
+        <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely: see what it can touch first</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
-        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
-        <li><a href="/krate-vs-electron.html">Krate vs Electron: one app file instead of a browser in every app</a></li>
-        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
-        <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>
-        <li><a href="/desktop-app-code-signing.html">Do you need code signing to ship a desktop app?</a></li>
-        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>
+        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one native file instead of a browser in every app</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
+        <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
       </ul>
     </section>
     </article>
