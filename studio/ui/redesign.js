@@ -92,10 +92,13 @@
     const web = !desktopApp();
     const b = document.createElement("div");
     b.className = "kr-boot" + (web ? " web" : ""); b.setAttribute("aria-hidden", "true");
+    // On the web the breathing mark is the whole loader: no bar, no
+    // "Loading Studio" -- the mark in motion already says it (founder,
+    // 2026-10-07). The line below stays empty unless loading is slow.
     b.innerHTML = `<div class="bk"><span class="bmk">${window.krIso ? window.krIso(84, "stack") : ""}</span>` +
       `<span class="bweb">${window.krIso ? window.krIso(40, "breathe") : ""}<b>Krate</b><small>Studio</small></span>` +
-      `<span class="hair"><i></i></span><span class="cbar"><i></i></span>` +
-      `<p class="bt"><span class="kr-swp"><span>${web ? "Loading Studio" : "Opening Studio"}</span></span></p></div>`;
+      `<span class="hair"><i></i></span>` +
+      `<p class="bt"><span class="kr-swp"><span>${web ? "" : "Opening Studio"}</span></span></p></div>`;
     document.body.appendChild(b);
     void b.offsetWidth; b.classList.add("run");
     if (window.krStack) window.krStack(b, 120);
@@ -3145,7 +3148,7 @@
       const b = document.createElement("div");
       b.className = "kr-boot web run kr-leaving"; b.setAttribute("role", "status");
       b.innerHTML = `<div class="bk"><span class="bweb">${window.krIso ? window.krIso(40, "breathe") : ""}<b>Krate</b><small>Studio</small></span>` +
-        `<span class="cbar"><i></i></span><p class="bt"><span class="kr-swp"><span>${esc(words)}</span></span></p></div>`;
+        `<p class="bt"><span class="kr-swp"><span>${esc(words)}</span></span></p></div>`;
       document.body.appendChild(b);
       // Back from the provider without signing in (the browser's Back
       // button restores this page from its cache): the loader goes.
