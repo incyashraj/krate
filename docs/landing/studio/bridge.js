@@ -96,6 +96,34 @@ function goSignIn(request) {
   return new Promise(() => {});
 }
 
+/* Asked by Studio before a send makes a session (webSignInFirst).
+ *
+ * Signed out, the press opens the sign-in popup over the page it was made
+ * on and nothing else happens: no session, no draft row, no reload. The
+ * words stay where they were typed. A send from Home also carries on by
+ * itself once the sign-in lands (F-307), the same handoff the front page
+ * uses; closing the popup takes that back and leaves only the words. */
+window.krNeedsSignIn = (text, opts = {}) => {
+  if (bridge.token) return false;
+  const typed = String(text || "").trim();
+  try {
+    if (typed && opts.start) localStorage.setItem(START_KEY, JSON.stringify({ text: typed, at: Date.now() }));
+    else if (typed) localStorage.setItem(PENDING_KEY, typed);
+  } catch (e) {}
+  const forget = () => { try { localStorage.removeItem(START_KEY); localStorage.removeItem(PENDING_KEY); } catch (e) {} };
+  if (window.krSignIn) {
+    window.krSignIn({
+      why: typed
+        ? "Making an app needs a free account. Your words are kept, and it starts as soon as you are signed in."
+        : "Making an app needs a free account. It takes a moment.",
+      onClose: forget,
+    });
+  } else {
+    location.href = "/login/?next=studio";
+  }
+  return true;
+};
+
 /* The build service said the session is over.
  *
  * Its 401 means exactly that: an outage reaching the hub is a 502 since

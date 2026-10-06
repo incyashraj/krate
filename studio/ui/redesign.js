@@ -788,7 +788,9 @@
         if (!th.classList.contains("ready")) th.classList.add("ready");
       };
       watch(pt, { attributes: true, subtree: true, attributeFilter: ["class"] }, place);
-      watch($("viewSession"), { attributes: true, attributeFilter: ["class"] }, () => requestAnimationFrame(place));
+      // data-mob: on a phone the tabs are hidden until App is chosen, and a
+      // thumb measured while hidden is a zero-width ring (a stray line).
+      watch($("viewSession"), { attributes: true, attributeFilter: ["class", "data-mob"] }, () => requestAnimationFrame(place));
       addEventListener("resize", place);
       (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(place);
     }
@@ -3276,4 +3278,53 @@
   }
   // A session opened or a new one started: begin at the bottom again.
   document.addEventListener("click", (e) => { if (e.target.closest && e.target.closest(".sess-row, #homeSend")) stick = true; }, true);
+})();
+
+/* Phones: the conversation or the app, one at a time (2026-10-06).
+ *
+ * Under 861px the session stacked the app's panel over the conversation,
+ * each in its own small scrolling strip, with the panel's tabs floating
+ * over the app. On an iPhone neither half was usable. Now the header
+ * carries a Chat / App switch and the chosen one gets the whole screen.
+ * A session opens on the conversation; while a build runs the App side
+ * shows a live dot, and the moment the app is made it is shown. Wider
+ * windows never see the switch (CSS), so nothing changes there. */
+(function phoneSession() {
+  const view = document.getElementById("viewSession");
+  const head = view && view.querySelector(".rail-head");
+  if (!view || !head) return;
+  const sw = document.createElement("div");
+  sw.className = "mob-switch";
+  sw.setAttribute("role", "tablist");
+  sw.setAttribute("aria-label", "Show the conversation or the app");
+  sw.innerHTML = '<button type="button" role="tab" data-mob="chat">Chat</button>'
+    + '<button type="button" role="tab" data-mob="app">App<i class="mob-dot" aria-hidden="true"></i></button>';
+  head.appendChild(sw);
+  function set(which) {
+    view.dataset.mob = which;
+    for (const b of sw.querySelectorAll("button")) b.setAttribute("aria-selected", String(b.dataset.mob === which));
+    if (which === "app") sw.classList.remove("news");
+  }
+  sw.addEventListener("click", (e) => { const b = e.target.closest("button[data-mob]"); if (b) set(b.dataset.mob); });
+  set("chat");
+  const shown = (id) => { const el = document.getElementById(id); return !!el && !el.classList.contains("hidden"); };
+  let wasOpen = false, building = false;
+  const sync = () => {
+    const open = !view.classList.contains("hidden");
+    if (open && !wasOpen) set("chat");
+    wasOpen = open;
+    const nowBuilding = shown("stateBuilding") || shown("statePlanning");
+    sw.classList.toggle("live", nowBuilding);
+    if (building && !nowBuilding && shown("stateDone") && open) set("app");
+    else if (!building && nowBuilding && view.dataset.mob === "chat") sw.classList.add("news");
+    building = nowBuilding;
+  };
+  if (!window.MutationObserver) return;
+  const mo = new MutationObserver(sync);
+  mo.observe(view, { attributes: true, attributeFilter: ["class"] });
+  for (const id of ["stateIdle", "statePlanning", "stateBuilding", "stateDone", "stateFailed"]) {
+    const el = document.getElementById(id);
+    if (el) mo.observe(el, { attributes: true, attributeFilter: ["class"] });
+  }
+  sync();
 })();

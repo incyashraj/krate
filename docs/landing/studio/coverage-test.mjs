@@ -842,6 +842,26 @@ assert.match(app, /function isJustAGreeting\(text\)/, "a greeting is recognised"
 
 console.log("ok  a greeting does not spend an app");
 
+// Signed out on the web, a send asks for an account BEFORE a session exists
+// (2026-10-06). It used to open the session, write the words into it and
+// only then ask, from inside the build; closing the popup reloaded the page.
+for (const [name, mark] of [["startFromHomeInner", "newSession("], ["submitInSession", "make("], ["startPortFromHome", "newSession("]]) {
+  const from = app.indexOf(`function ${name}(`);
+  assert.ok(from > 0, name);
+  const body = app.slice(from, app.indexOf("\n}\n", from));
+  const gate = body.indexOf("webSignInFirst(");
+  assert.ok(gate > 0 && gate < body.indexOf(mark), `${name} asks for sign-in before it makes anything`);
+}
+{
+  const fn = bridge.slice(bridge.indexOf("window.krNeedsSignIn ="));
+  const body = fn.slice(0, fn.indexOf("\n};\n"));
+  assert.match(body, /if \(bridge\.token\) return false;/, "a signed-in person is never stopped");
+  assert.match(body, /window\.krSignIn\(/, "the popup opens over the page");
+  assert.doesNotMatch(body, /location\.reload|newSession|create_app/, "and nothing else happens: no reload, no session");
+  assert.match(body, /onClose: forget/, "closing it takes back the auto-start and leaves the words");
+}
+console.log("ok  signed out, a send asks for an account before any session");
+
 // A refresh does not lose a build that is still running.
 //
 // `bridge.job` is memory. A reload lost it, and with it the only handle on

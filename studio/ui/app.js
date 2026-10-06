@@ -6891,6 +6891,18 @@ function isJustAGreeting(text) {
   return /^(hi|hey|hello|yo|hiya|howdy|sup|hi there|hey there|hello there|good morning|good afternoon|good evening|test|testing)$/.test(t);
 }
 
+/* On the web, nothing reaches a session without an account (2026-10-06).
+ *
+ * A signed-out send used to open a session, put the words in it and only
+ * then ask for sign-in from inside the build; closing the popup reloaded
+ * the page. Now the press itself asks: the sign-in popup opens over Home,
+ * the words stay in the box, and no session is made. The bridge decides
+ * (it holds the token); on a desktop there is no such door. */
+function webSignInFirst(text, opts) {
+  if (tauri || typeof window.krNeedsSignIn !== "function") return false;
+  return window.krNeedsSignIn(text, opts || {});
+}
+
 /* One request per press, however fast the presses come.
  *
  * startFromHome is async -- it awaits the AI check before creating a
@@ -6920,6 +6932,7 @@ async function startFromHome() {
 async function startFromHomeInner() {
   const text = $("homePrompt").value.trim();
   if (!text) return;
+  if (webSignInFirst(text, { start: true })) return;
   if (isJustAGreeting(text)) {
     // Answer where they are. Opening a session for "hi" would put them on
     // a build screen with nothing being built.
@@ -7003,6 +7016,7 @@ async function startFromHomeInner() {
  * is its Build it. The port itself runs through buildNow, so the chip, the
  * stages, the stop button and the done card are the ones a build has. */
 async function startPortFromHome() {
+  if (webSignInFirst("")) return;
   if (state.buildingSession && !state.buildSettled) {
     const hint = $("homeHint");
     if (hint) hint.textContent = `One app at a time: "${clip(state.buildingSession.title || "your other app", 60)}" is still being made.`;
@@ -7194,6 +7208,7 @@ async function replaceWithMidBuild(text) {
 function submitInSession() {
   const text = $("prompt").value.trim();
   if (!text) return;
+  if (webSignInFirst(text)) return;
   // Same guard as Home. In a session with no app yet a greeting would start
   // a build; in one with an app it would be read as a change to make.
   if (isJustAGreeting(text)) {
@@ -8871,7 +8886,9 @@ function setShelfOpen(open) {
     // before anything on screen (K-784). `inert` removes it from focus and
     // from the accessibility tree until it is open.
     side.inert = !open;
-    if (remember) {
+    // A phone's drawer is a menu over the page: opening it there is not a
+    // choice to keep, or every later visit opened onto the drawer.
+    if (remember && !window.matchMedia("(max-width: 860px)").matches) {
       try { lsSet(OPEN_KEY, open ? "1" : "0"); } catch (e) {}
     }
     // The body class is what lets the room step aside and take its rounded
@@ -8915,7 +8932,8 @@ function setShelfOpen(open) {
     // starts shut, because there the drawer covers the page.
     const stored = localStorage.getItem(OPEN_KEY);
     const wide = window.matchMedia && window.matchMedia("(min-width: 1100px)").matches;
-    if (stored === "1" || (stored === null && wide)) {
+    const phone = window.matchMedia && window.matchMedia("(max-width: 860px)").matches;
+    if (!phone && (stored === "1" || (stored === null && wide))) {
       document.body.classList.add("side-restoring");
       setOpen(true, false);
       // One frame with transitions off, then hand animation back for every

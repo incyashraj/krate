@@ -2962,3 +2962,76 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
   .kr-fdone .kr-da { flex: 1 1 100%; display: flex; gap: 8px; }
   .kr-fdone .kr-da .btn { flex: 1; justify-content: center; }
 }
+
+/* ================================================================ phones
+ * 2026-10-06: Studio on an iPhone. The session is one pane at a time
+ * (redesign.js phoneSession): Chat, or the App with its tabs, each with the
+ * whole screen. Edge to edge, no desktop window inset. */
+.mob-switch { display: none; }
+@media (max-width: 860px) {
+  #viewSession .session-body { padding: 0; }
+  #viewSession .rail-head {
+    position: sticky; top: 0; z-index: 30; margin: 0; border-radius: 0;
+    padding: calc(6px + env(safe-area-inset-top)) 10px 6px 6px; min-height: 52px;
+    display: flex; align-items: center; gap: 4px; background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  #viewSession .rail-head .sess-title { min-width: 0; flex: 1 1 auto; }
+  #viewSession .rail-head .sess-title .crumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  #viewSession .rail-head .spacer { display: none; }
+  #viewSession .rail-head .kr-ver { flex: none; }
+  #viewSession .mob-switch {
+    display: inline-flex; flex: none; padding: 3px; gap: 2px; border-radius: 999px;
+    background: var(--film); border: 1px solid var(--line);
+  }
+  #viewSession .mob-switch button {
+    appearance: none; border: 0; background: none; color: var(--muted); font: inherit;
+    font-size: 13px; font-weight: 500; min-height: 34px; padding: 0 13px; border-radius: 999px;
+    position: relative; cursor: pointer;
+  }
+  #viewSession .mob-switch button[aria-selected="true"] { background: var(--text); color: var(--bg); }
+  #viewSession .mob-dot {
+    display: none; position: absolute; top: 5px; right: 4px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--blue, #6d8bff);
+  }
+  #viewSession .mob-switch.live .mob-dot, #viewSession .mob-switch.news .mob-dot { display: block; }
+  #viewSession .mob-switch.live .mob-dot { animation: krMobPulse 1.4s ease-in-out infinite; }
+  #viewSession .mob-switch button[aria-selected="true"] .mob-dot { display: none; }
+
+  /* Chat: the conversation and its bar fill the screen. */
+  #viewSession[data-mob="chat"] .panel { display: none; }
+  #viewSession[data-mob="chat"] .thread { flex: 1 1 auto; min-height: 0; padding: 14px 14px 10px; }
+  #viewSession .composer { padding: 6px 10px calc(8px + env(safe-area-inset-bottom)); }
+
+  /* App: the panel, its tabs on their own row, the app below them. */
+  #viewSession[data-mob="app"] .thread, #viewSession[data-mob="app"] .composer { display: none; }
+  #viewSession[data-mob="app"] .panel {
+    display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; margin: 0; border-radius: 0;
+  }
+  #viewSession[data-mob="app"] .panel-bar {
+    position: static; flex: none; height: auto; min-height: 48px; padding: 7px 10px; gap: 8px;
+    border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  }
+  #viewSession[data-mob="app"] .ptabs { flex: none; }
+  #viewSession[data-mob="app"] .panel-body {
+    flex: 1 1 auto; height: auto; min-height: 0; margin: 0 10px calc(10px + env(safe-area-inset-bottom));
+    overflow: auto; -webkit-overflow-scrolling: touch;
+  }
+  /* The stage was a 34dvh strip with its own scroll; here it is the pane. */
+  #viewSession[data-mob="app"] .stage { height: auto; min-height: 0; max-height: none; border-bottom: 0; }
+  #viewSession[data-mob="app"] .done-card .shot-stage img { max-height: calc(100dvh - 260px); }
+  #viewSession[data-mob="app"] .done-meta .done-name, #viewSession[data-mob="app"] .done-meta .done-sub { display: block; }
+}
+/* A small phone gives the app's name the room the "draft" chip took. */
+@media (max-width: 400px) { #viewSession .rail-head .kr-ver.draft { display: none; } }
+@keyframes krMobPulse { 50% { opacity: .35; } }
+/* No apps yet and the shelf shut (a phone): the shelf was an empty box,
+   its only control faded out. Browse all stays, as it does on a desktop. */
+#viewHome .shelf[data-empty="true"] .shelf-all { opacity: 1; pointer-events: auto; }
+/* Settings on a phone is the whole screen: no rounded corners at its edges. */
+@media (max-width: 600px) { #setSheet .set-modal { border-radius: 0; } }
+/* "Finish <long app name>" gives way before its buttons do: at 320 the
+   delete was pushed past the screen's edge. */
+.apps-finish > span:first-child { min-width: 0; overflow: hidden; }
+.apps-finish > span:first-child b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apps-finish .go, .apps-finish .apps-x { flex: none; }
