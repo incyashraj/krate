@@ -770,6 +770,11 @@ h1 .ln { display: block; }
 @media (max-width: 1240px) { .objs { display: none; } }
 @media (max-width: 820px) {
   .pin { grid-template-columns: 1fr; gap: 26px; align-content: center; } .story { height: 260vh; }
+  /* A fixed height, a little over the tallest resting state (321px; 344px at
+     320 wide). While one step closes and the next opens, the list briefly
+     grows to ~372px; with its height fixed that growth overflows instead of
+     re-centring the column, which moved the picture below it (0.097 CLS). */
+  .js .steps { height: 350px; }
   .step.on h3 { font-size: 24px; } .scene { padding-bottom: 60px; }
  
   .ucard { width: 300px; height: 520px; }
@@ -890,7 +895,7 @@ main img, main svg { max-width: none; }
 </section>
 <div class="band0">
   <div class="scene" id="scene">
-    <div class="shot"><div class="in"><span class="sl on"><img class="lt" src="/os-mac.webp" alt="Editor.krate, a code editor, open on a Mac"><img class="dk" src="/os-mac-dark.webp" alt=""></span><span class="sl"><img class="lt" src="/os-win.webp" alt="The same Editor.krate open on Windows"><img class="dk" src="/os-win-dark.webp" alt=""></span><span class="sl"><img class="lt" src="/os-linux.webp" alt="The same Editor.krate open on Linux"><img class="dk" src="/os-linux-dark.webp" alt=""></span></div></div>
+    <div class="shot"><div class="in"><span class="sl on"><img class="lt" src="/os-mac.webp" width="2400" height="1520" decoding="async" fetchpriority="high" alt="Editor.krate, a code editor, open on a Mac"><img class="dk" src="/os-mac-dark.webp" width="2400" height="1520" decoding="async" loading="lazy" alt=""></span><span class="sl"><img class="lt" data-src="/os-win.webp" width="2400" height="1520" decoding="async" loading="lazy" alt="The same Editor.krate open on Windows"><img class="dk" data-src="/os-win-dark.webp" width="2400" height="1520" decoding="async" loading="lazy" alt=""></span><span class="sl"><img class="lt" data-src="/os-linux.webp" width="2400" height="1520" decoding="async" loading="lazy" alt="The same Editor.krate open on Linux"><img class="dk" data-src="/os-linux-dark.webp" width="2400" height="1520" decoding="async" loading="lazy" alt=""></span></div></div>
     <div class="pstage" id="pstage" aria-label="Editor.krate on an iPhone, an Android phone and a Linux phone, coming soon">
       <svg class="parrow" width="210" height="110" viewBox="0 0 210 110"><path pathLength="1" d="M8 96 C 50 28, 126 16, 192 50"/><path pathLength="1" d="M172 30 L 194 50 L 170 64"/></svg>
       <div class="phone p1 ios"><div class="scr"><div class="sbar"><b>9:41</b><span class="isl"></span><i class="sig"><s></s><s></s><s></s><s></s></i></div>
@@ -1161,7 +1166,15 @@ linux   = true</div></div></div>
   const N = words.length || 4;
   let cur = 0;
   const fit = () => { if (every) every.style.width = words[cur].offsetWidth + 'px'; };
+  // The Windows and Linux pictures load just before their turn, not with the
+  // page: on a phone they were most of the first load and delayed the first
+  // picture. The dark copies are loading="lazy" and hidden in light mode, so
+  // the browser fetches only the theme on screen.
+  const warm = k => { const s = shots[k]; if (s) s.querySelectorAll('img[data-src]').forEach(im => { im.src = im.dataset.src; im.removeAttribute('data-src'); }); };
   const show = i => {
+    warm(i);
+    const next = (i + 1) % shots.length;
+    if (document.readyState === 'complete') warm(next); else addEventListener('load', () => warm(next), { once: true });
     const prev = cur; cur = i;
     words.forEach((w, k) => { w.classList.toggle('on', k === i); w.classList.toggle('out', k === prev && k !== i); });
     if (every) every.className = 'every c' + i;
