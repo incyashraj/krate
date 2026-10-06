@@ -140,7 +140,7 @@ Duration: 24 seconds
 Target finish: around 3:51, then pause
 
 Voiceover:
-The honest status is this: Krate is real proof, but still pre-alpha.
+The honest status is this: Krate is real proof, but still early.
 Today we have runtime execution, visible permissions, sample apps, and evidence tracking.
 The investment case is to turn this speed into developer pull: ship the desktop preview, validate it with outside developers, and pull mobile feasibility, SDK packaging, and distribution groundwork forward as funding and proof allow.
 

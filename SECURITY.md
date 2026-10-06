@@ -2,7 +2,9 @@
 
 ## Supported versions
 
-Krate is pre-alpha (Phase 1). No versions are supported for production use.
+Krate is in early development. Current release: 0.5.4.
+
+TODO(Yashraj): which versions receive security fixes.
 
 When v1.0 ships, we will maintain the latest minor version with security
 patches. Older minor versions will receive patches for 12 months after the

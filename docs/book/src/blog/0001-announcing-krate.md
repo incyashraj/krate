@@ -1,5 +1,7 @@
 # Announcing Krate
 
+> Update 6 October 2026: Krate is now 0.5.4. Current status and limits: https://krate.tech/docs/limits.html
+
 **Status:** Draft
 **Target:** Refresh before public launch
 

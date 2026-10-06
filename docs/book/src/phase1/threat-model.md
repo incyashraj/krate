@@ -97,7 +97,8 @@ the Krate runtime, CLI, Wasmtime engine, and host OS are trusted.
 Phase 1 users must treat `krate run foo.wasm` like running a local developer
 tool, not like installing a sandboxed app from a store.
 
-> Krate is pre-alpha. Do not run untrusted WASM through `krate` in Phase 1.
+> Phase 1 (July 2026): do not run untrusted WASM through `krate` in Phase 1.
+> Current status and limits: https://krate.tech/docs/limits.html.
 > Treat `krate run foo.wasm` exactly as you would treat running a local
 > executable from a developer checkout. The sandbox is real, but the platform is
 > not adversarially hardened yet. Real capability boundaries arrive in Phase 2.

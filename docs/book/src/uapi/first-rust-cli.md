@@ -4,8 +4,9 @@ This walkthrough is the shortest current path from "I know Rust" to "I ran a
 Krate Phase 2 app." It uses the real Rust SDK, the real manifest commands, and
 the current `krate run` path.
 
-Phase 2 is still pre-alpha, so this guide uses the repo workspace directly. The
-future version will start with `cargo add krate`.
+This guide was written during Phase 2 (2026) and uses the repo workspace directly.
+For the current way to start, see the [quickstart](../quickstart.md); current
+status and limits are at https://krate.tech/docs/limits.html.
 
 ## What You Build
 

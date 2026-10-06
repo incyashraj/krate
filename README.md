@@ -5,14 +5,18 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Ship one app file to Mac, Windows and Linux.</strong>
+  <strong>Ship your application faster, as one file that works natively on every desktop.</strong>
 </p>
 
 <p align="center">
-  Krate packs your app into one small <code>.krate</code> file that opens on macOS,<br>
-  Windows and Linux, runs sandboxed and asks before it touches anything.<br>
-  Send it like a document. Describe an app and Krate Studio's AI builds it.<br>
-  Open-source runtime. No per-OS builds. No browser inside every app.
+  AI made building apps easy. Krate makes shipping them easy. One small <code>.krate</code> file<br>
+  runs natively on macOS, Windows and Linux through the Krate runtime, which people install once.<br>
+  It is fast, efficient and sandboxed: it asks before it touches files or the network,<br>
+  and you send it in one click. Open-source runtime. No per-OS builds. No browser inside every app.
+</p>
+
+<p align="center">
+  <sub>Status: Krate 0.5.4 (30 September 2026). Published runtimes: macOS (Apple silicon, Intel), Windows (x64, ARM64), Linux (x86_64, arm64). Tested in CI: macOS arm64, Ubuntu x86_64, Windows x86_64. Limits: <a href="https://krate.tech/docs/limits.html">krate.tech/docs/limits.html</a></sub>
 </p>
 
 <p align="center">
@@ -71,9 +75,9 @@
 
 ## Start with the runtime
 
-Krate is for developers who want a shared application artifact, not just a
-shared codebase. Build once, send the file, and let the native runtime handle
-the platform.
+Krate is for developers who want to ship one application file instead of a
+package per operating system. Build once, send the file, and let the native
+runtime handle the platform.
 
 Install the CLI/runtime on the machine that will open the app. These commands
 download and execute the published installer; read the
@@ -421,7 +425,6 @@ it says so on first run rather than hiding here.
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
 - License: MIT OR Apache-2.0
 
-Krate was previously named Layer36. The rename is complete.
 
 ## License
 

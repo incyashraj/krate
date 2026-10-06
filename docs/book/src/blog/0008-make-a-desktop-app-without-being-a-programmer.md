@@ -1,5 +1,7 @@
 # How to make a desktop app without being a programmer
 
+> Update 6 October 2026: Krate is now 0.5.4. Current status and limits: https://krate.tech/docs/limits.html
+
 **Published:** 2026-08-05
 
 > **Where this stands now.** Krate is built for developers. This post is from
