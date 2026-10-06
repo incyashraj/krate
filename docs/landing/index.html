@@ -508,7 +508,7 @@ h1 .ln { display: block; }
 .cmp div { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; align-items: center; }
 .cmp div b { font-weight: 500; color: var(--ink-2); } .cmp div span { font-variant-numeric: tabular-nums; }
 .cmp i { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: #ececef; overflow: hidden; }
-.cmp i::after { content: ""; display: block; height: 100%; width: var(--w); border-radius: 3px; background: var(--c, #d4d4d8); transform: scaleX(0); transform-origin: 0 50%; transition: transform 1.4s var(--ease) .3s; }
+.cmp i::after { content: ""; display: block; height: 100%; width: calc(var(--w) * 100%); border-radius: 3px; background: var(--c, #d4d4d8); transform: scaleX(0); transform-origin: 0 50%; transition: transform 1.4s var(--ease) .3s; }
 .ngrid.in .cmp i::after { transform: none; }
 .nfine { width: min(760px, 100% - 48px); margin: 40px auto 0; text-align: center; font-size: 13px; line-height: 1.6; color: var(--ink-3); text-wrap: balance; }
 .nfine a { color: var(--ink-2); text-decoration: underline; text-decoration-color: #d4d4d8; text-underline-offset: 3px; }
@@ -967,9 +967,9 @@ linux   = true</div></div></div>
     <div class="nb"><div class="v"><span data-to="1">1</span><small>file</small></div><h4>For every desktop</h4><p>macOS, Windows and Linux all open the same .krate. No build per system.</p></div>
     <div class="nb"><div class="v"><span data-to="37">37</span><small>KB</small></div><h4>For a whole app</h4><p>The Notes app, start to finish. The Krate runtime is installed once and shared by every app.</p></div>
     <div class="nb"><div class="v"><span data-to="13">13</span><small>× less</small></div><h4>Memory</h4><p>Notes holding 50,000 lines, against an Electron editor doing the same work.</p>
-      <div class="cmp"><div><b>Krate</b><span>179 MiB</span><i style="--w:7.8%;--c:#3d6df0"></i></div><div><b>Electron editor</b><span>2,299 MiB</span><i style="--w:100%"></i></div></div></div>
+      <div class="cmp"><div><b>Krate</b><span>178.5 MiB</span><i style="--w:.078;--c:#3d6df0"></i></div><div><b>Electron editor</b><span>2,299.4 MiB</span><i style="--w:1"></i></div></div></div>
     <div class="nb"><div class="v"><span data-to="2.6">2.6</span><small>× faster</small></div><h4>To open</h4><p>A warm open of the same 50,000 lines, median of ten runs.</p>
-      <div class="cmp"><div><b>Krate</b><span>237 ms</span><i style="--w:38.8%;--c:#3d6df0"></i></div><div><b>Electron editor</b><span>612 ms</span><i style="--w:100%"></i></div></div></div>
+      <div class="cmp"><div><b>Krate</b><span>237.1 ms</span><i style="--w:.388;--c:#3d6df0"></i></div><div><b>Electron editor</b><span>611.5 ms</span><i style="--w:1"></i></div></div></div>
   </div>
   <p class="nfine rv">Measured on 25 August 2026 on an Apple M4: Krate against MarkText 0.17.1 (Electron), both ARM64, on the same 50,000-line notes workload. An equivalent workload, not full feature parity. <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/README.md">Read the method</a></p>
 </section>
