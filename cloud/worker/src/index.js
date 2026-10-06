@@ -5447,6 +5447,22 @@ async function people(env, days) {
     }
   }
 
+  // How sign-ins went in the last 7 days, per way in (google, github,
+  // email ...): a sign-in is an attempt, not a person, and the gap between
+  // started and finished is people who never got an account.
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const ways = {};
+  for (const r of steps || []) {
+    if (r.kind === "try" || String(r.day).slice(0, 10) < weekAgo) continue;
+    const m = /^(.+)-(start|done)$/.exec(String(r.step || ""));
+    if (!m) continue;
+    const w = (ways[m[1]] = ways[m[1]] || { way: m[1], started: 0, finished: 0, failed: 0 });
+    const n = Number(r.n) || 0;
+    if (m[2] === "start") w.started += n;
+    else if (r.outcome === "ok") w.finished += n;
+    if (r.outcome === "error") w.failed += n;
+  }
+
   // Accounts come from KV itself, so they are right even for the days
   // before this counting existed.
   const listing = await env.APPS.list({ prefix: "user:", limit: 1000 });
@@ -5463,6 +5479,7 @@ async function people(env, days) {
   return {
     days: Object.values(byDay),
     accounts_total: accounts.length,
+    signin_ways_7d: Object.values(ways).sort((a, b) => b.started - a.started),
     newest_accounts: accounts.slice(0, 30),
     top_pages_7d: pages,
     top_sources_7d: sources,
@@ -5512,7 +5529,6 @@ textarea{min-height:70px;resize:vertical}
   <button data-t="tickets">Tickets</button>
   <button data-t="reports">Reports</button>
   <button data-t="users">Users</button>
-  <button data-t="payments">Payments</button>
   <button data-t="makeit">Make-it queue</button>
 </nav>
 <div id="view"></div>
@@ -5527,7 +5543,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.payments} payments · billing \${o.billing_live?"LIVE":"not configured"}\`;el("#app").style.display="";show("people");}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports\`;el("#app").style.display="";show("people");}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -5555,8 +5571,8 @@ async function show(tab){
     h+='<div class="row" style="align-items:stretch;margin-bottom:10px">'
       +card("Visitors",sum(last7,"visitors"),"people on krate.tech, counted once a day")
       +card("Download clicks",sum(last7,"downloads"),"from the site")
-      +card("Sign-ins",sum(last7,"signin_done")+" / "+sum(last7,"signin_tries"),"finished / started · "+sum(last7,"signin_failed")+" failed on our side")
-      +card("New accounts",sum(last7,"accounts_new"),P.accounts_total+" accounts in all")
+      +card("Sign-ins finished",sum(last7,"signin_done")+" of "+sum(last7,"signin_tries"),"attempts, not people: one person can sign in many times · "+Math.max(0,sum(last7,"signin_tries")-sum(last7,"signin_done"))+" never finished · "+sum(last7,"signin_failed")+" failed on our side")
+      +card("New accounts",sum(last7,"accounts_new"),"people: "+P.accounts_total+" accounts in all, one per person, made at their first finished sign-in")
       +card("Tried making",sum(last7,"make_tries"),"make attempts, desktop and web")
       +card("Real installs",sum(last7,"installs"),sum(last7,"installs_ci")+" CI/cloud set apart")
       +'</div>';
@@ -5566,6 +5582,7 @@ async function show(tab){
     h+='</table></div>';
     h+='<div class="card"><b>Newest accounts</b>'+(P.newest_accounts.length?'':'<p class="mut">None yet.</p>')+P.newest_accounts.map(a=>'<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span class="grow"><b>'+esc(a.name||a.login||a.email)+'</b> <span class="mut">'+esc(a.email||"")+' · '+esc((a.providers||[]).join(", "))+'</span></span><span class="mut">'+when(a.created)+'</span></div>').join("")+'</div>';
     const list=(title,rows)=>'<div class="card" style="flex:1;min-width:220px"><b>'+title+'</b>'+((rows&&rows.length)?rows.map(x=>'<div class="row" style="padding:3px 0"><span class="grow">'+esc(x.k)+'</span><span class="mut">'+esc(x.v)+'</span></div>').join(""):'<p class="mut">Nothing yet.</p>')+'</div>';
+    h+='<div class="card"><b>How sign-ins went, 7 days</b><p class="mut" style="margin:4px 0 8px">Started and never finished means that person has no account. Studio on a computer needs no sign-in, so its users are not here unless they publish.</p>'+((P.signin_ways_7d||[]).length?P.signin_ways_7d.map(w=>'<div class="row" style="padding:4px 0;border-top:1px solid var(--line)"><span class="grow"><b>'+esc(w.way)+'</b></span><span>'+w.finished+' of '+w.started+' finished</span>'+(w.failed?'<span class="mut"> · '+w.failed+' failed on our side</span>':'')+'</div>').join(""):'<p class="mut">No sign-ins in the last 7 days.</p>')+'</div>';
     h+='<div class="row" style="align-items:stretch">'+list("Pages, 7 days",P.top_pages_7d)+list("Where they came from, 7 days",P.top_sources_7d)+list("Countries, 7 days",P.top_countries_7d)+'</div>';
     h+='<div class="card mut">'+P.notes.map(esc).join("<br>")+'</div>';
     v.innerHTML=h;
@@ -5621,15 +5638,6 @@ async function show(tab){
       }
     };
     el("#go").onclick=load;el("#q").onkeydown=e=>{if(e.key==="Enter")load()};load();
-  }
-  if(tab==="payments"){
-    const {payments}=await api("payments");
-    v.innerHTML=payments.length?"":'<p class="mut">No payments yet.</p>';
-    for(const p of payments){
-      const d=document.createElement("div");d.className="card row";
-      d.innerHTML=\`<b>\${(p.amount/100).toFixed(2)} \${esc((p.currency||"usd").toUpperCase())}</b><span class="mut grow">\${esc(p.email||p.userId)} · \${when(p.at)} · \${esc(p.invoice)}</span>\`;
-      v.appendChild(d);
-    }
   }
   if(tab==="makeit"){
     const {requests}=await api("makeit");

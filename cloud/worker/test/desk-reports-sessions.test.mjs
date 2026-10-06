@@ -94,6 +94,12 @@ const e = env();
   assert.ok(scripts.length > 0);
   for (const code of scripts) new Function(code); // throws on a syntax error
   assert.match(page, /sessionsInto/, "tickets and reports can open the sessions");
+  assert.doesNotMatch(page, /data-t="payments"/, "no Payments tab: billing is not live");
+  assert.match(page, /How sign-ins went, 7 days/, "sign-ins are broken down by way in");
+  assert.match(page, /attempts, not people/, "a sign-in is labelled as an attempt");
+  const people = await (await worker.fetch(as("krs_admin", "/admin/api/people?days=7"), e)).json();
+  assert.ok(Array.isArray(people.signin_ways_7d), "the people view carries the sign-in breakdown");
+  assert.strictEqual(people.accounts_total, 2, "accounts are people: one record each");
 }
 
 console.log("desk reports and sessions: all checks passed");
