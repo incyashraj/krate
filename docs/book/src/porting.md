@@ -1,5 +1,8 @@
 # Porting an app you already have
 
+Porting is in beta: it works, and some apps still need hand changes after
+the port. The verdict below tells you which parts before anything changes.
+
 `krate port` looks at a project you already wrote and tells you what it
 would take to run it as a Krate app. The default scan reads source without
 building or executing the project. It is an assessment, not a conversion of

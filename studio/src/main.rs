@@ -19,6 +19,8 @@ use std::sync::Mutex;
 use base64::Engine as _;
 use tauri::{Emitter, Manager};
 
+#[cfg(test)]
+mod command_tests;
 mod ide;
 
 /// The one build allowed at a time, by process id, so Stop can reach it.
@@ -922,11 +924,7 @@ where
 fn session_save(mut session: Session) -> Result<(), String> {
     // The id is ours (a timestamp), but never trust a path component you did
     // not mint this second.
-    if !session
-        .id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
+    if !session_id_ok(&session.id) {
         return Err("bad session id".to_string());
     }
     // The screenshot lives beside the JSON, never inside it. Inlined as a
@@ -990,7 +988,7 @@ fn session_push(body: String) {
 /// these lazily, card by card, instead of every visit paying for every shot.
 #[tauri::command]
 fn session_shot(id: String) -> Result<String, String> {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if !session_id_ok(&id) {
         return Err("bad session id".to_string());
     }
     let png = studio_dir().join("sessions").join(format!("{id}.shot.png"));
@@ -1003,7 +1001,7 @@ fn session_shot(id: String) -> Result<String, String> {
 
 #[tauri::command]
 fn session_delete(id: String) -> Result<(), String> {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if !session_id_ok(&id) {
         return Err("bad session id".to_string());
     }
     let _ = std::fs::remove_file(studio_dir().join("sessions").join(format!("{id}.json")));
@@ -1067,10 +1065,20 @@ async fn account_login(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn account_logout() -> Result<(), String> {
     let engine = engine()?;
-    silent_cmd(&engine)
+    let out = silent_cmd(&engine)
         .args(["account", "logout"])
         .output()
         .map_err(|err| err.to_string())?;
+    if !out.status.success() {
+        // Saying "signed out" while still signed in is worse than saying so.
+        let why = String::from_utf8_lossy(&out.stderr);
+        let why = why.trim().trim_start_matches("error: ").trim();
+        return Err(if why.is_empty() {
+            "could not sign out; try again".to_string()
+        } else {
+            why.to_string()
+        });
+    }
     Ok(())
 }
 
@@ -1214,12 +1222,16 @@ async fn api_key_forget(vendor: String) -> Result<(), String> {
 /// has a session with no source_dir and a workspace sitting on disk all
 /// the same. Deriving it from the session id means Source works for the
 /// whole library rather than only for apps built from today.
+/// A session id names files and folders, so it is letters, digits and
+/// dashes only, and never empty: "" named `sessions/.json` and pointed at
+/// the builds folder itself.
+fn session_id_ok(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 #[tauri::command]
 fn session_source_dir(session: String) -> Result<String, String> {
-    if !session
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
+    if !session_id_ok(&session) {
         return Err("bad session id".to_string());
     }
     let work = studio_dir().join("builds").join(&session);
@@ -1288,9 +1300,30 @@ fn stash_pasted_text(text: String) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let path = dir.join(format!("pasted-{stamp}.txt"));
-    std::fs::write(&path, text).map_err(|err| err.to_string())?;
-    Ok(path.to_string_lossy().to_string())
+    // Two pastes in one millisecond each get their own file.
+    for n in 0..1000u32 {
+        let name = if n == 0 {
+            format!("pasted-{stamp}.txt")
+        } else {
+            format!("pasted-{stamp}-{n}.txt")
+        };
+        let path = dir.join(name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                use std::io::Write as _;
+                file.write_all(text.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                return Ok(path.to_string_lossy().to_string());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+    Err("could not keep that paste; try again".to_string())
 }
 
 #[tauri::command]
@@ -1719,6 +1752,11 @@ async fn revise_app(
 /// made (K-131). This is the ground truth the build screen polls.
 #[tauri::command]
 fn build_alive(state: tauri::State<Running>) -> Result<bool, String> {
+    build_alive_in(state.inner())
+}
+
+/// The body of `build_alive`, on the slot itself so a test can ask it.
+fn build_alive_in(state: &Running) -> Result<bool, String> {
     // Answered from the liveness flag the authoring waiter maintains, not by
     // spawning tasklist: the old form ran a process every four seconds for
     // the whole build -- about two hundred spawns per app -- to ask a
@@ -1746,6 +1784,11 @@ fn build_alive(state: tauri::State<Running>) -> Result<bool, String> {
 
 #[tauri::command]
 fn stop_build(state: tauri::State<Running>) -> Result<(), String> {
+    stop_build_in(state.inner())
+}
+
+/// The body of `stop_build`, on the slot itself so a test can ask it.
+fn stop_build_in(state: &Running) -> Result<(), String> {
     let pid = state
         .0
         .lock()
@@ -1872,11 +1915,7 @@ fn kill_tree(pid: u32) {
 /// The shell knows the path before it spawns anything, so it records it up
 /// front. Whatever happens to the window, the session can find its app.
 fn remember_target(session: &str, path: &Path) {
-    if session.is_empty()
-        || !session
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
+    if !session_id_ok(session) {
         return;
     }
     let file = studio_dir()
@@ -2670,6 +2709,42 @@ async fn plan_request(
     agent: Option<String>,
 ) -> Result<String, String> {
     let out = tauri::async_runtime::spawn_blocking(move || {
+        plan_request_blocking(request, attachments, agent)
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+    if let Ok(answer) = &out {
+        // The plan step can take half a minute and people tab away; a
+        // question that nobody sees is a build that never starts.
+        if answer.contains("\"ask\"") {
+            notify(&app, "Krate has a question about your app.");
+            // Bounce the dock as well, which `notify` cannot do.
+            //
+            // `notify` stays quiet when the window is focused, and that is
+            // right for "your build finished" -- somebody watching does not
+            // need the OS to repeat it. A QUESTION is different: the build
+            // is stopped until it is answered, and a person can sit with
+            // Studio frontmost while looking somewhere else entirely. Then
+            // the notification is suppressed for being focused and nothing
+            // else asks for them, which is how a real user came back to a
+            // question he never knew was waiting (K-761).
+            if let Some(window) = app.get_webview_window("main") {
+                let _ =
+                    window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+            }
+        }
+    }
+    out
+}
+
+/// The engine half of `plan_request`, with no window in it, so a test can
+/// run it against a stub engine.
+fn plan_request_blocking(
+    request: String,
+    attachments: Vec<String>,
+    agent: Option<String>,
+) -> Result<String, String> {
+    {
         let engine = engine()?;
         // Say WHICH thing is wrong. An engine too old to plan used to fail
         // here as an ordinary error, and the UI turned that into "I'll skip
@@ -2705,31 +2780,7 @@ async fn plan_request(
             });
         }
         Ok(stdout)
-    })
-    .await
-    .map_err(|err| err.to_string())?;
-    if let Ok(answer) = &out {
-        // The plan step can take half a minute and people tab away; a
-        // question that nobody sees is a build that never starts.
-        if answer.contains("\"ask\"") {
-            notify(&app, "Krate has a question about your app.");
-            // Bounce the dock as well, which `notify` cannot do.
-            //
-            // `notify` stays quiet when the window is focused, and that is
-            // right for "your build finished" -- somebody watching does not
-            // need the OS to repeat it. A QUESTION is different: the build
-            // is stopped until it is answered, and a person can sit with
-            // Studio frontmost while looking somewhere else entirely. Then
-            // the notification is suppressed for being focused and nothing
-            // else asks for them, which is how a real user came back to a
-            // question he never knew was waiting (K-761).
-            if let Some(window) = app.get_webview_window("main") {
-                let _ =
-                    window.request_user_attention(Some(tauri::UserAttentionType::Informational));
-            }
-        }
     }
-    out
 }
 
 /// Publish to the hub and hand back the short run-by-URL link.
@@ -2915,7 +2966,7 @@ async fn install_agent(app: tauri::AppHandle, name: String) -> Result<(), String
             .to_string();
 
         let npm = which_npm().ok_or_else(|| {
-            "Installing an AI needs Node.js, which is not on this machine.              Install Node from nodejs.org, then try again."
+            "Installing an AI needs Node.js, which is not on this machine. Install Node from nodejs.org, then try again."
                 .to_string()
         })?;
 
@@ -2990,7 +3041,7 @@ async fn install_agent(app: tauri::AppHandle, name: String) -> Result<(), String
         };
         if !status.success() {
             return Err(
-                "The install did not finish. Node may need permission to write                  its global folder."
+                "The install did not finish. Node may need permission to write its global folder."
                     .to_string(),
             );
         }
@@ -3219,7 +3270,7 @@ fn agent_session_tag(path: String) -> Result<String, String> {
             .join("store")
             .join(format!("{id}.agent-session")),
     )
-    .map_err(|err| err.to_string())?;
+    .map_err(|_| "this app has no AI conversation kept for it".to_string())?;
     Ok(tag.trim().to_string())
 }
 

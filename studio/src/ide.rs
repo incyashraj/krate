@@ -1159,7 +1159,10 @@ fn apply_keeping(
         };
         planned.push((f.rel.clone(), dest, bytes));
     }
-    let backup = backups.join(format!("{}-{}", display_name(project), unix_now()));
+    let backup = fresh_dir(
+        backups,
+        &format!("{}-{}", display_name(project), unix_now()),
+    );
     let mut changed = Vec::new();
     for (rel, dest, bytes) in planned {
         if let Ok(old) = std::fs::read(&dest) {
@@ -1265,6 +1268,7 @@ pub(crate) async fn ide_read(path: String, rel: String) -> Result<String, String
 /// Rename or move a file or folder inside the project. Both ends are
 /// checked, and an existing file is never overwritten.
 fn rename_in(project: &Path, from: &str, to: &str) -> Result<(), String> {
+    keeps_the_project(from)?;
     let src = inside_existing(project, from)?;
     let dest = inside_for_write(project, to).map_err(|e| {
         if e.ends_with("is a folder") {
@@ -1282,21 +1286,45 @@ fn rename_in(project: &Path, from: &str, to: &str) -> Result<(), String> {
     std::fs::rename(&src, &dest).map_err(|e| format!("could not rename {from}: {e}"))
 }
 
-/// Delete by moving the file or folder into Studio's own ide-backups, so a
-/// delete can still be undone by hand.
-fn delete_in(project: &Path, rel: &str, backups: &Path) -> Result<(), String> {
-    let src = inside_existing(project, rel)?;
+/// Cargo.toml and manifest.toml side by side are what make a folder a
+/// project: neither is deleted or renamed away, however its name is typed
+/// (macOS and Windows disks ignore case, so CARGO.TOML is Cargo.toml).
+fn keeps_the_project(rel: &str) -> Result<(), String> {
     let clean = clean_rel(rel)?;
     for keep in ["Cargo.toml", "manifest.toml"] {
-        if clean == Path::new(keep) {
+        if clean.to_string_lossy().eq_ignore_ascii_case(keep) {
             return Err(format!(
                 "{keep} is what makes this a Krate project; it stays"
             ));
         }
     }
-    let dest = backups
-        .join(format!("{}-{}-deleted", display_name(project), unix_now()))
-        .join(&clean);
+    Ok(())
+}
+
+/// A backup folder no earlier backup is using: two changes or deletes in
+/// the same second each keep their own copy.
+fn fresh_dir(backups: &Path, stem: &str) -> PathBuf {
+    let first = backups.join(stem);
+    if std::fs::symlink_metadata(&first).is_err() {
+        return first;
+    }
+    (2..)
+        .map(|n| backups.join(format!("{stem}-{n}")))
+        .find(|p| std::fs::symlink_metadata(p).is_err())
+        .unwrap_or(first)
+}
+
+/// Delete by moving the file or folder into Studio's own ide-backups, so a
+/// delete can still be undone by hand.
+fn delete_in(project: &Path, rel: &str, backups: &Path) -> Result<(), String> {
+    keeps_the_project(rel)?;
+    let src = inside_existing(project, rel)?;
+    let clean = clean_rel(rel)?;
+    let dest = fresh_dir(
+        backups,
+        &format!("{}-{}-deleted", display_name(project), unix_now()),
+    )
+    .join(&clean);
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -1622,7 +1650,10 @@ pub(crate) async fn ide_apply(path: String, files: Vec<Accepted>) -> Result<Vec<
 /// nothing was running: the person's intent -- nothing running -- holds.
 #[tauri::command]
 pub(crate) fn ide_stop(path: String) -> Result<(), String> {
-    let project = std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(&path));
+    // The same path the job was started under: a typed `~/x` or a padded
+    // path reaches it too.
+    let typed = expand_home(path.trim());
+    let project = std::fs::canonicalize(&typed).unwrap_or(typed);
     stop(&project);
     Ok(())
 }
@@ -1767,6 +1798,8 @@ mod tests {
 
     #[test]
     fn a_tilde_path_is_the_home_folder() {
+        // HOME is process-wide, and the command tests move it.
+        let _env = crate::command_tests::env_lock();
         let home = PathBuf::from(
             std::env::var_os("HOME")
                 .or_else(|| std::env::var_os("USERPROFILE"))
@@ -2034,6 +2067,448 @@ mod tests {
         assert!(claim(&p).is_err());
         drop(held);
         assert!(claim(&p).is_ok());
+    }
+
+    /// The window-less halves of ide_new, ide_build, ide_pack, ide_ask and
+    /// ide_stop, against a stub engine under a throwaway HOME.
+    #[cfg(unix)]
+    mod with_engine {
+        use super::*;
+        use crate::command_tests::{make_project, zip_with, TestHome};
+
+        fn quiet(_: &str) {}
+
+        /// `create --kind K --name N --work-dir D --output O --no-install -- R`
+        /// the way the engine answers it: the crate at D/N.
+        const CREATE: &str = r#"if [ "$1" = create ]; then
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --name) name="$2"; shift;;
+      --work-dir) work="$2"; shift;;
+      --) shift; break;;
+    esac
+    shift
+  done
+  mkdir -p "$work/$name/src"
+  printf '[package]\nname = "%s"\n' "$name" > "$work/$name/Cargo.toml"
+  printf '[app]\nid = "x"\n' > "$work/$name/manifest.toml"
+  echo "made $name"
+fi"#;
+
+        #[test]
+        fn a_new_project_is_the_engines_starter_moved_into_place_whole() {
+            let t = TestHome::new();
+            t.engine(CREATE);
+            let root = t.root().join("Krate Apps ü").join("Projects");
+            let made =
+                new_project(&engine().unwrap(), &root, "Shop List!", "checklist", &quiet).unwrap();
+            assert_eq!(
+                made,
+                std::fs::canonicalize(&root).unwrap().join("shop-list")
+            );
+            assert!(is_project(&made));
+            let args = t.args();
+            for want in [
+                "--kind",
+                "checklist",
+                "--name",
+                "shop-list",
+                "--no-install",
+                "--",
+                STARTER_REQUEST,
+            ] {
+                assert!(args.iter().any(|a| a == want), "{want} missing: {args:?}");
+            }
+            let litter: Vec<String> = std::fs::read_dir(&root)
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| n.starts_with(".new-"))
+                .collect();
+            assert!(litter.is_empty(), "staging left behind: {litter:?}");
+        }
+
+        #[test]
+        fn a_second_project_with_the_same_name_is_refused_without_running_the_engine() {
+            let t = TestHome::new();
+            t.engine(CREATE);
+            let root = t.root().join("Projects");
+            let e = engine().unwrap();
+            new_project(&e, &root, "Shop List", "checklist", &quiet).unwrap();
+            let calls = t.calls().len();
+            assert_eq!(
+                new_project(&e, &root, "  shop   LIST ", "checklist", &quiet).unwrap_err(),
+                "A project named shop-list already exists."
+            );
+            assert_eq!(t.calls().len(), calls, "the engine was not asked again");
+        }
+
+        #[test]
+        fn an_unknown_starter_falls_back_to_the_checklist() {
+            let t = TestHome::new();
+            t.engine(CREATE);
+            new_project(
+                &engine().unwrap(),
+                &t.root().join("Projects"),
+                "x",
+                "../evil",
+                &quiet,
+            )
+            .unwrap();
+            let args = t.args();
+            let at = args.iter().position(|a| a == "--kind").unwrap();
+            assert_eq!(args[at + 1], "checklist");
+        }
+
+        #[test]
+        fn a_project_name_needs_a_letter_or_a_number() {
+            let t = TestHome::new();
+            t.engine(CREATE);
+            for name in ["", "!!!", "日本", "   "] {
+                assert_eq!(
+                    new_project(&engine().unwrap(), &t.root(), name, "checklist", &quiet)
+                        .unwrap_err(),
+                    "Give the project a name with at least one letter or number.",
+                    "{name:?}"
+                );
+            }
+            assert!(!t.engine_ran());
+            let long = new_project(
+                &engine().unwrap(),
+                &t.root().join("P"),
+                &"word ".repeat(40),
+                "checklist",
+                &quiet,
+            )
+            .unwrap();
+            assert!(display_name(&long).len() <= 40, "{}", display_name(&long));
+        }
+
+        #[test]
+        fn a_starter_the_engine_could_not_make_leaves_nothing_behind() {
+            let t = TestHome::new();
+            let root = t.root().join("Projects");
+            t.engine("echo 'compiling'; echo 'error: cargo is not installed' >&2; exit 1");
+            assert_eq!(
+                new_project(&engine().unwrap(), &root, "shop", "checklist", &quiet).unwrap_err(),
+                "error: cargo is not installed"
+            );
+            t.engine("exit 0");
+            assert_eq!(
+                new_project(&engine().unwrap(), &root, "shop", "checklist", &quiet).unwrap_err(),
+                "the engine made no project folder"
+            );
+            let left: Vec<String> = std::fs::read_dir(&root)
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+            assert!(left.is_empty(), "{left:?}");
+        }
+
+        /// check-app PROJECT --json [--shoot PNG] [--no-run]: a component
+        /// where the manifest says, a frame if asked, then `verdict`.
+        fn check_engine(verdict: &str) -> String {
+            format!(
+                r#"if [ "$1" = check-app ]; then
+  proj="$2"; shot=""; shift 2
+  while [ $# -gt 0 ]; do case "$1" in --shoot) shot="$2"; shift;; esac; shift; done
+  mkdir -p "$proj/target/wasm32-wasip1/release"
+  printf 'wasm' > "$proj/target/wasm32-wasip1/release/proj.wasm"
+  if [ -n "$shot" ]; then printf '\211PNG\r\n\032\n' > "$shot"; fi
+  echo 'compiling proj'
+  echo '{verdict}'
+fi
+if [ "$1" = pack ]; then
+  while [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; esac; shift; done
+  printf 'PK-packed' > "$out"
+fi"#
+            )
+        }
+
+        #[test]
+        fn a_build_reports_the_verdict_the_frame_and_the_size() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            t.engine(&check_engine(
+                r#"{"ok":true,"stages":["build","imports","run"],"usability_notes":["small text"]}"#,
+            ));
+            let lines = Mutex::new(Vec::<String>::new());
+            let sink = |l: &str| lines.lock().unwrap().push(l.to_string());
+            let r = build(&engine().unwrap(), &p, &sink).unwrap();
+            assert!(r.ok);
+            assert_eq!(r.stage, "done");
+            assert_eq!(r.message, "Passed: build, imports, run.\nnote: small text");
+            assert_eq!(
+                r.shot.as_deref(),
+                Some("data:image/png;base64,iVBORw0KGgo=")
+            );
+            assert_eq!(r.size_bytes, Some(4));
+            assert!(lines
+                .lock()
+                .unwrap()
+                .contains(&"compiling proj".to_string()));
+        }
+
+        #[test]
+        fn a_failed_build_carries_its_stage_and_the_fix() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            t.engine(&check_engine(
+                r#"{"ok":false,"stage":"build","detail":"E0425: x not found  ","fix":"declare x"}"#,
+            ));
+            let r = build(&engine().unwrap(), &p, &quiet).unwrap();
+            assert!(!r.ok);
+            assert_eq!(r.stage, "build");
+            assert_eq!(r.message, "E0425: x not found\n\nFix:\ndeclare x");
+            assert_eq!(r.size_bytes, None);
+        }
+
+        #[test]
+        fn a_build_with_no_verdict_says_the_engine_stopped() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            t.engine("echo 'thread main panicked' >&2; exit 101");
+            let r = build(&engine().unwrap(), &p, &quiet).unwrap();
+            assert!(!r.ok);
+            assert_eq!(r.stage, "engine");
+            assert_eq!(r.message, "thread main panicked");
+            assert_eq!(r.shot, None);
+        }
+
+        #[test]
+        fn a_stale_project_is_built_then_packed_beside_the_projects() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            let root = t.root().join("out ü");
+            t.engine(&check_engine(r#"{"ok":true,"stages":["build"]}"#));
+            let krate = pack_project(&engine().unwrap(), &root, &p, &quiet).unwrap();
+            assert_eq!(krate, root.join("proj.krate"));
+            assert_eq!(std::fs::read(&krate).unwrap(), b"PK-packed");
+            let calls = t.calls();
+            assert!(calls[0].starts_with("check-app ") && calls[0].contains("--no-run"));
+            assert!(calls[1].starts_with("pack --manifest "));
+            let names: Vec<String> = std::fs::read_dir(&root)
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+            assert_eq!(names, vec!["proj.krate"], "no staging left");
+            // Nothing changed since: the second pack does not build.
+            pack_project(&engine().unwrap(), &root, &p, &quiet).unwrap();
+            assert!(t.calls()[2].starts_with("pack "), "{:?}", t.calls());
+        }
+
+        #[test]
+        fn a_pack_that_fails_keeps_the_last_good_app_and_leaves_no_half_file() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            let root = t.root().join("out");
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(root.join("proj.krate"), "the last good one").unwrap();
+            // The pack writes half a file, then fails.
+            t.engine(&check_engine(r#"{"ok":true,"stages":["build"]}"#).replace(
+                "printf 'PK-packed' > \"$out\"",
+                "printf 'half' > \"$out\"; echo 'error: manifest has no id' >&2; exit 1",
+            ));
+            let err = pack_project(&engine().unwrap(), &root, &p, &quiet).unwrap_err();
+            assert_eq!(err, "error: manifest has no id");
+            assert_eq!(
+                std::fs::read_to_string(root.join("proj.krate")).unwrap(),
+                "the last good one"
+            );
+            let names: Vec<String> = std::fs::read_dir(&root)
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+            assert_eq!(names, vec!["proj.krate"]);
+        }
+
+        #[test]
+        fn a_project_that_does_not_build_is_not_packed() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            t.engine(&check_engine(
+                r#"{"ok":false,"stage":"imports","detail":"wasi:filesystem"}"#,
+            ));
+            let err =
+                pack_project(&engine().unwrap(), &t.root().join("out"), &p, &quiet).unwrap_err();
+            assert_eq!(err, "The app does not build (imports).\n\nwasi:filesystem");
+            assert!(t.calls().iter().all(|c| !c.starts_with("pack ")));
+        }
+
+        /// `revise --agent A --output AFTER -- PROJECT REQUEST`: copy a
+        /// prepared bundle to AFTER, then exit with `code`.
+        fn revise_engine(bundle: &Path, code: i32, say: &str) -> String {
+            format!(
+                r#"if [ "$1" = revise ]; then
+  while [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; --) break;; esac; shift; done
+  cp '{}' "$out"
+  {say}
+  exit {code}
+fi"#,
+                bundle.display()
+            )
+        }
+
+        #[test]
+        fn ask_proposes_the_change_and_touches_nothing_in_the_project() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            let bundle = t.root().join("after.krate");
+            zip_with(
+                &bundle,
+                &[
+                    ("manifest.toml", b"[app]\n"),
+                    ("source/src/lib.rs", b"// changed\n"),
+                    ("source/assets/icon.bin", &[0xff, 0x00]),
+                ],
+            );
+            t.engine(&revise_engine(&bundle, 0, "echo done"));
+            let files = ask(&engine().unwrap(), &p, "-make it blue", "codex", &quiet).unwrap();
+            let rels: Vec<&str> = files.iter().map(|f| f.rel.as_str()).collect();
+            assert_eq!(rels, vec!["assets/icon.bin", "src/lib.rs"]);
+            let lib = &files[1];
+            assert_eq!(lib.before.as_deref(), Some("// hi\n"));
+            assert_eq!(lib.after.as_deref(), Some("// changed\n"));
+            assert_eq!(files[0].b64.as_deref(), Some("/wA="));
+            assert_eq!(
+                std::fs::read_to_string(p.join("src/lib.rs")).unwrap(),
+                "// hi\n",
+                "a proposal is not a write"
+            );
+            assert!(!p.join("assets").exists());
+            let args = t.args();
+            assert_eq!(
+                args[args.len() - 3..],
+                [
+                    "--".to_string(),
+                    p.display().to_string(),
+                    "-make it blue".to_string()
+                ]
+            );
+            let work = t.studio().join("work");
+            let left: Vec<String> = std::fs::read_dir(&work)
+                .map(|d| {
+                    d.flatten()
+                        .map(|e| e.file_name().to_string_lossy().to_string())
+                        .filter(|n| n.starts_with("ide-ask-"))
+                        .collect()
+                })
+                .unwrap_or_default();
+            assert!(left.is_empty(), "scratch left behind: {left:?}");
+        }
+
+        #[test]
+        fn ask_refuses_an_empty_request_or_an_agent_that_is_not_a_name() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            t.engine("exit 0");
+            let e = engine().unwrap();
+            assert_eq!(
+                ask(&e, &p, "   ", "claude", &quiet).unwrap_err(),
+                "Say what to change."
+            );
+            for agent in ["--yolo", "a b", "", "claude;rm"] {
+                assert_eq!(
+                    ask(&e, &p, "blue", agent, &quiet).unwrap_err(),
+                    format!("{agent} is not an AI Krate knows")
+                );
+            }
+            assert!(!t.engine_ran());
+        }
+
+        #[test]
+        fn ask_reports_a_change_that_missed_the_point_or_never_arrived() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            let bundle = t.root().join("after.krate");
+            zip_with(&bundle, &[("source/src/lib.rs", b"// changed\n")]);
+            t.engine(&revise_engine(
+                &bundle,
+                6,
+                "echo 'The change did not do what you asked.'; echo 'asked for:   blue'; echo 'but    it is red'",
+            ));
+            let e = engine().unwrap();
+            assert_eq!(
+                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                "The change did not do what you asked.\nasked for: blue\nbut it is red"
+            );
+            t.engine(&revise_engine(&bundle, 6, "true"));
+            assert_eq!(
+                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                "The change did not do what you asked, so your project was left as it was."
+            );
+            t.engine("if [ \"$1\" = revise ]; then echo 'error: the AI is not signed in' >&2; exit 1; fi");
+            assert_eq!(
+                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                "error: the AI is not signed in"
+            );
+            t.engine("exit 0");
+            assert_eq!(
+                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                "the AI finished but no changed app was written"
+            );
+            assert_eq!(
+                std::fs::read_to_string(p.join("src/lib.rs")).unwrap(),
+                "// hi\n"
+            );
+        }
+
+        #[test]
+        fn stop_reaches_a_project_whose_job_is_waiting_to_start() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            t.engine(&check_engine(r#"{"ok":true,"stages":["build"]}"#));
+            let _job = claim(&p).unwrap();
+            ide_stop(p.display().to_string()).unwrap();
+            assert!(was_stopped(&p));
+            assert_eq!(
+                build(&engine().unwrap(), &p, &quiet).unwrap_err(),
+                "stopped",
+                "a stopped job does not start the engine"
+            );
+            assert!(!t.engine_ran());
+        }
+
+        #[test]
+        fn stop_ends_a_build_that_is_running_and_everything_under_it() {
+            let t = TestHome::new();
+            let p = make_project(&t.root(), "proj");
+            t.engine("sleep 30");
+            let job = claim(&p).unwrap();
+            let e = engine().unwrap();
+            let project = p.clone();
+            let started = Instant::now();
+            let runner = std::thread::spawn(move || build(&e, &project, &|_: &str| {}));
+            let deadline = Instant::now() + std::time::Duration::from_secs(10);
+            while jobs().lock().unwrap().get(&p).and_then(|j| j.pid).is_none() {
+                assert!(Instant::now() < deadline, "the engine never started");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            ide_stop(p.display().to_string()).unwrap();
+            let result = runner.join().unwrap();
+            assert_eq!(result.unwrap_err(), "stopped");
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "the stop did not end the engine"
+            );
+            drop(job);
+            assert!(claim(&p).is_ok(), "the project is free again");
+        }
+
+        #[test]
+        fn stop_reaches_a_project_opened_by_a_tilde_path() {
+            let t = TestHome::new();
+            let p = make_project(&t.home().join("Krate Apps"), "proj");
+            // The same path the UI keeps after opening a typed path (K-973).
+            let typed = "~/Krate Apps/proj".to_string();
+            assert_eq!(project_dir(&typed).unwrap(), p);
+            let _job = claim(&p).unwrap();
+            ide_stop(typed).unwrap();
+            assert!(was_stopped(&p), "Stop did not reach the running job");
+        }
     }
 
     fn bundled_engine() -> Option<PathBuf> {

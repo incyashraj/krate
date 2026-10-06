@@ -2866,3 +2866,10 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .kr-np-kinds b { font: 500 13px var(--sans); color: var(--ink); } .kr-np-kinds small { font-size: 12px; color: var(--ink-3); }
 @media (max-width: 560px) { .kr-np-kinds { grid-template-columns: 1fr; } }
 .kr-newp .kr-np-kinds { flex-basis: 100%; }
+
+/* Beta: Port and the IDE work and still have known limits; said where they are named. */
+.kr-beta { display: inline-flex; align-items: center; height: 16px; margin-left: 6px; padding: 0 6px; border-radius: 999px; vertical-align: 1px; flex: none;
+  font: 600 10px/1 var(--sans); letter-spacing: .03em; font-style: normal; color: var(--violet); background: color-mix(in srgb, var(--violet) 11%, transparent); }
+body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891ff 16%, transparent); }
+.home-tabs .kr-beta { margin-left: 5px; }
+.ide-proj .kr-beta { margin-left: 0; }

@@ -651,8 +651,8 @@
       const dark = !document.body.classList.contains("light");
       const acts = [
         ["New app", "new", rowClick('#side .side-row[data-side="home"]'), mod + "N"],
-        ["Port an app", "port", rowClick("#sidePort"), ""],
-        ["Open the IDE", "code", rowClick("#sideIde"), ""],
+        ["Port an app", "port", rowClick("#sidePort"), "Beta"],
+        ["Open the IDE", "code", rowClick("#sideIde"), "Beta"],
         ["Settings", "gear", () => press($("sideSettings")), mod + ","],
         [dark ? "Switch to light" : "Switch to dark", dark ? "sun" : "moon", () => press($("themeBtn")), ""],
         ["Gallery", "compass", rowClick('#side .side-row[data-side="discover"]'), ""],
