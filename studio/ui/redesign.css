@@ -1474,9 +1474,24 @@ body.macos .side-brandrow .side-toggle, body.macos.light .side-brandrow .side-to
 .kr-ct { margin-left: auto; font: 400 11.5px var(--sans); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .kr-ct:empty { display: none; }
 @media (min-width: 861px) {
-  body.kr-rail .side-brandrow { flex-direction: column; height: auto; gap: 14px; align-items: center; margin-bottom: 12px; }
-  body.kr-rail .side-brandrow .side-toggle { order: -1; }
-  body.kr-rail .side-mark { padding: 0; width: 30px; justify-content: center; }
+  /* The design's rail head: the mark alone, and the panel toggle in its
+     place on hover (or keyboard focus). Stacked, the toggle sat above the
+     mark and pressed it against the first row. */
+  body.kr-rail #side .side-brandrow { position: relative; flex-direction: row; height: 44px; gap: 0; align-items: center; justify-content: center; margin: 4px 0 10px; }
+  /* One centre line down the rail (36px): the mark, every row's icon, the
+     bell and the avatar. The rows' 16px left padding put their icons 2.5px
+     off it, and the head's space-between put the mark 9px off. */
+  body.kr-rail:not(.macos) .side-nav > .side-row, body.kr-rail:not(.macos) .side-nav > .side-search { padding-left: 18.5px; }
+  body.kr-rail .side-brandrow .side-toggle { order: 0; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; transition: opacity .2s var(--ease); }
+  body.kr-rail .side-brandrow:hover .side-toggle, body.kr-rail .side-brandrow .side-toggle:focus-visible { opacity: 1; pointer-events: auto; }
+  body.kr-rail .side-mark { padding: 0; width: 30px; justify-content: center; transition: opacity .2s var(--ease); }
+  /* Keyboard focus on the toggle swaps them too; a mouse click leaves focus
+     on the toggle, and :focus-within hid the mark for good after it. */
+  body.kr-rail .side-brandrow:hover .side-mark, body.kr-rail .side-brandrow:has(.side-toggle:focus-visible) .side-mark { opacity: 0; }
+  @media (hover: none) {
+    body.kr-rail .side-brandrow .side-toggle { opacity: 1; pointer-events: auto; }
+    body.kr-rail .side-mark { opacity: 0; pointer-events: none; }
+  }
   body.kr-rail .kr-ct { display: none; }
   body.macos.kr-rail .side-top { height: 44px; display: block; }
 }
@@ -2209,6 +2224,7 @@ body:not(.light) .kr-kf { background: var(--surface-2); }
 .kf-said .car { display: inline-block; width: 2px; height: .9em; margin-left: 2px; vertical-align: -.08em; background: var(--accent); animation: krBlink 1s steps(1) infinite; }
 .kf-by { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: var(--ink-3); }
 .kr-av.sm { width: 20px; height: 20px; font-size: 10px; }
+.kr-av.kr-av-img { object-fit: cover; background: var(--s2); padding: 0; }
 .kf-act { display: flex; gap: 8px; margin-top: 18px; }
 .kf-r .kr-kwin { transform: perspective(1200px) rotateY(-8deg) rotateX(2deg); transition: transform .9s var(--ease); }
 .kr-kf:hover .kf-r .kr-kwin { transform: perspective(1200px) rotateY(-3deg); }

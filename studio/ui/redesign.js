@@ -353,7 +353,12 @@
   // A ready one is chosen right here (app.js's useAgent, the same call the
   // sheet's "Use this" makes); one that needs installing or a sign-in opens
   // the sheet, which is where that is done. API keys live in the sheet too.
-  const logo = (name) => { try { return aiLogo(name); } catch (e) { return agentMark(name); } };
+  // The same choice the chip makes: the known AIs, Krate's own included,
+  // have a mark; aiLogo is for the rest. The picker asked aiLogo first, and
+  // Krate AI came out as an empty circle beside its own logo in the chip.
+  const logo = (name) => /claude|anthropic|codex|openai|gpt|gemini|google|krate/i.test(String(name || ""))
+    ? agentMark(name)
+    : (() => { try { return aiLogo(name); } catch (e) { return agentMark(name); } })();
   function agentPicker(anchor) {
     const st = app(); if (!st) return;
     const API = new Set(["anthropic", "openai"]);
@@ -632,7 +637,16 @@
       e.stopImmediatePropagation(); e.preventDefault();
       const dark = !document.body.classList.contains("light");
       const items = [
-        { head: `<span class="kr-av">${esc((q(".kr-mn", mt).textContent || "Y").charAt(0).toUpperCase())}</span><span><b>${esc(q(".kr-mn", mt).textContent)}</b><small>${esc(q(".kr-mp", mt).textContent)}</small></span>` },
+        { head: `${(() => {
+            // The photo the sidebar shows, once it has really loaded; the
+            // initial otherwise. The head always drew the initial, so a
+            // signed-in person saw their picture in the sidebar and a
+            // letter in the menu above it.
+            const img = $("sideAvatarImg");
+            return img && img.complete && img.naturalWidth > 0 && img.src && !img.classList.contains("hidden")
+              ? `<img class="kr-av kr-av-img" src="${esc(img.src)}" alt="">`
+              : `<span class="kr-av">${esc((q(".kr-mn", mt).textContent || "Y").charAt(0).toUpperCase())}</span>`;
+          })()}<span><b>${esc(q(".kr-mn", mt).textContent)}</b><small>${esc(q(".kr-mp", mt).textContent)}</small></span>` },
         "sep",
         { icon: "user", label: "Profile", run: () => press(acct) },
         { icon: "gear", label: "Settings", run: () => press($("sideSettings")) },

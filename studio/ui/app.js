@@ -196,6 +196,11 @@ const invoke = async (cmd, args) => {
  * their run), Windows loses the native frame and gets our three buttons,
  * Linux keeps its native frame but has no lights to clear. */
 (function () {
+  // The desktop app's window only. In a browser tab there are no traffic
+  // lights to clear and no frameless window to give buttons to: the web
+  // Studio on a Mac reserved an empty corner and a wider rail, and on
+  // Windows it drew minimise and close buttons inside the page (2026-10-06).
+  if (!tauri) return;
   const ua = navigator.userAgent;
   // macOS is the only platform that overlays traffic lights on our
   // content, so it is the only one that should give up the top-left
