@@ -51,6 +51,9 @@ The public benchmark kit contains the protocol, analysis and seal. Retained raw 
 - [How to distribute a desktop app: ship one file](https://krate.tech/how-to-distribute-a-desktop-app.html)
 - [Krate vs Electron](https://krate.tech/krate-vs-electron.html)
 - [Krate vs Tauri](https://krate.tech/krate-vs-tauri.html)
+- [Electron alternatives in 2026](https://krate.tech/electron-alternatives.html)
+- [Tauri alternatives in 2026](https://krate.tech/tauri-alternatives.html)
+- [Cross-platform desktop app frameworks in 2026](https://krate.tech/cross-platform-desktop-app-frameworks.html)
 - [Desktop app or hosted web app](https://krate.tech/desktop-app-or-web-app.html)
 - [Code signing and Krate](https://krate.tech/desktop-app-code-signing.html)
 - [Shipping a desktop app: questions and answers](https://krate.tech/desktop-app-shipping-faq.html)
@@ -748,3 +751,244 @@ A: No. An app has to be built or ported for Krate's interfaces. Krate Studio can
 
 Q: What can't Krate do yet?
 A: Phones, shipping apps in languages other than Rust, native libraries and subprocesses, and demanding 3D games. The full list (https://krate.tech/docs/limits.html).
+
+## Electron alternatives in 2026, compared by what you ship
+
+URL: https://krate.tech/electron-alternatives.html
+Reviewed: 2026-10-06 against Krate 0.5.4
+
+The main Electron alternatives are Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, and they differ most in what you hand to users: Krate ships one .krate file for every desktop, while the others ship a build for each operating system. With Krate, the app runtime, people install the runtime once, and an app starts with no file or network access until they allow it.
+
+### The short list
+
+Electron and its alternatives, from each project's official docs, read 6 October 2026
+
+Tool | What you ship | How it draws the UI | App languages | Phones
+
+Electron | A package per operating system, each with its own Chromium and Node.js. | Its own Chromium. | JavaScript, HTML, CSS. | No.
+
+Tauri | A bundle or installer per operating system, plus store packages for mobile. | The system WebView. | A web frontend, with Rust in the core. | Yes.
+
+Wails | A binary per operating system and architecture, with an optional Windows installer. | The system WebView. | Go, with a web frontend. | Only in v3, marked experimental.
+
+Neutralinojs | A prebuilt binary per operating system and CPU, all made by one build on any host, plus a resources file. | The system WebView. | JavaScript, HTML, CSS. | No.
+
+Flutter | A build per operating system (.exe with DLLs, .app, or a Linux package). | Its own widgets and renderer, no WebView. | Dart. | Yes.
+
+Qt | A per-platform build, static or with Qt's shared libraries. | Its own widgets or scene graph, no WebView by default. | C++, QML, or Python through Qt for Python. | Yes.
+
+Krate | One .krate file for every desktop. | The Krate runtime draws a native window, with no browser or WebView. | Rust today, or built with AI in Krate Studio. | Not yet.
+
+Sources: Electron (https://www.electronjs.org/docs/latest/) and Electron Forge (https://www.electronjs.org/docs/latest/tutorial/forge-overview), Tauri distribution (https://tauri.app/distribute/) and Tauri webviews (https://tauri.app/reference/webview-versions/), Wails (https://wails.io/docs/introduction), Neutralinojs (https://neutralino.js.org/docs/) and its distribution overview (https://neutralino.js.org/docs/distribution/overview/), Flutter desktop (https://docs.flutter.dev/platform-integration/desktop) and supported platforms (https://docs.flutter.dev/reference/supported-platforms), Qt deployment (https://doc.qt.io/qt-6/deployment.html) and supported platforms (https://doc.qt.io/qt-6/supported-platforms.html).
+
+### What the user installs, and what the app can touch
+
+Install and access, from each project's official docs, read 6 October 2026
+
+Tool | What the user installs | What limits the app
+
+Electron | Your app's own package. | Renderers run in Chromium's sandbox by default since Electron 20; the main process is not sandboxed.
+
+Tauri | Your app's own package; on Windows it relies on WebView2, which the installer can add on older systems. | Capabilities limit what the frontend can call; the Rust core has full access to system resources.
+
+Wails | Your app's own binary; on Windows the WebView2 runtime is needed. | The v2 guides linked here describe Go methods bound to the frontend, not a permission model.
+
+Neutralinojs | Your app's own binary and resources file. | An allow list and a block list in the config control which native APIs the frontend can call.
+
+Flutter | Your app's own package; on Windows, the Visual C++ redistributables too. | macOS builds use App Sandbox by default, with entitlements for network, camera or files.
+
+Qt | Your app, plus Qt's libraries unless the system already has them. | Permission APIs ask for operating-system consent, such as the microphone; no Qt-level sandbox is described.
+
+Krate | The Krate runtime, once; then every .krate opens from its file. | The whole app starts with no file or network access; the person sees what it asks for and grants it before it opens.
+
+Sources: Electron sandbox (https://www.electronjs.org/docs/latest/tutorial/sandbox), Tauri security (https://v2.tauri.app/security/) and capabilities (https://tauri.app/security/capabilities/), Wails on Windows (https://wails.io/docs/guides/windows), Neutralinojs configuration (https://neutralino.js.org/docs/configuration/neutralino.config.json/), Flutter on macOS (https://docs.flutter.dev/platform-integration/macos/building), Qt permissions (https://doc.qt.io/qt-6/permissions.html).
+
+### How to choose
+
+- You have a web app and want it on the desktop as it is: Electron, or Tauri, Wails or Neutralinojs if you want the system WebView instead of a bundled Chromium.
+
+- You also need phones: Flutter, Qt or Tauri.
+
+- You want one file for every desktop, sandboxed by default: Krate. It is the only option here where the same file opens on macOS, Windows and Linux.
+
+- You write C++ or need a long-established widget toolkit: Qt.
+
+Whichever you pick, a native installer still needs signing on macOS and Windows; the code signing page (https://krate.tech/desktop-app-code-signing.html) explains what that takes, and the distribution guide (https://krate.tech/how-to-distribute-a-desktop-app.html) walks through both routes.
+
+### When to pick something else
+
+Krate is young (0.5.4). Pick another tool when:
+
+- you want to keep running an existing HTML, CSS and JavaScript codebase;
+
+- you need iOS or Android today;
+
+- you need a mature accessibility stack, enterprise widgets or a large plugin ecosystem;
+
+- your team writes a language other than Rust and does not want Krate Studio to write the code;
+
+- you need a signed Windows runtime installer today: the Krate runtime installer for Windows is not code-signed yet, so Windows may warn the first time.
+
+The limits page (https://krate.tech/docs/limits.html) lists what Krate cannot do yet.
+
+### Try Krate in five minutes
+
+Download Krate (https://krate.tech/download/), then open chart.krate (https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate), an 11,455-byte chart app, on any of the three systems. The quickstart (https://krate.tech/docs/quickstart.html) shows how to inspect what it asks for before it runs.
+
+### Questions
+
+Q: Which Electron alternatives use the system WebView?
+A: Tauri, Wails and Neutralinojs. Flutter and Qt draw their own interface, and Krate's runtime draws a native window with no browser or WebView.
+
+Q: Can I keep my web frontend?
+A: With Tauri, Wails or Neutralinojs, yes. Krate does not run HTML; an Electron app moves to Krate by porting its interface to Krate's own interfaces, and krate port reports what that would take.
+
+Q: Which alternative ships one file for every operating system?
+A: Krate. Neutralinojs builds every platform's binary in one step, but you still ship one binary per system; a .krate is the same file on macOS, Windows and Linux.
+
+Q: Do any of them sandbox apps by default?
+A: Electron sandboxes renderers by default; Tauri limits what the frontend can call; Flutter's macOS builds use App Sandbox. In Krate the whole app starts with no file or network access until the person allows it.
+
+## Tauri alternatives in 2026, compared by what you ship
+
+URL: https://krate.tech/tauri-alternatives.html
+Reviewed: 2026-10-06 against Krate 0.5.4
+
+If you like Tauri's small apps but want to stop building, signing and hosting a bundle for each operating system, Krate ships one .krate file that runs natively on every desktop; Electron, Wails and Flutter are the other common choices, each with a build per OS. With Krate, the app runtime, people install the runtime once, and the app asks before it touches their files or the network.
+
+### Why people look past Tauri
+
+Tauri is a good tool, and its apps are small because they use the system WebView. Three things send people looking anyway, all from Tauri's own docs:
+
+- A build per system. Tauri ships an app bundle and DMG on macOS, MSI or NSIS installers on Windows, and Linux packages, each built for that platform (distribution (https://tauri.app/distribute/)).
+
+- A different WebView on each system. WebView2 on Windows, WKWebView on macOS and webkit2gtk on Linux, so the same frontend renders through three engines (webview versions (https://tauri.app/reference/webview-versions/)).
+
+- Permissions cover the frontend, not the core. Capabilities limit what the WebView can call; code in the Rust core and plugins has full access to system resources (security (https://v2.tauri.app/security/)).
+
+### Side by side
+
+Tauri and its alternatives, from each project's official docs, read 6 October 2026
+
+Tool | What you ship | Rendering | What limits the app | Phones
+
+Tauri | A bundle or installer per operating system. | The system WebView. | Capabilities for the frontend; the Rust core is unconstrained. | Yes.
+
+Krate | One .krate file for every desktop. | The Krate runtime draws a native window; no WebView. | The whole app starts with no file or network access until the person allows it. | Not yet.
+
+Electron | A package per operating system with its own Chromium and Node.js. | Bundled Chromium. | Renderers sandboxed by default; the main process is not. | No.
+
+Wails | A binary per operating system and architecture. | The system WebView. | Go methods bound to the frontend. | v3 only, experimental.
+
+Flutter | A build per operating system. | Its own renderer; no WebView. | App Sandbox by default on macOS builds. | Yes.
+
+Sources: Tauri (https://v2.tauri.app/start/), Electron sandbox (https://www.electronjs.org/docs/latest/tutorial/sandbox), Wails cross-platform builds (https://wails.io/docs/guides/crossplatform-build), Flutter architecture (https://docs.flutter.dev/resources/architectural-overview) and Flutter on macOS (https://docs.flutter.dev/platform-integration/macos/building).
+
+### Krate for Tauri developers
+
+Both are Rust. What changes is where the app runs and what you hand people. A Krate app is a WebAssembly component that calls Krate's interfaces for its window, drawing, files, network and storage; the Krate runtime, installed once on each machine, runs the same file everywhere and checks every protected call against what the person granted.
+
+There is no WebView, so there is no HTML to keep: the interface is written against Krate's interfaces, by hand or by Krate Studio's AI. Reusable Rust logic that builds for WebAssembly is a good starting point. Start with a scan that reads your project without building or running it:
+
+krate port ./my-tauri-app
+
+It lists what maps cleanly, what needs a permission and what will not work yet. The porting guide (https://krate.tech/docs/porting.html) covers the rest.
+
+### When Tauri is still the better choice
+
+- You want a web frontend, or already have one.
+
+- You need iOS or Android from the same project.
+
+- You rely on Tauri's plugins or its mature update and installer tooling.
+
+- You need a signed Windows installer today: the Krate runtime installer for Windows is not code-signed yet.
+
+Krate is 0.5.4; the limits page (https://krate.tech/docs/limits.html) lists what it cannot do yet.
+
+### Questions
+
+Q: Can I reuse my Tauri Rust code in Krate?
+A: Logic that builds for WebAssembly usually carries over. Calls into the operating system and the WebView interface move to Krate's interfaces; krate port reports what each part would take.
+
+Q: Does Krate use a WebView?
+A: No. The Krate runtime draws the app's window itself, so the same app does not render through three different browser engines.
+
+Q: Do the Tauri alternatives support phones?
+A: Flutter does, and Wails v3 has experimental mobile support. Electron does not. Krate is desktop only today.
+
+Q: What do people install to open a Krate app?
+A: The Krate runtime, once for their system. After that every .krate opens from the file, and each one shows what it asks for before it runs.
+
+## Cross-platform desktop app frameworks in 2026, compared by what you ship
+
+URL: https://krate.tech/cross-platform-desktop-app-frameworks.html
+Reviewed: 2026-10-06 against Krate 0.5.4
+
+If you want one artifact for every desktop, Krate ships a single sandboxed file; if you need a mature accessibility stack, mobile targets or an existing web codebase, Electron, Tauri, Flutter or Qt fit better, and the table below shows each trade-off. With Krate, the app runtime, people install the runtime once and approve what each app can touch.
+
+### The comparison
+
+Five frameworks, from each project's official docs, read 6 October 2026
+
+Question | Electron | Tauri | Flutter | Qt | Krate
+
+What you ship | A package per OS | A bundle per OS | A build per OS | A build per platform | One .krate file
+
+What the user installs | Your package | Your package; WebView2 on older Windows | Your package; VC++ redistributables on Windows | Your app with Qt's libraries | The Krate runtime, once
+
+Per-OS builds | Yes; some installers only build on their own OS | Yes; macOS bundles on a Mac, MSI on Windows | Yes, with each OS's toolchain | Yes, each platform's environment | No; one build
+
+Signing | Sign and notarize per OS | Sign and notarize per OS | Notarize on macOS; signed MSIX on Windows | macdeployqt can sign for notarization | None per OS for the app file
+
+Sandbox and permissions | Renderers sandboxed; main process not | Capabilities for the frontend; core unconstrained | App Sandbox on macOS builds | OS consent APIs; no Qt sandbox | Whole app starts with no file or network access
+
+App languages | JavaScript, HTML, CSS | Web frontend, Rust core | Dart | C++, QML, Python | Rust, or built with AI
+
+Phones | No | Yes | Yes | Yes | Not yet
+
+Maturity | Established; latest three majors supported | Stable v2; v3 in alpha | Stable, 3.47 | Qt 6.12, September 2026 | Young, 0.5.4
+
+Sources: Electron distribution (https://www.electronjs.org/docs/latest/tutorial/distribution-overview), signing (https://www.electronjs.org/docs/latest/tutorial/code-signing) and sandbox (https://www.electronjs.org/docs/latest/tutorial/sandbox); Tauri distribution (https://tauri.app/distribute/), security (https://v2.tauri.app/security/) and webviews (https://tauri.app/reference/webview-versions/); Flutter desktop (https://docs.flutter.dev/platform-integration/desktop), macOS builds (https://docs.flutter.dev/platform-integration/macos/building) and platforms (https://docs.flutter.dev/reference/supported-platforms); Qt deployment (https://doc.qt.io/qt-6/deployment.html), permissions (https://doc.qt.io/qt-6/permissions.html) and platforms (https://doc.qt.io/qt-6/supported-platforms.html). Wails and Neutralinojs are on the Electron alternatives (https://krate.tech/electron-alternatives.html) page.
+
+### Three questions that decide it
+
+- Do you have a web codebase you want to keep? Then Electron or Tauri. Flutter, Qt and Krate each want their own interface code.
+
+- Do you need phones from the same project? Then Flutter, Qt or Tauri. Krate and Electron are desktop only.
+
+- Do you want to hand people one file for every desktop? Then Krate. Every other option here produces a separate build for each operating system.
+
+A fourth question sits under all of them: who decides what the app may touch? In most frameworks the developer decides. In Krate the person running the app sees what it asks for and grants it, and the runtime enforces that.
+
+### Signing and installers, whichever you pick
+
+A native installer is signed for each system. On macOS, software distributed with a Developer ID must be notarized by Apple (Apple (https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)). On Windows, unsigned apps show a SmartScreen warning, and new signed apps can still warn until they build reputation (Microsoft (https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)).
+
+A .krate file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once: on macOS it is signed and notarized; the Windows runtime installer is not code-signed yet. More on the code signing page (https://krate.tech/desktop-app-code-signing.html).
+
+### When to pick something else
+
+- You need iOS or Android: Flutter, Qt or Tauri.
+
+- You need a mature accessibility stack or enterprise widgets: Qt or Electron.
+
+- You want to keep an existing web codebase: Electron or Tauri.
+
+- Your team writes C++, Dart or JavaScript and does not want Rust or AI-written code: Qt, Flutter or Electron.
+
+Pick Krate when one sandboxed file for every desktop matters more than those. The same .krate files pass automated checks on macOS, Windows and Linux in CI: 10 apps on all three at Krate 0.5.4. The limits page (https://krate.tech/docs/limits.html) lists what Krate cannot do yet.
+
+### Questions
+
+Q: What is the best cross-platform desktop app framework?
+A: It depends on what you ship. For a web codebase, Electron or Tauri; for phones too, Flutter, Qt or Tauri; for one sandboxed file on every desktop, Krate.
+
+Q: Which framework needs no build per operating system?
+A: Krate: you build one .krate file and the runtime on each system opens it. The others produce a build for each operating system.
+
+Q: Which frameworks avoid a browser engine?
+A: Flutter and Qt draw their own interface, and so does Krate's runtime. Electron bundles Chromium, and Tauri uses the system WebView.
+
+Q: Is Krate production ready?
+A: Krate is young, at 0.5.4. The capability boundary is enforced, and the limits page is explicit about what is missing; it does not yet claim hardening against deliberately hostile code.

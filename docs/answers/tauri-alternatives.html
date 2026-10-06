@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Shipping a desktop app in 2026: straight answers | Krate</title>
-<meta name="description" content="Straight answers about shipping a desktop app in 2026: one file for every desktop, code signing, Electron and Tauri alternatives, and apps built with AI.">
-<link rel="canonical" href="https://krate.tech/desktop-app-shipping-faq.html">
+<title>Tauri alternatives in 2026, compared by what you ship</title>
+<meta name="description" content="Tauri alternatives in 2026: Krate ships one .krate file for every desktop; Electron, Wails and Flutter each ship a build per OS. Compared from their docs.">
+<link rel="canonical" href="https://krate.tech/tauri-alternatives.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
-<meta property="og:title" content="Shipping a desktop app in 2026: straight answers | Krate">
-<meta property="og:description" content="Straight answers about shipping a desktop app in 2026: one file for every desktop, code signing, Electron and Tauri alternatives, and apps built with AI.">
-<meta property="og:url" content="https://krate.tech/desktop-app-shipping-faq.html">
+<meta property="og:title" content="Tauri alternatives in 2026, compared by what you ship">
+<meta property="og:description" content="Tauri alternatives in 2026: Krate ships one .krate file for every desktop; Electron, Wails and Flutter each ship a build per OS. Compared from their docs.">
+<meta property="og:url" content="https://krate.tech/tauri-alternatives.html">
 <meta property="og:image" content="https://krate.tech/og-v4.png">
 <meta property="og:image:alt" content="Krate desktop application runtime">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Shipping a desktop app in 2026: straight answers | Krate">
-<meta name="twitter:description" content="Straight answers about shipping a desktop app in 2026: one file for every desktop, code signing, Electron and Tauri alternatives, and apps built with AI.">
+<meta name="twitter:title" content="Tauri alternatives in 2026, compared by what you ship">
+<meta name="twitter:description" content="Tauri alternatives in 2026: Krate ships one .krate file for every desktop; Electron, Wails and Flutter each ship a build per OS. Compared from their docs.">
 <meta name="twitter:image" content="https://krate.tech/og-v4.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/desktop-app-shipping-faq.html#webpage", "url": "https://krate.tech/desktop-app-shipping-faq.html", "name": "Shipping a desktop app in 2026: straight answers | Krate", "description": "Straight answers about shipping a desktop app in 2026: one file for every desktop, code signing, Electron and Tauri alternatives, and apps built with AI.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "How do I distribute a desktop app to Windows, macOS and Linux?", "acceptedAnswer": {"@type": "Answer", "text": "Either build, sign and host a package for each system, or ship one .krate file that opens on all three through the Krate runtime. Both routes, step by step."}}, {"@type": "Question", "name": "Can I ship one app file to Windows, Mac and Linux?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, as a .krate: the same bytes open on all three once the person has installed the Krate runtime. A normal native executable cannot do this. How the format works."}}, {"@type": "Question", "name": "What is a good Electron alternative?", "acceptedAnswer": {"@type": "Answer", "text": "It depends on what you need. Tauri, Wails and Neutralino keep a web frontend in the system WebView; Flutter and Qt draw their own interface; Krate ships one sandboxed .krate file for all three desktop systems. Krate vs Electron."}}, {"@type": "Question", "name": "Is there a Tauri alternative that doesn't need a build per OS?", "acceptedAnswer": {"@type": "Answer", "text": "Krate. Tauri builds an installer or bundle for each operating system; Krate ships one file and keeps the per-OS work in a runtime that Krate maintains. Krate vs Tauri."}}, {"@type": "Question", "name": "How do I share an app I built with AI as a desktop app?", "acceptedAnswer": {"@type": "Answer", "text": "If it is a Krate app, send the .krate file; the person installs Krate once and opens it. If your AI tool built a website, host it, wrap it per OS with Electron or Tauri, or port it to Krate in Krate Studio. Sharing an AI-built app."}}, {"@type": "Question", "name": "Can I ship a cross-platform app without code signing?", "acceptedAnswer": {"@type": "Answer", "text": "With a .krate, you don't sign a package per OS, because the file is opened by the Krate runtime. Native installers effectively need signing on macOS and Windows. Code signing and Krate."}}, {"@type": "Question", "name": "How can I run an untrusted desktop app more safely?", "acceptedAnswer": {"@type": "Answer", "text": "For an unknown native program, use the strongest isolation you have, such as a virtual machine or Windows Sandbox. For apps shipped as .krate files, the app starts without file or network access and asks; inspect it first with krate run app.krate --dump-caps. Krate is not yet hardened against deliberately hostile code. Inspecting an app before you run it."}}, {"@type": "Question", "name": "Is there a portable app format that runs on every OS?", "acceptedAnswer": {"@type": "Answer", "text": "No format runs on every system. A .krate runs on macOS, Windows and Linux desktops through the Krate runtime. AppImage is Linux only, Cosmopolitan's Actually Portable Executable runs one executable on several systems, mainly for command-line programs, and Java apps need a Java runtime. The .krate format."}}, {"@type": "Question", "name": "Is there a WebAssembly runtime for desktop GUI apps?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Krate runs desktop apps compiled to WebAssembly components, with windows, widgets, a 2D canvas, files, storage and networking behind permissions. It embeds Wasmtime. General runtimes such as Wasmtime, Wasmer and WasmEdge focus on servers and command-line programs. Krate's architecture."}}, {"@type": "Question", "name": "Do people need to install anything to open a .krate?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, the Krate runtime, once. Download Krate, or read what to do when someone sends you a .krate."}}, {"@type": "Question", "name": "Is Krate free and open source?", "acceptedAnswer": {"@type": "Answer", "text": "The runtime, CLI and SDK are free and open source under MIT OR Apache-2.0. Krate Studio is source-available under the Business Source License 1.1 and free on your own machine with your own AI. Licence details."}}, {"@type": "Question", "name": "Does Krate run existing .exe or .app files?", "acceptedAnswer": {"@type": "Answer", "text": "No. An app has to be built or ported for Krate's interfaces. Krate Studio can port a project folder with AI; the porting guide explains what carries over."}}, {"@type": "Question", "name": "What can't Krate do yet?", "acceptedAnswer": {"@type": "Answer", "text": "Phones, shipping apps in languages other than Rust, native libraries and subprocesses, and demanding 3D games. The full list."}}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/tauri-alternatives.html#webpage", "url": "https://krate.tech/tauri-alternatives.html", "name": "Tauri alternatives in 2026, compared by what you ship", "description": "Tauri alternatives in 2026: Krate ships one .krate file for every desktop; Electron, Wails and Flutter each ship a build per OS. Compared from their docs.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Can I reuse my Tauri Rust code in Krate?", "acceptedAnswer": {"@type": "Answer", "text": "Logic that builds for WebAssembly usually carries over. Calls into the operating system and the WebView interface move to Krate's interfaces; krate port reports what each part would take."}}, {"@type": "Question", "name": "Does Krate use a WebView?", "acceptedAnswer": {"@type": "Answer", "text": "No. The Krate runtime draws the app's window itself, so the same app does not render through three different browser engines."}}, {"@type": "Question", "name": "Do the Tauri alternatives support phones?", "acceptedAnswer": {"@type": "Answer", "text": "Flutter does, and Wails v3 has experimental mobile support. Electron does not. Krate is desktop only today."}}, {"@type": "Question", "name": "What do people install to open a Krate app?", "acceptedAnswer": {"@type": "Answer", "text": "The Krate runtime, once for their system. After that every .krate opens from the file, and each one shows what it asks for before it runs."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -108,54 +108,78 @@
 <main id="main">
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
-  <h1>Shipping a desktop app in 2026: questions and straight answers</h1>
-  <p class="lede">AI solved building the app; the short answer to shipping it is one <code>.krate</code> file that runs natively on every desktop, sandboxed, and sent in one click. People install the Krate app runtime once. Each answer below starts with the answer, then links to the longer page.</p>
-  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 1 min read</p>
+  <h1>Tauri alternatives in 2026, compared by what you ship</h1>
+  <p class="lede">If you like Tauri's small apps but want to stop building, signing and hosting a bundle for each operating system, Krate ships one <code>.krate</code> file that runs natively on every desktop; Electron, Wails and Flutter are the other common choices, each with a build per OS. With Krate, the app runtime, people install the runtime once, and the app asks before it touches their files or the network.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 2 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
-    <a class="btn dark" href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
-    <a class="btn ghost" href="/download/">Install Krate</a>
+    <a class="btn dark" href="#side-by-side">See the table <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/krate-vs-tauri.html">Krate vs Tauri in detail</a>
   </nav>
-  <p class="ent">These answers describe Krate 0.5.4. Krate is young, and the <a href="/docs/limits.html">limits page</a> lists what it cannot do yet. Where another tool is the better fit, the answer says so.</p>
 </section>
 
 <section class="art-body wrap">
   <div class="doc">
     <nav class="toc" aria-label="On this page">
       <h6>On this page</h6>
-
+      <a href="#why-people-look-past-tauri">Why people look past Tauri</a>
+      <a href="#side-by-side">Side by side</a>
+      <a href="#krate-for-tauri-developers">Krate for Tauri developers</a>
+      <a href="#when-tauri-is-still-the-better-choice">When Tauri is still the better choice</a>
       <a href="#questions">Questions</a>
       <a href="#more-answers">More answers</a>
     </nav>
     <article class="prose">
-
+      <section id="why-people-look-past-tauri">
+        <h2>Why people look past Tauri</h2>
+<p>Tauri is a good tool, and its apps are small because they use the system WebView. Three things send people looking anyway, all from Tauri's own docs:</p>
+<ul>
+<li><strong>A build per system.</strong> Tauri ships an app bundle and DMG on macOS, MSI or NSIS installers on Windows, and Linux packages, each built for that platform (<a href="https://tauri.app/distribute/">distribution</a>).</li>
+<li><strong>A different WebView on each system.</strong> WebView2 on Windows, WKWebView on macOS and webkit2gtk on Linux, so the same frontend renders through three engines (<a href="https://tauri.app/reference/webview-versions/">webview versions</a>).</li>
+<li><strong>Permissions cover the frontend, not the core.</strong> Capabilities limit what the WebView can call; code in the Rust core and plugins has full access to system resources (<a href="https://v2.tauri.app/security/">security</a>).</li>
+</ul>
+      </section>
+      <section id="side-by-side">
+        <h2>Side by side</h2>
+<div class="answer-table-wrap" role="region" aria-label="Tauri alternatives compared" tabindex="0"><table class="answer-table">
+<caption>Tauri and its alternatives, from each project's official docs, read 6 October 2026</caption>
+<thead><tr><th scope="col">Tool</th><th scope="col">What you ship</th><th scope="col">Rendering</th><th scope="col">What limits the app</th><th scope="col">Phones</th></tr></thead>
+<tbody>
+<tr><th scope="row">Tauri</th><td>A bundle or installer per operating system.</td><td>The system WebView.</td><td>Capabilities for the frontend; the Rust core is unconstrained.</td><td>Yes.</td></tr>
+<tr><th scope="row">Krate</th><td>One <code>.krate</code> file for every desktop.</td><td>The Krate runtime draws a native window; no WebView.</td><td>The whole app starts with no file or network access until the person allows it.</td><td>Not yet.</td></tr>
+<tr><th scope="row">Electron</th><td>A package per operating system with its own Chromium and Node.js.</td><td>Bundled Chromium.</td><td>Renderers sandboxed by default; the main process is not.</td><td>No.</td></tr>
+<tr><th scope="row">Wails</th><td>A binary per operating system and architecture.</td><td>The system WebView.</td><td>Go methods bound to the frontend.</td><td>v3 only, experimental.</td></tr>
+<tr><th scope="row">Flutter</th><td>A build per operating system.</td><td>Its own renderer; no WebView.</td><td>App Sandbox by default on macOS builds.</td><td>Yes.</td></tr>
+</tbody></table></div>
+<!-- Competitor rows read 6 October 2026 from the official docs linked below. -->
+<p>Sources: <a href="https://v2.tauri.app/start/">Tauri</a>, <a href="https://www.electronjs.org/docs/latest/tutorial/sandbox">Electron sandbox</a>, <a href="https://wails.io/docs/guides/crossplatform-build">Wails cross-platform builds</a>, <a href="https://docs.flutter.dev/resources/architectural-overview">Flutter architecture</a> and <a href="https://docs.flutter.dev/platform-integration/macos/building">Flutter on macOS</a>.</p>
+      </section>
+      <section id="krate-for-tauri-developers">
+        <h2>Krate for Tauri developers</h2>
+<p>Both are Rust. What changes is where the app runs and what you hand people. A Krate app is a WebAssembly component that calls Krate's interfaces for its window, drawing, files, network and storage; the Krate runtime, installed once on each machine, runs the same file everywhere and checks every protected call against what the person granted.</p>
+<p>There is no WebView, so there is no HTML to keep: the interface is written against Krate's interfaces, by hand or by Krate Studio's AI. Reusable Rust logic that builds for WebAssembly is a good starting point. Start with a scan that reads your project without building or running it:</p>
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate port ./my-tauri-app</pre>
+<p>It lists what maps cleanly, what needs a permission and what will not work yet. The <a href="/docs/porting.html">porting guide</a> covers the rest.</p>
+      </section>
+      <section id="when-tauri-is-still-the-better-choice">
+        <h2>When Tauri is still the better choice</h2>
+<ul>
+<li>You want a web frontend, or already have one.</li>
+<li>You need iOS or Android from the same project.</li>
+<li>You rely on Tauri's plugins or its mature update and installer tooling.</li>
+<li>You need a signed Windows installer today: the Krate runtime installer for Windows is not code-signed yet.</li>
+</ul>
+<p>Krate is 0.5.4; the <a href="/docs/limits.html">limits page</a> lists what it cannot do yet.</p>
+      </section>
     <section id="questions">
       <h2>Questions</h2>
-      <h3>How do I distribute a desktop app to Windows, macOS and Linux?</h3>
-<p>Either build, sign and host a package for each system, or ship one <code>.krate</code> file that opens on all three through the Krate runtime. <a href="/how-to-distribute-a-desktop-app.html">Both routes, step by step</a>.</p>
-      <h3>Can I ship one app file to Windows, Mac and Linux?</h3>
-<p>Yes, as a <code>.krate</code>: the same bytes open on all three once the person has installed the Krate runtime. A normal native executable cannot do this. <a href="/portable-desktop-app-format.html">How the format works</a>.</p>
-      <h3>What is a good Electron alternative?</h3>
-<p>It depends on what you need. Tauri, Wails and Neutralino keep a web frontend in the system WebView; Flutter and Qt draw their own interface; Krate ships one sandboxed <code>.krate</code> file for all three desktop systems. <a href="/krate-vs-electron.html">Krate vs Electron</a>.</p>
-      <h3>Is there a Tauri alternative that doesn&#x27;t need a build per OS?</h3>
-<p>Krate. Tauri builds an installer or bundle for each operating system; Krate ships one file and keeps the per-OS work in a runtime that Krate maintains. <a href="/krate-vs-tauri.html">Krate vs Tauri</a>.</p>
-      <h3>How do I share an app I built with AI as a desktop app?</h3>
-<p>If it is a Krate app, send the <code>.krate</code> file; the person installs Krate once and opens it. If your AI tool built a website, host it, wrap it per OS with Electron or Tauri, or port it to Krate in Krate Studio. <a href="/share-an-app-made-with-ai.html">Sharing an AI-built app</a>.</p>
-      <h3>Can I ship a cross-platform app without code signing?</h3>
-<p>With a <code>.krate</code>, you don't sign a package per OS, because the file is opened by the Krate runtime. Native installers effectively need signing on macOS and Windows. <a href="/desktop-app-code-signing.html">Code signing and Krate</a>.</p>
-      <h3>How can I run an untrusted desktop app more safely?</h3>
-<p>For an unknown native program, use the strongest isolation you have, such as a virtual machine or Windows Sandbox. For apps shipped as <code>.krate</code> files, the app starts without file or network access and asks; inspect it first with <code>krate run app.krate --dump-caps</code>. Krate is not yet hardened against deliberately hostile code. <a href="/run-ai-generated-code-safely.html">Inspecting an app before you run it</a>.</p>
-      <h3>Is there a portable app format that runs on every OS?</h3>
-<p>No format runs on every system. A <code>.krate</code> runs on macOS, Windows and Linux desktops through the Krate runtime. AppImage is Linux only, Cosmopolitan's Actually Portable Executable runs one executable on several systems, mainly for command-line programs, and Java apps need a Java runtime. <a href="/portable-desktop-app-format.html">The .krate format</a>.</p>
-      <h3>Is there a WebAssembly runtime for desktop GUI apps?</h3>
-<p>Yes. Krate runs desktop apps compiled to WebAssembly components, with windows, widgets, a 2D canvas, files, storage and networking behind permissions. It embeds Wasmtime. General runtimes such as Wasmtime, Wasmer and WasmEdge focus on servers and command-line programs. <a href="/docs/architecture.html">Krate's architecture</a>.</p>
-      <h3>Do people need to install anything to open a .krate?</h3>
-<p>Yes, the Krate runtime, once. <a href="/download/">Download Krate</a>, or read <a href="/open/">what to do when someone sends you a .krate</a>.</p>
-      <h3>Is Krate free and open source?</h3>
-<p>The runtime, CLI and SDK are free and open source under MIT OR Apache-2.0. Krate Studio is source-available under the Business Source License 1.1 and free on your own machine with your own AI. <a href="https://github.com/incyashraj/krate#license">Licence details</a>.</p>
-      <h3>Does Krate run existing .exe or .app files?</h3>
-<p>No. An app has to be built or ported for Krate's interfaces. Krate Studio can port a project folder with AI; the <a href="/docs/porting.html">porting guide</a> explains what carries over.</p>
-      <h3>What can&#x27;t Krate do yet?</h3>
-<p>Phones, shipping apps in languages other than Rust, native libraries and subprocesses, and demanding 3D games. <a href="/docs/limits.html">The full list</a>.</p>
+      <h3>Can I reuse my Tauri Rust code in Krate?</h3>
+<p>Logic that builds for WebAssembly usually carries over. Calls into the operating system and the WebView interface move to Krate's interfaces; <code>krate port</code> reports what each part would take.</p>
+      <h3>Does Krate use a WebView?</h3>
+<p>No. The Krate runtime draws the app's window itself, so the same app does not render through three different browser engines.</p>
+      <h3>Do the Tauri alternatives support phones?</h3>
+<p>Flutter does, and Wails v3 has experimental mobile support. Electron does not. Krate is desktop only today.</p>
+      <h3>What do people install to open a Krate app?</h3>
+<p>The Krate runtime, once for their system. After that every <code>.krate</code> opens from the file, and each one shows what it asks for before it runs.</p>
     </section>
     <section id="more-answers">
       <h2>More answers about shipping desktop apps</h2>
@@ -169,8 +193,8 @@
         <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
         <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
         <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
         <li><a href="/electron-alternatives.html">Electron alternatives in 2026, compared by what you ship</a></li>
-        <li><a href="/tauri-alternatives.html">Tauri alternatives in 2026, compared by what you ship</a></li>
         <li><a href="/cross-platform-desktop-app-frameworks.html">Cross-platform desktop app frameworks in 2026, compared by what you ship</a></li>
       </ul>
     </section>

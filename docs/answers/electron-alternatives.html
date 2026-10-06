@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Electron alternatives in 2026, compared by what you ship</title>
+<meta name="description" content="Electron alternatives in 2026: Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, compared by what you hand to users and what they have to install.">
+<link rel="canonical" href="https://krate.tech/electron-alternatives.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Krate">
+<meta property="og:title" content="Electron alternatives in 2026, compared by what you ship">
+<meta property="og:description" content="Electron alternatives in 2026: Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, compared by what you hand to users and what they have to install.">
+<meta property="og:url" content="https://krate.tech/electron-alternatives.html">
+<meta property="og:image" content="https://krate.tech/og-v4.png">
+<meta property="og:image:alt" content="Krate desktop application runtime">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Electron alternatives in 2026, compared by what you ship">
+<meta name="twitter:description" content="Electron alternatives in 2026: Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, compared by what you hand to users and what they have to install.">
+<meta name="twitter:image" content="https://krate.tech/og-v4.png">
+<link rel="icon" href="/krate-favicon.png">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/electron-alternatives.html#webpage", "url": "https://krate.tech/electron-alternatives.html", "name": "Electron alternatives in 2026, compared by what you ship", "description": "Electron alternatives in 2026: Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, compared by what you hand to users and what they have to install.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Which Electron alternatives use the system WebView?", "acceptedAnswer": {"@type": "Answer", "text": "Tauri, Wails and Neutralinojs. Flutter and Qt draw their own interface, and Krate's runtime draws a native window with no browser or WebView."}}, {"@type": "Question", "name": "Can I keep my web frontend?", "acceptedAnswer": {"@type": "Answer", "text": "With Tauri, Wails or Neutralinojs, yes. Krate does not run HTML; an Electron app moves to Krate by porting its interface to Krate's own interfaces, and krate port reports what that would take."}}, {"@type": "Question", "name": "Which alternative ships one file for every operating system?", "acceptedAnswer": {"@type": "Answer", "text": "Krate. Neutralinojs builds every platform's binary in one step, but you still ship one binary per system; a .krate is the same file on macOS, Windows and Linux."}}, {"@type": "Question", "name": "Do any of them sandbox apps by default?", "acceptedAnswer": {"@type": "Answer", "text": "Electron sandboxes renderers by default; Tauri limits what the frontend can call; Flutter's macOS builds use App Sandbox. In Krate the whole app starts with no file or network access until the person allows it."}}]}</script>
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+@media (min-width: 961px) { .ph.art { padding-left: 276px; } }
+.ph.art .lede { max-width: 640px; }
+.ph.art .acts { margin-top: 26px; gap: 10px 12px; }
+.ph.art .ent { margin-top: 18px; max-width: 640px; font-size: 14.5px; line-height: 1.6; color: var(--mute); }
+.ph.art .ent a, .ph.art .lede a { color: var(--accent); }
+.ph.art .ent code, .ph.art .lede code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: 6px; background: var(--s2); color: var(--ink); }
+.art-body { padding-top: 64px; }
+.prose { max-width: 700px; min-width: 0; }
+.prose > :first-child { margin-top: 0; }
+.prose section + section { margin-top: 52px; }
+.prose section > h2 { margin-top: 0; }
+.prose :is(p, li, h2, h3) { overflow-wrap: anywhere; }
+.answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
+.answer-table tbody th { min-width: 150px; }
+.prose em { font-style: italic; }
+.ph.art h1 .nw { white-space: nowrap; }
+.prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
+:root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
+.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+/* the comparison table */
+.answer-table-wrap { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow-x: auto; }
+.answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14.5px; }
+.answer-table caption { caption-side: top; text-align: left; padding: 14px 14px 6px; font-size: 12.5px; color: var(--ink-3); }
+.answer-table thead th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--ink-3); padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.answer-table tbody th { text-align: left; vertical-align: top; padding: 13px 14px; border-bottom: 1px solid var(--line); font-weight: 500; color: var(--ink); line-height: 1.5; }
+.answer-table td { padding: 13px 14px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; line-height: 1.5; }
+.answer-table tbody tr:last-child > * { border-bottom: 0; }
+/* the two shipping workflows, side by side */
+.prose .shipping-flow { margin-top: 26px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.prose .shipping-flow figcaption { grid-column: 1 / -1; font-size: 13.5px; line-height: 1.55; color: var(--ink-3); }
+.prose .shipping-lane { padding: 20px 20px 8px; border-radius: 18px; background: var(--soft); }
+.prose .shipping-lane-krate { background: var(--accent-soft); }
+.prose .shipping-lane h3 { margin: 0 0 10px; font-size: 16px; }
+.prose .shipping-lane-krate h3 { color: var(--accent); }
+.prose .shipping-lane ol { list-style: none; padding: 0; }
+.prose .shipping-lane li { margin: 0; padding: 11px 0 12px; border-top: 1px solid var(--line-2); font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+.prose .shipping-lane-krate li { border-top-color: color-mix(in srgb, var(--accent) 18%, transparent); }
+.prose .shipping-lane li span { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+/* the closing band: words, then the ways forward */
+.band.st { flex-direction: column; align-items: flex-start; gap: 22px; }
+.band.st p { max-width: 640px; }
+.band.st .acts { margin-top: 0; justify-content: flex-start; gap: 10px 12px; }
+.band p a { color: var(--accent); }
+@media (max-width: 680px) {
+  .art-body { padding-top: 44px; }
+  .prose .shipping-flow { grid-template-columns: 1fr; }
+  .prose pre.answer-cmd { font-size: 12.5px; }
+  .ph.art .acts, .band.st .acts { flex-direction: column; align-items: stretch; width: 100%; }
+  .band .acts .btn { white-space: normal; text-align: center; }
+}
+</style>
+</head>
+<body>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
+    </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main id="main">
+<section class="ph sm l art wrap">
+  <span class="eye">Answer</span>
+  <h1>Electron alternatives in 2026, compared by what you ship</h1>
+  <p class="lede">The main Electron alternatives are Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, and they differ most in what you hand to users: Krate ships one <code>.krate</code> file for every desktop, while the others ship a build for each operating system. With Krate, the app runtime, people install the runtime once, and an app starts with no file or network access until they allow it.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 4 min read</p>
+  <nav class="acts answer-actions" aria-label="Choose your next step">
+    <a class="btn dark" href="#the-short-list">See the table <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/krate-vs-electron.html">Krate vs Electron in detail</a>
+  </nav>
+</section>
+
+<section class="art-body wrap">
+  <div class="doc">
+    <nav class="toc" aria-label="On this page">
+      <h6>On this page</h6>
+      <a href="#the-short-list">The short list</a>
+      <a href="#what-the-user-installs-and-what-the-app-can-touch">What the user installs, and what the app can touch</a>
+      <a href="#how-to-choose">How to choose</a>
+      <a href="#when-to-pick-something-else">When to pick something else</a>
+      <a href="#try-krate-in-five-minutes">Try Krate in five minutes</a>
+      <a href="#questions">Questions</a>
+      <a href="#more-answers">More answers</a>
+    </nav>
+    <article class="prose">
+      <section id="the-short-list">
+        <h2>The short list</h2>
+<div class="answer-table-wrap" role="region" aria-label="Electron alternatives compared" tabindex="0"><table class="answer-table">
+<caption>Electron and its alternatives, from each project's official docs, read 6 October 2026</caption>
+<thead><tr><th scope="col">Tool</th><th scope="col">What you ship</th><th scope="col">How it draws the UI</th><th scope="col">App languages</th><th scope="col">Phones</th></tr></thead>
+<tbody>
+<tr><th scope="row">Electron</th><td>A package per operating system, each with its own Chromium and Node.js.</td><td>Its own Chromium.</td><td>JavaScript, HTML, CSS.</td><td>No.</td></tr>
+<tr><th scope="row">Tauri</th><td>A bundle or installer per operating system, plus store packages for mobile.</td><td>The system WebView.</td><td>A web frontend, with Rust in the core.</td><td>Yes.</td></tr>
+<tr><th scope="row">Wails</th><td>A binary per operating system and architecture, with an optional Windows installer.</td><td>The system WebView.</td><td>Go, with a web frontend.</td><td>Only in v3, marked experimental.</td></tr>
+<tr><th scope="row">Neutralinojs</th><td>A prebuilt binary per operating system and CPU, all made by one build on any host, plus a resources file.</td><td>The system WebView.</td><td>JavaScript, HTML, CSS.</td><td>No.</td></tr>
+<tr><th scope="row">Flutter</th><td>A build per operating system (.exe with DLLs, .app, or a Linux package).</td><td>Its own widgets and renderer, no WebView.</td><td>Dart.</td><td>Yes.</td></tr>
+<tr><th scope="row">Qt</th><td>A per-platform build, static or with Qt's shared libraries.</td><td>Its own widgets or scene graph, no WebView by default.</td><td>C++, QML, or Python through Qt for Python.</td><td>Yes.</td></tr>
+<tr><th scope="row">Krate</th><td>One <code>.krate</code> file for every desktop.</td><td>The Krate runtime draws a native window, with no browser or WebView.</td><td>Rust today, or built with AI in Krate Studio.</td><td>Not yet.</td></tr>
+</tbody></table></div>
+<!-- Competitor rows read 6 October 2026 from the official docs linked below. -->
+<p>Sources: <a href="https://www.electronjs.org/docs/latest/">Electron</a> and <a href="https://www.electronjs.org/docs/latest/tutorial/forge-overview">Electron Forge</a>, <a href="https://tauri.app/distribute/">Tauri distribution</a> and <a href="https://tauri.app/reference/webview-versions/">Tauri webviews</a>, <a href="https://wails.io/docs/introduction">Wails</a>, <a href="https://neutralino.js.org/docs/">Neutralinojs</a> and its <a href="https://neutralino.js.org/docs/distribution/overview/">distribution overview</a>, <a href="https://docs.flutter.dev/platform-integration/desktop">Flutter desktop</a> and <a href="https://docs.flutter.dev/reference/supported-platforms">supported platforms</a>, <a href="https://doc.qt.io/qt-6/deployment.html">Qt deployment</a> and <a href="https://doc.qt.io/qt-6/supported-platforms.html">supported platforms</a>.</p>
+      </section>
+      <section id="what-the-user-installs-and-what-the-app-can-touch">
+        <h2>What the user installs, and what the app can touch</h2>
+<div class="answer-table-wrap" role="region" aria-label="Install and access compared" tabindex="0"><table class="answer-table">
+<caption>Install and access, from each project's official docs, read 6 October 2026</caption>
+<thead><tr><th scope="col">Tool</th><th scope="col">What the user installs</th><th scope="col">What limits the app</th></tr></thead>
+<tbody>
+<tr><th scope="row">Electron</th><td>Your app's own package.</td><td>Renderers run in Chromium's sandbox by default since Electron 20; the main process is not sandboxed.</td></tr>
+<tr><th scope="row">Tauri</th><td>Your app's own package; on Windows it relies on WebView2, which the installer can add on older systems.</td><td>Capabilities limit what the frontend can call; the Rust core has full access to system resources.</td></tr>
+<tr><th scope="row">Wails</th><td>Your app's own binary; on Windows the WebView2 runtime is needed.</td><td>The v2 guides linked here describe Go methods bound to the frontend, not a permission model.</td></tr>
+<tr><th scope="row">Neutralinojs</th><td>Your app's own binary and resources file.</td><td>An allow list and a block list in the config control which native APIs the frontend can call.</td></tr>
+<tr><th scope="row">Flutter</th><td>Your app's own package; on Windows, the Visual C++ redistributables too.</td><td>macOS builds use App Sandbox by default, with entitlements for network, camera or files.</td></tr>
+<tr><th scope="row">Qt</th><td>Your app, plus Qt's libraries unless the system already has them.</td><td>Permission APIs ask for operating-system consent, such as the microphone; no Qt-level sandbox is described.</td></tr>
+<tr><th scope="row">Krate</th><td>The Krate runtime, once; then every <code>.krate</code> opens from its file.</td><td>The whole app starts with no file or network access; the person sees what it asks for and grants it before it opens.</td></tr>
+</tbody></table></div>
+<p>Sources: <a href="https://www.electronjs.org/docs/latest/tutorial/sandbox">Electron sandbox</a>, <a href="https://v2.tauri.app/security/">Tauri security</a> and <a href="https://tauri.app/security/capabilities/">capabilities</a>, <a href="https://wails.io/docs/guides/windows">Wails on Windows</a>, <a href="https://neutralino.js.org/docs/configuration/neutralino.config.json/">Neutralinojs configuration</a>, <a href="https://docs.flutter.dev/platform-integration/macos/building">Flutter on macOS</a>, <a href="https://doc.qt.io/qt-6/permissions.html">Qt permissions</a>.</p>
+      </section>
+      <section id="how-to-choose">
+        <h2>How to choose</h2>
+<ul>
+<li><strong>You have a web app and want it on the desktop as it is:</strong> Electron, or Tauri, Wails or Neutralinojs if you want the system WebView instead of a bundled Chromium.</li>
+<li><strong>You also need phones:</strong> Flutter, Qt or Tauri.</li>
+<li><strong>You want one file for every desktop, sandboxed by default:</strong> Krate. It is the only option here where the same file opens on macOS, Windows and Linux.</li>
+<li><strong>You write C++ or need a long-established widget toolkit:</strong> Qt.</li>
+</ul>
+<p>Whichever you pick, a native installer still needs signing on macOS and Windows; the <a href="/desktop-app-code-signing.html">code signing page</a> explains what that takes, and the <a href="/how-to-distribute-a-desktop-app.html">distribution guide</a> walks through both routes.</p>
+      </section>
+      <section id="when-to-pick-something-else">
+        <h2>When to pick something else</h2>
+<p>Krate is young (0.5.4). Pick another tool when:</p>
+<ul>
+<li>you want to keep running an existing HTML, CSS and JavaScript codebase;</li>
+<li>you need iOS or Android today;</li>
+<li>you need a mature accessibility stack, enterprise widgets or a large plugin ecosystem;</li>
+<li>your team writes a language other than Rust and does not want Krate Studio to write the code;</li>
+<li>you need a signed Windows runtime installer today: the Krate runtime installer for Windows is not code-signed yet, so Windows may warn the first time.</li>
+</ul>
+<p>The <a href="/docs/limits.html">limits page</a> lists what Krate cannot do yet.</p>
+      </section>
+      <section id="try-krate-in-five-minutes">
+        <h2>Try Krate in five minutes</h2>
+<p><a href="/download/">Download Krate</a>, then open <a href="https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate">chart.krate</a>, an 11,455-byte chart app, on any of the three systems. The <a href="/docs/quickstart.html">quickstart</a> shows how to inspect what it asks for before it runs.</p>
+      </section>
+    <section id="questions">
+      <h2>Questions</h2>
+      <h3>Which Electron alternatives use the system WebView?</h3>
+<p>Tauri, Wails and Neutralinojs. Flutter and Qt draw their own interface, and Krate's runtime draws a native window with no browser or WebView.</p>
+      <h3>Can I keep my web frontend?</h3>
+<p>With Tauri, Wails or Neutralinojs, yes. Krate does not run HTML; an Electron app moves to Krate by porting its interface to Krate's own interfaces, and <code>krate port</code> reports what that would take.</p>
+      <h3>Which alternative ships one file for every operating system?</h3>
+<p>Krate. Neutralinojs builds every platform's binary in one step, but you still ship one binary per system; a <code>.krate</code> is the same file on macOS, Windows and Linux.</p>
+      <h3>Do any of them sandbox apps by default?</h3>
+<p>Electron sandboxes renderers by default; Tauri limits what the frontend can call; Flutter's macOS builds use App Sandbox. In Krate the whole app starts with no file or network access until the person allows it.</p>
+    </section>
+    <section id="more-answers">
+      <h2>More answers about shipping desktop apps</h2>
+      <ul class="answer-related">
+        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every desktop</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one file</a></li>
+        <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely: see what it can touch first</a></li>
+        <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
+        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one native file instead of a browser in every app</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
+        <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
+        <li><a href="/tauri-alternatives.html">Tauri alternatives in 2026, compared by what you ship</a></li>
+        <li><a href="/cross-platform-desktop-app-frameworks.html">Cross-platform desktop app frameworks in 2026, compared by what you ship</a></li>
+      </ul>
+    </section>
+    </article>
+  </div>
+</section>
+
+<div class="band st rv">
+  <div><h2>Build with Krate</h2><p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p></div>
+  <div class="acts">
+    <a class="btn dark" href="/docs/quickstart.html">Developer quickstart <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/porting.html">Evaluate your app</a>
+    <a class="btn ghost" href="/studio/">Make an app in Studio</a>
+    <a class="btn link" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
+  </div>
+</div>
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+</footer>
+<script src="/kit/site.js"></script>
+</body>
+</html>
