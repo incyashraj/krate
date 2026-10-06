@@ -1724,7 +1724,8 @@ async fn revise_app(
     attachments: Vec<String>,
 ) -> Result<CreateResult, String> {
     eprintln!("[revise_app] enter: path={path} agent={agent}");
-    tauri::async_runtime::spawn_blocking(move || {
+    let notify_app = app.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
         // Fail before spending anyone's AI quota on a file that is gone.
         let out_path = existing(&path)?;
@@ -1739,7 +1740,16 @@ async fn revise_app(
         run_author(&app, cmd, &engine, &out_path, None)
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    // A change that failed reaches the person as far as a new app does: it
+    // said nothing, so somebody who tabbed away never knew.
+    if out.is_err() {
+        notify(
+            &notify_app,
+            "That change didn't come together. Come see why.",
+        );
+    }
+    out
 }
 
 /// Stop the running build: kill the engine child's whole process group so
