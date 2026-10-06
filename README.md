@@ -5,12 +5,13 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Describe an app. Get one file.</strong>
+  <strong>Ship one app file to Mac, Windows and Linux.</strong>
 </p>
 
 <p align="center">
-  Krate turns a sentence into a real desktop app: one small <code>.krate</code> file<br>
-  that opens on macOS, Windows and Linux, and asks before it touches anything.<br>
+  Krate packs your app into one small <code>.krate</code> file that opens on macOS,<br>
+  Windows and Linux, runs sandboxed and asks before it touches anything.<br>
+  Send it like a document. Describe an app and Krate Studio's AI builds it.<br>
   Open-source runtime. No per-OS builds. No browser inside every app.
 </p>
 

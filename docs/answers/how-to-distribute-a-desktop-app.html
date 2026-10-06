@@ -1217,21 +1217,21 @@ picture source { display: none; }
   .appFrame { aspect-ratio: auto; }
   .appFrame .ap { position: relative; margin-top: 16px; opacity: 1; transform: none; }
 </style></noscript>
-<title>Krate vs Electron vs Tauri: desktop app distribution</title>
-  <meta name="description" content="Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.">
-  <link rel="canonical" href="https://krate.tech/desktop-app-distribution.html">
+<title>How to distribute a desktop app to Windows, macOS and Linux | Krate</title>
+  <meta name="description" content="Usually: a package per OS, code signing, notarization and builds per CPU. With Krate: one .krate file that opens on all three through a runtime installed once.">
+  <link rel="canonical" href="https://krate.tech/how-to-distribute-a-desktop-app.html">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Krate">
-  <meta property="og:title" content="Krate vs Electron vs Tauri: desktop app distribution">
-  <meta property="og:description" content="Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.">
-  <meta property="og:url" content="https://krate.tech/desktop-app-distribution.html">
+  <meta property="og:title" content="How to distribute a desktop app to Windows, macOS and Linux | Krate">
+  <meta property="og:description" content="Usually: a package per OS, code signing, notarization and builds per CPU. With Krate: one .krate file that opens on all three through a runtime installed once.">
+  <meta property="og:url" content="https://krate.tech/how-to-distribute-a-desktop-app.html">
   <meta property="og:image" content="https://krate.tech/og-v4.png">
   <meta property="og:image:alt" content="Krate desktop application runtime">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Krate vs Electron vs Tauri: desktop app distribution">
-  <meta name="twitter:description" content="Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.">
+  <meta name="twitter:title" content="How to distribute a desktop app to Windows, macOS and Linux | Krate">
+  <meta name="twitter:description" content="Usually: a package per OS, code signing, notarization and builds per CPU. With Krate: one .krate file that opens on all three through a runtime installed once.">
   <meta name="twitter:image" content="https://krate.tech/og-v4.png">
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/desktop-app-distribution.html#webpage", "url": "https://krate.tech/desktop-app-distribution.html", "name": "Krate vs Electron vs Tauri: desktop app distribution", "description": "Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/how-to-distribute-a-desktop-app.html#webpage", "url": "https://krate.tech/how-to-distribute-a-desktop-app.html", "name": "How to distribute a desktop app to Windows, macOS and Linux | Krate", "description": "Usually: a package per OS, code signing, notarization and builds per CPU. With Krate: one .krate file that opens on all three through a runtime installed once.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Can one file run on Windows, macOS and Linux?", "acceptedAnswer": {"@type": "Answer", "text": "A normal native executable can't, because each system uses its own executable format. A .krate can, because it is not a native executable: it holds a WebAssembly component that the installed Krate runtime runs on each system."}}, {"@type": "Question", "name": "Do the people I send it to need to install anything?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, once: the Krate runtime for their system, from the download page. After that, every Krate app is a single file they open."}}, {"@type": "Question", "name": "Do I need a code signing certificate to ship a .krate?", "acceptedAnswer": {"@type": "Answer", "text": "No. You don't sign and notarize a package per operating system, because the file isn't one. You can still sign a .krate with your own key so people can check it came from you. See code signing and Krate."}}, {"@type": "Question", "name": "Can I ship an app I made with AI this way?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, if it is a Krate app. Make it in Krate Studio with the AI agent you already use, or open an existing project in Studio and port it. See how to share an AI-built desktop app."}}]}</script>
   <style>
     /* The article shell owns its layout. The homepage supplies fonts and
        colors, not styles for these differently named elements. */
@@ -1392,68 +1392,67 @@ picture source { display: none; }
   </div>
 </header>
     <main id="main" class="page-wrap">
-    <h1>Krate vs Electron vs Tauri: what do you ship?</h1>
-    <p class="page-lede">Electron and Tauri let you share a codebase and ship platform-specific applications. Krate lets you ship one .krate file that runs on Mac, Windows and Linux through native Krate runtimes. The difference is the file you hand to your users.</p>
+    <h1>How to distribute a desktop app to Windows, macOS and Linux</h1>
+    <p class="page-lede">Most teams build a separate package for each operating system, often one per processor too, then sign, notarize and host each download. Krate changes that step: you ship one <code>.krate</code> file, your users install the Krate runtime once, and the same file opens on macOS, Windows and Linux in a sandbox, with only the access they grant.</p>
+    <p class="answer-reviewed">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4.</p>
     <div class="answer-entry">
       <nav class="answer-actions" aria-label="Choose your next step">
-<a class="pill pill-primary" href="/docs/quickstart.html#try-the-chart-sample">Try the same-file example</a>
-<a class="pill" href="/docs/porting.html">Check your project&#x27;s fit</a>
+<a class="pill pill-primary" href="#the-usual-route-step-by-step">Compare the two routes</a>
+<a class="pill" href="/docs/quickstart.html#try-the-chart-sample">Try a .krate file</a>
       </nav>
 
     </div>
 
-    <section id="one-app-two-shipping-workflows">
-      <h2>One app, two shipping workflows</h2>
-<p>When you release an update, what needs to reach each user? In the usual packaged Electron or Tauri workflow, you distribute the build for their platform. With Krate, you distribute the same application artifact to all three.</p>
-<figure class="shipping-flow">
-<figcaption>Typical desktop packaging, compared with Krate's shared-runtime model. Read each row from build to delivery.</figcaption>
-<div class="shipping-lane"><h3>Electron / Tauri</h3><ol>
-<li><span>1. Develop</span>Shared application code</li>
-<li><span>2. Package</span>Platform-specific applications</li>
-<li><span>3. Deliver</span>macOS package<br>Windows package<br>Linux package</li>
-</ol></div>
-<div class="shipping-lane shipping-lane-krate"><h3>Krate</h3><ol>
-<li><span>1. Develop</span>App using Krate's interfaces</li>
-<li><span>2. Package</span>One <code>app.krate</code> file</li>
-<li><span>3. Deliver</span>The same file to Mac, Windows and Linux users</li>
-</ol></div>
-</figure>
-<p>Krate users install the native runtime for their system once, then use it to open compatible .krate apps. The runtime handles the platform-specific implementation. The application file stays the same.</p>
-<p>See Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/application-distribution">application packaging</a> and Tauri's <a href="https://tauri.app/distribute/">distribution formats</a>. Electron's <code>app.asar</code> can package application source, but it is delivered inside a platform-specific Electron distribution; it is not a standalone cross-OS executable.</p>
+    <section id="the-usual-route-step-by-step">
+      <h2>The usual route, step by step</h2>
+<ol>
+<li><strong>Build once per operating system.</strong> Electron and Tauri share your code, then produce a separate package for macOS, Windows and Linux. In practice that means a build machine or CI runner for each system, and macOS signing needs a Mac.</li>
+<li><strong>Often build once per processor.</strong> Apple silicon and Intel Macs, x64 and ARM64 Windows, x86_64 and arm64 Linux each need native code built for them, or a universal build that carries both.</li>
+<li><strong>Sign and notarize.</strong> For direct downloads, macOS expects a Developer ID signature and Apple notarization, which needs a paid Apple Developer Program membership. On Windows, an unsigned download shows "Windows protected your PC", and even a newly signed app can be flagged as unrecognized until it builds reputation.</li>
+<li><strong>Package and host each one.</strong> A DMG or app bundle for macOS, an installer for Windows, and AppImage, deb, RPM, Flatpak or Snap for Linux. Each gets its own download link and its own update path.</li>
+</ol>
+<p>After all that, a conventional desktop program usually runs with the same access to files and the network as the person who opened it, unless the platform sandboxes it, as the Mac App Store does. A signature says who made the app. It does not limit which of your files the app can read.</p>
+<p>Sources: Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/code-signing">code signing guide</a>, Tauri's <a href="https://tauri.app/distribute/">distribution guide</a> and Microsoft's <a href="https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation">SmartScreen reputation guide</a>.</p>
     </section>
-    <section id="compare-the-distribution-boundary">
-      <h2>Compare the distribution boundary</h2>
-<div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
-<caption>Desktop distribution models, reviewed 20 September 2026</caption>
-<thead><tr><th scope="col">Question</th><th scope="col">Electron</th><th scope="col">Tauri</th><th scope="col">Krate</th></tr></thead>
-<tbody>
-<tr><th scope="row">Application artifact</th><td>Platform-specific packaged application.</td><td>Platform-specific application bundle or installer.</td><td>One .krate application bundle for compatible runtimes.</td></tr>
-<tr><th scope="row">UI/runtime model</th><td>Chromium and Node.js in Electron's process model.</td><td>Web frontend in an OS WebView with a Rust backend.</td><td>WebAssembly guest using Krate UI and host interfaces.</td></tr>
-<tr><th scope="row">Recipient prerequisite</th><td>The packaged application and its platform requirements.</td><td>The packaged application and platform/WebView requirements.</td><td>A compatible native Krate runtime installed for that system.</td></tr>
-<tr><th scope="row">Existing app migration</th><td>Fits browser/Node-based applications.</td><td>Fits web UI with Rust/native integration.</td><td>Port logic and adapt UI/host dependencies to supported Krate APIs.</td></tr>
-</tbody></table></div>
-<p>Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">distribution guide</a> covers packaging, signing, publishing and updates; its <a href="https://www.electronjs.org/docs/latest/tutorial/process-model">process model</a> explains Chromium and Node. Tauri documents <a href="https://tauri.app/distribute/">platform-specific distribution</a> and its <a href="https://tauri.app/concept/architecture/">WebView/Rust architecture</a>. Tauri does not bundle Chromium like Electron.</p>
+    <section id="the-krate-route">
+      <h2>The Krate route</h2>
+<ol>
+<li><strong>Make the app.</strong> Describe it to an AI coding agent in <a href="/studio/">Krate Studio</a>, or write it in Rust against the Krate SDK. Studio can also port a project you already have: the AI rewrites it against Krate's interfaces, so read the plan it shows before you start.</li>
+<li><strong>Pack one file.</strong> The result is one <code>.krate</code>: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. It contains no Intel or ARM machine code, so there is nothing to build per processor.</li>
+<li><strong>Send it like a document.</strong> Email it, drop it in a shared folder or a chat, or publish it and send a link. Every recipient gets the same bytes.</li>
+<li><strong>Your users install Krate once.</strong> Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once when it is installed. After that, each new app is only its own file.</li>
+<li><strong>They decide what it may touch.</strong> An app starts without file or network access and asks for what it needs. The runtime checks protected calls against what was allowed; the known gaps are on the <a href="/docs/limits.html">limits page</a>. See <a href="/run-ai-generated-code-safely.html">how to inspect an app before running it</a>.</li>
+</ol>
     </section>
-    <section id="can-i-send-exactly-the-same-file-to-all-three-systems">
-      <h2>Can I send exactly the same file to all three systems?</h2>
-<p>Yes, with Krate: build for Krate's interfaces and send the same .krate file to users with compatible Mac, Windows or Linux runtimes. There is no separate application build per OS. You still test the app's behavior on the systems you support.</p>
-<p>Try <a href="/docs/quickstart.html#try-the-chart-sample">the downloadable Chart example</a>. Its <a href="/portable-desktop-app-format.html#try-one-file-tested-on-all-three-systems">source, full-file checksum and three-OS test evidence</a> let you check the claim yourself. No Rust toolchain or AI account is needed to run the file.</p>
+    <section id="what-you-stop-doing-and-what-you-still-do">
+      <h2>What you stop doing, and what you still do</h2>
+<p><strong>You stop</strong> producing a separate app package for each operating system and processor, signing and notarizing each app for each platform, and asking people to run an installer that gets their full permissions.</p>
+<p><strong>You still</strong> test the app on the systems you support, write it against Krate's interfaces (Rust today), check the <a href="/docs/limits.html">current limits</a> and tell recipients where to get the runtime. Runtime updates are separate from your app's updates. Krate does not turn an existing <code>.exe</code> or <code>.app</code> into a <code>.krate</code>.</p>
     </section>
-    <section id="how-to-decide-for-your-project">
-      <h2>How to decide for your project</h2>
-<p>If your application depends on a browser DOM or Node ecosystem, account for that investment before moving away from Electron. If you want a web UI plus custom Rust/native integrations, examine Tauri's APIs and deployment requirements. Neither choice means rewriting the entire application independently for every OS.</p>
-<p>Evaluate Krate when distributing the same application file matters and your required features map to its interfaces. Start with <code>krate port ./my-project</code>, then validate the findings against the <a href="/docs/limits.html">current capability limits</a>. A scan is evidence for planning, not proof the port will preserve every feature.</p>
-<p>For a specific app, compare a representative end-to-end task first. If an essential OS integration is missing, stay with a suitable platform or contribute that capability before migrating. See the <a href="/docs/porting.html">porting checklist</a>.</p>
+    <section id="check-it-yourself">
+      <h2>Check it yourself</h2>
+<p>Download <a href="https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate">chart.krate</a>, one file of 11,455 bytes with SHA-256 <code>3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3</code>. Follow <a href="/docs/quickstart.html#try-the-chart-sample">the quickstart</a> to see what it asks for and run it on any of the three systems.</p>
+<p>Ten ported apps, as the same committed <code>.krate</code> files, passed their replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. An eleventh app has no replay check defined yet and is skipped. Records: <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a>. These are automated headless checks, not hands-on testing of every feature. Runtimes are also published for Intel Macs, ARM64 Windows and arm64 Linux; those are not in these checks yet.</p>
     </section>
-    <section id="compare-costs-at-the-same-boundary">
-      <h2>Compare costs at the same boundary</h2>
-<p>With Krate, the runtime is installed once and shared by compatible apps. Measure the first installation as runtime plus app; measure each additional app separately. For every option, record the complete download, installed footprint and app data.</p>
-<p>For performance, hold the task and inputs constant, record versions and hardware, distinguish cold/warm startup and count all relevant processes. Native dependencies, renderer work and application design can dominate. The <a href="/reports/">Krate reports</a> describe particular workloads; they are not benchmarks of all Electron or Tauri applications.</p>
+    <section id="when-another-route-fits-better">
+      <h2>When another route fits better</h2>
+<ul>
+<li>Your app also needs phones or the web: Tauri, Flutter or a web app cover more platforms today.</li>
+<li>Your app depends on the browser DOM or Node.js packages: Electron runs that code as it is.</li>
+<li>You need native libraries, subprocesses or a demanding 3D renderer; see the <a href="/docs/limits.html">limits page</a>.</li>
+</ul>
+<p>Krate fits desktop tools, internal utilities, dashboards, editors, small games and apps made with AI, where getting one file to people safely matters more than reaching every platform.</p>
     </section>
-    <section id="what-happens-when-the-app-changes">
-      <h2>What happens when the app changes?</h2>
-<p>Build the next .krate file and distribute it to your users. They can open that file with a compatible runtime; using the format does not require a hosted app store. Updates to the native runtime are separate from updates to your app.</p>
-<p>Compatibility, user-data migration and testing remain part of releasing software. Krate changes the artifact you distribute, not those responsibilities. Start with a representative feature and real data, then use the <a href="/docs/porting.html">porting checklist</a> to work through the rest of your application.</p>
+    <section id="questions">
+      <h2>Questions</h2>
+      <h3>Can one file run on Windows, macOS and Linux?</h3>
+<p>A normal native executable can't, because each system uses its own executable format. A <code>.krate</code> can, because it is not a native executable: it holds a WebAssembly component that the installed Krate runtime runs on each system.</p>
+      <h3>Do the people I send it to need to install anything?</h3>
+<p>Yes, once: the Krate runtime for their system, from the <a href="/download/">download page</a>. After that, every Krate app is a single file they open.</p>
+      <h3>Do I need a code signing certificate to ship a .krate?</h3>
+<p>No. You don't sign and notarize a package per operating system, because the file isn't one. You can still sign a <code>.krate</code> with your own key so people can check it came from you. See <a href="/desktop-app-code-signing.html">code signing and Krate</a>.</p>
+      <h3>Can I ship an app I made with AI this way?</h3>
+<p>Yes, if it is a Krate app. Make it in Krate Studio with the AI agent you already use, or open an existing project in Studio and port it. See <a href="/share-an-app-made-with-ai.html">how to share an AI-built desktop app</a>.</p>
     </section>
 
     <section id="more-answers">
@@ -1462,7 +1461,7 @@ picture source { display: none; }
         <li><a href="/portable-desktop-app-format.html">One desktop app file, three operating systems</a></li>
         <li><a href="/share-an-app-made-with-ai.html">Share the app, not your development setup</a></li>
         <li><a href="/run-ai-generated-code-safely.html">Inspect what an AI-built app can access</a></li>
-        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
+        <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
         <li><a href="/krate-vs-electron.html">Krate vs Electron: one app file instead of a browser in every app</a></li>
         <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
         <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>

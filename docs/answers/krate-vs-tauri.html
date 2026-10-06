@@ -1217,21 +1217,21 @@ picture source { display: none; }
   .appFrame { aspect-ratio: auto; }
   .appFrame .ap { position: relative; margin-top: 16px; opacity: 1; transform: none; }
 </style></noscript>
-<title>Krate vs Electron vs Tauri: desktop app distribution</title>
-  <meta name="description" content="Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.">
-  <link rel="canonical" href="https://krate.tech/desktop-app-distribution.html">
+<title>Krate vs Tauri: one .krate file or a bundle for each OS</title>
+  <meta name="description" content="Tauri builds a WebView app and an installer for each OS. Krate ships one .krate file that opens on Mac, Windows and Linux through a runtime installed once.">
+  <link rel="canonical" href="https://krate.tech/krate-vs-tauri.html">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Krate">
-  <meta property="og:title" content="Krate vs Electron vs Tauri: desktop app distribution">
-  <meta property="og:description" content="Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.">
-  <meta property="og:url" content="https://krate.tech/desktop-app-distribution.html">
+  <meta property="og:title" content="Krate vs Tauri: one .krate file or a bundle for each OS">
+  <meta property="og:description" content="Tauri builds a WebView app and an installer for each OS. Krate ships one .krate file that opens on Mac, Windows and Linux through a runtime installed once.">
+  <meta property="og:url" content="https://krate.tech/krate-vs-tauri.html">
   <meta property="og:image" content="https://krate.tech/og-v4.png">
   <meta property="og:image:alt" content="Krate desktop application runtime">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Krate vs Electron vs Tauri: desktop app distribution">
-  <meta name="twitter:description" content="Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.">
+  <meta name="twitter:title" content="Krate vs Tauri: one .krate file or a bundle for each OS">
+  <meta name="twitter:description" content="Tauri builds a WebView app and an installer for each OS. Krate ships one .krate file that opens on Mac, Windows and Linux through a runtime installed once.">
   <meta name="twitter:image" content="https://krate.tech/og-v4.png">
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/desktop-app-distribution.html#webpage", "url": "https://krate.tech/desktop-app-distribution.html", "name": "Krate vs Electron vs Tauri: desktop app distribution", "description": "Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/krate-vs-tauri.html#webpage", "url": "https://krate.tech/krate-vs-tauri.html", "name": "Krate vs Tauri: one .krate file or a bundle for each OS", "description": "Tauri builds a WebView app and an installer for each OS. Krate ships one .krate file that opens on Mac, Windows and Linux through a runtime installed once.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Is Krate built on Tauri?", "acceptedAnswer": {"@type": "Answer", "text": "No. Krate is its own runtime, built on Wasmtime. It does not use a WebView."}}, {"@type": "Question", "name": "Can a Tauri app run in Krate unchanged?", "acceptedAnswer": {"@type": "Answer", "text": "No. A Tauri app is a native program with a web frontend. A Krate app is a WebAssembly component written against Krate's interfaces, so moving one is a port."}}, {"@type": "Question", "name": "Which one makes smaller downloads?", "acceptedAnswer": {"@type": "Answer", "text": "It depends on what you count. A Tauri app relies on the system WebView, so its package can be small. A Krate app file is small too, but a first-time recipient also downloads the Krate runtime once. Compare runtime plus app for the first app, and the app alone after that."}}]}</script>
   <style>
     /* The article shell owns its layout. The homepage supplies fonts and
        colors, not styles for these differently named elements. */
@@ -1392,68 +1392,65 @@ picture source { display: none; }
   </div>
 </header>
     <main id="main" class="page-wrap">
-    <h1>Krate vs Electron vs Tauri: what do you ship?</h1>
-    <p class="page-lede">Electron and Tauri let you share a codebase and ship platform-specific applications. Krate lets you ship one .krate file that runs on Mac, Windows and Linux through native Krate runtimes. The difference is the file you hand to your users.</p>
+    <h1>Krate vs Tauri: what you ship and who holds the permissions</h1>
+    <p class="page-lede">Tauri and Krate are both built in Rust and both take permissions seriously, but they ship differently. Tauri builds a platform-specific installer or bundle for each operating system, with your web frontend running in the system WebView. Krate ships one <code>.krate</code> file that the installed Krate runtime opens on macOS, Windows and Linux. Tauri is more mature and also targets Android and iOS; Krate is desktop only today.</p>
+    <p class="answer-reviewed">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4.</p>
     <div class="answer-entry">
       <nav class="answer-actions" aria-label="Choose your next step">
-<a class="pill pill-primary" href="/docs/quickstart.html#try-the-chart-sample">Try the same-file example</a>
-<a class="pill" href="/docs/porting.html">Check your project&#x27;s fit</a>
+<a class="pill pill-primary" href="#side-by-side">See the comparison</a>
+<a class="pill" href="/docs/quickstart.html#try-the-chart-sample">Try a .krate file</a>
       </nav>
 
     </div>
 
-    <section id="one-app-two-shipping-workflows">
-      <h2>One app, two shipping workflows</h2>
-<p>When you release an update, what needs to reach each user? In the usual packaged Electron or Tauri workflow, you distribute the build for their platform. With Krate, you distribute the same application artifact to all three.</p>
-<figure class="shipping-flow">
-<figcaption>Typical desktop packaging, compared with Krate's shared-runtime model. Read each row from build to delivery.</figcaption>
-<div class="shipping-lane"><h3>Electron / Tauri</h3><ol>
-<li><span>1. Develop</span>Shared application code</li>
-<li><span>2. Package</span>Platform-specific applications</li>
-<li><span>3. Deliver</span>macOS package<br>Windows package<br>Linux package</li>
-</ol></div>
-<div class="shipping-lane shipping-lane-krate"><h3>Krate</h3><ol>
-<li><span>1. Develop</span>App using Krate's interfaces</li>
-<li><span>2. Package</span>One <code>app.krate</code> file</li>
-<li><span>3. Deliver</span>The same file to Mac, Windows and Linux users</li>
-</ol></div>
-</figure>
-<p>Krate users install the native runtime for their system once, then use it to open compatible .krate apps. The runtime handles the platform-specific implementation. The application file stays the same.</p>
-<p>See Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/application-distribution">application packaging</a> and Tauri's <a href="https://tauri.app/distribute/">distribution formats</a>. Electron's <code>app.asar</code> can package application source, but it is delivered inside a platform-specific Electron distribution; it is not a standalone cross-OS executable.</p>
-    </section>
-    <section id="compare-the-distribution-boundary">
-      <h2>Compare the distribution boundary</h2>
-<div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
-<caption>Desktop distribution models, reviewed 20 September 2026</caption>
-<thead><tr><th scope="col">Question</th><th scope="col">Electron</th><th scope="col">Tauri</th><th scope="col">Krate</th></tr></thead>
+    <section id="side-by-side">
+      <h2>Side by side</h2>
+<div class="answer-table-wrap" role="region" aria-label="Tauri and Krate compared" tabindex="0"><table class="answer-table">
+<caption>Tauri and Krate, reviewed 6 October 2026 against Tauri's official docs</caption>
+<thead><tr><th scope="col">Question</th><th scope="col">Tauri</th><th scope="col">Krate</th></tr></thead>
 <tbody>
-<tr><th scope="row">Application artifact</th><td>Platform-specific packaged application.</td><td>Platform-specific application bundle or installer.</td><td>One .krate application bundle for compatible runtimes.</td></tr>
-<tr><th scope="row">UI/runtime model</th><td>Chromium and Node.js in Electron's process model.</td><td>Web frontend in an OS WebView with a Rust backend.</td><td>WebAssembly guest using Krate UI and host interfaces.</td></tr>
-<tr><th scope="row">Recipient prerequisite</th><td>The packaged application and its platform requirements.</td><td>The packaged application and platform/WebView requirements.</td><td>A compatible native Krate runtime installed for that system.</td></tr>
-<tr><th scope="row">Existing app migration</th><td>Fits browser/Node-based applications.</td><td>Fits web UI with Rust/native integration.</td><td>Port logic and adapt UI/host dependencies to supported Krate APIs.</td></tr>
+<tr><th scope="row">What you ship</th><td>An installer or bundle per platform: DMG or app bundle, a Windows installer, AppImage, deb, RPM, Flatpak or Snap.</td><td>One <code>.krate</code> file for macOS, Windows and Linux.</td></tr>
+<tr><th scope="row">Interface</th><td>Your web frontend in the system WebView: WebView2, WKWebView or webkit2gtk.</td><td>Krate's own UI interfaces. No WebView.</td></tr>
+<tr><th scope="row">App logic</th><td>Rust commands, with plugins in Rust, Swift or Kotlin.</td><td>A WebAssembly component. Rust today.</td></tr>
+<tr><th scope="row">Permissions</th><td>Capability files the developer writes grant or deny commands per window.</td><td>The app requests access in its manifest; the person running it grants or refuses.</td></tr>
+<tr><th scope="row">Signing</th><td>Required on most platforms. Direct macOS downloads also need notarization.</td><td>No per-OS signing of the app file. Optional Krate signature with your own key.</td></tr>
+<tr><th scope="row">Platforms</th><td>Windows, macOS, Linux, Android and iOS.</td><td>macOS, Windows and Linux. iOS and Android exist only as reference ports.</td></tr>
+<tr><th scope="row">Maturity</th><td>Version 2, stable since 2024.</td><td>Young (0.5.x).</td></tr>
 </tbody></table></div>
-<p>Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">distribution guide</a> covers packaging, signing, publishing and updates; its <a href="https://www.electronjs.org/docs/latest/tutorial/process-model">process model</a> explains Chromium and Node. Tauri documents <a href="https://tauri.app/distribute/">platform-specific distribution</a> and its <a href="https://tauri.app/concept/architecture/">WebView/Rust architecture</a>. Tauri does not bundle Chromium like Electron.</p>
+<p>Tauri facts: <a href="https://tauri.app/distribute/">distribution</a>, <a href="https://tauri.app/security/capabilities/">capabilities</a> and <a href="https://tauri.app/reference/webview-versions/">WebView versions</a>.</p>
     </section>
-    <section id="can-i-send-exactly-the-same-file-to-all-three-systems">
-      <h2>Can I send exactly the same file to all three systems?</h2>
-<p>Yes, with Krate: build for Krate's interfaces and send the same .krate file to users with compatible Mac, Windows or Linux runtimes. There is no separate application build per OS. You still test the app's behavior on the systems you support.</p>
-<p>Try <a href="/docs/quickstart.html#try-the-chart-sample">the downloadable Chart example</a>. Its <a href="/portable-desktop-app-format.html#try-one-file-tested-on-all-three-systems">source, full-file checksum and three-OS test evidence</a> let you check the claim yourself. No Rust toolchain or AI account is needed to run the file.</p>
+    <section id="who-holds-the-permissions">
+      <h2>Who holds the permissions</h2>
+<p>Tauri's capabilities limit what the frontend in the WebView may call. They are chosen by the developer, and <a href="https://tauri.app/security/capabilities/">Tauri's own docs</a> say they do not protect against malicious or insecure Rust code in the app itself. They protect users from a compromised frontend.</p>
+<p>In Krate, the whole app is the guest. It cannot call the operating system directly; it calls Krate interfaces, and the runtime checks protected calls against what the person running it allowed. The model is young and its gaps are on the <a href="/docs/limits.html">limits page</a>.</p>
     </section>
-    <section id="how-to-decide-for-your-project">
-      <h2>How to decide for your project</h2>
-<p>If your application depends on a browser DOM or Node ecosystem, account for that investment before moving away from Electron. If you want a web UI plus custom Rust/native integrations, examine Tauri's APIs and deployment requirements. Neither choice means rewriting the entire application independently for every OS.</p>
-<p>Evaluate Krate when distributing the same application file matters and your required features map to its interfaces. Start with <code>krate port ./my-project</code>, then validate the findings against the <a href="/docs/limits.html">current capability limits</a>. A scan is evidence for planning, not proof the port will preserve every feature.</p>
-<p>For a specific app, compare a representative end-to-end task first. If an essential OS integration is missing, stay with a suitable platform or contribute that capability before migrating. See the <a href="/docs/porting.html">porting checklist</a>.</p>
+    <section id="shipping-a-release">
+      <h2>Shipping a release</h2>
+<p>With Tauri, a release means building on each platform, usually in a CI job per system, signing for each platform, and hosting and updating each package. With Krate, a release is one new <code>.krate</code> file that you send or publish. Recipients need a compatible runtime, and runtime updates are separate from yours.</p>
     </section>
-    <section id="compare-costs-at-the-same-boundary">
-      <h2>Compare costs at the same boundary</h2>
-<p>With Krate, the runtime is installed once and shared by compatible apps. Measure the first installation as runtime plus app; measure each additional app separately. For every option, record the complete download, installed footprint and app data.</p>
-<p>For performance, hold the task and inputs constant, record versions and hardware, distinguish cold/warm startup and count all relevant processes. Native dependencies, renderer work and application design can dominate. The <a href="/reports/">Krate reports</a> describe particular workloads; they are not benchmarks of all Electron or Tauri applications.</p>
+    <section id="when-tauri-is-the-better-choice">
+      <h2>When Tauri is the better choice</h2>
+<ul>
+<li>You want a web frontend, or already have one.</li>
+<li>You need Android or iOS from the same project.</li>
+<li>You call native libraries from Rust. A <code>.krate</code> cannot link a native library.</li>
+<li>You need its plugin ecosystem.</li>
+</ul>
     </section>
-    <section id="what-happens-when-the-app-changes">
-      <h2>What happens when the app changes?</h2>
-<p>Build the next .krate file and distribute it to your users. They can open that file with a compatible runtime; using the format does not require a hosted app store. Updates to the native runtime are separate from updates to your app.</p>
-<p>Compatibility, user-data migration and testing remain part of releasing software. Krate changes the artifact you distribute, not those responsibilities. Start with a representative feature and real data, then use the <a href="/docs/porting.html">porting checklist</a> to work through the rest of your application.</p>
+    <section id="moving-a-tauri-app-to-krate">
+      <h2>Moving a Tauri app to Krate</h2>
+<p>Inventory your Rust commands, plugins and WebView interactions, then run the scan, which reads source without building it:</p>
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate port ./my-tauri-app</pre>
+<p>Pure Rust logic may carry over. The WebView interface and native plugins need adapting to Krate's widgets, canvas and host interfaces. See the <a href="/docs/porting.html">porting guide</a>.</p>
+    </section>
+    <section id="questions">
+      <h2>Questions</h2>
+      <h3>Is Krate built on Tauri?</h3>
+<p>No. Krate is its own runtime, built on Wasmtime. It does not use a WebView.</p>
+      <h3>Can a Tauri app run in Krate unchanged?</h3>
+<p>No. A Tauri app is a native program with a web frontend. A Krate app is a WebAssembly component written against Krate's interfaces, so moving one is a port.</p>
+      <h3>Which one makes smaller downloads?</h3>
+<p>It depends on what you count. A Tauri app relies on the system WebView, so its package can be small. A Krate app file is small too, but a first-time recipient also downloads the Krate runtime once. Compare runtime plus app for the first app, and the app alone after that.</p>
     </section>
 
     <section id="more-answers">
@@ -1462,9 +1459,9 @@ picture source { display: none; }
         <li><a href="/portable-desktop-app-format.html">One desktop app file, three operating systems</a></li>
         <li><a href="/share-an-app-made-with-ai.html">Share the app, not your development setup</a></li>
         <li><a href="/run-ai-generated-code-safely.html">Inspect what an AI-built app can access</a></li>
+        <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
         <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
         <li><a href="/krate-vs-electron.html">Krate vs Electron: one app file instead of a browser in every app</a></li>
-        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
         <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>
         <li><a href="/desktop-app-code-signing.html">Do you need code signing to ship a desktop app?</a></li>
         <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>

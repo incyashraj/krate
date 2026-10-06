@@ -1,7 +1,7 @@
 {
   "schema": "krate.public-facts.v1",
   "name": "Krate",
-  "description": "Krate lets developers package software as one .krate file that runs through native Krate runtimes on macOS, Windows and Linux.",
+  "description": "Krate lets developers ship an app as one .krate file that runs through native Krate runtimes on macOS, Windows and Linux, instead of building, signing and hosting a separate package for each operating system.",
   "prerequisite": "The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.",
   "bundle_accounting": "A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.",
   "security": "Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.",

@@ -28,7 +28,9 @@ PRIORITY_PATHS = {"/", "/studio/", "/download/", "/about/", "/faq/", "/docs/", "
                   "/docs/porting.html", "/docs/limits.html", "/reports/", "/progress/",
                   "/open/", "/cloud/", "/portable-desktop-app-format.html",
                   "/run-ai-generated-code-safely.html", "/share-an-app-made-with-ai.html",
-                  "/desktop-app-distribution.html"}
+                  "/desktop-app-distribution.html", "/how-to-distribute-a-desktop-app.html",
+                  "/krate-vs-electron.html", "/krate-vs-tauri.html", "/desktop-app-or-web-app.html",
+                  "/desktop-app-code-signing.html", "/desktop-app-shipping-faq.html"}
 # Narrow editorial summaries for search entry points whose opening paragraph
 # is setup text, an old size claim or a phase-status snapshot. Summarize the
 # actual page rather than turning historical prose into a current promise.

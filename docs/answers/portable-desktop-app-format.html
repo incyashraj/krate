@@ -2,6 +2,7 @@
 <html lang="en" class="dark">
 <head>
 <meta charset="utf-8" />
+<script>document.documentElement.classList.add("js");</script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
 
@@ -20,9 +21,15 @@
 
 
 
+
+
+
 <style>
 @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+/* Geist, every weight (variable, Latin), for headings below the first
+   screen: 600 with tight tracking is what reads as a product, not a poster. */
+@font-face { font-family: "Geist Var"; src: url("/fonts/geist-var-latin.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
 
 :root {
@@ -48,6 +55,109 @@ picture { display: contents; }
 picture source { display: none; }
 ::selection { background: rgba(165, 88, 251, 0.35); }
 
+/* ------------------------------------------------ prompt-first hero
+   The first screen is the product: one bar, a headline and a line under
+   it. Type an app, press Enter, and it opens in Studio (signing in first
+   if needed) and starts from the sentence. The rest of the page follows
+   on scroll. */
+.promptHero {
+  position: relative; min-height: 100svh; display: grid; place-items: center;
+  padding: 96px 20px 72px; overflow: hidden; isolation: isolate;
+}
+/* Krate's eclipse, rising: the same four coats as the hero's (a white rim, a purple band, an indigo band, a black core) on a planet BELOW the bar, so the first screen is a horizon with the bar in the sky above it. The
+   next section's eclipse hangs from above, so scrolling passes from one
+   horizon to the other. CSS only: it is visible even where animation
+   frames never arrive, and it rises in once where motion is welcome. */
+/* The light: a full field of the brand's colour, blue into indigo into
+   violet with a warm edge at the bottom, filling the first screen from the
+   bar down and gone into black above it. Five big soft pools, each drifting
+   on its own slow cycle so the field is alive; the whole field rises and
+   fades in once as the page lands. Film grain keeps it from reading as a
+   screen effect. The next section overlaps it with a rounded top edge, so
+   the colour is covered rather than cut. */
+.phSky { position: absolute; inset: 0; z-index: -3; pointer-events: none; background: #000; }
+.phAurora {
+  position: absolute; inset: 0; z-index: -2; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, transparent 44%, #000 74%);
+          mask-image: linear-gradient(180deg, transparent 44%, #000 74%);
+}
+.phAurora i { position: absolute; display: block; border-radius: 50%; mix-blend-mode: screen; filter: blur(64px); will-change: transform; }
+.phAurora .a1 { left: -10%; top: 50%; width: 62%; height: 66%; background: radial-gradient(closest-side, rgba(37, 99, 235, 0.95), rgba(37, 99, 235, 0.4) 55%, transparent 100%); }
+.phAurora .a2 { left: 36%; top: 52%; width: 70%; height: 72%; background: radial-gradient(closest-side, rgba(79, 70, 229, 1), rgba(79, 70, 229, 0.42) 55%, transparent 100%); }
+.phAurora .a3 { left: 8%; top: 64%; width: 58%; height: 60%; background: radial-gradient(closest-side, rgba(139, 92, 246, 0.95), rgba(139, 92, 246, 0.3) 58%, transparent 100%); }
+.phAurora .a4 { left: 40%; top: 70%; width: 62%; height: 56%; background: radial-gradient(closest-side, rgba(217, 70, 239, 0.8), rgba(217, 70, 239, 0.22) 55%, transparent 100%); }
+.phAurora .a5 { left: 32%; top: 58%; width: 36%; height: 40%; background: radial-gradient(closest-side, rgba(199, 210, 254, 0.55), transparent 100%); filter: blur(48px); }
+.phGrain {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0.07; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .phAurora { animation: ph-rise 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .phAurora .a1 { animation: ph-drift1 16s ease-in-out infinite alternate; }
+  .phAurora .a2 { animation: ph-drift2 19s ease-in-out infinite alternate; }
+  .phAurora .a3 { animation: ph-drift3 14s ease-in-out infinite alternate; }
+  .phAurora .a4 { animation: ph-drift1 21s ease-in-out infinite alternate-reverse; }
+  .phAurora .a5 { animation: ph-drift2 12s ease-in-out infinite alternate-reverse; }
+}
+@keyframes ph-rise { from { opacity: 0; transform: translateY(10vh); } to { opacity: 1; transform: none; } }
+/* Side to side, mostly: the light sweeps across the bottom of the screen. */
+@keyframes ph-drift1 { to { transform: translate(28%, 3%) scale(1.06); } }
+@keyframes ph-drift2 { to { transform: translate(-30%, -3%) scale(0.96); } }
+@keyframes ph-drift3 { to { transform: translate(34%, 2%) scale(1.1); } }
+@media (max-width: 700px) {
+  .phAurora .a1 { left: -40%; width: 120%; }
+  .phAurora .a2 { left: 10%; width: 120%; }
+  .phAurora .a3 { left: -30%; width: 110%; }
+  .phAurora .a4 { left: 20%; width: 110%; }
+  .phAurora .a5 { left: 10%; width: 80%; }
+}
+/* Wide enough for the headline on one line; the bar keeps its own width. */
+.promptHero .ph-inner { width: 100%; max-width: 1120px; text-align: center; }
+.promptHero .promptBar, .promptHero .ph-note { max-width: 640px; margin-left: auto; margin-right: auto; }
+.promptHero h1 {
+  font-family: var(--disp); font-weight: 600; letter-spacing: -0.02em;
+  font-size: clamp(34px, 4.6vw, 58px); line-height: 1.08; color: #fff;
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; column-gap: 0.3em;
+}
+.promptHero h1 .dim { font-weight: 500; color: #c4c4cc; }
+@media (max-width: 760px) {
+  /* Two lines on a phone, as the hero does: the glyph is hidden there, and
+     without it the two sentences would run together. */
+  .promptHero h1 { flex-direction: column; }
+  .promptHero h1 .dim { color: #d4d4d8; }
+}
+.promptHero .ph-sub {
+  margin: 12px auto 30px; max-width: 780px; font-size: clamp(15px, 1.4vw, 17.5px);
+  line-height: 1.5; color: #e4e4e7;
+}
+@media (max-width: 700px) { .promptHero .ph-sub { text-wrap: balance; } }
+.ph-br { display: none; }
+.promptBar {
+  text-align: left; background: rgba(24, 24, 27, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 22px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  padding: 14px 14px 10px 18px; transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.promptBar:focus-within { border-color: rgba(196, 181, 253, 0.55);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(165, 88, 251, 0.14); }
+.promptBar textarea {
+  display: block; width: 100%; min-height: 44px; max-height: 200px; resize: none;
+  background: transparent; border: 0; outline: none; color: #fff;
+  font: inherit; font-size: 16px; line-height: 1.5;
+}
+.promptBar textarea::placeholder { color: #8b8b95; }
+.promptBar .pb-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.promptBar .pb-send {
+  width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center;
+  background: #fff; color: #0a0a0a; transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.promptBar .pb-send:disabled { opacity: 0.35; cursor: default; }
+.promptBar .pb-send:not(:disabled):hover { transform: translateY(-1px); }
+.promptHero .ph-note { min-height: 22px; margin-top: 14px; font-size: 13.5px; color: #d4d4d8; }
+.promptHero .ph-note a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+
 /* ------------------------------------------------ progressive blur bar */
 .topblur {
   position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
@@ -70,6 +180,8 @@ picture source { display: none; }
 .bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
   transition: color 0.15s ease, background 0.15s ease; }
 .bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.cta { margin-left: 6px; background: #fff; color: #000; font-weight: 500; padding: 6px 12px; }
+.bnav a.cta:hover { background: #e4e4e7; color: #000; }
 /* The nav is where "Make an app" lives, and on a phone that is the
    primary action of the whole page. It used to be hidden wholesale under
    760px, so a phone visitor had a download button and nothing else. The
@@ -137,68 +249,10 @@ picture source { display: none; }
 }
 .starpill:active { scale: 0.96; }
 .starpill svg { width: 12px; height: 12px; color: #fbbf24; flex: none; }
-.starpill .num { font-variant-numeric: tabular-nums; }
-
-/* --------------------------------------------------------------- hero */
-.heroTrack { position: relative; height: 195vh; width: 100%; }
-.heroStick { position: sticky; top: 0; height: 100vh; width: 100%; overflow: hidden; }
-
-/* The eclipse: one giant ellipse hanging above the screen, its bottom edge
+.starpill .num { font-variant-numeric: tabular-nums; }/* --------------------------------------------------------------- hero *//* The eclipse: one giant ellipse hanging above the screen, its bottom edge
    the visible arc. Four concentric coats, outermost first: a white rim with
    its own halo, a purple band, an indigo band, and a heavily blurred black
-   core that darkens the deep interior. */
-.eclipse {
-  position: absolute; left: 50%; top: 0; width: 200vw; height: 200vh;
-  margin-left: -100vw; pointer-events: none; isolation: isolate;
-  opacity: 0; filter: blur(15px);
-  transform: translateY(-180vh) scaleY(1.12);
-  will-change: transform, opacity, filter;
-}
-.eclipse > i { position: absolute; inset: 0; border-radius: 100%; display: block; }
-.eclipse .rim  { background: #fff; box-shadow: 0 5px 18px 1px rgba(255, 255, 255, 0.55), 0 14px 44px 4px rgba(165, 88, 251, 0.32); }
-.eclipse .glo1 { background: var(--purple); filter: blur(22px); transform: scale(0.988); }
-.eclipse .glo2 { background: var(--indigo); filter: blur(22px); transform: scale(0.964); }
-.eclipse .core { background: #000; filter: blur(48px); transform: scale(0.94); }
-
-.heroContent {
-  position: absolute; inset: 0; z-index: 10;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  gap: 24px; padding: max(15vh, 110px) 24px 0; text-align: center;
-  will-change: transform, opacity, filter;
-}
-.heroContent h1 {
-  font-family: var(--disp); font-weight: 600;
-  font-size: clamp(34px, 7.4vw, 76px);
-  line-height: 1.1; letter-spacing: -0.01em; color: #fff;
-  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
-  opacity: 0; filter: blur(8px); transform: translateY(24px);
-}
-.heroContent h1 .dim { font-weight: 500; color: #a1a1aa; }
-.heroCycle {
-  display: inline-flex; align-items: center; justify-content: center;
-  overflow: visible; vertical-align: middle;
-  width: 1.06em; margin: 0 0.125em;
-}
-.heroCycle .glyph {
-  display: inline-block; width: 0.82em; height: 0.82em;
-  transition: opacity 0.42s cubic-bezier(0.2, 0.8, 0.2, 1),
-              transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1.35);
-}
-.heroCycle .glyph svg { width: 100%; height: 100%; display: block; }
-.heroCycle .glyph.out { opacity: 0; transform: translateY(-12px) scale(0) rotate(12deg); transition-timing-function: ease-in; transition-duration: 0.3s; }
-.heroCycle .glyph.pre { opacity: 0; transform: translateY(16px) scale(0) rotate(-12deg); transition: none; }
-.heroSub {
-  max-width: 620px; font-size: 14px; line-height: 1.7; color: #a1a1aa;
-  opacity: 0; filter: blur(4px); transform: translateY(16px);
-}
-.heroCtas { opacity: 0; transform: translateY(16px); }
-/* The second door: makers download, receivers open. Both start here. */
-.secondDoor { margin-top: 18px; font-size: 13px; color: #71717a; }
-.secondDoor a { color: #a1a1aa; text-decoration: underline;
-  text-underline-offset: 3px; transition: color 0.15s ease; }
-.secondDoor a:hover { color: #fff; }
-.heroContent h1.in, .heroSub.in, .heroCtas.in { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
+   core that darkens the deep interior. *//* The .krate file between the two sentences: the thing the line is about. *//* The second door: makers download, receivers open. Both start here. */
 
 /* ------------------------------------------------------------ buttons */
 .ctaRow { display: flex; gap: 12px; margin-top: 8px; align-items: stretch; justify-content: center; flex-wrap: wrap; }
@@ -237,8 +291,7 @@ picture source { display: none; }
  *
  * Making an app is the product; downloading a tool is how somebody does
  * more of it later. So the hero leads with Make in the white primary, and
- * the download sits on the quiet line under it -- the same split button,
- * every id and handler intact, wearing a smaller and softer skin. */
+ * the download sits on the quiet line under it -- the same split button, * every id and handler intact, wearing a smaller and softer skin. */
 .dlLine { display: flex; align-items: center; justify-content: center;
   gap: 10px; flex-wrap: wrap; }
 .dlLine .split { transform: none; }
@@ -277,76 +330,11 @@ picture source { display: none; }
 .dlmenu .sep { height: 1px; margin: 5px 8px; background: rgba(255,255,255,0.08); }
 
 /* -------------------------------------------------------- studio shot */
-.shotWrap {
-  position: absolute; inset: 0; z-index: 20; pointer-events: none;
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0; transform: translateY(60px) scale(0.85);
-  will-change: transform, opacity;
-}
-.shotBox { position: relative; width: 100%; max-width: min(1080px, calc(100vw - 130px)); aspect-ratio: 1240 / 800; margin: 0 24px; }
-.shotBox .frame {
-  position: absolute; inset: 0; overflow: hidden; border-radius: 24px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 40px 120px -20px rgba(0,0,0,0.8);
-}
-.shotBox .frame img { width: 100%; height: 100%; object-fit: cover; }
-.chip {
-  position: absolute; z-index: 2;
-  display: flex; align-items: center; justify-content: center;
-  width: 58px; height: 58px; border-radius: 16px;
-  background: #101013;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 16px 40px -10px rgba(0,0,0,0.8);
-  opacity: 0; transform: scale(0.3) rotate(-10deg);
-  transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1.4);
-}
-.chip svg, .chip img { width: 28px; height: 28px; }
-.chip.in { opacity: 1; transform: scale(1) rotate(0deg); }
-.chip.in .float { animation: chipfloat 5.2s ease-in-out infinite alternate; }
-.chip .float { display: flex; align-items: center; justify-content: center; }
-@keyframes chipfloat { from { transform: translateY(-4px); } to { transform: translateY(5px); } }
-.chip.c1 { left: -28px; bottom: 22%; }
-.chip.c2 { right: -24px; top: 10%; }
-.chip.c3 { left: -18px; top: 8%; }
-.chip.c4 { right: -30px; bottom: 26%; }
-.chip.c5 { left: 16%; top: -26px; }
-.chip.c1.in { transition-delay: 0.05s; } .chip.c1.in .float { animation-duration: 5.2s; }
-.chip.c2.in { transition-delay: 0.16s; } .chip.c2.in .float { animation-duration: 6.4s; animation-delay: 0.8s; }
-.chip.c3.in { transition-delay: 0.27s; } .chip.c3.in .float { animation-duration: 5.8s; animation-delay: 0.4s; }
-.chip.c4.in { transition-delay: 0.38s; } .chip.c4.in .float { animation-duration: 6.1s; animation-delay: 1.1s; }
-.chip.c5.in { transition-delay: 0.49s; } .chip.c5.in .float { animation-duration: 5.5s; animation-delay: 0.6s; }
-@media (max-width: 760px) { .chip.c3, .chip.c4, .chip.c5 { display: none; } }
 
-/* ------------------------------------------------------------ marquee */
-/* Vertically centered in the dark band between the arc and the page end:
+@keyframes chipfloat { from { transform: translateY(-4px); } to { transform: translateY(5px); } }/* ------------------------------------------------------------ marquee *//* Vertically centered in the dark band between the arc and the page end:
    the arc's lowest dip sits at 57vh, so the band's middle is ~78vh. */
-.marqWrap {
-  position: absolute; top: 78vh; left: 0; right: 0; z-index: 40;
-  opacity: 0; filter: blur(6px); transform: translateY(calc(-50% + 16px));
-  will-change: transform, opacity, filter;
-}
-.marqWrap.in { opacity: 1; filter: blur(0); transform: translateY(-50%);
-  transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.marqLabel {
-  position: absolute; bottom: 14px; left: 0; right: 0; z-index: 40;
-  text-align: center;
-  font-size: 10px; font-weight: 500; letter-spacing: 0.25em;
-  text-transform: uppercase; color: #71717a;
-  opacity: 0; transition: opacity 1s ease;
-  will-change: opacity;
-}
-.marqLabel.in { opacity: 1; }
-.marqMask {
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8% 92%, transparent);
-          mask-image: linear-gradient(90deg, transparent, #000 8% 92%, transparent);
-}
-.marqTrack {
-  display: flex; gap: 14px; width: max-content; padding: 4px 16px;
-  animation: marquee 110s linear infinite;
-}
-.marqTrack:hover { animation-play-state: paused; }
 @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-/* The reference site's card shape, carrying our promises: a small glyph,
-   a bold title, and the sentence right there -- nothing hidden. */
+/* The reference site's card shape, carrying our promises: a small glyph, a bold title, and the sentence right there -- nothing hidden. */
 .stat {
   width: 296px; flex: none; text-align: left; user-select: none; cursor: default;
   border-radius: 16px; background: rgba(24, 24, 27, 0.9); padding: 13px 15px 14px;
@@ -370,133 +358,28 @@ picture source { display: none; }
 .stat .note {
   margin-top: 9px; font-size: 12.5px; line-height: 1.5; color: #d4d4d8;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-
-/* ----------------------------------------------------- section: works */
-/* Sized to what it holds, not to the window. `min-height: 100vh` forced a
+}/* ----------------------------------------------------- section: works *//* Sized to what it holds, not to the window. `min-height: 100vh` forced a
    whole screen of black for one paragraph and a graphic, and on a tall
-   display that reads as a page that failed to load rather than as air. */
-/* ---- what it is: the phone's answer, hidden on a desktop -------------- */
-.whatis { display: none; }
-/* The forwards-facing subtitle is the phone's; the desktop keeps the one
+   display that reads as a page that failed to load rather than as air. *//* ---- what it is: the phone's answer, hidden on a desktop -------------- *//* The forwards-facing subtitle is the phone's; the desktop keeps the one
    that leads with the denials, because its marquee explains them
-   immediately underneath. */
-.heroSubPhone { display: none; }
-.works {
-  position: relative; z-index: 30; width: 100%;
-  background: #000; padding: 96px 24px;
-  display: flex; align-items: center; justify-content: center;
-}
-.worksGrid {
-  width: 100%; max-width: 1120px;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
-}
-@media (max-width: 900px) { .worksGrid { grid-template-columns: 1fr; } }
-/* A grid item's default `min-width: auto` is its content's minimum, and the
+   immediately underneath. *//* A grid item's default `min-width: auto` is its content's minimum, and the
    orbit's rings are positioned to overflow their box -- so on a 320px screen
    this column sized itself to 322 and the whole page scrolled sideways to
    346. The rings are decoration and are meant to spill; the column must not
    grow to contain them. */
-.worksGrid > * { min-width: 0; }
-.orbitStage { min-width: 0; overflow: hidden; }
-.works h2 {
-  font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4vw, 46px); line-height: 1.12; color: #fff;
-  margin-bottom: 16px;
-  opacity: 0; filter: blur(8px); transform: translateY(20px);
-}
-.works .copy {
-  max-width: 560px; font-size: 14px; line-height: 1.75; color: #a1a1aa;
-  margin-bottom: 32px;
-  opacity: 0; filter: blur(8px); transform: translateY(16px);
-}
-.works.in h2, .works.in .copy { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1); }
-.works.in .copy { transition-delay: 0.1s; }
-.tagRow { display: flex; gap: 1px; }
-.tag {
-  padding: 5px 13px; background: rgba(24,24,27,0.6);
-  font-size: 11px; font-weight: 500; color: #a1a1aa; white-space: nowrap;
-  opacity: 0; filter: blur(6px); transform: translateY(10px) scaleX(0.4) scaleY(0.8);
-  transform-origin: left center;
-}
 .tag:first-child { border-radius: 999px 2px 2px 999px; }
 .tag:last-child { border-radius: 2px 999px 999px 2px; }
 @media (max-width: 760px) {
   /* Keep every label readable when the three-chip row exceeds a phone's
      content width. Larger screens keep the existing single row. */
-  .tagRow { flex-wrap: wrap; row-gap: 6px; }
-}
-.works.in .tag { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.7s ease, filter 0.7s ease, transform 0.7s cubic-bezier(0.2,0.8,0.2,1.2); }
-.works.in .tag:nth-child(1) { transition-delay: 0.22s; }
-.works.in .tag:nth-child(2) { transition-delay: 0.3s; }
-.works.in .tag:nth-child(3) { transition-delay: 0.38s; }
 
-.orbitStage {
-  position: relative; min-height: 420px;
-  display: flex; align-items: center; justify-content: center;
 }
-.orbitBox {
-  position: relative; width: 100%; max-width: 420px; height: 420px;
-  overflow: visible;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 75%, transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 0%, #000 75%, transparent 100%);
-}
-.ring {
-  position: absolute; inset: 0; margin: auto; border-radius: 50%;
-  border-top: 1px solid rgba(255,255,255,0.15);
-  background: linear-gradient(to bottom, rgba(255,255,255,0.1), transparent 25%);
-  opacity: 0; filter: blur(8px); transform: scale(0.5);
-}
-.works.in .ring { opacity: 1; filter: blur(0); transform: scale(1);
-  transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2,0.8,0.2,1); }
 .ring.r1 { width: 350px; height: 350px; }
 .ring.r2 { width: 215px; height: 215px; }
-.works.in .ring.r2 { transition-delay: 0.12s; }
-.orbArm {
-  position: absolute; top: 0; left: 50%; height: 50%; width: 48px;
-  margin-left: -24px; transform-origin: bottom center;
-  display: flex; justify-content: center; align-items: flex-start;
-  pointer-events: none;
-}
-.orbArm .counter { margin-top: -24px; pointer-events: auto; }
-.orbIcon {
-  width: 48px; height: 48px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--z900); border: 1px solid rgba(255,255,255,0.2);
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-  transition: transform 0.3s ease;
-  opacity: 0; filter: blur(6px); scale: 0;
-}
-.works.in .orbIcon { opacity: 1; filter: blur(0); scale: 1;
-  transition: opacity 0.6s ease, filter 0.6s ease, scale 0.6s cubic-bezier(0.2,0.8,0.2,1.4),
-              transform 0.3s ease; }
-.works.in .d1 { transition-delay: 0.25s; } .works.in .d2 { transition-delay: 0.34s; }
-.works.in .d3 { transition-delay: 0.43s; } .works.in .d4 { transition-delay: 0.52s; }
-.works.in .d5 { transition-delay: 0.61s; }
-.orbIcon:hover { transform: scale(1.1); }
-.orbIcon svg { width: 20px; height: 20px; }
 @keyframes orbit-cw  { from { transform: rotate(var(--a0)); } to { transform: rotate(calc(var(--a0) + 360deg)); } }
 @keyframes orbit-ccw { from { transform: rotate(var(--a0)); } to { transform: rotate(calc(var(--a0) - 360deg)); } }
 @keyframes counter-cw  { from { transform: rotate(calc(-1 * var(--a0))); } to { transform: rotate(calc(-1 * var(--a0) - 360deg)); } }
 @keyframes counter-ccw { from { transform: rotate(calc(-1 * var(--a0))); } to { transform: rotate(calc(-1 * var(--a0) + 360deg)); } }
-.centerGlyph {
-  position: absolute; left: 0; right: 0; bottom: 0; margin: 8px auto;
-  width: fit-content; z-index: 5;
-  border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); padding: 4px;
-  background: #000;
-  opacity: 0; filter: blur(10px); transform: scale(0.3);
-}
-.works.in .centerGlyph { opacity: 1; filter: blur(0); transform: scale(1);
-  transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1.3);
-  transition-delay: 0.35s; }
-.centerGlyph .inner {
-  width: 64px; height: 64px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: #000; box-shadow: 0 0 40px rgba(255,255,255,0.12);
-}
-.centerGlyph img { width: 32px; height: 32px; }
 
 /* --------------------------------------------------- section: how */
 /* Sections stack directly on each other, so a big bottom padding here
@@ -509,109 +392,29 @@ picture source { display: none; }
   background: #000; padding: 88px 24px;
   display: flex; flex-direction: column; align-items: center;
 }
-.how h2, .price h2 {
-  font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
-  font-size: clamp(28px, 4vw, 46px); line-height: 1.12; color: #fff;
-  text-align: center; margin-bottom: 12px;
-  opacity: 0; filter: blur(8px); transform: translateY(20px);
-}
-.how .lead, .price .lead {
-  font-size: 14px; color: #a1a1aa; text-align: center; margin-bottom: 48px;
-  opacity: 0; filter: blur(8px); transform: translateY(16px);
-}
-.how.in h2, .how.in .lead, .price.in h2, .price.in .lead {
+.how.in h2, .how.in .lead {
   opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1);
 }
-.how.in .lead, .price.in .lead { transition-delay: 0.1s; }
-.stepGrid {
-  width: 100%; max-width: 1024px;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
-}
-@media (max-width: 760px) { .stepGrid { grid-template-columns: 1fr; } }
+.how.in .lead { transition-delay: 0.1s; }
 /* The scrolling stat cards were wider than a phone, so every card was cut
    off at both edges and none could be read whole. */
 @media (max-width: 860px) {
   /* Cards were clipped at both edges: a fixed width wider than the screen
      with a track that starts off-canvas. */
-  .marqTrack .stat { width: min(74vw, 290px); white-space: normal; }
-  .marqTrack { gap: 12px; }
-  .marqLabel { font-size: 11.5px; padding: 0 16px; text-align: center; }
+
+
+
 }
-.step {
-  border-radius: 20px; padding: 26px 24px 28px;
-  background: rgba(24, 24, 27, 0.5);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
-  opacity: 0; filter: blur(8px); transform: translateY(24px);
-  transition: box-shadow 0.25s ease, translate 0.25s ease;
-}
-.step:hover { translate: 0 -3px; box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 16px 40px -16px rgba(0,0,0,0.8); }
 .how.in .step { opacity: 1; filter: blur(0); transform: none; }
 .how.in .step { transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1), box-shadow 0.25s ease, translate 0.25s ease; }
 .how.in .step:nth-child(1) { transition-delay: 0.15s; }
 .how.in .step:nth-child(2) { transition-delay: 0.28s; }
-.how.in .step:nth-child(3) { transition-delay: 0.41s; }
-.step .n {
-  font-family: var(--disp); font-weight: 800; font-size: 30px;
-  color: var(--purple); line-height: 1; margin-bottom: 14px;
-}
-.step h3 { font-size: 16px; font-weight: 500; color: #fff; margin-bottom: 8px; }
-.step p { font-size: 13.5px; line-height: 1.65; color: #a1a1aa; }
-
-/* ------------------------------------------------- section: pricing */
-.price {
-  position: relative; z-index: 30; width: 100%;
-  background: #000; padding: 88px 24px;
-  display: flex; flex-direction: column; align-items: center;
-}
-/* The grid is shared by the receipts (three) and the pricing (two), so it
+.how.in .step:nth-child(3) { transition-delay: 0.41s; }/* ------------------------------------------------- section: pricing *//* The grid is shared by the receipts (three) and the pricing (two), so it
    sizes to whatever it holds and centres what is left over. Fixed at three
    columns, two cards hugged the left of a 1024px track with a hole beside
    them. */
-.priceGrid {
-  width: 100%; max-width: 1024px; margin-inline: auto;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px; align-items: stretch; justify-content: center;
-}
-#free .priceGrid { max-width: 720px; }
-@media (max-width: 820px) { .priceGrid { grid-template-columns: 1fr; max-width: 440px; } }
-.plan {
-  display: flex; flex-direction: column; border-radius: 20px; padding: 26px 24px;
-  background: rgba(24, 24, 27, 0.5);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
-  opacity: 0; filter: blur(8px); transform: translateY(24px);
-}
-.price.in .plan { opacity: 1; filter: blur(0); transform: none;
-  transition: opacity 0.8s ease, filter 0.8s ease, transform 0.8s cubic-bezier(0.2,0.8,0.2,1),
-              box-shadow 0.25s ease, translate 0.25s ease; }
-.price.in .plan:nth-child(1) { transition-delay: 0.15s; }
-.price.in .plan:nth-child(2) { transition-delay: 0.28s; }
-.price.in .plan:nth-child(3) { transition-delay: 0.41s; }
-.plan:hover { translate: 0 -3px; box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 16px 40px -16px rgba(0,0,0,0.8); }
-.plan.hot { box-shadow: 0 0 0 1px rgba(165, 88, 251, 0.45), 0 0 44px -14px rgba(165, 88, 251, 0.5); }
-.plan.hot:hover { box-shadow: 0 0 0 1px rgba(165, 88, 251, 0.65), 0 16px 50px -14px rgba(165, 88, 251, 0.45); }
-.plan .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.plan h3 { font-size: 15px; font-weight: 500; color: #fff; }
-.plan .badge {
-  font-size: 10px; font-weight: 500; letter-spacing: 0.06em; color: #a1a1aa;
-  border: 1px solid rgba(255,255,255,0.12); border-radius: 999px; padding: 3px 9px;
-}
-.plan.hot .badge { color: var(--purple); border-color: rgba(165, 88, 251, 0.4); }
-.plan .amount { font-family: var(--disp); font-weight: 700; font-size: 30px; color: #fff; }
-.plan .amount span { font-family: var(--sans); font-weight: 400; font-size: 12.5px; color: #a1a1aa; }
-.plan ul { list-style: none; margin: 16px 0 22px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.plan li { font-size: 13px; line-height: 1.5; color: #d4d4d8; padding-left: 20px; position: relative; }
-.plan li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 9px; height: 5px;
-  border-left: 1.6px solid #7ee2a8; border-bottom: 1.6px solid #7ee2a8; transform: rotate(-45deg); }
-.plan .btn { width: 100%; border-radius: 12px; }
-.plan .btn.ghosty { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16); color: #fff; }
-.plan .btn.ghosty:hover { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
-.price .note { margin-top: 26px; font-size: 12.5px; color: #71717a; text-align: center;
-  opacity: 0; transition: opacity 0.8s ease 0.5s; }
-.price.in .note { opacity: 1; }
-.price .note a { color: #a1a1aa; text-decoration: underline; }
-
-/* The reveal is decoration; the words are not.
+#free .priceGrid { max-width: 720px; }/* The reveal is decoration; the words are not.
  *
  * A section whose heading never fades in is a screen of empty black, and
  * that is a far worse outcome than a missing animation. These sections
@@ -622,10 +425,6 @@ picture source { display: none; }
  * newly added section, its text sat at opacity 0 forever, and the page
  * looked broken on a tall display.
  */
-.price h2, .price .lead, .price .note, .price .plan,
-.how h2, .how .lead, .how .step {
-  opacity: 1; filter: none; transform: none;
-}
 
 /* -------------------------------------------------------- section: cta */
 /* Same reasoning as .works above: the closing card and the footer do not
@@ -676,12 +475,14 @@ picture source { display: none; }
 }
 .ctaSec.in .ctaText p { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.9s ease 0.45s, filter 0.9s ease 0.45s, transform 0.9s cubic-bezier(0.2,0.8,0.2,1) 0.45s; }
-.ctaActs {
-  position: relative; z-index: 1; align-self: flex-end;
-  opacity: 0; filter: blur(8px); transform: translateY(20px) scale(0.85);
-}
 .ctaSec.in .ctaActs { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.9s ease 0.55s, filter 0.9s ease 0.55s, transform 0.9s cubic-bezier(0.2,0.8,0.2,1.2) 0.55s; }
+
+/* --------------------------------------------------- every download */
+/* One download for this computer; the brand bar is fixed over the page,
+   so a link that lands here scrolls the row clear of it. */
+.dlRow { position: relative; z-index: 1; margin-top: 36px; display: flex; flex-direction: column; align-items: center; gap: 14px; scroll-margin-top: 96px; }
+.dlRowK { font-size: 14px; color: var(--ink2); }
 
 /* -------------------------------------------------------------- footer */
 .foot {
@@ -698,18 +499,14 @@ picture source { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .eclipse { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
-  .heroContent h1, .heroSub, .heroCtas { opacity: 1 !important; filter: none !important; transform: none !important; }
-  .works h2, .works .copy, .works .tag, .ring, .orbIcon, .centerGlyph,
-  .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
+  .ctaCard, .ctaText h2, .ctaText p {
     opacity: 1 !important; filter: none !important; transform: none !important;
     clip-path: none !important; scale: 1 !important;
   }
 }
 
 /* ---- the hero, on a phone -------------------------------------------- */
-@media (max-width: 760px) {
-  /* ---- the arc ---------------------------------------------------------
+@media (max-width: 760px) {/* ---- the arc ---------------------------------------------------------
    *
    * The eclipse is a 1890px disc whose bright rim is the page's one piece
    * of colour. On a desktop it arcs below the buttons and reads as a
@@ -724,8 +521,7 @@ picture source { display: none; }
    *
    * Sized off the VIEWPORT instead, so the rim always falls below the
    * content rather than at whatever height a 1890px disc happens to
-   * reach: the arc sits under the hero, the way it does on a desktop. */
-  /* ---- the glow ------------------------------------------------------
+   * reach: the arc sits under the hero, the way it does on a desktop. *//* ---- the glow ------------------------------------------------------
    *
    * On a desktop the eclipse is a horizon: a huge disc whose bright rim
    * arcs below the hero, with the page's content standing on it. That
@@ -740,48 +536,31 @@ picture source { display: none; }
    * is placed to land under it -- 143vh up from 148vh puts the glow's
    * centre just behind the headline.
    *
-   * Centred by margin, not by transform: the transform is the script's. */
-  /* The element is named for what it is: a white rim, two coloured glows,
+   * Centred by margin, not by transform: the transform is the script's. *//* The element is named for what it is: a white rim, two coloured glows,
      and a BLACK core disc in front of them. The colour is only ever seen
      as the ring the core does not cover -- hide the core and the whole
      thing becomes a solid purple wall, which is exactly what happened on
      the first attempt here.
-     So the eclipse stays an eclipse; it is only moved and softened. */
-  /* Placed so the ring's LOWER arc crosses the top of the screen -- the
+     So the eclipse stays an eclipse; it is only moved and softened. *//* Placed so the ring's LOWER arc crosses the top of the screen -- the
      glow comes from above and falls on the hero, the way a sky lights a
      landscape. A ring centred on the hero encircles the words instead of
      lighting them, and the same ring below the fold is scenery for a
      horizon that is not there. This is the founder's suggestion and it is
      the right one: the light belongs at the top.
      143vh of the script's inline transform is subtracted from this. */
-  .eclipse {
-    /* Sized and placed in vh only. Mixing vw into the offset made the
-       arc's landing depend on the aspect ratio: at 390x844 it ended 202px
-       ABOVE the screen and left nothing but a smudge.
-       The disc is 150vh tall and its top is 143vh (the script's offset)
-       minus 118vh, so its lower arc crosses at 32vh -- a third of the way
-       down, above the headline, lighting it from the sky. */
-    width: 150vh; height: 150vh;
-    left: 50%; margin-left: -75vh;
-    /* 18, not 25: the arc was crossing at 0.32 of the screen and the
-       headline starts at 0.26, so the brightest part of the light landed
-       ON the words. Lifted so the glow peaks above them and the headline
-       reads against the fade. */
-    top: 18vh; bottom: auto;
-    /* 0.42, not 0.55: at full strength the band is a colour the words sit
-       ON rather than a light falling across them. */
-    opacity: 0.42;
-  }
+
+
+
+
   /* The rim is the one hard edge -- a bright white hairline that reads as
      a horizon on a wide screen and as a stray arc on a narrow one. The
-     glow keeps its shape without it. */
-  .eclipse .rim { display: none; }
-  /* The two coloured layers are blurred 22px, which against a 2880px
+     glow keeps its shape without it. *//* The two coloured layers are blurred 22px, which against a 2880px
      desktop disc is a soft haze and against a 1266px phone disc is a
      crisp band -- a purple stripe with visible top and bottom edges,
      sliced across the headline. Blurred far harder so the colour falls
      off gradually and reads as light rather than as a painted shape. */
-  .eclipse .glo1, .eclipse .glo2 { filter: blur(90px); }
+
+
 
   /* ---- the scroll transition -----------------------------------------
    *
@@ -804,7 +583,9 @@ picture source { display: none; }
    * 304px picture, and on a phone that reveal is a toll on the way to the
    * next sentence rather than the moment it is on a desktop. Trimmed to
    * the least that still lets the fade read as a fade. */
-  .heroTrack { height: 112vh; }
+
+
+
   /* With the arc below the content, the download button no longer needs a
      plate of its own to be legible -- but it keeps a quiet one, because
      it is the second action on the screen and should not compete with
@@ -813,9 +594,7 @@ picture source { display: none; }
     background: rgba(20, 20, 24, 0.92); color: #fff;
     border-color: rgba(255, 255, 255, 0.22);
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-  }
-
-  /* ---- the hero as one composition -------------------------------------
+  }/* ---- the hero as one composition -------------------------------------
    *
    * It was `justify-content: flex-start` with 84px of top padding: the
    * content stacked from the top and stopped at 534 in a 700px screen,
@@ -823,38 +602,30 @@ picture source { display: none; }
    * there. Centred in the space between the brand bar and the foot
    * instead, so the screen reads as one composed thing rather than a
    * column that ran out. */
-  .heroContent {
-    padding: 78px 20px 24px;
-    justify-content: center;
-  }
+
+
   /* The headline's second line is #a1a1aa -- the same grey as the
      paragraph under it -- so the largest words on the page were also the
      faintest. It keeps the contrast step it has on a desktop, where it
      sits against a much darker ground. */
-  #heroH1 { font-size: clamp(30px, 9vw, 40px); line-height: 1.12; }
-  #heroH1 .dim { color: #d4d4d8; }
-  /* Two lines, always. The h1 is a wrapping flexbox and the cycling glyph
-     was the only thing between its two sentences -- hiding that glyph on
-     phones (it stranded at the end of line one and read as a typo) left
-     them touching: "Build once.Ship one file." with no space at all. The
-     break is made explicit rather than left to whatever happens to sit
-     between them. */
-  #heroH1 { flex-direction: column; }
-  .heroSub { font-size: 14.5px; line-height: 1.6; }
+
+
+
+
+
   /* Each action on its own full-width row: two buttons side by side at
      this width leaves both too narrow to read and too small to hit. */
   .ctaRow { flex-direction: column; align-items: stretch; gap: 10px; }
   .ctaRow .btn, .ctaRow .split { width: 100%; }
   .split .main { flex: 1; }
-  .secondDoor { font-size: 13px; line-height: 1.7; color: #c7c7d1; }
-  .secondDoor a { color: #fff; }
+
+
   .dlLine { flex-direction: column; gap: 8px; }
   /* 44, not 40. This was trimmed to buy back four pixels of hero height,
      which is the wrong trade for the button that downloads the product --
      and the hero now fits without it (the marquee gave up the space
      instead). The split's chevron is the same control, so it matches. */
-  .dlLine .btn, .dlLine .split > * { min-height: 44px; }
-  /* The marquee is gone on a phone, and this is the reason it stayed so
+  .dlLine .btn, .dlLine .split > * { min-height: 44px; }/* The marquee is gone on a phone, and this is the reason it stayed so
      long: it was the only thing on the small screen that said what Krate
      gives you. Now `.whatis` says it in a list you can read at rest,
      built from the SAME seven STATS entries -- so keeping both printed
@@ -863,15 +634,14 @@ picture source { display: none; }
      the wrong instrument here: it moves text away from a reader who
      cannot hover to pause it. The desktop keeps it as ambient texture
      beside a hero that has room to spare. */
-  .marqWrap { display: none; }
+
+
 
   /* 10px is a label on a monitor you are sitting two feet from and a smudge
      on a phone held at arm's length. These are all short chips -- the star
      count, the plan badges -- so a point and a half costs no layout and
      makes them legible. The desktop keeps its finer setting. */
-  .starpill, .plan .badge { font-size: 11.5px; }
-
-  /* ---- the download button at the foot of the page -------------------
+  .starpill{ font-size: 11.5px; }/* ---- the download button at the foot of the page -------------------
    *
    * `.ctaRow` above is the hero's button row; this is the other one, in
    * the closing card, and it had no phone rule at all. Measured at 390px:
@@ -882,11 +652,13 @@ picture source { display: none; }
    *
    * A flex child may shrink below its content unless told not to: that is
    * `min-width: auto` losing to `flex: 1 1 0%`. */
-  .ctaActs { align-self: stretch; width: 100%; }
-  .ctaActs .split { display: flex; width: 100%; }
-  .ctaActs .split .main { flex: 1 1 auto; min-width: 0; }
-  .ctaActs .split .more { flex: 0 0 52px; }
-  .ctaActs .split > * { min-height: 44px; }
+
+
+
+
+
+
+
 
   /* ---- the footer ----------------------------------------------------
    *
@@ -916,9 +688,7 @@ picture source { display: none; }
   section.works, section.how, section.price, section.ctaSec {
     padding-top: 40px; padding-bottom: 40px;
   }
-  .ctaSec { padding-bottom: 28px; }
-
-  /* ---- the cards ------------------------------------------------------
+  .ctaSec { padding-bottom: 28px; }/* ---- the cards ------------------------------------------------------
    *
    * The page is 7.8 screens of scrolling for 768 words. Most of that is
    * the cards: measured at 390x844 each one holds 55-72 words in 400px,
@@ -929,21 +699,19 @@ picture source { display: none; }
    * They keep their words. What comes down is the air around the words --
    * padding, leading, the gaps between cards and between their rows --
    * which is what was sized for a monitor. */
-  .plan, .step {
-    padding: 18px 18px 20px;
-    border-radius: 16px;
-  }
-  .priceGrid, .stepGrid { gap: 12px; }
-  .plan ul, .step p { line-height: 1.5; }
+
+
   /* `padding: 4px 0` here was the bug: the shorthand reset padding-left to
      0 while the tick stayed absolutely positioned at left:2px, so every
      line drew its checkmark straight through its own first letter. Set the
      vertical padding only and the 20px runway for the tick survives. */
-  .plan li { padding-top: 4px; padding-bottom: 4px; }
-  .plan ul { margin-bottom: 14px; }
+
+
+
   /* The footnote under each card is a source citation -- true and worth
      keeping, but it is set at the size of body copy and takes 60px. */
-  .plan .note { font-size: 11.5px; line-height: 1.5; }
+
+
   /* NOT trimmed: the evidence cards keep all four claims.
      They are the longest thing on the page -- 1.9 screens of three cards
      with four detailed proofs each -- and dropping two per card takes the
@@ -956,28 +724,26 @@ picture source { display: none; }
      That call belongs to the founder, so the section stays whole and
      only its spacing comes down. (Shrinking the type instead made the
      cards TALLER: 16px to 14px turned a 405px card into 411, because the
-     lines rewrapped worse.) */
-  /* The section headings and their ledes carry a desktop's spacing too. */
-  .price h2, .how h2 { margin-bottom: 8px; }
-  .price .lead, .how .lead { margin-bottom: 20px; font-size: 14px; }
-  /* The big number on a plan card is display type for a wide screen. */
-  .plan .amount { font-size: 26px; }
+     lines rewrapped worse.) *//* The section headings and their ledes carry a desktop's spacing too. */
 
-  /* The orbit: five vendor logos circling a Krate mark, 420px tall, whose
+
+  .how h2 { margin-bottom: 8px; } .how .lead { margin-bottom: 20px; font-size: 14px; }/* The big number on a plan card is display type for a wide screen. *//* The orbit: five vendor logos circling a Krate mark, 420px tall, whose
      whole message is "works with the AI you already pay for" -- which the
      paragraph beside it already says. On a desktop it is the right half of
      a two-column section and earns its space; stacked on a phone it is
      half a screen of animation under the sentence it illustrates. */
-  .orbitStage { min-height: 260px; }
-  .orbitBox { height: 260px; }
-  .worksGrid { gap: 20px; }
+
+
+
+
+
+
+
 
   /* The closing section's card and the footer were 212px apart -- a
      desktop's breathing room between the last thing you read and the
      links under it. */
-  .ctaSec .foot { margin-top: 28px; }
-
-  /* ---- what it is ----------------------------------------------------
+  .ctaSec .foot { margin-top: 28px; }/* ---- what it is ----------------------------------------------------
    *
    * The first thing after the headline, because it is the first question:
    * what IS this. The hero opens with what Krate is not -- "no installer,
@@ -986,57 +752,28 @@ picture source { display: none; }
    *
    * A plain sentence, then the seven facts as a list. Seven rows of one
    * bold phrase and one sentence: scannable in a thumb-flick, readable if
-   * you stop. */
-  /* The two subtitles swap: what it IS, not what it is not. */
-  #heroSub { display: none; }
+   * you stop. *//* The two subtitles swap: what it IS, not what it is not. */
+
+
+
   /* `max-width: 620px` on a 375px screen means edge to edge with no side
      padding at all, so the sentence ran the full width of the glass. A
      measure of roughly 34 characters is what a phone paragraph wants. */
-  .heroSubPhone {
-    display: block;
-    /* Geist's zero is 0.672em wide: keep the same final 34-character
-       measure without sizing the box from the temporary fallback font.
-       Using ch here changed three lines to two when Geist loaded. */
-    max-width: 22.848em;
-    margin-left: auto; margin-right: auto;
-    padding: 0 18px;
-  }
 
-  .whatis {
-    display: block;
-    padding: 40px 20px 8px;
-    max-width: 640px; margin: 0 auto;
-  }
-  .whatis h2 {
-    font-family: var(--disp); font-weight: 700;
-    font-size: clamp(24px, 7.5vw, 32px); line-height: 1.14;
-    letter-spacing: -0.02em; color: #fff;
-  }
-  .whatis .lead {
-    margin-top: 12px; font-size: 15px; line-height: 1.6; color: #a1a1aa;
-  }
-  .whatisList {
-    list-style: none; margin: 24px 0 0; padding: 0;
-    display: flex; flex-direction: column; gap: 2px;
-  }
-  .whatisList li {
-    display: flex; gap: 13px; align-items: flex-start;
-    padding: 13px 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
-  }
-  .whatisList li:first-child { border-top: 0; }
-  .wIc {
-    flex: none; width: 19px; height: 19px; margin-top: 1px;
-    display: grid; place-items: center;
-  }
-  .wIc svg { width: 19px; height: 19px; display: block; }
-  .wTx { font-size: 13.5px; line-height: 1.55; color: #a1a1aa; }
   /* The claim on its own line, in white, with the explanation under it:
      the eye can take the seven claims alone and stop at the one it wants. */
-  .wTx b {
-    display: block; margin-bottom: 2px;
-    font-size: 14.5px; font-weight: 500; color: #fff; letter-spacing: -0.005em;
-  }
+
+
+
+
+
+
+
+
+
+
+
+
 
   /* ---- the brand bar -------------------------------------------------
    *
@@ -1081,8 +818,7 @@ picture source { display: none; }
        exists to avoid; the blur behind the bar is what separates it
        from the page. */
     border-bottom: 0;
-  }
-  /* The glow begins at full strength at y=0, because the eclipse's box
+  }/* The glow begins at full strength at y=0, because the eclipse's box
      sits entirely above the fold (measured: its lowest layer ends at
      -33px) and only its 90px blur spills into view -- so there is
      nothing above it to fade from, and it met the bar as a flat wash.
@@ -1094,29 +830,15 @@ picture source { display: none; }
      alpha softened the seam and flattened the glow with it, which trades
      one problem for a worse one -- the colour is the hero. This reaches
      just past the bar and is gone by 96px. */
-  .heroStick::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 70px;
-    z-index: 1;
-    pointer-events: none;
-    background: linear-gradient(
-      to bottom,
-      rgba(10, 10, 10, 0.42) 0%,
-      rgba(10, 10, 10, 0.16) 60%,
-      rgba(10, 10, 10, 0) 100%
-    );
-  }
+
+
   /* The entrance animation re-centres with a transform; on a full-width
      bar there is nothing to centre and it would slide the bar sideways. */
   .brandbar.in { transform: none; }
   /* A vertical rule between a brand and a button is a desktop nav's
      separator -- with one link on either side of it, it is just a line
      down the middle of the header. */
-  .brandbar .bnav { border-left: 0; padding-left: 0; }
-
-  /* ---- the Studio screenshot -----------------------------------------
+  .brandbar .bnav { border-left: 0; padding-left: 0; }/* ---- the Studio screenshot -----------------------------------------
    *
    * A 1240x800 capture of a desktop window, shown at 221x143. Nothing in
    * it is legible at that size -- it is a grey smudge that happens to be
@@ -1134,27 +856,15 @@ picture source { display: none; }
    * the proof. Individual words are small at this size, but the shape is
    * legible: a conversation on one side, a finished app on the other, and
    * that shape is the whole claim. */
-  .shotBox {
-    max-width: none; margin: 0 16px;
-    aspect-ratio: 1240 / 800;
-  }
-  .shotBox .frame img {
-    width: 100%; height: 100%; max-width: none;
-    object-fit: contain; object-position: center;
-  }
+
+
   /* The remaining two chips float at negative offsets, which is a nice
      touch beside a 1080px frame and a pair of half-cropped squares beside
      a 304px one. The other three are already hidden here; these join
      them. */
-  .chip { display: none; }
 
-  /* The headline cycles a vendor glyph between its two sentences: on a wide
-     screen all three sit on one line and it reads as a separator. Here the
-     line wraps, the glyph is stranded at the end of "Build once." and the
-     site's first sentence appears to contain a stray mark -- an X, when the
-     cycle happens to be showing Grok. Hidden: the sentence is the point,
-     and the logos are already shown further down the page. */
-  .heroCycle { display: none !important; }
+
+
 
   /* The marquee was pinned at 78vh, a share of the screen, while the hero
      above it stacks to a fixed pixel height. The two only clear each other
@@ -1169,8 +879,7 @@ picture source { display: none; }
      toolbars are counted, buries "Someone sent you a file?" under the
      cards. Pinning it to the bottom instead keeps it in the same dark band
      and makes the gap grow with the screen rather than shrink. */
-  .marqWrap { top: auto; bottom: 74px; }
-  .marqWrap, .marqWrap.in { transform: none !important; }
+
 
   /* The hero read as an empty screen with a headline floating in it.
      Measured at 390x700: the sticky box is 100vh and `.heroContent`
@@ -1194,58 +903,25 @@ picture source { display: none; }
      Do NOT give .heroTrack `height: auto` while the driver still runs:
      the runway collapses to a few px, `span` goes to ~0 and the headline
      fades out within one flick of the thumb. Measured that way first. */
-  .heroTrack { height: auto; }
+
+
+
   /* `overflow: hidden` STAYS. The eclipse is a deliberately oversized
      glow -- measured 1050px wide, from -330 to 720 at a 390px viewport --
      and this box is what clips it. Changing this to `visible` while
-     unsticking the box made the whole page scroll sideways to 720px. */
-  /* `position: relative`, not `static`. The eclipse is absolutely
+     unsticking the box made the whole page scroll sideways to 720px. *//* `position: relative`, not `static`. The eclipse is absolutely
      positioned, so it is clipped by the nearest POSITIONED ancestor --
      a static box with `overflow: hidden` does not contain it and the
      glow leaked to 720px on a 390px screen, scrolling the page sideways.
      Relative keeps it the containing block while still flowing in the
      normal document, which is what unsticks the hero. */
-  .heroStick { position: relative; height: auto; overflow: hidden; }
-  .heroContent {
-    position: static; height: auto;
-    /* The brandbar is FIXED, so it is out of flow and reserves no space:
-       with `padding-top: 22px` the bar's bottom edge sat at 57px and the
-       headline began at 22px, hiding 35px of "Build once." behind it.
-       Measured, not guessed. The bar is 44px of content plus its
-       safe-area inset, so clear that and then add the air. */
-    /* +52, not +26. The bar's `backdrop-filter: blur(16px)` blurs what is
-       BEHIND its box, and that sampling feathers past the box edge -- so
-       a headline sitting 14px under the bar gets softened by it even
-       though the geometry says the two never overlap. Measured on a real
-       render: "Build once." came out at maxEdge 27 / avgEdge 2.01 while
-       "Ship one file." on the next line was 36 / 3.32. Only the first
-       line was affected, which is the signature of a blur that reaches
-       down rather than of anything wrong with the type.
-       Clearing the blur radius with room to spare fixes it. */
-    padding: calc(44px + env(safe-area-inset-top) + 52px) 0 4px;
-    justify-content: flex-start;
-  }
+
+
+
+
   /* Absolutely positioned for the cross-fade; in the stacked phone layout
      it is just the next block down the page. */
-  .shotWrap {
-    position: static; height: auto;
-    margin-top: 26px; padding: 0;
-    /* The base rule hides this (`opacity: 0`) because on a desktop the
-       scroll driver fades it in. Nothing fades it in here, so without
-       these three it stayed invisible and the phone hero lost the one
-       picture of the product. */
-    opacity: 1;
-    transform: none;
-    pointer-events: auto;
-  }
-}
 
-/* On narrow, tall screens the loaded subtitle occupies three lines, but
-   the fallback font fits it into two. Reserve the final line box so loading
-   Geist does not move the buttons and screenshot. At 323px it already fits
-   two lines; at heights up to 800px the smaller type below does too. */
-@media (max-width: 322px) and (min-height: 801px) {
-  .heroSubPhone { min-height: 3lh; }
 }
 
 /* Short screens, whatever the width. The hero and the marquee both live
@@ -1256,51 +932,13 @@ picture source { display: none; }
    of two fixed blocks that fits 687px into 629.
    So first, buy back what can be bought: tighter leading and a smaller
    headline recover about 50px. */
-@media (max-height: 800px) and (max-width: 760px) {
-  /* The top padding is set with the rest of the hero above (78px, which
+@media (max-height: 800px) and (max-width: 760px) {/* The top padding is set with the rest of the hero above (78px, which
      is the brand bar's 64px end plus daylight); only the type comes down
      here, to buy back height on a short screen. */
-  #heroH1 { font-size: clamp(27px, 8vw, 34px); }
-  .heroSub { font-size: 13.5px; line-height: 1.55; }
-  .heroCtas { gap: 10px; }
-}
 
-/* And below that, stop trying. The marquee is scenery -- the same numbers
-   appear as full cards further down the page -- while the hero carries the
-   one button the page exists for. On a screen this short the choice is
-   which of the two to lose, and it is never the call to action.
 
-   A single height cutoff cannot express this, and trying one was wrong:
-   the hero's own height is not constant. The subtitle rewraps with the
-   width, so at 390px wide the stack ends anywhere between 504 and 543,
-   and a threshold tuned to one of those is off by a line at the other:
 
-       height  heroEnds  clearance with a 691px cutoff
-          691       505   hidden, fine
-          692       516   -13  <- still overlapping
-          700       512   -2   <- still overlapping
-          736       504   +42
 
-   So the marquee yields to the hero instead of to a number. It is hidden
-   unless the screen can hold the hero's tallest form (543) plus the
-   marquee's own 190, which is 733 -- and 740 leaves a margin for a font
-   that loads a little wider than the one measured here. Above that the
-   bottom anchor keeps the gap growing with the screen.
-
-   Verified by loading the page in an iframe at each height, because a
-   screenshot taken after a viewport resize could not be trusted to have
-   painted. */
-/* On every phone, not below a threshold. The hero is centred in its
-   screen now rather than stacked from the top, so it always ends lower
-   and there is no height at which both it and the marquee sit
-   comfortably: at 844 the cards landed on "Someone sent you a file?"
-   again, and tuning the cutoff just moves which screen loses.
-   The marquee is scenery. Its four numbers appear as full cards a
-   screen further down, where they can be read rather than glimpsed
-   sideways through a mask. The hero carries the button the page is for,
-   and on a phone it gets the screen to itself. */
-@media (max-width: 760px) {
-  .marqWrap, .marqLabel { display: none; }
 }
 
   /* Touch, not width: a thumb needs 44px whatever the screen size, and
@@ -1314,26 +952,270 @@ picture source { display: none; }
        on every page (it goes home). */
     a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
   }
+/* A class that sets display must not beat the hidden attribute: the
+   browser door stays hidden while making is off. */
+[hidden] { display: none !important; }/* The no-install door: the one way in that needs nothing downloaded, so it
+   reads as a button, not a footnote -- as dim text over the glow it was
+   nearly invisible. */
+</style>
+<style>
+/* ================================================= below the first screen
+   Rules, not decoration: one grotesque (Geist, 600, tight) for every
+   heading; headings left, on one 1280px column; 160px of air between
+   sections; surfaces are a lifted shade with a hairline ring, never a
+   coloured border; the only glow is the brand's, and only behind real
+   product. Motion is a short fade-and-rise and nothing else. Everything
+   hidden at first is gated on .js, so without scripts it all shows. */
+.kx {
+  --ink: #fafafa; --ink2: #a1a1aa; --ink3: #71717a;
+  --surf: #0e0e11; --surf2: #141418;
+  --ring: 0 0 0 1px rgba(255,255,255,0.06), 0 1px 1px rgba(0,0,0,0.4), 0 8px 30px -12px rgba(0,0,0,0.6);
+  --head: "Geist Var", var(--sans);
+  position: relative; z-index: 2; width: 100%; background: #000;
+  padding: 104px 32px 0;
+}
+.kx > * { max-width: 1080px; margin-left: auto; margin-right: auto; }
+.kxBuild > *, .kxApps > * { max-width: 820px; }
+.kxHead { margin-bottom: 40px; text-align: left; }
+.kxHead h2 {
+  font-family: var(--head); font-weight: 600; letter-spacing: -0.04em;
+  font-size: clamp(28px, 3vw, 40px); line-height: 1.1; color: var(--ink);
+}
+.kxHead p { margin-top: 12px; max-width: 560px; font-size: 16px; line-height: 1.6; color: var(--ink2); }
+.kx h3 { font-family: var(--head); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.kx code { font-family: var(--mono, ui-monospace, monospace); font-size: 0.92em; color: #d4d4d8; }
+.kx p a { color: var(--ink); text-decoration: underline; text-decoration-color: rgba(255,255,255,0.3); text-underline-offset: 3px; }
+.kx p a:hover { text-decoration-color: var(--ink); }
+
+.js .reveal { opacity: 0; transform: translateY(16px); }
+.js .reveal.in { opacity: 1; transform: none; transition: opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1); }
+
+/* ---- three cards */
+.wCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@keyframes caretBlink { 50% { opacity: 0; } }
+@keyframes scanDown { to { top: 105%; } }
+@keyframes fileFloat { 50% { transform: translateY(-5px); } }
+@keyframes osLight { 0%, 55%, 100% { color: var(--ink3); } 15%, 40% { color: #fafafa; box-shadow: 0 0 0 1px rgba(196,181,253,0.45); } }
+
+/* ---- the build, as it happens: one real recording, four moments under it */
+.kxBuild { padding-top: 104px; margin-top: -28px; border-radius: 28px 28px 0 0; }
+.kxBuild .kxHead { margin-bottom: 28px; }
+.kicker { display: inline-block; margin-bottom: 14px; font-size: 13px; font-weight: 500; letter-spacing: 0.01em; color: var(--ink3); }
+.buildStage { position: relative; }
+.buildGlow { position: absolute; left: 50%; top: 42%; width: 78%; height: 66%; transform: translate(-50%, -50%); background: radial-gradient(50% 50% at 50% 50%, rgba(73, 34, 229, 0.3), transparent 70%); filter: blur(70px); pointer-events: none; }
+.buildFrame { position: relative; border-radius: 14px; overflow: hidden; background: #0b0b0e; aspect-ratio: 16 / 10; box-shadow: 0 0 0 1px rgba(255,255,255,0.09), 0 60px 120px -40px rgba(0,0,0,0.95); }
+.buildFrame video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.js .buildFrame { opacity: 0; transform: translateY(44px) scale(0.965); }
+.js .buildFrame.in { opacity: 1; transform: none; transition: opacity 0.9s cubic-bezier(0.2, 0.7, 0.2, 1), transform 1.2s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.buildTag { position: relative; display: flex; align-items: center; gap: 9px; margin-top: 18px; font-size: 13px; color: var(--ink3); }
+.buildTag i { width: 7px; height: 7px; border-radius: 999px; background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.2); }
+.moments { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
+.moments li { position: relative; padding-top: 20px; cursor: pointer; }
+.moments li::before { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 1px; background: rgba(255,255,255,0.1); }
+.moments .prog { position: absolute; left: 0; top: 0; width: 100%; height: 1px; background: var(--ink); transform: scaleX(var(--p, 0)); transform-origin: 0 50%; }
+.moments b { display: block; font-family: var(--head); font-weight: 600; font-size: 16px; letter-spacing: -0.02em; color: var(--ink3); transition: color 0.4s; }
+.moments b em { font-style: normal; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; font-weight: 500; letter-spacing: 0; margin-right: 12px; }
+.moments p { margin-top: 8px; font-size: 14px; line-height: 1.55; color: var(--ink3); transition: color 0.4s; }
+.moments li.on b { color: var(--ink); }
+.moments li.on p { color: var(--ink2); }
+
+/* ---- made with Krate: one app at a time, big, the names in a row under it */
+.kxApps .kxHead { margin-bottom: 28px; }
+.appFrame { position: relative; aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; background: #08080a; box-shadow: 0 0 0 1px rgba(255,255,255,0.09), 0 60px 120px -40px rgba(0,0,0,0.95); }
+.appFrame .ap { position: absolute; inset: 0; margin: 0; }
+.appFrame .ap video { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; background: #08080a; }
+.appFrame .ap { opacity: 0; transform: scale(1.03); transition: opacity 0.7s ease, transform 1.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.appFrame .ap.on { opacity: 1; transform: none; }
+.appList { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
+.appList li { position: relative; }
+.appList li::before { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 1px; background: rgba(255,255,255,0.1); }
+.appList .prog { position: absolute; left: 0; top: 0; width: 100%; height: 1px; background: var(--ink); transform: scaleX(var(--p, 0)); transform-origin: 0 50%; }
+.appList button { display: block; width: 100%; text-align: left; padding: 20px 0 0; border: 0; background: none; cursor: pointer; font: inherit; }
+.appList b { display: block; font-family: var(--head); font-size: 16px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink3); transition: color 0.4s; }
+.appList b em { font-style: normal; font-weight: 400; font-size: 13px; letter-spacing: 0; color: var(--ink3); margin-left: 10px; }
+.appList span { display: block; margin-top: 8px; font-size: 14px; line-height: 1.55; color: var(--ink3); transition: color 0.4s; }
+.appList li.on b { color: var(--ink); }
+.appList li.on span { color: var(--ink2); }
+.appList button:hover b { color: var(--ink); }
+.kxMore { margin-top: 40px; }
+.kxMore .btn { padding-left: 0; }
+
+/* ---- numbers: memory as two lines, drawn as the section arrives. Two measured
+   points each (5,000 and 50,000 lines, the same run): the Electron line
+   climbs, Krate's barely leaves the floor. */
+.numsWrap { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 56px; align-items: center; }
+.numsWrap .kxHead { margin-bottom: 0; }
+.numsWrap .kxHead h2 em { font-style: normal; color: #c4b5fd; }
+.numFacts { list-style: none; margin: 28px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; max-width: 420px; }
+.numFacts li { padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.1); }
+.numFacts b { display: block; font-family: var(--head); font-weight: 500; font-size: 24px; letter-spacing: -0.03em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.numFacts span { display: block; margin-top: 4px; font-size: 13px; color: var(--ink3); }
+.barNote { margin-top: 24px; font-size: 12.5px; line-height: 19px; color: var(--ink3); max-width: 420px; }
+.barNote a { color: var(--ink2); }
+.memChart { margin: 0; padding: 26px 26px 18px; border-radius: 16px; background: var(--surf); box-shadow: var(--ring); }
+.memChart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.memChart .grid { stroke: rgba(255,255,255,0.08); stroke-width: 1; }
+.memChart .axis { fill: var(--ink3); font-size: 11px; font-family: var(--sans); }
+.memChart .lbl { fill: var(--ink2); font-size: 12px; font-family: var(--sans); }
+.memChart .lbl.us { fill: var(--ink); font-weight: 500; }
+.memChart .lbl.k { fill: var(--ink3); font-size: 11px; }
+.memChart .memLine { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.memChart .memLine.them { stroke: #8a8a94; stroke-width: 2; }
+.memChart .memLine.us { stroke: #a78bfa; stroke-width: 2.5; filter: drop-shadow(0 0 8px rgba(167, 139, 250, 0.8)); }
+.memChart .memArea.them { fill: url(#memGreyFill); }
+.memChart .memArea.us { fill: url(#memVioletFill); }
+.memChart .dot { fill: #0e0e11; stroke-width: 2; }
+.memChart .dot.them { stroke: #8a8a94; }
+.memChart .dot.us { stroke: #c4b5fd; fill: #a78bfa; filter: drop-shadow(0 0 10px rgba(167, 139, 250, 0.9)); }
+.js .memChart .memLine { stroke-dasharray: 440; stroke-dashoffset: 440; }
+.js .memChart .memArea { opacity: 0; }
+.js .memChart.in .memLine { stroke-dashoffset: 0; transition: stroke-dashoffset 1.8s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s; }
+.js .memChart.in .memArea { opacity: 1; transition: opacity 1.2s ease 1.2s; }
+.memKey { display: flex; gap: 18px; margin-top: 12px; font-size: 12.5px; color: var(--ink2); }
+.memKey i { display: inline-block; width: 18px; height: 2px; vertical-align: middle; margin-right: 8px; background: #8a8a94; border-radius: 2px; }
+.memKey .us i { background: #a78bfa; box-shadow: 0 0 8px rgba(167, 139, 250, 0.8); }
+@media (prefers-reduced-motion: no-preference) { .memChart .dot.us { animation: dotPulse 2.6s ease-in-out infinite; } }
+@keyframes dotPulse { 50% { filter: drop-shadow(0 0 16px rgba(167, 139, 250, 1)); } }
+
+/* ---- voices */
+.kxVoices .kxHead { text-align: center; }
+.voice { max-width: 880px; margin: 0 auto; text-align: center; }
+.voice blockquote { margin: 0; font-family: var(--head); font-weight: 500; font-size: clamp(22px, 2.6vw, 32px); line-height: 1.35; letter-spacing: -0.02em; color: var(--ink); transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.voice blockquote::before { content: "\201C"; }
+.voice blockquote::after { content: "\201D"; }
+.voice figcaption { margin-top: 24px; display: flex; flex-direction: column; gap: 2px; }
+.voice figcaption b { font-size: 15px; font-weight: 600; color: var(--ink); }
+.voice figcaption span { font-size: 14px; color: var(--ink2); }
+.voice.swap blockquote { opacity: 0; transform: translateY(8px); }
+.voiceDots { display: flex; justify-content: center; gap: 8px; margin-top: 28px; }
+.voiceDots button { width: 6px; height: 6px; padding: 0; border: 0; border-radius: 999px; background: rgba(255,255,255,0.2); cursor: pointer; transition: width 0.3s, background 0.3s; }
+.voiceDots button[aria-selected="true"] { width: 22px; background: var(--ink); }
+
+/* ---- facts: text under hairlines, no icons */
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
+
+/* ---- the closing prompt: no bezel, the bar over a soft glow */
+/* Clipped sideways: the closing glow is wider than a phone, and an
+   unclipped section widened the whole page past the screen. */
+#ctaSec { padding-top: 160px; overflow-x: clip; }
+#ctaSec .ctaCard { max-width: 900px; border: 0; background: none; box-shadow: none; padding: 0; }
+#ctaSec .ctaInner { background: none; border: 0; box-shadow: none; align-items: center; text-align: center; overflow: visible; gap: 32px; }
+/* The page closes the way it opens: the brand's light under a prompt bar. */
+#ctaSec .ctaInner canvas { display: none; }
+#ctaSec .ctaCard::before {
+  content: ""; position: absolute; left: 50%; bottom: -30%; width: 140%; height: 90%; transform: translateX(-50%);
+  background: radial-gradient(50% 50% at 50% 50%, rgba(124, 58, 237, 0.32), rgba(73, 34, 229, 0.14) 45%, transparent 72%);
+  filter: blur(40px); pointer-events: none; z-index: 0;
+}
+/* The downloads list joins the same column and the same type. */
+#ctaSec .ctaText { max-width: 640px; margin: 0 auto; }
+#ctaSec .ctaText h2 { font-family: "Geist Var", var(--sans); font-weight: 600; letter-spacing: -0.04em; font-size: clamp(30px, 3.2vw, 44px); line-height: 1.1; clip-path: none; filter: none; }
+#ctaSec .ctaText p { font-size: 17px; }
+.endBar { position: relative; z-index: 1; width: min(680px, 100%); }
+.endNote { position: relative; z-index: 1; margin-top: -16px; min-height: 22px; font-size: 13.5px; color: #d4d4d8; }
+.endNote a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .kx { padding: 110px 20px 0; }
+  .appFrame { border-radius: 10px; }
+  .appList { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 20px; margin-top: 28px; }
+  .appList b { font-size: 15.5px; }
+  .appList b em { display: none; }
+  .appList span { font-size: 13.5px; }
+  .numsWrap { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .memChart { padding: 18px 14px 12px; }
+  .numFacts { gap: 16px; }
+  .kxBuild { padding-top: 110px; }
+  .buildFrame { border-radius: 10px; }
+  .buildTag { font-size: 12.5px; margin-top: 14px; }
+  .moments { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 20px; margin-top: 28px; }
+  .moments b { font-size: 15.5px; }
+  .moments p { font-size: 13.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal { opacity: 1; transform: none; }
+  .js .buildFrame { opacity: 1; transform: none; }
+  .js .memChart .memLine { stroke-dashoffset: 0; }
+  .js .memChart .memArea { opacity: 1; }
+  .appFrame .ap { transition: none; }
+}
+</style>
+<style>
+/* ============================================================ the file
+   Three cards about the thing you send: the same bytes on three desktops,
+   what a real file made in Studio holds, and the ask a player puts up
+   before an app may use anything. */
+.kxFile .kxHead { margin-bottom: 36px; }
+.fileGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.fc { margin: 0; border-radius: 16px; background: var(--surf); box-shadow: var(--ring); overflow: hidden; display: flex; flex-direction: column; }
+.fc.fcWide { grid-column: span 2; }
+.js .fileGrid .fc:nth-child(2) { transition-delay: 0.08s; }
+.js .fileGrid .fc:nth-child(3) { transition-delay: 0.16s; }
+.fcText { margin-top: auto; padding: 24px 26px 28px; }
+.fcText h3 { font-size: 18px; }
+.fcText p { margin-top: 8px; font-size: 14.5px; line-height: 1.6; color: var(--ink2); max-width: 680px; }
+.fcText code { font-size: 0.9em; }
+/* the same bytes, three desktops: three small windows, their chrome drawn here, the app inside a real frame of Orbit */
+.osRow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 40px 36px 0; align-items: end; background: radial-gradient(70% 90% at 50% 100%, rgba(73, 34, 229, 0.28), transparent 70%); }
+.osw { position: relative; aspect-ratio: 16 / 10.5; border-radius: 10px 10px 0 0; overflow: hidden; background: #0b0b0e; box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 30px 60px -30px rgba(0,0,0,0.9); }
+.osw .bar { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: #1b1b21; font-size: 11px; color: #d4d4d8; }
+.osw .title { flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.osw .lights { display: inline-flex; gap: 6px; }
+.osw .lights i { width: 10px; height: 10px; border-radius: 50%; background: #ff5f57; }
+.osw .lights i:nth-child(2) { background: #febc2e; }
+.osw .lights i:nth-child(3) { background: #28c840; }
+.osw.mac .title { padding-right: 42px; }
+.osw.win .bar { background: #202024; justify-content: space-between; }
+.osw.win .title { flex: none; text-align: left; }
+.osw.win .caps { display: inline-flex; gap: 14px; font-size: 10px; color: #a1a1aa; }
+.osw.lin .bar { height: 32px; background: #262630; }
+.osw.lin .x { width: 18px; height: 18px; border-radius: 50%; background: #3a3a46; font-size: 9px; display: grid; place-items: center; color: #e4e4e7; }
+.osw > img { width: 100%; height: calc(100% - 28px); object-fit: cover; object-position: top left; display: block; }
+.osw.lin > img { height: calc(100% - 32px); }
+.osw .os { position: absolute; left: 10px; bottom: 10px; padding: 4px 9px; border-radius: 999px; background: rgba(0,0,0,0.62); box-shadow: 0 0 0 1px rgba(255,255,255,0.12); font-size: 11px; color: #e4e4e7; }
+/* what is inside: the listing of the file built on this page */
+.fcList { padding: 26px 26px 4px; font-family: var(--mono, ui-monospace, monospace); }
+.fcName { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
+.fcName span { margin-left: auto; color: var(--ink3); }
+.fcList ul { list-style: none; margin: 14px 0 0; padding: 0; }
+.fcList li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12.5px; color: #d4d4d8; }
+.fcList li em { font-style: normal; color: var(--ink3); }
+/* the ask: the sheet a player puts up. Allow lifts it; Not now says what the app gets instead. */
+.wall .sheet, .wall .denied, .wall .granted { margin: 26px 26px 0; padding: 18px; border-radius: 14px; background: #1c1c22; box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 30px 60px -30px rgba(0,0,0,0.9); }
+.sheetHead { display: flex; align-items: center; gap: 10px; font-size: 15px; color: #fff; }
+.sheetHead b { font-weight: 600; }
+.sheet ul { list-style: none; margin: 12px 0 0; padding: 0; }
+.sheet li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #e4e4e7; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.05); }
+.sheet li i { width: 8px; height: 8px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.2); }
+.sheetNote { margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: #a1a1aa; }
+.sheetActs { display: flex; gap: 8px; margin-top: 16px; }
+.sheetActs .btn { padding: 8px 16px; font-size: 13px; }
+.wall .denied, .wall .granted { display: none; font-size: 14px; line-height: 1.55; color: #e4e4e7; }
+.wall .granted i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #34d399; margin-right: 8px; }
+.wall.is-denied .sheet, .wall.is-granted .sheet { display: none; }
+.wall.is-denied .denied { display: block; }
+.wall.is-granted .granted { display: block; }
+.linkBtn { background: none; border: 0; padding: 0; margin-left: 8px; font: inherit; font-size: 13px; color: #fff; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+@media (max-width: 900px) {
+  .fileGrid { grid-template-columns: minmax(0, 1fr); }
+  .fc.fcWide { grid-column: auto; }
+  .osRow { padding: 24px 16px 0; gap: 10px; }
+  .osw .bar { font-size: 9px; padding: 0 6px; }
+  .osw .os { display: none; }
+  .fcText { padding: 20px 20px 24px; }
+  .wall .sheet, .wall .denied, .wall .granted, .fcList { margin-left: 20px; margin-right: 20px; }
+  .fcList { padding-left: 0; padding-right: 0; }
+}
 </style>
 <noscript><style>
-  /* .works .tag belongs in both lists below. The three chips start at
-     opacity 0 and are cleared by the scroll observer, so without this they
-     stay invisible for a reader with JavaScript off -- measured at opacity 0
-     while the heading beside them read correctly. The reduced-motion block
-     already covers them; this list had simply left them out. */
-  .brandbar, .heroContent h1, .heroSub, .heroCtas, .works h2, .works .copy,
-  .works .tag, .how h2, .how .lead, .step, .price h2, .price .lead, .plan,
-  .ctaCard, .ctaText h2, .ctaText p, .ctaActs { opacity: 1 !important; filter: none !important; }
-  .brandbar { transform: translateX(-50%); }
-  .heroContent h1, .heroSub, .heroCtas, .step, .plan { transform: none !important; }
-  .works h2, .works .copy, .works .tag, .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
-    transform: none !important; clip-path: none !important; scale: 1 !important;
-  }
-  .heroTrack { height: auto; min-height: 680px; }
-  .heroStick { position: relative; height: auto; min-height: 680px; overflow: visible; }
-  .heroContent { position: relative; padding-bottom: 60px; }
-  .eclipse, .marqWrap, .marqLabel, .chip, .orbitStage { display: none; }
-  .whatis { display: block; }
+  /* Without scripts nothing waits for a reveal: the panel's pictures and
+     steps, the bars, the closing card all show at rest. (The .js-gated
+     reveals never apply at all; scripts/build-answer-pages.py checks
+     every hidden rule has its way back.) */
+  .brandbar { opacity: 1; transform: translateX(-50%); }
+  .ctaCard, .ctaText h2, .ctaText p { opacity: 1; filter: none; transform: none; clip-path: none; }
+  .appFrame { aspect-ratio: auto; }
+  .appFrame .ap { position: relative; margin-top: 16px; opacity: 1; transform: none; }
 </style></noscript>
 <title>One desktop app file for macOS, Windows and Linux | Krate</title>
   <meta name="description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
@@ -1349,7 +1231,7 @@ picture source { display: none; }
   <meta name="twitter:title" content="One desktop app file for macOS, Windows and Linux | Krate">
   <meta name="twitter:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
   <meta name="twitter:image" content="https://krate.tech/og-v4.png">
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/portable-desktop-app-format.html#webpage", "url": "https://krate.tech/portable-desktop-app-format.html", "name": "One desktop app file for macOS, Windows and Linux | Krate", "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/portable-desktop-app-format.html#webpage", "url": "https://krate.tech/portable-desktop-app-format.html", "name": "One desktop app file for macOS, Windows and Linux | Krate", "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
   <style>
     /* The article shell owns its layout. The homepage supplies fonts and
        colors, not styles for these differently named elements. */
@@ -1460,6 +1342,8 @@ picture source { display: none; }
       padding: 12px; text-align: left; vertical-align: top;
       border-bottom: 1px solid rgba(255,255,255,.14);
     }
+    .answer-reviewed { margin-top: 12px; color: #a1a1aa; font-size: 14px; }
+    .answer-related li { margin-bottom: 6px; }
     .shipping-flow { margin: 24px 0; }
     .shipping-flow figcaption { margin-bottom: 16px; color: #a1a1aa; font-size: 14px; }
     .shipping-lane { padding: 20px; border: 1px solid #3f3f46; border-radius: 12px; margin-top: 12px; }
@@ -1536,7 +1420,7 @@ picture source { display: none; }
     </section>
     <section id="what-is-inside-a-krate-file">
       <h2>What is inside a .krate file?</h2>
-<p>The bundle is a ZIP-based application format, not just a renamed executable. Its core entries are <code>manifest.toml</code> and <code>code.wasm</code>. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.</p>
+<p>The bundle is a ZIP-based application format, not a renamed executable. Its core entries are <code>manifest.toml</code> and <code>code.wasm</code>. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.</p>
 <p>The manifest identifies the app and its requested capabilities. The component calls Krate interfaces described in WIT; the native runtime supplies their implementations. Files, network and other host resources are governed by the capability model.</p>
 <p>Read the <a href="https://github.com/incyashraj/krate/tree/main/crates/bundle">bundle implementation</a> and <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>. Do not put credentials or private inputs in source or assets that will be distributed.</p>
     </section>
@@ -1562,6 +1446,21 @@ krate run app.krate --prompt</pre>
     <section id="check-whether-your-project-fits">
       <h2>Check whether your project fits</h2>
 <p>Krate's aim is software distribution for developers, not a fixed list of toy apps. What determines today's fit is the available API surface: UI, data, networking, media and OS integration. Check the <a href="/docs/limits.html">current limits</a> and use the <a href="/docs/porting.html">porting guide</a> to inventory dependencies before committing to a migration.</p>
+    </section>
+
+    <section id="more-answers">
+      <h2>More answers about shipping desktop apps</h2>
+      <ul class="answer-related">
+        <li><a href="/share-an-app-made-with-ai.html">Share the app, not your development setup</a></li>
+        <li><a href="/run-ai-generated-code-safely.html">Inspect what an AI-built app can access</a></li>
+        <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
+        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app to Windows, macOS and Linux</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one app file instead of a browser in every app</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: what you ship and who holds the permissions</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Ship a desktop app or host a web app?</a></li>
+        <li><a href="/desktop-app-code-signing.html">Do you need code signing to ship a desktop app?</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app: questions and straight answers</a></li>
+      </ul>
     </section>
 
     <section>

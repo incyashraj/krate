@@ -13,16 +13,23 @@ already drifted, and prose pages drift the same way.
 """
 
 import html
+import importlib.util
 import json
 import re
 import sys
 import unittest
+from datetime import date
 from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LANDING = ROOT / "docs" / "landing" / "index.html"
 OUT = ROOT / "docs" / "answers"
+# Committed beside llms.txt, so the deploy's copy of docs/landing serves it.
+LLMS_FULL = ROOT / "docs" / "landing" / "llms-full.txt"
+ANSWERS_HEADING = "# Answers about shipping desktop apps with Krate"
+# The release the reviewed pages were checked against.
+REVIEWED_VERSION = "0.5.4"
 
 
 def chrome():
@@ -40,6 +47,16 @@ def chrome():
     if end is None:
         raise ValueError("Landing page has no closing head tag")
     head = s[:end.end()]
+    # The landing head sends a signed-in visitor who arrives from another
+    # site straight to Studio. That is right for the homepage and wrong for
+    # an answer page: someone who clicked a search result for a question
+    # must get the answer. Keep the `.js` class the stylesheet keys on, drop
+    # the redirect.
+    head, redirects = re.subn(
+        r"<script>(?:(?!</script>).)*?location\.replace\(\"/app/\"\)(?:(?!</script>).)*?</script>",
+        '<script>document.documentElement.classList.add("js");</script>', head, count=1, flags=re.S)
+    if "/app/" in head and "location.replace" in head:
+        raise ValueError("Landing head still redirects to Studio")
     # These live at the site root; the landing's relative links do not.
     head = head.replace('href="./', 'href="/').replace('src="./', 'src="/')
 
@@ -191,6 +208,8 @@ ANSWER_CSS = """  <style>
       padding: 12px; text-align: left; vertical-align: top;
       border-bottom: 1px solid rgba(255,255,255,.14);
     }
+    .answer-reviewed { margin-top: 12px; color: #a1a1aa; font-size: 14px; }
+    .answer-related li { margin-bottom: 6px; }
     .shipping-flow { margin: 24px 0; }
     .shipping-flow figcaption { margin-bottom: 16px; color: #a1a1aa; font-size: 14px; }
     .shipping-lane { padding: 20px; border: 1px solid #3f3f46; border-radius: 12px; margin-top: 12px; }
@@ -282,6 +301,107 @@ class PageHead(HTMLParser):
         self.parts.append(f"<!{decl}>")
 
 
+PUBLISHER = {"@type": "Organization", "@id": "https://krate.tech/#organization",
+             "name": "Krate Labs", "url": "https://krate.tech/"}
+RUNTIME = {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate",
+           "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}
+
+
+class PlainText(HTMLParser):
+    """Readable text from a page fragment, for structured data and llms-full.txt."""
+
+    BLOCKS = {"p", "pre", "h3", "caption", "ol", "ul", "div", "table"}
+
+    def __init__(self, links=False):
+        super().__init__(convert_charrefs=True)
+        self.out = []
+        self.links = links
+        self.href = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.BLOCKS or tag in ("li", "tr"):
+            self.out.append("\n")
+        if tag == "li":
+            self.out.append("- ")
+        if tag in ("td", "th"):
+            self.out.append(" | ")
+        if tag == "a":
+            href = dict(attrs).get("href", "")
+            self.href.append("https://krate.tech" + href if href.startswith("/") else href)
+
+    def handle_endtag(self, tag):
+        if tag in self.BLOCKS:
+            self.out.append("\n")
+        if tag == "a" and self.href:
+            href = self.href.pop()
+            if self.links and href.startswith("http"):
+                self.out.append(f" ({href})")
+
+    def handle_data(self, data):
+        self.out.append(data)
+
+
+def plain_text(fragment, links=False):
+    parser = PlainText(links)
+    parser.feed(fragment)
+    parser.close()
+    lines = (re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in "".join(parser.out).split("\n"))
+    text = "\n".join(line.lstrip("| ").strip() if line.startswith("|") else line for line in lines)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def page_schema(page, url):
+    schema = {
+        "@context": "https://schema.org", "@type": "FAQPage" if page.get("faq") else "WebPage",
+        "@id": url + "#webpage", "url": url, "name": page["title"],
+        "description": page["description"], "inLanguage": "en",
+        "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"},
+        "publisher": PUBLISHER, "about": RUNTIME,
+    }
+    if page.get("reviewed"):
+        schema["dateModified"] = page["reviewed"]
+    if page.get("faq"):
+        schema["mainEntity"] = [
+            {"@type": "Question", "name": question,
+             "acceptedAnswer": {"@type": "Answer", "text": plain_text(answer)}}
+            for question, answer in page["faq"]
+        ]
+    return schema
+
+
+def reviewed_line(page):
+    if not page.get("reviewed"):
+        return ""
+    day = date.fromisoformat(page["reviewed"])
+    return (f'    <p class="answer-reviewed">Reviewed <time datetime="{day.isoformat()}">'
+            f'{day.day} {day:%B %Y}</time> against Krate {REVIEWED_VERSION}.</p>\n')
+
+
+def faq_section(page):
+    if not page.get("faq"):
+        return ""
+    items = "\n".join(f"""      <h3>{html.escape(question)}</h3>
+{answer}""" for question, answer in page["faq"])
+    return f"""    <section id="questions">
+      <h2>Questions</h2>
+{items}
+    </section>
+"""
+
+
+def related_section(page):
+    links = "\n".join(
+        f'        <li><a href="/{other["slug"]}">{html.escape(other["h1"])}</a></li>'
+        for other in PAGES if other["slug"] != page["slug"])
+    return f"""    <section id="more-answers">
+      <h2>More answers about shipping desktop apps</h2>
+      <ul class="answer-related">
+{links}
+      </ul>
+    </section>
+"""
+
+
 def page_head(head, page):
     parser = PageHead()
     parser.feed(head)
@@ -289,12 +409,7 @@ def page_head(head, page):
     title = html.escape(page["title"], quote=True)
     description = html.escape(page["description"], quote=True)
     url = "https://krate.tech/" + page["slug"]
-    schema = json.dumps({
-        "@context": "https://schema.org", "@type": "WebPage",
-        "@id": url + "#webpage", "url": url, "name": page["title"],
-        "description": page["description"], "inLanguage": "en",
-        "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"},
-    }, ensure_ascii=False).replace("<", "\\u003c")
+    schema = json.dumps(page_schema(page, url), ensure_ascii=False).replace("<", "\\u003c")
     metadata = f'''<title>{title}</title>
   <meta name="description" content="{description}">
   <link rel="canonical" href="{url}">
@@ -324,7 +439,9 @@ def render(page):
 
     head = page_head(head, page)
 
-    section_ids = [section_id(title) for title, _ in page["sections"]]
+    section_ids = [section_id(title) for title, _ in page["sections"]] + ["more-answers"]
+    if page.get("faq"):
+        section_ids.append("questions")
     if len(section_ids) != len(set(section_ids)) or not all(section_ids):
         raise ValueError(f"Section anchors must be unique: {page['slug']}")
     actions = "\n".join(
@@ -349,7 +466,7 @@ def render(page):
     <main id="main" class="page-wrap">
     <h1>{html.escape(page["h1"])}</h1>
     <p class="page-lede">{page["lead"]}</p>
-    <div class="answer-entry">
+{reviewed_line(page)}    <div class="answer-entry">
       <nav class="answer-actions" aria-label="Choose your next step">
 {actions}
       </nav>
@@ -357,7 +474,8 @@ def render(page):
     </div>
 
 {sections}
-
+{faq_section(page)}
+{related_section(page)}
     <section>
       <h2>Build with Krate</h2>
       <p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p>
@@ -400,7 +518,7 @@ PAGES = [
 <li>Windows: <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/windows-2022/chart.png">reference image</a> and <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/windows-2022/chart.png.json">recorded bundle hash</a>.</li>
 <li>Linux: <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/ubuntu-latest/chart.png">reference image</a> and <a href="https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/ubuntu-latest/chart.png.json">recorded bundle hash</a>.</li>
 </ul>"""),
-            ("What is inside a .krate file?", """<p>The bundle is a ZIP-based application format, not just a renamed executable. Its core entries are <code>manifest.toml</code> and <code>code.wasm</code>. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.</p>
+            ("What is inside a .krate file?", """<p>The bundle is a ZIP-based application format, not a renamed executable. Its core entries are <code>manifest.toml</code> and <code>code.wasm</code>. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.</p>
 <p>The manifest identifies the app and its requested capabilities. The component calls Krate interfaces described in WIT; the native runtime supplies their implementations. Files, network and other host resources are governed by the capability model.</p>
 <p>Read the <a href="https://github.com/incyashraj/krate/tree/main/crates/bundle">bundle implementation</a> and <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>. Do not put credentials or private inputs in source or assets that will be distributed.</p>"""),
             ("Verify a shared artifact yourself", """<p>Start with an app you built or reviewed. Install a compatible runtime on each target machine, copy the <em>same</em> file, record <code>krate --version</code>, inspect permissions and run it:</p>
@@ -523,6 +641,252 @@ krate publish regex.krate</pre>
 ]
 
 
+PIN = "59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e"
+E3 = "https://github.com/incyashraj/krate/blob/" + PIN + "/evidence/e3/run-36557127592-replay-"
+CHART = "https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate"
+EL_SIGN = "https://www.electronjs.org/docs/latest/tutorial/code-signing"
+EL_SANDBOX = "https://www.electronjs.org/docs/latest/tutorial/sandbox"
+EL_DIST = "https://www.electronjs.org/docs/latest/tutorial/distribution-overview"
+EL_PROC = "https://www.electronjs.org/docs/latest/tutorial/process-model"
+TA_DIST = "https://tauri.app/distribute/"
+TA_CAPS = "https://tauri.app/security/capabilities/"
+TA_WEBVIEW = "https://tauri.app/reference/webview-versions/"
+MS_SS = "https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation"
+MDN_FSA = "https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker"
+
+THREE_OS_REPLAY = f"""<p>Ten ported apps, as the same committed <code>.krate</code> files, passed their replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. An eleventh app has no replay check defined yet and is skipped. Records: <a href="{E3}macos.tsv">macOS</a>, <a href="{E3}ubuntu.tsv">Ubuntu</a>, <a href="{E3}windows.tsv">Windows</a>. These are automated headless checks, not hands-on testing of every feature. Runtimes are also published for Intel Macs, ARM64 Windows and arm64 Linux; those are not in these checks yet.</p>"""
+
+def comparison_table(caption, label, head, rows):
+    h = "".join(f'<th scope="col">{c}</th>' for c in head)
+    body = "\n".join("<tr>" + f'<th scope="row">{r[0]}</th>' + "".join(f"<td>{c}</td>" for c in r[1:]) + "</tr>" for r in rows)
+    return (f'<div class="answer-table-wrap" role="region" aria-label="{label}" tabindex="0"><table class="answer-table">\n'
+            f"<caption>{caption}</caption>\n<thead><tr>{h}</tr></thead>\n<tbody>\n{body}\n</tbody></table></div>")
+
+# Shipping-led pages (K-SEO, 6 October 2026). Every page answers in its lead,
+# names the other tools fairly and links official sources for their facts.
+PAGES += [
+    {
+        "slug": "how-to-distribute-a-desktop-app.html",
+        "title": "How to distribute a desktop app to Windows, macOS and Linux | Krate",
+        "description": "Usually: a package per OS, code signing, notarization and builds per CPU. With Krate: one .krate file that opens on all three through a runtime installed once.",
+        "h1": "How to distribute a desktop app to Windows, macOS and Linux",
+        "lead": "Most teams build a separate package for each operating system, often one per processor too, then sign, notarize and host each download. Krate changes that step: you ship one <code>.krate</code> file, your users install the Krate runtime once, and the same file opens on macOS, Windows and Linux in a sandbox, with only the access they grant.",
+        "reviewed": "2026-10-06",
+        "entry_actions": [("Compare the two routes", "#the-usual-route-step-by-step"),
+                          ("Try a .krate file", "/docs/quickstart.html#try-the-chart-sample")],
+        "sections": [
+            ("The usual route, step by step", f"""<ol>
+<li><strong>Build once per operating system.</strong> Electron and Tauri share your code, then produce a separate package for macOS, Windows and Linux. In practice that means a build machine or CI runner for each system, and macOS signing needs a Mac.</li>
+<li><strong>Often build once per processor.</strong> Apple silicon and Intel Macs, x64 and ARM64 Windows, x86_64 and arm64 Linux each need native code built for them, or a universal build that carries both.</li>
+<li><strong>Sign and notarize.</strong> For direct downloads, macOS expects a Developer ID signature and Apple notarization, which needs a paid Apple Developer Program membership. On Windows, an unsigned download shows "Windows protected your PC", and even a newly signed app can be flagged as unrecognized until it builds reputation.</li>
+<li><strong>Package and host each one.</strong> A DMG or app bundle for macOS, an installer for Windows, and AppImage, deb, RPM, Flatpak or Snap for Linux. Each gets its own download link and its own update path.</li>
+</ol>
+<p>After all that, a conventional desktop program usually runs with the same access to files and the network as the person who opened it, unless the platform sandboxes it, as the Mac App Store does. A signature says who made the app. It does not limit which of your files the app can read.</p>
+<p>Sources: Electron's <a href="{EL_SIGN}">code signing guide</a>, Tauri's <a href="{TA_DIST}">distribution guide</a> and Microsoft's <a href="{MS_SS}">SmartScreen reputation guide</a>.</p>"""),
+            ("The Krate route", """<ol>
+<li><strong>Make the app.</strong> Describe it to an AI coding agent in <a href="/studio/">Krate Studio</a>, or write it in Rust against the Krate SDK. Studio can also port a project you already have: the AI rewrites it against Krate's interfaces, so read the plan it shows before you start.</li>
+<li><strong>Pack one file.</strong> The result is one <code>.krate</code>: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. It contains no Intel or ARM machine code, so there is nothing to build per processor.</li>
+<li><strong>Send it like a document.</strong> Email it, drop it in a shared folder or a chat, or publish it and send a link. Every recipient gets the same bytes.</li>
+<li><strong>Your users install Krate once.</strong> Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once when it is installed. After that, each new app is only its own file.</li>
+<li><strong>They decide what it may touch.</strong> An app starts without file or network access and asks for what it needs. The runtime checks protected calls against what was allowed; the known gaps are on the <a href="/docs/limits.html">limits page</a>. See <a href="/run-ai-generated-code-safely.html">how to inspect an app before running it</a>.</li>
+</ol>"""),
+            ("What you stop doing, and what you still do", """<p><strong>You stop</strong> producing a separate app package for each operating system and processor, signing and notarizing each app for each platform, and asking people to run an installer that gets their full permissions.</p>
+<p><strong>You still</strong> test the app on the systems you support, write it against Krate's interfaces (Rust today), check the <a href="/docs/limits.html">current limits</a> and tell recipients where to get the runtime. Runtime updates are separate from your app's updates. Krate does not turn an existing <code>.exe</code> or <code>.app</code> into a <code>.krate</code>.</p>"""),
+            ("Check it yourself", f"""<p>Download <a href="{CHART}">chart.krate</a>, one file of 11,455 bytes with SHA-256 <code>3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3</code>. Follow <a href="/docs/quickstart.html#try-the-chart-sample">the quickstart</a> to see what it asks for and run it on any of the three systems.</p>
+{THREE_OS_REPLAY}"""),
+            ("When another route fits better", """<ul>
+<li>Your app also needs phones or the web: Tauri, Flutter or a web app cover more platforms today.</li>
+<li>Your app depends on the browser DOM or Node.js packages: Electron runs that code as it is.</li>
+<li>You need native libraries, subprocesses or a demanding 3D renderer; see the <a href="/docs/limits.html">limits page</a>.</li>
+</ul>
+<p>Krate fits desktop tools, internal utilities, dashboards, editors, small games and apps made with AI, where getting one file to people safely matters more than reaching every platform.</p>"""),
+        ],
+        "faq": [
+            ("Can one file run on Windows, macOS and Linux?", "<p>A normal native executable can't, because each system uses its own executable format. A <code>.krate</code> can, because it is not a native executable: it holds a WebAssembly component that the installed Krate runtime runs on each system.</p>"),
+            ("Do the people I send it to need to install anything?", '<p>Yes, once: the Krate runtime for their system, from the <a href="/download/">download page</a>. After that, every Krate app is a single file they open.</p>'),
+            ("Do I need a code signing certificate to ship a .krate?", '<p>No. You don\'t sign and notarize a package per operating system, because the file isn\'t one. You can still sign a <code>.krate</code> with your own key so people can check it came from you. See <a href="/desktop-app-code-signing.html">code signing and Krate</a>.</p>'),
+            ("Can I ship an app I made with AI this way?", '<p>Yes, if it is a Krate app. Make it in Krate Studio with the AI agent you already use, or open an existing project in Studio and port it. See <a href="/share-an-app-made-with-ai.html">how to share an AI-built desktop app</a>.</p>'),
+        ],
+    },
+    {
+        "slug": "krate-vs-electron.html",
+        "title": "Krate vs Electron: an Electron alternative that ships one file",
+        "description": "Electron packages Chromium and Node.js into each app, per OS. Krate ships one .krate file that a shared runtime opens on Mac, Windows and Linux. Where each fits.",
+        "h1": "Krate vs Electron: one app file instead of a browser in every app",
+        "lead": "Krate is an Electron alternative for desktop apps you want to ship as one file. Electron packages Chromium and Node.js into a separate app for each operating system. Krate ships one <code>.krate</code> file that the Krate runtime, installed once, opens on macOS, Windows and Linux. Electron is far more mature and runs your existing web code; Krate apps are written against Krate's own interfaces, in Rust today.",
+        "reviewed": "2026-10-06",
+        "entry_actions": [("See the comparison", "#side-by-side"),
+                          ("Check your project's fit", "/docs/porting.html")],
+        "sections": [
+            ("Side by side", comparison_table("Electron and Krate, reviewed 6 October 2026 against Electron's official docs", "Electron and Krate compared",
+                ["Question", "Electron", "Krate"], [
+                ["What you ship", "A packaged app for each operating system, each carrying its own Chromium and Node.js.", "One <code>.krate</code> file for all three, opened by a runtime the user installs once and every Krate app shares."],
+                ["App code", "HTML, CSS and JavaScript in Chromium, with Node.js in the main process.", "A WebAssembly component that calls Krate's interfaces. Rust today."],
+                ["Builds per OS and CPU", "One package per target platform.", "One file. The runtime is the only per-platform piece, and Krate builds it."],
+                ["Signing", "Sign for Windows and macOS, and notarize for macOS, for each release.", "No per-OS signing of the app file. Optional Krate signature with your own key."],
+                ["Default access", "Renderers are sandboxed by default since Electron 20. The main process is not sandboxed and has Node.js.", "The app starts without file or network access. The person running it grants or refuses each request."],
+                ["Platforms", "Windows, macOS and Linux.", "macOS, Windows and Linux. iOS and Android exist only as reference ports."],
+                ["Maturity", "Established, with a large ecosystem and many well-known apps.", "Young (0.5.x), with a small ecosystem."],
+            ]) + f"""
+<p>Electron facts: <a href="{EL_PROC}">process model</a>, <a href="{EL_SANDBOX}">process sandboxing</a>, <a href="{EL_SIGN}">code signing</a> and <a href="{EL_DIST}">distribution overview</a>.</p>"""),
+            ("What one file changes for shipping", """<p>With Electron, each release is a set of platform builds that you sign, notarize and host. With Krate, each release is one new file. People who already have Krate open it straight away; everyone else installs the runtime once first. Because Krate apps share the runtime, a second or third app does not bring another copy of a browser.</p>
+<p>Count the same things when you compare size: for a first-time recipient, the runtime plus the app; for everyone after that, the app file alone. The <a href="/reports/">measurements page</a> shows one scoped comparison with MarkText, an Electron editor, and says what it does and doesn't cover.</p>"""),
+            ("Who decides what the app can touch", """<p>In Electron, the developer decides what the main process exposes to the sandboxed renderers, and the main process itself runs with the user's permissions. That is a sound design for code you wrote, but the person running the app has no say in it.</p>
+<p>In Krate, the app lists what it wants in its manifest and the person running it approves or refuses. The runtime checks protected calls against what was allowed. Krate is young: the known gaps are on the <a href="/docs/limits.html">limits page</a>, and it does not yet claim hardening against deliberately hostile code.</p>"""),
+            ("When to stay with Electron", """<ul>
+<li>You have a web or Node.js codebase and want to keep running it as it is.</li>
+<li>You depend on the DOM, npm packages or Chromium's consistent rendering on every system.</li>
+<li>You need mature auto-update tooling or a large plugin ecosystem.</li>
+</ul>"""),
+            ("Moving an Electron app to Krate", """<p>Start with a scan. It reads your source without building or running it and lists what maps to Krate and what doesn't:</p>
+<pre class="answer-cmd">krate port ./my-electron-app</pre>
+<p>A port is a rewrite in Rust against the Krate SDK, not a repackage. DOM and Node.js APIs do not carry over. Krate Studio can do the rewrite with AI and shows its plan first. Begin with one representative feature and read the <a href="/docs/porting.html">porting guide</a>.</p>"""),
+        ],
+        "faq": [
+            ("Is Krate a drop-in replacement for Electron?", "<p>No. Electron runs your HTML, CSS and JavaScript as they are. A Krate app is written against Krate's interfaces, in Rust today, so moving an Electron app is a port, not a repackage.</p>"),
+            ("Do Krate users need Chromium?", "<p>No. Krate apps don't run in a browser engine. Users install the Krate runtime once, and every Krate app shares it.</p>"),
+            ("Can I keep writing JavaScript?", "<p>Not for a shipped Krate app today: Rust is the only finished SDK. Krate Studio can write the Rust for you from a description, or port a JavaScript project by rewriting it.</p>"),
+        ],
+    },
+    {
+        "slug": "krate-vs-tauri.html",
+        "title": "Krate vs Tauri: one .krate file or a bundle for each OS",
+        "description": "Tauri builds a WebView app and an installer for each OS. Krate ships one .krate file that opens on Mac, Windows and Linux through a runtime installed once.",
+        "h1": "Krate vs Tauri: what you ship and who holds the permissions",
+        "lead": "Tauri and Krate are both built in Rust and both take permissions seriously, but they ship differently. Tauri builds a platform-specific installer or bundle for each operating system, with your web frontend running in the system WebView. Krate ships one <code>.krate</code> file that the installed Krate runtime opens on macOS, Windows and Linux. Tauri is more mature and also targets Android and iOS; Krate is desktop only today.",
+        "reviewed": "2026-10-06",
+        "entry_actions": [("See the comparison", "#side-by-side"),
+                          ("Try a .krate file", "/docs/quickstart.html#try-the-chart-sample")],
+        "sections": [
+            ("Side by side", comparison_table("Tauri and Krate, reviewed 6 October 2026 against Tauri's official docs", "Tauri and Krate compared",
+                ["Question", "Tauri", "Krate"], [
+                ["What you ship", "An installer or bundle per platform: DMG or app bundle, a Windows installer, AppImage, deb, RPM, Flatpak or Snap.", "One <code>.krate</code> file for macOS, Windows and Linux."],
+                ["Interface", "Your web frontend in the system WebView: WebView2, WKWebView or webkit2gtk.", "Krate's own UI interfaces. No WebView."],
+                ["App logic", "Rust commands, with plugins in Rust, Swift or Kotlin.", "A WebAssembly component. Rust today."],
+                ["Permissions", "Capability files the developer writes grant or deny commands per window.", "The app requests access in its manifest; the person running it grants or refuses."],
+                ["Signing", "Required on most platforms. Direct macOS downloads also need notarization.", "No per-OS signing of the app file. Optional Krate signature with your own key."],
+                ["Platforms", "Windows, macOS, Linux, Android and iOS.", "macOS, Windows and Linux. iOS and Android exist only as reference ports."],
+                ["Maturity", "Version 2, stable since 2024.", "Young (0.5.x)."],
+            ]) + f"""
+<p>Tauri facts: <a href="{TA_DIST}">distribution</a>, <a href="{TA_CAPS}">capabilities</a> and <a href="{TA_WEBVIEW}">WebView versions</a>.</p>"""),
+            ("Who holds the permissions", f"""<p>Tauri's capabilities limit what the frontend in the WebView may call. They are chosen by the developer, and <a href="{TA_CAPS}">Tauri's own docs</a> say they do not protect against malicious or insecure Rust code in the app itself. They protect users from a compromised frontend.</p>
+<p>In Krate, the whole app is the guest. It cannot call the operating system directly; it calls Krate interfaces, and the runtime checks protected calls against what the person running it allowed. The model is young and its gaps are on the <a href="/docs/limits.html">limits page</a>.</p>"""),
+            ("Shipping a release", """<p>With Tauri, a release means building on each platform, usually in a CI job per system, signing for each platform, and hosting and updating each package. With Krate, a release is one new <code>.krate</code> file that you send or publish. Recipients need a compatible runtime, and runtime updates are separate from yours.</p>"""),
+            ("When Tauri is the better choice", """<ul>
+<li>You want a web frontend, or already have one.</li>
+<li>You need Android or iOS from the same project.</li>
+<li>You call native libraries from Rust. A <code>.krate</code> cannot link a native library.</li>
+<li>You need its plugin ecosystem.</li>
+</ul>"""),
+            ("Moving a Tauri app to Krate", """<p>Inventory your Rust commands, plugins and WebView interactions, then run the scan, which reads source without building it:</p>
+<pre class="answer-cmd">krate port ./my-tauri-app</pre>
+<p>Pure Rust logic may carry over. The WebView interface and native plugins need adapting to Krate's widgets, canvas and host interfaces. See the <a href="/docs/porting.html">porting guide</a>.</p>"""),
+        ],
+        "faq": [
+            ("Is Krate built on Tauri?", "<p>No. Krate is its own runtime, built on Wasmtime. It does not use a WebView.</p>"),
+            ("Can a Tauri app run in Krate unchanged?", "<p>No. A Tauri app is a native program with a web frontend. A Krate app is a WebAssembly component written against Krate's interfaces, so moving one is a port.</p>"),
+            ("Which one makes smaller downloads?", "<p>It depends on what you count. A Tauri app relies on the system WebView, so its package can be small. A Krate app file is small too, but a first-time recipient also downloads the Krate runtime once. Compare runtime plus app for the first app, and the app alone after that.</p>"),
+        ],
+    },
+    {
+        "slug": "desktop-app-or-web-app.html",
+        "title": "Desktop app or hosted web app? Ship without a server | Krate",
+        "description": "Hosting a web app avoids installers but needs a server and a browser. A .krate is a desktop app in one file that works offline and asks before it uses your files.",
+        "h1": "Ship a desktop app or host a web app?",
+        "lead": "Host a web app when people need it on phones or without installing anything. Ship a desktop app when it should open like a program, work offline and handle local files. A <code>.krate</code> gives you the desktop option without a package per OS: one file that opens on macOS, Windows and Linux, at the cost of a one-time Krate runtime install for each person.",
+        "reviewed": "2026-10-06",
+        "entry_actions": [("See the comparison", "#side-by-side"),
+                          ("How to distribute a desktop app", "/how-to-distribute-a-desktop-app.html")],
+        "sections": [
+            ("Side by side", comparison_table("A hosted web app and a .krate desktop app, reviewed 6 October 2026", "Web app and Krate app compared",
+                ["Question", "Hosted web app", "Krate app"], [
+                ["What people get", "A page in a browser tab, or an installed web app where the browser supports it.", "A desktop app in its own window."],
+                ["What you run", "A server or hosting account, for as long as people use the app.", "Nothing. The file runs on their computer. Publishing to a hub is optional."],
+                ["Offline", "Only with extra work, such as a service worker.", "Works without a connection unless the app itself needs the network."],
+                ["Local files", f'Depends on the browser. The File System Access picker is <a href="{MDN_FSA}">not available in all major browsers</a>.', "Through a file dialog or a folder the person grants."],
+                ["Updates", "Every visitor gets the new version on reload.", "You send or publish a new file."],
+                ["Phones", "Yes.", "Not yet. Desktop only today."],
+                ["What people install", "Nothing.", "The Krate runtime, once."],
+            ])),
+            ("Hosting has running costs too", """<p>A hosted app needs a domain, a hosting bill, uptime, sign-in and storage for user data, and it keeps people's data on your server, which brings privacy duties. A Krate app keeps its saved data on the person's computer unless it is granted network access and sends it somewhere. If it needs a service, you still run that service, but the app itself does not need hosting.</p>"""),
+            ("Apps made with Lovable, Bolt, v0 and similar tools", """<p>These tools mostly produce web apps. You can host the published URL, or wrap it with Electron, Tauri or a wrapper service, which gives you a package per OS to build, sign and host. Krate does not wrap websites. To ship such an app as a <code>.krate</code>, open the project in Krate Studio and port it: the AI rewrites it against Krate's interfaces and shows its plan first. The DOM does not carry over. See <a href="/share-an-app-made-with-ai.html">how to share an AI-built desktop app</a>.</p>"""),
+            ("When the web is the right answer", """<ul>
+<li>People need it on phones, or cannot install anything.</li>
+<li>Many people work on the same live data.</li>
+<li>Search engines need to index the content.</li>
+<li>Your team and your code are already on the web.</li>
+</ul>"""),
+        ],
+        "faq": [
+            ("Can I turn my website into a desktop app?", "<p>You can wrap it with Electron or Tauri, which gives you a package per OS to build and sign. Krate doesn't wrap websites: a Krate app is written against Krate's interfaces, and Krate Studio can port a web project by rewriting it.</p>"),
+            ("Do Krate apps need an internet connection?", "<p>No, unless the app itself uses the network, and then only to the hosts the person allows.</p>"),
+            ("Can people open a .krate on their phone?", "<p>Not yet. iOS and Android exist in Krate's source as reference ports and are not shipping.</p>"),
+        ],
+    },
+    {
+        "slug": "desktop-app-code-signing.html",
+        "title": "Do you need code signing to ship a desktop app? | Krate",
+        "description": "Native installers need a Developer ID and notarization on macOS and a trusted signature on Windows. A .krate is not a native executable. What that changes.",
+        "h1": "Do you need code signing to ship a desktop app?",
+        "lead": "For a native installer, in practice yes: macOS expects a Developer ID signature and Apple notarization for apps downloaded outside the App Store, and Windows warns about unsigned downloads, and about new signed ones until they build reputation. A <code>.krate</code> is not a native executable, so you don't sign and notarize a package for each system. Your users install the Krate runtime once, and it opens your file and shows what the app asks for.",
+        "reviewed": "2026-10-06",
+        "entry_actions": [("Sign a .krate with your own key", "#signing-a-krate-with-your-own-key"),
+                          ("Install Krate", "/download/")],
+        "sections": [
+            ("What signing takes for a native app", f"""<ul>
+<li><strong>macOS:</strong> an Apple Developer Program membership with an annual fee, Xcode on a Mac, signing certificates, then an upload to Apple for notarization.</li>
+<li><strong>Windows:</strong> an unsigned download shows "Windows protected your PC" and the user must choose to run it anyway. A file signed with a new certificate can still be flagged as unrecognized until it builds reputation, and an EV certificate no longer skips that. On Windows 11, Smart App Control can block unsigned files that have no positive reputation.</li>
+<li><strong>Linux:</strong> package and repository signing depends on the format and the store.</li>
+</ul>
+<p>Sources: Electron's <a href="{EL_SIGN}">code signing guide</a> and Microsoft's <a href="{MS_SS}">SmartScreen reputation guide</a>.</p>"""),
+            ("What a signature tells your users", """<p>A signature identifies the publisher and shows the file has not been changed since it was signed. It does not limit what the program can reach once it runs: a signed installer still gets the same access to files and the network as the person who opened it.</p>"""),
+            ("How it works with a .krate", """<p>The operating system checks the Krate runtime once, when it is installed. Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once at install, and Windows 11 machines with Smart App Control may block it.</p>
+<p>Your app is a file the runtime opens, not a program the operating system launches, so there is no per-OS package of yours to sign or notarize. When someone opens it, Krate shows what it asks for, and the app gets only what they allow.</p>"""),
+            ("Signing a .krate with your own key", """<p>You can sign a bundle so recipients can check it came from you and has not changed. The key is an Ed25519 key you create; it stays on your machine, and signing and checking work offline with no account:</p>
+<pre class="answer-cmd">krate sign app.krate --key publisher.key --generate-key --namespace com.example.app</pre>
+<p><code>--generate-key</code> writes a new key the first time and refuses to overwrite one. Run <code>krate sign --help</code> for your version's options. This signature ties releases to your key; it is not a certificate authority's check of your legal identity.</p>"""),
+            ("What you still own", """<ul>
+<li>Telling people where to get Krate, and that Windows asks once at install today.</li>
+<li>Publishing your app's hash or signing key somewhere they trust, so they can check what they received.</li>
+<li>Testing on the systems you support, within the <a href="/docs/limits.html">current limits</a>.</li>
+</ul>"""),
+        ],
+        "faq": [
+            ("Can I distribute a Windows app without a code signing certificate?", "<p>Yes, but users see a SmartScreen warning and must choose to run it anyway, and some managed or Smart App Control machines block it. With Krate you ship a <code>.krate</code> instead of an <code>.exe</code>; Windows checks the Krate runtime when it is installed, and that runtime is unsigned today.</p>"),
+            ("Do I need an Apple Developer account to share a Mac app?", "<p>For a native Mac app downloaded from the web, in practice yes: notarization needs a Developer ID from the paid Apple Developer Program. A <code>.krate</code> is opened by Krate for Mac, which is signed and notarized, so you don't need your own Apple account to share one.</p>"),
+            ("Is a signed app safe to run?", "<p>A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds a second check: the app asks before it gets your files or the network.</p>"),
+        ],
+    },
+    {
+        "slug": "desktop-app-shipping-faq.html",
+        "title": "Shipping a desktop app: straight answers to common questions | Krate",
+        "description": "How to ship one app to Windows, macOS and Linux, share an app built with AI, skip per-OS builds, run untrusted apps more safely and pick an Electron or Tauri alternative.",
+        "h1": "Shipping a desktop app: questions and straight answers",
+        "lead": "Short answers to the questions people ask once they have built an app and need to get it onto other people's computers. Each answer starts with the answer, then links to the longer page.",
+        "reviewed": "2026-10-06",
+        "entry_actions": [("How to distribute a desktop app", "/how-to-distribute-a-desktop-app.html"),
+                          ("Install Krate", "/download/")],
+        "entry_note": 'These answers describe Krate 0.5.4. Krate is young, and the <a href="/docs/limits.html">limits page</a> lists what it cannot do yet. Where another tool is the better fit, the answer says so.',
+        "sections": [],
+        "faq": [
+            ("How do I distribute a desktop app to Windows, macOS and Linux?", '<p>Either build, sign and host a package for each system, or ship one <code>.krate</code> file that opens on all three through the Krate runtime. <a href="/how-to-distribute-a-desktop-app.html">Both routes, step by step</a>.</p>'),
+            ("Can I ship one app file to Windows, Mac and Linux?", '<p>Yes, as a <code>.krate</code>: the same bytes open on all three once the person has installed the Krate runtime. A normal native executable cannot do this. <a href="/portable-desktop-app-format.html">How the format works</a>.</p>'),
+            ("What is a good Electron alternative?", '<p>It depends on what you need. Tauri, Wails and Neutralino keep a web frontend in the system WebView; Flutter and Qt draw their own interface; Krate ships one sandboxed <code>.krate</code> file for all three desktop systems. <a href="/krate-vs-electron.html">Krate vs Electron</a>.</p>'),
+            ("Is there a Tauri alternative that doesn't need a build per OS?", '<p>Krate. Tauri builds an installer or bundle for each operating system; Krate ships one file and keeps the per-OS work in a runtime that Krate maintains. <a href="/krate-vs-tauri.html">Krate vs Tauri</a>.</p>'),
+            ("How do I share an app I built with AI as a desktop app?", '<p>If it is a Krate app, send the <code>.krate</code> file; the person installs Krate once and opens it. If your AI tool built a website, host it, wrap it per OS with Electron or Tauri, or port it to Krate in Krate Studio. <a href="/share-an-app-made-with-ai.html">Sharing an AI-built app</a>.</p>'),
+            ("Can I ship a cross-platform app without code signing?", '<p>With a <code>.krate</code>, you don\'t sign a package per OS, because the file is opened by the Krate runtime. Native installers effectively need signing on macOS and Windows. <a href="/desktop-app-code-signing.html">Code signing and Krate</a>.</p>'),
+            ("How can I run an untrusted desktop app more safely?", '<p>For an unknown native program, use the strongest isolation you have, such as a virtual machine or Windows Sandbox. For apps shipped as <code>.krate</code> files, the app starts without file or network access and asks; inspect it first with <code>krate run app.krate --dump-caps</code>. Krate is not yet hardened against deliberately hostile code. <a href="/run-ai-generated-code-safely.html">Inspecting an app before you run it</a>.</p>'),
+            ("Is there a portable app format that runs on every OS?", '<p>No format runs on every system. A <code>.krate</code> runs on macOS, Windows and Linux desktops through the Krate runtime. AppImage is Linux only, Cosmopolitan\'s Actually Portable Executable runs one executable on several systems, mainly for command-line programs, and Java apps need a Java runtime. <a href="/portable-desktop-app-format.html">The .krate format</a>.</p>'),
+            ("Is there a WebAssembly runtime for desktop GUI apps?", '<p>Yes. Krate runs desktop apps compiled to WebAssembly components, with windows, widgets, a 2D canvas, files, storage and networking behind permissions. It embeds Wasmtime. General runtimes such as Wasmtime, Wasmer and WasmEdge focus on servers and command-line programs. <a href="/docs/architecture.html">Krate\'s architecture</a>.</p>'),
+            ("Do people need to install anything to open a .krate?", '<p>Yes, the Krate runtime, once. <a href="/download/">Download Krate</a>, or read <a href="/open/">what to do when someone sends you a .krate</a>.</p>'),
+            ("Is Krate free and open source?", '<p>The runtime, CLI and SDK are free and open source under MIT OR Apache-2.0. Krate Studio is source-available under the Business Source License 1.1 and free on your own machine with your own AI. <a href="https://github.com/incyashraj/krate#license">Licence details</a>.</p>'),
+            ("Does Krate run existing .exe or .app files?", '<p>No. An app has to be built or ported for Krate\'s interfaces. Krate Studio can port a project folder with AI; the <a href="/docs/porting.html">porting guide</a> explains what carries over.</p>'),
+            ("What can't Krate do yet?", '<p>Phones, shipping apps in languages other than Rust, native libraries and subprocesses, and demanding 3D games. <a href="/docs/limits.html">The full list</a>.</p>'),
+        ],
+    },
+]
+
+
 class MetadataTests(unittest.TestCase):
     def test_homepage_identity_is_replaced_with_varied_html(self):
         variants = [
@@ -559,7 +923,9 @@ class MetadataTests(unittest.TestCase):
                 schemas = re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)
                 self.assertEqual(len(schemas), 1)
                 schema = json.loads(schemas[0])
-                self.assertEqual(schema["@type"], "WebPage")
+                self.assertEqual(schema["@type"], "FAQPage" if page.get("faq") else "WebPage")
+                self.assertEqual(schema["publisher"]["@id"], "https://krate.tech/#organization")
+                self.assertEqual(schema["about"]["@id"], "https://krate.tech/#runtime")
                 self.assertEqual(schema["name"], page["title"])
                 self.assertEqual(schema["url"], "https://krate.tech/" + page["slug"])
                 self.assertIn("/docs/quickstart.html", result)
@@ -771,6 +1137,102 @@ class MetadataTests(unittest.TestCase):
                     self.assertIn(restore, joined, f"{name} is never restored ({restore}) {label}")
         self.assertGreater(hidden, 0, "the homepage reveals nothing any more; this test is stale")
 
+    def test_questions_are_visible_and_match_the_structured_data(self):
+        # Structured data must describe what a reader can see on the page.
+        faq_pages = [p for p in PAGES if p.get("faq")]
+        self.assertGreaterEqual(len(faq_pages), 6)
+        for page in faq_pages:
+            with self.subTest(slug=page["slug"]):
+                result = render(page)
+                schema = json.loads(re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)[0])
+                self.assertEqual(len(schema["mainEntity"]), len(page["faq"]))
+                for entity, (question, answer) in zip(schema["mainEntity"], page["faq"]):
+                    self.assertEqual(entity["name"], question)
+                    self.assertIn(f"<h3>{html.escape(question)}</h3>", result)
+                    text = entity["acceptedAnswer"]["text"]
+                    self.assertNotIn("<", text)
+                    self.assertTrue(text and text[0].isupper(), question)
+                self.assertLess(result.index('<section id="questions">'), result.index('<section id="more-answers">'))
+
+    def test_reviewed_pages_carry_a_visible_date(self):
+        for page in PAGES:
+            if not page.get("reviewed"):
+                continue
+            with self.subTest(slug=page["slug"]):
+                result = render(page)
+                schema = json.loads(re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)[0])
+                self.assertEqual(schema["dateModified"], page["reviewed"])
+                self.assertIn(f'<time datetime="{page["reviewed"]}">', result)
+                self.assertIn(f"against Krate {REVIEWED_VERSION}.", result)
+
+    def test_every_page_links_every_other_answer(self):
+        for page in PAGES:
+            result = render(page)
+            related = result[result.index('<section id="more-answers">'):]
+            for other in PAGES:
+                if other is not page:
+                    self.assertIn(f'href="/{other["slug"]}"', related, page["slug"])
+            self.assertNotIn(f'href="/{page["slug"]}"', related)
+
+    def test_internal_answer_links_resolve(self):
+        slugs = {p["slug"] for p in PAGES}
+        for page in PAGES:
+            for target in re.findall(r'href="/([a-z0-9-]+\.html)', render(page)):
+                self.assertIn(target, slugs, f"{page['slug']} links /{target}")
+
+    def test_shipping_comparisons_cite_official_sources_and_say_when_to_stay(self):
+        expected = {
+            "krate-vs-electron.html": ("https://www.electronjs.org/docs/latest/tutorial/code-signing",
+                                       "https://www.electronjs.org/docs/latest/tutorial/sandbox", "When to stay with Electron"),
+            "krate-vs-tauri.html": ("https://tauri.app/distribute/", "https://tauri.app/security/capabilities/",
+                                    "When Tauri is the better choice"),
+            "desktop-app-code-signing.html": ("https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation",
+                                              "https://www.electronjs.org/docs/latest/tutorial/code-signing", "What you still own"),
+        }
+        for slug, (first, second, heading) in expected.items():
+            result = render(next(p for p in PAGES if p["slug"] == slug))
+            self.assertIn(f'href="{first}"', result)
+            self.assertIn(f'href="{second}"', result)
+            self.assertIn(f"<h2>{heading}</h2>", result)
+
+    def test_distribution_page_links_the_three_os_replay_records(self):
+        result = render(next(p for p in PAGES if p["slug"] == "how-to-distribute-a-desktop-app.html"))
+        for host in ("macos", "ubuntu", "windows"):
+            path = f"evidence/e3/run-36557127592-replay-{host}.tsv"
+            self.assertTrue((ROOT / path).is_file(), path)
+            self.assertIn(f"/blob/{PIN}/{path}", result)
+        self.assertIn("3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3", result)
+        self.assertIn("not hands-on testing of every feature", result)
+
+    def test_llms_full_carries_the_short_file_and_every_page(self):
+        text = render_llms_full()
+        self.assertTrue(text.startswith(load_public_facts().render_llms().rstrip()))
+        for page in PAGES:
+            self.assertIn(f"URL: https://krate.tech/{page['slug']}", text)
+            self.assertIn(f"## {page['h1']}", text)
+            for question, _ in page.get("faq", []):
+                self.assertIn(question, text)
+        self.assertNotIn("<a ", text)
+        self.assertNotIn("<code>", text)
+
+    def test_committed_llms_full_carries_the_current_answers(self):
+        # The answers half is this file's output; the llms.txt half is
+        # checked by public_facts.py --check, so compare from the heading.
+        committed = LLMS_FULL.read_text()
+        self.assertTrue(committed.startswith("# Krate\n"))
+        expected = render_llms_full()
+        self.assertEqual(committed[committed.index(ANSWERS_HEADING):],
+                         expected[expected.index(ANSWERS_HEADING):],
+                         "stale docs/landing/llms-full.txt: run scripts/build-answer-pages.py")
+
+    def test_answer_pages_never_redirect_to_studio(self):
+        # A signed-in reader arriving from a search result must see the answer.
+        for page in PAGES:
+            result = render(page)
+            self.assertNotIn('location.replace("/app/")', result, page["slug"])
+            self.assertIn('document.documentElement.classList.add("js")', result)
+        self.assertIn('location.replace("/app/")', LANDING.read_text())
+
     def test_metadata_is_escaped(self):
         page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')
         result = page_head("<html><head></head>", page)
@@ -779,12 +1241,47 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(json.loads(schemas[0])["description"], page["description"])
 
 
+def load_public_facts():
+    spec = importlib.util.spec_from_file_location("public_facts", ROOT / "scripts" / "public_facts.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def render_llms_full():
+    """llms.txt, then the plain text of every answer page, for AI readers."""
+    parts = [load_public_facts().render_llms().rstrip(), "",
+             ANSWERS_HEADING, ""]
+    for page in PAGES:
+        parts += [f"## {page['h1']}", "", f"URL: https://krate.tech/{page['slug']}"]
+        if page.get("reviewed"):
+            parts.append(f"Reviewed: {page['reviewed']} against Krate {REVIEWED_VERSION}")
+        parts += ["", plain_text(page["lead"], links=True), ""]
+        for title, body in page["sections"]:
+            parts += [f"### {title}", "", plain_text(body, links=True), ""]
+        if page.get("faq"):
+            parts += ["### Questions", ""]
+            for question, answer in page["faq"]:
+                parts += [f"Q: {question}", f"A: {plain_text(answer, links=True)}", ""]
+    return "\n".join(parts).rstrip() + "\n"
+
+
 def main() -> int:
+    if "--llms-full" in sys.argv:
+        index = sys.argv.index("--llms-full")
+        if index + 1 >= len(sys.argv):
+            raise SystemExit("usage: build-answer-pages.py --llms-full PATH")
+        target = Path(sys.argv[index + 1])
+        target.write_text(render_llms_full())
+        print(f"  wrote {target}")
+        return 0
     OUT.mkdir(parents=True, exist_ok=True)
     for page in PAGES:
         target = OUT / page["slug"]
         target.write_text(render(page))
         print(f"  wrote docs/answers/{page['slug']}")
+    LLMS_FULL.write_text(render_llms_full())
+    print("  wrote docs/landing/llms-full.txt")
     return 0
 
 
