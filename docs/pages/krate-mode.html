@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Krate Mode -- make any AI write Krate apps</title>
+  <title>Krate Mode: make any AI write Krate apps</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta name="description" content="One prompt you paste into ChatGPT, Claude, or Cursor that makes it write correct Krate app code. Nothing to install. You build the result locally." />
@@ -141,14 +141,14 @@
     <article class="prose">
       <p class="lbl">The prompt</p>
       <h2 id="get-the-prompt">Copy it, paste it, then ask for an app.</h2>
-      <p>The prompt carries the real Krate API -- every function that exists, every capability an app may ask for, the rules that keep an app inside its sandbox, and two complete working apps as examples. It is <strong>generated from Krate's own source code</strong>, so it describes the toolchain that will actually build your app, not a summary someone wrote once and forgot.</p>
+      <p>The prompt carries the real Krate API: every function that exists, every capability an app may ask for, the rules that keep an app inside its sandbox, and two complete working apps as examples. It is <strong>generated from Krate's own source code</strong>, so it describes the toolchain that will actually build your app, not a summary someone wrote once and forgot.</p>
       <div class="grab" id="prompt">
         <button class="btn dark" type="button" id="grab" data-src="/krate-mode.md">Copy the prompt</button>
-        <p class="grab-note">About 56 KB of text. Long, deliberately -- it is the whole API. Or <a href="/krate-mode.md" download>download it as a file</a>.</p>
+        <p class="grab-note">About 56 KB of text. Long, deliberately: it is the whole API. Or <a href="/krate-mode.md" download>download it as a file</a>.</p>
       </div>
       <div class="call"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="7.2"/><path d="M10 9v4.6M10 6.4v.1"/></svg><div>
         <p><strong>Paste it as your first message, then ask for what you want</strong> in the next one. For example: <code>a unit converter for cooking measurements</code>, or <code>a tool that explains a cron expression</code>.</p>
-        <p>It works in a long-context chat. If your model has a small context window, the prompt may not fit -- use the <a href="/#ctaSec">local <code>krate create</code></a> route instead, which does not need one.</p>
+        <p>It works in a long-context chat. If your model has a small context window, the prompt may not fit, so use the <a href="/#ctaSec">local <code>krate create</code></a> route instead, which does not need one.</p>
       </div></div>
 
       <p class="lbl">How it works</p>
@@ -160,7 +160,7 @@
         </li>
         <li>
           <h3>Ask for an app.</h3>
-          <p>Describe what you want in plain words. The model writes three complete files -- <code>Cargo.toml</code>, <code>src/lib.rs</code>, and <code>manifest.toml</code> -- and hands them to you. Save them into an empty folder.</p>
+          <p>Describe what you want in plain words. The model writes three complete files, <code>Cargo.toml</code>, <code>src/lib.rs</code>, and <code>manifest.toml</code>, and hands them to you. Save them into an empty folder.</p>
         </li>
         <li>
           <h3>Build it on your machine.</h3>
@@ -169,14 +169,14 @@
             <pre id="cmd-1"><span class="p">krate</span> check-app .</pre>
             <button class="cp copy-button" type="button" data-target="cmd-1" aria-label="Copy command">Copy</button>
           </div>
-          <p>If it prints <code>OK</code>, the app is real -- it compiled, it stayed inside the sandbox, and it ran. If it fails, it names the stage and the exact fix. <strong>Paste that failure back into the chat</strong> and the model corrects the code. That loop is the whole workflow.</p>
+          <p>If it prints <code>OK</code>, the app is real: it compiled, it stayed inside the sandbox, and it ran. If it fails, it names the stage and the exact fix. <strong>Paste that failure back into the chat</strong> and the model corrects the code. That loop is the whole workflow.</p>
         </li>
       </ol>
 
       <p class="lbl">The catch</p>
       <h2 id="the-catch">The chat cannot compile anything.</h2>
       <p>A chat model has no compiler. It cannot build your app, cannot run it, and cannot check whether it stayed inside the sandbox. It can only write code that <em>should</em> work. The prompt tells the model this outright and instructs it not to claim otherwise, but it is worth knowing yourself.</p>
-      <p>So <strong>the build always happens on your machine</strong>, and <code>krate check-app</code> is what turns "the model wrote something" into "this actually works". It is not a formality -- it is the only thing in the loop that knows the truth.</p>
+      <p>So <strong>the build always happens on your machine</strong>, and <code>krate check-app</code> is what turns "the model wrote something" into "this actually works". It is not a formality. It is the only thing in the loop that knows the truth.</p>
       <p>You need Krate and the Rust build tools installed for that step. The <a href="/docs/pages/make-an-app-with-ai.html">make-an-app-with-AI guide</a> covers that setup, and <code>krate create</code> will offer to install what is missing the first time you run it.</p>
 
       <p class="lbl">Which one to use</p>
@@ -208,12 +208,12 @@
       </div>
       <div class="call"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="7.2"/><path d="M10 9v4.6M10 6.4v.1"/></svg><div>
         <p><span class="tag warn">Coming</span></p>
-        <p><strong>A Krate MCP server</strong> is being built. It will let a model start a build, watch it, and hand back the finished <code>.krate</code> without you copying anything -- the same loop as <code>krate create</code>, driven from inside your chat. Krate Mode is what works in the meantime, and it will keep working for tools that never get MCP support.</p>
+        <p><strong>A Krate MCP server</strong> is being built. It will let a model start a build, watch it, and hand back the finished <code>.krate</code> without you copying anything, the same loop as <code>krate create</code>, driven from inside your chat. Krate Mode is what works in the meantime, and it will keep working for tools that never get MCP support.</p>
       </div></div>
 
       <p class="lbl">What to expect</p>
       <h2 id="what-to-expect">Focused apps work. Sprawling ones do not.</h2>
-      <p>Krate Mode is at its best with a <strong>single, clear app</strong>: a converter, a calculator, a timer, a small game, a formatter, a viewer. Both apps used to test this prompt -- a cooking measurement converter and a cron expression explainer -- built and ran correctly on the first try, with no corrections needed.</p>
+      <p>Krate Mode is at its best with a <strong>single, clear app</strong>: a converter, a calculator, a timer, a small game, a formatter, a viewer. Both apps used to test this prompt, a cooking measurement converter and a cron expression explainer, built and ran correctly on the first try, with no corrections needed.</p>
       <p>It will not one-shot a large, sprawling program from one sentence. Narrow the request, or build it a piece at a time.</p>
       <p>Some things Krate apps genuinely cannot do, and a good answer says so rather than writing code that pretends: reach another person's device, run in the background when closed, or read your email and accounts. The prompt tells the model to refuse those plainly instead of producing a convincing-looking app over invented data.</p>
 
@@ -223,13 +223,13 @@
         <details>
           <summary>check-app says it failed at imports</summary>
           <div class="ans">
-            <p>The app reached the operating system somewhere it should not have, usually through a path that can crash. Paste the whole failure into the chat -- the prompt teaches the model what causes this and how to fix it. The usual culprits are <code>format!</code>, <code>.unwrap()</code>, square-bracket indexing, or a deleted <code>krate</code> dependency in <code>Cargo.toml</code>.</p>
+            <p>The app reached the operating system somewhere it should not have, usually through a path that can crash. Paste the whole failure into the chat. The prompt teaches the model what causes this and how to fix it. The usual culprits are <code>format!</code>, <code>.unwrap()</code>, square-bracket indexing, or a deleted <code>krate</code> dependency in <code>Cargo.toml</code>.</p>
           </div>
         </details>
         <details>
           <summary>It says "no global memory allocator found"</summary>
           <div class="ans">
-            <p>The model removed the <code>krate</code> dependency from <code>Cargo.toml</code>, usually reasoning that the app does not call it. It is still required -- it supplies pieces the app cannot build without. Put it back, or tell the chat to restore it.</p>
+            <p>The model removed the <code>krate</code> dependency from <code>Cargo.toml</code>, usually reasoning that the app does not call it. It is still required: it supplies pieces the app cannot build without. Put it back, or tell the chat to restore it.</p>
           </div>
         </details>
         <details>

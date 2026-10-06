@@ -52,6 +52,9 @@ def questions(page_text):
     return out
 
 
+REVIEWED = re.compile(r'Reviewed <time datetime="(\d{4}-\d{2}-\d{2})">')
+
+
 def block(page_text):
     data = {
         "@context": "https://schema.org",
@@ -62,6 +65,11 @@ def block(page_text):
             for q, a in questions(page_text)
         ],
     }
+    # The date the page shows as "Reviewed", so the visible date and the
+    # data never disagree.
+    reviewed = REVIEWED.search(page_text)
+    if reviewed:
+        data["dateModified"] = reviewed.group(1)
     body = json.dumps(data, ensure_ascii=False, indent=1).replace("</", "<\\/")
     return f'{START}\n<script type="application/ld+json">\n{body}\n</script>\n{END}'
 
