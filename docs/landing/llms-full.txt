@@ -400,7 +400,7 @@ Sources: Electron's code signing guide (https://www.electronjs.org/docs/latest/t
 
 - Send it like a document. Email it, drop it in a shared folder or a chat, or publish it and send a link. Every recipient gets the same bytes.
 
-- Your users install Krate once. Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once when it is installed. After that, each new app is only its own file.
+- Your users install Krate once. Krate for Mac is signed and notarized by Apple. After that, each new app is only its own file.
 
 - They decide what it may touch. An app starts without file or network access and asks for what it needs. The runtime checks protected calls against what was allowed; the known gaps are on the limits page (https://krate.tech/docs/limits.html). See how to inspect an app before running it (https://krate.tech/run-ai-generated-code-safely.html).
 
@@ -670,7 +670,7 @@ A signature identifies the publisher and shows the file has not been changed sin
 
 ### How it works with a .krate
 
-The operating system checks the Krate runtime once, when it is installed. Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once at install, and Windows 11 machines with Smart App Control may block it.
+The operating system checks the Krate runtime once, when it is installed. Krate for Mac is signed and notarized by Apple.
 
 Your app is a file the runtime opens, not a program the operating system launches, so there is no per-OS package of yours to sign or notarize. When someone opens it, Krate shows what it asks for, and the app gets only what they allow.
 
@@ -692,8 +692,8 @@ krate sign app.krate --key publisher.key --generate-key --namespace com.example.
 
 ### Questions
 
-Q: Is the Krate runtime itself signed?
-A: On macOS, the Krate app is signed and notarized by Apple. The Windows runtime installer is not code-signed yet, so Windows may show a SmartScreen warning the first time it is installed. Signing it is planned.
+Q: Does a Krate app need its own Apple Developer ID?
+A: No. The app is a file that the Krate runtime opens, and Krate for Mac is signed and notarized by Apple. You do not sign or notarize the .krate for each system.
 
 Q: Can I distribute a Windows app without a code signing certificate?
 A: Yes, but users see a SmartScreen warning and must choose to run it anyway, and some managed or Smart App Control machines block it. With Krate you ship a .krate instead of an .exe; Windows checks the Krate runtime when it is installed, and that runtime is unsigned today.
@@ -827,8 +827,6 @@ Krate is young (0.5.4). Pick another tool when:
 
 - your team writes a language other than Rust and does not want Krate Studio to write the code;
 
-- you need a signed Windows runtime installer today: the Krate runtime installer for Windows is not code-signed yet, so Windows may warn the first time.
-
 The limits page (https://krate.tech/docs/limits.html) lists what Krate cannot do yet.
 
 ### Try Krate in five minutes
@@ -902,8 +900,6 @@ It lists what maps cleanly, what needs a permission and what will not work yet. 
 
 - You rely on Tauri's plugins or its mature update and installer tooling.
 
-- You need a signed Windows installer today: the Krate runtime installer for Windows is not code-signed yet.
-
 Krate is 0.5.4; the limits page (https://krate.tech/docs/limits.html) lists what it cannot do yet.
 
 ### Questions
@@ -965,7 +961,7 @@ A fourth question sits under all of them: who decides what the app may touch? In
 
 A native installer is signed for each system. On macOS, software distributed with a Developer ID must be notarized by Apple (Apple (https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)). On Windows, unsigned apps show a SmartScreen warning, and new signed apps can still warn until they build reputation (Microsoft (https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)).
 
-A .krate file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once: on macOS it is signed and notarized; the Windows runtime installer is not code-signed yet. More on the code signing page (https://krate.tech/desktop-app-code-signing.html).
+A .krate file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once, and on macOS it is signed and notarized by Apple. More on the code signing page (https://krate.tech/desktop-app-code-signing.html).
 
 ### When to pick something else
 

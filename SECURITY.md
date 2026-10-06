@@ -14,7 +14,7 @@ next minor release.
 
 **Do not open a public issue for security vulnerabilities.**
 
-Email `security@krate.dev` with:
+Email `yashraj@krate.tech` with:
 
 - A clear description of the vulnerability.
 - Steps to reproduce.

@@ -159,7 +159,7 @@
       <section id="signing-and-installers-whichever-you-pick">
         <h2>Signing and installers, whichever you pick</h2>
 <p>A native installer is signed for each system. On macOS, software distributed with a Developer ID must be notarized by Apple (<a href="https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution">Apple</a>). On Windows, unsigned apps show a SmartScreen warning, and new signed apps can still warn until they build reputation (<a href="https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation">Microsoft</a>).</p>
-<p>A <code>.krate</code> file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once: on macOS it is signed and notarized; the Windows runtime installer is not code-signed yet. More on the <a href="/desktop-app-code-signing.html">code signing page</a>.</p>
+<p>A <code>.krate</code> file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once, and on macOS it is signed and notarized by Apple. More on the <a href="/desktop-app-code-signing.html">code signing page</a>.</p>
       </section>
       <section id="when-to-pick-something-else">
         <h2>When to pick something else</h2>

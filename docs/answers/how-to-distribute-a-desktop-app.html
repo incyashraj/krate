@@ -147,7 +147,7 @@
 <li><strong>Make the app.</strong> Describe it to an AI coding agent in <a href="/studio/">Krate Studio</a>, or write it in Rust against the Krate SDK. Studio can also port a project you already have: the AI rewrites it against Krate's interfaces, so read the plan it shows before you start.</li>
 <li><strong>Pack one file.</strong> The result is one <code>.krate</code>: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. It contains no Intel or ARM machine code, so there is nothing to build per processor.</li>
 <li><strong>Send it like a document.</strong> Email it, drop it in a shared folder or a chat, or publish it and send a link. Every recipient gets the same bytes.</li>
-<li><strong>Your users install Krate once.</strong> Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once when it is installed. After that, each new app is only its own file.</li>
+<li><strong>Your users install Krate once.</strong> Krate for Mac is signed and notarized by Apple. After that, each new app is only its own file.</li>
 <li><strong>They decide what it may touch.</strong> An app starts without file or network access and asks for what it needs. The runtime checks protected calls against what was allowed; the known gaps are on the <a href="/docs/limits.html">limits page</a>. See <a href="/run-ai-generated-code-safely.html">how to inspect an app before running it</a>.</li>
 </ol>
       </section>

@@ -544,7 +544,7 @@ PAGES += [
 <li><strong>Make the app.</strong> Describe it to an AI coding agent in <a href="/studio/">Krate Studio</a>, or write it in Rust against the Krate SDK. Studio can also port a project you already have: the AI rewrites it against Krate's interfaces, so read the plan it shows before you start.</li>
 <li><strong>Pack one file.</strong> The result is one <code>.krate</code>: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. It contains no Intel or ARM machine code, so there is nothing to build per processor.</li>
 <li><strong>Send it like a document.</strong> Email it, drop it in a shared folder or a chat, or publish it and send a link. Every recipient gets the same bytes.</li>
-<li><strong>Your users install Krate once.</strong> Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once when it is installed. After that, each new app is only its own file.</li>
+<li><strong>Your users install Krate once.</strong> Krate for Mac is signed and notarized by Apple. After that, each new app is only its own file.</li>
 <li><strong>They decide what it may touch.</strong> An app starts without file or network access and asks for what it needs. The runtime checks protected calls against what was allowed; the known gaps are on the <a href="/docs/limits.html">limits page</a>. See <a href="/run-ai-generated-code-safely.html">how to inspect an app before running it</a>.</li>
 </ol>"""),
             ("What you stop doing, and what you still do", """<p><strong>You stop</strong> producing a separate app package for each operating system and processor, signing and notarizing each app for each platform, and asking people to run an installer that gets their full permissions.</p>
@@ -702,7 +702,7 @@ PAGES += [
 </ul>
 <p>Sources: Electron's <a href="{EL_SIGN}">code signing guide</a> and Microsoft's <a href="{MS_SS}">SmartScreen reputation guide</a>.</p>"""),
             ("What a signature tells your users", """<p>A signature identifies the publisher and shows the file has not been changed since it was signed. It does not limit what the program can reach once it runs: a signed installer still gets the same access to files and the network as the person who opened it.</p>"""),
-            ("How it works with a .krate", """<p>The operating system checks the Krate runtime once, when it is installed. Krate for Mac is signed and notarized by Apple. The Windows runtime is not code-signed yet, so SmartScreen asks once at install, and Windows 11 machines with Smart App Control may block it.</p>
+            ("How it works with a .krate", """<p>The operating system checks the Krate runtime once, when it is installed. Krate for Mac is signed and notarized by Apple.</p>
 <p>Your app is a file the runtime opens, not a program the operating system launches, so there is no per-OS package of yours to sign or notarize. When someone opens it, Krate shows what it asks for, and the app gets only what they allow.</p>"""),
             ("Signing a .krate with your own key", """<p>You can sign a bundle so recipients can check it came from you and has not changed. The key is an Ed25519 key you create; it stays on your machine, and signing and checking work offline with no account:</p>
 <pre class="answer-cmd">krate sign app.krate --key publisher.key --generate-key --namespace com.example.app</pre>
@@ -714,7 +714,7 @@ PAGES += [
 </ul>"""),
         ],
         "faq": [
-            ("Is the Krate runtime itself signed?", "<p>On macOS, the Krate app is signed and notarized by Apple. The Windows runtime installer is not code-signed yet, so Windows may show a SmartScreen warning the first time it is installed. Signing it is planned.</p>"),
+            ("Does a Krate app need its own Apple Developer ID?", "<p>No. The app is a file that the Krate runtime opens, and Krate for Mac is signed and notarized by Apple. You do not sign or notarize the <code>.krate</code> for each system.</p>"),
             ("Can I distribute a Windows app without a code signing certificate?", "<p>Yes, but users see a SmartScreen warning and must choose to run it anyway, and some managed or Smart App Control machines block it. With Krate you ship a <code>.krate</code> instead of an <code>.exe</code>; Windows checks the Krate runtime when it is installed, and that runtime is unsigned today.</p>"),
             ("Do I need an Apple Developer account to share a Mac app?", "<p>For a native Mac app downloaded from the web, in practice yes: notarization needs a Developer ID from the paid Apple Developer Program. A <code>.krate</code> is opened by Krate for Mac, which is signed and notarized, so you don't need your own Apple account to share one.</p>"),
             ("Is a signed app safe to run?", "<p>A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds a second check: the app asks before it gets your files or the network.</p>"),
@@ -819,7 +819,6 @@ PAGES += [
 <li>you need iOS or Android today;</li>
 <li>you need a mature accessibility stack, enterprise widgets or a large plugin ecosystem;</li>
 <li>your team writes a language other than Rust and does not want Krate Studio to write the code;</li>
-<li>you need a signed Windows runtime installer today: the Krate runtime installer for Windows is not code-signed yet, so Windows may warn the first time.</li>
 </ul>
 <p>The <a href="/docs/limits.html">limits page</a> lists what Krate cannot do yet.</p>"""),
             ("Try Krate in five minutes", """<p><a href="/download/">Download Krate</a>, then open <a href="https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate">chart.krate</a>, an 11,455-byte chart app, on any of the three systems. The <a href="/docs/quickstart.html">quickstart</a> shows how to inspect what it asks for before it runs.</p>"""),
@@ -864,7 +863,6 @@ PAGES += [
 <li>You want a web frontend, or already have one.</li>
 <li>You need iOS or Android from the same project.</li>
 <li>You rely on Tauri's plugins or its mature update and installer tooling.</li>
-<li>You need a signed Windows installer today: the Krate runtime installer for Windows is not code-signed yet.</li>
 </ul>
 <p>Krate is 0.5.4; the <a href="/docs/limits.html">limits page</a> lists what it cannot do yet.</p>"""),
         ],
@@ -904,7 +902,7 @@ PAGES += [
 </ol>
 <p>A fourth question sits under all of them: who decides what the app may touch? In most frameworks the developer decides. In Krate the person running the app sees what it asks for and grants it, and the runtime enforces that.</p>"""),
             ("Signing and installers, whichever you pick", f"""<p>A native installer is signed for each system. On macOS, software distributed with a Developer ID must be notarized by Apple (<a href="{AP_NOTARY}">Apple</a>). On Windows, unsigned apps show a SmartScreen warning, and new signed apps can still warn until they build reputation (<a href="{MS_SS}">Microsoft</a>).</p>
-<p>A <code>.krate</code> file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once: on macOS it is signed and notarized; the Windows runtime installer is not code-signed yet. More on the <a href="/desktop-app-code-signing.html">code signing page</a>.</p>"""),
+<p>A <code>.krate</code> file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once, and on macOS it is signed and notarized by Apple. More on the <a href="/desktop-app-code-signing.html">code signing page</a>.</p>"""),
             ("When to pick something else", """<ul>
 <li>You need iOS or Android: Flutter, Qt or Tauri.</li>
 <li>You need a mature accessibility stack or enterprise widgets: Qt or Electron.</li>
