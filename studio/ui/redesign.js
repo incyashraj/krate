@@ -1812,17 +1812,20 @@
       go.dataset.busy = "1"; err.hidden = true;
       handOver();
       const listed = l.classList.contains("on");
-      // A ring fills around the mark while it uploads; done, it comes down
-      // as the home page's stamp.
+      // The app's own gallery tile, made in front of them: it appears with
+      // a sheen while the file is packed, lifts while it uploads (a bar along
+      // its foot, the bytes rising off it), and settles into the gallery --
+      // its neighbours slide in beside it and a Live pill lands on it. The
+      // finished pane keeps the same tile, so the two read as one motion.
       const frm = q(".kr-frm", pane); frm.hidden = true;
-      const ring = document.createElement("div"); ring.className = "kr-pubing";
-      ring.innerHTML = `<div class="kr-pring"><svg class="rg" viewBox="0 0 210 210"><defs><path id="krPubR" d="M105 105 m-80 0 a80 80 0 1 1 160 0 a80 80 0 1 1 -160 0"/></defs><circle class="trk2" cx="105" cy="105" r="98"/><circle class="prog" cx="105" cy="105" r="98" pathLength="1"/><text class="rtx" font-size="14" font-weight="600"><textPath href="#krPubR" textLength="495" lengthAdjust="spacing">PUBLISHING · TO THE GALLERY · PUBLISHING · TO THE GALLERY ·</textPath></text></svg>${window.krIso ? window.krIso(46, "breathe") : ""}` +
-        `<svg class="st" viewBox="0 0 210 210"><defs><path id="krPubS" d="M105 105 m-78 0 a78 78 0 1 1 156 0 a78 78 0 1 1 -156 0"/></defs><g fill="none" stroke="currentColor" stroke-width="5"><circle cx="105" cy="105" r="98"/><circle cx="105" cy="105" r="62"/></g><text font-size="15" font-weight="700" fill="currentColor"><textPath href="#krPubS" textLength="482" lengthAdjust="spacing">${listed ? "IN THE GALLERY · ANYONE CAN OPEN IT · " : "PUBLISHED · ONLY WITH THE LINK · "}</textPath></text><text x="105" y="119" text-anchor="middle" font-size="40" font-weight="700" fill="currentColor">LIVE</text></svg></div>` +
-        `<p class="pc"><span class="kr-swp"><span>Getting it ready</span></span></p>`;
+      const ring = document.createElement("div"); ring.className = "kr-pub2"; ring.dataset.ph = "ready";
+      ring.dataset.listed = listed ? "1" : "0";
+      ring.innerHTML = `<div class="kp-stage">${pubTile(n.value.trim(), listed)}<span class="kp-up" aria-hidden="true">${"<i></i>".repeat(6)}</span></div>` +
+        `<p class="pc" role="status"><span class="kr-swp"><span>Getting it ready</span></span></p>`;
       frm.after(ring);
-      const pr = q(".prog", ring), t0 = performance.now();
-      let upT = setTimeout(() => window.krSwap(q(".kr-swp", ring), `Uploading ${esc((shareApp && shareApp.size) || "it")}`), 900);
-      let raf = 0; const fill = (now) => { const p = Math.min(.86, (now - t0) / 3200), e = 1 - Math.pow(1 - p, 2.2); pr.style.strokeDashoffset = 1 - e; raf = requestAnimationFrame(fill); }; raf = requestAnimationFrame(fill);
+      const bar = q(".kp-bar i", ring), t0 = performance.now();
+      let upT = setTimeout(() => { ring.dataset.ph = "up"; window.krSwap(q(".kr-swp", ring), `Uploading ${esc((shareApp && shareApp.size) || "it")}`); }, 900);
+      let raf = 0; const fill = (now) => { const p = Math.min(.86, (now - t0) / 3200), e = 1 - Math.pow(1 - p, 2.2); bar.style.transform = `scaleX(${e})`; raf = requestAnimationFrame(fill); }; raf = requestAnimationFrame(fill);
       linking = true;
       // Signed out: the popup asks, and when it lands this same button
       // publishes again here, ring and stamp and all (it finished behind the
@@ -1832,10 +1835,10 @@
       linking = false;
       cancelAnimationFrame(raf); clearTimeout(upT);
       if (linkOf() && !($("pubSignin") && !$("pubSignin").classList.contains("hidden"))) {
-        pr.style.transition = "stroke-dashoffset .4s var(--ease)"; pr.style.strokeDashoffset = 0;
-        await new Promise((r) => setTimeout(r, 380));
-        q(".kr-pring", ring).classList.add("done"); window.krSwap(q(".kr-swp", ring), listed ? "In the gallery" : "Published");
-        await new Promise((r) => setTimeout(r, reduce ? 0 : 1100));
+        bar.style.transition = "transform .4s var(--ease)"; bar.style.transform = "scaleX(1)";
+        await new Promise((r) => setTimeout(r, reduce ? 0 : 420));
+        ring.dataset.ph = "done"; window.krSwap(q(".kr-swp", ring), listed ? "In the gallery" : "Your link is ready");
+        await new Promise((r) => setTimeout(r, reduce ? 0 : 1500));
       }
       ring.remove(); frm.hidden = false;
       if (sheet) sheet.classList.add("hidden");
@@ -1849,14 +1852,27 @@
       err.textContent = (($("pubNote") || {}).textContent || "").trim() || "It did not publish just now. Try again in a moment."; err.hidden = false;
     });
   }
+  // The app's gallery tile: its picture (or the mark), its name and size,
+  // a bar for the upload, and the pill it wears once it is live.
+  function pubTile(name, listed) {
+    let pic = "";
+    try { pic = shareApp && shareApp.shot && shareApp.shot !== "file" ? shareApp.shot : ((q("#stateDone .shot-stage img") || {}).src || ""); } catch (e) {}
+    const face = pic ? `<img src="${esc(pic)}" alt="">` : (window.krIso ? window.krIso(44, "breathe") : "");
+    return `<span class="kp-ghost l" aria-hidden="true"><i></i><b></b></span><span class="kp-ghost r" aria-hidden="true"><i></i><b></b></span>` +
+      `<div class="kp-tile"><div class="kp-pic">${face}<i class="kp-sheen"></i></div>` +
+      `<div class="kp-meta"><b>${esc(name || "Your app")}</b><small>${esc((shareApp && shareApp.size) || "")}</small></div>` +
+      `<span class="kp-bar"><i></i></span><span class="kp-live">${listed ? "<i></i>Live" : `${ico("link", "")}Link`}</span></div>`;
+  }
   function published(pane, name, url, listed) {
-    const burst = reduce ? "" : `<div class="kr-pburst">${Array.from({ length: 14 }, (_, i) => { const a = i / 14 * Math.PI * 2, d = 60 + (i % 3) * 18;
-      return `<i style="--c:${["#3d6df0", "#22c55e", "#e8873f", "#7c5ce8", "#d6578f"][i % 5]};--x:${Math.cos(a) * d}px;--y:${Math.sin(a) * d}px;animation-delay:${i * 8}ms"></i>`; }).join("")}</div>`;
-    pane.innerHTML = `<div class="kr-pubdone">${burst}<div class="kr-big">${ico("check", "")}</div><b></b><p>${listed ? "Anyone can find it in the gallery, and the link opens it." : "Not listed: only people with the link can find it."}</p></div>
+    pane.innerHTML = `<div class="kr-pub2 kp-still" data-ph="done" data-listed="${listed ? 1 : 0}"><div class="kp-stage">${pubTile(name, listed)}</div></div>` +
+      `<div class="kr-pubdone"><b></b><p>${listed ? "Anyone can find it in the gallery, and the link opens it." : "Not listed: only people with the link can find it."}</p></div>
       <div class="kr-linkf"><span class="kr-u"></span><button type="button" class="btn kr-dark" data-copy>${ico("copy")}<span>Copy</span></button></div>
       ${listed ? `<div class="kr-shacts kr-center"><button type="button" class="btn kr-ghost" data-gal>See it in the gallery</button></div>` : ""}`;
-    q("b", pane).textContent = listed ? `${name} is in the gallery` : `${name} has a link`;
-    q(".kr-u", pane).textContent = url.replace(/^https?:\/\//, "");
+    q(".kr-pubdone b", pane).textContent = listed ? `${name} is in the gallery` : `${name} has a link`;
+    // The link types itself in, as a freshly made link does.
+    const shownUrl = url.replace(/^https?:\/\//, ""), uEl = q(".kr-u", pane);
+    if (reduce) uEl.textContent = shownUrl;
+    else [...shownUrl].forEach((ch, i) => { const c = document.createElement("span"); c.className = "kr-c"; c.style.animationDelay = 260 + i * 14 + "ms"; c.textContent = ch; uEl.appendChild(c); });
     q("[data-copy]", pane).addEventListener("click", (e) => {
       const b = e.currentTarget, done = () => { b.classList.add("ok"); q("span", b).textContent = "Copied"; setTimeout(() => { b.classList.remove("ok"); q("span", b).textContent = "Copy"; }, 1400); };
       (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(done, done);

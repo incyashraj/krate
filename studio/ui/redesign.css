@@ -2010,13 +2010,8 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 .kr-tog > span { flex: 1; font: 500 13.5px var(--sans); color: var(--ink); }
 .kr-tog small { display: block; font: 400 12px var(--sans); color: var(--ink-3); }
 .kr-pubdone { position: relative; text-align: center; padding: 8px 0 12px; }
-.kr-big { width: 54px; height: 54px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; animation: krPop .6s var(--spring) both; }
-.kr-big svg { width: 24px; height: 24px; }
 .kr-pubdone b { display: block; margin-top: 12px; font: 500 16px var(--sans); color: var(--ink); }
 .kr-pubdone p { margin: 3px 0 0; font-size: 13px; color: var(--ink-3); }
-.kr-pburst { position: absolute; left: 50%; top: 35px; width: 0; height: 0; }
-.kr-pburst i { position: absolute; width: 6px; height: 6px; border-radius: 2px; background: var(--c); animation: krPBurst .9s var(--ease) both; }
-@keyframes krPBurst { from { transform: translate(0, 0) scale(1); opacity: 1; } to { transform: translate(var(--x), var(--y)) scale(.4) rotate(220deg); opacity: 0; } }
 .kr-shacts.kr-center { justify-content: center; margin-top: 12px; }
 
 /* ---- every sheet is a modal: above the sidebar too ----------------------- */
@@ -2385,18 +2380,6 @@ body:not(.light) .kr-netp { background: #1c1c1f; }
 .kr-svs.saved { color: var(--green-ink); }
 
 /* ---- publishing: a ring fills around the mark, then comes down as a stamp */
-.kr-pubing { text-align: center; padding: 6px 0 2px; }
-.kr-pring { position: relative; width: 150px; height: 150px; margin: 0 auto; }
-.kr-pring .rg { position: absolute; inset: 0; overflow: visible; transition: opacity .15s; font-family: var(--sans); }
-.kr-pring .trk2 { fill: none; stroke: var(--surface-3); stroke-width: 5; }
-.kr-pring .prog { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; transform: rotate(-90deg); transform-origin: 105px 105px; }
-.kr-pring .rtx { fill: var(--ink-3); }
-.kr-pring > .iso { position: absolute; left: 50%; top: 50%; margin: -23px 0 0 -23px; transition: opacity .15s; }
-.kr-pring .st { position: absolute; inset: 4px; opacity: 0; transform: rotate(-14deg) scale(1.6); color: #c2457d; font-family: var(--sans); }
-body:not(.light) .kr-pring .st { color: #ee7cad; }
-.kr-pring.done .st { opacity: 1; transform: rotate(-14deg) scale(1); transition: transform .42s cubic-bezier(.3, 1.45, .55, 1), opacity .12s; }
-.kr-pring.done .rg, .kr-pring.done > .iso { opacity: 0; }
-.kr-pubing .pc { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
 .kr-make .kr-lb { display: inline-flex; align-items: center; gap: 8px; }
 .kr-make .iso { color: var(--btn-ink); --gap: var(--btn); }
 .kr-frm[hidden] { display: none; }
@@ -3035,3 +3018,93 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
 .apps-finish > span:first-child { min-width: 0; overflow: hidden; }
 .apps-finish > span:first-child b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .apps-finish .go, .apps-finish .apps-x { flex: none; }
+
+/* ---- publishing: the app's gallery tile, made in front of you ----------
+ * 2026-10-07. Replaces the ring of rotating words, the LIVE stamp and the
+ * confetti. One tile carries all three moments: ready (it appears, a sheen
+ * passes), up (it lifts, a bar fills along its foot, the bytes rise off it),
+ * done (it settles; listed, its gallery neighbours slide in and a Live pill
+ * lands; unlisted, a Link pill). The finished pane opens on the same tile. */
+.kr-pub2 { text-align: center; padding: 4px 0 2px; }
+.kr-pub2 .pc { margin: 14px 0 0; font-size: 13px; color: var(--ink-2); }
+.kp-stage { position: relative; height: 176px; display: grid; place-items: center; }
+.kp-tile {
+  position: relative; z-index: 2; width: 172px; border-radius: 16px; overflow: hidden; text-align: left;
+  background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 12px 32px -14px rgba(0, 0, 0, .45);
+  animation: kpIn .55s var(--spring) backwards;
+  transition: transform .7s var(--ease), box-shadow .7s var(--ease);
+}
+.kp-pic { position: relative; height: 104px; display: grid; place-items: center; overflow: hidden; background: var(--surface-2); }
+.kp-pic img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.kp-pic .iso { width: 44px; height: 44px; }
+.kp-sheen {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .22) 50%, transparent 70%);
+  transform: translateX(-110%); animation: kpSheen 1.6s var(--ease) .25s infinite;
+}
+.kp-meta { padding: 9px 12px 11px; }
+.kp-meta b { display: block; font: 500 13px var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kp-meta small { display: block; margin-top: 1px; font-size: 11px; color: var(--ink-3); min-height: 14px; }
+.kp-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: transparent; transition: opacity .4s var(--ease); }
+.kp-bar i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
+.kp-live {
+  position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 9px; border-radius: 999px; font: 600 11px var(--sans); letter-spacing: .01em;
+  color: #fff; background: rgba(12, 12, 14, .72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  opacity: 0; transform: translateY(-6px) scale(.8);
+}
+.kp-live > i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(34, 197, 94, .6); }
+.kp-live svg { width: 12px; height: 12px; }
+.kp-ghost {
+  position: absolute; z-index: 1; top: 50%; width: 132px; margin-top: -58px; border-radius: 14px; overflow: hidden;
+  background: var(--surface); box-shadow: 0 0 0 1px var(--hair); opacity: 0;
+  transition: transform .7s var(--ease), opacity .6s var(--ease);
+}
+.kp-ghost i { display: block; height: 80px; background: linear-gradient(135deg, var(--surface-2), var(--surface-3)); }
+.kp-ghost b { display: block; height: 7px; width: 60%; margin: 10px 12px 18px; border-radius: 4px; background: var(--surface-3); }
+.kp-ghost.l { left: 50%; transform: translateX(-50%) scale(.9); }
+.kp-ghost.r { right: 50%; transform: translateX(50%) scale(.9); }
+.kp-up { position: absolute; left: 50%; top: 10px; width: 0; height: 0; z-index: 3; }
+.kp-up i { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0; }
+.kp-up i:nth-child(1) { left: -40px; } .kp-up i:nth-child(2) { left: -22px; } .kp-up i:nth-child(3) { left: -6px; }
+.kp-up i:nth-child(4) { left: 10px; } .kp-up i:nth-child(5) { left: 26px; } .kp-up i:nth-child(6) { left: 42px; }
+
+/* up: the tile lifts and the bytes rise off it */
+.kr-pub2[data-ph="up"] .kp-tile { transform: translateY(-6px); box-shadow: 0 0 0 1px var(--hair), 0 22px 40px -16px rgba(0, 0, 0, .5); }
+.kr-pub2[data-ph="up"] .kp-up i { animation: kpRise 1.1s var(--ease) infinite; }
+.kr-pub2[data-ph="up"] .kp-up i:nth-child(2) { animation-delay: .35s; } .kr-pub2[data-ph="up"] .kp-up i:nth-child(3) { animation-delay: .7s; }
+.kr-pub2[data-ph="up"] .kp-up i:nth-child(4) { animation-delay: .15s; } .kr-pub2[data-ph="up"] .kp-up i:nth-child(5) { animation-delay: .55s; }
+.kr-pub2[data-ph="up"] .kp-up i:nth-child(6) { animation-delay: .9s; }
+
+/* done: it settles, the bar goes, the pill lands, the gallery appears */
+.kr-pub2[data-ph="done"] .kp-tile { transform: none; animation: kpIn .55s var(--spring) backwards, kpSettle .6s var(--spring) both; }
+.kr-pub2[data-ph="done"] .kp-sheen { animation: kpSheen .9s var(--ease) both; }
+.kr-pub2[data-ph="done"] .kp-bar { opacity: 0; }
+.kr-pub2[data-ph="done"] .kp-live { opacity: 1; transform: none; transition: opacity .2s, transform .5s var(--spring) .15s; }
+.kr-pub2[data-ph="done"] .kp-live > i { animation: kpPing 1.6s var(--ease) .5s 2; }
+.kr-pub2[data-ph="done"][data-listed="1"] .kp-ghost { opacity: .55; }
+.kr-pub2[data-ph="done"][data-listed="1"] .kp-ghost.l { transform: translateX(calc(-50% - 156px)) scale(.9); }
+.kr-pub2[data-ph="done"][data-listed="1"] .kp-ghost.r { transform: translateX(calc(50% + 156px)) scale(.9); }
+@media (max-width: 420px) {
+  .kr-pub2[data-ph="done"][data-listed="1"] .kp-ghost.l { transform: translateX(calc(-50% - 128px)) scale(.86); }
+  .kr-pub2[data-ph="done"][data-listed="1"] .kp-ghost.r { transform: translateX(calc(50% + 128px)) scale(.86); }
+}
+.kr-pub2 .kp-stage { overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 24%, #000 76%, transparent); mask-image: linear-gradient(90deg, transparent, #000 24%, #000 76%, transparent); }
+
+/* the finished pane opens on the same tile, already settled */
+.kr-pub2.kp-still .kp-tile, .kr-pub2.kp-still .kp-sheen, .kr-pub2.kp-still .kp-live > i { animation: none; }
+.kr-pub2.kp-still .kp-live, .kr-pub2.kp-still .kp-ghost { transition: none; }
+.kr-pub2.kp-still + .kr-pubdone b, .kr-pub2.kp-still + .kr-pubdone p { animation: kpUp .5s var(--ease) both; }
+.kr-pub2.kp-still + .kr-pubdone p { animation-delay: .08s; }
+.kr-pub2.kp-still + .kr-pubdone { padding-top: 0; }
+
+@keyframes kpIn { from { opacity: 0; transform: translateY(10px) scale(.92); } }
+@keyframes kpSettle { 0% { transform: translateY(-6px); } 60% { transform: translateY(2px); } 100% { transform: none; } }
+@keyframes kpSheen { to { transform: translateX(110%); } }
+@keyframes kpRise { 0% { opacity: 0; transform: translateY(0) scale(.6); } 25% { opacity: .9; } 100% { opacity: 0; transform: translateY(-34px) scale(1); } }
+@keyframes kpPing { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .6); } 100% { box-shadow: 0 0 0 9px rgba(34, 197, 94, 0); } }
+@keyframes kpUp { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) {
+  .kp-tile, .kp-sheen, .kp-up i, .kp-live > i, .kr-pub2.kp-still + .kr-pubdone b, .kr-pub2.kp-still + .kr-pubdone p { animation: none !important; }
+  .kp-tile, .kp-ghost, .kp-live { transition: none !important; }
+}
