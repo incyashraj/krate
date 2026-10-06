@@ -114,26 +114,42 @@
     }, 100);
   })();
 
-  /* ---- Home: the word in the title, building then shipping -------------- */
+  /* ---- Home: the word in the title types itself, building then shipping -- */
+  // The word is typed, backspaced and typed again behind a caret, as if
+  // someone were writing the question. Screen readers get one steady word;
+  // with reduced motion the first word simply stays.
   const rw = $("homeRw");
   if (rw) {
-    const words = qa(".w", rw);
-    let at = 0;
-    const fit = () => { const w = words[at] ? words[at].offsetWidth : 0; if (w) rw.style.width = w + "px"; else rw.style.removeProperty("width"); };
-    if (window.ResizeObserver) { const ro = new ResizeObserver(fit); words.forEach((w) => ro.observe(w)); }
-    const show = (i) => {
-      const cur = words[at];
-      cur.classList.remove("on"); cur.classList.add("out");
-      setTimeout(() => cur.classList.remove("out"), 700);
-      at = i; words[i].classList.add("on"); fit();
-    };
-    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(fit);
-    addEventListener("resize", fit);
-    if (!reduce && words.length > 1) setInterval(() => {
-      const home = $("viewHome");
-      if (document.hidden || !home || home.classList.contains("hidden")) return;
-      show((at + 1) % words.length);
-    }, 3200);
+    const words = qa(".w", rw).map((w) => w.textContent.trim()).filter(Boolean);
+    const said = document.createElement("span");
+    said.className = "kr-sr"; said.textContent = words[0] || "";
+    rw.parentNode.insertBefore(said, rw);
+    rw.setAttribute("aria-hidden", "true");
+    rw.classList.add("kr-typed");
+    rw.textContent = "";
+    const tw = document.createElement("span"); tw.className = "tw"; tw.textContent = words[0] || "";
+    const car = document.createElement("span"); car.className = "car";
+    rw.append(tw, car);
+    rw.dataset.i = "0";
+    if (!reduce && words.length > 1) {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      // Only animate while Home is on screen; otherwise check back shortly.
+      const onScreen = () => { const home = $("viewHome"); return !document.hidden && home && !home.classList.contains("hidden"); };
+      (async () => {
+        let i = 0;
+        for (;;) {
+          await wait(2600);
+          if (!onScreen()) continue;
+          rw.classList.add("busy");
+          for (let n = tw.textContent.length; n > 0; n--) { tw.textContent = tw.textContent.slice(0, -1); await wait(55); }
+          i = (i + 1) % words.length; rw.dataset.i = String(i);
+          await wait(260);
+          const next = words[i];
+          for (let n = 1; n <= next.length; n++) { tw.textContent = next.slice(0, n); await wait(80 + Math.random() * 60); }
+          rw.classList.remove("busy");
+        }
+      })();
+    }
   }
 
   /* ---- Home: the placeholder types out ideas until someone types -------- */
