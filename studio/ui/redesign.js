@@ -607,7 +607,7 @@
         "sep",
         { icon: "user", label: "Profile", run: () => press(acct) },
         { icon: "gear", label: "Settings", run: () => press($("sideSettings")) },
-        { icon: dark ? "sun" : "moon", label: dark ? "Light mode" : "Dark mode", run: () => press($("themeBtn")) },
+        { icon: dark ? "sun" : "moon", label: dark ? "Light mode" : "Dark mode", run: () => (window.krSetTheme ? window.krSetTheme(dark ? "light" : "dark") : press($("themeBtn"))) },
         { icon: "gift", label: "Share Krate", run: () => press($("sideShare")) },
         { icon: "book", label: "Docs", em: "↗", run: () => press($("sideDocs")) },
         "sep",
@@ -630,7 +630,7 @@
     pal.innerHTML = `<div class="kr-pin">${ico("search")}<input type="text" placeholder="Search apps, actions and the gallery" aria-label="Search" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div><div class="kr-pres"></div><div class="kr-pf"><span>↑↓ to move</span><span>↵ to open</span><span>${mod}K anywhere</span></div>`;
     document.body.append(scrim, pal);
     const input = q("input", pal), res = q(".kr-pres", pal);
-    let items = [], hl = 0, mine = [];
+    let items = [], hl = 0, mine = [], drafts0 = [];
     const isOn = () => pal.classList.contains("on");
     const rowClick = (sel) => () => { const r = q(sel); if (r) r.click(); };
     const appName = (s) => ((s.result && s.result.name) || s.title || "App").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -641,6 +641,7 @@
       const seen = new Set();
       mine = list.filter((x) => x.result && x.result.path && !seen.has(x.result.path) && seen.add(x.result.path))
         .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      drafts0 = list.filter((x) => !(x.result && x.result.path)).sort((a, b) => (b.updated || 0) - (a.updated || 0));
       for (const x of mine.slice(0, 12)) {
         if (shotOf.has(x.id)) continue;
         const sh = x.result.shot;
@@ -657,7 +658,7 @@
         ["Port an app", "port", rowClick("#sidePort"), "Beta"],
         ["Open the IDE", "code", rowClick("#sideIde"), "Beta"],
         ["Settings", "gear", () => press($("sideSettings")), mod + ","],
-        [dark ? "Switch to light" : "Switch to dark", dark ? "sun" : "moon", () => press($("themeBtn")), ""],
+        [dark ? "Switch to light" : "Switch to dark", dark ? "sun" : "moon", () => (window.krSetTheme ? window.krSetTheme(dark ? "light" : "dark") : press($("themeBtn"))), ""],
         ["Gallery", "compass", rowClick('#side .side-row[data-side="discover"]'), ""],
       ].filter((a) => (a[0] !== "Open the IDE" || $("sideIde")) && a[0].toLowerCase().includes(s))
         .map((a) => ({ g: "Actions", t: a[0], i: ico(a[1]), k: a[3], f: a[2] }));
@@ -666,7 +667,11 @@
       const st = app();
       const gal = s && st && Array.isArray(st.cloud) ? st.cloud.filter((a) => ((a.meta && a.meta.name) || "").toLowerCase().includes(s)).slice(0, 5)
         .map((a) => ({ g: "Gallery", t: a.meta.name, i: `<span class="kr-th0">${a.shot ? `<img src="${esc(a.shot)}" alt="">` : ""}</span>`, k: a.meta.author ? "@" + a.meta.author : "", f: () => { try { showCloudApp(a); } catch (e) {} } })) : [];
-      items = [...acts, ...apps, ...gal];
+      // Drafts too: a session that never built is still the person's work,
+      // and past Recents' first rows search was the only way back to it.
+      const drafts = s ? drafts0.filter((x) => (x.title || "").toLowerCase().includes(s)).slice(0, 6)
+        .map((x) => ({ g: "Drafts", t: x.title || "Untitled", i: ico("pencil"), k: "draft", f: () => { try { openSession(x); } catch (e) {} } })) : [];
+      items = [...acts, ...apps, ...drafts, ...gal];
       if (s && !items.length) items = [{ g: "Make it", t: `Make “${input.value.trim()}”`, i: ico("spark"), k: "↵", f: () => {
         rowClick('#side .side-row[data-side="home"]')();
         setTimeout(() => { const ta = $("homePrompt"); if (ta) { ta.value = input.value.trim(); ta.dispatchEvent(new Event("input")); ta.focus(); } }, 200);
@@ -788,7 +793,7 @@
   // working: planning, or this session's build. Read from app.js's state.
   const working = () => {
     const st = app(); if (!st) return false;
-    let plan = false; try { plan = planning; } catch (e) {}
+    let plan = false; try { plan = isPlanning(); } catch (e) {}
     const bs = st.buildingSession;
     return !!plan || !!(bs && st.session && bs.id === st.session.id && !st.buildSettled);
   };
@@ -1540,7 +1545,7 @@
       if (box.dataset.sig === sig) return;
       box.dataset.sig = sig;
       box.innerHTML = "";
-      if (!order.length) { box.innerHTML = `<p class="kr-agc-empty">${st.agentsError ? "Krate could not look for AI tools on this computer." : "Looking for AI tools on this computer…"}</p>`; return; }
+      if (!order.length) { box.innerHTML = `<p class="kr-agc-empty">${st.agentsError ? "Krate could not look for AI tools on this computer." : st.agentsChecked ? "No AI tool is installed on this computer yet. Install one, or add an API key." : "Looking for AI tools on this computer…"}</p>`; return; }
       order.forEach((a, i) => {
         const ok = a.state === "working", on = ok && a.name === st.agent;
         const b = document.createElement("div");
@@ -1571,7 +1576,12 @@
     // The key row opens the sheet that holds the keys. (app.js pressed the
     // AI chip here, which now opens a menu beside a chip the dialog hides.)
     const keyBtn = $("setAgentBtn");
-    if (keyBtn) keyBtn.addEventListener("click", (e) => { e.stopImmediatePropagation(); sheet(); }, true);
+    // "Add a key" opens the sheet on its API key tab (it opened on
+    // Installed tools, one more click from what was asked for).
+    if (keyBtn) keyBtn.addEventListener("click", (e) => {
+      e.stopImmediatePropagation(); sheet();
+      setTimeout(() => { const t = q('#aiNav [data-ai="keys"]'); if (t) press(t); }, 0);
+    }, true);
     if (!desktopApp()) { const kp = $("setKeyPanel"); if (kp) kp.hidden = true; }
     // Reduce motion: this computer only, on top of the system's own setting.
     const calm = $("setCalm");
@@ -2335,7 +2345,11 @@
 
     const clock = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
     const shown = (id) => { const e = $(id); return !!e && !e.classList.contains("hidden"); };
-    let mode = "", builtSecs = null, lastSecs = 0, arriveT = 0, wasBuilding = false;
+    // Per session: which session was seen building, and how long each took.
+    // A build that finished in another session must not "arrive" here with
+    // that session's time (it played A's arrival and A's 0:20 on B).
+    let mode = "", builtSecs = null, lastSecs = 0, arriveT = 0, wasBuilding = null, seenSid = null;
+    const secsBy = new Map();
 
     // What the app may do, said plainly: what it does, then what it cannot.
     const DOES = {
@@ -2425,12 +2439,15 @@
       const st = app();
       const s = shown("stateDone") ? "done" : shown("stateFailed") ? "failed" : shown("stateBuilding") ? "building" : shown("statePlanning") ? "planning" : "idle";
       let next = s;
-      // Arriving: the app shows up small in the inset, then settles.
-      if (s === "done" && wasBuilding) { wasBuilding = false; builtSecs = lastSecs; arriveT = Date.now(); }
+      const sid = st && st.session ? st.session.id : null;
+      if (sid !== seenSid) { seenSid = sid; arriveT = 0; wasBuilding = null; builtSecs = secsBy.has(sid) ? secsBy.get(sid) : null; }
+      // Arriving: the app shows up small in the inset, then settles -- only
+      // in the session whose build was watched.
+      if (s === "done" && wasBuilding && wasBuilding === sid) { wasBuilding = null; builtSecs = secsBy.has(sid) ? secsBy.get(sid) : lastSecs; arriveT = Date.now(); }
       if (s === "done" && arriveT && Date.now() - arriveT < 1500) next = "arrive";
       else if (s === "done") arriveT = 0;
-      if (s === "building") wasBuilding = true;
-      else if (s !== "done") wasBuilding = false;
+      if (s === "building") wasBuilding = sid;
+      else if (s !== "done") wasBuilding = null;
       if (s === "building" && mode !== "building" && mode !== "arrive") builtSecs = null;
       if (s === "failed" && failBlock()) next = "stopped";
       if (s !== "planning") f.classList.remove("kr-busy");
@@ -2448,6 +2465,7 @@
         sentence(ph);
         const secs = st && st.startedAt ? Math.max(0, Math.floor((Date.now() - st.startedAt) / 1000)) : 0;
         lastSecs = secs; fel.textContent = clock(secs);
+        if (sid) secsBy.set(sid, secs);
         f.classList.toggle("kr-long", secs >= 45);
         return;
       }
@@ -2514,7 +2532,19 @@
   const keyOf = (a) => String(a.id || a.url || (a.meta && a.meta.name) || "");
   function getFile(a, btn) {
     if (!a || !a.url) return;
-    if (btn) { btn.classList.add("ing"); setTimeout(() => { btn.classList.remove("ing"); btn.classList.add("got"); const t = q(".gt", btn); if (t) t.textContent = "Downloading"; }, 1300); }
+    // One download per press: presses while it fills do nothing, and the
+    // button says what happened, then goes back to Get (it said
+    // "Downloading" for ever and downloaded again on every press).
+    if (btn && (btn.classList.contains("ing") || btn.classList.contains("got"))) return;
+    if (btn) {
+      const t = q(".gt", btn), was = t ? t.textContent : "";
+      btn.classList.add("ing");
+      setTimeout(() => {
+        btn.classList.remove("ing"); btn.classList.add("got");
+        if (t) t.textContent = desktopApp() ? "Opened in your browser" : "Downloaded";
+        setTimeout(() => { btn.classList.remove("got"); if (t) t.textContent = was; }, 2600);
+      }, 1300);
+    }
     if (desktopApp()) { try { invoke("open_external", { url: getUrl(a) }); } catch (e) {} }
     else { const l = document.createElement("a"); l.href = getUrl(a); l.download = fileOf(a); document.body.appendChild(l); l.click(); l.remove(); }
     toast(`${fileOf(a)} is downloading`);
@@ -2661,11 +2691,19 @@
     const kd = document.createElement("div"); kd.className = "kr-kd";
     main.prepend(kd);
     let cur = null;
+    // app.js's note lives in this page while it shows, and goes home before
+    // the page is redrawn: drawn over, it was destroyed, and the third app
+    // opened in one visit showed the old app while Run it ran the new one.
+    const noteEl = $("detailNote"), noteHome = noteEl ? noteEl.parentElement : null;
     const NOT = [[/^net\./, "No network"], [/^camera\./, "No camera"], [/^(fs\.|ui\.dialog:file|ui\.dialog:open)/, "None of your files"]];
     function caps(list) {
       const box = q(".kd-asks", kd); if (!box) return;
       let words = (c) => c; try { words = capWords; } catch (e) {}
-      const yes = (list || []).map((c) => { try { return capWords(c); } catch (e) { return c; } }).filter((w, i, a) => w && a.indexOf(w) === i);
+      // What every app may do without asking (print, the clock, the
+      // language, random numbers) is not an ask: twelve lines of it buried
+      // the two that matter.
+      const plumbing = /^(io\.|time\.|locale\.|random\.)/;
+      const yes = (list || []).filter((c) => !plumbing.test(String(c))).map((c) => { try { return capWords(c); } catch (e) { return c; } }).filter((w, i, a) => w && a.indexOf(w) === i);
       const no = NOT.filter(([re]) => !(list || []).some((c) => re.test(String(c)))).map(([, w]) => w);
       box.innerHTML = yes.map((w, i) => `<span class="kr-ask y" style="--k:${i}"><i>${ico("check", "")}</i>${esc(w)}</span>`).join("") +
         no.map((w, i) => `<span class="kr-ask n" style="--k:${yes.length + i}"><i>${ico("no", "")}</i>${esc(w)}</span>`).join("");
@@ -2680,6 +2718,7 @@
     }
     function paint(a) {
       cur = a;
+      if (noteEl && noteHome && kd.contains(noteEl)) noteHome.appendChild(noteEl);
       const m = a.meta || {};
       const when = m.published ? (() => { try { return timeAgo(m.published); } catch (e) { return ""; } })() : "";
       kd.innerHTML = `<div class="kd-cols"><div class="kd-l">${win(a, true)}</div>
@@ -2707,6 +2746,7 @@
     });
     const orig = showCloudApp;
     window.showCloudApp = function (a) { orig(a); try { paint(a); } catch (e) {} };
+    window.krGalCapsFailed = () => { const box = q(".kd-asks", kd); if (box) box.innerHTML = '<span class="kd-dim">Could not read what it asks for just now. Krate still checks it when the app opens.</span>'; };
     const rcg = renderCapGroups;
     window.renderCapGroups = function (host, list) { rcg(host, list); if (host && host.id === "detailCaps") caps(list); };
   })();
@@ -2732,20 +2772,32 @@
   try {
     if (typeof openApp === "function") {
       const oa = openApp;
+      let opening = false;
       window.openApp = async function (which, version) {
+        // One open per press: a double-click launched the app twice.
+        if (opening) return { kind: "busy" };
+        opening = true;
         let a = null; try { a = (which && which.path) ? which : currentApp(); } catch (e) {}
         const name = a ? (a.name || "").replace(/\.krate$/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "your app";
         const n = pill("krOpen"); n.classList.remove("off", "lift"); n.classList.add("on", "opening");
         q(".kr-swp", n).innerHTML = `<span><b>Opening ${esc(name)}</b></span>`;
         setTimeout(() => n.classList.add("lift"), 380);
         const t0 = performance.now();
-        const before = (($("composerHint") || {}).textContent || "");
-        try { await oa(which, version); } finally {
+        let r = { kind: "failed", why: "" };
+        try { r = (await oa(which, version)) || { kind: "opened" }; } catch (e) { r = { kind: "failed", why: String(e) }; } finally {
+          opening = false;
           const secs = ((performance.now() - t0) / 1000).toFixed(1);
-          const failed = (($("composerHint") || {}).textContent || "") !== before;
-          window.krSwap(q(".kr-swp", n), failed ? `<b>${esc(name)} did not open</b><small>The reason is under the box.</small>` : `<b>${esc(name)}</b><small>${+secs >= 0.1 ? `opened in ${secs} s` : "opened"}</small>`);
-          setTimeout(() => n.classList.remove("on", "opening", "lift"), 2600);
+          const why = (r.why || "").split(/(?<=\.)\s/)[0].slice(0, 90);
+          // The pill says what really happened: a tab that is asking says
+          // nothing (its sheet is talking), a download says so.
+          if (r.kind === "asking") n.classList.remove("on", "opening", "lift");
+          else window.krSwap(q(".kr-swp", n),
+            r.kind === "failed" ? `<b>${esc(name)} did not open</b><small>${esc(why || "Try again in a moment.")}</small>`
+            : r.kind === "downloaded" ? `<b>${esc(name)} downloaded</b><small>Double-click the file to open it.</small>`
+            : `<b>${esc(name)}</b><small>${+secs >= 0.1 ? `opened in ${secs} s` : "opened"}</small>`);
+          setTimeout(() => n.classList.remove("on", "opening", "lift"), r.kind === "failed" ? 4200 : 2600);
         }
+        return r;
       };
     }
   } catch (e) {}
@@ -3035,6 +3087,14 @@
         "sep",
         { icon: "x", label: "Never mind", sub: "Your words stay in the box", run: () => { const box = $("prompt"); if (box) box.focus(); } },
       ], { big: true, above: true, right: true });
+      // The menu is about the build that is running: when that build ends,
+      // the question has gone and so does the menu.
+      const mine = popEl, st = app(), was = st && st.buildingSession;
+      const t = setInterval(() => {
+        const now = app();
+        if (popEl !== mine) { clearInterval(t); return; }
+        if (!now || !now.buildingSession || now.buildingSession !== was || now.buildSettled) { clearInterval(t); closePop(); }
+      }, 300);
     });
   })();
 

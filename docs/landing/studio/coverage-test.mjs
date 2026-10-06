@@ -314,8 +314,8 @@ assert.match(
   /unlockComposer\("Changed your mind\?[^"]*"\);\s*(\/\/[^\n]*\n\s*)*showFailReporting\(false\)/,
   "a deliberate stop hides them",
 );
-assert.match(app, /const what = stopped \? "stopped" : "failed";/,
-  "and the timeline chip says which it was");
+assert.match(app, /const what = stopped === "replaced" \? "replaced" : stopped \? "stopped" : "failed";/,
+  "and the timeline chip says which it was (a redirect says replaced)");
 
 // Try again on a failed build goes straight back to the build.
 //
@@ -323,11 +323,17 @@ assert.match(app, /const what = stopped \? "stopped" : "failed";/,
 // the same plan again and asked the person to press "Build it" a second
 // time for a request they had already approved. Measured after the fix:
 // 0 plan calls, 1 build call.
+// Every retry goes straight to the build now, the receipt's Try again
+// too: it called make(), which posted the enriched request back into the
+// conversation as the person's own words and planned it again.
 const retry = app.slice(app.indexOf('$("retryBtn").addEventListener'));
-assert.match(retry.slice(0, 1200), /\(The agreed plan:/,
-  "a retry recognises a request whose plan was already agreed");
-assert.match(retry.slice(0, 1200), /buildNow\(again/,
+assert.match(retry.slice(0, 1600), /retryFailed\(again\)/,
+  "the card's Try again uses the one retry");
+const retryFn = app.slice(app.indexOf("function retryFailed("), app.indexOf("function retryFailed(") + 600);
+assert.match(retryFn, /buildNow\(again/,
   "and rebuilds it rather than re-planning it");
+assert.match(app, /settleChipBad\([^;]*\(\) => retryFailed\(request\)/,
+  "the receipt's Try again uses it too");
 
 console.log("ok  a stop is not recorded as a failure");
 console.log("ok  Try again rebuilds instead of re-planning");

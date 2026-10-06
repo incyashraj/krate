@@ -2885,3 +2885,7 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 .ip-miss { margin: 2px 0 8px 22px; font: 400 12px var(--sans); color: var(--ink-3); }
+.sess-more { display: block; width: 100%; margin: 2px 0 6px; padding: 6px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left; font: 500 12.5px var(--sans); color: var(--ink-3); }
+.sess-more:hover { color: var(--ink); background: var(--surface-2); }
+/* The gallery's own empty state says "nothing matches"; app.js's line would say it twice. */
+#viewCloud.kr-galon #cloudError[data-kind="empty"] { display: none !important; }

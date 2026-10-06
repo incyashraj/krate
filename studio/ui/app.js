@@ -166,10 +166,10 @@ const invoke = async (cmd, args) => {
   if (!tauri) return;
   try {
     const mine = await invoke("studio_version");
-    const r = await fetch("https://api.github.com/repos/incyashraj/krate/releases/latest");
-    if (!r.ok) return;
-    const rel = await r.json();
-    const latest = String(rel.tag_name || "").replace(/^v/, "");
+    // Through the shell, as Settings does: the window's CSP blocks a direct
+    // fetch, so this check never once saw a newer release (K-994).
+    const rel = await invoke("latest_release");
+    const latest = String((rel && (rel.tag || rel.tag_name)) || "").replace(/^v/, "");
     if (!latest || latest === mine) return;
     const newer = isNewerVersion(latest, mine);
     if (!newer) return;
@@ -182,6 +182,8 @@ const invoke = async (cmd, args) => {
     const chip = $("updateChip");
     chip.textContent = `Update to v${latest}`;
     chip.classList.remove("hidden");
+    // And the bell says there is something to read.
+    $("sideBellDot")?.classList.remove("hidden");
     chip.addEventListener("click", () => {
       invoke("open_external", {
         url: `https://github.com/incyashraj/krate/releases/download/v${latest}/${file}`,
@@ -722,10 +724,14 @@ function onLoginStep(step) {
   } else if (step.step === "adopted") {
     // The identity was stored by the engine (browser hand-off); read it
     // back rather than trusting the URL's own fields.
-    refreshAccountAndEnter();
+    // Home only from the sign-in page: a sign-in that lands while the
+    // person is somewhere else (Your apps, a session) leaves them there.
+    if (!$("viewGate").classList.contains("hidden")) refreshAccountAndEnter();
+    else invoke("account_status").then((a) => { if (a && a.signed_in) { state.account = a; renderAccount(); } }).catch(() => {});
   } else if (step.step === "done") {
     state.account = { signed_in: true, login: step.login, name: step.name, avatar_url: step.avatar_url };
-    enterHome();
+    renderAccount();
+    if (!$("viewGate").classList.contains("hidden")) enterHome();
   } else if (step.step === "error" || step.step === "handoff-failed") {
     $("gateStart").classList.remove("hidden");
     $("gateCode").classList.add("hidden");
@@ -796,7 +802,8 @@ async function enterHome() {
       .then((full) => renderSessions(full))
       .catch(() => {});
   } else {
-    renderSessions(await invoke("sessions_list"));
+    // A list that fails to load must not stop Home from opening.
+    try { renderSessions(await invoke("sessions_list")); } catch (e) { /* the shelf says it */ }
   }
   renderShelf();
   renderBuilding();
@@ -996,8 +1003,13 @@ function renderSessions(sessions) {
     x.addEventListener("click", async (e) => {
       // The card underneath opens a session; this must not do both.
       e.stopPropagation();
-      await invoke("session_delete", { id: s.id });
-      renderSessions(await invoke("sessions_list"));
+      try { await invoke("session_delete", { id: s.id }); }
+      catch (err) { toastish(`Could not remove it: ${String(err && err.message ? err.message : err)}`); return; }
+      knownSessions.delete(s.id);
+      // The whole page again, count and sidebar included (only the grid
+      // was redrawn, so "3 apps" stayed after one was removed).
+      loadAppsPage();
+      if (window.__paintDrawerSessions) window.__paintDrawerSessions();
     });
     card.appendChild(x);
     card.classList.add("reveal");
@@ -1036,7 +1048,14 @@ function newSession(firstRequest) {
   if (window.__paintDrawerSessions) window.__paintDrawerSessions();
 }
 
+// The newest copy of every session this window has saved. A row in Recents
+// holds the copy it was drawn from; a build that finished while the person
+// was elsewhere updated a newer one, and opening the row's old copy said
+// "This one never got going" about a finished app.
+const knownSessions = new Map();
+
 function openSession(s) {
+  if (s && s.id && knownSessions.has(s.id)) s = knownSessions.get(s.id);
   // Every door in reads a normal session (K-898).
   s = normalSession(s);
   if (!s) return;
@@ -1093,6 +1112,10 @@ function openSession(s) {
   // After a restart the in-memory planning state is gone; rebuild enough of
   // it from the transcript that Build it still means "build what I asked
   // for". The request is the person's first message.
+  if (lastAsk !== undefined && !state.planning && s.planningSaved && s.planningSaved.request) {
+    // A plan made while the person was in another session (planAnsweredAway).
+    state.planning = { ...s.planningSaved, files: s.planningSaved.files || [], qa: s.planningSaved.qa || [] };
+  }
   if (lastAsk !== undefined && !state.planning) {
     const first = msgs.find((m) => m.who === "YOU");
     if (first) {
@@ -1195,6 +1218,9 @@ function openSession(s) {
     unlockComposer("Describe the app you want…");
   }
   showView("session");
+  // The send button belongs to this session: a Stop square left from the
+  // session that is building elsewhere stopped that build (K-990).
+  syncSendReady();
   $("prompt").focus();
 }
 
@@ -1202,11 +1228,17 @@ async function persist() {
   return persistSession(state.session);
 }
 
+let recentsT = 0;
 async function persistSession(s) {
   if (!s) return;
   s.updated = Math.floor(Date.now() / 1000);
+  if (s.id) knownSessions.set(s.id, s);
   try {
     await invoke("session_save", { session: s });
+    // Recents follows what was saved: a new session, a finished build, a
+    // new title. It used to repaint only on open, rename or drawer open.
+    clearTimeout(recentsT);
+    recentsT = setTimeout(() => { if (window.__paintDrawerSessions) window.__paintDrawerSessions(); }, 250);
   } catch (e) {
     // History is a convenience; never let saving break making. But say so
     // somewhere: a save that failed silently lost whole sessions (K-897).
@@ -1267,8 +1299,6 @@ const STATUS_LINES = new Set([
   "Looking at your request…",
   "Picking your build back up where it was.",
   "Reading your app, then making that change.",
-  "Noted. I'll do that as soon as this one is finished.",
-  "Stopping that one. Building this instead.",
   "Folding that in and building again.",
 ]);
 
@@ -1545,12 +1575,16 @@ function settleChipBad(el, version, retry, stopped) {
   // "failed" is wrong for a build somebody stopped on purpose, and the
   // timeline is the one place that record persists: a person scrolling
   // back should not find their own decision written down as a failure.
-  const what = stopped ? "stopped" : "failed";
-  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vbadc"><b>v${version}</b> ${what} <span class="vm">app untouched</span></span>`;
+  const what = stopped === "replaced" ? "replaced" : stopped ? "stopped" : "failed";
+  // A first build that stopped saved nothing; a change that stopped left
+  // the app as it was. Each receipt says the one that is true.
+  const firstBuild = !(state.session && state.session.result && state.session.result.path);
+  const note = stopped === "replaced" ? "by your new words" : firstBuild ? "nothing was saved" : "app untouched";
+  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vbadc"><b>v${version}</b> ${what} <span class="vm">${note}</span></span>`;
   if (retry) {
     const fix = document.createElement("button");
     fix.className = "vact";
-    fix.textContent = "Try again";
+    fix.textContent = stopped && firstBuild ? "Start again" : "Try again";
     fix.addEventListener("click", retry);
     el.querySelector(".vchip").appendChild(fix);
   }
@@ -2557,7 +2591,7 @@ let resumeAfterKey = null;
 function resumeWhenKeyed(run) {
   const session = state.session;
   resumeAfterKey = () => {
-    if (state.session !== session || state.buildingSession || planning) return;
+    if (state.session !== session || state.buildingSession || isPlanning()) return;
     run();
   };
 }
@@ -2599,7 +2633,12 @@ function failBuild(why, request) {
   state.buildSettled = true;
   clearInterval(state.watchdog);
   clearProgress(false);
-  settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request), why === "stopped");
+  // A redirect is a replacement, not a failure: its receipt says so and has
+  // no Try again. Otherwise Try again rebuilds what was attempted; it used to
+  // call make(), which posted the enriched request (plan and all) back into
+  // the conversation as the person's own words and planned it again.
+  const replaced = why === "stopped" && state.replacing;
+  settleChipBad(state.buildChip, state.buildVersion || 1, replaced ? null : () => retryFailed(request), why === "stopped" ? (replaced ? "replaced" : "stopped") : false);
   state.buildChip = null;
   clearInterval(state.timer);
   const built = state.buildingSession || state.session;
@@ -3227,6 +3266,16 @@ async function continuePlanning(text, files) {
   // particles yes" and got a second, longer plan; a plan is a preview,
   // never a negotiation loop.
   if (state.planning.planShown) {
+    // In Plan first nothing is built: a change to the plan is a new plan
+    // with that change in it (it was refused as "nothing was built").
+    if (composerMode() === "plan") {
+      state.planning.planShown = false;
+      state.planning.rounds = Math.max(1, state.planning.rounds);
+      clearAnsweredActions();
+      showPlanning("Changing the plan", "folding your change in…");
+      await runPlan();
+      return;
+    }
     return finishPlanningAndBuild();
   }
   clearAnsweredActions();
@@ -3263,31 +3312,99 @@ async function ensureUsableAgent() {
  * Guarded where the work actually happens rather than at each door, so a
  * third door added later is covered too (K-847).
  */
-let planning = false;
+// The session being planned: one plan per session at a time, while another
+// session may plan beside it (the guard was global, so a second session's
+// request was dropped without a word while the first one planned).
+const planningIn = new Set();
+// Whether the session on screen is planning right now (read by redesign.js).
+function isPlanning() { return !!(state.session && planningIn.has(state.session.id)); }
 
 async function runPlan() {
-  if (planning) return;
-  planning = true;
+  const id = state.session && state.session.id;
+  if (planningIn.has(id)) return;
+  planningIn.add(id);
   // Anything new supersedes a wall that was waiting on a key.
   resumeAfterKey = null;
   try {
     await runPlanInner();
   } finally {
-    planning = false;
+    planningIn.delete(id);
   }
+}
+
+/* The plan step answered after the person had moved to another session.
+ * The answer belongs to the session that asked: it is written there, with
+ * its Build it, and waits for them (it used to land in whatever session was
+ * on screen, which then read "I'll skip the questions" and built nothing). */
+function planAnsweredAway(S, P, answer, err) {
+  if (!S) return;
+  let body = "";
+  if (!err && answer && answer.agent_session) P.agentSession = answer.agent_session;
+  if (!err && answer && answer.shape) P.shape = String(answer.shape);
+  if (!err && answer && answer.ask && answer.ask.length && P.rounds < 1) {
+    P.rounds += 1;
+    P.lastQuestions = answer.ask;
+    body = answer.ask.map((q, i) => `${i + 1}. ${q}`).join("\n");
+  } else if (!err && answer && answer.plan) {
+    const m = planMessage(answer);
+    if (m.named) { P.name = m.named; S.planName = m.named; }
+    P.plan = m.plan; P.planShown = true;
+    body = m.body;
+  } else {
+    body = err
+      ? "The plan step stopped while you were in another session. Press Build it to build what you asked for, or send it again."
+      : "Your plan is ready. Press Build it to start.";
+  }
+  S.messages.push({ who: "KRATE", body, files: [], when: Math.floor(Date.now() / 1000), kind: "ask" });
+  // Enough to pick up where it left off when the session is opened.
+  S.planningSaved = { request: P.request, files: P.files || [], qa: P.qa || [], rounds: P.rounds || 1, lastQuestions: P.lastQuestions || [], plan: P.plan || null, name: P.name || null, agentSession: P.agentSession || null, shape: P.shape || null };
+  persistSession(S);
+  if (window.krToast) window.krToast(`${S.planName || S.title || "Your app"}: ${body.startsWith("1.") ? "a question is waiting" : "the plan is ready"}`);
+  if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+}
+
+/* The plan as the card shows it: the sentence, short points, the name, and
+ * what it will ask permission for. */
+function planMessage(answer) {
+  const points = (Array.isArray(answer.points) ? answer.points : [])
+    .map((p) => String(p || "").replace(/\s+/g, " ").replace(/[.]$/, "").trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const named = String(answer.name || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  const needs = (answer.needs || []).filter(Boolean);
+  const needsLine = needs.length
+    ? `\n\nIt will ask your permission to: ${needs
+        .map((c) => {
+          const w = capWords(c);
+          return w.charAt(0).toLowerCase() + w.slice(1);
+        })
+        .join("; ")}.`
+    : "";
+  return {
+    points,
+    named,
+    plan: points.length ? `${answer.plan} ${points.join(". ")}.` : answer.plan,
+    body: `Here's what I'll build: ${answer.plan}${points.map((p) => `\n• ${p}`).join("")}${needsLine}`,
+  };
 }
 
 async function runPlanInner() {
   $("composerHint").textContent = "";
   $("send").disabled = true;
+  // The session and request this plan is for. The person may move to
+  // another session while the AI thinks; its answer still belongs here.
+  const S = state.session, P = state.planning;
+  const away = () => state.session !== S || state.planning !== P;
   await ensureUsableAgent();
+  if (away()) { planAnsweredAway(S, P, null, new Error("left")); return; }
   try {
     const raw = await invoke("plan_request", {
       request: planContext(),
-      attachments: state.planning.files,
+      attachments: P.files,
       agent: state.agent,
     });
     const answer = JSON.parse(raw);
+    if (away()) { planAnsweredAway(S, P, answer, null); return; }
     // The planning session's id, when the engine carried one: the build
     // resumes that session, so the request and the agreed plan are already
     // in the AI's context instead of being re-sent to a cold start.
@@ -3337,30 +3454,18 @@ async function runPlanInner() {
       // Short points read like the design's plan card; the sentence alone was
       // three long lines of theory. An engine from before points (or an AI
       // that left them out) still gives a plan: the card splits the sentence.
-      const points = (Array.isArray(answer.points) ? answer.points : [])
-        .map((p) => String(p || "").replace(/\s+/g, " ").replace(/[.]$/, "").trim())
-        .filter(Boolean)
-        .slice(0, 6);
-      const named = String(answer.name || "").replace(/\s+/g, " ").trim().slice(0, 40);
+      const pm = planMessage(answer);
+      const points = pm.points, named = pm.named;
       if (named) {
         state.planning.name = named;
         // Kept with the session, so the card and the right side can call the
         // app by its name after the plan is gone.
         if (state.session) state.session.planName = named;
       }
-      state.planning.plan = points.length ? `${answer.plan} ${points.join(". ")}.` : answer.plan;
+      state.planning.plan = pm.plan;
       state.planning.planShown = true;
-      const needs = (answer.needs || []).filter(Boolean);
       // In words, not capability ids: "From you it needs: store.kv" was
-      // the first thing a stranger read about their own app.
-      const needsLine = needs.length
-        ? `\n\nIt will ask your permission to: ${needs
-            .map((c) => {
-              const w = capWords(c);
-              return w.charAt(0).toLowerCase() + w.slice(1);
-            })
-            .join("; ")}.`
-        : "";
+      // the first thing a stranger read about their own app (planMessage).
       // The plan is the one KRATE message a person reads closely -- it is
       // what they are agreeing to. Marked so it is set as substance rather
       // than as another line of narration (K-835).
@@ -3371,7 +3476,15 @@ async function runPlanInner() {
       // choosing between two live Build it buttons describing two
       // different apps.
       clearAnsweredActions();
-      say("KRATE", `Here's what I'll build: ${answer.plan}${points.map((p) => `\n• ${p}`).join("")}${needsLine}`, null, {
+      // Build mode is "make it straight away": the plan is said, and the
+      // build starts (the design's "Build, start to finish"). Plan first
+      // waits on the card below.
+      if (composerMode() !== "plan") {
+        say("KRATE", pm.body, null, { variant: "plan" });
+        finishPlanningAndBuild();
+        return;
+      }
+      say("KRATE", pm.body, null, {
         variant: "plan",
         actions: [
           { label: "Build it", primary: true, run: finishPlanningAndBuild },
@@ -3390,9 +3503,13 @@ async function runPlanInner() {
         [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
       );
     } else {
-      return finishPlanningAndBuild();
+      finishPlanningAndBuild();
+      return;
     }
   } catch (err) {
+    // The person moved to another session while this planned: the outcome
+    // is written there, never into the session on screen.
+    if (away()) { planAnsweredAway(S, P, null, err); return; }
     // The conversation must never become a wall in front of building --
     // and its failure must never read like one. One plain line, no nested
     // error prose (the first live run printed a build error inside a
@@ -3453,7 +3570,8 @@ async function runPlanInner() {
         + "Studio, so I cannot talk an app through before building it. "
         + "Updating Krate restores the questions. I'll build directly for now.");
       setIdleNote("Old engine: building without the planning step.");
-      return finishPlanningAndBuild();
+      finishPlanningAndBuild();
+      return;
     }
     // A question is not a build request. When the plan step cannot answer
     // AND the message reads as a question about Krate, answer it instead
@@ -3481,12 +3599,15 @@ async function runPlanInner() {
       return;
     }
     say("KRATE", "I'll skip the questions this time and build right away.");
-    return finishPlanningAndBuild();
+    finishPlanningAndBuild();
+    return;
   } finally {
-    $("composerHint").textContent = "";
-    $("send").disabled = false;
+    if (!away()) {
+      $("composerHint").textContent = "";
+      $("send").disabled = false;
+    }
   }
-  persist();
+  if (!away()) persist();
 }
 
 /* The idle stage's one line. It is the only thing on the right while the
@@ -3527,6 +3648,7 @@ function finishPlanningAndBuild() {
     return;
   }
   state.planning = null;
+  if (state.session) delete state.session.planningSaved;
   clearAnsweredActions();
   $("prompt").placeholder = "Describe the app you want…";
   let enriched = p.request;
@@ -3633,6 +3755,13 @@ async function buildNow(request, files, revising, planSession, starterShape, por
   $("prompt").placeholder = "Add a change. It runs when this finishes…";
 
   state.buildingSession = state.session;
+  // This build's own token. A build replaced mid-way ("Stop it and use this
+  // instead") still returns from the engine later; only the build holding
+  // the current token may settle anything, or the old one's exit marked the
+  // new build failed and cleared it (K-990).
+  const token = {};
+  state.buildToken = token;
+  const current = () => state.buildToken === token;
   state.lastRequest = request;
   // The attempt itself is a fact about the session, persisted: a reopened
   // session must know a build ran even when the process, the result, and
@@ -3732,8 +3861,10 @@ async function buildNow(request, files, revising, planSession, starterShape, por
               : ""),
           starterShape: starterShape || "",
         });
+    if (!current()) return;
     finishBuild(result);
   } catch (err) {
+    if (!current()) return;
     state.lastError = String(err);
     const text = String(err);
     // A feasibility refusal is an ANSWER, not an error: the AI read the
@@ -3851,6 +3982,8 @@ async function buildNow(request, files, revising, planSession, starterShape, por
       failBuild(plainWords(err), request);
     }
   } finally {
+    // A replaced build leaves the new one alone: its session, chip, queue.
+    if (!current()) return;
     // Drop this build's progress record. It exists to survive navigation
     // WHILE a build runs; once the build has settled the session's own
     // result is what the pane shows, and keeping the record would let a
@@ -4124,6 +4257,8 @@ async function refreshAgents() {
   try {
     state.agents = await invoke("agents");
     state.agentsError = null;
+    // A probe that answered, even with nothing: Settings stops "looking".
+    state.agentsChecked = true;
   } catch (err) {
     // The full error rides on the chip's tooltip AND into the AI sheet, so
     // "engine not found" on someone else's machine is diagnosable from a
@@ -4211,7 +4346,10 @@ async function checkEngineAge() {
 /// the apps; they all read this.
 function agentLabel() {
   const chosen = state.agents.find((a) => a.name === state.agent);
-  return chosen ? chosen.label : state.agent;
+  if (chosen) return chosen.label;
+  // The list did not load: still the AI's own name, written properly.
+  const id = String(state.agent || "");
+  return { claude: "Claude", codex: "Codex", gemini: "Gemini", grok: "Grok", opencode: "OpenCode", krate: "Krate" }[id] || (id.charAt(0).toUpperCase() + id.slice(1));
 }
 
 function setChips(dot, text, title) {
@@ -4226,7 +4364,9 @@ function setChips(dot, text, title) {
   // The home bar's "Built by" chip carries the same truth.
   const bbn = $("builtByName");
   const bbd = $("builtByDot");
-  if (bbn) bbn.textContent = agentLabel();
+  // The name when it is ready; the trouble when it is not ("Built by
+  // Claude" with only a dot's colour hid a sign-out).
+  if (bbn) bbn.textContent = dot === "ok" ? agentLabel() : text;
   if (bbd) bbd.className = `dot ${dot}`;
   const sv = $("setAgent");
   if (sv) sv.textContent = agentLabel();
@@ -4455,13 +4595,17 @@ function openAiSheet() {
       const fix = document.createElement("button");
       fix.className = "btn";
       fix.textContent = "Sign in";
+      // One handler that knows its step: a second handler added beside the
+      // first ran both, so Check again started another sign-in.
+      let signedInStarted = false;
       fix.addEventListener("click", async () => {
+        if (signedInStarted) { refreshAgents(); openAiSheet(); return; }
         const note = row.querySelector(".ai-detail");
         try {
           await invoke("sign_in_agent", { name: a.name });
           note.textContent = "Finish in the terminal, then check again.";
           fix.textContent = "Check again";
-          fix.onclick = () => { refreshAgents(); openAiSheet(); };
+          signedInStarted = true;
         } catch (err) {
           note.textContent = String(err);
         }
@@ -4474,10 +4618,26 @@ function openAiSheet() {
       const add = document.createElement("button");
       add.className = "btn btn-primary";
       add.textContent = "Install";
+      // One handler, three steps: install, sign in, check again. The later
+      // steps were added as a second handler beside the first, so pressing
+      // Sign in installed the tool again too.
+      let step = "install";
       add.addEventListener("click", async () => {
+        const note = row.querySelector(".ai-detail");
+        if (step === "check") { refreshAgents(); openAiSheet(); return; }
+        if (step === "signin") {
+          try {
+            await invoke("sign_in_agent", { name: a.name });
+            note.textContent = "Finish signing in, then come back.";
+            add.textContent = "Check again";
+            step = "check";
+          } catch (err) {
+            note.textContent = String(err);
+          }
+          return;
+        }
         add.disabled = true;
         add.textContent = "Installing…";
-        const note = row.querySelector(".ai-detail");
         note.classList.add("installing");
         try {
           await invoke("install_agent", { name: a.name });
@@ -4487,16 +4647,7 @@ function openAiSheet() {
           // button beats printing the command and hoping.
           add.textContent = "Sign in";
           add.disabled = false;
-          add.onclick = async () => {
-            try {
-              await invoke("sign_in_agent", { name: a.name });
-              note.textContent = "Finish signing in, then come back.";
-              add.textContent = "Check again";
-              add.onclick = () => { refreshAgents(); openAiSheet(); };
-            } catch (err) {
-              note.textContent = String(err);
-            }
-          };
+          step = "signin";
           refreshAgents();
         } catch (err) {
           note.classList.remove("installing");
@@ -4571,7 +4722,10 @@ async function attach() {
     const box = $("homeHint") || $("composerHint");
     if (box) {
       const was = box.textContent;
-      box.textContent = plainWords(err);
+      // The picker's own words: plainWords is for builds, and said "The
+      // build failed" under a box where nothing was building.
+      const why = String(err && err.message ? err.message : err || "").replace(/^error:\s*/i, "").trim();
+      box.textContent = why ? `Could not add a file: ${why}` : "Could not open the file picker. Try again.";
       setTimeout(() => { box.textContent = was; }, 4000);
     }
     return;
@@ -4616,6 +4770,20 @@ function guardLongPaste(box, hintId) {
 }
 guardLongPaste($("homePrompt"), "homeHint");
 guardLongPaste($("prompt"), "composerHint");
+// Typing up to the limit is said too: the box stopped taking letters
+// without a word.
+function guardLongTyping(box, hintId) {
+  if (!box) return;
+  box.addEventListener("input", () => {
+    const hint = $(hintId); if (!hint) return;
+    if (box.value.length >= REQUEST_BOX_CHARS) {
+      hint.textContent = "That is the 2,000-character limit. For more, paste it: a long paste goes in as a file.";
+      hint.dataset.limit = "1";
+    } else if (hint.dataset.limit) { hint.textContent = ""; delete hint.dataset.limit; }
+  });
+}
+guardLongTyping($("homePrompt"), "homeHint");
+guardLongTyping($("prompt"), "composerHint");
 
 /* ---- app details ------------------------------------------------------- */
 
@@ -4710,13 +4878,20 @@ async function sourceDirOf(app) {
  * Whatever someone does twice in a UI they will want in a script. This is
  * the shortest path from Studio to a Makefile or a CI job. */
 function buildCommandFor(session, app) {
-  const request = ((session && session.title) || "an app")
-    .replace(/\s+/g, " ")
-    .replace(/"/g, '\\"')
-    .trim();
-  const agent = (state.agent || "claude").trim();
+  const request = ((session && session.title) || "an app").replace(/\s+/g, " ").trim();
+  const agent = (state.agent || "claude").trim().replace(/[^a-z0-9-]/gi, "") || "claude";
   const out = (app && app.name) || "app.krate";
-  return `krate create "${request}" --agent ${agent} --output ${out}`;
+  return `krate create ${shellWord(request)} --agent ${agent} --output ${shellWord(out)}`;
+}
+
+/* One argument for a pasted command, quoted so nothing inside it runs.
+ * Double quotes let a title holding $(...) or backticks run in the shell;
+ * single quotes do not. PowerShell writes a quote inside one as ''. */
+function shellWord(text) {
+  const t = String(text);
+  if (/^[\w.\/:@%+=,-]+$/.test(t)) return t;
+  const win = /win/i.test(navigator.platform || navigator.userAgent || "");
+  return win ? `'${t.replace(/'/g, "''")}'` : `'${t.replace(/'/g, "'\\''")}'`;
 }
 
 async function showInfo() {
@@ -4880,7 +5055,13 @@ async function openCloud() {
       filterCloud();
     }
   } catch (err) {
-    $("cloudError").textContent = String(err);
+    // Plain words: the raw error ("SyntaxError: Unexpected token '<'") went
+    // straight onto the page. The real one goes to the log.
+    invoke("dbg_log", { line: "gallery load failed: " + clip(err, 300) }).catch(() => {});
+    $("cloudError").dataset.kind = "error";
+    $("cloudError").textContent = navigator.onLine === false
+      ? "You are offline, so the gallery cannot load. It comes back when you reconnect."
+      : "The gallery did not load just now. Try again in a moment.";
     $("cloudError").classList.remove("hidden");
   } finally {
     $("cloudLoading").classList.add("hidden");
@@ -5040,6 +5221,8 @@ function showCloudApp(app) {
     })
     .catch(() => {
       caps.innerHTML = '<p class="cap-dim">Could not read this app right now.</p>';
+      // The redesigned page says it too (it waited on "Reading the file…").
+      if (window.krGalCapsFailed) window.krGalCapsFailed();
     });
 }
 
@@ -5236,6 +5419,8 @@ function renderCloud(apps, filtered) {
   grid.className = "cloud-grid";
   $("cloudError").classList.add("hidden");
   if (!apps.length) {
+    // An empty list is not an error; the redesigned gallery says it itself.
+    $("cloudError").dataset.kind = "empty";
     $("cloudError").textContent = filtered
       ? "Nothing here matches that."
       : "Nothing published yet. Yours could be first.";
@@ -5382,13 +5567,22 @@ function currentApp() {
  * `which` is only trusted when it carries a path. These functions are also
  * bound directly as click handlers, where the first argument is a MouseEvent
  * -- taking that as an app would open nothing and say nothing. */
+// What happened, said back to whoever asked (the Run it pill read the hint
+// under the box to guess, and got it wrong both ways on the web):
+// "opened", "asking" (a tab asks whether Krate is installed), "downloaded"
+// (a tab hands over the file), or "failed" with the reason.
 async function openApp(which, version) {
   const app = (which && which.path) ? which : currentApp();
-  if (!app) return;
+  if (!app) return { kind: "failed", why: "There is no app here to open yet." };
   try {
-    await invoke("open_app", { path: app.path, version });
+    const r = await invoke("open_app", { path: app.path, version });
+    return { kind: r === "asking" ? "asking" : "opened" };
   } catch (err) {
+    const why = String(err && err.message ? err.message : err || "");
+    // A tab's "Downloaded. Double-click the file..." is how it succeeds.
+    if (/^Downloaded\./.test(why)) { toastish(why); return { kind: "downloaded", why }; }
     showActionError(err);
+    return { kind: "failed", why: why.replace(/^error:\s*/i, "") };
   }
 }
 
@@ -5921,6 +6115,10 @@ function resetPanel() {
   panel.contents = null;
   panel.contentsFor = "";
   panel.codeFile = "";
+  // A search typed for the last app does not carry into this one, where
+  // its box may not even show (it kept filtering, and said "Nothing
+  // matches" with no box to clear).
+  if ($("codeSearch")) $("codeSearch").value = "";
   if (panel.pane !== "preview") fillPane(panel.pane);
   paintPanelBar();
 }
@@ -6188,6 +6386,10 @@ function paintCodeTree() {
     none.className = "code-dir";
     none.textContent = "Nothing matches.";
     host.appendChild(none);
+  } else if (q && !host.querySelector(".code-file.on")) {
+    // The open file fell out of the search: the first match is shown.
+    const first = host.querySelector(".code-file");
+    if (first) { panel.codeFile = first.title; first.classList.add("on"); }
   }
 }
 
@@ -6220,10 +6422,19 @@ function showCodeFile(rel) {
     }
     frag.appendChild(ln);
   }
+  // A very long file says where it stops, rather than counting lines it
+  // does not draw.
+  const LIMIT = 20000;
+  if (lines.length > LIMIT) {
+    const more = document.createElement("span");
+    more.className = "ln code-more";
+    more.textContent = `… ${(lines.length - LIMIT).toLocaleString()} more lines are not shown here. Open the source folder to read the whole file.`;
+    frag.appendChild(more);
+  }
   pre.appendChild(frag);
   pre.scrollTop = 0;
   if (stats) {
-    stats.textContent = `${lines.length} line${lines.length === 1 ? "" : "s"}` + (q ? ` · ${hits} match${hits === 1 ? "" : "es"}` : "");
+    stats.textContent = `${lines.length.toLocaleString()} line${lines.length === 1 ? "" : "s"}` + (lines.length > LIMIT ? ` · first ${LIMIT.toLocaleString()} shown` : "") + (q ? ` · ${hits} match${hits === 1 ? "" : "es"}` : "");
   }
   if (firstHit) firstHit.scrollIntoView({ block: "center" });
 }
@@ -6442,7 +6653,7 @@ async function fillDetails(app) {
   }
   // The header's one action: run it from a terminal. Building it again is
   // a second, smaller one beside it.
-  const run = tauri && info.path ? `krate launch "${info.path}"` : `krate launch ${app.name || "app.krate"}`;
+  const run = `krate launch ${shellWord(tauri && info.path ? info.path : app.name || "app.krate")}`;
   const runBtn = copyBtn("Copy the run command", run, "btn btn-sm dt2-run");
   runBtn.title = run;
   head.appendChild(runBtn);
@@ -6559,8 +6770,12 @@ async function removeCurrentSession() {
     toastish(err);
     return;
   }
+  knownSessions.delete(s.id);
+  // Off the screen before leaving: Back saves the session on screen, and
+  // saved this one straight back after it was removed.
+  state.session = null;
   if (window.__paintDrawerSessions) window.__paintDrawerSessions();
-  $("backBtn").click();
+  enterHome();
 }
 
 /* ---- wiring ----------------------------------------------------------- */
@@ -6685,7 +6900,8 @@ async function startFromHomeInner() {
   show("idle");
   showView("session");
   $("homePrompt").value = "";
-  say("YOU", text);
+  // The files go on the message too, so the person sees what was sent.
+  say("YOU", text, (state.attachments || []).slice());
   // The probe already ran at launch and on every focus. When it found an AI
   // that works, the request goes straight on and the list is refreshed
   // behind it; waiting on a fresh probe here was the pause that read as
@@ -6832,7 +7048,9 @@ function queueMidBuild(text) {
   autoGrow($("prompt"));
   syncSendReady();
   say("YOU", text);
-  say("KRATE", "Noted. I'll do that as soon as this one is finished.", null, { variant: "note" });
+  // An answer to what the person chose, so it stays in sight; folded into
+  // the build's live "Thinking" it was hidden until the build ended.
+  say("KRATE", "Noted. I'll do that as soon as this one is finished.");
   $("composerHint").textContent = "Queued for after this build";
 }
 
@@ -6850,7 +7068,7 @@ async function replaceWithMidBuild(text) {
   // "Stopped. / Resume build" card for a build nobody wanted resumed --
   // one second before the replacement started and covered it.
   state.replacing = true;
-  say("KRATE", "Stopping that one. Building this instead.", null, { variant: "note" });
+  say("KRATE", "Stopping that one. Building this instead.");
   try {
     await stopBuild();
   } finally {
@@ -6885,7 +7103,7 @@ async function replaceWithMidBuild(text) {
   // is its own first request.
   const original = String((state.session && state.session.title) || "").trim();
   const first = state.session && state.session.messages
-    ? (state.session.messages.find((m) => m.who === "YOU") || {}).text
+    ? (state.session.messages.find((m) => m.who === "YOU") || {}).body
     : "";
   const brief = String(first || original || "").trim();
   const combined = brief && brief !== text
@@ -7205,7 +7423,8 @@ syncSendReady();
  * recomputing keeps the press and the picture in agreement: whatever the
  * person is looking at is what happens. */
 function sendOrStop() {
-  if ($("send").classList.contains("stopping")) return stopBuild();
+  // Stop only ever stops the build in THIS session.
+  if ($("send").classList.contains("stopping") && busyHere()) return stopBuild();
   submitInSession();
 }
 $("send").addEventListener("click", sendOrStop);
@@ -7312,7 +7531,11 @@ $("detailRun").addEventListener("click", async () => {
   btn.textContent = "Opening…";
   try {
     await invoke("cloud_run", { url: app.url });
-    $("detailNote").textContent = "Opening. It asks your permission before it can do anything.";
+    // True of the desktop, where Krate runs it behind the wall. A tab only
+    // opened the app's page, and promised a prompt that never comes.
+    $("detailNote").textContent = tauri
+      ? "Opening. It asks your permission before it can do anything."
+      : "Its page opened in a new tab. Get the file there to run it on your computer.";
   } catch (err) {
     $("detailNote").textContent = String(err);
   }
@@ -7894,7 +8117,8 @@ $("supSend")?.addEventListener("click", async () => {
 });
 {
   const g = $("galleryBtn");
-  if (g) g.addEventListener("click", () => showView("cloud"));
+  // Settings closes first, or it stayed over the gallery.
+  if (g) g.addEventListener("click", () => { try { closeSettings(); } catch (e) {} showView("cloud"); });
 }
 $("reportBtn")?.addEventListener("click", openReportSheet);
 $("repSend")?.addEventListener("click", sendReport);
@@ -7930,12 +8154,19 @@ $("retryBtn").addEventListener("click", () => {
   // exactly what was attempted. A request that never reached a plan (a
   // change to an existing app, say) has no such text, and goes back
   // through `make` as before.
-  if (/\(The agreed plan:/.test(again)) {
-    buildNow(again, [], false, "", "");
-  } else {
-    make(again);
-  }
+  retryFailed(again);
 });
+
+/* Try again, from the card or the receipt: the same build again, straight
+ * to the engine. The words were already said and the plan agreed, so
+ * nothing is posted or planned a second time. A change to a built app is
+ * retried as a change. */
+function retryFailed(again) {
+  if (!again || state.buildingSession) return;
+  show("idle");
+  const revising = !!(state.session && state.session.result && state.session.result.path);
+  buildNow(again, [], revising, "", "");
+}
 // The failure card's second door: a different brain, one click away. The
 // sheet it opens is the same AI picker as everywhere else.
 $("switchAiBtn")?.addEventListener("click", openAiSheet);
@@ -8045,7 +8276,12 @@ $("changeDirBtn").addEventListener("click", async () => {
  * function now, so the account sheet, the profile row and the sidebar's
  * menu all end in the same place. */
 async function signOutToGate() {
-  try { await invoke("account_logout"); } catch (e) {}
+  try { await invoke("account_logout"); } catch (e) {
+    // Still signed in: said, and the person stays where they are. It used
+    // to show the sign-in page, then bounce back home three seconds later.
+    toastish(`Could not sign out: ${String(e && e.message ? e.message : e).replace(/^error:\s*/i, "")}`);
+    return;
+  }
   state.account = null;
   // In a tab, signing out is leaving: the site's front page is where a
   // signed-out person belongs, and it is one press from signing back in.
@@ -8102,8 +8338,16 @@ function sheetClosed(w) {
 // keyboard cannot back out of reads as a trap.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" && e.key !== "Esc" && e.keyCode !== 27) return;
-  const open = document.querySelector(".sheet-wrap:not(.hidden)");
-  if (open) { open.classList.add("hidden"); sheetClosed(open); e.preventDefault(); }
+  // The sheet on top: the last open one. The first in the page is Settings,
+  // so Escape over the AI or Support sheet closed Settings underneath and
+  // left the sheet the person was looking at (K-993).
+  const all = [...document.querySelectorAll(".sheet-wrap:not(.hidden)")];
+  const open = all[all.length - 1];
+  if (!open) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (open.id === "setSheet") { closeSettings(); return; }
+  open.classList.add("hidden"); sheetClosed(open);
 });
 
 /* Dragging the window by its title bar.
@@ -8356,7 +8600,9 @@ async function renderShelf() {
   const body = $("shelfBody");
   if (!body) return;
   let sessions = [];
-  try { sessions = (await invoke("sessions_list")) || []; } catch (e) {}
+  // A failed read keeps the shelf as it was: drawn empty, it looked as if
+  // the person had never made anything.
+  try { sessions = (await invoke("sessions_list")) || []; } catch (e) { return; }
 
   const files = [];
   const seen = new Set();
@@ -8696,7 +8942,15 @@ async function loadAppsPage() {
     ).size;
     const count = $("appsCount");
     if (count) count.textContent = made === 1 ? "1 app" : `${made} apps`;
-  } catch (e) { /* the page still renders its empty state */ }
+  } catch (e) {
+    // Said, with a way to try again: a failed list drew a blank page.
+    const grid = $("appsGrid");
+    if (grid) {
+      grid.innerHTML = '<p class="apps-empty">Your apps could not be listed just now. <button type="button" class="btn btn-sm" id="appsRetry">Try again</button></p>';
+      grid.querySelector("button")?.addEventListener("click", () => loadAppsPage());
+    }
+    invoke("dbg_log", { line: "sessions_list failed: " + clip(e, 300) }).catch(() => {});
+  }
 }
 
 /* ---- settings page ----------------------------------------------------- */
@@ -8953,7 +9207,9 @@ async function checkForUpdate() {
 
   let mine = "";
   try { mine = String(await invoke("studio_version")).replace(/^v/, ""); } catch (e) {}
-  $("updCurrent").textContent = mine || "unknown";
+  // The line is rewritten whole: the span inside it is gone after the first
+  // check, and writing into it threw and left "Checking…" spinning (K-991).
+  $("updS").textContent = `Version ${mine || "unknown"}`;
 
   try {
     // Through the shell, not fetch: the webview's CSP blocks the network
@@ -9047,7 +9303,10 @@ async function runUpdate(latest) {
     $("updT").textContent = `Version ${latest} is ready to install`;
     $("updS").textContent = "Takes about five seconds. Your apps and history stay.";
     $("updAct").innerHTML = '<button class="set-mini go" id="updRestart">Restart Krate</button>';
-    $("updRestart").addEventListener("click", () => invoke("restart_for_update").catch(() => {}));
+    $("updRestart").addEventListener("click", () => invoke("restart_for_update").catch((err) => {
+      // Said where the button is: a failed restart did nothing at all.
+      $("updS").textContent = `Could not restart: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Quit Krate and open it again to finish.`;
+    }));
   } catch (err) {
     // Falling back to the browser is honest, not a failure: the file is
     // real and the person can finish it by hand.
@@ -9191,10 +9450,20 @@ async function loadProfilePage() {
 // listener bound once at load never reached them -- Connect did nothing.
 // It also opened hub.krate.tech/login/<provider>/start, which does not
 // exist (404). Connect is the same sign-in every other door uses.
+/* A sign-in started from a button somewhere in Studio: the popup, where the
+ * person picks GitHub, Google or email and sees it waiting. These buttons
+ * opened a browser straight away, with nothing on screen saying why. */
+function signInHere(why) {
+  if (tauri && window.krSignIn) {
+    window.krSignIn({ why, onDone: () => { try { renderAccount(); } catch (e) {} } });
+    return;
+  }
+  beginBrowserSignIn().catch(() => {});
+}
 document.addEventListener("click", (event) => {
   const button = event.target.closest && event.target.closest("button[data-connect]");
   if (!button) return;
-  beginBrowserSignIn().catch(() => {});
+  signInHere("Sign in to publish to Krate Cloud. Everything else works without it.");
 });
 
 /* Sign out, bound ONCE.
@@ -9218,6 +9487,13 @@ $("profSignIn")?.addEventListener("click", () => {
     // The browser sign-in (GitHub, Google or email), with the gate's
     // waiting card -- not the GitHub-only code flow (K-971).
     closeSettings();
+    // The popup first: the person picks GitHub, Google or email before
+    // anything opens. This went to the gate and pressed its browser button,
+    // which opened a browser before any choice, then a second one (K-992).
+    if (window.krSignIn) {
+      window.krSignIn({ why: "Sign in to publish to Krate Cloud. Everything else works without it.", onDone: () => { try { renderAccount(); } catch (e) {} } });
+      return;
+    }
     showView("gate");
     $("loginBrowserBtn").click();
     return;
@@ -9339,6 +9615,9 @@ function showCloudSkeleton() {
     lsSet(KEY, mode);
     apply();
   });
+  // "Dark mode" and "Light mode" from a menu or search mean exactly that;
+  // pressing the cycling button did nothing on one press in three.
+  window.krSetTheme = (m) => { mode = MODES.includes(m) ? m : "system"; lsSet(KEY, mode); apply(); };
 
   /* The same switch, for the Appearance section in settings.
    *
@@ -9435,15 +9714,16 @@ function paintExamples() {
 }
 
 /* The greeting: "Hi Y" -- their first name's initial, from whichever
- * source knows it. The account's name wins because it is theirs; the
- * onboarding name is the fallback for anyone who skipped signing in. */
+ * source knows it. The name they chose ("What we call you", or the one
+ * typed at the welcome) wins: the setting promised to change the greeting
+ * and the account's name overrode it. The account's name is the fallback. */
 function paintGreeting() {
   const greet = $("homeGreet");
   // The login when there is no display name, as /make already does
   // ("What should we make, carol?"); an email sign-in has neither.
   const fromAccount = state.account && (state.account.name || state.account.login);
   const saved = lsGet("krate-name") || "";
-  const name = (fromAccount || saved || "").trim();
+  const name = (saved || fromAccount || "").trim();
   const initial = name ? name.trim().charAt(0).toUpperCase() : "";
   // Greeting and question are two lines doing two jobs, at two weights:
   // the mark and "Hi <name>" small on top, the question at full size
@@ -9736,7 +10016,7 @@ $("obSkipAll")?.addEventListener("click", () => {
   paintExamples();
 });
 $("obSignIn")?.addEventListener("click", () => {
-  beginBrowserSignIn().catch(() => {});
+  signInHere("Sign in to publish to Krate Cloud. Everything else works without it.");
 });
 $("obName")?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") finishOnboarding();
@@ -9874,6 +10154,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
   if (!list) return;
 
   const MAX_ROWS = 14;
+  let showAll = false;
 
   function clean(title) {
     return (title || "").replace(/\s+/g, " ").trim();
@@ -9890,7 +10171,19 @@ $("aiRefresh")?.addEventListener("click", async () => {
     }
     if (label) label.classList.remove("hidden");
     list.innerHTML = "";
-    for (const session of sessions.slice(0, MAX_ROWS)) {
+    // Fourteen at a glance; the rest one click away (a draft past the
+    // fourteenth could not be reached at all).
+    const rows = showAll ? sessions : sessions.slice(0, MAX_ROWS);
+    if (sessions.length > MAX_ROWS) {
+      queueMicrotask(() => {
+        const more = document.createElement("button");
+        more.type = "button"; more.className = "sess-more";
+        more.textContent = showAll ? "Show fewer" : `Show all ${sessions.length}`;
+        more.addEventListener("click", () => { showAll = !showAll; paint(); });
+        list.appendChild(more);
+      });
+    }
+    for (const session of rows) {
       const row = document.createElement("div");
       row.className = "sess-row";
       row.dataset.id = session.id;
@@ -9932,13 +10225,17 @@ $("aiRefresh")?.addEventListener("click", async () => {
 
       // Open the session. Guarded so a click while renaming does not
       // navigate out from under the edit.
+      const startEdit = () => beginRename(session, name, row);
       row.addEventListener("click", (event) => {
         if (name.isContentEditable) return;
         if (event.target === rename || rename.contains(event.target)) return;
+        // The first click opened the session and repainted this list, so
+        // the second click of a double-click lands on a new row and the
+        // dblclick never fires: the click count says it was one.
+        if (event.detail >= 2 && state.session && state.session.id === session.id) { startEdit(); return; }
         openSession(session);
       });
 
-      const startEdit = () => beginRename(session, name, row);
       rename.addEventListener("click", (e) => { e.stopPropagation(); startEdit(); });
       name.addEventListener("dblclick", (e) => { e.stopPropagation(); startEdit(); });
     }
