@@ -9114,6 +9114,103 @@ fn a_mac_gift_is_one_disk_image_carrying_the_player() {
     );
 }
 
+/// The build service makes Mac gifts on Linux, from the release's notarized
+/// opener and its two signed Mac engines: one .zip, one folder inside, the
+/// opener runnable, one player per architecture named for it -- and a file
+/// that is not a Mac program is refused rather than handed to a Mac.
+#[test]
+fn a_mac_gift_from_named_parts_is_one_zip_with_a_player_per_architecture() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let opener = dir.path().join("Krate Opener.app");
+    std::fs::create_dir_all(opener.join("Contents/MacOS")).unwrap();
+    std::fs::write(opener.join("Contents/MacOS/open"), "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            opener.join("Contents/MacOS/open"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+    }
+    let macho = |cpu: u32| {
+        let mut b = vec![0xCF, 0xFA, 0xED, 0xFE];
+        b.extend_from_slice(&cpu.to_le_bytes());
+        b.extend_from_slice(&[0u8; 64]);
+        b
+    };
+    let arm = dir.path().join("arm64-krate");
+    let intel = dir.path().join("x86-krate");
+    std::fs::write(&arm, macho(0x0100_000C)).unwrap();
+    std::fs::write(&intel, macho(0x0100_0007)).unwrap();
+    let zip_path = dir.path().join("gift.zip");
+    let out = krate()
+        .args(["wrap", "--for", "mac"])
+        .arg(&bundle)
+        .arg("-o")
+        .arg(&zip_path)
+        .arg("--opener")
+        .arg(&opener)
+        .arg("--player")
+        .arg(&arm)
+        .arg("--player")
+        .arg(&intel)
+        .output()
+        .expect("run krate wrap");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&zip_path).unwrap()).expect("a zip");
+    let names: Vec<String> = (0..zip.len())
+        .map(|i| zip.by_index(i).unwrap().name().to_string())
+        .collect();
+    let top: std::collections::BTreeSet<&str> =
+        names.iter().map(|n| n.split('/').next().unwrap()).collect();
+    assert_eq!(top.len(), 1, "one folder inside: {top:?}");
+    let has = |suffix: &str| names.iter().find(|n| n.ends_with(suffix)).cloned();
+    let open = has(".app/Contents/MacOS/open").expect("the opener");
+    assert!(
+        open.contains("/Open "),
+        "the opener is named for the app: {open}"
+    );
+    let mode = zip.by_name(&open).unwrap().unix_mode().unwrap_or(0);
+    assert!(mode & 0o111 != 0, "the opener stays runnable");
+    for player in ["/.player/krate-arm64", "/.player/krate-x86_64"] {
+        let name = has(player).unwrap_or_else(|| panic!("{player} in {names:?}"));
+        assert!(
+            zip.by_name(&name).unwrap().unix_mode().unwrap_or(0) & 0o111 != 0,
+            "{player} runnable"
+        );
+    }
+    assert!(has(".krate").is_some(), "the app");
+
+    // A Linux engine handed to a Mac gift: refused.
+    let elf = dir.path().join("linux-krate");
+    std::fs::write(&elf, b"\x7fELF\x02\x01\x01\x00padding").unwrap();
+    let refused = krate()
+        .args(["wrap", "--for", "mac"])
+        .arg(&bundle)
+        .arg("-o")
+        .arg(dir.path().join("bad.zip"))
+        .arg("--opener")
+        .arg(&opener)
+        .arg("--player")
+        .arg(&elf)
+        .output()
+        .unwrap();
+    assert!(
+        !refused.status.success(),
+        "a Linux program is not a Mac player"
+    );
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("not a Mac program"));
+}
+
 /// The Linux gift carries the player too: run on a machine with no Krate,
 /// it installs the player into the home folder and opens the app; run again
 /// it just opens; a damaged copy installs nothing. And it is still a bundle

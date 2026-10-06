@@ -1985,8 +1985,36 @@ const COMMANDS = {
   link_terminal_tool() {
     return refuse("That is a desktop thing. Download Studio if you want the terminal command.");
   },
-  make_wrap() {
-    return refuse("The gift for a friend without Krate is made in Studio on your computer.");
+  /* "For someone new to Krate": the build service makes the gift from the
+   * app it built -- the app plus the Krate player for the friend's system
+   * (cloud/builder/src/gift.js) -- and it arrives as a download. Mac and
+   * Linux; Windows waits for signed Windows builds. */
+  async make_wrap({ path, target } = {}) {
+    const id = jobIdOf(path);
+    if (!id) return refuse("This app was not made here, so its gift is made in Studio on your computer.");
+    if (target === "windows") {
+      return refuse("A gift for Windows is not ready yet. Send them the link: they get Krate once from krate.tech, then the app opens.");
+    }
+    if (!bridge.token) return goSignIn("");
+    const health = await builderHealth();
+    if (!health || !health.gifts) return refuse("Gifts from the browser arrive with the next Krate release. Send the link for now.");
+    const res = await fetch(`${BUILDER}/build/${id}/gift?for=${encodeURIComponent(target || "")}`, {
+      headers: { authorization: `Bearer ${bridge.token}` },
+    });
+    if (!res.ok) {
+      if (res.status === 404) throw await fileFetchError(res);
+      return refuse((await res.text().catch(() => "")).trim() || "The gift could not be made just now. Try again in a moment.");
+    }
+    const named = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") || "");
+    const name = named ? named[1] : `gift-for-${target}`;
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await res.blob());
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+    return name;
   },
   make_card() {
     return refuse("The card is made in Studio on your computer. Download the file and open it there. Send a link works from here.");
@@ -3078,11 +3106,6 @@ console.info("krate: studio bridge ready (hub + builder)");
   }, true);
 })();
 
-/* "For someone new to Krate", in a tab: the gift file is made by the krate
- * binary on the sender's own computer, so a browser cannot make one. The
- * Share menu in app.js checks `tauri` and shows the row as a plain line
- * here -- share the link, they get Krate once -- with no buttons that
- * lead nowhere. Nothing for the bridge to rewrite. */
 
 /* Pick a build back up after a refresh.
  *

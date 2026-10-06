@@ -30,6 +30,8 @@ FROM rust:1.94.1-slim-trixie
 # than guessed: audio, Wayland, keyboard and udev. `--shoot` renders headless
 # with no display server, but the binary still links these at load time.
 #
+# unzip unpacks the release's notarized gift opener (src/gift.js).
+#
 # ca-certificates is not optional -- every hub call and crates.io fetch is
 # HTTPS, and without it they fail with an error that reads like a network
 # outage.
@@ -46,6 +48,7 @@ RUN apt-get update -q && apt-get install -y -q --no-install-recommends \
       libxkbcommon-dev \
       libudev-dev \
       ca-certificates \
+      unzip \
       curl \
       xz-utils \
       fontconfig \

@@ -30,6 +30,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { createGifts } from "./gift.js";
 
 const PORT = Number(process.env.PORT || 8787);
 const KRATE = process.env.KRATE_BIN || "krate";
@@ -365,6 +366,20 @@ function withoutServiceSecrets(env) {
   delete copy.KRATE_BUILDER_SECRET;
   return copy;
 }
+
+// Gifts for a friend without Krate (gift.js). A few an hour per account:
+// each one hands out ~26 MB, and nobody needs more to send an app on.
+const gifts = createGifts({
+  krate: KRATE,
+  stateDir: STATE_DIR,
+  env: (() => {
+    const env = withoutServiceSecrets(process.env);
+    for (const name of Object.values(API_AGENTS)) delete env[name];
+    return env;
+  })(),
+});
+const GIFTS_PER_HOUR = Number(process.env.KRATE_GIFTS_PER_HOUR || 20);
+const giftsByAccount = new Map(); // account -> [timestamps]
 
 function authoringOff() {
   const needs = API_AGENTS[AGENT];
@@ -1359,6 +1374,7 @@ const server = createServer(async (req, res) => {
         building: activeByAccount.size,
         authoring: authoringOff() ? "off" : "on",
         agent: AGENT,
+        gifts: await gifts.canGift(),
       });
     }
 
@@ -1653,6 +1669,27 @@ const server = createServer(async (req, res) => {
         return send(res, 404, "no such build");
       }
 
+      if (action === "gift") {
+        if (job.state === "expired") return send(res, 404, job.error);
+        const bytes = job.result ? await resultBytes(job) : null;
+        if (!bytes) return send(res, 404, "not ready");
+        const now = Date.now();
+        const recent = (giftsByAccount.get(account) || []).filter((t) => now - t < 60 * 60 * 1000);
+        if (recent.length >= GIFTS_PER_HOUR) return send(res, 429, "That is a lot of gifts for one hour. Try again a little later.");
+        recent.push(now);
+        giftsByAccount.set(account, recent);
+        try {
+          const gift = await gifts.make(bytes, job.result.name, url.searchParams.get("for") || "");
+          res.setHeader("content-type", "application/octet-stream");
+          res.setHeader("content-disposition", `attachment; filename="${gift.filename}"`);
+          res.setHeader("access-control-expose-headers", "content-disposition");
+          await audit({ action: "gift", account, job: id, for: url.searchParams.get("for") });
+          return send(res, 200, gift.bytes);
+        } catch (err) {
+          return send(res, err.status || 500, String(err.message || err));
+        }
+      }
+
       if (action === "file") {
         if (job.state === "expired") return send(res, 404, job.error);
         if (!job.result) return send(res, 404, "not ready");
@@ -1762,6 +1799,7 @@ function send(res, status, body) {
 await initState();
 server.listen(PORT, () => {
   console.log(`krate builder on :${PORT} (engine: ${KRATE}, agent: ${AGENT})`);
+  gifts.warm();
 });
 
 if (IDLE_EXIT_MS > 0) {

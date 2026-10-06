@@ -5728,11 +5728,13 @@ async function makeWrap(app, os, label) {
     // The player rides inside a Mac gift, and inside a Linux gift made on
     // Linux. Anything else still sends the friend to krate.tech first, and
     // says so rather than promising an install it cannot do.
-    const carries = os === "mac" || (os === "linux" && /linux/i.test(navigator.platform || ""));
-    label.textContent = os === "mac" && !/\.dmg$/i.test(name) ? `${name} · send the whole folder`
+    // In a tab the build service (Linux) makes the gift, so Linux carries it too.
+    const carries = os === "mac" || (os === "linux" && (!tauri || /linux/i.test(navigator.platform || "")));
+    label.textContent = os === "mac" && !/\.(dmg|zip)$/i.test(name) ? `${name} · send the whole folder`
       : carries ? `${name} · send this one file, Krate comes with it`
       : `${name} · your friend gets Krate from krate.tech first`;
-    try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
+    // In a tab the gift arrived as a download; there is no folder to show.
+    if (tauri) try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
   } catch (err) {
     label.textContent = plainWords(err);
     setTimeout(() => { label.textContent = was; }, 2500);

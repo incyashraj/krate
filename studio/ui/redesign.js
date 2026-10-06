@@ -1765,9 +1765,19 @@
   function paintFile() {
     const pane = q('.kr-wp[data-w="file"]', shareWrap);
     if (!desktopApp()) {
+      // The gift block waits for the build service to say it can make one
+      // (an engine from before gifts says no), so no button leads nowhere.
       pane.innerHTML = `<p class="kr-shp">Download the file and send it any way you like. Whoever gets it opens it with Krate.</p>
-        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-dl>${ico("down")}Download the file</button></div>`;
+        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-dl>${ico("down")}Download the file</button></div>
+        <div class="kr-new" data-gift hidden><b>For someone new to Krate</b><small>One file with Krate inside: it installs once, then opens the app.</small>
+        <div class="kr-os"><button type="button" class="btn kr-ghost" data-os="mac">Mac</button><button type="button" class="btn kr-ghost" data-os="linux">Linux</button></div>
+        <p class="kr-shst" data-wst>Windows: send the link. They get Krate once, then it opens.</p></div>`;
       q("[data-dl]", pane).addEventListener("click", () => press($("filesSave")));
+      const giftBox = q("[data-gift]", pane), wst = q("[data-wst]", pane);
+      qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
+      try {
+        if (isCurrent() && typeof builderHealth === "function") builderHealth().then((h) => { if (h && h.gifts) giftBox.hidden = false; }).catch(() => {});
+      } catch (e) {}
       return;
     }
     pane.innerHTML = `<div class="kr-shacts"><button type="button" class="btn kr-dark" data-send>${ico("share")}<span>Send it</span></button>

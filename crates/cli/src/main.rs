@@ -895,6 +895,19 @@ enum Command {
         /// input, e.g. RateCard-for-Mac.command.
         #[arg(long, short = 'o')]
         output: Option<PathBuf>,
+
+        /// The player to put in the gift, instead of this Krate. Repeat it
+        /// for a Mac gift that carries one engine per architecture. Used by
+        /// the build service, which makes Mac gifts on Linux from the
+        /// release's signed engines; the friend's opener still checks the
+        /// signature before installing.
+        #[arg(long, hide = true)]
+        player: Vec<PathBuf>,
+
+        /// The gift opener to use, instead of the one installed beside this
+        /// Krate (the build service passes the release's notarized one).
+        #[arg(long, hide = true)]
+        opener: Option<PathBuf>,
     },
 
     /// Print the macOS gift opener's script to stdout.
@@ -2019,7 +2032,14 @@ fn run() -> Result<u8> {
             bundle,
             target,
             output,
-        } => wrap_bundle(&bundle, target, output.as_deref()),
+            player,
+            opener,
+        } => wrap_bundle(
+            &bundle,
+            target,
+            output.as_deref(),
+            &GiftParts { player, opener },
+        ),
         Command::GiftOpener => {
             print!("{}", mac_opener_script());
             Ok(0)
@@ -6319,7 +6339,10 @@ krate_bin="$(find_krate || true)"
 if [ -z "$krate_bin" ]; then
   # No player yet. A double-clicked .app has no console, so every word is
   # said in a window.
+  # One universal player, or one per architecture (gifts made in a browser
+  # carry both, because the build service cannot join them into one).
   player="$here/.player/krate"
+  [ -f "$player" ] || player="$here/.player/krate-$(uname -m)"
   if [ ! -f "$player" ] || ! signed_by_krate "$player"; then
     get_krate "This app runs on Krate, a small free player.\n\nInstall it once from krate.tech, then open this file again."
   fi
@@ -6369,6 +6392,7 @@ fn wrap_mac_folder(
     stem: &str,
     output: Option<&Path>,
     announce: bool,
+    parts: &GiftParts,
 ) -> Result<u8> {
     // Both of these are filesystem names, so both come from the safe form.
     //
@@ -6415,7 +6439,7 @@ fn wrap_mac_folder(
     // Its name is generic ("Open") because one notarized bundle serves every
     // gift; renaming the .app on copy is cosmetic and leaves the seal alone,
     // but the executable and Info.plist inside must not be touched.
-    if let Some(shipped) = shipped_gift_opener() {
+    if let Some(shipped) = parts.opener.clone().or_else(shipped_gift_opener) {
         fs::create_dir_all(&out_dir)
             .with_context(|| format!("could not create {}", out_dir.display()))?;
         let status = std::process::Command::new("cp")
@@ -6424,7 +6448,7 @@ fn wrap_mac_folder(
             .arg(&opener)
             .status();
         if matches!(status, Ok(s) if s.success()) {
-            return finish_mac_gift(bundle, &out_dir, &app_file, app_name, true, announce);
+            return finish_mac_gift(bundle, &out_dir, &app_file, app_name, true, announce, parts);
         }
         // A failed copy is not a reason to refuse the gift; fall through and
         // write the plain opener, which works but shows the warning.
@@ -6474,7 +6498,9 @@ fn wrap_mac_folder(
         fs::set_permissions(&exe, perms)?;
     }
 
-    finish_mac_gift(bundle, &out_dir, &app_file, app_name, false, announce)
+    finish_mac_gift(
+        bundle, &out_dir, &app_file, app_name, false, announce, parts,
+    )
 }
 
 /// The notarized opener that shipped with this install, if it is there.
@@ -6504,6 +6530,7 @@ fn finish_mac_gift(
     app_name: &str,
     notarized: bool,
     announce: bool,
+    parts: &GiftParts,
 ) -> Result<u8> {
     fs::copy(bundle, out_dir.join(app_file))
         .with_context(|| format!("could not copy {}", bundle.display()))?;
@@ -6513,7 +6540,7 @@ fn finish_mac_gift(
     // Studio. The opener installs it only after checking Krate signed it, so
     // carrying one that is not signed would only add weight -- it is left
     // out, and the friend is sent to krate.tech instead (IC-381).
-    let carried = carry_mac_player(out_dir)?;
+    let carried = carry_mac_player(out_dir, parts)?;
 
     // One line the receiver can read without opening anything.
     fs::write(
@@ -6555,6 +6582,26 @@ fn mac_gift_summary(app_name: &str, notarized: bool, carried: bool) {
     }
 }
 
+/// Which Mac a Mach-O runs on, from its first bytes: "arm64", "x86_64",
+/// "universal" for a fat binary, or None for anything that is not a Mac
+/// program (a Linux ELF handed to a Mac gift by mistake).
+fn macho_arch(head: &[u8]) -> Option<&'static str> {
+    if head.len() < 8 {
+        return None;
+    }
+    if head[..4] == [0xCA, 0xFE, 0xBA, 0xBE] {
+        return Some("universal");
+    }
+    if head[..4] != [0xCF, 0xFA, 0xED, 0xFE] {
+        return None;
+    }
+    match u32::from_le_bytes([head[4], head[5], head[6], head[7]]) {
+        0x0100_000C => Some("arm64"),
+        0x0100_0007 => Some("x86_64"),
+        _ => None,
+    }
+}
+
 /// Krate's Developer ID team. The opener installs only a player signed by
 /// it, and the sender's side checks the same thing before carrying one.
 const KRATE_TEAM_ID: &str = "DBYD4AW5Q8";
@@ -6563,7 +6610,34 @@ const KRATE_TEAM_ID: &str = "DBYD4AW5Q8";
 /// whether it went in. KRATE_GIFT_ANY_PLAYER carries it regardless, for a
 /// test that drives the whole gift with a local build (the receiving opener
 /// still refuses it unless the test removes that check too).
-fn carry_mac_player(out_dir: &Path) -> Result<bool> {
+fn carry_mac_player(out_dir: &Path, parts: &GiftParts) -> Result<bool> {
+    // Named players (the build service): each goes in under its
+    // architecture, and the opener picks the one for the Mac it is on. No
+    // signature check here -- this may be a Linux machine with no codesign --
+    // because the opener checks every player before it installs one.
+    if !parts.player.is_empty() {
+        let dir = out_dir.join(".player");
+        fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
+        for engine in &parts.player {
+            let mut head = [0u8; 8];
+            let n = fs::File::open(engine)
+                .and_then(|mut f| std::io::Read::read(&mut f, &mut head))
+                .with_context(|| format!("could not read {}", engine.display()))?;
+            let name = match macho_arch(&head[..n]) {
+                Some("universal") => "krate".to_string(),
+                Some(arch) => format!("krate-{arch}"),
+                None => anyhow::bail!("{} is not a Mac program", engine.display()),
+            };
+            fs::copy(engine, dir.join(&name))
+                .with_context(|| format!("could not put {} in the gift", engine.display()))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(dir.join(&name), fs::Permissions::from_mode(0o755))?;
+            }
+        }
+        return Ok(true);
+    }
     let Ok(engine) = std::env::current_exe() else {
         return Ok(false);
     };
@@ -6591,7 +6665,13 @@ fn carry_mac_player(out_dir: &Path) -> Result<bool> {
 /// the player (IC-383 -- one transit artifact, not a folder to zip). A disk
 /// image needs no signature of its own: Gatekeeper judges the stapled
 /// opener inside it, which is the part Apple notarized.
-fn wrap_mac_dmg(bundle: &Path, app_name: &str, stem: &str, dmg: &Path) -> Result<u8> {
+fn wrap_mac_dmg(
+    bundle: &Path,
+    app_name: &str,
+    stem: &str,
+    dmg: &Path,
+    parts: &GiftParts,
+) -> Result<u8> {
     let parent = dmg
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -6601,7 +6681,7 @@ fn wrap_mac_dmg(bundle: &Path, app_name: &str, stem: &str, dmg: &Path) -> Result
         .tempdir_in(parent)
         .with_context(|| format!("could not make a working folder in {}", parent.display()))?;
     let folder = staging.path().join(safe_path_name(stem));
-    wrap_mac_folder(bundle, app_name, stem, Some(&folder), false)?;
+    wrap_mac_folder(bundle, app_name, stem, Some(&folder), false, parts)?;
     let notarized = fs::read_dir(&folder)?
         .filter_map(|e| e.ok())
         .find(|e| e.path().extension().map(|x| x == "app").unwrap_or(false))
@@ -6643,7 +6723,94 @@ fn wrap_mac_dmg(bundle: &Path, app_name: &str, stem: &str, dmg: &Path) -> Result
     Ok(0)
 }
 
-fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Result<u8> {
+/// The Mac gift as a .zip: the same folder as the disk image, made on any
+/// system (the build service is Linux, with no hdiutil). One folder inside,
+/// so unzipping gives the friend one thing. Modes are kept, so the opener and
+/// the players stay runnable; the opener's signature lives in files inside
+/// its bundle, which a zip carries whole.
+fn wrap_mac_zip(
+    bundle: &Path,
+    app_name: &str,
+    stem: &str,
+    zip_path: &Path,
+    parts: &GiftParts,
+) -> Result<u8> {
+    let parent = zip_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let staging = tempfile::Builder::new()
+        .prefix(".krate-gift-")
+        .tempdir_in(parent)
+        .with_context(|| format!("could not make a working folder in {}", parent.display()))?;
+    let top = format!("{} for Mac", safe_path_name(app_name));
+    let folder = staging.path().join(&top);
+    wrap_mac_folder(bundle, app_name, stem, Some(&folder), false, parts)?;
+    let carried = folder.join(".player").is_dir();
+    let tmp_zip = staging.path().join("gift.zip");
+    {
+        let file = fs::File::create(&tmp_zip).context("could not write the gift")?;
+        let mut zip = zip::ZipWriter::new(file);
+        let mut stack = vec![folder.clone()];
+        let mut paths = Vec::new();
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir)? {
+                let path = entry?.path();
+                if path.is_dir() {
+                    stack.push(path.clone());
+                }
+                paths.push(path);
+            }
+        }
+        paths.sort();
+        for path in paths {
+            let rel = path
+                .strip_prefix(staging.path())
+                .expect("inside the staging folder");
+            let name = rel.to_string_lossy().replace('\\', "/");
+            #[cfg(unix)]
+            let mode = {
+                use std::os::unix::fs::PermissionsExt;
+                fs::metadata(&path)?.permissions().mode() & 0o777
+            };
+            #[cfg(not(unix))]
+            let mode = if path.is_dir() { 0o755 } else { 0o644 };
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .unix_permissions(mode);
+            if path.is_dir() {
+                zip.add_directory(format!("{name}/"), options)?;
+            } else {
+                zip.start_file(name, options)?;
+                std::io::copy(&mut fs::File::open(&path)?, &mut zip)?;
+            }
+        }
+        zip.finish().context("could not finish the gift")?;
+    }
+    fs::rename(&tmp_zip, zip_path)
+        .or_else(|_| fs::copy(&tmp_zip, zip_path).map(|_| ()))
+        .with_context(|| format!("could not write {}", zip_path.display()))?;
+    let mb = fs::metadata(zip_path).map(|m| m.len()).unwrap_or(0) as f64 / 1_048_576.0;
+    println!("Gift written: {} ({mb:.0} MB)", zip_path.display());
+    mac_gift_summary(app_name, parts.opener.is_some(), carried);
+    println!("  Send this one file. Your friend opens it, then the opener inside.");
+    Ok(0)
+}
+
+/// What a gift carries when the caller names it rather than taking it from
+/// this install: players (engines) and the notarized opener.
+#[derive(Default)]
+struct GiftParts {
+    player: Vec<PathBuf>,
+    opener: Option<PathBuf>,
+}
+
+fn wrap_bundle(
+    bundle: &Path,
+    target: WrapTarget,
+    output: Option<&Path>,
+    parts: &GiftParts,
+) -> Result<u8> {
     if !krate_bundle::is_bundle_path(bundle) {
         anyhow::bail!(
             "not a .krate bundle: {}\nPack one first with `krate pack` (or `krate create`).",
@@ -6665,6 +6832,7 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
             Some(path) if path.extension().map(|e| e == "dmg").unwrap_or(false) => {
                 Some(path.to_path_buf())
             }
+            Some(path) if path.extension().map(|e| e == "zip").unwrap_or(false) => None,
             Some(_) => None,
             None if cfg!(target_os = "macos") && Path::new("/usr/bin/hdiutil").exists() => Some(
                 bundle
@@ -6674,10 +6842,13 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
             ),
             None => None,
         };
-        if let Some(dmg) = dmg {
-            return wrap_mac_dmg(bundle, &app_name, &stem, &dmg);
+        if let Some(zip) = output.filter(|p| p.extension().map(|e| e == "zip").unwrap_or(false)) {
+            return wrap_mac_zip(bundle, &app_name, &stem, zip, parts);
         }
-        return wrap_mac_folder(bundle, &app_name, &stem, output, true);
+        if let Some(dmg) = dmg {
+            return wrap_mac_dmg(bundle, &app_name, &stem, &dmg, parts);
+        }
+        return wrap_mac_folder(bundle, &app_name, &stem, output, true, parts);
     }
 
     let (prefix, suffix, friend) = match target {
@@ -6705,6 +6876,15 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
         if let Ok(engine) = std::env::current_exe() {
             return wrap_linux_with_player(&engine, &bundle_bytes, &app_name, &stem, &out_path);
         }
+    }
+    if target == WrapTarget::Linux && !parts.player.is_empty() {
+        return wrap_linux_with_player(
+            &parts.player[0],
+            &bundle_bytes,
+            &app_name,
+            &stem,
+            &out_path,
+        );
     }
     let mut wrap_bytes = prefix.into_bytes();
     wrap_bytes.extend_from_slice(&bundle_bytes);
