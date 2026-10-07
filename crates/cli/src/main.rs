@@ -6299,9 +6299,11 @@ exit /b %STATUS%
 fn mac_opener_script() -> String {
     r#"#!/bin/sh
 # The opener for a Krate gift. It opens the app file sitting next to this
-# bundle. On a Mac with no Krate it first installs the player the gift
-# carries -- after checking that Krate signed it -- so the app opens now and
-# every later .krate opens on a double-click (IC-381, IC-383).
+# bundle with the newest Krate on this Mac. When the gift carries a newer
+# player than any installed -- or there is none -- it installs that one
+# first, after checking Krate signed it (IC-381, IC-383). And it never fails
+# silently: a double-clicked app has no console, so a run that ends badly
+# says why in a window.
 set -u
 here="$(cd "$(dirname "$0")/../../.." && pwd)"
 # The gift's app file is whichever .krate shares this folder. Named by
@@ -6310,16 +6312,46 @@ app=""
 for candidate in "$here"/*.krate; do
   if [ -f "$candidate" ]; then app="$candidate"; break; fi
 done
-find_krate() {
-  command -v krate 2>/dev/null && return 0
-  for c in /usr/local/bin/krate "$HOME/.local/bin/krate" \
-      "$HOME/Applications/Krate Player.app/Contents/MacOS/krate-cli" \
-      "/Applications/Krate Player.app/Contents/MacOS/krate-cli" \
-      "/Applications/Krate.app/Contents/Resources/bin/krate"; do
-    if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
-  done
-  return 1
+say() {
+  osascript - "$1" <<'AS' >/dev/null 2>&1
+on run argv
+  display dialog (item 1 of argv) buttons {"OK"} default button "OK" with title "Krate"
+end run
+AS
 }
+get_krate() {
+  osascript - "$1" <<'AS' | grep -q "Get Krate" || exit 0
+on run argv
+  display dialog (item 1 of argv) buttons {"Not now", "Get Krate"} default button "Get Krate" with title "Krate"
+end run
+AS
+  open "https://krate.tech/open"
+  exit 0
+}
+# "krate v0.5.3", "krate 0.5.5 (debug build)" -> 0.5.3, 0.5.5
+version_of() {
+  "$1" --version 2>/dev/null | head -n 1 | sed -E 's/^[^0-9]*([0-9]+(\.[0-9]+)*).*$/\1/'
+}
+# Is version $1 newer than $2? (numeric, dot by dot)
+newer() {
+  awk -v a="$1" -v b="$2" 'BEGIN { n = split(a, x, "."); m = split(b, y, ".");
+    k = n > m ? n : m; for (i = 1; i <= k; i++) { p = x[i] + 0; q = y[i] + 0;
+    if (p > q) exit 0; if (p < q) exit 1 } exit 1 }'
+}
+# The NEWEST Krate here, not the first found: a Mac can hold a months-old
+# `krate` on its PATH beside a current one, and the old one cannot run an
+# app made today -- it failed, unseen, after the permission window.
+best=""
+best_version=""
+for c in "$(command -v krate 2>/dev/null)" /usr/local/bin/krate "$HOME/.local/bin/krate" \
+    "$HOME/Applications/Krate Player.app/Contents/MacOS/krate-cli" \
+    "/Applications/Krate Player.app/Contents/MacOS/krate-cli" \
+    "/Applications/Krate.app/Contents/Resources/bin/krate"; do
+  [ -n "$c" ] && [ -x "$c" ] || continue
+  v="$(version_of "$c")"
+  [ -n "$v" ] || continue
+  if [ -z "$best" ] || newer "$v" "$best_version"; then best="$c"; best_version="$v"; fi
+done
 # Krate's own signature: a Developer ID certificate of team DBYD4AW5Q8.
 # Whatever else sits beside this opener is never installed, whoever put it
 # there -- the gift is made on a sender's laptop, so its contents are only
@@ -6329,45 +6361,75 @@ signed_by_krate() {
     -R='anchor apple generic and certificate leaf[subject.OU] = "DBYD4AW5Q8"' \
     "$1" >/dev/null 2>&1
 }
-get_krate() {
-  osascript -e "display dialog \"$1\" buttons {\"Not now\",\"Get Krate\"} default button \"Get Krate\" with title \"Krate\"" \
-    | grep -q "Get Krate" || exit 0
-  open "https://krate.tech/open"
-  exit 0
-}
-krate_bin="$(find_krate || true)"
-if [ -z "$krate_bin" ]; then
-  # No player yet. A double-clicked .app has no console, so every word is
-  # said in a window.
-  # One universal player, or one per architecture (gifts made in a browser
-  # carry both, because the build service cannot join them into one).
-  player="$here/.player/krate"
-  [ -f "$player" ] || player="$here/.player/krate-$(uname -m)"
-  if [ ! -f "$player" ] || ! signed_by_krate "$player"; then
-    get_krate "This app runs on Krate, a small free player.\n\nInstall it once from krate.tech, then open this file again."
-  fi
-  osascript -e 'display dialog "This app runs on Krate, a free player that comes with it.\n\nInstall it now? It goes in your own Applications folder and needs no password. After this, every Krate app anyone sends you opens with a double-click." buttons {"Not now","Install"} default button "Install" with title "Krate"' \
-    | grep -q "Install" || exit 0
+# One universal player, or one per architecture (gifts made in a browser
+# carry both, because the build service cannot join them into one).
+player="$here/.player/krate"
+[ -f "$player" ] || player="$here/.player/krate-$(uname -m)"
+if [ -f "$player" ] && signed_by_krate "$player"; then
   # A private folder, never a guessable name (IC-384). The copy loses the
   # download's quarantine flag only after the same signature check passes
   # on the copy itself.
   work="$(mktemp -d "${TMPDIR:-/tmp}/krate-gift.XXXXXX")" || exit 1
-  installed=""
   if cp "$player" "$work/krate" && signed_by_krate "$work/krate"; then
     xattr -d com.apple.quarantine "$work/krate" 2>/dev/null
-    installed="$("$work/krate" player-install 2>/dev/null | sed -n 's/^Player: //p' | tail -n 1)"
+    carried="$(version_of "$work/krate")"
+    if [ -z "$best" ] || { [ -n "$carried" ] && newer "$carried" "$best_version"; }; then
+      if [ -z "$best" ]; then
+        ask="This app runs on Krate, a free player that comes with it.\n\nInstall it now? It goes in your own Applications folder and needs no password. After this, every Krate app anyone sends you opens with a double-click."
+        yes="Install"
+      else
+        ask="This app needs a newer Krate than the one on this Mac ($best_version). The newer one ($carried) comes with it.\n\nUpdate now? No password needed."
+        yes="Update"
+      fi
+      if osascript - "$(printf '%b' "$ask")" "$yes" <<'AS' | grep -q "$yes"
+on run argv
+  display dialog (item 1 of argv) buttons {"Not now", (item 2 of argv)} default button (item 2 of argv) with title "Krate"
+end run
+AS
+      then
+        installed="$("$work/krate" player-install 2>/dev/null | sed -n 's/^Player: //p' | tail -n 1)"
+        if [ -n "$installed" ] && [ -x "$installed" ]; then
+          best="$installed"; best_version="$carried"
+        fi
+      elif [ -z "$best" ]; then
+        rm -rf "$work"; exit 0
+      fi
+    fi
   fi
   rm -rf "$work"
-  if [ -z "$installed" ] || [ ! -x "$installed" ]; then
-    get_krate "Krate could not be installed from this gift.\n\nGet it from krate.tech instead, then open this file again."
-  fi
-  krate_bin="$installed"
+fi
+if [ -z "$best" ]; then
+  get_krate "This app runs on Krate, a small free player.
+
+Install it once from krate.tech, then open this file again."
 fi
 if [ ! -f "$app" ]; then
-  osascript -e 'display dialog "The app file is missing.\n\nKeep this opener and the .krate file together in the same folder." buttons {"OK"} with title "Krate"' >/dev/null 2>&1
+  say "The app file is missing.
+
+Keep this opener and the .krate file together in the same folder."
   exit 1
 fi
-exec "$krate_bin" run "$app" --consent
+# Run it, and if it ends badly, say why. Not `exec`: the reason the engine
+# prints would otherwise go nowhere, and the app would just vanish.
+err="$(mktemp "${TMPDIR:-/tmp}/krate-open.XXXXXX")" || err=/dev/null
+"$best" run "$app" --consent 2>"$err"
+status=$?
+if [ "$status" -ne 0 ]; then
+  # The engine's own one-line reason; its follow-up lines are for a
+  # terminal (an install command, a `krate` menu) and mean nothing here.
+  why="$(grep -m 1 '^error: ' "$err" 2>/dev/null | sed 's/^error: //' | cut -c1-300)"
+  [ -n "$why" ] || why="$(grep -v '^[[:space:]]*$' "$err" 2>/dev/null | head -n 1 | cut -c1-300)"
+  # Saying no in the permission window is the person's choice, not a fault.
+  if ! printf '%s' "$why" | grep -q -i 'not allow\|declin\|denied\|cancel'; then
+    get_krate "$(basename "$app" .krate) could not start with Krate $best_version.
+
+${why:-It stopped without saying why.}
+
+Getting the newest Krate usually fixes this."
+  fi
+fi
+[ "$err" = /dev/null ] || rm -f "$err"
+exit "$status"
 "#
     .to_string()
 }
@@ -6952,6 +7014,24 @@ fn wrap_linux_with_player(
     let raw = fs::read(engine).context("could not read this Krate to put it in the gift")?;
     // The digest is of the player as it will run, checked after unpacking.
     let digest = format!("{:x}", Sha256::digest(&raw));
+    // The player's version, so a friend with an older Krate is offered the
+    // update: asked of the player when it runs here, else this engine's own.
+    let player_version = std::process::Command::new(engine)
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| {
+            let text = String::from_utf8_lossy(&o.stdout).to_string();
+            text.split_whitespace().nth(1).map(|w| {
+                w.trim_start_matches('v')
+                    .split('-')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
+        })
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
     // Packed with the system's gzip, which every Linux has for unpacking:
     // 28 MB becomes about 12. (Not the flate2 crate: adding it here would
     // change which deflate backend the bundle writer gets -- K-335.)
@@ -6978,6 +7058,7 @@ fn wrap_linux_with_player(
             player.len(),
             &digest,
             arch,
+            &player_version,
             app_start,
         );
         if header.len() == len {
@@ -7019,8 +7100,10 @@ fn linux_player_header(
     player_size: usize,
     digest: &str,
     arch: &str,
+    player_version: &str,
     app_start: usize,
 ) -> String {
+    let player_version = script_safe_text(player_version).replace(' ', "");
     let app_name = script_safe_text(app_name);
     let stem = script_safe_text(stem).replace(' ', "-");
     format!(
@@ -7036,6 +7119,7 @@ player_start={player_start}
 player_size={player_size}
 player_sha256={digest}
 player_arch={arch}
+player_version={player_version}
 app_start={app_start}
 self="$0"
 ask() {{
@@ -7053,37 +7137,61 @@ digest() {{
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }}
-find_krate() {{
-  command -v krate 2>/dev/null && return 0
-  for c in "$HOME/.local/bin/krate" "${{XDG_DATA_HOME:-$HOME/.local/share}}/krate/bin/krate"; do
-    if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
-  done
-  return 1
+# "krate v0.5.3", "krate 0.5.5 (debug build)" -> 0.5.3, 0.5.5
+version_of() {{
+  "$1" --version 2>/dev/null | head -n 1 | sed -E 's/^[^0-9]*([0-9]+(\.[0-9]+)*).*$/\1/'
 }}
-krate_bin="$(find_krate || true)"
-if [ -z "$krate_bin" ]; then
-  machine="$(uname -m)"
-  if [ "$machine" != "$player_arch" ] && ! {{ [ "$machine" = arm64 ] && [ "$player_arch" = aarch64 ]; }}; then
-    echo "{app_name} runs on Krate. The player inside this file is for $player_arch computers, and this one is $machine."
-    echo "Get Krate once from https://krate.tech/open, then run this file again."
-    exit 1
+newer() {{
+  awk -v a="$1" -v b="$2" 'BEGIN {{ n = split(a, x, "."); m = split(b, y, ".");
+    k = n > m ? n : m; for (i = 1; i <= k; i++) {{ p = x[i] + 0; q = y[i] + 0;
+    if (p > q) exit 0; if (p < q) exit 1 }} exit 1 }}'
+}}
+# The NEWEST Krate here, not the first found: an old `krate` on the PATH
+# cannot run an app made today.
+best=""
+best_version=""
+for c in "$(command -v krate 2>/dev/null)" "$HOME/.local/bin/krate" "${{XDG_DATA_HOME:-$HOME/.local/share}}/krate/bin/krate"; do
+  [ -n "$c" ] && [ -x "$c" ] || continue
+  v="$(version_of "$c")"
+  [ -n "$v" ] || continue
+  if [ -z "$best" ] || newer "$v" "$best_version"; then best="$c"; best_version="$v"; fi
+done
+machine="$(uname -m)"
+fits=1
+if [ "$machine" != "$player_arch" ] && ! {{ [ "$machine" = arm64 ] && [ "$player_arch" = aarch64 ]; }}; then fits=0; fi
+if [ -z "$best" ] && [ "$fits" = 0 ]; then
+  echo "{app_name} runs on Krate. The player inside this file is for $player_arch computers, and this one is $machine."
+  echo "Get Krate once from https://krate.tech/open, then run this file again."
+  exit 1
+fi
+if [ "$fits" = 1 ] && {{ [ -z "$best" ] || newer "$player_version" "$best_version"; }}; then
+  if [ -z "$best" ]; then
+    question="{app_name} runs on Krate, a free player that comes with it. Install it now? (your home folder, no password)"
+  else
+    question="{app_name} needs a newer Krate than the one here ($best_version). The newer one ($player_version) comes with it. Update now? (no password)"
   fi
-  ask "{app_name} runs on Krate, a free player that comes with it. Install it now? (your home folder, no password)" || exit 0
-  work="$(mktemp -d "${{TMPDIR:-/tmp}}/krate-gift.XXXXXX")" || exit 1
-  tail -c +$((player_start + 1)) "$self" | head -c "$player_size" | gzip -dc > "$work/krate"
-  if [ "$(digest "$work/krate")" != "$player_sha256" ]; then
+  if ask "$question"; then
+    work="$(mktemp -d "${{TMPDIR:-/tmp}}/krate-gift.XXXXXX")" || exit 1
+    tail -c +$((player_start + 1)) "$self" | head -c "$player_size" | gzip -dc > "$work/krate"
+    if [ "$(digest "$work/krate")" != "$player_sha256" ]; then
+      rm -rf "$work"
+      echo "This file is damaged: the player inside it does not match. Ask for it again."
+      exit 1
+    fi
+    chmod 755 "$work/krate"
+    installed="$("$work/krate" player-install | sed -n 's/^Player: //p' | tail -n 1)"
     rm -rf "$work"
-    echo "This file is damaged: the player inside it does not match. Ask for it again."
-    exit 1
-  fi
-  chmod 755 "$work/krate"
-  krate_bin="$("$work/krate" player-install | sed -n 's/^Player: //p' | tail -n 1)"
-  rm -rf "$work"
-  if [ -z "$krate_bin" ] || [ ! -x "$krate_bin" ]; then
-    echo "Krate could not be installed from this file. Get it from https://krate.tech/open"
-    exit 1
+    if [ -n "$installed" ] && [ -x "$installed" ]; then
+      best="$installed"; best_version="$player_version"
+    elif [ -z "$best" ]; then
+      echo "Krate could not be installed from this file. Get it from https://krate.tech/open"
+      exit 1
+    fi
+  elif [ -z "$best" ]; then
+    exit 0
   fi
 fi
+krate_bin="$best"
 appdir="$(mktemp -d "${{TMPDIR:-/tmp}}/krate-app.XXXXXX")" || exit 1
 tail -c +$((app_start + 1)) "$self" > "$appdir/{stem}.krate"
 "$krate_bin" run "$appdir/{stem}.krate" --consent

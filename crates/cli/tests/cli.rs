@@ -9116,6 +9116,94 @@ fn a_mac_gift_is_one_disk_image_carrying_the_player() {
     );
 }
 
+/// The Mac opener runs the NEWEST Krate on the machine, and a run that ends
+/// badly says why in a window. A Mac held a months-old `krate` on its PATH
+/// beside a current Krate; the opener took the first one found, which could
+/// not run an app made that day, and with `exec` and no console the app just
+/// vanished after the permission window (2026-10-07).
+///
+/// Driven with fake engines (each records that it ran) and osascript stubbed
+/// to record what the person would be shown.
+#[cfg(unix)]
+#[test]
+fn the_mac_opener_runs_the_newest_krate_and_never_fails_silently() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let script = krate().arg("gift-opener").output().expect("gift-opener");
+    let gift = dir.path().join("gift");
+    let macos = gift.join("Open Demo.app/Contents/MacOS");
+    std::fs::create_dir_all(&macos).unwrap();
+    std::fs::write(macos.join("open"), &script.stdout).unwrap();
+    std::fs::write(gift.join("Demo.krate"), b"app").unwrap();
+    let exe = |path: &std::path::Path, body: &str| {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let log = dir.path().join("ran.log");
+    let dialogs = dir.path().join("dialogs.log");
+    let stub = dir.path().join("stub");
+    exe(
+        &stub.join("osascript"),
+        &format!("#!/bin/sh\nargs=\"$*\"; cat >/dev/null; echo \"$args\" >> '{}'\necho 'button returned:Not now'\n", dialogs.display()),
+    );
+    let engine = |version: &str, run: &str| {
+        format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'krate v{version}'; exit 0; fi\necho '{version}' >> '{}'\n{run}\n", log.display())
+    };
+    let open = |home: &std::path::Path| {
+        let _ = std::fs::remove_file(&log);
+        let _ = std::fs::remove_file(&dialogs);
+        std::process::Command::new("sh")
+            .arg(macos.join("open"))
+            .env_clear()
+            .env("HOME", home)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin:/usr/sbin:/sbin", stub.display()),
+            )
+            .env("TMPDIR", dir.path())
+            .output()
+            .expect("run the opener")
+    };
+
+    // An old krate first on the search path, a newer player after it.
+    let home = dir.path().join("home");
+    exe(&home.join(".local/bin/krate"), &engine("0.1.58", "exit 1"));
+    exe(
+        &home.join("Applications/Krate Player.app/Contents/MacOS/krate-cli"),
+        &engine("9.9.9", "exit 0"),
+    );
+    open(&home);
+    let ran = std::fs::read_to_string(&log).unwrap_or_default();
+    assert_eq!(
+        ran.trim(),
+        "9.9.9",
+        "the newest Krate runs the app, not the first found"
+    );
+    assert!(!dialogs.exists(), "a good run shows nothing");
+
+    // The newest one fails: the person is told why, in a window.
+    let home2 = dir.path().join("home2");
+    exe(
+        &home2.join("Applications/Krate Player.app/Contents/MacOS/krate-cli"),
+        &engine(
+            "9.9.9",
+            "echo 'error: built against different versions of the app interface' >&2\nexit 1",
+        ),
+    );
+    open(&home2);
+    let said = std::fs::read_to_string(&dialogs).unwrap_or_default();
+    assert!(
+        said.contains("Demo could not start"),
+        "the failure is said: {said}"
+    );
+    assert!(
+        said.contains("different versions of the app interface"),
+        "with the engine's reason: {said}"
+    );
+    assert!(!said.contains("curl"), "and no terminal command: {said}");
+}
+
 /// The build service makes Mac gifts on Linux, from the release's notarized
 /// opener and its two signed Mac engines: one .zip, one folder inside, the
 /// opener runnable, one player per architecture named for it -- and a file
