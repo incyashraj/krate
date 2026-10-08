@@ -42,6 +42,14 @@ pub struct CanvasSurface {
     design: Option<(f32, f32)>,
     /// `0xAARRGGBB`, row-major from the top — the drawn painter's format.
     buffer: Vec<u32>,
+    /// A frame that is one opaque picture covering the whole canvas -- a
+    /// game's finished frame, an emulator's screen -- kept as the app gave
+    /// it instead of rastered at window resolution. It goes to the screen
+    /// at its own size and the display scales it: a 960x600 frame was
+    /// upscaled on the CPU to 2560x1600 on a Retina window, copied, and
+    /// uploaded every frame. Any other drawing rasters it first, so the
+    /// result is exactly what drawing it would have made.
+    pending: Option<ImagePixels>,
 }
 
 // ---------------------------------------------------------------- op timing
@@ -256,6 +264,7 @@ impl CanvasSurface {
             // Opaque white, so a canvas an app forgets to clear reads as a
             // blank sheet rather than a black hole in the window.
             buffer: vec![0xFFFF_FFFF; phys_w as usize * phys_h as usize],
+            pending: None,
         })
     }
 
@@ -383,6 +392,7 @@ impl CanvasSurface {
     }
 
     pub fn clear(&mut self, color: u32) {
+        self.pending = None;
         let __op_timer = OpTimer(0, std::time::Instant::now());
         let _ = &__op_timer;
         // Clear respects the clip too, so "clear this region" works -- which
@@ -407,6 +417,7 @@ impl CanvasSurface {
     }
 
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
+        self.materialize();
         let __op_timer = OpTimer(0, std::time::Instant::now());
         let _ = &__op_timer;
         let (x, y) = self.map_point(x, y);
@@ -430,6 +441,7 @@ impl CanvasSurface {
     /// is smooth rather than stair-stepped -- the primitive that makes round
     /// things look drawn instead of plotted.
     pub fn fill_circle(&mut self, cx: f32, cy: f32, radius: f32, color: u32) {
+        self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let radius = self.map_len(radius);
         let k = self.scale;
@@ -481,6 +493,7 @@ impl CanvasSurface {
     /// that screensaver got a visible square box around it. The model did the
     /// best it could with what we exposed; the gap was ours.
     pub fn stroke_circle(&mut self, cx: f32, cy: f32, radius: f32, width: f32, color: u32) {
+        self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let (radius, width) = (self.map_len(radius), self.map_len(width));
         let k = self.scale;
@@ -590,6 +603,7 @@ impl CanvasSurface {
         radii: (f32, f32, f32, f32),
         color: u32,
     ) {
+        self.materialize();
         if w <= 0.0 || h <= 0.0 {
             return;
         }
@@ -628,6 +642,7 @@ impl CanvasSurface {
         width: f32,
         color: u32,
     ) {
+        self.materialize();
         if w <= 0.0 || h <= 0.0 || width <= 0.0 {
             return;
         }
@@ -670,6 +685,7 @@ impl CanvasSurface {
         blur: f32,
         color: u32,
     ) {
+        self.materialize();
         if w <= 0.0 || h <= 0.0 {
             return;
         }
@@ -705,6 +721,7 @@ impl CanvasSurface {
         angle_degrees: f32,
         stops: &[(f32, u32)],
     ) {
+        self.materialize();
         if stops.is_empty() {
             return;
         }
@@ -761,6 +778,7 @@ impl CanvasSurface {
         width: f32,
         color: u32,
     ) {
+        self.materialize();
         if radius <= 0.0 || width <= 0.0 || sweep_degrees == 0.0 {
             return;
         }
@@ -814,6 +832,7 @@ impl CanvasSurface {
     /// primitive -- a soft light falloff instead of a flat disc, which is the
     /// single biggest difference between a modern look and a flat one.
     pub fn radial_gradient(&mut self, cx: f32, cy: f32, radius: f32, inner: u32, outer: u32) {
+        self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let radius = self.map_len(radius);
         let k = self.scale;
@@ -856,6 +875,7 @@ impl CanvasSurface {
     /// A vertical linear gradient filling a rectangle: `top` color at `y`
     /// easing to `bottom` at `y + h`. For skies, panels, backdrops.
     pub fn linear_gradient_v(&mut self, x: f32, y: f32, w: f32, h: f32, top: u32, bottom: u32) {
+        self.materialize();
         let (x, y) = self.map_point(x, y);
         let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
@@ -888,6 +908,7 @@ impl CanvasSurface {
     /// The minimum one-pixel stroke is the one thing that must be computed
     /// in device pixels, so it is converted back into app coordinates.
     pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32, stroke: f32, color: u32) {
+        self.materialize();
         // A hairline must still cover a whole device pixel. `map_len` and
         // the backing scale are what a length is multiplied by on its way
         // down, so dividing by them turns "one device pixel" back into the
@@ -914,6 +935,7 @@ impl CanvasSurface {
     /// `font-family` is accepted and ignored: one good face everywhere beats
     /// honoring a font name on one system.
     pub fn text(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
+        self.materialize();
         let __op_timer = OpTimer(1, std::time::Instant::now());
         let _ = &__op_timer;
         self.text_styled(
@@ -937,6 +959,7 @@ impl CanvasSurface {
         color: u32,
         style: krate_adapter_common::vector_text::CanvasTextStyle,
     ) {
+        self.materialize();
         let __op_timer = OpTimer(1, std::time::Instant::now());
         let _ = &__op_timer;
         let (x, y) = self.map_point(x, y);
@@ -1062,6 +1085,7 @@ impl CanvasSurface {
     /// and alpha blending on all three systems, and there is one place where
     /// that behaviour can ever drift.
     pub fn draw_pixels(&mut self, x: f32, y: f32, w: f32, h: f32, image: &ImagePixels) {
+        self.materialize();
         let (x, y) = self.map_point(x, y);
         let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
@@ -1091,6 +1115,7 @@ impl CanvasSurface {
         radii: (f32, f32, f32, f32),
         image: &ImagePixels,
     ) {
+        self.materialize();
         if w <= 0.0 || h <= 0.0 || image.width == 0 || image.height == 0 {
             return;
         }
@@ -1167,6 +1192,7 @@ impl CanvasSurface {
         angle: f32,
         image: &ImagePixels,
     ) {
+        self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let (dst_w, dst_h) = (self.map_len(dst_w), self.map_len(dst_h));
         let k = self.scale;
@@ -1249,7 +1275,58 @@ impl CanvasSurface {
         (self.width, self.height)
     }
 
+    /// Draw a picture the host owns, keeping it whole when it is the frame.
+    ///
+    /// The fast path needs all of: no clip, the picture covering the whole
+    /// buffer once mapped (no letterbox bars it would leave unpainted), and
+    /// every pixel opaque (nothing beneath it can show through). Otherwise
+    /// it is an ordinary `draw_pixels`.
+    pub fn draw_pixels_owned(&mut self, x: f32, y: f32, w: f32, h: f32, image: ImagePixels) {
+        // Same proportions as the area, too: drawn, a picture keeps its
+        // shape and letterboxes inside the area, while a display stretches a
+        // frame to fit -- so only a picture that already fits may skip it.
+        let same_shape = w > 0.0
+            && h > 0.0
+            && ((image.width as f32 / image.height.max(1) as f32) / (w / h) - 1.0).abs() < 0.01;
+        if self.clip.is_none()
+            && same_shape
+            && self.covers_buffer(x, y, w, h)
+            && image.rgba.chunks_exact(4).all(|px| px[3] == 255)
+        {
+            self.pending = Some(image);
+            return;
+        }
+        self.draw_pixels(x, y, w, h, &image);
+    }
+
+    fn covers_buffer(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
+        let (x, y) = self.map_point(x, y);
+        let (w, h) = (self.map_len(w), self.map_len(h));
+        let k = self.scale;
+        x * k <= 0.5
+            && y * k <= 0.5
+            && (x + w) * k >= self.width as f32 - 0.5
+            && (y + h) * k >= self.height as f32 - 0.5
+    }
+
+    /// Raster a kept picture before anything is drawn over it.
+    fn materialize(&mut self) {
+        if let Some(image) = self.pending.take() {
+            draw_image(
+                &mut self.buffer,
+                self.width,
+                self.height,
+                (0.0, 0.0, self.width as f32, self.height as f32),
+                &image,
+                None,
+            );
+        }
+    }
+
     pub fn to_image(&self) -> Result<ImagePixels, UiAdapterError> {
+        if let Some(image) = &self.pending {
+            return Ok(image.clone());
+        }
         // Chunked writes instead of four pushes per pixel: every push
         // carries a capacity check, and this conversion runs once per
         // frame over the whole canvas -- it was the single hottest line
@@ -1281,6 +1358,67 @@ mod tests {
     ///
     /// Asserted on all four sides, because the failure left TWO of them
     /// looking perfectly correct.
+    /// A frame that is one opaque picture covering the canvas goes out at
+    /// the picture's own size; anything else, or anything drawn after it,
+    /// rasters exactly as before.
+    #[test]
+    fn a_whole_frame_picture_is_kept_at_its_own_size() {
+        let frame = |w: u32, h: u32, alpha: u8| {
+            let rgba = (0..w * h).flat_map(|_| [200u8, 40, 10, alpha]).collect();
+            ImagePixels::new(w, h, rgba).expect("image")
+        };
+
+        // A game's frame on a 2x canvas: kept, published at 96x60.
+        let mut s = CanvasSurface::new_scaled(128, 80, 2.0).expect("surface");
+        s.set_design_size(96.0, 60.0);
+        s.draw_pixels_owned(0.0, 0.0, 96.0, 60.0, frame(96, 60, 255));
+        let out = s.to_image().expect("image");
+        assert_eq!((out.width, out.height), (96, 60), "kept at its own size");
+        assert_eq!(&out.rgba[..4], &[200, 40, 10, 255]);
+
+        // Something drawn over it: the picture is rastered first, then the
+        // rect, at the physical size -- what drawing it would have made.
+        s.fill_rect(0.0, 0.0, 10.0, 10.0, pack_color(0.0, 0.0, 1.0, 1.0));
+        let out = s.to_image().expect("image");
+        assert_eq!(
+            (out.width, out.height),
+            (256, 160),
+            "rastered once drawn over"
+        );
+        let far = ((150 * 256 + 250) * 4) as usize;
+        assert_eq!(
+            &out.rgba[far..far + 4],
+            &[200, 40, 10, 255],
+            "the picture is under it"
+        );
+        assert_eq!(&out.rgba[..4], &[0, 0, 255, 255], "and the rect on top");
+
+        // A translucent picture shows what is beneath: not kept.
+        let mut s = CanvasSurface::new_scaled(96, 60, 2.0).expect("surface");
+        s.draw_pixels_owned(0.0, 0.0, 96.0, 60.0, frame(96, 60, 128));
+        assert_eq!(s.to_image().expect("image").width, 192);
+
+        // A design size of another shape leaves letterbox bars the picture
+        // does not cover: not kept.
+        let mut s = CanvasSurface::new_scaled(200, 100, 1.0).expect("surface");
+        s.set_design_size(100.0, 100.0);
+        s.draw_pixels_owned(0.0, 0.0, 100.0, 100.0, frame(100, 100, 255));
+        assert_eq!(s.to_image().expect("image").width, 200);
+
+        // A picture of another shape than its area letterboxes when drawn:
+        // not kept, or the display would stretch it instead.
+        let mut s = CanvasSurface::new_scaled(96, 60, 2.0).expect("surface");
+        s.draw_pixels_owned(0.0, 0.0, 96.0, 60.0, frame(60, 60, 255));
+        assert_eq!(s.to_image().expect("image").width, 192);
+
+        // A clip limits what may be painted: not kept.
+        let mut s = CanvasSurface::new_scaled(96, 60, 2.0).expect("surface");
+        s.set_clip(Some((0.0, 0.0, 50.0, 60.0)));
+        s.draw_pixels_owned(0.0, 0.0, 96.0, 60.0, frame(96, 60, 255));
+        assert_eq!(s.to_image().expect("image").width, 192);
+        assert!(s.pending.is_none(), "a clipped canvas is never kept");
+    }
+
     #[test]
     fn a_stroked_rect_is_closed_and_in_bounds_at_two_x() {
         let mut s = CanvasSurface::new_scaled(100, 50, 2.0).expect("surface");

@@ -5036,17 +5036,22 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         height: u32,
         rgba: Vec<u8>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(
-            canvas,
-            crate::canvas_list::CanvasOp::Pixels {
-                rect: (area.x, area.y, area.width, area.height),
-                image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels {
-                    width,
-                    height,
-                    rgba: rgba.clone(),
-                }),
-            },
-        );
+        // Only copy the picture when something will read the copy: a whole
+        // frame is megabytes, and cloning it every frame for a list no
+        // adapter consumes cost a full-frame copy for nothing.
+        if self.lists_enabled() || self.inspect_layout.get() {
+            self.record_op(
+                canvas,
+                crate::canvas_list::CanvasOp::Pixels {
+                    rect: (area.x, area.y, area.width, area.height),
+                    image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels {
+                        width,
+                        height,
+                        rgba: rgba.clone(),
+                    }),
+                },
+            );
+        }
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -5061,7 +5066,7 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
         };
-        surface.draw_pixels(area.x, area.y, area.width, area.height, &image);
+        surface.draw_pixels_owned(area.x, area.y, area.width, area.height, image);
         Ok(Ok(()))
     }
 
