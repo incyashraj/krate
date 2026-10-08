@@ -1090,13 +1090,15 @@ impl CanvasSurface {
         let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
         let (x, y, w, h) = (x * k, y * k, w * k, h * k);
+        // The clip, like every other draw call: an image in a scrolled list
+        // painted over the list's header without it (K-1014).
         draw_image(
             &mut self.buffer,
             self.width,
             self.height,
             (x, y, w, h),
             image,
-            None,
+            self.clip,
         );
     }
 
@@ -1358,6 +1360,25 @@ mod tests {
     ///
     /// Asserted on all four sides, because the failure left TWO of them
     /// looking perfectly correct.
+    /// An image respects the clip like every other draw call (K-1014).
+    #[test]
+    fn an_image_stays_inside_the_clip() {
+        let mut s = CanvasSurface::new_scaled(96, 60, 2.0).expect("surface");
+        s.clear(pack_color(0.0, 0.0, 0.0, 1.0));
+        s.set_clip(Some((0.0, 0.0, 50.0, 60.0)));
+        let rgba = (0..96 * 60).flat_map(|_| [200u8, 40, 10, 255]).collect();
+        let image = ImagePixels::new(96, 60, rgba).expect("image");
+        s.draw_pixels(0.0, 0.0, 96.0, 60.0, &image);
+        let out = s.to_image().expect("image");
+        let at = |x: usize, y: usize| &out.rgba[(y * 192 + x) * 4..(y * 192 + x) * 4 + 4];
+        assert_eq!(
+            at(20, 20),
+            &[200, 40, 10, 255],
+            "inside the clip is painted"
+        );
+        assert_eq!(at(150, 20), &[0, 0, 0, 255], "outside the clip is not");
+    }
+
     /// A frame that is one opaque picture covering the canvas goes out at
     /// the picture's own size; anything else, or anything drawn after it,
     /// rasters exactly as before.
