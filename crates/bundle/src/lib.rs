@@ -3127,15 +3127,26 @@ fn collect_unpacked(root: &Path, prefix: &str) -> Result<Vec<(String, PathBuf)>>
     Ok(out)
 }
 
+/// A finished or half-written bundle sitting in an app's folder. Never
+/// source: packing into the app's own folder wrote `.<name>.krate.<n>.partial`
+/// before walking the folder, so the bundle carried a copy of itself, and
+/// an older `.krate` left there rode along in every pack after it (K-1004 --
+/// Doom.krate came out 6.5 MB, 2.8 MB of it its own earlier copies).
+fn is_packed_bundle(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".krate") || (lower.contains(".krate.") && lower.ends_with(".partial"))
+}
+
 fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
     // Cargo.lock TRAVELS (CP1, the editable closure). It used to be skipped
     // as "versions that may not resolve on someone else's machine", which
     // had it backwards: the lock is what makes a rebuild elsewhere resolve
     // to the same crates, and `--locked` is how a rebuild proves it did.
     collect_files(root, &|name| {
-        matches!(
-            name,
-            "target"
+        is_packed_bundle(name)
+            || matches!(
+                name,
+                "target"
                 | "bindings.rs"
                 | ".git"
                 | ".agent-transcript.txt"
@@ -3159,7 +3170,7 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 | "desktop.ini"
                 // The verification frame the pack tells agents to shoot.
                 | "frame.png"
-        )
+            )
     })
 }
 
@@ -7960,12 +7971,26 @@ required = true
         fs::create_dir_all(dir.path().join("target/release")).expect("target");
         fs::write(dir.path().join("target/release/junk"), b"build output").expect("junk");
 
+        // An older bundle left in the folder: never source (K-1004).
+        write_temp(dir.path(), "Earlier.krate", b"PK an older copy of the app");
         let bundle = dir.path().join("out.krate");
         pack_with_source(&manifest, &component, None, Some(dir.path()), &bundle)
             .expect("pack with source");
 
         let opened = open(&bundle).expect("open");
         let source = opened.source_path().expect("source shipped");
+        // Packed INTO its own source folder: neither the earlier bundle nor
+        // this pack's own half-written file rides along (K-1004).
+        let shipped: Vec<String> = fs::read_dir(source)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+            .collect();
+        assert!(
+            !shipped
+                .iter()
+                .any(|n| n.ends_with(".krate") || n.ends_with(".partial")),
+            "a bundle must not carry bundles as source: {shipped:?}"
+        );
         assert!(source.join("Cargo.toml").is_file());
         assert!(source.join("src/lib.rs").is_file());
         // The point of shipping source is rebuilding: the lock travels so
