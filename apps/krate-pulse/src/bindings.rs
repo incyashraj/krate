@@ -864,6 +864,117 @@ pub mod krate {
                 }
             }
         }
+        /// How much of a stream is still waiting to be heard (K-1011).
+        ///
+        /// `write` takes up to about ten seconds of sound so a writer is never cut
+        /// off -- which also means an app that writes everything it has mixed can
+        /// run seconds ahead of the speaker, and every sound after is heard that
+        /// late. A game keeps this small: write only while `queued` is under, say,
+        /// a tenth of a second. Needs `audio.playback`, like the stream itself.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod playback_queue {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            pub type AudioError = super::super::super::krate::audio::types::AudioError;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Frames written to the stream and not yet played, at the stream's own
+            /// sample rate. 4410 at 44.1 kHz is a tenth of a second.
+            pub fn queued(stream_id: u64) -> Result<u32, AudioError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:audio/playback-queue@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "queued"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&stream_id), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result12 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<i32>();
+                                l3 as u32
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::audio::types::AudioError as V11;
+                                let v11 = match l4 {
+                                    0 => V11::PermissionDenied,
+                                    1 => V11::InvalidStream,
+                                    2 => V11::DeviceUnavailable,
+                                    3 => {
+                                        let e11 = {
+                                            let l5 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        V11::Unsupported(e11)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V11::Platform(e11)
+                                    }
+                                };
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+        }
         /// Audio capture calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod capture {
@@ -24001,8 +24112,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 14496] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa6p\x01A\x02\x01A\x83\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 14591] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x85q\x01A\x02\x01A\x85\
 \x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-l\
 evel\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0c\
 invalid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/t\
@@ -24292,48 +24403,50 @@ en\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x0
 \x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0al\
 oad-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-\
 sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\
-\x03\0\x1akrate:audio/playback@0.1.0\x05I\x01B\x0f\x02\x03\x02\x01G\x04\0\x0baud\
-io-error\x03\0\0\x02\x03\x02\x01H\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\
-\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09\
-stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\
-\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19\
-krate:audio/capture@0.1.0\x05J\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\
-\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\
-\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\
-\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05\
-bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\
-\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0dsys\
-tem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\
-\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05K\x02\x03\0)\x0ccamera-error\x02\x03\
-\0)\x0bdevice-info\x02\x03\0)\x05frame\x02\x03\0)\x0aframe-info\x02\x03\0)\x0dst\
-ream-config\x01B\x1d\x02\x03\x02\x01L\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01\
-M\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01N\x04\0\x05frame\x03\0\x04\x02\x03\
-\x02\x01O\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01P\x04\0\x0dstream-config\x03\
-\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01\
-w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\
-\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01\
-@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01\
-j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05cl\
-ose\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05Q\x01B\x12\x01r\x01\x04texts\x04\
-\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\
-\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0csp\
-eech-error\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-inv\
-alid\x0bunsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\
-\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08l\
-anguage\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmode\
-l-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\
-\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0a\
-pcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\
-\0\x11match-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05R\x01\
-B\x12\x01r\x03\x02ids\x04names\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11p\
-ermission-denied\0\0\x0finvalid-request\x01s\0\x0bunsupported\x01s\0\x08platform\
-\x01s\0\x04\0\x09say-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\
-\0\x06voices\x01\x06\x01ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04\
-rate\x08\0\x09\x04\0\x03say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\
-\x01\x03\x01@\0\0\x0c\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@\
-0.1.0\x05S\x01@\0\0z\x04\0\x03run\x01T\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\
-\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x07\
-0.227.1\x10wit-bindgen-rust\x060.41.0";
+\x03\0\x1akrate:audio/playback@0.1.0\x05I\x01B\x05\x02\x03\x02\x01G\x04\0\x0baud\
+io-error\x03\0\0\x01j\x01y\x01\x01\x01@\x01\x09stream-idw\0\x02\x04\0\x06queued\x01\
+\x03\x03\0\x20krate:audio/playback-queue@0.1.0\x05J\x01B\x0f\x02\x03\x02\x01G\x04\
+\0\x0baudio-error\x03\0\0\x02\x03\x02\x01H\x04\0\x0dstream-config\x03\0\x02\x01j\
+\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01\
+@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01\
+j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\
+\x03\0\x19krate:audio/capture@0.1.0\x05K\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cfra\
+me-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0ds\
+tream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\
+\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\
+\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\x05fr\
+ame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-\
+unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\
+\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05L\x02\x03\0*\x0c\
+camera-error\x02\x03\0*\x0bdevice-info\x02\x03\0*\x05frame\x02\x03\0*\x0aframe-i\
+nfo\x02\x03\0*\x0dstream-config\x01B\x1d\x02\x03\x02\x01M\x04\0\x0ccamera-error\x03\
+\0\0\x02\x03\x02\x01N\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01O\x04\0\x05f\
+rame\x03\0\x04\x02\x03\x02\x01P\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01Q\x04\
+\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07\
+devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04\
+open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\
+\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04\
+stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04\
+read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05R\x01\
+B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-request\x01\
+s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\x09infe\
+rence\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0finvalid-request\x0fmode\
+l-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\0\x0bmatch-error\x03\
+\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\
+\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\
+\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08\
+expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0b\
+model-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\x06f\
+inish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\0\x20krate:speech/transcr\
+iption@0.1.0\x05S\x01B\x12\x01r\x03\x02ids\x04names\x08languages\x04\0\x05voice\x03\
+\0\0\x01q\x04\x11permission-denied\0\0\x0finvalid-request\x01s\0\x0bunsupported\x01\
+s\0\x08platform\x01s\0\x04\0\x09say-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\
+\x01@\0\0\x05\x04\0\x06voices\x01\x06\x01ks\x01kv\x01j\0\x01\x03\x01@\x03\x04tex\
+ts\x05voice\x07\x04rate\x08\0\x09\x04\0\x03say\x01\x0a\x01@\0\0\x09\x04\0\x04sto\
+p\x01\x0b\x01j\x01\x7f\x01\x03\x01@\0\0\x0c\x04\0\x08speaking\x01\x0d\x03\0\x1ck\
+rate:speech/synthesis@0.1.0\x05T\x01@\0\0z\x04\0\x03run\x01U\x04\0\x13krate:app/\
+gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\
+\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
