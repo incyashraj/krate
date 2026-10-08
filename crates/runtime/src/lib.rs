@@ -349,6 +349,16 @@ fn instantiate_error(err: &wasmtime::Error) -> String {
     parts.join(": ")
 }
 
+/// A trap as a person can act on it: where it happened AND what it was.
+///
+/// wasmtime puts the backtrace in the outer error and the trap itself --
+/// "out of bounds memory access", "indirect call type mismatch" -- in its
+/// cause. `to_string()` keeps only the outer one, so a crashed app reported
+/// where it died and never why.
+fn trap_message(err: &wasmtime::Error) -> String {
+    format!("{err:#}")
+}
+
 /// Errors surfaced by the Phase 1 runtime.
 #[derive(Debug, Error)]
 pub enum RuntimeError {
@@ -1027,7 +1037,7 @@ impl Runtime {
                 return Ok(RunOutcome::LimitExceeded(message));
             }
 
-            return Err(RuntimeError::Trap(err.to_string()));
+            return Err(RuntimeError::Trap(trap_message(&err)));
         }
 
         Ok(RunOutcome::Exited(store.data().exit_code.unwrap_or(0)))
@@ -1053,7 +1063,7 @@ impl Runtime {
                     return Ok(RunOutcome::LimitExceeded(message));
                 }
 
-                return Err(RuntimeError::Trap(err.to_string()));
+                return Err(RuntimeError::Trap(trap_message(&err)));
             }
         };
 
@@ -1375,7 +1385,7 @@ impl Runtime {
                     return Ok(RunOutcome::LimitExceeded(message));
                 }
 
-                return Err(RuntimeError::Trap(err.to_string()));
+                return Err(RuntimeError::Trap(trap_message(&err)));
             }
         };
 
@@ -3413,6 +3423,17 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// A trap report names what the trap was, not only where (K-1010). The
+    /// kind lives in the error's cause; the outer error is just the backtrace.
+    #[test]
+    fn a_trap_report_says_what_the_trap_was() {
+        let err = wasmtime::Error::msg("wasm trap: uninitialized element")
+            .context("error while executing at wasm backtrace:\n    0: 0x1 - app!f");
+        let message = super::trap_message(&err);
+        assert!(message.contains("wasm backtrace"), "{message}");
+        assert!(message.contains("uninitialized element"), "{message}");
+    }
+
     /// The memory limiter REFUSES growth; it does not trap.
     ///
     /// The difference decides whether an app that asks for too much can
