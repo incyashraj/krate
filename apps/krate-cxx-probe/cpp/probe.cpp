@@ -44,6 +44,11 @@ extern "C" int probe_main(int argc, char **argv) {
     long size = ftell(f);
     fclose(f);
     printf("file: %s", line);
+    // "w+": emptied, then written and read back through the same handle.
+    FILE *both = fopen("probe-dir/both.txt", "w+");
+    char back[16] = {0};
+    if (both) { fputs("round-trip", both); rewind(both); fgets(back, sizeof back, both); fclose(both); }
+    printf("w+: %s\n", back);
     printf("size: %ld\n", size);
     struct stat st;
     printf("stat: %d %lld\n", stat("probe-dir/hello.txt", &st), (long long)st.st_size);

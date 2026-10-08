@@ -6257,6 +6257,7 @@ fn a_cpp_program_runs_and_its_constructors_run_once() {
         "global: constructed",
         "ctors: 1",
         "file: hello from C++ 42",
+        "w+: round-trip",
         "setjmp: came back with 7",
         "probe: ok",
         "exit: 0",

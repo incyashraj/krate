@@ -58,6 +58,7 @@ const O_DIRECTORY: i32 = 2;
 const O_EXCL: i32 = 4;
 const O_TRUNC: i32 = 8;
 const FD_APPEND: i32 = 1;
+const RIGHT_READ: i64 = 1 << 1;
 const RIGHT_WRITE: i64 = 1 << 6;
 
 enum Entry {
@@ -677,7 +678,21 @@ pub unsafe extern "C" fn __imported_wasi_snapshot_preview1_path_open(
     let mode = if fdflags & FD_APPEND != 0 {
         OpenMode::Append
     } else if oflags & O_TRUNC != 0 || (oflags & O_CREAT != 0 && existing.is_none()) {
-        OpenMode::Write
+        if rights & RIGHT_READ != 0 {
+            // "w+": emptied, then read AND written. Krate's write mode cannot
+            // be read from, and its read-write mode does not empty the file,
+            // so empty it with one, then open it with the other. Mapping this
+            // to write-only made every read come back empty -- a demo the
+            // engine built by writing a file and reading it back was all
+            // zeros (K-1012).
+            match files::open(&path, OpenMode::Write) {
+                Ok(emptied) => drop(emptied),
+                Err(err) => return errno(&err),
+            }
+            OpenMode::ReadWrite
+        } else {
+            OpenMode::Write
+        }
     } else if wants_write {
         OpenMode::ReadWrite
     } else {
