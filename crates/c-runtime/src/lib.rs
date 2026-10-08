@@ -16,6 +16,8 @@
 //! - clocks, sleep: `krate:time`. Random: `krate:random`.
 //! - args: whatever the app sets with [`set_args`]. No environment.
 //! - sockets: not supported (Krate's network is `krate:net`).
+//! - dlopen: an app is one module, so there is nothing to open; `dlopen`
+//!   fails and `dlerror` says why, and a program takes its own error path.
 //!
 //! Use: link wasi-sdk's `libc.a` (and `libc++.a`, `libc++abi.a` for C++)
 //! into the app, call [`start`] once, then the program's entry point.
@@ -935,4 +937,34 @@ pub unsafe extern "C" fn __imported_wasi_snapshot_preview1_sock_send(
 #[no_mangle]
 pub unsafe extern "C" fn __imported_wasi_snapshot_preview1_sock_shutdown(_fd: i32, _h: i32) -> i32 {
     ENOTSUP
+}
+
+// ---- dynamic libraries ----------------------------------------------------
+// wasi-libc declares these and defines none of them for a static program. A
+// program that can live without a plugin (a game's optional bot or metamod
+// library) asks, gets no, and carries on.
+
+static DL_ERROR: &[u8] = b"no dynamic libraries in a Krate app\0";
+
+#[no_mangle]
+pub extern "C" fn dlopen(_file: *const core::ffi::c_char, _mode: i32) -> *mut core::ffi::c_void {
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub extern "C" fn dlsym(
+    _handle: *mut core::ffi::c_void,
+    _name: *const core::ffi::c_char,
+) -> *mut core::ffi::c_void {
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub extern "C" fn dlclose(_handle: *mut core::ffi::c_void) -> i32 {
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn dlerror() -> *const core::ffi::c_char {
+    DL_ERROR.as_ptr() as *const core::ffi::c_char
 }
