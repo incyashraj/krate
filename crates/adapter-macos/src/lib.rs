@@ -555,6 +555,33 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
         appkit::take_raw_pointer_samples()
     }
 
+    /// The pointer the AppKit pump tracks for this window (IC-909).
+    fn pointer(&self, id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        appkit::pointer_state(id)
+    }
+
+    fn take_pointer_motion(&self, id: WindowId) -> (f32, f32) {
+        appkit::take_pointer_motion(id)
+    }
+
+    /// Hold the pointer in the real NSWindow. A headless run has no pointer
+    /// to hold, and says so.
+    fn set_pointer_capture(&self, id: WindowId, capture: bool) -> Result<(), UiAdapterError> {
+        let held = APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
+            sessions
+                .borrow()
+                .get(&id)
+                .map(|session| session.window().set_pointer_capture(capture))
+        });
+        match held {
+            Some(result) => result,
+            None if capture => Err(UiAdapterError::Unsupported(
+                "this window has no pointer to hold (it is not on screen)".to_string(),
+            )),
+            None => Ok(()),
+        }
+    }
+
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.headless.set_root(window, root)
     }

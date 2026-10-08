@@ -518,6 +518,19 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
         winit_native::drain_pointer_samples()
     }
 
+    /// The pointer the winit pump tracks for this window (IC-909).
+    fn pointer(&self, window: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        winit_native::pointer_state(window)
+    }
+
+    fn take_pointer_motion(&self, window: WindowId) -> (f32, f32) {
+        winit_native::take_pointer_motion(window)
+    }
+
+    fn set_pointer_capture(&self, window: WindowId, capture: bool) -> Result<(), UiAdapterError> {
+        winit_native::set_pointer_capture(window, capture)
+    }
+
     fn drain_raw_key_input(&self) -> Vec<krate_adapter_common::ui::RawKeySample> {
         winit_native::drain_key_samples()
     }

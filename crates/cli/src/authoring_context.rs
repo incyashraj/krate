@@ -366,7 +366,13 @@ clock. Never `request-redraw` (see the redraw rule); never bound the loop.\n\n\
 names below. `events::poll()` for one-shot events (fire on the press, not \
 every frame it is held). Gamepad: `gamepad_held(\"south\")`, \
 `gamepad_axis(\"left-x\")`, and `gamepad_connected()` before showing a \
-controller prompt.\n\n\
+controller prompt. Mouse, asked the same way (`krate::ui::pointer`): \
+`position(win)` for where it is, `button_held(PointerButton::Secondary)` \
+for any button, `take_motion(win)` for how far it moved since last frame. \
+A first-person game calls `capture(win)` on a click: the pointer hides and \
+`take_motion` keeps coming however far the mouse goes. Escape or switching \
+apps always releases it -- check `captured(win)` each frame and show \
+\"click to play\" when it reads false.\n\n\
 **3. Sprites.** Two ways, both real: `draw_pixels` blits a straight RGBA \
 buffer at a rect (fastest for tiles and unrotated sprites), and \
 `draw_sprite(canvas, center, dst, angle, w, h, rgba)` rotates one. For a \
@@ -422,7 +428,10 @@ never moves -- so they are listed here in full rather than guessed at:\n\n\
 `\"w\"`, `\"z\"`, `\"1\"`. Not `KeyA`, not `\"A\"`.\n\
 - **Named keys**: `Space`, `Enter`, `Tab`, `Backspace`, `Escape`, \
 `Home`, `End`, `PageUp`, `PageDown`, `Delete`\n\
-- Modifiers arrive on the event (`modifiers`), not as key names.\n\n\
+- **Modifiers**: `Shift`, `Control`, `Alt`, `Meta` (Command on a Mac) \
+-- hold-to-walk, hold-to-crouch. They also arrive on every event as \
+`modifiers`.\n\
+- **Function keys**: `F1` to `F12`.\n\n\
 A run-and-gun game therefore reads: \
 `key_held(\"ArrowLeft\")`, `key_held(\"Space\")` to jump, \
 `key_held(\"z\")` to shoot. `apps/krate-nova` and `apps/krate-bounce` \

@@ -1569,6 +1569,95 @@ pub struct RawWheelSample {
     pub modifiers: Modifiers,
 }
 
+/// The mouse as a game asks about it (IC-909): where it is, which buttons
+/// are down, how far it moved, and whether the app holds it.
+///
+/// Every native adapter keeps one per window and feeds it from its own
+/// events; the rules live here once, so a captured pointer releases the same
+/// way on every system.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PointerTracker {
+    /// Last position over the window, logical pixels; `None` once it leaves.
+    pub position: Option<(f32, f32)>,
+    /// Held buttons: bit 0 primary, bit 1 secondary, bit 2 middle.
+    pub buttons: u8,
+    /// Motion the app has not taken yet, logical pixels.
+    pub motion: (f32, f32),
+    /// The app holds the pointer.
+    pub captured: bool,
+}
+
+impl PointerTracker {
+    /// The bit for a button in `buttons`, or `None` for one with no bit.
+    pub fn button_bit(button: PointerButton) -> Option<u8> {
+        match button {
+            PointerButton::Primary => Some(1),
+            PointerButton::Secondary => Some(2),
+            PointerButton::Middle => Some(4),
+            PointerButton::Other => None,
+        }
+    }
+
+    /// The pointer is now at `(x, y)`. Outside capture the step from the last
+    /// position is motion; while captured the cursor is pinned and only the
+    /// device's own motion ([`Self::moved_by`]) counts.
+    pub fn moved_to(&mut self, x: f32, y: f32) {
+        if self.captured {
+            return;
+        }
+        if let Some((px, py)) = self.position {
+            self.motion.0 += x - px;
+            self.motion.1 += y - py;
+        }
+        self.position = Some((x, y));
+    }
+
+    /// The mouse itself moved by `(dx, dy)`. Counted only while captured,
+    /// where nothing else reports motion; outside capture the position does.
+    pub fn moved_by(&mut self, dx: f32, dy: f32) {
+        if self.captured {
+            self.motion.0 += dx;
+            self.motion.1 += dy;
+        }
+    }
+
+    /// The pointer left the window.
+    pub fn left(&mut self) {
+        if !self.captured {
+            self.position = None;
+        }
+    }
+
+    /// A button went down or up.
+    pub fn button(&mut self, button: PointerButton, pressed: bool) {
+        if let Some(bit) = Self::button_bit(button) {
+            if pressed {
+                self.buttons |= bit;
+            } else {
+                self.buttons &= !bit;
+            }
+        }
+    }
+
+    /// Whether a button is down.
+    pub fn held(&self, button: PointerButton) -> bool {
+        Self::button_bit(button).is_some_and(|bit| self.buttons & bit != 0)
+    }
+
+    /// Hand over the motion so far and start again from zero.
+    pub fn take_motion(&mut self) -> (f32, f32) {
+        std::mem::take(&mut self.motion)
+    }
+
+    /// Focus went elsewhere: let go of the pointer and every button, so
+    /// nothing sticks while the person is in another app.
+    pub fn focus_lost(&mut self) {
+        self.captured = false;
+        self.buttons = 0;
+        self.motion = (0.0, 0.0);
+    }
+}
+
 /// A canvas frame handed to a GPU-capable adapter as draw calls instead of
 /// pixels. Opaque here: the runtime defines the op list, the adapter's
 /// renderer consumes it, and this crate only carries it between them.
@@ -1698,6 +1787,32 @@ pub trait UiAdapter: WindowAdapter {
     /// since the last call. Headless adapters return nothing.
     fn drain_raw_wheel_input(&self) -> Vec<RawWheelSample> {
         Vec::new()
+    }
+
+    /// The pointer of a window, as its tracker stands now (IC-909). Hosts
+    /// without native input answer an empty tracker: nowhere, nothing held.
+    fn pointer(&self, _window: WindowId) -> PointerTracker {
+        PointerTracker::default()
+    }
+
+    /// Hand over a window's pointer motion since the last call.
+    fn take_pointer_motion(&self, _window: WindowId) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
+    /// Hold the pointer in a window (`true`) or let it go (`false`).
+    ///
+    /// Default is honest refusal, so a host that has not wired capture says so
+    /// and a game falls back to its menu instead of turning with a cursor that
+    /// hits the window's edge.
+    fn set_pointer_capture(&self, _window: WindowId, capture: bool) -> Result<(), UiAdapterError> {
+        if capture {
+            Err(UiAdapterError::Unsupported(
+                "holding the pointer is not available on this host yet".to_string(),
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// Read the current text of a natively lowered editable control.
@@ -3345,5 +3460,54 @@ mod tests {
         first.write_clipboard_text("first").expect("write first");
         assert_eq!(first.read_clipboard_text().expect("read first"), "first");
         assert_eq!(second.read_clipboard_text().expect("read second"), "");
+    }
+
+    /// The pointer rules every adapter shares (IC-909): motion from
+    /// positions outside capture, only the device's own motion inside it,
+    /// and focus loss letting go of everything.
+    #[test]
+    fn a_pointer_reports_motion_buttons_and_lets_go_on_focus_loss() {
+        let mut p = PointerTracker::default();
+        p.moved_to(10.0, 10.0);
+        assert_eq!(
+            p.take_motion(),
+            (0.0, 0.0),
+            "the first position is not a move"
+        );
+        p.moved_to(15.0, 7.0);
+        p.moved_by(100.0, 100.0);
+        assert_eq!(
+            p.take_motion(),
+            (5.0, -3.0),
+            "outside capture the cursor's path is the motion, not raw deltas"
+        );
+        assert_eq!(p.take_motion(), (0.0, 0.0), "taking motion resets it");
+
+        p.button(PointerButton::Secondary, true);
+        assert!(p.held(PointerButton::Secondary));
+        assert!(!p.held(PointerButton::Primary));
+
+        p.captured = true;
+        p.moved_to(400.0, 400.0);
+        p.moved_by(3.0, -2.0);
+        p.moved_by(3.0, -2.0);
+        assert_eq!(
+            p.take_motion(),
+            (6.0, -4.0),
+            "held, only the mouse's own motion counts: the cursor is pinned"
+        );
+        assert_eq!(p.position, Some((15.0, 7.0)), "a held pointer stays put");
+        p.left();
+        assert!(p.position.is_some(), "a held pointer never leaves");
+
+        p.moved_by(9.0, 9.0);
+        p.focus_lost();
+        assert!(!p.captured, "focus loss gives the pointer back");
+        assert!(!p.held(PointerButton::Secondary), "and no button sticks");
+        assert_eq!(p.take_motion(), (0.0, 0.0), "and stale motion is dropped");
+        assert!(
+            !p.held(PointerButton::Other),
+            "a button with no bit is never held"
+        );
     }
 }

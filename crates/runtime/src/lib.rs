@@ -1312,6 +1312,8 @@ impl Runtime {
         // (K-175).
         link_gui!(ui4::events);
         link_gui!(ui4::print);
+        // Phase 4 only: the mouse as a game asks about it (IC-909).
+        link_gui!(ui4::pointer);
 
         link_gui!(ui::window);
         link_gui!(ui::image);

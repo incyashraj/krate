@@ -29,6 +29,7 @@ world gui {
   import krate:ui/tree@0.1.0;
   import krate:ui/image@0.1.0;
   import krate:ui/events@0.1.0;
+  import krate:ui/pointer@0.1.0;
   import krate:ui/dialog@0.1.0;
   import krate:ui/print@0.1.0;
   import krate:ui/clipboard@0.1.0;

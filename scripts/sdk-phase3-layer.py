@@ -104,6 +104,9 @@ def signature(sig):
     sig = re.sub(r"\s*,\s*", ", ", sig)
     sig = re.sub(r"\s*->\s*", " -> ", sig)
     sig = re.sub(r"Result<\s*", "Result<", sig)
+    # wit-bindgen spells a function that returns nothing `-> ()`; written
+    # out in the SDK that is a clippy error (unused_unit).
+    sig = re.sub(r"\s*->\s*\(\)\s*$", "", sig)
     return sig
 
 
@@ -274,6 +277,7 @@ pub mod krate {
     check("the shared types module is re-exported whole", "pub use crate::bindings::krate::ui::types::*;" in out, out)
     check("the doc line is on the wrapper", "/// Create a host window and return its id.\n        pub fn create(" in out, out)
     check("rendering is stable", render(fns, types) == out)
+    check("a function returning nothing has no `-> ()`", signature("pub fn release(window: u64,) -> ()") == "pub fn release(window: u64)", signature("pub fn release(window: u64,) -> ()"))
     check("names of every argument are read past generics", arguments("pub fn f(a: Option<&str>, b: Result<u8, E>, c: &[f32]) -> u8") == ["a", "b", "c"])
     check("a formatted multi-line signature is read whole", "crate::bindings::krate::ui::window::set_title(window, title)" in out, out)
     check("a brace inside a doc comment does not lose the modules after it", "krate/speech/transcription" in fns, str(list(fns)))

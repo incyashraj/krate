@@ -994,6 +994,11 @@ impl AppKitWindowBackend {
         id: WindowId,
         focused: bool,
     ) -> Result<(), UiAdapterError> {
+        if !focused {
+            // Another app has the person's attention: a held pointer and any
+            // pressed button go back now, not when focus returns (IC-909).
+            pointer_focus_lost(id);
+        }
         WindowAdapter::queue_window_focused(adapter, id, focused)
     }
 
@@ -1258,9 +1263,10 @@ mod platform {
     };
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSBitmapImageRep,
-        NSButton, NSColor, NSControl, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType,
-        NSFont, NSImage, NSImageScaling, NSImageView, NSMenu, NSMenuItem, NSText, NSTextField,
-        NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility,
+        NSButton, NSColor, NSControl, NSCursor, NSEvent, NSEventMask, NSEventModifierFlags,
+        NSEventType, NSFont, NSImage, NSImageScaling, NSImageView, NSMenu, NSMenuItem, NSText,
+        NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+        NSWindowTitleVisibility,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -2144,6 +2150,32 @@ mod platform {
     }
 
     impl AppKitWindowPrototype {
+        /// Hold the pointer (IC-909): hidden, detached from the mouse, so
+        /// motion keeps coming however far the mouse goes. Only while this
+        /// window has focus, like the web's pointer lock; Escape and focus
+        /// loss hand it back (see `capture_key_event`, `pointer_focus_lost`).
+        pub fn set_pointer_capture(&self, capture: bool) -> Result<(), UiAdapterError> {
+            if !capture {
+                release_pointer(self.id);
+                return Ok(());
+            }
+            if !self.window.isKeyWindow() {
+                return Err(UiAdapterError::Unsupported(
+                    "the pointer can be held only while the window has focus".to_string(),
+                ));
+            }
+            let already = with_pointer(self.id, |tracker| {
+                std::mem::replace(&mut tracker.captured, true)
+            });
+            if !already {
+                // SAFETY: plain CoreGraphics call with no pointers.
+                unsafe { CGAssociateMouseAndMouseCursorPosition(0) };
+                NSCursor::hide();
+                with_pointer(self.id, |tracker| tracker.motion = (0.0, 0.0));
+            }
+            Ok(())
+        }
+
         /// Extend the app's content into the title-bar band, traffic lights
         /// overlaid -- the "full-bleed" style every modern editor, terminal
         /// and browser window uses (K-117). Reversible, because the WIT call
@@ -2262,6 +2294,56 @@ mod platform {
         static PENDING_WHEEL_SAMPLES: std::cell::RefCell<
             Vec<krate_adapter_common::ui::RawWheelSample>,
         > = const { std::cell::RefCell::new(Vec::new()) };
+
+        /// Each window's pointer, for apps that ask rather than listen
+        /// (IC-909). Main-thread only, like the samples above.
+        static POINTERS: std::cell::RefCell<
+            std::collections::BTreeMap<u64, krate_adapter_common::ui::PointerTracker>,
+        > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        /// Detach (0) or reattach (1) the cursor from the mouse. Detached,
+        /// the cursor stays put and the mouse still reports its motion: the
+        /// way every Mac game turns its camera.
+        fn CGAssociateMouseAndMouseCursorPosition(connected: u32) -> i32;
+    }
+
+    fn with_pointer<R>(
+        id: WindowId,
+        f: impl FnOnce(&mut krate_adapter_common::ui::PointerTracker) -> R,
+    ) -> R {
+        POINTERS.with(|pointers| f(pointers.borrow_mut().entry(id.get()).or_default()))
+    }
+
+    /// A window's pointer as it stands.
+    pub fn pointer_state(id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        with_pointer(id, |tracker| *tracker)
+    }
+
+    /// Hand over a window's pointer motion since the last call.
+    pub fn take_pointer_motion(id: WindowId) -> (f32, f32) {
+        with_pointer(id, |tracker| tracker.take_motion())
+    }
+
+    /// Give the pointer back: reattach the cursor and show it. Safe to call
+    /// when nothing is held.
+    pub fn release_pointer(id: WindowId) {
+        let was = with_pointer(id, |tracker| {
+            std::mem::replace(&mut tracker.captured, false)
+        });
+        if was {
+            // SAFETY: plain CoreGraphics call with no pointers.
+            unsafe { CGAssociateMouseAndMouseCursorPosition(1) };
+            NSCursor::unhide();
+        }
+    }
+
+    /// The window lost focus: let go of the pointer and every button.
+    pub fn pointer_focus_lost(id: WindowId) {
+        release_pointer(id);
+        with_pointer(id, |tracker| tracker.focus_lost());
     }
 
     /// Hand over every wheel sample captured since the last call.
@@ -2327,6 +2409,19 @@ mod platform {
             124 => Some("ArrowRight"),
             125 => Some("ArrowDown"),
             126 => Some("ArrowUp"),
+            // Function keys, by key code: their characters are private-use.
+            122 => Some("F1"),
+            120 => Some("F2"),
+            99 => Some("F3"),
+            118 => Some("F4"),
+            96 => Some("F5"),
+            97 => Some("F6"),
+            98 => Some("F7"),
+            100 => Some("F8"),
+            101 => Some("F9"),
+            109 => Some("F10"),
+            103 => Some("F11"),
+            111 => Some("F12"),
             _ => None,
         };
         if let Some(name) = named {
@@ -2359,6 +2454,14 @@ mod platform {
             assert_eq!(portable_key_name(36, Some("\r")).as_deref(), Some("Enter"));
             assert_eq!(portable_key_name(53, None).as_deref(), Some("Escape"));
             assert_eq!(portable_key_name(0, Some("a")).as_deref(), Some("a"));
+            assert_eq!(
+                portable_key_name(122, Some("\u{f704}")).as_deref(),
+                Some("F1")
+            );
+            assert_eq!(
+                portable_key_name(111, Some("\u{f70f}")).as_deref(),
+                Some("F12")
+            );
         }
 
         #[test]
@@ -2517,9 +2620,31 @@ mod platform {
         /// The event is still sent on afterwards, so real AppKit controls in
         /// the same window keep working.
         fn capture_mouse_event(&self, event: &NSEvent) {
-            let pressed = match event.r#type() {
-                NSEventType::LeftMouseDown => true,
-                NSEventType::LeftMouseUp => false,
+            use krate_adapter_common::ui::PointerButton;
+            // Every button and every movement feeds the window's pointer
+            // tracker (IC-909); the primary press and release also go on as
+            // the raw samples widget hit-testing has always used.
+            let (button, pressed, moved) = match event.r#type() {
+                NSEventType::LeftMouseDown => (Some(PointerButton::Primary), true, false),
+                NSEventType::LeftMouseUp => (Some(PointerButton::Primary), false, false),
+                NSEventType::RightMouseDown => (Some(PointerButton::Secondary), true, false),
+                NSEventType::RightMouseUp => (Some(PointerButton::Secondary), false, false),
+                NSEventType::OtherMouseDown | NSEventType::OtherMouseUp => {
+                    let which = if event.buttonNumber() == 2 {
+                        PointerButton::Middle
+                    } else {
+                        PointerButton::Other
+                    };
+                    (
+                        Some(which),
+                        event.r#type() == NSEventType::OtherMouseDown,
+                        false,
+                    )
+                }
+                NSEventType::MouseMoved
+                | NSEventType::LeftMouseDragged
+                | NSEventType::RightMouseDragged
+                | NSEventType::OtherMouseDragged => (None, false, true),
                 _ => return,
             };
 
@@ -2547,9 +2672,32 @@ mod platform {
             // moves out of reach, so the app read as completely dead to
             // clicks while still animating happily (K-141).
             let point = event.locationInWindow();
-            let content_height = effective_content_rect(&self.window).size.height;
+            let content = effective_content_rect(&self.window).size;
+            let content_height = content.height;
             let x = point.x as f32;
             let y = (content_height - point.y) as f32;
+
+            let inside = x >= 0.0
+                && y >= 0.0
+                && f64::from(x) <= content.width
+                && f64::from(y) <= content_height;
+            with_pointer(self.id, |tracker| {
+                if inside {
+                    tracker.moved_to(x, y);
+                } else {
+                    tracker.left();
+                }
+                if moved {
+                    // AppKit's mouse deltas already run right and down.
+                    tracker.moved_by(event.deltaX() as f32, event.deltaY() as f32);
+                }
+                if let Some(button) = button {
+                    tracker.button(button, pressed);
+                }
+            });
+            if button != Some(PointerButton::Primary) {
+                return;
+            }
 
             PENDING_POINTER_SAMPLES.with(|slot| {
                 slot.borrow_mut()
@@ -2558,6 +2706,46 @@ mod platform {
                         x,
                         y,
                         pressed,
+                    });
+            });
+        }
+
+        /// Shift, Control, Option and Command, as keys a game can bind.
+        ///
+        /// AppKit reports these only as a change of modifier flags, never as
+        /// key presses, so before this a game could not crouch on Control or
+        /// walk on Shift on a Mac. Which key changed is in the key code;
+        /// whether it is now down is in the flags.
+        fn capture_modifier_event(&self, event: &NSEvent) {
+            let Ok(mtm) = main_thread_marker() else {
+                return;
+            };
+            match event.window(mtm) {
+                Some(target) if target == self.window => {}
+                _ => return,
+            }
+            let flags = event.modifierFlags();
+            let (key, flag) = match event.keyCode() {
+                56 | 60 => ("Shift", NSEventModifierFlags::Shift),
+                59 | 62 => ("Control", NSEventModifierFlags::Control),
+                58 | 61 => ("Alt", NSEventModifierFlags::Option),
+                55 | 54 => ("Meta", NSEventModifierFlags::Command),
+                _ => return,
+            };
+            let modifiers = krate_adapter_common::ui::Modifiers {
+                shift: flags.contains(NSEventModifierFlags::Shift),
+                control: flags.contains(NSEventModifierFlags::Control),
+                alt: flags.contains(NSEventModifierFlags::Option),
+                meta: flags.contains(NSEventModifierFlags::Command),
+            };
+            PENDING_KEY_SAMPLES.with(|slot| {
+                slot.borrow_mut()
+                    .push(krate_adapter_common::ui::RawKeySample {
+                        window: self.id,
+                        key: key.to_string(),
+                        pressed: flags.contains(flag),
+                        modifiers,
+                        text: None,
                     });
             });
         }
@@ -2572,6 +2760,11 @@ mod platform {
         /// in real controls keeps working. Everything else is game input.
         fn capture_key_event(&self, event: &NSEvent) -> bool {
             let event_type = event.r#type();
+            if event_type == NSEventType::FlagsChanged {
+                self.capture_modifier_event(event);
+                // Still sent on: menus and text fields track modifiers too.
+                return false;
+            }
             let pressed = match event_type {
                 NSEventType::KeyDown => true,
                 NSEventType::KeyUp => false,
@@ -2602,6 +2795,11 @@ mod platform {
                 // sample -- there is no portable name an app could ask for.
                 return true;
             };
+            // Escape always gives a held pointer back, whatever the app does
+            // with the key (IC-909). The app still gets the key.
+            if key == "Escape" && pressed {
+                release_pointer(self.id);
+            }
 
             let modifiers = krate_adapter_common::ui::Modifiers {
                 shift: flags.contains(NSEventModifierFlags::Shift),
@@ -2779,6 +2977,9 @@ mod platform {
         let title = NSString::from_str(&options.title);
         window.setTitle(&title);
         window.center();
+        // Without this AppKit sends no movement at all, only presses: an app
+        // could never know where the pointer is until it clicked (IC-909).
+        window.setAcceptsMouseMovedEvents(true);
         window
     }
 
@@ -2977,6 +3178,17 @@ mod platform {
         Vec::new()
     }
 
+    /// No pointer off macOS: nowhere, nothing held.
+    pub fn pointer_state(_id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        krate_adapter_common::ui::PointerTracker::default()
+    }
+
+    pub fn take_pointer_motion(_id: WindowId) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
+    pub fn pointer_focus_lost(_id: WindowId) {}
+
     /// Placeholder returned only on macOS builds.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct AppKitWindowPrototype {
@@ -3051,6 +3263,17 @@ mod platform {
         /// reports no size change so callers queue nothing (K-117).
         pub fn set_full_bleed(&self, _enabled: bool) -> Option<WindowSize> {
             None
+        }
+
+        /// Holding the pointer needs AppKit.
+        pub fn set_pointer_capture(&self, capture: bool) -> Result<(), UiAdapterError> {
+            if capture {
+                Err(UiAdapterError::Unsupported(
+                    "holding the pointer needs a macOS window".to_string(),
+                ))
+            } else {
+                Ok(())
+            }
         }
 
         /// AppKit widget lowering is only available in macOS builds.
@@ -3186,6 +3409,7 @@ pub use platform::AppKitWidgetSurface;
 pub use platform::AppKitWindowNativeDelegate;
 pub use platform::AppKitWindowPrototype;
 pub use platform::{lookup_window_scale, record_window_scale};
+pub use platform::{pointer_focus_lost, pointer_state, take_pointer_motion};
 
 fn validate_color_channel(name: &str, value: f32) -> Result<(), UiAdapterError> {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {

@@ -283,6 +283,42 @@ pub(crate) fn error_to_phase4(err: ui3::types::UiError) -> ui4::types::UiError {
 ///
 /// The two new cases are `file-dropped` and `file-hovering`. They are drained
 /// FIRST, so a drop is answered before a backlog of pointer moves (K-175).
+/// The mouse as a game asks about it (IC-909). Phase 4 only: Phase 3 is
+/// frozen, and an interface it never had cannot break an app built for it.
+impl ui4::pointer::Host for Phase3GuiHost {
+    fn position(&mut self, window: u64) -> wasmtime::Result<Option<(f32, f32)>> {
+        Ok(self.pointer_state(window).position)
+    }
+
+    fn button_held(&mut self, button: ui4::types::PointerButton) -> wasmtime::Result<bool> {
+        use krate_adapter_common::ui::PointerButton as P;
+        let button = match button {
+            ui4::types::PointerButton::Primary => P::Primary,
+            ui4::types::PointerButton::Secondary => P::Secondary,
+            ui4::types::PointerButton::Middle => P::Middle,
+            ui4::types::PointerButton::Other => P::Other,
+        };
+        Ok(self.pointer_button_held(button))
+    }
+
+    fn take_motion(&mut self, window: u64) -> wasmtime::Result<(f32, f32)> {
+        Ok(self.pointer_take_motion(window))
+    }
+
+    fn capture(&mut self, window: u64) -> wasmtime::Result<Result<(), ui4::types::UiError>> {
+        Ok(self.pointer_capture(window, true).map_err(error_to_phase4))
+    }
+
+    fn release(&mut self, window: u64) -> wasmtime::Result<()> {
+        let _ = self.pointer_capture(window, false);
+        Ok(())
+    }
+
+    fn captured(&mut self, window: u64) -> wasmtime::Result<bool> {
+        Ok(self.pointer_state(window).captured)
+    }
+}
+
 impl ui4::events::Host for Phase3GuiHost {
     fn poll(&mut self) -> wasmtime::Result<Option<ui4::types::Event>> {
         if let Some(notice) = self.take_drop_notice() {

@@ -2855,6 +2855,53 @@ impl Phase3GuiHost {
             .find(|window| window.get() == raw)
             .ok_or(ui::types::UiError::InvalidWindow)
     }
+
+    /// Pump once and keep what came out, the way `key-held` does: a game
+    /// asking about the mouse every frame may never call `poll`, and its
+    /// pointer must still move.
+    fn pump_for_query(&self) {
+        if let Ok(Some(event)) = self.poll_one_event() {
+            self.pending_events.borrow_mut().push_back(event);
+        }
+    }
+
+    /// The pointer of a window the app owns (IC-909); an empty tracker for a
+    /// window it does not.
+    pub(crate) fn pointer_state(&self, window: u64) -> krate_adapter_common::ui::PointerTracker {
+        self.pump_for_query();
+        match self.window_id(window) {
+            Ok(id) => self.dispatcher().pointer(id),
+            Err(_) => krate_adapter_common::ui::PointerTracker::default(),
+        }
+    }
+
+    /// Whether a button is held in any of the app's windows.
+    pub(crate) fn pointer_button_held(&self, button: PointerButton) -> bool {
+        self.pump_for_query();
+        let dispatcher = self.dispatcher();
+        self.windows
+            .iter()
+            .any(|window| dispatcher.pointer(*window).held(button))
+    }
+
+    pub(crate) fn pointer_take_motion(&self, window: u64) -> (f32, f32) {
+        self.pump_for_query();
+        match self.window_id(window) {
+            Ok(id) => self.dispatcher().take_pointer_motion(id),
+            Err(_) => (0.0, 0.0),
+        }
+    }
+
+    pub(crate) fn pointer_capture(
+        &self,
+        window: u64,
+        capture: bool,
+    ) -> Result<(), ui::types::UiError> {
+        let id = self.window_id(window)?;
+        self.dispatcher()
+            .set_pointer_capture(id, capture)
+            .map_err(dispatch_error_to_ui_error)
+    }
 }
 
 // Accumulated milliseconds inside the native event pump, reported with the

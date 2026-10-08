@@ -6208,6 +6208,65 @@ fn krate_logs_go_to_stderr_never_into_what_the_app_prints() {
     );
 }
 
+/// A game asks about the mouse through the binary a person runs
+/// (krate:ui/pointer, IC-909).
+///
+/// `pointer-probe.wasm` is apps/krate-pointer-probe built. Headless there is
+/// no pointer: it must be nowhere, hold nothing, move nothing, and refuse to
+/// be captured with a reason -- never a crash, and never a capture that
+/// claims to hold a pointer that does not exist.
+#[test]
+fn an_app_asks_about_the_mouse_and_a_headless_capture_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/pointer-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.pointer-probe\"\nname = \"pointer-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+         [[capabilities]]\ncap = \"ui.window:create\"\nrationale = \"window\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("pointer.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let out = krate()
+        .arg("run")
+        .arg("--headless")
+        .arg(&bundle)
+        .arg("--auto-grant")
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "the interface links and answers: {stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report = stdout
+        .lines()
+        .find(|line| line.starts_with("position="))
+        .unwrap_or_else(|| panic!("no report line in: {stdout}"));
+    assert!(
+        report.starts_with(
+            "position=none primary=up secondary=up middle=up motion=0,0 captured=false capture=refused: "
+        ),
+        "headless: nowhere, nothing held, nothing moved, capture refused with a reason: {report}"
+    );
+    assert!(stdout.contains("released captured=false"), "{stdout}");
+}
+
 /// An app speaks through the binary a person runs (krate:speech/synthesis,
 /// the capability roadmap's first Tier 1 item).
 ///

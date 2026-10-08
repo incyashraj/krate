@@ -662,6 +662,12 @@ takes this path, so any of them is a model for the wiring.
 - `events::gamepad-connected: func() -> bool`
 - `events::gamepad-held: func(button: string) -> bool`
 - `events::gamepad-axis: func(axis: string) -> f32`
+- `pointer::position: func(window: u64) -> option<tuple<f32, f32>>`
+- `pointer::button-held: func(button: pointer-button) -> bool`
+- `pointer::take-motion: func(window: u64) -> tuple<f32, f32>`
+- `pointer::capture: func(window: u64) -> result<_, ui-error>`
+- `pointer::release: func(window: u64)`
+- `pointer::captured: func(window: u64) -> bool`
 - `dialog::message: func(window: u64, title: string, body: string) -> result<_, ui-error>`
 - `dialog::confirm: func(window: u64, title: string, body: string) -> result<bool, ui-error>`
 - `dialog::open-file: func(window: u64, title: string, filter: string) -> result<option<chosen-file>, ui-error>`

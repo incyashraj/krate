@@ -72,6 +72,8 @@ mod real {
         windows: BTreeMap<NativeWindowId, TrackedWindow>,
         events: CollectedNativeEvents,
         cursor: BTreeMap<NativeWindowId, (f32, f32)>,
+        /// Each window's pointer for apps that ask (IC-909), by Krate id.
+        pointers: BTreeMap<u64, krate_adapter_common::ui::PointerTracker>,
         pointer_samples: Vec<RawPointerSample>,
         key_samples: Vec<RawKeySample>,
         wheel_samples: Vec<RawWheelSample>,
@@ -191,6 +193,24 @@ mod real {
                     NamedKey::End => "End",
                     NamedKey::PageUp => "PageUp",
                     NamedKey::PageDown => "PageDown",
+                    // Modifiers and function keys, as keys a game binds:
+                    // crouch on Control, walk on Shift, quick-save on F5.
+                    NamedKey::Shift => "Shift",
+                    NamedKey::Control => "Control",
+                    NamedKey::Alt => "Alt",
+                    NamedKey::Super => "Meta",
+                    NamedKey::F1 => "F1",
+                    NamedKey::F2 => "F2",
+                    NamedKey::F3 => "F3",
+                    NamedKey::F4 => "F4",
+                    NamedKey::F5 => "F5",
+                    NamedKey::F6 => "F6",
+                    NamedKey::F7 => "F7",
+                    NamedKey::F8 => "F8",
+                    NamedKey::F9 => "F9",
+                    NamedKey::F10 => "F10",
+                    NamedKey::F11 => "F11",
+                    NamedKey::F12 => "F12",
                     _ => return None,
                 };
                 Some(name.to_string())
@@ -300,6 +320,107 @@ mod real {
         }
     }
 
+    impl PumpApp {
+        /// Feed a window's pointer tracker from its events (IC-909): every
+        /// button, every move, leaving, focus loss, and Escape giving a held
+        /// pointer back.
+        fn track_pointer(&mut self, native: NativeWindowId, krate: WindowId, event: &WindowEvent) {
+            use krate_adapter_common::ui::PointerButton;
+            let scale = self
+                .windows
+                .get(&native)
+                .map(|tracked| tracked.window.scale_factor())
+                .unwrap_or(1.0);
+            let mut release = false;
+            {
+                let tracker = self.pointers.entry(krate.get()).or_default();
+                match event {
+                    WindowEvent::CursorMoved { position, .. } => {
+                        tracker.moved_to((position.x / scale) as f32, (position.y / scale) as f32);
+                    }
+                    WindowEvent::CursorLeft { .. } => tracker.left(),
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        let button = match button {
+                            winit::event::MouseButton::Left => PointerButton::Primary,
+                            winit::event::MouseButton::Right => PointerButton::Secondary,
+                            winit::event::MouseButton::Middle => PointerButton::Middle,
+                            _ => PointerButton::Other,
+                        };
+                        tracker.button(button, *state == winit::event::ElementState::Pressed);
+                    }
+                    WindowEvent::Focused(false) => {
+                        release = tracker.captured;
+                        tracker.focus_lost();
+                    }
+                    WindowEvent::KeyboardInput { event, .. } => {
+                        if event.state == winit::event::ElementState::Pressed
+                            && event.logical_key
+                                == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
+                            && tracker.captured
+                        {
+                            tracker.captured = false;
+                            release = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if release {
+                if let Some(tracked) = self.windows.get(&native) {
+                    let _ = tracked
+                        .window
+                        .set_cursor_grab(winit::window::CursorGrabMode::None);
+                    tracked.window.set_cursor_visible(true);
+                }
+            }
+        }
+
+        /// Hold or let go of the pointer in a window. Locked where the system
+        /// offers it, confined to the window where it does not; either way
+        /// the mouse's own motion arrives through `device_event`.
+        fn set_pointer_capture(
+            &mut self,
+            krate: WindowId,
+            capture: bool,
+        ) -> Result<(), UiAdapterError> {
+            let Some(tracked) = self.windows.values().find(|tracked| tracked.krate == krate) else {
+                return if capture {
+                    Err(UiAdapterError::Unsupported(
+                        "this window has no pointer to hold (it is not on screen)".to_string(),
+                    ))
+                } else {
+                    Ok(())
+                };
+            };
+            let window = tracked.window.clone();
+            let tracker = self.pointers.entry(krate.get()).or_default();
+            if !capture {
+                if std::mem::replace(&mut tracker.captured, false) {
+                    let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+                    window.set_cursor_visible(true);
+                }
+                return Ok(());
+            }
+            if !window.has_focus() {
+                return Err(UiAdapterError::Unsupported(
+                    "the pointer can be held only while the window has focus".to_string(),
+                ));
+            }
+            if !tracker.captured {
+                window
+                    .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+                    .or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined))
+                    .map_err(|err| {
+                        UiAdapterError::Unsupported(format!("the pointer could not be held: {err}"))
+                    })?;
+                window.set_cursor_visible(false);
+                tracker.captured = true;
+                tracker.motion = (0.0, 0.0);
+            }
+            Ok(())
+        }
+    }
+
     impl ApplicationHandler for PumpApp {
         fn resumed(&mut self, event_loop: &ActiveEventLoop) {
             self.drain_pending_creates(event_loop);
@@ -307,6 +428,22 @@ mod real {
 
         fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
             self.drain_pending_creates(event_loop);
+        }
+
+        /// The mouse's own motion, which keeps coming when the cursor is held
+        /// at the window's edge -- what a captured pointer turns a view with
+        /// (IC-909). Counted only for windows that hold the pointer.
+        fn device_event(
+            &mut self,
+            _event_loop: &ActiveEventLoop,
+            _device: winit::event::DeviceId,
+            event: winit::event::DeviceEvent,
+        ) {
+            if let winit::event::DeviceEvent::MouseMotion { delta } = event {
+                for tracker in self.pointers.values_mut() {
+                    tracker.moved_by(delta.0 as f32, delta.1 as f32);
+                }
+            }
         }
 
         fn window_event(
@@ -331,6 +468,7 @@ mod real {
             let Some(krate) = self.krate_id(native) else {
                 return;
             };
+            self.track_pointer(native, krate, &event);
             let mapped = match event {
                 WindowEvent::CloseRequested => Some(WinitWindowNativeEvent::CloseRequested),
                 // A drop IS the permission, the same way a click on the
@@ -1042,6 +1180,51 @@ mod real {
         })
     }
 
+    /// A window's pointer as it stands (IC-909).
+    pub fn pointer_state(id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        if !host_initialized() {
+            return Default::default();
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .and_then(|host| host.app.pointers.get(&id.get()).copied())
+                .unwrap_or_default()
+        })
+    }
+
+    /// Hand over a window's pointer motion since the last call.
+    pub fn take_pointer_motion(id: WindowId) -> (f32, f32) {
+        if !host_initialized() {
+            return (0.0, 0.0);
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow_mut()
+                .as_mut()
+                .and_then(|host| {
+                    host.app
+                        .pointers
+                        .get_mut(&id.get())
+                        .map(|t| t.take_motion())
+                })
+                .unwrap_or((0.0, 0.0))
+        })
+    }
+
+    /// Hold or let go of a window's pointer.
+    pub fn set_pointer_capture(id: WindowId, capture: bool) -> Result<(), UiAdapterError> {
+        if !host_initialized() {
+            return if capture {
+                Err(UiAdapterError::Unsupported(
+                    "no window is open to hold the pointer in".to_string(),
+                ))
+            } else {
+                Ok(())
+            };
+        }
+        with_host(|host| host.app.set_pointer_capture(id, capture))
+    }
+
     /// Drain raw pointer samples captured since the last call.
     pub fn drain_pointer_samples() -> Vec<RawPointerSample> {
         if !host_initialized() {
@@ -1262,6 +1445,25 @@ mod stub {
     /// Winit windows are only available in Linux builds.
     pub fn drain_pointer_samples() -> Vec<RawPointerSample> {
         Vec::new()
+    }
+
+    /// Winit windows are only available in Linux builds.
+    pub fn pointer_state(_id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        Default::default()
+    }
+
+    /// Winit windows are only available in Linux builds.
+    pub fn take_pointer_motion(_id: WindowId) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
+    /// Winit windows are only available in Linux builds.
+    pub fn set_pointer_capture(_id: WindowId, capture: bool) -> Result<(), UiAdapterError> {
+        if capture {
+            unsupported()
+        } else {
+            Ok(())
+        }
     }
 
     /// Winit windows are only available in Linux builds.

@@ -572,6 +572,23 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.drain_raw_pointer_input()
     }
 
+    /// A window's pointer as its tracker stands (IC-909).
+    pub fn pointer(&self, id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        self.adapter.pointer(id)
+    }
+
+    /// A window's pointer motion since the last call.
+    pub fn take_pointer_motion(&self, id: WindowId) -> (f32, f32) {
+        self.adapter.take_pointer_motion(id)
+    }
+
+    /// Hold or let go of the pointer in a window.
+    pub fn set_pointer_capture(&self, id: WindowId, capture: bool) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.set_pointer_capture(id, capture)?;
+        Ok(())
+    }
+
     pub fn drain_events(&self) -> UiDispatchResult<Vec<UiEvent>> {
         Ok(self.adapter.drain_events()?)
     }

@@ -633,6 +633,55 @@ interface events {
   gamepad-axis: func(axis: string) -> f32;
 }
 
+/// The mouse, asked about the way a game asks about keys (IC-909).
+///
+/// Events say what happened. A game wants what is true now: where the
+/// pointer is, which buttons are down, how far the mouse moved since the last
+/// frame. And a first-person game turns its view with the mouse, which a
+/// pointer that stops at the window's edge cannot do -- `capture` holds the
+/// pointer, hidden, in the window, and motion keeps coming however far the
+/// mouse travels.
+///
+/// The person can always take the pointer back: Escape, switching to another
+/// app, or the window losing focus releases it, and `captured` says so. Like
+/// the web's pointer lock, capture asks no permission and works only while the
+/// window has focus.
+interface pointer {
+  use types.{pointer-button, ui-error};
+
+  /// Where the pointer is over the window, in logical pixels from the top-left
+  /// of its content, or none when it is outside. It stays put while captured.
+  position: func(window: u64) -> option<tuple<f32, f32>>;
+
+  /// Whether a mouse button is held down right now.
+  ///
+  /// All buttons are released when the window loses focus, so a button can
+  /// never stick down the way a key can when its release goes elsewhere.
+  button-held: func(button: pointer-button) -> bool;
+
+  /// How far the mouse moved since the last call, in logical pixels, then
+  /// zero again. Right and down are positive.
+  ///
+  /// While captured this is the mouse's own motion, which does not stop at
+  /// the edge of the window or the screen.
+  take-motion: func(window: u64) -> tuple<f32, f32>;
+
+  /// Hold the pointer in the window: hidden, and turning the view instead of
+  /// moving a cursor.
+  ///
+  /// Refused unless the window has focus. Released by Escape, by focus moving
+  /// elsewhere, or by `release`.
+  capture: func(window: u64) -> result<_, ui-error>;
+
+  /// Let the pointer go, where it was when it was captured.
+  release: func(window: u64);
+
+  /// Whether the pointer is held right now. An app that captured it checks
+  /// this to know the person took it back, and shows its menu or a "click to
+  /// play" prompt.
+  captured: func(window: u64) -> bool;
+}
+
 /// System dialog calls.
 interface dialog {
   use types.{chosen-file, ui-error};

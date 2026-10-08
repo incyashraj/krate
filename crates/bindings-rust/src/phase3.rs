@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: clipboard, dialog, events, image, launcher, menu, notify, print, tree, window.
+/// `krate:ui`: clipboard, dialog, events, image, launcher, menu, notify, pointer, print, tree, window.
 pub mod ui {
     /// `krate:ui/clipboard`.
     pub mod clipboard {
@@ -223,6 +223,54 @@ pub mod ui {
         /// which keeps this from becoming a way to watch the person.
         pub fn show(title: &str, body: &str) -> Result<(), NotifyError> {
             crate::bindings::krate::ui::notify::show(title, body)
+        }
+    }
+    /// `krate:ui/pointer`.
+    pub mod pointer {
+        pub use crate::bindings::krate::ui::pointer::{PointerButton, UiError};
+
+        /// Where the pointer is over the window, in logical pixels from the top-left
+        /// of its content, or none when it is outside. It stays put while captured.
+        pub fn position(window: u64) -> Option<(f32, f32)> {
+            crate::bindings::krate::ui::pointer::position(window)
+        }
+
+        /// Whether a mouse button is held down right now.
+        ///
+        /// All buttons are released when the window loses focus, so a button can
+        /// never stick down the way a key can when its release goes elsewhere.
+        pub fn button_held(button: PointerButton) -> bool {
+            crate::bindings::krate::ui::pointer::button_held(button)
+        }
+
+        /// How far the mouse moved since the last call, in logical pixels, then
+        /// zero again. Right and down are positive.
+        ///
+        /// While captured this is the mouse's own motion, which does not stop at
+        /// the edge of the window or the screen.
+        pub fn take_motion(window: u64) -> (f32, f32) {
+            crate::bindings::krate::ui::pointer::take_motion(window)
+        }
+
+        /// Hold the pointer in the window: hidden, and turning the view instead of
+        /// moving a cursor.
+        ///
+        /// Refused unless the window has focus. Released by Escape, by focus moving
+        /// elsewhere, or by `release`.
+        pub fn capture(window: u64) -> Result<(), UiError> {
+            crate::bindings::krate::ui::pointer::capture(window)
+        }
+
+        /// Let the pointer go, where it was when it was captured.
+        pub fn release(window: u64) {
+            crate::bindings::krate::ui::pointer::release(window)
+        }
+
+        /// Whether the pointer is held right now. An app that captured it checks
+        /// this to know the person took it back, and shows its menu or a "click to
+        /// play" prompt.
+        pub fn captured(window: u64) -> bool {
+            crate::bindings::krate::ui::pointer::captured(window)
         }
     }
     /// `krate:ui/print`.
