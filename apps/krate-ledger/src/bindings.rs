@@ -21647,6 +21647,245 @@ pub mod krate {
                 }
             }
         }
+        /// The mouse, asked about the way a game asks about keys (IC-909).
+        ///
+        /// Events say what happened. A game wants what is true now: where the
+        /// pointer is, which buttons are down, how far the mouse moved since the last
+        /// frame. And a first-person game turns its view with the mouse, which a
+        /// pointer that stops at the window's edge cannot do -- `capture` holds the
+        /// pointer, hidden, in the window, and motion keeps coming however far the
+        /// mouse travels.
+        ///
+        /// The person can always take the pointer back: Escape, switching to another
+        /// app, or the window losing focus releases it, and `captured` says so. Like
+        /// the web's pointer lock, capture asks no permission and works only while the
+        /// window has focus.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod pointer {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            pub type PointerButton = super::super::super::krate::ui::types::PointerButton;
+            pub type UiError = super::super::super::krate::ui::types::UiError;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Where the pointer is over the window, in logical pixels from the top-left
+            /// of its content, or none when it is outside. It stays put while captured.
+            pub fn position(window: u64) -> Option<(f32, f32)> {
+                unsafe {
+                    #[repr(align(4))]
+                    struct RetArea([::core::mem::MaybeUninit<u8>; 12]);
+                    let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 12]);
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/pointer@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "position"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&window), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result5 = match l2 {
+                        0 => None,
+                        1 => {
+                            let e = {
+                                let l3 = *ptr0.add(4).cast::<f32>();
+                                let l4 = *ptr0.add(8).cast::<f32>();
+                                (l3, l4)
+                            };
+                            Some(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result5
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Whether a mouse button is held down right now.
+            ///
+            /// All buttons are released when the window loses focus, so a button can
+            /// never stick down the way a key can when its release goes elsewhere.
+            pub fn button_held(button: PointerButton) -> bool {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/pointer@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "button-held"]
+                        fn wit_import0(_: i32) -> i32;
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i32) -> i32 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0(button.clone() as i32) };
+                    _rt::bool_lift(ret as u8)
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// How far the mouse moved since the last call, in logical pixels, then
+            /// zero again. Right and down are positive.
+            ///
+            /// While captured this is the mouse's own motion, which does not stop at
+            /// the edge of the window or the screen.
+            pub fn take_motion(window: u64) -> (f32, f32) {
+                unsafe {
+                    #[repr(align(4))]
+                    struct RetArea([::core::mem::MaybeUninit<u8>; 8]);
+                    let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 8]);
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/pointer@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "take-motion"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&window), ptr0) };
+                    let l2 = *ptr0.add(0).cast::<f32>();
+                    let l3 = *ptr0.add(4).cast::<f32>();
+                    let result4 = (l2, l3);
+                    result4
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Hold the pointer in the window: hidden, and turning the view instead of
+            /// moving a cursor.
+            ///
+            /// Refused unless the window has focus. Released by Escape, by focus moving
+            /// elsewhere, or by `release`.
+            pub fn capture(window: u64) -> Result<(), UiError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/pointer@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "capture"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&window), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result11 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::ui::types::UiError as V10;
+                                let v10 = match l3 {
+                                    0 => V10::PermissionDenied,
+                                    1 => V10::InvalidWindow,
+                                    2 => V10::InvalidWidget,
+                                    3 => {
+                                        let e10 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        V10::Unsupported(e10)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e10 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        V10::Platform(e10)
+                                    }
+                                };
+                                v10
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result11
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Let the pointer go, where it was when it was captured.
+            pub fn release(window: u64) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/pointer@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "release"]
+                        fn wit_import0(_: i64);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(&window)) };
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Whether the pointer is held right now. An app that captured it checks
+            /// this to know the person took it back, and shows its menu or a "click to
+            /// play" prompt.
+            pub fn captured(window: u64) -> bool {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/pointer@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "captured"]
+                        fn wit_import0(_: i64) -> i32;
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) -> i32 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0(_rt::as_i64(&window)) };
+                    _rt::bool_lift(ret as u8)
+                }
+            }
+        }
         /// System dialog calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod dialog {
@@ -23762,8 +24001,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 14230] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9cn\x01A\x02\x01A\x80\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 14496] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa6p\x01A\x02\x01A\x83\
 \x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-l\
 evel\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0c\
 invalid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/t\
@@ -23944,151 +24183,157 @@ clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x05,\x02\x03\0\x17\x05event\x01B\x10
 keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\x04\0\x11gamepad-connected\x01\
 \x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01@\x01\x04axiss\0\
 v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x05.\x02\x03\0\x17\
-\x0bchosen-file\x01B\x16\x02\x03\x02\x01/\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\
-\x01&\x04\0\x08ui-error\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\x0dchosen-fo\
-lder\x03\0\x04\x01j\0\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\x06\x04\0\
-\x07message\x01\x07\x01j\x01\x7f\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\
-\x08\x04\0\x07confirm\x01\x09\x01k\x01\x01j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05\
-titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01@\x04\x06windoww\x05titles\
-\x09suggesteds\x06filters\0\x0b\x04\0\x09save-file\x01\x0d\x01k\x05\x01j\x01\x0e\
-\x01\x03\x01@\x02\x06windoww\x05titles\0\x0f\x04\0\x0bopen-folder\x01\x10\x03\0\x15\
-krate:ui/dialog@0.1.0\x050\x01B\x0b\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\0\x01\
-m\x03\x07printed\x09cancelled\x10opened-in-viewer\x04\0\x0dprint-outcome\x03\0\x02\
-\x01j\x01\x03\x01\x01\x01@\x02\x06windoww\x05titles\0\x04\x04\0\x06window\x01\x05\
-\x01j\x01y\x01\x01\x01@\x01\x06windoww\0\x06\x04\0\x08add-page\x01\x07\x04\0\x06\
-finish\x01\x05\x03\0\x14krate:ui/print@0.1.0\x051\x01B\x08\x02\x03\x02\x01&\x04\0\
-\x08ui-error\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01\
-j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:u\
-i/clipboard@0.1.0\x052\x02\x03\0\x17\x09menu-item\x01B\x08\x02\x03\x02\x013\x04\0\
-\x09menu-item\x03\0\0\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\
-\0\x01\x03\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\
-\0\x13krate:ui/menu@0.1.0\x054\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01\
-s\0\x0bunavailable\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03\
-urls\0\x02\x04\0\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x055\x01B\x05\
-\x01q\x03\x06denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0c\
-notify-error\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04s\
-how\x01\x03\x03\0\x15krate:ui/notify@0.1.0\x056\x01B\x14\x01r\x04\x01rv\x01gv\x01\
-bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01\
-r\x02\x05widthv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\
-\x06ascentv\x07descentv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05\
-widthv\x06heightv\x04\0\x04rect\x03\0\x08\x01r\x02\x06offsetv\x05color\x01\x04\0\
-\x0dgradient-stop\x03\0\x0a\x01m\x03\x04sans\x05serif\x04mono\x04\0\x0bfont-fami\
-ly\x03\0\x0c\x01r\x04\x06weight{\x06italic\x7f\x0eletter-spacingv\x06family\x0d\x04\
-\0\x0atext-style\x03\0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0b\
-bottom-leftv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0e\
-invalid-target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\
-\0\x12\x03\0\x15krate:gfx/types@0.1.0\x057\x02\x03\0\"\x05color\x02\x03\0\"\x05p\
-oint\x02\x03\0\"\x04rect\x02\x03\0\"\x04size\x02\x03\0\"\x0ctext-metrics\x02\x03\
-\0\"\x09gfx-error\x02\x03\0\"\x0dgradient-stop\x02\x03\0\"\x0ccorner-radii\x02\x03\
-\0\"\x0atext-style\x02\x03\0\"\x0bfont-family\x01BK\x02\x03\x02\x018\x04\0\x05co\
-lor\x03\0\0\x02\x03\x02\x019\x04\0\x05point\x03\0\x02\x02\x03\x02\x01:\x04\0\x04\
-rect\x03\0\x04\x02\x03\x02\x01;\x04\0\x04size\x03\0\x06\x02\x03\x02\x01<\x04\0\x0c\
-text-metrics\x03\0\x08\x02\x03\x02\x01=\x04\0\x09gfx-error\x03\0\x0a\x02\x03\x02\
-\x01>\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\x01?\x04\0\x0ccorner-radii\x03\
-\0\x0e\x02\x03\x02\x01@\x04\0\x0atext-style\x03\0\x10\x02\x03\x02\x01A\x04\0\x0b\
-font-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06windoww\x06widgetw\0\x14\x04\
-\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06canvasw\0\x16\x04\0\x0bcanva\
-s-size\x01\x17\x01j\0\x01\x0b\x01@\x02\x06canvasw\x04size\x07\0\x18\x04\0\x0fset\
--design-size\x01\x19\x01@\x05\x06canvasw\x01xv\x01yv\x01wv\x01hv\0\x18\x04\0\x08\
-set-clip\x01\x1a\x01@\x01\x06canvasw\0\x18\x04\0\x0aclear-clip\x01\x1b\x01@\x02\x06\
-canvasw\x04fill\x01\0\x18\x04\0\x05clear\x01\x1c\x01@\x03\x06canvasw\x04area\x05\
-\x04fill\x01\0\x18\x04\0\x09fill-rect\x01\x1d\x01@\x04\x06canvasw\x04area\x05\x06\
-stroke\x01\x05widthv\0\x18\x04\0\x0bstroke-rect\x01\x1e\x01@\x04\x06canvasw\x04a\
-rea\x05\x05radii\x0f\x04fill\x01\0\x18\x04\0\x0ffill-round-rect\x01\x1f\x01@\x05\
-\x06canvasw\x04area\x05\x05radii\x0f\x05widthv\x06stroke\x01\0\x18\x04\0\x11stro\
-ke-round-rect\x01\x20\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x04blurv\x06s\
-hadow\x01\0\x18\x04\0\x16drop-shadow-round-rect\x01!\x01p\x0d\x01@\x04\x06canvas\
-w\x04area\x05\x0dangle-degreesv\x05stops\"\0\x18\x04\0\x15linear-gradient-stops\x01\
-#\x01@\x06\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\x05style\x11\
-\0\x18\x04\0\x10draw-text-styled\x01$\x01j\x01\x09\x01\x0b\x01@\x04\x06canvasw\x04\
-texts\x09font-sizev\x05style\x11\0%\x04\0\x13measure-text-styled\x01&\x01@\x07\x06\
-canvasw\x06center\x03\x06radiusv\x0dstart-degreesv\x0dsweep-degreesv\x05widthv\x06\
-stroke\x01\0\x18\x04\0\x0astroke-arc\x01'\x01p}\x01@\x06\x06canvasw\x04area\x05\x05\
-radii\x0f\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x11draw-pixels-round\x01)\x01\
-@\x04\x06canvasw\x06center\x03\x06radiusv\x04fill\x01\0\x18\x04\0\x0bfill-circle\
-\x01*\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05widthv\x06stroke\x01\0\x18\
-\x04\0\x0dstroke-circle\x01+\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05inn\
-er\x01\x05outer\x01\0\x18\x04\0\x0fradial-gradient\x01,\x01@\x04\x06canvasw\x04a\
-rea\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0flinear-gradient\x01-\x01@\x05\x06\
-canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\0\x18\x04\0\x09draw-text\
-\x01.\x01@\x03\x06canvasw\x04texts\x09font-sizev\0%\x04\0\x0cmeasure-text\x01/\x01\
-@\x05\x06canvasw\x04area\x05\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-p\
-ixels\x010\x01@\x07\x06canvasw\x06center\x03\x03dst\x07\x05anglev\x05widthy\x06h\
-eighty\x04rgba(\0\x18\x04\0\x0bdraw-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18\
-krate:gfx/canvas2d@0.1.0\x05B\x01B%\x02\x03\x02\x018\x04\0\x05color\x03\0\0\x02\x03\
-\x02\x01=\x04\0\x09gfx-error\x03\0\x02\x01pv\x01r\x0a\x07ambientv\x08specularv\x09\
-shininessv\x0bfog-densityv\x09fog-color\x01\x0efill-direction\x04\x0afill-color\x01\
-\x0dshadow-radiusv\x0fshadow-softnessv\x08exposurev\x04\0\x08lighting\x03\0\x05\x01\
-j\x01w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x07\x04\0\x04bind\x01\x08\x01j\0\
-\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x09\x04\0\x05clear\x01\x0a\x01@\x04\x05\
-scenew\x03eye\x04\x07look-at\x04\x0bfov-degreesv\0\x09\x04\0\x06camera\x01\x0b\x01\
-@\x02\x05scenew\x09direction\x04\0\x09\x04\0\x05light\x01\x0c\x01@\x03\x05scenew\
-\x08vertices\x04\x04tint\x01\0\x09\x04\0\x09triangles\x01\x0d\x01@\x06\x05scenew\
-\x08vertices\x04\x09translate\x04\x0erotate-degrees\x04\x05scalev\x04tint\x01\0\x09\
-\x04\0\x05place\x01\x0e\x01p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0f\
-\0\x07\x04\0\x0eupload-texture\x01\x10\x01@\x05\x05scenew\x08vertices\x04\x03uvs\
-\x04\x07texturew\x04tint\x01\0\x09\x04\0\x08textured\x01\x11\x01@\x06\x05scenew\x08\
-vertices\x04\x07normals\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x06sm\
-ooth\x01\x12\x01@\x02\x05scenew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\
-\x01@\x08\x05scenew\x08vertices\x04\x07normals\x04\x08tangents\x04\x03uvs\x04\x07\
-texturew\x0enormal-texturew\x04tint\x01\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\
-\0\x05unlit\x01\x11\x01@\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-f\
-aces\x01\x15\x01@\x01\x05scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gf\
-x/scene3d@0.1.0\x05C\x01B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-for\
-mat\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06format\x01\x0dbuffer-frames\
-y\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-\
-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\
-\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types@0.1.0\x05D\x02\x03\0%\x0b\
-audio-error\x02\x03\0%\x0dstream-config\x01B\x15\x02\x03\x02\x01E\x04\0\x0baudio\
--error\x03\0\0\x02\x03\x02\x01F\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\
-\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09s\
-tream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\
-\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09\
-stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\
-\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05\
-soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05\
-G\x01B\x0f\x02\x03\x02\x01E\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01F\x04\0\x0d\
-stream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04\
-open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\
-\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-byte\
-sy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05H\x01B\x0d\x01\
-m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fp\
-sy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03\
-fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\
-\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eel\
-apsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einva\
-lid-stream\0\0\x12device-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01\
-s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/typ\
-es@0.1.0\x05I\x02\x03\0(\x0ccamera-error\x02\x03\0(\x0bdevice-info\x02\x03\0(\x05\
-frame\x02\x03\0(\x0aframe-info\x02\x03\0(\x0dstream-config\x01B\x1d\x02\x03\x02\x01\
-J\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01K\x04\0\x0bdevice-info\x03\0\x02\x02\
-\x03\x02\x01L\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01M\x04\0\x0aframe-info\x03\0\
-\x06\x02\x03\x02\x01N\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\
-\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\
-\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stre\
-am-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\
-\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\
-\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate\
-:camera/capture@0.1.0\x05O\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\
-\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\
-\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01\
-m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09i\
-nference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\
-\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0a\
-transcribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0b\
-sample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k\
-}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-rate\
-y\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\
-\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05P\x01B\x12\x01r\x03\x02ids\x04\
-names\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11permission-denied\0\0\x0fi\
-nvalid-request\x01s\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09say-erro\
-r\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\0\x06voices\x01\x06\x01\
-ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04rate\x08\0\x09\x04\0\x03\
-say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\x01\x03\x01@\0\0\x0c\
-\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@0.1.0\x05Q\x01@\0\0z\x04\
-\0\x03run\x01R\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0\
-G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
-n-rust\x060.41.0";
+\x0epointer-button\x01B\x13\x02\x03\x02\x01/\x04\0\x0epointer-button\x03\0\0\x02\
+\x03\x02\x01&\x04\0\x08ui-error\x03\0\x02\x01o\x02vv\x01k\x04\x01@\x01\x06window\
+w\0\x05\x04\0\x08position\x01\x06\x01@\x01\x06button\x01\0\x7f\x04\0\x0bbutton-h\
+eld\x01\x07\x01@\x01\x06windoww\0\x04\x04\0\x0btake-motion\x01\x08\x01j\0\x01\x03\
+\x01@\x01\x06windoww\0\x09\x04\0\x07capture\x01\x0a\x01@\x01\x06windoww\x01\0\x04\
+\0\x07release\x01\x0b\x01@\x01\x06windoww\0\x7f\x04\0\x08captured\x01\x0c\x03\0\x16\
+krate:ui/pointer@0.1.0\x050\x02\x03\0\x17\x0bchosen-file\x01B\x16\x02\x03\x02\x01\
+1\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\x02\x01r\
+\x02\x04names\x05tokens\x04\0\x0dchosen-folder\x03\0\x04\x01j\0\x01\x03\x01@\x03\
+\x06windoww\x05titles\x04bodys\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x03\
+\x01@\x03\x06windoww\x05titles\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x01\x01\
+j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-f\
+ile\x01\x0c\x01@\x04\x06windoww\x05titles\x09suggesteds\x06filters\0\x0b\x04\0\x09\
+save-file\x01\x0d\x01k\x05\x01j\x01\x0e\x01\x03\x01@\x02\x06windoww\x05titles\0\x0f\
+\x04\0\x0bopen-folder\x01\x10\x03\0\x15krate:ui/dialog@0.1.0\x052\x01B\x0b\x02\x03\
+\x02\x01&\x04\0\x08ui-error\x03\0\0\x01m\x03\x07printed\x09cancelled\x10opened-i\
+n-viewer\x04\0\x0dprint-outcome\x03\0\x02\x01j\x01\x03\x01\x01\x01@\x02\x06windo\
+ww\x05titles\0\x04\x04\0\x06window\x01\x05\x01j\x01y\x01\x01\x01@\x01\x06windoww\
+\0\x06\x04\0\x08add-page\x01\x07\x04\0\x06finish\x01\x05\x03\0\x14krate:ui/print\
+@0.1.0\x053\x01B\x08\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\x01\
+\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\
+\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x054\x02\x03\0\x17\x09\
+menu-item\x01B\x08\x02\x03\x02\x015\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01&\x04\
+\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05items\x04\
+\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x056\x01B\x05\x01\
+q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\x01s\0\x04\0\x0claunch-\
+error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\x08open-url\x01\x03\x03\
+\0\x17krate:ui/launcher@0.1.0\x057\x01B\x05\x01q\x03\x06denied\0\0\x0finvalid-co\
+ntent\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01\
+@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\0\x15krate:ui/notify@0.\
+1.0\x058\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\
+\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06heightv\x04\0\x04siz\
+e\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06ascentv\x07descentv\x04\0\x0ctext-m\
+etrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\x08\
+\x01r\x02\x06offsetv\x05color\x01\x04\0\x0dgradient-stop\x03\0\x0a\x01m\x03\x04s\
+ans\x05serif\x04mono\x04\0\x0bfont-family\x03\0\x0c\x01r\x04\x06weight{\x06itali\
+c\x7f\x0eletter-spacingv\x06family\x0d\x04\0\x0atext-style\x03\0\x0e\x01r\x04\x08\
+top-leftv\x09top-rightv\x0cbottom-rightv\x0bbottom-leftv\x04\0\x0ccorner-radii\x03\
+\0\x10\x01q\x04\x11permission-denied\0\0\x0einvalid-target\0\0\x0bunsupported\x01\
+s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x12\x03\0\x15krate:gfx/types@0.1\
+.0\x059\x02\x03\0#\x05color\x02\x03\0#\x05point\x02\x03\0#\x04rect\x02\x03\0#\x04\
+size\x02\x03\0#\x0ctext-metrics\x02\x03\0#\x09gfx-error\x02\x03\0#\x0dgradient-s\
+top\x02\x03\0#\x0ccorner-radii\x02\x03\0#\x0atext-style\x02\x03\0#\x0bfont-famil\
+y\x01BK\x02\x03\x02\x01:\x04\0\x05color\x03\0\0\x02\x03\x02\x01;\x04\0\x05point\x03\
+\0\x02\x02\x03\x02\x01<\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01=\x04\0\x04size\x03\
+\0\x06\x02\x03\x02\x01>\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\x02\x01?\x04\0\x09\
+gfx-error\x03\0\x0a\x02\x03\x02\x01@\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\
+\x01A\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01B\x04\0\x0atext-style\x03\0\
+\x10\x02\x03\x02\x01C\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06\
+windoww\x06widgetw\0\x14\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06\
+canvasw\0\x16\x04\0\x0bcanvas-size\x01\x17\x01j\0\x01\x0b\x01@\x02\x06canvasw\x04\
+size\x07\0\x18\x04\0\x0fset-design-size\x01\x19\x01@\x05\x06canvasw\x01xv\x01yv\x01\
+wv\x01hv\0\x18\x04\0\x08set-clip\x01\x1a\x01@\x01\x06canvasw\0\x18\x04\0\x0aclea\
+r-clip\x01\x1b\x01@\x02\x06canvasw\x04fill\x01\0\x18\x04\0\x05clear\x01\x1c\x01@\
+\x03\x06canvasw\x04area\x05\x04fill\x01\0\x18\x04\0\x09fill-rect\x01\x1d\x01@\x04\
+\x06canvasw\x04area\x05\x06stroke\x01\x05widthv\0\x18\x04\0\x0bstroke-rect\x01\x1e\
+\x01@\x04\x06canvasw\x04area\x05\x05radii\x0f\x04fill\x01\0\x18\x04\0\x0ffill-ro\
+und-rect\x01\x1f\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x05widthv\x06strok\
+e\x01\0\x18\x04\0\x11stroke-round-rect\x01\x20\x01@\x05\x06canvasw\x04area\x05\x05\
+radii\x0f\x04blurv\x06shadow\x01\0\x18\x04\0\x16drop-shadow-round-rect\x01!\x01p\
+\x0d\x01@\x04\x06canvasw\x04area\x05\x0dangle-degreesv\x05stops\"\0\x18\x04\0\x15\
+linear-gradient-stops\x01#\x01@\x06\x06canvasw\x04texts\x06origin\x03\x09font-si\
+zev\x03ink\x01\x05style\x11\0\x18\x04\0\x10draw-text-styled\x01$\x01j\x01\x09\x01\
+\x0b\x01@\x04\x06canvasw\x04texts\x09font-sizev\x05style\x11\0%\x04\0\x13measure\
+-text-styled\x01&\x01@\x07\x06canvasw\x06center\x03\x06radiusv\x0dstart-degreesv\
+\x0dsweep-degreesv\x05widthv\x06stroke\x01\0\x18\x04\0\x0astroke-arc\x01'\x01p}\x01\
+@\x06\x06canvasw\x04area\x05\x05radii\x0f\x05widthy\x06heighty\x04rgba(\0\x18\x04\
+\0\x11draw-pixels-round\x01)\x01@\x04\x06canvasw\x06center\x03\x06radiusv\x04fil\
+l\x01\0\x18\x04\0\x0bfill-circle\x01*\x01@\x05\x06canvasw\x06center\x03\x06radiu\
+sv\x05widthv\x06stroke\x01\0\x18\x04\0\x0dstroke-circle\x01+\x01@\x05\x06canvasw\
+\x06center\x03\x06radiusv\x05inner\x01\x05outer\x01\0\x18\x04\0\x0fradial-gradie\
+nt\x01,\x01@\x04\x06canvasw\x04area\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0f\
+linear-gradient\x01-\x01@\x05\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03\
+ink\x01\0\x18\x04\0\x09draw-text\x01.\x01@\x03\x06canvasw\x04texts\x09font-sizev\
+\0%\x04\0\x0cmeasure-text\x01/\x01@\x05\x06canvasw\x04area\x05\x05widthy\x06heig\
+hty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06center\x03\x03\
+dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-sprite\x011\x04\
+\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05D\x01B%\x02\x03\x02\x01\
+:\x04\0\x05color\x03\0\0\x02\x03\x02\x01?\x04\0\x09gfx-error\x03\0\x02\x01pv\x01\
+r\x0a\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09fog-color\x01\x0e\
+fill-direction\x04\x0afill-color\x01\x0dshadow-radiusv\x0fshadow-softnessv\x08ex\
+posurev\x04\0\x08lighting\x03\0\x05\x01j\x01w\x01\x03\x01@\x02\x06windoww\x06wid\
+getw\0\x07\x04\0\x04bind\x01\x08\x01j\0\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x09\
+\x04\0\x05clear\x01\x0a\x01@\x04\x05scenew\x03eye\x04\x07look-at\x04\x0bfov-degr\
+eesv\0\x09\x04\0\x06camera\x01\x0b\x01@\x02\x05scenew\x09direction\x04\0\x09\x04\
+\0\x05light\x01\x0c\x01@\x03\x05scenew\x08vertices\x04\x04tint\x01\0\x09\x04\0\x09\
+triangles\x01\x0d\x01@\x06\x05scenew\x08vertices\x04\x09translate\x04\x0erotate-\
+degrees\x04\x05scalev\x04tint\x01\0\x09\x04\0\x05place\x01\x0e\x01p}\x01@\x04\x05\
+scenew\x05widthy\x06heighty\x04rgba\x0f\0\x07\x04\0\x0eupload-texture\x01\x10\x01\
+@\x05\x05scenew\x08vertices\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x08\
+textured\x01\x11\x01@\x06\x05scenew\x08vertices\x04\x07normals\x04\x03uvs\x04\x07\
+texturew\x04tint\x01\0\x09\x04\0\x06smooth\x01\x12\x01@\x02\x05scenew\x08lightin\
+g\x06\0\x09\x04\0\x0cset-lighting\x01\x13\x01@\x08\x05scenew\x08vertices\x04\x07\
+normals\x04\x08tangents\x04\x03uvs\x04\x07texturew\x0enormal-texturew\x04tint\x01\
+\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\0\x05unlit\x01\x11\x01@\x02\x05scenew\x07\
+enabled\x7f\0\x09\x04\0\x0fcull-back-faces\x01\x15\x01@\x01\x05scenew\0\x09\x04\0\
+\x07present\x01\x16\x03\0\x17krate:gfx/scene3d@0.1.0\x05E\x01B\x06\x01m\x02\x07p\
+cm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08cha\
+nnels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\
+\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0buns\
+upported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate\
+:audio/types@0.1.0\x05F\x02\x03\0&\x0baudio-error\x02\x03\0&\x0dstream-config\x01\
+B\x15\x02\x03\x02\x01G\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01H\x04\0\x0dst\
+ream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04op\
+en\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\
+\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\
+\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0al\
+oad-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-\
+sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\
+\x03\0\x1akrate:audio/playback@0.1.0\x05I\x01B\x0f\x02\x03\x02\x01G\x04\0\x0baud\
+io-error\x03\0\0\x02\x03\x02\x01H\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\
+\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09\
+stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\
+\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19\
+krate:audio/capture@0.1.0\x05J\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\
+\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\
+\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\
+\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05\
+bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\
+\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0dsys\
+tem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\
+\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05K\x02\x03\0)\x0ccamera-error\x02\x03\
+\0)\x0bdevice-info\x02\x03\0)\x05frame\x02\x03\0)\x0aframe-info\x02\x03\0)\x0dst\
+ream-config\x01B\x1d\x02\x03\x02\x01L\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01\
+M\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01N\x04\0\x05frame\x03\0\x04\x02\x03\
+\x02\x01O\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01P\x04\0\x0dstream-config\x03\
+\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01\
+w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\
+\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01\
+@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01\
+j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05cl\
+ose\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05Q\x01B\x12\x01r\x01\x04texts\x04\
+\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\
+\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0csp\
+eech-error\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-inv\
+alid\x0bunsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\
+\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08l\
+anguage\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmode\
+l-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\
+\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0a\
+pcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\
+\0\x11match-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05R\x01\
+B\x12\x01r\x03\x02ids\x04names\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11p\
+ermission-denied\0\0\x0finvalid-request\x01s\0\x0bunsupported\x01s\0\x08platform\
+\x01s\0\x04\0\x09say-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\
+\0\x06voices\x01\x06\x01ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04\
+rate\x08\0\x09\x04\0\x03say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\
+\x01\x03\x01@\0\0\x0c\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@\
+0.1.0\x05S\x01@\0\0z\x04\0\x03run\x01T\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\
+\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x07\
+0.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
