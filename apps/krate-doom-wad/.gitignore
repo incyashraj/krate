@@ -1,0 +1,2 @@
+# The shareware WAD is fetched, not committed: see apps/krate-doom/build.rs.
+*.wad
