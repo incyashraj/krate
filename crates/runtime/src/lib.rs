@@ -443,6 +443,13 @@ impl Runtime {
     fn engine_settings(config: &Config) -> Result<wasmtime::Config> {
         let mut wt_config = wasmtime::Config::new();
         wt_config.wasm_component_model(true);
+        // WebAssembly exception handling (standardized): what C++ `throw`
+        // and C `setjmp`/`longjmp` compile to with wasi-sdk. Without it a C
+        // or C++ program that recovers from an error that way -- a game
+        // engine's error handler, most C++ libraries -- is refused at load
+        // with "exceptions proposal not enabled" (IC-908). Control flow
+        // inside the module only: it reaches nothing the sandbox did not.
+        wt_config.wasm_exceptions(true);
 
         // iOS forbids executable pages, so the JIT cannot exist there.
         // Pulley is wasmtime's portable interpreter backend: guests are

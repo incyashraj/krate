@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 #include <dirent.h>
+#include <setjmp.h>
+static jmp_buf g_jump;
+static void jump_back(int v) { longjmp(g_jump, v); }
 #include <sys/stat.h>
 #include <errno.h>
 #include <string.h>
@@ -49,6 +52,9 @@ extern "C" int probe_main(int argc, char **argv) {
     volatile double x = 0; for (int i = 0; i < 2000000; i++) x += i * 0.5;
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
     printf("clock: %lld ms\n", (long long)ms);
+    int got = setjmp(g_jump);
+    if (got == 0) jump_back(7);
+    printf("setjmp: came back with %d\n", got);
     printf("probe: ok\n");
     return 0;
 }

@@ -20,6 +20,14 @@ fn main() {
             "-O2",
             "-fno-exceptions",
             "-std=c++17",
+            // setjmp/longjmp ride on WebAssembly exception handling.
+            "-mexception-handling",
+            "-mllvm",
+            "-wasm-enable-sjlj",
+            // The standardized instructions (try_table, exnref), which
+            // Wasmtime implements, not the legacy try/catch.
+            "-mllvm",
+            "-wasm-use-legacy-eh=false",
         ])
         .arg(format!("--sysroot={}", sysroot.display()))
         .arg("-c")
@@ -51,6 +59,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=probe");
     println!("cargo:rustc-link-lib=static=c++");
     println!("cargo:rustc-link-lib=static=c++abi");
+    println!("cargo:rustc-link-lib=static=setjmp");
     println!("cargo:rustc-link-lib=static=c");
     println!("cargo:rerun-if-changed=cpp/probe.cpp");
 }
