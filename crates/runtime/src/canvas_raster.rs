@@ -261,9 +261,10 @@ impl CanvasSurface {
             logical_height: height,
             scale,
             design: None,
-            // Opaque white, so a canvas an app forgets to clear reads as a
-            // blank sheet rather than a black hole in the window.
-            buffer: vec![0xFFFF_FFFF; phys_w as usize * phys_h as usize],
+            // Made on first draw (see `materialize`): an app that only ever
+            // hands over whole pictures never needs a window-sized raster,
+            // which on a Retina window is 16 MB written white for nothing.
+            buffer: Vec::new(),
             pending: None,
         })
     }
@@ -393,6 +394,7 @@ impl CanvasSurface {
 
     pub fn clear(&mut self, color: u32) {
         self.pending = None;
+        self.ensure_buffer();
         let __op_timer = OpTimer(0, std::time::Instant::now());
         let _ = &__op_timer;
         // Clear respects the clip too, so "clear this region" works -- which
@@ -1311,8 +1313,18 @@ impl CanvasSurface {
             && (y + h) * k >= self.height as f32 - 0.5
     }
 
+    /// The raster, made on first use: opaque white, so a canvas an app
+    /// forgets to clear reads as a blank sheet rather than a black hole in
+    /// the window.
+    fn ensure_buffer(&mut self) {
+        if self.buffer.is_empty() {
+            self.buffer = vec![0xFFFF_FFFF; self.width as usize * self.height as usize];
+        }
+    }
+
     /// Raster a kept picture before anything is drawn over it.
     fn materialize(&mut self) {
+        self.ensure_buffer();
         if let Some(image) = self.pending.take() {
             draw_image(
                 &mut self.buffer,
@@ -1328,6 +1340,11 @@ impl CanvasSurface {
     pub fn to_image(&self) -> Result<ImagePixels, UiAdapterError> {
         if let Some(image) = &self.pending {
             return Ok(image.clone());
+        }
+        if self.buffer.is_empty() {
+            // Nothing drawn yet: the blank white sheet the buffer would be.
+            let rgba = vec![0xFF; self.width as usize * self.height as usize * 4];
+            return ImagePixels::new(self.width, self.height, rgba);
         }
         // Chunked writes instead of four pushes per pixel: every push
         // carries a capacity check, and this conversion runs once per
@@ -1396,6 +1413,7 @@ mod tests {
         let out = s.to_image().expect("image");
         assert_eq!((out.width, out.height), (96, 60), "kept at its own size");
         assert_eq!(&out.rgba[..4], &[200, 40, 10, 255]);
+        assert!(s.buffer.is_empty(), "a kept frame never needs the raster");
 
         // Something drawn over it: the picture is rastered first, then the
         // rect, at the physical size -- what drawing it would have made.
@@ -1686,11 +1704,16 @@ mod tests {
 
         assert!(surface.resize(900, 500).expect("grow"));
         assert_eq!(surface.dimensions(), (900, 500));
-        // The buffer really is the new size, not just the reported number.
+        // The raster really is the new size, not just the reported number:
+        // what is published, and what a draw writes into.
+        let image = surface.to_image().expect("image");
+        assert_eq!((image.width, image.height), (900, 500));
+        surface.fill_rect(0.0, 0.0, 1.0, 1.0, 0xFF00_0000);
         assert_eq!(surface.buffer.len(), 900 * 500);
 
         assert!(surface.resize(320, 760).expect("shrink"));
         assert_eq!(surface.dimensions(), (320, 760));
+        surface.fill_rect(0.0, 0.0, 1.0, 1.0, 0xFF00_0000);
         assert_eq!(surface.buffer.len(), 320 * 760);
 
         // Same size is a no-op, so a redraw does not reallocate every frame.
