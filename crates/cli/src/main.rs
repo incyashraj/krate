@@ -17472,6 +17472,10 @@ fn human_label(cap: &Capability) -> String {
             Some(r) => format!("create folders in {}", tidy_resource(r)),
             None => "create folders".to_string(),
         },
+        ("fs", "remove") => match resource {
+            Some(r) => format!("delete files in {}", tidy_resource(r)),
+            None => "delete files".to_string(),
+        },
         ("net", "connect") => match resource {
             Some(r) => format!("connect to {r} over the network"),
             None => "connect over the network".to_string(),
@@ -23213,6 +23217,10 @@ again: {} -> {}",
         assert_eq!(
             human_label(&cap("fs.mkdir:input/quick")),
             "create folders in input/quick"
+        );
+        assert_eq!(
+            human_label(&cap("fs.remove:saves/**")),
+            "delete files in saves"
         );
         assert_eq!(
             human_label(&cap("ui.window:create")),
