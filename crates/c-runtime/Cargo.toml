@@ -9,3 +9,5 @@ description = "Run C and C++ programs built with wasi-sdk as Krate apps: their W
 
 [dependencies]
 krate = { path = "../bindings-rust" }
+# The guard the SDK's exports already use to run static constructors once.
+wit-bindgen-rt = "0.44.0"

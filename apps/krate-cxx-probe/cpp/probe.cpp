@@ -16,6 +16,10 @@ static void jump_back(int v) { longjmp(g_jump, v); }
 #include <string.h>
 
 struct Global { std::string name; Global() : name("constructed") {} } g_global;
+// Static constructors must run exactly once. Twice turns every
+// self-registering list (a game's menus, a plugin table) into a cycle.
+static int g_ctor_runs = 0;
+struct Counted { Counted() { g_ctor_runs++; } } g_counted;
 
 extern "C" int probe_main(int argc, char **argv) {
     std::vector<std::string> words = {"runs", "krate", "c++"};
@@ -25,6 +29,7 @@ extern "C" int probe_main(int argc, char **argv) {
     auto shared = std::make_shared<std::vector<int>>(1000, 7);
     printf("argv: %d %s\n", argc, argc > 1 ? argv[1] : "-");
     printf("global: %s\n", g_global.name.c_str());
+    printf("ctors: %d\n", g_ctor_runs);
     std::cout << "iostream: " << words[0] << " " << lengths["krate"] << " " << shared->size() << std::endl;
 
     mkdir("probe-dir", 0755);

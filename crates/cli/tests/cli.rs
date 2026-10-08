@@ -6208,6 +6208,67 @@ fn krate_logs_go_to_stderr_never_into_what_the_app_prints() {
     );
 }
 
+/// An ordinary C++ program runs as a Krate app (IC-908): the STL, iostream,
+/// files, folders, the clock, setjmp -- and its static constructors run
+/// exactly once.
+///
+/// `cxx-probe.wasm` is apps/krate-cxx-probe built. Constructors ran twice
+/// once (K-1009): the app's export ran them and the C runtime ran them
+/// again, and every self-registering C++ list -- Counter-Strike's menus --
+/// became a cycle the program looped on forever.
+#[test]
+fn a_cpp_program_runs_and_its_constructors_run_once() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/cxx-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.cxx-probe\"\nname = \"cxx-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"fs.read:./probe-dir/**\"\nrationale = \"read\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"fs.write:./probe-dir/**\"\nrationale = \"write\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"fs.list:./probe-dir/**\"\nrationale = \"list\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("cxx.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let out = krate()
+        .current_dir(dir.path())
+        .arg("run")
+        .arg("--headless")
+        .arg(&bundle)
+        .arg("--auto-grant")
+        .output()
+        .expect("run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in [
+        "global: constructed",
+        "ctors: 1",
+        "file: hello from C++ 42",
+        "setjmp: came back with 7",
+        "probe: ok",
+        "exit: 0",
+    ] {
+        assert!(
+            stdout.lines().any(|l| l.trim() == line),
+            "missing {line:?} in: {stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 /// A game asks about the mouse through the binary a person runs
 /// (krate:ui/pointer, IC-909).
 ///

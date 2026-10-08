@@ -73,7 +73,6 @@ static mut STARTED: bool = false;
 static mut EXIT_CODE: Option<i32> = None;
 
 extern "C" {
-    fn __wasm_call_ctors();
     fn fflush(stream: *mut core::ffi::c_void) -> i32;
 }
 
@@ -106,8 +105,11 @@ pub fn start() {
         FDS.push(Some(Entry::Out(false)));
         FDS.push(Some(Entry::Out(true)));
         FDS.push(Some(Entry::Dir(String::new())));
-        __wasm_call_ctors();
     }
+    // Through the SDK's own guard, never directly: the app's exported entry
+    // has already run the constructors through it, and running them a second
+    // time made every self-registering C++ list loop forever (K-1009).
+    wit_bindgen_rt::run_ctors_once();
 }
 
 /// The code a program passed to `exit`, when it has called it.
