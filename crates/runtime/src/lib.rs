@@ -1336,6 +1336,8 @@ impl Runtime {
         link_gui!(gfx::scene3d);
         link_gui!(audio::types);
         link_gui!(audio::playback);
+        // Phase 4 only: how far ahead a stream is (K-1011).
+        link_gui!(phase4_gui_bindings::krate::audio::playback_queue);
         link_gui!(audio::capture);
         link_gui!(camera::types);
         link_gui!(camera::capture);

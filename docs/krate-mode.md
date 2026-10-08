@@ -691,6 +691,7 @@ takes this path, so any of them is a model for the wiring.
 - `playback::load-sound: func(stream-id: u64, bytes: list<u8>) -> result<u64, audio-error>`
 - `playback::play-sound: func(stream-id: u64, sound: u64, gain: f32) -> result<_, audio-error>`
 - `playback::stop-sound: func(stream-id: u64, sound: u64) -> result<_, audio-error>`
+- `playback-queue::queued: func(stream-id: u64) -> result<u32, audio-error>`
 - `capture::open: func(config: stream-config) -> result<u64, audio-error>`
 - `capture::start: func(stream-id: u64) -> result<_, audio-error>`
 - `capture::stop: func(stream-id: u64) -> result<_, audio-error>`

@@ -354,6 +354,39 @@ impl AudioPlaybackRuntime {
         let accepted = stream.converter.write(&stream.ring, bytes)?;
         Ok(accepted as u32)
     }
+
+    /// Frames written and not yet played, in the stream's own rate (K-1011).
+    ///
+    /// The ring holds up to ten seconds so a writer is never cut off, which
+    /// also means an app that writes whatever it has mixed can drift seconds
+    /// ahead of the speaker -- a game's shots were heard three to five
+    /// seconds late. With this an app keeps the queue as short as it wants.
+    pub fn queued(&self, stream_id: u64) -> Result<u32, PlaybackError> {
+        let stream = self
+            .streams
+            .get(&stream_id)
+            .ok_or(PlaybackError::InvalidStream)?;
+        let samples = stream.ring.lock().map(|ring| ring.len()).unwrap_or(0);
+        Ok(queued_guest_frames(
+            samples,
+            stream.converter.device_channels,
+            stream.converter.device_rate,
+            stream.converter.guest_rate,
+        ))
+    }
+}
+
+/// Device samples in a ring, as frames at the guest's rate.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn queued_guest_frames(
+    samples: usize,
+    device_channels: usize,
+    device_rate: u32,
+    guest_rate: u32,
+) -> u32 {
+    let device_frames = (samples / device_channels.max(1)) as u64;
+    let frames = device_frames * u64::from(guest_rate) / u64::from(device_rate.max(1));
+    u32::try_from(frames).unwrap_or(u32::MAX)
 }
 
 // The browser's answer: the same shapes, and an honest refusal.
@@ -381,6 +414,10 @@ impl AudioPlaybackRuntime {
     }
 
     pub fn stop(&mut self, _stream_id: u64) -> Result<(), PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
+
+    pub fn queued(&self, _stream_id: u64) -> Result<u32, PlaybackError> {
         Err(PlaybackError::Unsupported)
     }
 
@@ -791,5 +828,25 @@ mod tests {
         assert_eq!(out[1], (-0.5 * f32::from(i16::MAX)) as i16);
         assert_eq!(out[2], 0, "past the ring is silence, not stale data");
         assert_eq!(out[3], 0);
+    }
+}
+
+#[cfg(test)]
+mod queued_tests {
+    use super::queued_guest_frames;
+
+    /// The queue is reported in the app's own frames, whatever the device
+    /// runs at: 48 kHz stereo holding 9,600 samples is 100 ms, which is 4,410
+    /// frames to an app writing 44.1 kHz.
+    #[test]
+    fn queued_frames_are_the_apps_own() {
+        assert_eq!(queued_guest_frames(9_600, 2, 48_000, 44_100), 4_410);
+        assert_eq!(queued_guest_frames(9_600, 2, 48_000, 48_000), 4_800);
+        assert_eq!(queued_guest_frames(0, 2, 48_000, 44_100), 0);
+        assert_eq!(
+            queued_guest_frames(7, 0, 0, 44_100),
+            308_700,
+            "no divide by zero"
+        );
     }
 }

@@ -36,6 +36,13 @@ impl Guest for Component {
                 Err(err) => describe(err),
             },
             (Some("say"), Some(text)) => say_and_stop(text),
+            // krate:audio/playback-queue (K-1011), on a stream that does not
+            // exist: the interface links and answers rather than trapping.
+            (Some("queue"), None) => match krate::audio::playback_queue::queued(999) {
+                Ok(frames) => format!("queue={frames}"),
+                Err(krate::audio::types::AudioError::InvalidStream) => String::from("queue=invalid-stream"),
+                Err(other) => format!("queue=error {other:?}"),
+            },
             (Some("rate"), Some(rate)) => match rate.parse::<f32>() {
                 Ok(rate) => match synthesis::say("rate", None, Some(rate)) {
                     Ok(()) => {
@@ -46,7 +53,7 @@ impl Guest for Component {
                 },
                 Err(_) => String::from("usage: rate <number>"),
             },
-            _ => String::from("usage: voices | say <text> | rate <x>"),
+            _ => String::from("usage: voices | say <text> | rate <x> | queue"),
         };
         if !write_line(&stdio::stdout(), &line) {
             return 20;

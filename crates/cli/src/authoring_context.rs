@@ -406,7 +406,10 @@ play handles as things happen.\n\n\
 \u{20}\u{20}\u{20}\u{20}// in the frame the shot happens:\n\
 \u{20}\u{20}\u{20}\u{20}let _ = audio::playback::play_sound(stream, shot, 0.8);\n\n\
 Music is the same trick with a note table: keep an index, advance it on a \
-clock, play the next note's blip. Declare `audio.playback` in the manifest \
+clock, play the next note's blip. Streaming your own mix (an emulator, a \
+synth) with `write`? Keep it on time: `audio::playback_queue::queued(stream)` \
+says how many frames are still waiting -- write only while it is under a \
+tenth of a second, or every sound is heard late. Declare `audio.playback` in the manifest \
 with a rationale in plain words (\"make the game's sounds\"). One stream \
 for the whole app -- opening one costs ~2ms, which a game cannot spend \
 mid-frame.\n\n\

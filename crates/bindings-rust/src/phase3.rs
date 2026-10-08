@@ -971,7 +971,7 @@ pub mod gfx {
     }
 }
 
-/// `krate:audio`: capture, playback.
+/// `krate:audio`: capture, playback, playback_queue.
 pub mod audio {
     /// `krate:audio/capture`.
     pub mod capture {
@@ -1050,6 +1050,16 @@ pub mod audio {
         /// Stop every copy of a sound that is currently playing.
         pub fn stop_sound(stream_id: u64, sound: u64) -> Result<(), AudioError> {
             crate::bindings::krate::audio::playback::stop_sound(stream_id, sound)
+        }
+    }
+    /// `krate:audio/playback_queue`.
+    pub mod playback_queue {
+        pub use crate::bindings::krate::audio::playback_queue::AudioError;
+
+        /// Frames written to the stream and not yet played, at the stream's own
+        /// sample rate. 4410 at 44.1 kHz is a tenth of a second.
+        pub fn queued(stream_id: u64) -> Result<u32, AudioError> {
+            crate::bindings::krate::audio::playback_queue::queued(stream_id)
         }
     }
     /// The records and errors this package's interfaces share.

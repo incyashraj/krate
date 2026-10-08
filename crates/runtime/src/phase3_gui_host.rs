@@ -5911,6 +5911,28 @@ impl audio::playback::Host for Phase3GuiHost {
     }
 }
 
+/// How far ahead a playback stream is (K-1011). Phase 4 only; the same
+/// permission as the stream it measures.
+impl crate::phase4_gui_bindings::krate::audio::playback_queue::Host for Phase3GuiHost {
+    fn queued(
+        &mut self,
+        stream_id: u64,
+    ) -> wasmtime::Result<Result<u32, audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self
+            .audio_playback
+            .queued(stream_id)
+            .map_err(playback_error))
+    }
+}
+
 impl audio::capture::Host for Phase3GuiHost {
     fn open(
         &mut self,

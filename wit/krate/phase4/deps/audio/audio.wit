@@ -76,6 +76,21 @@ interface playback {
   stop-sound: func(stream-id: u64, sound: u64) -> result<_, audio-error>;
 }
 
+/// How much of a stream is still waiting to be heard (K-1011).
+///
+/// `write` takes up to about ten seconds of sound so a writer is never cut
+/// off -- which also means an app that writes everything it has mixed can
+/// run seconds ahead of the speaker, and every sound after is heard that
+/// late. A game keeps this small: write only while `queued` is under, say,
+/// a tenth of a second. Needs `audio.playback`, like the stream itself.
+interface playback-queue {
+  use types.{audio-error};
+
+  /// Frames written to the stream and not yet played, at the stream's own
+  /// sample rate. 4410 at 44.1 kHz is a tenth of a second.
+  queued: func(stream-id: u64) -> result<u32, audio-error>;
+}
+
 /// Audio capture calls.
 interface capture {
   use types.{audio-error, stream-config};

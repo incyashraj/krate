@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 55 boundaries reviewed, 46 of them WIT interfaces (46 declared under wit/krate).
-- 32 compulsory, each with a justification or a recorded gap; 23 optional.
+- 56 boundaries reviewed, 47 of them WIT interfaces (47 declared under wit/krate).
+- 33 compulsory, each with a justification or a recorded gap; 23 optional.
 - 7 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -25,6 +25,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 |---|---|---|---|---|---|---|
 | `krate:audio@0.1.0/capture` | wit | the microphone boundary: opening an input is a grant the person gives | what is done with the audio: recognition, recording, analysis, by any library | raw PCM frames | yes | recipient-permission |
 | `krate:audio@0.1.0/playback` | wit | the device boundary: opening an output is a grant the person gives | synthesis, mixing, codecs and formats; the app decodes with any library it likes and hands over PCM | raw PCM buffers -- no codec or mixer of Krate's is between the app and the device | yes | recipient-permission |
+| `krate:audio@0.1.0/playback-queue` | wit | how much of a stream is still waiting to be heard, so a stream can stay on time | how far ahead it writes | none needed: it reads a number and grants nothing new | yes | recipient-permission |
 | `krate:audio@0.1.0/types` | wit | the sample formats and error shapes every host lowers to | what the app does with the samples | none needed: a type carries no authority | yes | portability |
 | `krate:camera@0.1.0/capture` | wit | the camera boundary: opening a camera is a grant the person gives | frame processing, encoding, vision, by any library | raw frames, pulled at the app's own rate | yes | recipient-permission |
 | `krate:camera@0.1.0/types` | wit | frame and error shapes every host lowers to | what the app does with a frame | none needed: a type carries no authority | yes | portability |

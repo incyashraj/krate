@@ -6384,6 +6384,9 @@ fn an_app_speaks_a_line_and_stops_when_told() {
         ask(&["rate", "3"]).starts_with("error=invalid-request"),
         "a rate outside 0.5 to 2.0 is refused the same way everywhere"
     );
+    // How far ahead a stream is (K-1011): a stream that does not exist is
+    // an answer, not a trap -- which also proves the interface links.
+    assert_eq!(ask(&["queue"]), "queue=invalid-stream");
     let voices = ask(&["voices"]);
     let said = ask(&["say", "Krate can talk"]);
     let no_voice = |line: &str| line.starts_with("error=unsupported");
