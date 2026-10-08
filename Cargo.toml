@@ -27,6 +27,7 @@ members = [
     "crates/port",
 ]
 exclude = [
+    "crates/c-runtime",
     "apps/krate-curl",
     "apps/krate-cat",
     "apps/krate-clock",

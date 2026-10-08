@@ -11,10 +11,16 @@ use std::process::Command;
 fn main() {
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let clang = std::env::var("KRATE_CLANG").unwrap_or_else(|_| "/opt/homebrew/opt/llvm/bin/clang".into());
-    let ar = std::env::var("KRATE_AR").unwrap_or_else(|_| "/opt/homebrew/opt/llvm/bin/llvm-ar".into());
+    let clang =
+        std::env::var("KRATE_CLANG").unwrap_or_else(|_| "/opt/homebrew/opt/llvm/bin/clang".into());
+    let ar =
+        std::env::var("KRATE_AR").unwrap_or_else(|_| "/opt/homebrew/opt/llvm/bin/llvm-ar".into());
     let resource = String::from_utf8(
-        Command::new(&clang).arg("-print-resource-dir").output().expect("run clang").stdout,
+        Command::new(&clang)
+            .arg("-print-resource-dir")
+            .output()
+            .expect("run clang")
+            .stdout,
     )
     .unwrap();
     let resource = resource.trim();
@@ -46,7 +52,13 @@ fn main() {
         println!("cargo:rerun-if-changed={}", src.display());
         let obj = out.join(src.file_name().unwrap()).with_extension("o");
         let status = Command::new(&clang)
-            .args(["--target=wasm32", "-O2", "-ffreestanding", "-nostdinc", "-w"])
+            .args([
+                "--target=wasm32",
+                "-O2",
+                "-ffreestanding",
+                "-nostdinc",
+                "-w",
+            ])
             .arg("-isystem")
             .arg(root.join("c/include"))
             .arg("-isystem")
@@ -63,7 +75,12 @@ fn main() {
     }
     let lib = out.join("libdoom.a");
     let _ = std::fs::remove_file(&lib);
-    let status = Command::new(&ar).arg("crs").arg(&lib).args(&objects).status().expect("run llvm-ar");
+    let status = Command::new(&ar)
+        .arg("crs")
+        .arg(&lib)
+        .args(&objects)
+        .status()
+        .expect("run llvm-ar");
     assert!(status.success(), "llvm-ar failed");
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=doom");

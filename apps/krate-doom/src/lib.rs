@@ -111,7 +111,12 @@ pub extern "C" fn DG_DrawFrame() {
         out[2] = *px as u8;
         out[3] = 255;
     }
-    let area = gfx::Rect { x: 0.0, y: 0.0, width: RES_X as f32, height: RES_Y as f32 };
+    let area = gfx::Rect {
+        x: 0.0,
+        y: 0.0,
+        width: RES_X as f32,
+        height: RES_Y as f32,
+    };
     let _ = canvas2d::draw_pixels(h.canvas, area, RES_X as u32, RES_Y as u32, &h.rgba);
     let _ = canvas2d::present(h.canvas);
     let _ = window::request_redraw(h.win);
@@ -169,7 +174,11 @@ pub unsafe extern "C" fn krate_c_free(p: *mut c_void) {
 pub unsafe extern "C" fn krate_c_realloc(p: *mut c_void, n: usize) -> *mut c_void {
     let base = (p as *mut u8).sub(HEADER);
     let old = *(base as *const usize);
-    let q = realloc(base, Layout::from_size_align_unchecked(old + HEADER, 16), n + HEADER);
+    let q = realloc(
+        base,
+        Layout::from_size_align_unchecked(old + HEADER, 16),
+        n + HEADER,
+    );
     if q.is_null() {
         return q as *mut c_void;
     }
@@ -233,18 +242,33 @@ impl krate::Guest for Component {
         // `bench`: a real window, Doom's own attract-mode demo, 20 seconds,
         // then the frame rate -- the number that says whether it plays.
         let bench = raw.split_whitespace().any(|w| w == "bench");
-        let Ok(win) = window::create("Doom", types::WindowSize { width: 960, height: 600 }) else {
+        let Ok(win) = window::create(
+            "Doom",
+            types::WindowSize {
+                width: 960,
+                height: 600,
+            },
+        ) else {
             return 1;
         };
         if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
             return 1;
         }
-        let _ = tree::upsert_node(win, &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas));
+        let _ = tree::upsert_node(
+            win,
+            &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
+        );
         let Ok(canvas) = canvas2d::bind(win, CANVAS_ID) else {
             return 1;
         };
         // Draw in Doom's own 320x200; the host scales it to the window.
-        let _ = canvas2d::set_design_size(canvas, gfx::Size { width: RES_X as f32, height: RES_Y as f32 });
+        let _ = canvas2d::set_design_size(
+            canvas,
+            gfx::Size {
+                width: RES_X as f32,
+                height: RES_Y as f32,
+            },
+        );
         unsafe {
             HOST = Some(Host {
                 win,
@@ -287,11 +311,14 @@ impl krate::Guest for Component {
         }
         let secs = (clock::monotonic_nanos() - started) as f64 / 1e9;
         let h = host();
-        let _ = stdio::stdout().write(alloc::format!(
-            "\nticks:{ticks} frames:{} seconds:{secs:.1} fps:{:.1}\n",
-            h.frames,
-            h.frames as f64 / secs
-        ).as_bytes());
+        let _ = stdio::stdout().write(
+            alloc::format!(
+                "\nticks:{ticks} frames:{} seconds:{secs:.1} fps:{:.1}\n",
+                h.frames,
+                h.frames as f64 / secs
+            )
+            .as_bytes(),
+        );
         let _ = window::close(win);
         0
     }

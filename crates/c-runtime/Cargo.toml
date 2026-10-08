@@ -1,0 +1,11 @@
+[package]
+name = "krate-c-runtime"
+version = "0.5.5"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/krate"
+rust-version = "1.91"
+description = "Run C and C++ programs built with wasi-sdk as Krate apps: their WASI calls are answered inside the app, by Krate's own interfaces."
+
+[dependencies]
+krate = { path = "../bindings-rust" }

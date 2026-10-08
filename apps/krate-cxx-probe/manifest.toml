@@ -1,0 +1,31 @@
+[app]
+id = "dev.krate.cxx-probe"
+name = "C++ probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_cxx_probe.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what the C++ program reports"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Pass arguments to the program"
+required = true
+
+[[capabilities]]
+cap = "fs.read:./probe-dir/**"
+rationale = "Read back the file the program wrote"
+required = true
+
+[[capabilities]]
+cap = "fs.write:./probe-dir/**"
+rationale = "Write a file, as any C program might"
+required = true
+
+[[capabilities]]
+cap = "fs.list:./probe-dir/**"
+rationale = "List the folder, as readdir does"
+required = true
