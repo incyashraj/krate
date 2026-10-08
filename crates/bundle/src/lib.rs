@@ -891,6 +891,21 @@ pub enum BundleError {
         path: String,
         defect: imports::ComponentDefect,
     },
+    /// The app uses Krate interfaces this copy of Krate does not have. Almost
+    /// always the app was made with a newer Krate, so the fix is to update --
+    /// the old wording ("fix the app ... nothing downstream can repair this")
+    /// sent a person who was simply behind to blame a good file.
+    #[error(
+        "{path} needs a newer Krate: it uses {}, which this copy of Krate \
+         does not have yet.\n\n  \
+         Update Krate: https://krate.tech/open\n\n  \
+         (Building this app yourself? Then check that interface name.)",
+        interfaces.join(", ")
+    )]
+    NeedsNewerKrate {
+        path: String,
+        interfaces: Vec<String>,
+    },
     #[error(
         "{path} uses characters outside ASCII.\n\n  \
          Two spellings of one accented name are different bytes but the same \
@@ -1209,6 +1224,12 @@ fn check_component(component: &[u8], path: &str, manifest: &Manifest) -> Result<
             path: path.to_string(),
             detail,
         }),
+        Err(ComponentDefect::UnknownKrateImports(interfaces)) => {
+            Err(BundleError::NeedsNewerKrate {
+                path: path.to_string(),
+                interfaces,
+            })
+        }
         Err(defect) => Err(BundleError::InvalidComponent {
             path: path.to_string(),
             defect,
@@ -4125,6 +4146,35 @@ mod tests {
     // The same shape with different code, for "the component changed" cases:
     // a change that open must still accept, not garbage it must refuse.
     const OTHER_COMPONENT: &[u8] = include_bytes!("../tests/fixtures/minimal-run-other.wasm");
+
+    /// An app made with a newer Krate says so: update Krate, not "fix the
+    /// app". The old wording made a person who was simply one version behind
+    /// believe a good file was broken -- the founder double-clicked a game
+    /// built on a new interface and was told nothing could repair it.
+    #[test]
+    fn an_app_from_a_newer_krate_asks_for_an_update() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let newer = wat::parse_str(
+            "(component\n\
+               (import \"krate:io/stdio@0.1.0\" (instance))\n\
+               (import \"krate:io/from-the-future@0.1.0\" (instance))\n\
+               (core module $m (func (export \"run\") (result i32) i32.const 0))\n\
+               (core instance $i (instantiate $m))\n\
+               (func $run (result s32) (canon lift (core func $i \"run\")))\n\
+               (export \"run\" (func $run)))",
+        )
+        .expect("test component");
+        let component = write_temp(dir.path(), "code.wasm", &newer);
+        let err = pack(&manifest, &component, &dir.path().join("app.krate"))
+            .expect_err("an unknown interface is refused");
+        let text = err.to_string();
+        assert!(matches!(err, BundleError::NeedsNewerKrate { .. }), "{text}");
+        assert!(text.contains("needs a newer Krate"), "{text}");
+        assert!(text.contains("krate:io/from-the-future@0.1.0"), "{text}");
+        assert!(text.contains("https://krate.tech/open"), "{text}");
+        assert!(!text.contains("nothing downstream"), "{text}");
+    }
 
     const MANIFEST: &str = r#"
 [app]
