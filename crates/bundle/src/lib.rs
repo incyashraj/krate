@@ -7741,7 +7741,10 @@ required = true
         for end in 0..module.len() {
             let truncated = &module[..end];
             let output = super::strip_debug_info(truncated);
-            assert!(output.is_none(), "truncation at byte {end} must not be accepted");
+            assert!(
+                output.is_none(),
+                "truncation at byte {end} must not be accepted"
+            );
         }
 
         let header = b"\0asm\x01\0\0\0";
