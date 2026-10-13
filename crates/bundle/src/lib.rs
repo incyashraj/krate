@@ -7744,7 +7744,7 @@ required = true
             assert!(output.is_none(), "truncation at byte {end} must not be accepted");
         }
 
-        let header = b"\\0asm\\x01\\0\\0\\0";
+        let header = b"\0asm\x01\0\0\0";
         assert!(super::strip_debug_info(header).is_none());
 
         let mut oversized_section = header.to_vec();
@@ -7759,7 +7759,7 @@ required = true
         overlong_name.extend(section(0, &[5, b'a', b'b']));
         assert!(super::strip_debug_info(&overlong_name).is_none());
 
-        let mut truncated_nested_module = b"\\0asm\\x0d\\0\\x01\\0".to_vec();
+        let mut truncated_nested_module = b"\0asm\x0d\0\x01\0".to_vec();
         truncated_nested_module.extend(section(1, header));
         assert!(super::strip_debug_info(&truncated_nested_module).is_none());
     }
