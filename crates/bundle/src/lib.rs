@@ -7708,6 +7708,63 @@ required = true
     }
 
     #[test]
+    fn strip_debug_info_rejects_truncated_and_malformed_sections() {
+        fn leb(mut value: usize) -> Vec<u8> {
+            let mut out = Vec::new();
+            loop {
+                let byte = (value & 0x7f) as u8;
+                value >>= 7;
+                if value == 0 {
+                    out.push(byte);
+                    return out;
+                }
+                out.push(byte | 0x80);
+            }
+        }
+
+        fn section(id: u8, payload: &[u8]) -> Vec<u8> {
+            let mut out = vec![id];
+            out.extend(leb(payload.len()));
+            out.extend_from_slice(payload);
+            out
+        }
+
+        fn custom(name: &[u8], body: &[u8]) -> Vec<u8> {
+            let mut payload = leb(name.len());
+            payload.extend_from_slice(name);
+            payload.extend_from_slice(body);
+            section(0, &payload)
+        }
+
+        let mut module = wat::parse_str("(module (func (export \"run\")))").expect("module");
+        module.extend(custom(b".debug_info", &[0xAB; 8]));
+        for end in 0..module.len() {
+            let truncated = &module[..end];
+            let output = super::strip_debug_info(truncated);
+            assert!(output.is_none(), "truncation at byte {end} must not be accepted");
+        }
+
+        let header = b"\\0asm\\x01\\0\\0\\0";
+        assert!(super::strip_debug_info(header).is_none());
+
+        let mut oversized_section = header.to_vec();
+        oversized_section.extend_from_slice(&[0, 10, 1]);
+        assert!(super::strip_debug_info(&oversized_section).is_none());
+
+        let mut unterminated_length = header.to_vec();
+        unterminated_length.extend_from_slice(&[0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+        assert!(super::strip_debug_info(&unterminated_length).is_none());
+
+        let mut overlong_name = header.to_vec();
+        overlong_name.extend(section(0, &[5, b'a', b'b']));
+        assert!(super::strip_debug_info(&overlong_name).is_none());
+
+        let mut truncated_nested_module = b"\\0asm\\x0d\\0\\x01\\0".to_vec();
+        truncated_nested_module.extend(section(1, header));
+        assert!(super::strip_debug_info(&truncated_nested_module).is_none());
+    }
+
+    #[test]
     fn a_bundle_too_big_for_the_hub_opens_locally_and_nowhere_else() {
         let n = MAX_ENTRY_COUNT + 1;
         let mut buf = Vec::new();
