@@ -7759,8 +7759,10 @@ required = true
         overlong_name.extend(section(0, &[5, b'a', b'b']));
         assert!(super::strip_debug_info(&overlong_name).is_none());
 
+        let mut truncated_inner_module = header.to_vec();
+        truncated_inner_module.extend_from_slice(&[1, 5, 0]);
         let mut truncated_nested_module = b"\0asm\x0d\0\x01\0".to_vec();
-        truncated_nested_module.extend(section(1, header));
+        truncated_nested_module.extend(section(1, &truncated_inner_module));
         assert!(super::strip_debug_info(&truncated_nested_module).is_none());
     }
 
