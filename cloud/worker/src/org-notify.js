@@ -16,7 +16,8 @@
 //      "version-decided"   their own version was approved, declined or
 //                          withdrawn in the last 30 days        tab "apps" / "waiting"
 //      "request"           an open app request (owners, admins,
-//                          developers)                          tab "requests"
+//                          developers), or the answer to one this
+//                          person asked for (anyone)            tab "requests"
 //      "security"          owners and admins: the team data key needs
 //                          renewing, refusals spiked this week, a computer
 //                          was added in the last 7 days         tab "security"
@@ -113,6 +114,14 @@ const ops = {
         if (mine(r.asked_by)) continue;
         items.push({ id: `request:${r.id}`, kind: "request", at: r.asked_at, text: `${personWords(r.asked_by)} asked for an app: "${clip(r.text, 120)}"`, tab: "requests", target: r.id });
       }
+    }
+
+    // What happened to what this person asked for: answered by someone
+    // else in the last 30 days. Shown here only; nothing is mailed for it.
+    const VERB = { planned: "plans to make", done: "made", declined: "does not plan to make" };
+    for (const r of this.rows("SELECT * FROM app_requests WHERE asked_by = ? AND replied_at >= ? ORDER BY replied_at DESC LIMIT 50", me.principal, since)) {
+      if (!r.replied_by || mine(r.replied_by) || !VERB[r.state]) continue;
+      items.push({ id: `answered:${r.id}:${r.replied_at}`, kind: "request", at: r.replied_at, text: `${personWords(r.replied_by)} ${VERB[r.state]} what you asked for, "${clip(r.text, 80)}"${r.reply ? `: ${clip(r.reply, 160)}` : ""}`, tab: "requests", target: r.id });
     }
 
     if (me.role === "owner" || me.role === "admin") {

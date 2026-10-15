@@ -696,12 +696,30 @@
         onclick: function () { approve(c, review.accepted()); },
       });
       acts.push(btn);
+      acts.push(el("button", { class: "btn ghost sm", type: "button", text: "Decline", onclick: function () { declineBox.hidden = !declineBox.hidden; if (!declineBox.hidden && why.focus) why.focus(); } }));
     } else {
       note = el("p", { class: "note", text: mine
         ? "You sent this one, so someone else approves it."
         : "A reviewer or an owner approves this." });
     }
     acts.push(el("button", { class: "btn ghost sm", type: "button", text: "Details", onclick: function () { inspectCandidate(c); } }));
+    // Declining says why, in a sentence the sender reads.
+    var why = el("textarea", { class: "inp", rows: "2", placeholder: "What would make it fine", "aria-label": "Why, for " + K.who(c.uploaded_by).label });
+    var whySay = el("small", { class: "lc-say", role: "status" });
+    var declineBox = el("div", { class: "wdecline", hidden: true }, [
+      el("label", { class: "sub", text: "Tell " + K.who(c.uploaded_by).label + " why. The version stays in the app's history." }), why,
+      el("div", { class: "row2" }, [el("button", { class: "btn dark sm", type: "button", text: "Decline it", onclick: function () {
+        var reason = String(why.value || "").trim();
+        if (!reason) { whySay.textContent = "Say why in a few words, so they know what to change."; return; }
+        K.api("POST", "/orgs/" + slug + "/candidates/" + c.digest + "/decline", { reason: reason }).then(function (out) {
+          if (!out.ok) { whySay.textContent = words(out, { what: "decline versions" }).title || "It did not go through. Try again."; return; }
+          toast(K.appName(c) + " was declined. " + K.who(c.uploaded_by).label + " sees why.");
+          show("waiting");
+          countWaiting();
+        });
+      } })]),
+      whySay,
+    ]);
     var waited = now - (c.uploaded_at || now);
     var update = c.changes && c.changes.against;
     var name = K.appName(c);
@@ -714,9 +732,11 @@
         ]),
         el("span", { class: "tag" + (waited > 2 * 86400 ? " warn" : ""), text: "Waiting " + age(waited) }),
       ]),
+      c.note ? el("blockquote", { class: "wnote", text: "\u201c" + c.note + "\u201d, " + K.who(c.uploaded_by).label }) : null,
       review.node,
       note,
       el("div", { class: "row2" }, acts),
+      declineBox,
     ]);
     if (btn) review.gate(btn);
     return card;
@@ -1504,7 +1524,7 @@
     : null;
   if (window.KrateOrgApp) A = window.KrateOrgApp({ S: S, slug: slug, head: head, crumb: drawCrumb, tabName: tabName, show: function (id, o) { show(id, o); }, openApp: openApp, roleOf: roleOf, inspect: inspect, waitCard: waitCard, R: R, I: I });
   // Search and the bell in the top bar (find.js).
-  if (window.KrateOrgFind) window.KrateOrgFind({ S: S, slug: slug, tabs: tabList, tabName: tabName, show: function (id, o) { show(id, o); }, openApp: openApp, roleOf: roleOf, inspect: inspect, releaseFlow: releaseFlow }).wire($("cfind"), $("cbell"));
+  if (window.KrateOrgFind) window.KrateOrgFind({ S: S, slug: slug, tabs: tabList, tabName: tabName, show: function (id, o) { show(id, o); }, openApp: openApp, roleOf: roleOf, inspect: inspect, releaseFlow: releaseFlow, toast: toast }).wire($("cfind"), $("cbell"));
   function apps(pane) {
     if (I) { I.pane(pane); return; }
     head(pane, "Apps", "");

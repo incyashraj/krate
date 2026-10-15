@@ -118,8 +118,37 @@
                 el("small", { text: (WORD[n.kind] || "") + " · " + K.moment(n.at) }), el("span", { text: n.text }),
               ]);
             }))
-          : el("p", { class: "cr-sub", text: "Nothing new. When a version waits for you, or something you sent is decided, it shows here." })]);
+          : el("p", { class: "cr-sub", text: "Nothing new. When a version waits for you, or something you sent is decided, it shows here." }), prefs()]);
       });
+    }
+
+    /// What is also emailed: only what the hub mails, to whom it mails it.
+    var MAILED = [
+      ["approval-waiting", "A version waits for my approval", "candidate.approve"],
+      ["version-decided", "My version was approved or declined", "candidate.publish"],
+      ["request", "Someone asks for an app", "request.manage"],
+    ];
+    function prefs() {
+      var role = D.roleOf();
+      var mine = MAILED.filter(function (m) { return K.can(role, m[2]); });
+      if (!mine.length) return null;
+      var box = el("div", { class: "cr-sec" }, [el("h3", { text: "Also email me when" })]);
+      K.api("GET", path("/me/notify")).then(function (res) {
+        if (!res.ok) { box.hidden = true; return; }
+        var p = (res.body && res.body.prefs) || {};
+        mine.forEach(function (m) {
+          var tick = el("input", { type: "checkbox", "aria-label": m[1] });
+          tick.checked = !!(p[m[0]] && p[m[0]].email);
+          tick.addEventListener("change", function () {
+            var body = {}; body[m[0]] = { email: !!tick.checked };
+            K.api("PUT", path("/me/notify"), { prefs: body }).then(function (out) {
+              if (!out.ok) { tick.checked = !tick.checked; D.toast && D.toast("That did not save. Try again."); }
+            });
+          });
+          box.appendChild(el("label", { class: "ntick" }, [tick, el("span", { text: m[1] })]));
+        });
+      });
+      return box;
     }
 
     function wire(findBtn, bellBtn) {

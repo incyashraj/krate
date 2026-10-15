@@ -149,6 +149,14 @@ test("owners, admins and developers see open app requests; security items reach 
   for (const who of ["bob", "dan"]) assert.ok(!kinds(await notes(env, who)).includes("request"), who);
   assert.strictEqual((await call(env, "carol", "PUT", `/orgs/acme/requests/${asked.id}`, { json: { state: "planned" } })).status, 200);
   assert.ok(!kinds(await notes(env, "alice")).includes("request"), "an answered request is not open");
+  // Whoever asked hears the answer; nobody else does.
+  assert.strictEqual((await call(env, "carol", "PUT", `/orgs/acme/requests/${asked.id}`, { json: { state: "planned", reply: "Next week" } })).status, 200);
+  const heard = (await notes(env, "dan")).items.filter((i) => i.kind === "request");
+  assert.deepStrictEqual(heard.map((i) => [i.text, i.tab, i.target]), [['@carol plans to make what you asked for, "A visitor log for the front desk": Next week', "requests", asked.id]]);
+  assert.ok(!kinds(await notes(env, "bob")).includes("request"), "the answer is for the person who asked");
+  const own = (await call(env, "carol", "POST", "/orgs/acme/requests", { json: { text: "A tool to check the stock" } })).body.request;
+  assert.strictEqual((await call(env, "carol", "PUT", `/orgs/acme/requests/${own.id}`, { json: { state: "done" } })).status, 200);
+  assert.ok(!(await notes(env, "carol")).items.some((i) => i.target === own.id), "answering your own request is not news to you");
 
   // The keyring's own states, as org-keys.js and org-insights.js keep them.
   const now = Math.floor(Date.now() / 1000);

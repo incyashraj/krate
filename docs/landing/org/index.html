@@ -650,7 +650,8 @@ body.console .phd p { font-size: 14px; }
 .pnl { padding: 0; overflow: hidden; }
 .pnl-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; }
 .pnl-h h3 { font-size: 14.5px; font-weight: 600; }
-.pnl > .prow, .pnl > .vrow, .pnl > .empty, .pnl > .pcode, .pnl > p, .pnl > dl { margin: 0 18px; }
+.pnl > .prow, .pnl > .vrow, .pnl > .empty, .pnl > .pcode, .pnl > p, .pnl > dl, .pnl-b > .prow, .pnl-b > .empty { margin: 0 18px; }
+.pask { display: grid; gap: 10px; padding: 0 18px 18px; }
 .prow { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: calc(100% - 36px); min-height: 48px; padding: 10px 0; border-top: 1px solid var(--line); text-align: left; font-size: 14px; }
 button.prow { margin: 0 18px; }
 .prow.opens:hover, .ptr.opens:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
@@ -752,6 +753,11 @@ button.prow { margin: 0 18px; }
 .nrow:hover { background: var(--s1); }
 .nrow small { font-size: 12px; color: var(--ink-3); }
 .nrow.new small::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 99px; background: var(--accent); vertical-align: 1px; }
+.wnote { margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); background: var(--s2); }
+.wdecline { display: grid; gap: 8px; padding-top: 4px; }
+.wdecline[hidden] { display: none; }
+.ntick { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 13.5px; color: var(--ink-2); }
+.ntick input { width: 16px; height: 16px; accent-color: var(--accent); }
 </style>
 </head>
 <body class="console" data-kit="app">

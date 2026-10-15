@@ -223,7 +223,7 @@
     /// App requests: anyone asks in a sentence; the people who make apps
     /// answer with planned, made or not planned, and a line why.
     function requests(p) {
-      var manage = K.can(D.roleOf(), "candidate.publish");
+      var manage = K.can(D.roleOf(), "request.manage");
       K.api("GET", path("/requests")).then(function (res) {
         D.head(p, "Requests", manage
           ? "What people in " + nameOf() + " asked for. Answer each one so they know where it stands."
@@ -249,16 +249,19 @@
             D.show("requests");
           });
         });
-        p.appendChild(el("section", { class: "card pnl ask" }, [
+        // Those who answer requests make the apps: no box to ask themselves.
+        if (!manage) p.appendChild(el("section", { class: "card pnl ask" }, [
           el("div", { class: "pnl-h" }, [el("h3", { text: "Ask for an app" })]),
           el("div", { class: "pask" }, [box, el("div", { class: "row2" }, [send]), say]),
         ]));
 
         var filter = "open";
         var seg = el("div", { class: "seg", role: "group", "aria-label": "Show" });
-        var body = el("div");
+        var body = el("div", { class: "pnl-b" });
         var GROUPS = [["open", "Open"], ["planned", "Planned"], ["answered", "Answered"]];
         function inGroup(r, g) { return g === "answered" ? r.state === "done" || r.state === "declined" : r.state === g; }
+        // Start on the first group that has something in it.
+        filter = (GROUPS.filter(function (g) { return list.some(function (r) { return inGroup(r, g[0]); }); })[0] || GROUPS[0])[0];
         function draw() {
           seg.textContent = "";
           GROUPS.forEach(function (g) {
