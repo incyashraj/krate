@@ -242,7 +242,8 @@ const dashRoutes = (org, extra = {}) => ({
   const co = await page(base, JOIN, { routes: { "GET /orgs/acme/invites/abc123def/door": () => [200, { name: "Acme Labs", company_sign_in: true, kind: "email" }] } });
   check(co.el("jH").textContent === "You have an invitation to Acme Labs", "an open invitation names the organisation as the email did");
   const links = co.el("jBody").all((n) => n.tagName === "A").map((a) => a.href);
-  check(links[0] === "/login/?org=acme&next=%2Fjoin%2F%3Fo%3Dacme%26c%3Dabc123def" && links[1].endsWith("#email"), "an organisation with company sign-in offers it first, then email for an email invitation");
+  const order = co.el("jBody").all((n) => n.tagName === "FORM" || n.tagName === "A").map((n) => n.tagName === "FORM" ? "email" : n.href);
+  check(order[0] === "/login/?org=acme&next=%2Fjoin%2F%3Fo%3Dacme%26c%3Dabc123def" && order[1] === "email", "an organisation with company sign-in offers it first, then email for an email invitation");
   check(!co.sent[0].headers.authorization, "asking which way in carries no session");
   const sum = co.el("jBody").all((n) => n.tagName === "SUMMARY")[0];
   const trouble = sum && sum.parent;

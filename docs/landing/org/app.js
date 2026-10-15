@@ -154,16 +154,23 @@
     function usage(b, a) {
       var u = a.use;
       if (!u) { b.appendChild(el("div", { class: "card" }, [el("div", { class: "empty" }, [el("b", { text: "Usage is for its makers and the people who run " + nameOf() }), el("p", { text: "Insights has the organisation's numbers." })])])); return; }
-      var max = Math.max(1, Math.max.apply(null, (u.daily || []).map(function (d) { return num(d.people); })));
+      var daily = u.daily || [];
+      var max = Math.max(1, Math.max.apply(null, daily.map(function (d) { return num(d.people); })));
+      var none = !daily.some(function (d) { return num(d.people) > 0 || d.people === "<3"; });
       b.appendChild(el("section", { class: "card hcard" }, [
-        el("div", { class: "hc-h" }, [el("h3", { text: "People who opened it, each day" }), el("p", { class: "sub", text: "Last 30 days" })]),
-        el("div", { class: "hchart" }, [el("div", { class: "hc-plot" }, [el("span", { class: "hc-max", text: String(max) }), el("div", { class: "hc-bars", style: "--n:" + (u.daily || []).length }, (u.daily || []).map(function (d) {
-          return el("span", { class: "hc-b", title: isoDay(d.day) + ": " + d.people }, [el("span", { style: "height:" + Math.max(num(d.people) / max * 100, num(d.people) ? 4 : 1.5) + "%" })]);
-        }))]), el("div", { class: "hc-axis" }, [el("span", { text: u.daily && u.daily[0] ? isoDay(u.daily[0].day) : "" }), el("span", { text: "Today" })])]),
+        el("div", { class: "hc-h" }, [el("div", {}, [el("h3", { text: "People who opened it, each day" }), el("p", { class: "sub", text: "Last 30 days" })])]),
+        el("div", { class: "hchart" + (none ? " empty" : "") }, [el("div", { class: "hc-plot" }, [
+          el("span", { class: "hc-max", text: String(max) }), el("span", { class: "hc-zero", text: "0" }),
+          el("div", { class: "hc-bars", style: "--n:" + daily.length }, daily.map(function (d) {
+            return el("span", { class: "hc-b", title: isoDay(d.day) + ": " + d.people }, [el("span", { style: "height:" + Math.max(num(d.people) / max * 100, num(d.people) ? 4 : 1.5) + "%" })]);
+          })),
+          none ? el("div", { class: "hc-empty", text: "Nobody opened " + a.name + " in these 30 days." }) : null,
+        ]), el("div", { class: "hc-axis" }, [el("span", { text: daily[0] ? isoDay(daily[0].day) : "" }), el("span", { text: "Today" })])]),
       ]));
-      b.appendChild(el("section", { class: "card pnl" }, [el("div", { class: "pnl-h" }, [el("h3", { text: "Versions in use, last 7 days" })])].concat((u.versions || []).map(function (v) {
+      var vrows = (u.versions || []).map(function (v) {
         return el("div", { class: "prow" }, [el("span", { class: "pr-t" }, [el("b", { class: "mono", text: v.version }), el("small", { text: v.current ? "Opens now" : "An older version" })]), el("span", { class: "pr-s", text: v.people === "<3" ? "fewer than 3" : plural(num(v.people), "person", "people") })]);
-      }))));
+      });
+      b.appendChild(el("section", { class: "card pnl" }, [el("div", { class: "pnl-h" }, [el("h3", { text: "Versions in use, last 7 days" })])].concat(vrows.length ? vrows : [el("p", { class: "sub", style: "padding:0 0 18px", text: "No version was opened this week." })])));
       if ((u.refusals || []).length) {
         b.appendChild(el("section", { class: "card pnl" }, [el("div", { class: "pnl-h" }, [el("h3", { text: "Turned away, last 30 days" })])].concat(u.refusals.map(function (r) {
           return el("div", { class: "prow" }, [el("span", { class: "pr-t" }, [el("b", { text: (K.refusal(r.reason, { org: nameOf() }).title) || r.reason })]), el("span", { class: "pr-s", text: String(r.n) })]);
@@ -174,7 +181,9 @@
     function permissions(b, a) {
       var caps = (a.inv && a.inv.capabilities) || (a.waiting[0] && a.waiting[0].capabilities) || [];
       var rows = caps.map(function (c) {
-        return el("div", { class: "prow" }, [el("span", { class: "pr-t" }, [el("b", { text: c.words || c.cap }), el("small", { text: (c.required ? "Needed" : "Optional") + (c.rationale ? " · “" + c.rationale + "”" : "") })])]);
+        var words = String(c.words || c.cap);
+        var said = [c.required === true ? "Needed" : c.optional === true ? "Optional" : "", c.rationale ? "“" + c.rationale + "”" : ""].filter(Boolean).join(" · ");
+        return el("div", { class: "prow" }, [el("span", { class: "pr-t" }, [el("b", { text: words.charAt(0).toUpperCase() + words.slice(1) }), said ? el("small", { text: said }) : null, el("small", { class: "mono", text: c.cap })])]);
       });
       b.appendChild(el("section", { class: "card pnl" }, [el("div", { class: "pnl-h" }, [el("h3", { text: "What it can do" })])].concat(rows.length ? rows : [el("p", { class: "sub", style: "padding:0 0 14px", text: a.inv && D.I ? D.I.canWords(a.inv) : "Its permissions show to the people who may see the organisation's apps." })])));
       var conns = (a.inv && a.inv.connections) || [];

@@ -19,7 +19,7 @@
  * on the right. Under 900px the sidebar is a drawer behind a top bar. */
 body.console { overflow-x: hidden; }
 .con { min-height: 100vh; }
-.con > .panel, .con > #stop { max-width: 560px; margin: 0 auto; padding-top: 12vh; }
+.con > .panel, .con > #stop { max-width: 560px; margin: 12vh auto 0; }
 .shell { --side: 256px; display: grid; grid-template-columns: var(--side) minmax(0, 1fr); min-height: 100vh; }
 .cside { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 6px; padding: 14px 12px 12px; background: var(--soft); border-right: 1px solid var(--line); overflow-y: auto; scrollbar-width: thin; }
 .cs-top { display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 4px; }
@@ -900,6 +900,31 @@ body.console .hfoot a:hover { color: var(--ink); }
 body.console .btn.dark:disabled, body.console .btn.dark[disabled] { opacity: .32; color: var(--btn-ink); background: var(--btn); box-shadow: none; cursor: default; }
 /* a list card's own title, not a small grey label */
 body.console .card.rows > p.grp:first-child { margin: 14px 0 2px; font-size: 15px; font-weight: 600; letter-spacing: -.012em; color: var(--ink); }
+/* the right-hand panel's details: a readable lead, actions their own size */
+body.console .cr-lead { font-size: 14.5px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
+body.console .cr-body > .btn, body.console .cr-body > .row2 { justify-self: start; }
+body.console .cr-tech summary, body.console details.tech > summary, body.console .sd-main details > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; list-style: none; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
+body.console .cr-tech summary::-webkit-details-marker, body.console .sd-main details > summary::-webkit-details-marker { display: none; }
+body.console .cr-tech summary::before, body.console .sd-main details > summary::before { content: ""; width: 6px; height: 6px; margin-left: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease); }
+body.console .cr-tech[open] summary::before, body.console .sd-main details[open] > summary::before { transform: rotate(45deg); }
+body.console .sd-main details { padding: 0; border-radius: 0; background: none; box-shadow: none; }
+body.console .sd-main details[open] > summary { margin-bottom: 6px; }
+/* ticks: one size, the accent, the words beside them */
+body.console .chk { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 14px; color: var(--ink); }
+body.console .chk input, body.console .card input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+/* what a version can do, on the review card */
+body.console .caps { font-size: 13.5px; color: var(--ink-2); }
+body.console .caps .cl { margin-top: 12px; }
+body.console .caps ul { gap: 10px; }
+body.console .caps li { font-size: 14px; font-weight: 500; color: var(--ink); }
+body.console .caps li::first-letter { text-transform: uppercase; }
+body.console .caps li small { margin-top: 2px; font-size: 12.5px; font-weight: 400; color: var(--ink-3); }
+/* a section label above a group of cards */
+body.console .abody > .grp, body.console .pane > .grp { margin: 22px 0 -4px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+/* the release panel: each starter's picture fits its card */
+body.console .cr-body .starter.has-shot { width: 100%; }
+body.console .cr-body .st-shot { aspect-ratio: 16 / 9; }
+body.console .cr-body .st-shot img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
 </style>
 </head>
 <body class="console" data-kit="app">

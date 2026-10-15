@@ -476,12 +476,12 @@
   /// One audit entry, in full.
   function inspectEvent(e) {
     inspect(e.result === "denied" ? "Refused" : "What happened", [
-      el("p", { text: K.eventWords(e, S.names) }),
+      el("p", { class: "cr-lead", text: K.eventWords(e, S.names) }),
       el("dl", { class: "cr-kv" }, [
         el("dt", { text: "When" }), el("dd", { text: K.moment(e.at) }),
         el("dt", { text: "Who" }), el("dd", { text: K.who(e.actor).label }),
         el("dt", { text: "Result" }), el("dd", { text: e.result === "denied" ? "Refused" : "Allowed" }),
-        e.reason ? el("dt", { text: "Why" }) : null, e.reason ? el("dd", { text: e.reason }) : null,
+        e.reason ? el("dt", { text: "Why" }) : null, e.reason ? el("dd", { text: (K.refusal(e.reason, { org: (S.org && S.org.name) || slug }).title) || e.reason }) : null,
       ]),
       K.can(roleOf(), "audit.read") ? el("button", { class: "btn ghost sm", type: "button", text: "All activity", onclick: function () { show("activity"); } }) : null,
     ]);

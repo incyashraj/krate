@@ -865,9 +865,12 @@
   /// travels to /login/ in this tab's session storage, never in the link,
   /// and /login/ sends it at once, keeping the one place that knows how a
   /// sign-in comes back here.
-  function signInChoices(here) {
+  /// `opts.first`: "email" puts the email box first (an invitation sent to
+  /// an inbox); otherwise GitHub and Google lead.
+  function signInChoices(here, opts) {
+    var emailFirst = !!(opts && opts.first === "email");
     var input = el("input", { class: "inp", type: "email", placeholder: "you@company.com", "aria-label": "Work email", autocomplete: "email", required: "" });
-    var go = el("button", { class: "btn ghost", type: "submit", text: "Continue" });
+    var go = el("button", { class: "btn " + (emailFirst ? "dark" : "ghost"), type: "submit", text: "Continue" });
     var form = el("form", { class: "si-email" }, [input, go]);
     form.addEventListener("submit", function (e) {
       if (e && e.preventDefault) e.preventDefault();
@@ -876,14 +879,12 @@
       try { root.sessionStorage.setItem("krate-login-email", v); } catch (x) {}
       root.location.href = signInHref(here, "email");
     });
-    return el("div", { class: "si" }, [
-      el("div", { class: "si-row" }, [
-        el("a", { class: "btn dark si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
-        el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
-      ]),
-      el("div", { class: "or" }, [el("span", { text: "or" })]),
-      form,
+    var row = el("div", { class: "si-row" }, [
+      el("a", { class: "btn " + (emailFirst ? "ghost" : "dark") + " si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
+      el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
     ]);
+    var or = el("div", { class: "or" }, [el("span", { text: "or" })]);
+    return el("div", { class: "si" }, emailFirst ? [form, or, row] : [row, or, form]);
   }
 
   /// Copy text, with the button saying it worked.
