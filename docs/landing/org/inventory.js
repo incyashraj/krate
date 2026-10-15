@@ -135,7 +135,8 @@
         ]),
       ]);
       // The app's head opens the whole of it on the right.
-      if (D.inspect) head.addEventListener("click", function () { inspectApp(a); });
+      if (D.openApp) head.addEventListener("click", function () { D.openApp(a.app_id); });
+      else if (D.inspect) head.addEventListener("click", function () { inspectApp(a); });
       card.appendChild(head);
       card.appendChild(ownerRow(a, p));
       var facts = [
@@ -232,6 +233,6 @@
       return row;
     }
 
-    return { pane: pane };
+    return { pane: pane, ownerRow: ownerRow, canWords: canWords, peopleWords: peopleWords, forWords: forWords, STATE: STATE };
   };
 })(typeof window !== "undefined" ? window : globalThis);

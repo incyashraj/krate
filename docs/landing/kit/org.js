@@ -110,7 +110,7 @@
   // ------------------------------------------------------------- roles
 
   var ROLES = ["owner", "admin", "developer", "reviewer", "recipient"];
-  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Recipient" };
+  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Member" };
   /// What each role is for, in one line (the same words as docs/book's
   /// organisations page).
   var ROLE_SAYS = {
@@ -193,22 +193,29 @@
   }
 
   /// The tabs a role sees on /org/, in order.
+  /// Each role's console: the sections it came for, in its order (the
+  /// org console by role, approved 2026-10-16). Owners and admins run the
+  /// organisation; developers make its apps; reviewers clear the queue;
+  /// members open what was released.
   function tabsFor(role) {
-    // The Dashboard first, for everyone: where an organisation starts.
-    var out = ["home", "releases"];
-    // Every app the organisation has, with its record (IC-954).
-    if (can(role, "inventory.view")) out.push("apps");
-    // The numbers each role's decisions need (IC-959).
-    if (can(role, "insights.view")) out.push("insights");
-    // The candidates list is for the people who send, approve or run the
-    // organisation; a recipient only ever opens what was released.
-    if (can(role, "candidate.publish") || can(role, "candidate.approve") || can(role, "audit.read")) out.push("waiting");
-    out.push("people");
-    if (can(role, "audit.read")) out.push("activity");
-    // Billing is the owners' and admins' (Addendum 3 E: GET billing).
-    if (can(role, "billing.read")) out.push("billing");
-    if (role && role !== "recipient") out.push("settings");
-    return out;
+    var out;
+    if (role === "owner" || role === "admin") {
+      out = ["home", "apps", "waiting", "requests", "releases", "people", "computers", "security", "connections", "insights", "activity", "billing", "settings"];
+    } else if (role === "developer") {
+      out = ["home", "myapps", "build", "requests", "releases", "connections", "insights", "people", "settings"];
+    } else if (role === "reviewer") {
+      out = ["home", "waiting", "apps", "releases", "insights", "people", "settings"];
+    } else {
+      out = ["home", "requests", "help"];
+    }
+    return out.filter(function (id) {
+      if (id === "billing") return can(role, "billing.read");
+      if (id === "connections") return can(role, "connection.view");
+      if (id === "apps") return can(role, "inventory.view");
+      if (id === "insights") return can(role, "insights.view");
+      if (id === "activity") return can(role, "audit.read");
+      return true;
+    });
   }
 
   /// The roles `role` may invite, in order.

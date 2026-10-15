@@ -73,8 +73,8 @@ const ticksIn = (row) => row.all((n) => n.tagName === "INPUT" && n.getAttribute(
 }
 
 {
-  // The person who sent it sees the list and cannot tick or approve.
-  const p = await page("https://krate.tech/org/?o=acme&tab=waiting", DASH, { token: "t", routes: as("github:carol") });
+  // The person who sent it reads what changed on its app's page, and cannot tick or approve.
+  const p = await page("https://krate.tech/org/?o=acme&tab=apps&app=com.acme.expenses", DASH, { token: "t", routes: as("github:carol") });
   const upd = rowOf(p, "Expenses");
   check(/use your camera/.test(upd.shown) && !button(upd, "Approve") && ticksIn(upd).every((x) => x.disabled), "the sender sees what changed, and nothing to tick or approve");
 }

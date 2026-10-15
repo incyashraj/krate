@@ -153,8 +153,95 @@ const shown = (n) => t(n.shown);
   button(pane, "All 3").click();
   pane.all((n) => n.tagName === "DIV" && /\bapph\b/.test(String(n.className)))[1].click();
   await settle();
-  check(p.el("crTitle").textContent === "Expenses" && /Owner @carol/.test(shown(p.el("crBody"))), "an app's head opens it on the right");
+  check(/tab=apps&app=/.test(p.location.href) && /Expenses/.test(shown(p.el("pane"))) && button(p.el("pane"), "Overview"), "an app's head opens its own page");
 }
 
-console.log(failures() ? `${failures()} check(s) failed` : "ok  the console: Dashboard, panel, Settings, Activity, Waiting, Apps");
+
+/* ---- each role's own home ---- */
+{
+  // A developer: three ways to start, their apps, and what the team asked for.
+  const dev = { ...insights, role: "developer", org: undefined, sections: ["developer", "yours"], reviewer: undefined,
+    developer: { apps: [{ app_id: "com.acme.notes", name: "Team Notes", released: true, people_week: 3, daily: days({}), refusals: [{ reason: "not-in-audience", n: 2 }] }] } };
+  const asked = [{ id: "r1", text: "A way to book the meeting rooms", by: "github:dan", at: NOW - DAY, state: "open", reply: "" }];
+  const p = await page("https://krate.tech/org/?o=acme", DASH, { token: "t", routes: { ...routes("developer"), "GET /orgs/acme/insights": () => [200, dev], "GET /orgs/acme/requests": () => [200, { requests: asked }] } });
+  await settle();
+  const pane = shown(p.el("pane"));
+  check(p.el("tab-home").shown.includes("Home") && /Your apps 1 1 released/.test(pane) && /People this week 3/.test(pane) && /Refused, 30 days 2/.test(pane), "a developer's home: their apps, who used them, what was refused");
+  check(/Describe it/.test(pane) && /Start from a ready one/.test(pane) && /Send your own/.test(pane), "and the three ways to start one");
+  check(/A way to book the meeting rooms/.test(pane) && /@dan/.test(pane), "and what the team asked for");
+}
+{
+  // A member asks for an app; a developer answers it.
+  const asked = [];
+  const p = await page("https://krate.tech/org/?o=acme&tab=requests", DASH, { token: "t", routes: { ...routes("recipient"),
+    "GET /orgs/acme/requests": () => [200, { requests: asked }],
+    "POST /orgs/acme/requests": (h, b) => { asked.push({ id: "r1", text: b.text, by: "github:dan", at: NOW, state: "open", reply: "" }); return [201, { request: asked[0] }]; } } });
+  await settle();
+  const pane = p.el("pane");
+  const box = pane.all((n) => n.tagName === "TEXTAREA")[0];
+  box.value = "Hi";
+  button(pane, "Ask for it").click();
+  await settle();
+  check(!p.sent.some((s) => s.key === "POST /orgs/acme/requests") && /Say a little more/.test(shown(pane)), "a request too short to act on is not sent");
+  box.value = "A way to book the meeting rooms";
+  button(pane, "Ask for it").click();
+  await settle();
+  const sent = p.sent.find((s) => s.key === "POST /orgs/acme/requests");
+  check(sent && sent.body.text === "A way to book the meeting rooms", "a member asks for an app in a sentence");
+  check(/A way to book the meeting rooms/.test(shown(p.el("pane"))) && /Asked/.test(shown(p.el("pane"))), "and sees it, asked and not yet answered");
+
+  const d = await page("https://krate.tech/org/?o=acme&tab=requests", DASH, { token: "t", routes: { ...routes("developer"),
+    "GET /orgs/acme/requests": () => [200, { requests: asked }],
+    "PUT /orgs/acme/requests/r1": () => [200, { request: { ...asked[0], state: "planned" } }] } });
+  await settle();
+  d.el("pane").all((n) => n.tagName === "BUTTON" && /\bopens\b/.test(String(n.className)))[0].click();
+  await settle();
+  const ta = d.el("crBody").all((n) => n.tagName === "TEXTAREA")[0];
+  ta.value = "Next week";
+  button(d.el("crBody"), "Planned").click();
+  await settle();
+  const put = d.sent.find((s) => s.key === "PUT /orgs/acme/requests/r1");
+  check(put && put.body.state === "planned" && put.body.reply === "Next week", "a developer answers it with planned and a line");
+
+  // A hub from before requests says so, and offers nothing that can only fail.
+  const old = await page("https://krate.tech/org/?o=acme&tab=requests", DASH, { token: "t", routes: { ...routes("recipient"), "GET /orgs/acme/requests": () => [404, { error: "hub-error", message: "" }] } });
+  await settle();
+  check(/Not on this hub yet/.test(shown(old.el("pane"))) && !button(old.el("pane"), "Ask for it"), "a hub without requests says so");
+}
+
+
+/* ---- search and the bell ---- */
+{
+  const inv = { apps: [{ app_id: "com.acme.expenses", name: "Expenses", releases: [], current: null }] };
+  const items = [{ id: "waiting:x", kind: "approval-waiting", at: NOW - 60, text: "Rota 1.1.0 waits for your approval", tab: "waiting", target: "x" }];
+  const p = await page("https://krate.tech/org/?o=acme", DASH, { token: "t", routes: { ...routes("owner"),
+    "GET /orgs/acme/apps": () => [200, inv],
+    "GET /orgs/acme/notifications": () => [200, { items, counts: { unread_hint: 1 } }] } });
+  await settle();
+  const bell = p.el("cbell");
+  check(bell.classList.contains("has") && /1 new/.test(bell.attrs["aria-label"]), "the bell shows something is new");
+  bell.click();
+  await settle();
+  check(p.el("crTitle").textContent === "Notifications" && /Rota 1\.1\.0 waits for your approval/.test(shown(p.el("crBody"))) && !bell.classList.contains("has"), "it opens on the right, and looking clears the dot");
+  check(Number(p.localStorage.getItem("krate-org-seen-acme")) > 0, "the page remembers when it last looked");
+
+  p.el("cfind").click();
+  await settle();
+  const dlg = p.el("findDlg");
+  const input = dlg.all((n) => n.tagName === "INPUT")[0];
+  input.value = "expen";
+  input.dispatch("input");
+  const rows = dlg.all((n) => n.tagName === "BUTTON" && /\bfd-row\b/.test(String(n.className)));
+  check(rows.length === 1 && /Expenses/.test(shown(rows[0])), "search finds an app by part of its name");
+  input.value = "people";
+  input.dispatch("input");
+  check(/Page People and groups/.test(shown(dlg)) && /Do Invite people/.test(shown(dlg)), "and pages and things to do by their words");
+  input.value = "expen";
+  input.dispatch("input");
+  input.dispatch("keydown", { key: "Enter" });
+  await settle();
+  check(/tab=apps&app=com\.acme\.expenses/.test(p.location.href), "Enter opens what is picked");
+}
+
+console.log(failures() ? `${failures()} check(s) failed` : "ok  the console: Dashboard, panel, Settings, Activity, Waiting, Apps, role homes, Requests, search, bell");
 process.exit(failures() ? 1 : 0);
