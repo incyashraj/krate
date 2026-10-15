@@ -758,6 +758,148 @@ button.prow { margin: 0 18px; }
 .wdecline[hidden] { display: none; }
 .ntick { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 13.5px; color: var(--ink-2); }
 .ntick input { width: 16px; height: 16px; accent-color: var(--accent); }
+/* ---- the details, decided once (2026-10-16) ------------------------------
+ * One card anatomy (title 15/600, a line under it, 20px 22px around), one
+ * action language (dark pill for the main thing, a hairline pill for the
+ * rest, never a bare blue link inside a card), one selected state for chips
+ * and segmented controls, panels that never pad twice, and no card inside a
+ * card. Later rules here win on purpose: they replace what came before. */
+:root[data-theme="light"] body.console { --seg: #eceff4; --seg-on: #fff; --seg-sh: 0 1px 2px rgba(12,16,23,.1), 0 0 0 .5px rgba(12,16,23,.08); }
+:root[data-theme="dark"] body.console { --seg: rgba(255,255,255,.06); --seg-on: rgba(255,255,255,.12); --seg-sh: 0 1px 2px rgba(0,0,0,.4); }
+body.console { --mono: "Geist Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+body.console .mono, body.console .dg, body.console .fp, body.console code.k, body.console pre.k, body.console .keyform .inp, body.console dialog.sheet .dgbox { font-family: var(--mono); }
+/* sidebar: the selected row is the raised one; no extra bar beside it */
+body.console .tab[aria-selected="true"]::before { display: none; }
+/* the page's header, then air before the work */
+body.console .pane > .phd + * { margin-top: 22px; }
+body.console .phd h2 { font-size: 22px; font-weight: 600; letter-spacing: -.025em; }
+body.console .phd p { margin-top: 4px; font-size: 14px; color: var(--ink-3); }
+/* cards */
+body.console .card { padding: 20px 22px; border-radius: 14px; }
+body.console .card.pnl, body.console .card.pnl.flush { padding: 0; }
+body.console .card.rows { padding: 4px 22px; }
+body.console .card h3, body.console .hc-h h3, body.console .pnl-h h3, body.console .sc-h h3, body.console .way h3, body.console .abox h3, body.console .cl-h h2, body.console .ins h4 { font-size: 15px; font-weight: 600; letter-spacing: -.012em; line-height: 1.35; }
+body.console .card h3 + p, body.console .card .sub, body.console .cl-h p, body.console .ins .q { margin-top: 3px; font-size: 13.5px; line-height: 1.5; color: var(--ink-3); }
+body.console .pnl-h { min-height: 56px; padding: 14px 22px; }
+body.console .pnl > .prow, body.console .pnl > .vrow, body.console .pnl > .empty, body.console .pnl > .pcode, body.console .pnl > p, body.console .pnl > dl, body.console .pnl-b > .prow, body.console .pnl-b > .empty { margin-left: 22px; margin-right: 22px; }
+body.console .prow { width: calc(100% - 44px); }
+body.console button.prow { margin: 0 22px; }
+body.console .pth, body.console .ptr { padding-left: 22px; padding-right: 22px; }
+body.console .pnl > :last-child:not(.pnl-h) { margin-bottom: 6px; }
+/* a card's header: words on the left, its tools on the right, centred */
+body.console .hc-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+body.console .hc-h > div { min-width: 0; }
+body.console .hc-tools { margin: 0; }
+/* actions */
+body.console .btn.link, body.console .act { display: inline-flex; align-items: center; justify-content: center; height: 30px; min-height: 30px; padding: 0 12px; margin: 0; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--ink); background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); text-decoration: none; white-space: nowrap; }
+body.console .btn.link:hover, body.console .act:hover { background: var(--s2); box-shadow: inset 0 0 0 1px var(--ink-4); text-decoration: none; }
+body.console .invres .btn.link, body.console .cl-h .btn.link { height: auto; min-height: 0; padding: 0; border-radius: 0; box-shadow: none; color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; background: none; }
+body.console .cl-h .btn.link:hover { color: var(--ink); }
+body.console .row2.center { justify-content: flex-start; }
+/* chips: a hairline, and the chosen one filled */
+body.console .chip { height: 30px; min-height: 30px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--ink-2); background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); }
+body.console .chip:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-4); }
+body.console .chip[aria-pressed="true"], body.console .inav .chip[aria-current="true"] { color: var(--btn-ink); background: var(--btn); box-shadow: none; }
+/* segmented controls: a tray, the chosen part raised */
+body.console .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--seg); box-shadow: none; }
+body.console .seg button { height: 28px; min-height: 28px; padding: 0 12px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--ink-3); background: transparent; box-shadow: none; }
+body.console .seg button:hover { color: var(--ink); }
+body.console .seg button[aria-pressed="true"] { color: var(--ink); background: var(--seg-on); box-shadow: var(--seg-sh); }
+/* a state: a small tinted pill */
+body.console .pdot { gap: 6px; height: 24px; padding: 0 9px 0 8px; border-radius: 999px; font-size: 12.5px; font-weight: 500; background: var(--s2); color: var(--ink-2); }
+body.console .pdot i { width: 6px; height: 6px; }
+body.console .pdot.ok { color: var(--green); background: var(--green-soft); }
+body.console .pdot.warn { color: var(--warn); background: var(--warn-soft); }
+body.console .pdot.bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* Security's cards: title, state under it, words, the action at the foot */
+body.console .scard { display: flex; flex-direction: column; gap: 10px; }
+body.console .sc-h { flex-direction: column; align-items: flex-start; gap: 8px; }
+body.console .scard > :last-child:is(.btn, .act, .row2) { margin-top: auto; align-self: flex-start; }
+body.console .scard .row2 { margin-top: auto; }
+/* the Dashboard's chart: a scale to read it by, and words when it is empty */
+body.console .hc-plot { height: 160px; padding-left: 28px; }
+body.console .hc-bars { gap: 4px; background: linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% 50%; border-bottom: 1px solid var(--line-2); }
+body.console .hc-max { top: -6px; }
+body.console .hc-zero { position: absolute; left: 0; bottom: -6px; font-size: 11px; color: var(--ink-3); }
+body.console .hc-b span { border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--accent) 70%, transparent); }
+body.console .hc-empty { position: absolute; inset: 0 0 0 28px; display: grid; place-items: center; font-size: 13.5px; color: var(--ink-3); pointer-events: none; }
+body.console .hc-empty + .hc-max, body.console .hchart.empty .hc-max { display: none; }
+body.console .hchart.empty .hc-b span { background: var(--line-2); }
+body.console .hchart.empty .hc-bars, body.console .bars.zero { background: none; }
+body.console .bars.zero::before { display: none; }
+/* Insights: numbers in one divided strip, not boxes inside the card */
+body.console .tiles { gap: 0; margin-top: 16px; border-radius: 12px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--line); }
+body.console .tile { padding: 14px 16px; border-radius: 0; background: transparent; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line); }
+body.console .tile.warn { background: color-mix(in srgb, var(--warn-soft) 70%, transparent); }
+body.console .tile .act { margin-top: 8px; max-width: 100%; height: auto; min-height: 30px; padding: 5px 12px; white-space: normal; text-align: left; line-height: 1.3; }
+@media (min-width: 1200px) {
+  body.console .igrid.many > :not(:first-child) .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.console .igrid.many > :not(:first-child) .tiles > .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+body.console .zone-line { font-size: 13.5px; color: var(--ink-3); align-items: center; }
+body.console .bars { background: linear-gradient(var(--line) 1px, transparent 1px) 0 16px / 100% 50% no-repeat; }
+body.console .bars.zero .top { display: none; }
+body.console .bars.zero::after { content: attr(data-empty); position: absolute; inset: 16px 0 0; display: grid; place-items: center; font-size: 13.5px; color: var(--ink-3); }
+/* Apps: the card's head is part of the card, divided from what follows */
+body.console .appc.card.rows { padding: 6px 22px 8px; }
+body.console .appc .apph { padding: 12px 0 14px; border-bottom: 1px solid var(--line); }
+body.console .appc .apph.opens { margin: 0 -10px; padding: 12px 10px 14px; border-radius: 10px 10px 0 0; }
+body.console .appc .apph.opens:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+body.console .invdet summary { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; list-style: none; font-size: 13px; font-weight: 500; color: var(--ink-2); }
+body.console .invdet summary::-webkit-details-marker { display: none; }
+body.console .invdet summary::before { content: ""; width: 6px; height: 6px; margin-left: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease); }
+body.console .invdet[open] summary::before { transform: rotate(45deg); }
+body.console .appc .apph { position: relative; border-bottom: 0; }
+body.console .appc .apph::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--line); }
+body.console .appc .apph.opens::after { left: 10px; right: 10px; }
+body.console .afacts { display: grid; gap: 8px; padding: 14px 0 6px; border-top: 1px solid var(--line); }
+body.console .af { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+body.console .af svg { margin-top: 2px; color: var(--ink-3); }
+body.console .af.ppl { color: var(--ink); }
+/* Getting started: every step on a hairline, both columns alike */
+body.console .cl-card { padding: 20px 22px 8px; }
+body.console .cl-card.compact .cl > li { border-top: 1px solid var(--line); }
+body.console .cl-bar { height: 3px; margin: 14px 0 0; }
+body.console .cl-card .cl { margin-top: 12px; }
+body.console .cl-t b { font-size: 14px; }
+body.console .cl-t small { font-size: 12.5px; }
+body.console .cl-tick { width: 22px; height: 22px; }
+/* the right-hand panel: plain rows to click, a quiet feed */
+body.console .cr-acts { gap: 2px; }
+body.console .cr-act { min-height: 36px; padding: 0 8px; border-radius: 8px; font-size: 13.5px; background: transparent; box-shadow: none; }
+body.console .cr-act:hover { background: var(--s2); box-shadow: none; }
+body.console .cr-act svg { color: var(--ink-3); }
+body.console .cr-ev { grid-template-columns: minmax(0, 1fr); padding: 10px 0; }
+body.console .cr-ev i { display: none; }
+body.console .cr-ev small { grid-column: 1; }
+body.console .cr-ev.denied { grid-template-columns: 8px minmax(0, 1fr); }
+body.console .cr-ev.denied i { display: block; }
+body.console .cr-ev.denied small { grid-column: 2; }
+body.console .cr-ev:hover span { color: var(--ink); }
+body.console .cr-feed > .btn.link { margin-top: 10px; justify-self: start; }
+/* Settings: the section that is open is marked; one title, not two */
+body.console .sd-main .pane > .phd h2 { display: none; }
+body.console .sd-main .pane > .phd p { margin-top: 2px; padding-right: 48px; }
+body.console .sd-x:focus:not(:focus-visible) { outline: none; box-shadow: none; }
+body.console .sd-main:focus { outline: none; }
+/* code: one look in both themes */
+body.console pre.k { padding: 12px 14px; border-radius: 10px; font-size: 12.5px; line-height: 1.6; color: var(--ink); background: var(--s2); box-shadow: inset 0 0 0 1px var(--line); }
+/* three ways side by side: their buttons on one line */
+body.console .way { display: flex; flex-direction: column; gap: 10px; }
+body.console .way > .row2 { margin-top: auto; padding-top: 4px; }
+/* Activity: the time on the entry's line; the search as tall as the chips */
+body.console .ev { align-items: baseline; }
+body.console .evtools .inp, body.console .ptools .psearch { height: 32px; border-radius: 999px; padding: 0 14px; font-size: 13px; }
+/* a state inside a table cell wraps rather than being cut */
+body.console .ptr .pdot { height: auto; min-height: 24px; padding: 3px 9px 3px 8px; white-space: normal; line-height: 1.35; }
+/* a person's apps: each card its own height; the footer link looks like one */
+body.console .lgrid { align-items: start; }
+body.console .hfoot a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
+body.console .hfoot a:hover { color: var(--ink); }
+/* the main button, unavailable: the same button, fainter */
+body.console .btn.dark:disabled, body.console .btn.dark[disabled] { opacity: .32; color: var(--btn-ink); background: var(--btn); box-shadow: none; cursor: default; }
+/* a list card's own title, not a small grey label */
+body.console .card.rows > p.grp:first-child { margin: 14px 0 2px; font-size: 15px; font-weight: 600; letter-spacing: -.012em; color: var(--ink); }
 </style>
 </head>
 <body class="console" data-kit="app">

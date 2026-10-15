@@ -161,7 +161,8 @@
       var top = exact.length ? Math.max.apply(null, exact) : 0;
       var last = items.length ? items[items.length - 1] : null;
       var said = o.what + ", " + o.span + ": most on one " + o.unit + " " + numSaid(top) + "; " + (o.lastWord || "the last") + " " + (last ? numSaid(last.value) : "0") + ".";
-      var bars = el("div", { class: "bars", role: "img", "aria-label": said });
+      var empty = !top && !few;
+      var bars = el("div", { class: "bars" + (empty ? " zero" : ""), role: "img", "aria-label": said, "data-empty": "Nobody yet in this time." });
       bars.appendChild(el("span", { class: "top", "aria-hidden": "true", text: String(max === 1 && !top ? 1 : max) }));
       items.forEach(function (x) {
         var v = x.value === FEWER ? 2 : Number(x.value) || 0;

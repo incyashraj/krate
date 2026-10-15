@@ -67,7 +67,7 @@ const shown = (n) => t(n.shown);
   check(p.el("in").classList.contains("inspect") && p.el("crBack").hidden === false, "and the panel says how to go back");
   p.el("crBack").click();
   await settle();
-  check(p.el("crTitle").textContent === "Overview" && /Quick actions/.test(shown(p.el("crBody"))), "back to the overview: quick actions and what changed lately");
+  check(p.el("crTitle").textContent === "Acme" && /Quick actions/.test(shown(p.el("crBody"))), "back to the overview: quick actions and what changed lately");
   bars[29].click();
   await settle();
   check(p.el("crTitle").textContent === bars[29].attrs["aria-label"].split(":")[0] && /2 people opened one of Acme's apps that day/.test(shown(p.el("crBody"))), "a bar opens its day");

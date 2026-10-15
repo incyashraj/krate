@@ -259,6 +259,9 @@
       }
       slot.appendChild(pane);
       dlg.showModal();
+      // Start reading at the top, not on the close button.
+      if (slot.setAttribute) slot.setAttribute("tabindex", "-1");
+      if (slot.focus) { try { slot.focus({ preventScroll: true }); } catch (e) { slot.focus(); } }
     }
     S.tab = id;
     try { history.replaceState(null, "", HERE + "&tab=" + id); } catch (e) {}
@@ -305,13 +308,16 @@
       sections.forEach(function (x) {
         var named = navName(x.title);
         if (named[1] !== group) { group = named[1]; nav.appendChild(el("p", { class: "sd-group", text: group })); }
-        nav.appendChild(el("button", { type: "button", text: named[0], onclick: function () {
+        var nb = el("button", { type: "button", text: named[0], onclick: function () {
           if (!x.card) { S.navGo = x.title; show("settings"); return; }
           Array.prototype.slice.call(nav.querySelectorAll("button")).forEach(function (b) { b.removeAttribute("aria-current"); });
           this.setAttribute("aria-current", "true");
           if (x.card.scrollIntoView) x.card.scrollIntoView({ block: "start" });
-        } }));
+        } });
+        nb.card = x.card;
+        nav.appendChild(nb);
       });
+      spy();
       // Arrived from Billing for one section: go to it once it is drawn.
       if (id === "settings" && S.navGo) {
         var want = sections.filter(function (x) { return x.title === S.navGo; })[0];
@@ -324,6 +330,19 @@
         nav.appendChild(bill);
       }
     }
+    // The section in view is the one marked, as the window scrolls.
+    function spy() {
+      var slot = $("setSlot");
+      var btns = Array.prototype.slice.call(nav.querySelectorAll("button")).filter(function (b) { return b.card; });
+      if (!btns.length || !slot) return;
+      var top = (slot.scrollTop || 0) + 60, at = btns[0];
+      btns.forEach(function (b) { if ((b.card.offsetTop || 0) <= top) at = b; });
+      if (slot.scrollTop + slot.clientHeight >= slot.scrollHeight - 4) at = btns[btns.length - 1];
+      btns.forEach(function (b) { if (b === at) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current"); });
+    }
+    var slotEl = $("setSlot");
+    if (slotEl && !slotEl.spying && slotEl.addEventListener) { slotEl.spying = true; slotEl.addEventListener("scroll", function () { if (S.navSpy) S.navSpy(); }, { passive: true }); }
+    S.navSpy = spy;
     draw();
     // Sections arrive after the window opens: Settings redraws this list
     // when it has drawn its own, and an observer catches the later ones.
@@ -404,7 +423,7 @@
     var feed = el("div", { class: "cr-feed" }, [el("p", { class: "cr-sub", text: "Loading" })]);
     // On Activity itself the list is the page: the panel says the week.
     if (S.tab === "activity") {
-      rail("Overview", [
+      rail((S.org && S.org.name) || slug, [
         acts.length ? el("div", { class: "cr-sec" }, [el("h3", { text: "Quick actions" }), el("div", { class: "cr-acts" }, acts)]) : null,
         el("div", { class: "cr-sec" }, [el("h3", { text: "This week" }), feed]),
       ], false);
@@ -421,7 +440,7 @@
       });
       return;
     }
-    rail("Overview", [
+    rail((S.org && S.org.name) || slug, [
       acts.length ? el("div", { class: "cr-sec" }, [el("h3", { text: "Quick actions" }), el("div", { class: "cr-acts" }, acts)]) : null,
       el("div", { class: "cr-sec" }, [el("h3", { text: K.can(role, "audit.read") ? "Lately" : "Your apps" }), feed]),
     ], false);

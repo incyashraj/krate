@@ -154,10 +154,6 @@
         ? "Company systems your apps may reach, with the credential kept here, sealed: an app sends its requests through Krate and never holds it."
         : "The company systems an app may reach, by name. An app names one in its manifest and Krate adds the credential on the way.");
       if (D.C) D.C.settings(p);
-      p.appendChild(panel("Using one in an app", [
-        el("div", { class: "pcode" }, [el("p", { class: "sub", text: "Name it in the app's manifest, with the reason a reviewer reads:" }), el("pre", { class: "k", text: "[[capabilities]]\ncap = \"net.connection:finance-api\"\nrationale = \"Read invoices from the Finance API\"" })]),
-        el("p", { class: "sub", style: "padding:0 0 14px", text: "Then the app makes an ordinary request to that system's address. Krate checks the app may, adds the credential on the way, and the app never sees it." }),
-      ]));
     }
 
     // -------------------------------------------------------------- new app
@@ -319,7 +315,7 @@
       var groupsAt = el("div", { hidden: true });
       p.appendChild(groupsAt);
       if (D.groups) D.groups(groupsAt);
-      p.appendChild(panel("Who to ask", owners.length ? owners.map(function (m) { return row(K.who(m).label, K.ROLE_NAME[m.role] || m.role); }) : [empty("Nobody listed", "Ask whoever invited you.")]));
+      p.appendChild(panel("Who to ask", owners.length ? owners.map(function (m) { return row(K.who(m).label, K.ROLE_NAME[m.role] || m.role); }) : [el("p", { class: "sub", style: "padding:0 0 16px", text: "Ask whoever invited you to " + nameOf() + "." })]));
     }
 
     return { computers: computers, security: security, connections: connections, build: build, myapps: myapps, requests: requests, help: help };

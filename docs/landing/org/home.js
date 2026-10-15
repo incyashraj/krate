@@ -61,15 +61,19 @@
         b.addEventListener("blur", function () { tip.hidden = true; });
         return b;
       }));
-      return el("div", { class: "hchart" }, [
-        el("div", { class: "hc-plot" }, [el("span", { class: "hc-max", text: String(max) }), bars, tip]),
+      var none = !series.some(function (d) { return num(d.n) > 0 || d.n === FEWER; });
+      return el("div", { class: "hchart" + (none ? " empty" : "") }, [
+        el("div", { class: "hc-plot" }, [
+          el("span", { class: "hc-max", text: String(max) }), el("span", { class: "hc-zero", text: "0" }), bars, tip,
+          none ? el("div", { class: "hc-empty", text: opts.empty || "Nothing in this time yet." }) : null,
+        ]),
         el("div", { class: "hc-axis" }, [el("span", { text: series.length ? series[0].label : "" }), el("span", { text: series.length ? series[series.length - 1].label : "" })]),
       ]);
     }
 
-    function card(title, sub, kids, cls) {
+    function card(title, sub, kids, cls, tool) {
       return el("section", { class: "card hcard" + (cls ? " " + cls : "") }, [
-        el("div", { class: "hc-h" }, [el("h3", { text: title }), sub ? el("p", { class: "sub", text: sub }) : null]),
+        el("div", { class: "hc-h" }, [el("div", {}, [el("h3", { text: title }), sub ? el("p", { class: "sub", text: sub }) : null]), tool || null]),
       ].concat(kids));
     }
     function go(tab, text, opts) { return el("button", { class: "btn ghost sm", type: "button", text: text, onclick: function () { D.show(tab, opts); } }); }
@@ -120,13 +124,13 @@
         var series = mode === "days"
           ? (a.daily || []).map(function (d) { return { label: isoDay(d.day), n: d.people, day: d.day }; })
           : (a.trend || []).map(function (w) { return { label: isoDay(w.from) + " to " + isoDay(w.to), n: w.people, from: w.from }; });
-        box.appendChild(chart(series, { open: function (d, i) { inspectDay(d, series, i, mode); } }));
+        box.appendChild(chart(series, { empty: "Nobody opened an app in these " + (mode === "days" ? "30 days" : "12 weeks") + ".", open: function (d, i) { inspectDay(d, series, i, mode); } }));
       }
       draw();
       var top = a.top || [];
       var most = Math.max(1, top.length ? top[0].people : 1);
       p.appendChild(el("div", { class: "hgrid" }, [
-        card("People opening apps", "Each " + (mode === "days" ? "day" : "week") + " in " + K.zoneName(b.time_zone || "UTC") + ". Point at a bar for its number.", [el("div", { class: "hc-tools" }, [seg]), box], "wide"),
+        card("People opening apps", "Each day in " + K.zoneName(b.time_zone || "UTC") + ". Point at a bar for its number.", [box], "wide", seg),
         card("Most used", "Last 30 days", [top.length
           ? el("div", { class: "hbars" }, top.map(function (t) {
               return el("button", { class: "hbar", type: "button", onclick: function () { inspectApp(t, o); } }, [
