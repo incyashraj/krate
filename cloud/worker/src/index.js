@@ -75,6 +75,12 @@ import { insightsRoute } from "./org-insights.js";
 import { orgTimeRoute } from "./org-time.js";
 // The organisation's logo, kept small and only as a picture.
 import { orgBrandRoute } from "./org-brand.js";
+// Declining a version with a reason, release notes, app requests and
+// notifications: after everything whose commands they wrap.
+import { orgDeclineRoute } from "./org-decline.js";
+import { orgNotesRoute, noteHeader } from "./org-notes.js";
+import { orgRequestsRoute } from "./org-requests.js";
+import { orgNotifyRoute, sendNotices } from "./org-notify.js";
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -343,7 +349,7 @@ export default {
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -768,7 +774,7 @@ export default {
       }
       // Organisations (IC-946).
       if (pathname === "/orgs" || pathname.startsWith("/orgs/")) {
-        return cors(await orgRoute(request, url, env));
+        return cors(await orgRoute(request, url, env, ctx));
       }
       return cors(text("not found", 404));
     } catch (err) {
@@ -7196,6 +7202,10 @@ boot();
 //   POST   /orgs/<slug>/candidates                (bundle bytes)
 //   GET    /orgs/<slug>/candidates                (history, for members who publish or approve)
 //   POST   /orgs/<slug>/candidates/<digest>/approve
+//   POST   /orgs/<slug>/candidates/<digest>/decline {reason}      (org-decline.js)
+//   PUT    /orgs/<slug>/candidates/<digest>/note    {note}        (org-notes.js)
+//   GET    /orgs/<slug>/requests, POST {text}, PUT /<id>          (org-requests.js)
+//   GET    /orgs/<slug>/notifications, GET/PUT /me/notify         (org-notify.js)
 //   GET    /orgs/<slug>/releases
 //   GET    /orgs/<slug>/audit
 //   GET    /a/<hash>                              (a private release: see fetchPrivate)
@@ -7335,16 +7345,16 @@ async function noteOrgOf(env, principal, slug, name, role) {
 /// Every organisation route, behind the refused-attempt limit (IC-948 B):
 /// a principal with 30 refusals this minute gets 429 before any store is
 /// asked, and each refusal the store gives is counted.
-async function orgRoute(request, url, env) {
+async function orgRoute(request, url, env, ctx) {
   const identity = await verifyGitHub(request, env);
   const principals = principalsOf(identity);
   if (principals.length && (await refusalsExhausted(env, principals))) return rateLimitedAnswer();
-  const res = await orgRouteCore(request, url, env, identity);
+  const res = await orgRouteCore(request, url, env, identity, ctx);
   if (principals.length && isRefusal(res.status)) await noteRefusal(env, principals);
   return res;
 }
 
-async function orgRouteCore(request, url, env, identity) {
+async function orgRouteCore(request, url, env, identity, ctx) {
   if (!env.ORGS) {
     return json({ error: "orgs-off", message: "organisations are not switched on on this hub" }, 503);
   }
@@ -7436,6 +7446,17 @@ async function orgRouteCore(request, url, env, identity) {
     return askRaw(op, argsOf(body.value), idempotency);
   };
   const mutate = async (op, argsOf) => orgAnswer(await mutateRaw(op, argsOf));
+  // Work that must not hold up or fail the answer -- notification mail --
+  // runs after it when the platform allows; a test, with no context, waits.
+  const later = (pending) => {
+    const safe = Promise.resolve(pending).catch((e) => console.error("after the answer:", e && e.message ? e.message : String(e)));
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(safe);
+      return Promise.resolve();
+    }
+    return safe;
+  };
+  const notices = { env, smtpSend, askRaw, site };
 
   // Company sign-in and offline access (IC-948, F and G).
   {
@@ -7512,7 +7533,15 @@ async function orgRouteCore(request, url, env, identity) {
     return ask("set-root", { public_key: publicKey, revocations }, idempotency);
   }
   if (rest[0] === "candidates") {
-    if (rest.length === 1 && method === "POST") return orgCandidate(request, env, slug, principals, url.pathname, base);
+    if (rest.length === 1 && method === "POST") {
+      const res = await orgCandidate(request, env, slug, principals, url.pathname, base);
+      // A new version waits: the people who may approve it hear (org-notify.js).
+      if (res.status === 201) {
+        const made = await res.clone().json().catch(() => null);
+        if (made && made.digest && made.state === "waiting-for-approval") await later(sendNotices(notices, { event: "waiting", digest: made.digest }));
+      }
+      return res;
+    }
     if (rest.length === 1 && method === "GET") return ask("candidates");
     if (rest.length === 3 && rest[2] === "approve" && method === "POST") {
       const digest = String(rest[1]).toLowerCase();
@@ -7520,7 +7549,10 @@ async function orgRouteCore(request, url, env, identity) {
         return orgError(404, "digest-mismatch", slug, "a digest is the candidate's 64-hex sha256");
       }
       // `accept`: the new capabilities the approver confirmed (IC-950).
-      return mutate("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      const answer = await mutateRaw("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      // Its sender hears it is out; never holds up or fails the approval.
+      if (answer.status === 200 && !answer.replayed) await later(sendNotices(notices, { event: "approved", digest }));
+      return orgAnswer(answer);
     }
   }
   if (rest[0] === "releases" && rest.length === 1 && method === "GET") return ask("releases", { base });
@@ -7535,10 +7567,12 @@ async function orgRouteCore(request, url, env, identity) {
   const h = {
     request, url, env, slug, rest, method, principals, identity, site, base,
     askRaw, mutateRaw, orgAsk, orgAnswer, json, readBody, readBounded, isAdmin, smtpSend, fetchBundle, idempotencyOf,
-    validate: callValidator,
+    validate: callValidator, later, notices,
   };
   const routed =
-    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) || (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
+    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) ||
+    (await orgDeclineRoute(h)) || (await orgNotesRoute(h)) || (await orgRequestsRoute(h)) || (await orgNotifyRoute(h)) ||
+    (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
     (await orgScimRoute(h)) || (await auditExportRoute(h)) || (await orgSamlRoute(h)) ||
     (await orgKeysRoute(h)) ||
     (await orgSigningRoute(h)) ||
@@ -7570,6 +7604,8 @@ async function orgCandidate(request, env, slug, principals, path, base) {
     );
   }
   const body = read.body;
+  const note = noteHeader(request.headers.get("x-krate-note"));
+  if (note.bad) return json({ error: "bad-request", message: note.bad }, 400);
   const invalid = (problem) => json({ error: "invalid-bundle", message: `not a valid .krate bundle: ${problem}` }, 422);
   if (body.length === 0) return invalid("the body is empty");
   const problem = archiveProblem(body);
@@ -7579,6 +7615,7 @@ async function orgCandidate(request, env, slug, principals, path, base) {
   const digest = await sha256Hex(body);
   const idempotency = await idempotencyOf(request, path, digest);
   const args = candidateArgs(judged.judgement, digest, body.length, base);
+  if (note.value) args.note = note.value;
 
   const check = await orgAsk(env, slug, { op: "check-candidate", principals, args, idempotency });
   if (check.replayed || check.status !== 200) return orgAnswer(check);

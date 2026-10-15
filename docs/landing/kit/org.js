@@ -185,6 +185,11 @@
     // F-319: the organisation's time zone (org-time.js).
     "org.time-zone": { owner: "yes", admin: "yes" },
     "org.logo": { owner: "yes", admin: "yes" },
+    // App requests (org-requests.js): anyone asks; owners, admins and
+    // developers see and answer them all; everyone else sees their own.
+    "request.create": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
+    "request.view": { owner: "yes", admin: "yes", developer: "yes", reviewer: "own", recipient: "own" },
+    "request.manage": { owner: "yes", admin: "yes", developer: "yes" },
   };
 
   function can(role, action) {
@@ -471,6 +476,12 @@
     "app-not-allowed": "the connection does not allow that app",
     "connection-not-requested": "that version did not ask for it",
     "credential-needs-entry": "its credential must be entered again",
+    // Declining, release notes and app requests.
+    declined: "it was declined",
+    "not-waiting": "it was not waiting for approval",
+    "note-closed": "a declined or withdrawn version keeps its note",
+    "no-such-request": "no such request",
+    "requests-full": "too many open requests",
   };
 
   /// One audit event as a sentence. `names` maps a digest to "Ledger 1.2".
@@ -538,6 +549,17 @@
         "usage.view": "see how the apps are used",
         "org.logo": "change the organisation's logo",
         "org.time-zone": "change the organisation's time zone",
+        // Declining, release notes and app requests.
+        "candidate.decline": "decline " + app(),
+        decline: "decline " + app(),
+        "candidate.note": "write the release note on " + app(),
+        "note-set": "write a release note",
+        "request.create": "ask for an app",
+        "request-create": "ask for an app",
+        "request.view": "see the app requests",
+        "request.manage": "answer an app request",
+        "request-update": "answer an app request",
+        "notify-prefs-set": "change their notifications",
       }[ev.action] || "do " + ev.action;
       // Shown beside a Refused badge, so the sentence says why, not "refused" again.
       return a + " tried to " + tried + ": " + (SHORT_WHY[ev.reason] || ev.reason || "not allowed") + ".";
@@ -608,6 +630,14 @@
       case "root-key.rotate": return a + " replaced the root key with " + fingerprint(t.value) + ".";
       case "release-key.revoke": return a + " withdrew the release key " + fingerprint(t.value) + ".";
       case "candidate.publish": return a + " sent " + app() + " for approval.";
+      case "candidate.decline": return a + " declined " + app() + (ev.reason ? ": " + ev.reason : "") + ".";
+      case "candidate.note": return a + (ev.reason === "cleared" ? " cleared the release note on " : " wrote the release note on ") + app() + ".";
+      case "request.create": return a + " asked for an app.";
+      case "request.update": {
+        var rs = String(ev.reason || "").split(",")[0];
+        var rw = { open: "open again", planned: "planned", done: "done", declined: "declined" }[rs] || rs;
+        return a + " marked an app request " + rw + (/replied/.test(ev.reason || "") ? ", with a reply." : ".");
+      }
       // Solo release (IC-958 addendum): the hub marks a release its sender
       // made while nobody else could approve with the reason "solo".
       case "candidate.approve":

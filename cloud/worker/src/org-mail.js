@@ -17,7 +17,9 @@ export const ORG_DAILY_LIMIT = 20;
 export const HUB_DAILY_LIMIT = 100;
 
 /// Send one plain-text mail through Gmail; null when it went, else why.
-async function gmail(env, smtpSend, { to, subject, text }) {
+/// Copied to krate.tech unless `cc` is null (a notification is the
+/// person's own, not the founder's to read).
+export async function gmail(env, smtpSend, { to, subject, text, cc = MAIL_CC }) {
   if (!env.GMAIL_APP_PASSWORD) return "invitation mail is not set up on this hub";
   const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
   const problem = await smtpSend(connect, {
@@ -25,7 +27,7 @@ async function gmail(env, smtpSend, { to, subject, text }) {
     password: env.GMAIL_APP_PASSWORD,
     from: `Yashraj Pardeshi <${MAIL_FROM_ADDRESS}>`,
     to,
-    cc: MAIL_CC,
+    cc: cc || undefined,
     subject,
     text,
   });
