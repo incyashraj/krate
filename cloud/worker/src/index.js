@@ -81,6 +81,8 @@ import { orgDeclineRoute } from "./org-decline.js";
 import { orgNotesRoute, noteHeader } from "./org-notes.js";
 import { orgRequestsRoute } from "./org-requests.js";
 import { orgNotifyRoute, sendNotices } from "./org-notify.js";
+// Signed-in sessions, and signing out everywhere.
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -428,27 +430,27 @@ export default {
         return noteStep(env, "signin", "github-start", loginStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/callback") {
-        return noteStep(env, "signin", "github-done", loginCallback(url, env));
+        return noteStep(env, "signin", "github-done", loginCallback(url, env, request));
       }
       if (request.method === "GET" && pathname === "/login/google/start") {
         return noteStep(env, "signin", "google-start", googleStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/google/callback") {
-        return noteStep(env, "signin", "google-done", googleCallback(url, env));
+        return noteStep(env, "signin", "google-done", googleCallback(url, env, request));
       }
       // Company sign-in for an organisation (IC-948, F).
       if (request.method === "GET" && pathname === "/login/oidc/start") {
         return noteStep(env, "signin", "oidc-start", oidcStart(url, env, signInDeps()));
       }
       if (request.method === "GET" && pathname === "/login/oidc/callback") {
-        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps()));
+        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps(request)));
       }
       // ... and by SAML 2.0 (IC-955): SP-initiated, the Response posted back.
       if (request.method === "GET" && pathname === "/login/saml/start") {
         return noteStep(env, "signin", "saml-start", samlStart(url, env, signInDeps()));
       }
       if (request.method === "POST" && /^\/login\/saml\/acs\/[a-z0-9-]+$/.test(pathname)) {
-        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(), readBounded }));
+        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(request), readBounded }));
       }
       if (request.method === "GET" && /^\/saml\/[a-z0-9-]+$/.test(pathname)) {
         return samlMetadata(url, env, signInDeps());
@@ -464,7 +466,7 @@ export default {
         return cors(await noteStep(env, "signin", "email-start", emailStart(request, env)));
       }
       if (request.method === "GET" && pathname === "/login/email/verify") {
-        return noteStep(env, "signin", "email-done", emailVerify(url, env));
+        return noteStep(env, "signin", "email-done", emailVerify(url, env, request));
       }
       if (request.method === "POST" && pathname === "/auth/start") {
         return cors(await noteStep(env, "signin", "desktop-start", authStart(env)));
@@ -771,6 +773,11 @@ export default {
       // SCIM 2.0 provisioning (IC-955): server to server, so no CORS.
       if (pathname.startsWith("/scim/v2/")) {
         return await scimRoute(request, url, env, { orgAsk, readBounded, noteOrgOf, rateLimited, slugOk: (s) => SLUG.test(s) });
+      }
+      // Signed-in sessions: list them, sign one out, sign out the others.
+      if (pathname.startsWith("/account/sessions")) {
+        const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
+        if (res) return cors(res);
       }
       // Organisations (IC-946).
       if (pathname === "/orgs" || pathname.startsWith("/orgs/")) {
@@ -3127,11 +3134,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
   return { sent };
 }
 
-async function newSession(env, userId) {
+async function newSession(env, userId, meta = {}) {
   const token = `krs_${crypto.randomUUID().replaceAll("-", "")}`;
   await env.APPS.put(`session:${token}`, userId, { expirationTtl: 90 * 24 * 3600 });
-  // Indexed per user so support can revoke a person's sessions.
-  await env.APPS.put(`usess:${userId}:${token}`, "1", { expirationTtl: 90 * 24 * 3600 });
+  // Indexed per user so support can revoke a person's sessions, and so the
+  // person can see and sign out their own (account-sessions.js): the entry
+  // holds the kind and the browser it came from, in the same write.
+  await recordSession(env, userId, token, meta);
   return token;
 }
 
@@ -3165,8 +3174,11 @@ function signInStart(from, nonce, appNonce) {
 
 /// What the company sign-in routes (org-sso.js) borrow from here: the same
 /// accounts, sessions and K-909 delivery every other sign-in uses.
-function signInDeps() {
-  return { SLUG, signInStart, deliver, ensureUser, newSession, orgAsk, noteOrgOf };
+function signInDeps(request) {
+  const label = sessionLabel(request && request.headers.get("user-agent"));
+  // Company sign-in's sessions say so in the session list.
+  const companySession = (env, userId, meta) => newSession(env, userId, meta || { kind: "company", label });
+  return { SLUG, signInStart, deliver, ensureUser, newSession: companySession, orgAsk, noteOrgOf };
 }
 
 /// Read a stored start. Before K-909 the record was the bare word "app" or
@@ -3225,7 +3237,7 @@ async function googleStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function googleCallback(url, env) {
+async function googleCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const stored = await env.APPS.get(`login:${state}`);
   if (!stored) return signInFailed(url, "expired");
@@ -3264,7 +3276,7 @@ async function googleCallback(url, env) {
     name: claims.name,
     avatar_url: claims.picture,
   });
-  return deliver(start, user, await newSession(env, user.id));
+  return deliver(start, user, await newSession(env, user.id, { kind: "google", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // -------------------------------------------------------------------- email
@@ -3511,7 +3523,7 @@ async function emailStart(request, env) {
   return json({ sent: true });
 }
 
-async function emailVerify(url, env) {
+async function emailVerify(url, env, request) {
   const token = url.searchParams.get("t") || "";
   const stored = await env.APPS.get(`email:${token}`);
   if (!stored) return signInFailed(url, "used");
@@ -3519,7 +3531,8 @@ async function emailVerify(url, env) {
   const record = JSON.parse(stored);
   // The link reached this inbox, so the inbox is proved (IC-947).
   const user = await ensureUser(env, "email", record.email, { email: record.email, verified_email: record.email });
-  return deliver(signInStart(record.from, record.nonce, record.app_nonce), user, await newSession(env, user.id));
+  const start = signInStart(record.from, record.nonce, record.app_nonce);
+  return deliver(start, user, await newSession(env, user.id, { kind: "email", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // --------------------------------------------------------------- web sign-in
@@ -3559,7 +3572,7 @@ async function loginStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function loginCallback(url, env) {
+async function loginCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
   const stored = await env.APPS.get(`login:${state}`);
@@ -3600,7 +3613,18 @@ async function loginCallback(url, env) {
   // The GitHub token itself is handed over (not a krs_ session): the engine
   // already publishes with it and the hub already verifies it. The account
   // record exists either way, so a later Google or email sign-in with the
-  // same address lands on this same user.
+  // same address lands on this same user. Indexed once, so the person can
+  // see this sign-in and sign it out (account-sessions.js): the one write a
+  // GitHub sign-in adds.
+  try {
+    await recordSession(env, account.id, result.access_token, {
+      kind: "github",
+      label: sessionLabel(request && request.headers.get("user-agent"), start.from),
+      ttl: GITHUB_INDEX_TTL_SECONDS,
+    });
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
   return deliver(start, { ...account, login: profile.login }, result.access_token);
 }
 
@@ -3656,6 +3680,21 @@ async function authPoll(request, env) {
   });
   if (!user.ok) return text("signed in, but the profile could not be read", 502);
   const profile = await user.json();
+  // Indexed for the person's session list when their account is known
+  // (one write per sign-in; account-sessions.js). A first-ever sign-in from
+  // the desktop has no account yet, and is listed only while it is in use.
+  try {
+    const userId = profile.login ? await env.APPS.get(`ghlogin:${String(profile.login).toLowerCase()}`) : null;
+    if (userId) {
+      await recordSession(env, userId, result.access_token, {
+        kind: "github",
+        label: sessionLabel(request.headers.get("user-agent"), "app"),
+        ttl: GITHUB_INDEX_TTL_SECONDS,
+      });
+    }
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
 
   return json({
     identity: {
@@ -6753,13 +6792,8 @@ async function adminApi(request, pathname, env) {
     return json({ ok: true });
   }
   if (route === "user/logout" && request.method === "POST") {
-    const sess = await env.APPS.list({ prefix: `usess:${body.id}:`, limit: 1000 });
-    for (const k of sess.keys) {
-      const token = k.name.split(":").pop();
-      await env.APPS.delete(`session:${token}`);
-      await env.APPS.delete(k.name);
-    }
-    return json({ revoked: sess.keys.length });
+    // Krate sessions, and GitHub sign-ins the hub indexed (account-sessions.js).
+    return json({ revoked: await endEverySession(env, String(body.id || ""), GITHUB_CLIENT_ID) });
   }
   if (route === "tickets") {
     const listing = await env.APPS.list({ prefix: "tick:", limit: 1000 });
