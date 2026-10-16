@@ -743,6 +743,25 @@ impl store::org::Host for Phase2Host<'_> {
                 .map_err(org_error_to_wit)
         }))
     }
+
+    fn status(&mut self) -> wasmtime::Result<Result<store::org::Standing, store::org::OrgError>> {
+        use crate::org_store::Link;
+        Ok(self.org().and_then(|org| {
+            org.status()
+                .map(|status| store::org::Standing {
+                    link: match status.link {
+                        Link::Synced => store::org::Link::Synced,
+                        Link::Syncing => store::org::Link::Syncing,
+                        Link::Offline => store::org::Link::Offline,
+                        Link::WaitingForKey => store::org::Link::WaitingForKey,
+                    },
+                    pending: status.pending,
+                    reached_at: status.reached_at,
+                    org: status.org,
+                })
+                .map_err(org_error_to_wit)
+        }))
+    }
 }
 
 fn shared_error_to_wit(error: crate::shared_host::SharedError) -> store::shared::SharedError {

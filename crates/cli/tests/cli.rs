@@ -21319,8 +21319,8 @@ fn a_company_connection_reaches_the_api_and_the_app_never_holds_the_credential()
 // ---------------------------------------------------------------------------
 // store.org (IC-951), end to end encrypted (F-316): an organisation's team
 // data, through the binary. The probe is apps/krate-orgstore-probe built
-// (fixtures/orgstore-probe.wasm): `put`, `get`, `delete`, `list`, `sync` and
-// `who` steps joined by `then`, one line each. The fake hub answers
+// (fixtures/orgstore-probe.wasm): `put`, `get`, `delete`, `list`, `sync`,
+// `who` and `status` steps joined by `then`, one line each. The fake hub answers
 // /orgs/<slug>/keys and /orgs/<slug>/data/<digest>/sync the way
 // cloud/worker/src/org-keys.js and org-data.js do, holding only what the
 // devices send; with KRATE_ORG_E2E_HUB set, the online test runs against a
@@ -21678,6 +21678,35 @@ fn org_team_data_is_sealed_shared_by_two_members_and_its_key_travels_device_to_d
         "{out:?} {err}"
     );
 
+    // Before that, the laptop is new to acme and holds no key: it says it is
+    // waiting for the key, by the organisation's name, keeps the write, and
+    // who() is none (K-1108).
+    let (out, err) = probe(
+        &world,
+        "alice-laptop",
+        &v2,
+        &[
+            "put",
+            "notes",
+            "n-wait",
+            "title=kept",
+            "then",
+            "sync",
+            "then",
+            "status",
+            "then",
+            "who",
+        ],
+        &[],
+    );
+    assert_eq!(out[0], "put n-wait ok", "{err}");
+    assert_eq!(out[1], "sync online=true changed=false pending=1", "{err}");
+    assert_eq!(
+        out[2], "status waiting-for-key pending=1 reached=true org=Acme",
+        "{err}"
+    );
+    assert_eq!(out[3], "who none", "{err}");
+
     // Alice's new laptop: the recovery code restores her key, and she
     // reads the data with no other device involved.
     let restored = world.says(
@@ -21710,12 +21739,21 @@ fn org_team_data_is_sealed_shared_by_two_members_and_its_key_travels_device_to_d
         &world,
         "alice-laptop",
         &v2,
-        &["sync", "then", "get", "tasks", id],
+        &[
+            "sync", "then", "get", "tasks", id, "then", "who", "then", "status",
+        ],
         &[],
     );
     assert_eq!(
         out[1],
         format!("get {id} done=true;title={title} by=dan@acme.example"),
+        "{out:?} {err}"
+    );
+    // The key arrived: who() fills on the same sync, and the write made
+    // while waiting went up with it.
+    assert_eq!(out[2], "who alice owner Acme", "{out:?} {err}");
+    assert_eq!(
+        out[3], "status synced pending=0 reached=true org=Acme",
         "{out:?} {err}"
     );
 
@@ -22823,6 +22861,8 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
         None,
         &[
             ("expect_text", "Your team's notes are on their way"),
+            // The calm line, by the organisation's name (K-1108).
+            ("expect_text", "someone in Acme opens Krate and it"),
             ("shoot", "team-notes-waiting.png"),
             ("click", "Write a note"),
             ("type", title),
@@ -22830,7 +22870,7 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
             ("type", "Twelve, stackable. Bob has the budget."),
             ("wait_ms", "900"),
             ("expect_text", title),
-            ("expect_text", "Waiting to be let in"),
+            ("expect_text", "Waiting for your team's key"),
         ],
     );
     keys_show(&world, "alice");

@@ -14,18 +14,19 @@
 //!   computer. The app keeps the cursor its last read gave and asks every
 //!   second only for what changed after it; a teammate's edit shows within a
 //!   second of the runtime's background sync bringing it down.
-//! - **`org::sync` can wait on the network, so it is called sparingly**: once
-//!   after the first frame is on screen, then every twenty seconds while
-//!   nobody is typing, to learn whether the app is online and whether
-//!   anything is still waiting to go up. Writes are never followed by a
-//!   sync: the runtime sends them in the background within seconds, and
-//!   once more when the window closes.
+//! - **`org::status` says where this computer stands and never waits**:
+//!   synced, syncing, offline, or waiting for the team's key, asked every
+//!   second beside the records. `org::sync` only asks the runtime to go now
+//!   (in a window it never waits), once after the first frame and then
+//!   every twenty seconds. Writes are never followed by a sync: the runtime
+//!   sends them in the background within seconds, and once more when the
+//!   window closes.
 //! - **Who changed it is the entry's own `changed_by`** and when is
 //!   `changed_at`; nothing needs storing for "last changed by dana". Who
 //!   *made* a note is a field (`made_by`), because `changed_by` moves on.
 //! - **Every state the store can report is a screen with words**: not an
 //!   organisation's app, removed, not shared with you, a version withdrawn,
-//!   a computer still being let in, offline. None of them is an error box.
+//!   a computer still waiting for the team's key, offline. None of them is an error box.
 //! - **Nothing typed is lost.** Edits are saved half a second after typing
 //!   stops, when another note is opened, and when the window closes; a
 //!   deleted note can be brought back with Undo.
@@ -99,11 +100,13 @@ struct Team {
     reached_at: Option<u64>,
     /// A sync has answered at least once.
     answered: bool,
-    /// The organisation has let this computer in: it holds the team's key
-    /// and has exchanged data. A new computer reaches the hub and still
-    /// waits, until a teammate's computer passes it the key; the sign is
-    /// that `who` stays empty after a sync that was online.
+    /// The organisation has named this person: `who` answered once this
+    /// computer held the team's key and exchanged data.
     admitted: bool,
+    /// This computer is new to the team and its key has not arrived yet
+    /// (`org::status` says `WaitingForKey`); a teammate's computer passes it
+    /// on by itself.
+    waiting_for_key: bool,
     /// Something was saved since the last sync answered.
     saved_since: bool,
     /// A problem worth a line that is not the end of the run: full, too
@@ -122,6 +125,7 @@ impl Team {
             reached_at: None,
             answered: false,
             admitted: false,
+            waiting_for_key: false,
             saved_since: false,
             problem: None,
         }
@@ -157,19 +161,14 @@ impl Team {
         }
     }
 
-    /// Ask for a sync now. It can wait on the network: call it when nobody
-    /// is typing. True when the team changed something.
+    /// Ask the runtime for a sync now. It never waits: the sync runs in the
+    /// background, and a later call says so when the team changed
+    /// something. True when it did.
     fn sync(&mut self) -> bool {
         match org::sync() {
             Ok(state) => {
-                self.online = state.online;
-                self.pending = state.pending;
-                self.answered = true;
                 self.saved_since = false;
-                if state.online {
-                    self.reached_at = Some(krate::time::now_millis());
-                }
-                self.learn_who();
+                self.look();
                 state.changed
             }
             Err(error) => {
@@ -177,6 +176,45 @@ impl Team {
                 false
             }
         }
+    }
+
+    /// Where this computer stands, from `org::status`: local and instant, so
+    /// it is asked every second. True when the line in the corner changed.
+    fn look(&mut self) -> bool {
+        let before = (
+            self.online,
+            self.pending,
+            self.waiting_for_key,
+            self.admitted,
+            self.answered,
+        );
+        match org::status() {
+            Ok(standing) => {
+                self.online = standing.link != org::Link::Offline;
+                self.pending = standing.pending;
+                self.waiting_for_key = standing.link == org::Link::WaitingForKey;
+                self.answered |=
+                    standing.reached_at.is_some() || standing.link == org::Link::Offline;
+                if standing.reached_at.is_some() {
+                    self.reached_at = standing.reached_at;
+                }
+                if self.org.is_empty() && !standing.org.is_empty() {
+                    self.org = standing.org;
+                }
+                if !self.admitted {
+                    self.learn_who();
+                }
+            }
+            Err(error) => self.fail(error),
+        }
+        before
+            != (
+                self.online,
+                self.pending,
+                self.waiting_for_key,
+                self.admitted,
+                self.answered,
+            )
     }
 
     /// Who this is, once the organisation has said.
@@ -188,9 +226,9 @@ impl Team {
         }
     }
 
-    /// Waiting for a teammate's computer to let this one in.
+    /// Waiting for the team's key, which a teammate's computer passes on.
     fn waiting_to_be_let_in(&self) -> bool {
-        self.answered && self.online && !self.admitted
+        self.waiting_for_key
     }
 
     /// One short line for the corner, and the colour of its dot.
@@ -201,8 +239,8 @@ impl Team {
         if !self.online {
             return (String::from("Offline, saved here"), ink.warn);
         }
-        if !self.admitted {
-            return (String::from("Waiting to be let in"), ink.warn);
+        if self.waiting_for_key {
+            return (String::from("Waiting for your team's key"), ink.warn);
         }
         if self.saved_since {
             return (String::from("Saved"), ink.good);
@@ -223,9 +261,9 @@ impl Team {
         }
         if self.waiting_to_be_let_in() {
             return Some(format!(
-                "This computer is new to your team. The team's {THINGS} appear here once a \
-                 teammate's computer is online and lets this one in, which happens by itself. \
-                 Anything you add now is kept and shared then."
+                "Waiting for your team's key: someone in {} opens Krate and it arrives. \
+                 Anything you add now is kept and shared then.",
+                self.org_name()
             ));
         }
         None
@@ -1431,10 +1469,9 @@ impl App {
         let (title, body) = if self.team.waiting_to_be_let_in() {
             (
                 "Your team's notes are on their way",
-                String::from(
-                    "This computer is new to your team. The notes appear here once a \
-                     teammate's computer is online and lets this one in, which happens by \
-                     itself. You can write a note now; it is shared then.",
+                format!(
+                    "Waiting for your team's key: someone in {org} opens Krate and it \
+                     arrives. You can write a note now; it is shared then."
                 ),
             )
         } else {
@@ -2283,6 +2320,8 @@ impl krate::Guest for Component {
                 if now >= looked + LOOK_EVERY_MS {
                     looked = now;
                     dirty |= app.look_for_changes();
+                    // Where this computer stands: local, never waits.
+                    dirty |= app.team.look();
                     // The status words ("synced 2 min ago") age too.
                     dirty |= app.undo.is_some();
                 }

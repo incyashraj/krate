@@ -9418,9 +9418,10 @@ pub mod krate {
         /// writes waiting, as it does offline.
         ///
         /// Offline first. Every call works on this device's copy and never waits
-        /// for the network; `sync` exchanges changes with the organisation's store,
-        /// and the runtime also syncs every five seconds while the app is open and
-        /// once when it closes. Being offline is never an error.
+        /// for the network. The runtime exchanges changes with the organisation's
+        /// store in the background every five seconds while the app is open and
+        /// once when it closes; `sync` asks for an exchange now, and `status` says
+        /// where this device stands. Being offline is never an error.
         ///
         /// Records merge per field: two people editing different fields of one
         /// record both keep their change, and for one field the later edit wins by
@@ -9543,6 +9544,76 @@ pub mod krate {
                         .field("changed", &self.changed)
                         .field("pending", &self.pending)
                         .field("last-synced", &self.last_synced)
+                        .finish()
+                }
+            }
+            /// Where this device stands with the organisation's store.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum Link {
+                /// The last exchange reached the organisation and nothing made here
+                /// is waiting to go up.
+                Synced,
+                /// An exchange is under way or due: changes made here are on their
+                /// way, or this run has not reached the organisation yet.
+                Syncing,
+                /// The last try did not reach the organisation. Changes wait here.
+                Offline,
+                /// This device does not hold the organisation's key yet. Changes wait
+                /// here; another member's computer passes the key on by itself the next
+                /// time it has Krate open.
+                WaitingForKey,
+            }
+            impl ::core::fmt::Debug for Link {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        Link::Synced => f.debug_tuple("Link::Synced").finish(),
+                        Link::Syncing => f.debug_tuple("Link::Syncing").finish(),
+                        Link::Offline => f.debug_tuple("Link::Offline").finish(),
+                        Link::WaitingForKey => f.debug_tuple("Link::WaitingForKey").finish(),
+                    }
+                }
+            }
+
+            impl Link {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> Link {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+
+                    match val {
+                        0 => Link::Synced,
+                        1 => Link::Syncing,
+                        2 => Link::Offline,
+                        3 => Link::WaitingForKey,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+
+            /// What `status` answers.
+            #[derive(Clone)]
+            pub struct Standing {
+                /// Where this device stands.
+                pub link: Link,
+                /// Changes made here that have not reached the organisation yet.
+                pub pending: u32,
+                /// When this device last reached the organisation's store, reading or
+                /// sending, in milliseconds since the Unix epoch; `none` before the
+                /// first time this run.
+                pub reached_at: Option<u64>,
+                /// The organisation's name, for words such as "someone in Acme".
+                pub org: _rt::String,
+            }
+            impl ::core::fmt::Debug for Standing {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Standing")
+                        .field("link", &self.link)
+                        .field("pending", &self.pending)
+                        .field("reached-at", &self.reached_at)
+                        .field("org", &self.org)
                         .finish()
                 }
             }
@@ -10633,8 +10704,12 @@ pub mod krate {
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
-            /// Exchange changes with the organisation now: push this device's,
-            /// pull everyone else's.
+            /// Ask for an exchange with the organisation now: push this device's
+            /// changes, pull everyone else's. In a windowed app it never waits: the
+            /// exchange runs in the background and this answers at once with where
+            /// this device stands, and `changed` is said by a later call once the
+            /// exchange brings something. In a command-line app it waits for the
+            /// exchange.
             pub fn sync() -> Result<SyncState, OrgError> {
                 unsafe {
                     #[repr(align(8))]
@@ -10771,7 +10846,7 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// The signed-in person and their role, once a sync has reached the
-            /// organisation; `none` before that.
+            /// organisation with its key; `none` before that.
             pub fn who() -> Result<Option<Member>, OrgError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
@@ -10930,6 +11005,148 @@ pub mod krate {
                         _ => _rt::invalid_enum_discriminant(),
                     };
                     result27
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Where this device stands, from this device: it never waits and never
+            /// reaches the network. Cheap enough to ask every frame.
+            pub fn status() -> Result<Standing, OrgError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            32 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            32 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/org@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "status"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result24 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = i32::from(*ptr0.add(8).cast::<u8>());
+                                let l4 = *ptr0.add(12).cast::<i32>();
+                                let l5 = i32::from(*ptr0.add(16).cast::<u8>());
+                                let l7 = *ptr0.add(32).cast::<*mut u8>();
+                                let l8 = *ptr0
+                                    .add(32 + 1 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len9 = l8;
+                                let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                Standing {
+                                    link: Link::_lift(l3 as u8),
+                                    pending: l4 as u32,
+                                    reached_at: match l5 {
+                                        0 => None,
+                                        1 => {
+                                            let e = {
+                                                let l6 = *ptr0.add(24).cast::<i64>();
+
+                                                l6 as u64
+                                            };
+                                            Some(e)
+                                        }
+                                        _ => _rt::invalid_enum_discriminant(),
+                                    },
+                                    org: _rt::string_lift(bytes9),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l10 = i32::from(*ptr0.add(8).cast::<u8>());
+                                let v23 = match l10 {
+                                    0 => OrgError::Denied,
+                                    1 => OrgError::NotAnOrgApp,
+                                    2 => {
+                                        let e23 = {
+                                            let l11 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        OrgError::Invalid(e23)
+                                    }
+                                    3 => OrgError::TooLarge,
+                                    4 => OrgError::OverQuota,
+                                    5 => {
+                                        let e23 = {
+                                            let l14 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 =
+                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
+                                            let l17 = *ptr0
+                                                .add(8 + 3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr0
+                                                .add(8 + 4 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 =
+                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
+
+                                            Refusal {
+                                                reason: _rt::string_lift(bytes16),
+                                                message: _rt::string_lift(bytes19),
+                                            }
+                                        };
+                                        OrgError::Refused(e23)
+                                    }
+                                    6 => OrgError::Unsupported,
+                                    n => {
+                                        debug_assert_eq!(n, 7, "invalid enum discriminant");
+                                        let e23 = {
+                                            let l20 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 =
+                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
+
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        OrgError::Io(e23)
+                                    }
+                                };
+
+                                v23
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result24
                 }
             }
         }
@@ -11305,8 +11522,8 @@ pub(crate) use __export_cli_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.1.0:cli:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6614] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdc2\x01A\x02\x01AB\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6737] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd73\x01A\x02\x01AB\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -11441,29 +11658,32 @@ group-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x02\x05groups\x03ke
 ys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x03\x05groups\x03keys\x05value\
 \x02\0\x06\x04\0\x03set\x01\x07\x01@\x02\x05groups\x03keys\0\x06\x04\0\x06delete\
 \x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\x01\x05groups\0\x0a\x04\0\x04keys\x01\x0b\
-\x03\0\x17krate:store/group@0.1.0\x05$\x01B*\x01p}\x01q\x05\x04null\0\0\x04text\x01\
+\x03\0\x17krate:store/group@0.1.0\x05$\x01B1\x01p}\x01q\x05\x04null\0\0\x04text\x01\
 s\0\x06number\x01u\0\x07boolean\x01\x7f\0\x05bytes\x01\0\0\x04\0\x05value\x03\0\x01\
 \x01o\x02s\x02\x01p\x03\x01r\x04\x02ids\x06fields\x04\x0achanged-bys\x0achanged-\
 atw\x04\0\x05entry\x03\0\x05\x01s\x04\0\x06cursor\x03\0\x07\x01p\x06\x01ps\x01r\x04\
 \x07entries\x09\x07removed\x0a\x04next\x08\x04more\x7f\x04\0\x04page\x03\0\x0b\x01\
 kw\x01r\x04\x06online\x7f\x07changed\x7f\x07pendingy\x0blast-synced\x0d\x04\0\x0a\
-sync-state\x03\0\x0e\x01r\x03\x04names\x04roles\x03orgs\x04\0\x06member\x03\0\x10\
-\x01r\x02\x06reasons\x07messages\x04\0\x07refusal\x03\0\x12\x01q\x08\x06denied\0\
-\0\x0enot-an-org-app\0\0\x07invalid\x01s\0\x09too-large\0\0\x0aover-quota\0\0\x07\
-refused\x01\x13\0\x0bunsupported\0\0\x02io\x01s\0\x04\0\x09org-error\x03\0\x14\x01\
-j\0\x01\x15\x01@\x03\x0acollections\x02ids\x06fields\x04\0\x16\x04\0\x03put\x01\x17\
-\x01k\x06\x01j\x01\x18\x01\x15\x01@\x02\x0acollections\x02ids\0\x19\x04\0\x03get\
-\x01\x1a\x01@\x02\x0acollections\x02ids\0\x16\x04\0\x06delete\x01\x1b\x01k\x08\x01\
-j\x01\x0c\x01\x15\x01@\x02\x0acollections\x05since\x1c\0\x1d\x04\0\x07records\x01\
-\x1e\x01j\x01\x0f\x01\x15\x01@\0\0\x1f\x04\0\x04sync\x01\x20\x01k\x11\x01j\x01!\x01\
-\x15\x01@\0\0\"\x04\0\x03who\x01#\x03\0\x15krate:store/org@0.1.0\x05%\x01B\x0b\x01\
-q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-range\0\0\x0bunavailable\x01s\0\x04\
-\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\x04\
-\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\
-\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:random/bytes@0.1.0\x05&\x01\
-@\0\0z\x04\0\x03run\x01'\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\
-\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10\
-wit-bindgen-rust\x060.41.0";
+sync-state\x03\0\x0e\x01m\x04\x06synced\x07syncing\x07offline\x0fwaiting-for-key\
+\x04\0\x04link\x03\0\x10\x01r\x04\x04link\x11\x07pendingy\x0areached-at\x0d\x03o\
+rgs\x04\0\x08standing\x03\0\x12\x01r\x03\x04names\x04roles\x03orgs\x04\0\x06memb\
+er\x03\0\x14\x01r\x02\x06reasons\x07messages\x04\0\x07refusal\x03\0\x16\x01q\x08\
+\x06denied\0\0\x0enot-an-org-app\0\0\x07invalid\x01s\0\x09too-large\0\0\x0aover-\
+quota\0\0\x07refused\x01\x17\0\x0bunsupported\0\0\x02io\x01s\0\x04\0\x09org-erro\
+r\x03\0\x18\x01j\0\x01\x19\x01@\x03\x0acollections\x02ids\x06fields\x04\0\x1a\x04\
+\0\x03put\x01\x1b\x01k\x06\x01j\x01\x1c\x01\x19\x01@\x02\x0acollections\x02ids\0\
+\x1d\x04\0\x03get\x01\x1e\x01@\x02\x0acollections\x02ids\0\x1a\x04\0\x06delete\x01\
+\x1f\x01k\x08\x01j\x01\x0c\x01\x19\x01@\x02\x0acollections\x05since\x20\0!\x04\0\
+\x07records\x01\"\x01j\x01\x0f\x01\x19\x01@\0\0#\x04\0\x04sync\x01$\x01k\x15\x01\
+j\x01%\x01\x19\x01@\0\0&\x04\0\x03who\x01'\x01j\x01\x13\x01\x19\x01@\0\0(\x04\0\x06\
+status\x01)\x03\0\x15krate:store/org@0.1.0\x05%\x01B\x0b\x01q\x04\x06denied\0\0\x09\
+too-large\0\0\x0bempty-range\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\
+\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01\
+j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\
+\0\x05below\x01\x07\x03\0\x18krate:random/bytes@0.1.0\x05&\x01@\0\0z\x04\0\x03ru\
+n\x01'\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09pro\
+ducers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x06\
+0.41.0";
 
 #[inline(never)]
 #[doc(hidden)]
