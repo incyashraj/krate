@@ -67,6 +67,7 @@ import { orgKeysRoute } from "./org-keys.js";
 // approved in the background, solo release.
 import { orgSigningRoute } from "./org-signing.js";
 import { orgDataRoute } from "./org-data.js";
+import { orgLiveRoute } from "./org-data-live.js";
 // Inventory, provenance and ownership (IC-954), after release control and review.
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
@@ -217,6 +218,11 @@ const RATE_LIMITS = {
   // cannot grow its audit -- and this bounds what they cost. A person
   // opening a private link before signing in sends one.
   "org/anonymous": 20,
+  // Live team-data sockets opening (org-data-live.js): each carries a
+  // ticket a signed-in sync gave, so this only bounds a flood of made-up
+  // ones. Generous, because a whole office behind one address reconnects
+  // together after a hub deploy.
+  "org/live": 240,
   // Requests to /scim/v2/ with no token or a wrong one (IC-955). They are
   // never audited, so this is what bounds them.
   "scim/refused": 20,
@@ -793,6 +799,13 @@ export default {
       if (pathname.startsWith("/account/sessions")) {
         const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
         if (res) return cors(res);
+      }
+      // A live team-data socket (org-data-live.js): handed to the
+      // organisation's object as it came, and its 101 handed back as it
+      // is -- CORS would rebuild the response and drop the socket.
+      if (pathname.startsWith("/orgs/") && (request.headers.get("upgrade") || "").toLowerCase() === "websocket") {
+        const live = await orgLiveRoute(request, url, env, { rateLimited });
+        if (live) return live;
       }
       // Organisations (IC-946).
       if (pathname === "/orgs" || pathname.startsWith("/orgs/")) {
@@ -5262,6 +5275,8 @@ function json(value, status = 200) {
 }
 
 function cors(response) {
+  // A WebSocket's 101 carries the socket itself; rebuilt, it would not.
+  if (response.status === 101 || response.webSocket) return response;
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
   headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
