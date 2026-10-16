@@ -242,7 +242,14 @@ test("a tab waits for the key, a colleague's computer passes it in the backgroun
 
   // What the hub holds: ciphertext only.
   const held = JSON.stringify(w.env.ORGS.object("acme").sql.exec("SELECT * FROM org_data").toArray());
-  for (const plain of ["North depot", "inspections", "i1", "site"]) assert.ok(!held.includes(plain), `${plain} reached the hub`);
+  // A short word is looked for as a JSON string (K-1124): the rows carry
+  // base64 ciphertext, where "i1" turns up by chance about one run in six,
+  // and base64 never holds a quote. Long words stay bare, so a leak inside
+  // a longer string is still caught.
+  for (const plain of ["North depot", "inspections", "i1", "site"]) {
+    const look = plain.length < 6 ? JSON.stringify(plain) : plain;
+    assert.ok(!held.includes(look), `${plain} reached the hub`);
+  }
 
   // The computer reads what the tab wrote, by carol.
   await desk.sync();
