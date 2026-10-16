@@ -83,6 +83,8 @@ import { orgDeclineRoute } from "./org-decline.js";
 import { orgNotesRoute, noteHeader } from "./org-notes.js";
 import { orgRequestsRoute } from "./org-requests.js";
 import { orgNotifyRoute, sendNotices } from "./org-notify.js";
+// Slack and Teams channels (G12).
+import { orgChatRoute, chatSweep } from "./org-chat.js";
 // Approval rules, and the code behind each approval: after everything
 // whose approving and candidates list they wrap.
 import { orgApprovalsRoute } from "./org-approvals.js";
@@ -355,6 +357,8 @@ export default {
     await runScrub(env, { repair: false });
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
+    // Security items for organisations with a Slack or Teams channel (G12).
+    await chatSweep(env, orgAsk, siteBase(env));
   },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -7498,6 +7502,8 @@ async function orgRouteCore(request, url, env, identity, ctx) {
     return safe;
   };
   const notices = { env, smtpSend, askRaw, site };
+  // One committed event's mail and channel posts, after the answer.
+  const notify = (event) => later(sendNotices(notices, event));
 
   // Company sign-in and offline access (IC-948, F and G).
   {
@@ -7551,7 +7557,11 @@ async function orgRouteCore(request, url, env, identity, ctx) {
     }
     if (method === "DELETE") {
       const answer = await mutateRaw("remove", () => ({ principal: target }));
-      if (answer.status === 204) await noteOrgOf(env, String(target).toLowerCase(), slug, null, null);
+      if (answer.status === 204) {
+        await noteOrgOf(env, String(target).toLowerCase(), slug, null, null);
+        // A removal can leave the team data key due for renewing.
+        await notify({ event: "security" });
+      }
       return orgAnswer(answer);
     }
   }
@@ -7608,7 +7618,7 @@ async function orgRouteCore(request, url, env, identity, ctx) {
   const h = {
     request, url, env, slug, rest, method, principals, identity, site, base,
     askRaw, mutateRaw, orgAsk, orgAnswer, json, readBody, readBounded, isAdmin, smtpSend, fetchBundle, idempotencyOf,
-    validate: callValidator, later, notices,
+    validate: callValidator, later, notices, notify,
   };
   const routed =
     (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) ||
@@ -7617,6 +7627,7 @@ async function orgRouteCore(request, url, env, identity, ctx) {
     (await orgScimRoute(h)) || (await auditExportRoute(h)) || (await orgSamlRoute(h)) ||
     (await orgKeysRoute(h)) ||
     (await orgSigningRoute(h)) ||
+    (await orgChatRoute(h)) ||
     (await orgDataRoute(h));
   if (routed) return routed;
   return text("not found", 404);

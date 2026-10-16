@@ -197,6 +197,8 @@
     "approval.policy": { owner: "yes" },
     // Staged rollout (org-rollout.js): a pilot group first, pinned groups.
     "release.rollout": { owner: "yes", admin: "yes" },
+    // Slack and Teams channels (org-chat.js).
+    "chat.manage": { owner: "yes", admin: "yes" },
   };
 
   function can(role, action) {

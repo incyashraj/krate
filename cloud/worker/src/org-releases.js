@@ -670,7 +670,10 @@ export async function orgReleaseRoute(h) {
     const digest = String(rest[1]).toLowerCase();
     if (rest[2] === "withdraw" && method === "POST") {
       if (!DIGEST.test(digest)) return notDigest();
-      return orgAnswer(await mutateRaw("withdraw", (b) => ({ digest, reason: b.reason, base })));
+      const answer = await mutateRaw("withdraw", (b) => ({ digest, reason: b.reason, base }));
+      // The channels hear it (org-chat.js); never holds up the answer.
+      if (answer.status === 200 && !answer.replayed && h.notify) await h.notify({ event: "withdrawn", digest });
+      return orgAnswer(answer);
     }
     if (rest[2] === "audience" && method === "PUT") {
       if (!DIGEST.test(digest)) return notDigest();

@@ -32,6 +32,8 @@
 // Nothing about mail is audited.
 import { Org, extendOrg, allows, displayOf } from "./org.js";
 import { gmail, addressFor } from "./org-mail.js";
+// The same moments post to the organisation's Slack and Teams channels.
+import { postChat } from "./org-chat.js";
 import "./org-insights.js";
 import "./org-keys.js";
 
@@ -57,6 +59,13 @@ export function personWords(principal) {
   const p = String(principal || "");
   return p.startsWith("github:") ? `@${displayOf(p)}` : displayOf(p) || "someone";
 }
+
+/// The pilot group a just-approved version went to (org-rollout.js), or null.
+const pilotOf = (store, c) => {
+  if (typeof store.pilotDigestOf !== "function") return null;
+  const app = String(c.app_id || c.name || "").trim().toLowerCase();
+  return store.pilotDigestOf(app) === c.digest ? store.rolloutRow(app).grp : null;
+};
 
 const appWords = (c) => `${c.name || "An app"}${c.version ? ` ${c.version}` : ""}`;
 const clip = (t, n) => {
@@ -202,7 +211,7 @@ const ops = {
         mails = [{
           principal: c.uploaded_by,
           subject: `${appWords(c)} is approved`,
-          text: `${personWords(c.approved_by)} approved ${appWords(c)}. It is released: everyone it is for in ${orgName} can open it now.\n\nSee it: ${link("apps")}${footer("you sent it")}`,
+          text: `${personWords(c.approved_by)} approved ${appWords(c)}. ${pilotOf(this, c) ? `It goes to the ${pilotOf(this, c)} group in ${orgName} first; everyone else gets it when it is released to everyone.` : `It is released: everyone it is for in ${orgName} can open it now.`}\n\nSee it: ${link("apps")}${footer("you sent it")}`,
         }];
       } else if (event === "declined" && c.state === "declined" && wants(c.uploaded_by, "version-decided")) {
         mails = [{
@@ -241,10 +250,12 @@ const ops = {
 extendOrg({ schema: SCHEMA, columns: [["members", "notify", "TEXT"]], ops, mutations: ["notify-prefs-set"] });
 void Org;
 
-/// Mail the people one committed event concerns. Answers how many mails
-/// went. Never throws: a mail is not worth failing anything for.
+/// Mail the people one committed event concerns, and post it to the
+/// organisation's channels (org-chat.js). Answers how many mails went.
+/// Never throws: a notice is not worth failing anything for.
 /// `n`: {env, smtpSend, askRaw, site}; `event`: {event, digest?, id?}.
 export async function sendNotices(n, event) {
+  await postChat(n, event);
   try {
     if (!n || !n.env || !n.env.GMAIL_APP_PASSWORD) return 0;
     const plan = await n.askRaw("notify-plan", { ...event, site: n.site });
