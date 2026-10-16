@@ -2282,6 +2282,7 @@ mod tests {
                 network: Some(vec![
                     krate_policy::OrgCeiling::parse_network(allowed).expect("pattern")
                 ]),
+                calls: Vec::new(),
             });
         }
         UapiGuard::new(policy).with_connections(crate::connections::Connections::new(vec![

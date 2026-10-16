@@ -3047,9 +3047,16 @@ mod platform {
                 NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
             );
             edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
-            add("Cut", sel!(cut:), "x");
-            add("Copy", sel!(copy:), "c");
-            add("Paste", sel!(paste:), "v");
+            // Where the organisation blocks the clipboard for this app, a
+            // native text field may not reach it on its own either (G17).
+            let (read_blocked, write_blocked) = krate_adapter_common::ui::clipboard_kept();
+            if !write_blocked {
+                add("Cut", sel!(cut:), "x");
+                add("Copy", sel!(copy:), "c");
+            }
+            if !read_blocked {
+                add("Paste", sel!(paste:), "v");
+            }
             add("Select All", sel!(selectAll:), "a");
 
             main_menu.addItem(&edit_item);
@@ -3083,6 +3090,11 @@ mod platform {
         let title = NSString::from_str(&options.title);
         window.setTitle(&title);
         window.center();
+        // Out of screenshots, recordings and screen sharing when the
+        // organisation says so for this app (G17).
+        if krate_adapter_common::ui::windows_kept_from_capture() {
+            window.setSharingType(objc2_app_kit::NSWindowSharingType::None);
+        }
         // Without this AppKit sends no movement at all, only presses: an app
         // could never know where the pointer is until it clicked (IC-909).
         window.setAcceptsMouseMovedEvents(true);

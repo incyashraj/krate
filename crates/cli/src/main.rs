@@ -15719,6 +15719,8 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     if !request.dump_caps {
         fleet::admit(&subject, door)?;
     }
+    // Who this app is for the policy's `[apps]` rules (G17).
+    let rules_app = subject.app_ref();
 
     // An organisation's private app opens only for a current member, and
     // offline only on a lease that holds (IC-948 G). A preview picture is
@@ -15935,7 +15937,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     };
     // Every policy this run builds carries the organisation's ceiling, so
     // what it blocks is refused however it was granted (IC-949 P4).
-    policy = fleet::narrow(policy);
+    policy = fleet::narrow(policy, &rules_app);
 
     // Before the wall, not after it: --dump-caps answers "what would this app
     // ask for?" without running a single instruction, and it is the safe way to
@@ -16057,9 +16059,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         if let Some(principal) = remembering {
             let remembered = load_remembered_grants(&store_home, principal);
             if !remembered.is_empty() {
-                policy = fleet::narrow(SessionPolicy::from_grants(
-                    policy.grants().iter().cloned().chain(remembered),
-                ));
+                policy = fleet::narrow(
+                    SessionPolicy::from_grants(policy.grants().iter().cloned().chain(remembered)),
+                    &rules_app,
+                );
             }
         }
         let missing = policy.missing_required_for_manifest(manifest)?;
@@ -16068,11 +16071,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             // asks in the terminal. The two paths fold the same grant set into
             // the same SessionPolicy, so enforcement downstream is identical.
             let before = policy.grants().clone();
-            policy = fleet::narrow(if request.consent {
-                consent_for_session_grants(manifest, &policy)?
-            } else {
-                prompt_for_session_grants(manifest, &policy)?
-            });
+            policy = fleet::narrow(
+                if request.consent {
+                    consent_for_session_grants(manifest, &policy)?
+                } else {
+                    prompt_for_session_grants(manifest, &policy)?
+                },
+                &rules_app,
+            );
             // Only what the person just said yes to, and only for an app
             // whose lineage can be checked again next time.
             if let Some(principal) = remembering {
@@ -16280,7 +16286,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // The run starts now: the open record says so, with what the app was
     // given and what it was not (IC-949 A). A picture is Krate looking, not
     // a person opening.
-    let policy = fleet::narrow(policy);
+    let policy = fleet::narrow(policy, &rules_app);
     if !request.for_screenshot {
         fleet::opened(&subject, door, &policy);
     }

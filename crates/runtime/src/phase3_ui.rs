@@ -225,6 +225,15 @@ impl<'a> Phase3UiDispatcher<'a> {
     }
 
     pub fn create_window(&self, options: WindowOptions) -> UiDispatchResult<WindowId> {
+        // Kept out of screenshots, recordings and screen sharing where the
+        // system allows it, when the organisation says so for this app (G17).
+        krate_adapter_common::ui::keep_windows_from_capture(
+            self.organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL),
+        );
+        krate_adapter_common::ui::keep_clipboard(
+            self.organisation_blocks_cap("ui.clipboard:read"),
+            self.organisation_blocks_cap("ui.clipboard:write"),
+        );
         self.check_window_access()?;
         let id = self.adapter.create_window(options)?;
         // A created window is a window somebody can see. Every adapter kept
@@ -323,6 +332,19 @@ impl<'a> Phase3UiDispatcher<'a> {
     pub fn read_clipboard_text(&self) -> UiDispatchResult<String> {
         self.check(&UapiCall::Ui(UiCall::ClipboardRead))?;
         self.adapter.read_clipboard_text().map_err(Into::into)
+    }
+
+    /// Whether the machine policy's ceiling stops this host call for this
+    /// app ([`krate_policy::PRINT_CALL`], [`krate_policy::SCREEN_CAPTURE_CALL`],
+    /// G17).
+    pub fn organisation_blocks_call(&self, call: &str) -> bool {
+        self.guard.policy().organisation_blocks_call(call)
+    }
+
+    /// Whether the machine policy blocks this capability for this app.
+    fn organisation_blocks_cap(&self, cap: &str) -> bool {
+        cap.parse::<krate_manifest::Capability>()
+            .is_ok_and(|cap| self.guard.policy().organisation_blocks(&cap).is_some())
     }
 
     /// What the person pasted with their own keystroke (Cmd+V on a Mac,
@@ -1976,6 +1998,7 @@ mod tests {
         let blocked = window_only.with_organisation(krate_policy::OrgCeiling {
             deny: vec![krate_policy::DenyRule::parse("ui.clipboard").expect("rule")],
             network: None,
+            calls: Vec::new(),
         });
         assert_eq!(paste_with(blocked, "v", primary), (false, vec![]));
         // A long paste is cut into pieces a text-input event may carry.

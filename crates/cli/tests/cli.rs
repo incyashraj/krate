@@ -21526,6 +21526,180 @@ fn keys_show(world: &OrgWorld, who: &str) -> String {
     world.says(who, &["org", "keys", "show", "acme"], true)
 }
 
+/// G17: the machine policy's per-app rules are shown by `krate policy`, and
+/// a required capability one of them blocks stops the app it names from
+/// opening -- only that app.
+#[test]
+fn per_app_rules_are_shown_and_stop_only_the_app_they_name() {
+    let fleet = Fleet::new();
+    fleet.policy(
+        "[apps.\"*\"]\nwipe_when_offline_ends = true\n\
+         [apps.\"com.acme.copier\"]\nclipboard_write = false\nprinting = false\n",
+    );
+    let shown = fleet.krate().arg("policy").output().expect("policy");
+    let words = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        words.contains("com.acme.copier: no copying out by the clipboard; no printing."),
+        "{words}"
+    );
+    assert!(
+        words.contains(
+            "Every organisation app: team data deleted from this computer when offline access ends."
+        ),
+        "{words}"
+    );
+    let json = fleet
+        .krate()
+        .args(["policy", "--json"])
+        .output()
+        .expect("policy --json");
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).expect("json");
+    let rules = &json["policy"]["apps"]["com.acme.copier"];
+    assert_eq!(rules["clipboard_write"], false, "{json}");
+    assert_eq!(rules["printing"], false, "{json}");
+    assert_eq!(rules["clipboard_read"], true, "{json}");
+    // Windowed apps that need to copy out: the same bytes under two ids.
+    let windowed = |name: &str| -> PathBuf {
+        let wasm = fleet.path("code.wasm");
+        std::fs::write(
+            &wasm,
+            include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+        )
+        .expect("component");
+        let manifest = fleet.path(&format!("{name}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+                 [[capabilities]]\ncap = \"ui.clipboard:write\"\nrationale = \"copy\"\nrequired = true\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = fleet.path(&format!("{name}.krate"));
+        let out = krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(out.status.success(), "pack: {}", stderr_of(&out));
+        bundle
+    };
+    let copier = windowed("copier");
+    let other = windowed("other");
+    let refused = fleet
+        .krate()
+        .args(["policy", "check"])
+        .arg(&copier)
+        .output()
+        .expect("check");
+    assert_eq!(refused.status.code(), Some(1), "{}", stderr_of(&refused));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        stderr_of(&refused)
+    );
+    assert!(
+        said.contains("which your organisation (Acme Labs) blocks"),
+        "{said}"
+    );
+    let opens = fleet
+        .krate()
+        .args(["policy", "check"])
+        .arg(&other)
+        .output()
+        .expect("check");
+    assert_eq!(opens.status.code(), Some(0), "{}", stderr_of(&opens));
+}
+
+/// G17: under `[apps."*"] wipe_when_offline_ends = true`, an organisation
+/// app whose offline access has run out leaves no team data on the
+/// computer; without the rule the data stays (the app still does not open).
+#[test]
+fn team_data_goes_when_offline_access_ends_where_the_policy_says() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping team_data_goes_when_offline_access_ends_...: no local port");
+        return;
+    };
+    if world.real_hub().is_some() {
+        eprintln!("skipping team_data_goes_when_offline_access_ends_...: it stops the hub");
+        return;
+    }
+    let root = world.acme();
+    let (bundle, digest) = released_probe(&world, &root, "1.0.0");
+    let (out, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["put", "tasks", "t1", "title=kept here", "then", "sync"],
+        &[],
+    );
+    assert_eq!(out[0], "put t1 ok", "{err}");
+    assert!(
+        !org_data_files(&world, "carol").is_empty(),
+        "the copy is here"
+    );
+    // Offline, and the lease ran out a day ago.
+    world.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(100));
+    let lease_file = world.homes["carol"]
+        .path()
+        .join(".krate/leases")
+        .join(format!("{digest}.json"));
+    let mut record: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&lease_file).expect("a lease")).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut body = record["answer"]["lease"].clone();
+    body["issued_at"] = serde_json::json!(now - 8 * 86_400);
+    body["expires_at"] = serde_json::json!(now - 86_400);
+    let pkcs8 = world.hub.lock().unwrap().lease_pkcs8.clone();
+    record["answer"] = krate_lease::sign(&body, &pkcs8).unwrap();
+    std::fs::write(&lease_file, record.to_string()).unwrap();
+    let keep = world.dir.path().join("keep.toml");
+    std::fs::write(&keep, "version = 1\n").unwrap();
+    let wipe = world.dir.path().join("wipe.toml");
+    std::fs::write(
+        &wipe,
+        "version = 1\nname = \"Acme\"\n[apps.\"*\"]\nwipe_when_offline_ends = true\n",
+    )
+    .unwrap();
+    let keep_s = keep.to_str().unwrap();
+    let (_, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["list", "tasks"],
+        &[("KRATE_TEST_POLICY", keep_s)],
+    );
+    assert!(err.contains("its offline access ran out on"), "{err}");
+    assert!(!org_data_files(&world, "carol").is_empty(), "no rule: kept");
+    let wipe_s = wipe.to_str().unwrap();
+    let (_, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["list", "tasks"],
+        &[("KRATE_TEST_POLICY", wipe_s)],
+    );
+    assert!(err.contains("its offline access ran out on"), "{err}");
+    assert!(
+        err.contains("team data for this app was deleted from this computer"),
+        "{err}"
+    );
+    assert!(
+        org_data_files(&world, "carol").is_empty(),
+        "{:?}",
+        org_data_files(&world, "carol")
+    );
+}
+
 /// The organisation-data files on `who`'s machine.
 fn org_data_files(world: &OrgWorld, who: &str) -> Vec<PathBuf> {
     let dir = world.homes[who].path().join(".krate/org-data/acme");

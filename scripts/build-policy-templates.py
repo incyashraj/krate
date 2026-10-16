@@ -119,6 +119,31 @@ KEYS = [
 
 TABLES = ["org", "trust", "capabilities", "network", "usage", "hub", "studio", "updates", "audit", "runtime"]
 
+# Device-side data rules (G17): [apps."*"] for every organisation's private
+# app on the computer, [apps."<app id>"] for one app. Each key narrows when
+# set to `narrows`; the other value is Krate's default. Shown commented out
+# in the TOML sample (the sample policy sets none of them), offered in the
+# Windows template for every organisation app (apps\*), and read the same
+# way from a profile or the registry (apps\<id> subkeys).
+APP_RULES = [
+    dict(key="clipboard_read", narrows=False, example=True,
+         title="Organisation apps: no reading the clipboard",
+         help="false: the app cannot read the clipboard, and a paste the person makes into it is refused too."),
+    dict(key="clipboard_write", narrows=False, example=False,
+         title="Organisation apps: no copying out",
+         help="false: nothing leaves the app by the clipboard."),
+    dict(key="printing", narrows=False, example=False,
+         title="Organisation apps: no printing",
+         help="false: the app cannot print, or save as PDF from the print dialog."),
+    dict(key="screen_capture", narrows=False, example=False,
+         title="Organisation apps: kept out of screenshots",
+         help="false: the app's windows are kept out of screenshots, screen recordings and screen sharing where the system allows it (macOS and Windows; not Linux), and Krate takes no picture of the app itself."),
+    dict(key="wipe_when_offline_ends", narrows=True, example=True,
+         title="Organisation apps: delete team data when offline access ends",
+         help="true: when the app's offline access runs out, the app's team data on this computer is deleted at the next open."),
+]
+APP_RULES_EXAMPLE_ID = "dev.acme.payroll"
+
 # The keys an organisation's own IT pack sets (IC-958 B4). krate.tech makes
 # the same three files in the browser with docs/landing/kit/policy.js, and
 # docs/landing/studio/org-policy-test.mjs proves the two write the same bytes.
@@ -224,7 +249,21 @@ def build_toml(keys=None, org=None):
         else:
             out.append(f'{k["key"]} = {toml_value(k["sample"])}')
         out.append("")
+    if org is None:
+        out += app_rules_toml()
     return "\n".join(out).rstrip() + "\n"
+
+
+def app_rules_toml():
+    """The [apps] section, commented out: what every organisation app, or one
+    app by its id, may not do on these computers (G17)."""
+    out = [wrap("Device-side data rules for your organisation's own apps: [apps.\"*\"] for every one of them, or [apps.\"<app id>\"] for one app. Each only narrows; a key left out keeps Krate's default. Uncomment to use."),
+           '# [apps."*"]']
+    for r in APP_RULES:
+        out.append(wrap(r["help"]))
+        out.append(f'# {r["key"]} = {toml_value(r["narrows"])}')
+    out += [f'# [apps."{APP_RULES_EXAMPLE_ID}"]', "# clipboard_write = false", ""]
+    return out
 
 
 # ---------------------------------------------------------------- plist / profile
@@ -276,6 +315,7 @@ CATEGORY = {"": "Krate", "org": "Krate_Krate", "trust": "Krate_Trust", "capabili
             "audit": "Krate_Krate", "studio": "Krate_Studio", "org": "Krate_Studio"}
 CATEGORY_TEXT = {"Krate": "Krate", "Krate_Trust": "Which apps may open",
                  "Krate_Apps": "What apps may do", "Krate_Krate": "Krate itself",
+                 "Krate_Data": "Organisation apps' data on this computer",
                  "Krate_Studio": "Krate Studio and AI builds"}
 
 
@@ -310,7 +350,7 @@ def build_admx():
          "  </supportedOn>",
          "  <categories>",
          '    <category name="Krate" displayName="$(string.Krate)" />']
-    for cat in ["Krate_Trust", "Krate_Apps", "Krate_Krate", "Krate_Studio"]:
+    for cat in ["Krate_Trust", "Krate_Apps", "Krate_Data", "Krate_Krate", "Krate_Studio"]:
         L.append(f'    <category name="{cat}" displayName="$(string.{cat})"><parentCategory ref="Krate" /></category>')
     L += ["  </categories>", "  <policies>"]
     for k in KEYS:
@@ -349,8 +389,26 @@ def build_admx():
         L.append(f"    <policy {attrs}>")
         L += body
         L.append("    </policy>")
+    for r in APP_RULES:
+        pid = app_rule_id(r)
+        enabled, disabled = (1, 0) if r["narrows"] else (0, 1)
+        L.append(f'    <policy name="{pid}" class="Machine" displayName="$(string.{pid})" explainText="$(string.{pid}_Help)" key="{APP_RULES_KEY}" valueName="{r["key"]}">')
+        L += ['      <parentCategory ref="Krate_Data" />',
+              '      <supportedOn ref="SUPPORTED_KratePolicy1" />',
+              f'      <enabledValue><decimal value="{enabled}" /></enabledValue>',
+              f'      <disabledValue><decimal value="{disabled}" /></disabledValue>',
+              f"      <enabledList>{version_item()}</enabledList>",
+              f"      <disabledList>{version_item()}</disabledList>",
+              "    </policy>"]
     L += ["  </policies>", "</policyDefinitions>"]
     return "\n".join(L) + "\n"
+
+
+APP_RULES_KEY = REG + "\\apps\\*"
+
+
+def app_rule_id(r):
+    return "AppsAll" + "".join(p.capitalize() for p in r["key"].split("_"))
 
 
 def admx_help(k):
@@ -388,6 +446,12 @@ def build_adml():
             P.append(f'      <presentation id="{pid}"><listBox refId="roots">{xml_escape(k["title"])}</listBox></presentation>')
         elif k["kind"] == "enum":
             P.append(f'      <presentation id="{pid}"><dropdownList refId="{k["key"]}" noSort="true" defaultItem="0">{xml_escape(k["title"])}</dropdownList></presentation>')
+    for r in APP_RULES:
+        pid = app_rule_id(r)
+        S.append((pid, r["title"]))
+        state = "Enabled sets it, Disabled or Not configured leaves Krate's default."
+        S.append((pid + "_Help", r["help"].replace("false: ", "").replace("true: ", "")
+                  + f" For every organisation app on this computer. {state} One app only: the same value in HKLM\\SOFTWARE\\Policies\\Krate\\apps\\<app id>, or [apps.\"<app id>\"] in policy.toml. Registry: the value {r['key']} in HKLM\\SOFTWARE\\Policies\\Krate\\apps\\*."))
     L = ['<?xml version="1.0" encoding="utf-8"?>',
          "<!-- Krate organisation policy, version 1. Generated by scripts/build-policy-templates.py. -->",
          f'<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="{NS}">',
@@ -444,6 +508,13 @@ def build_reg(policy_keys=None, org=None):
         out.append(f"[{key}]")
         out += keys[key]
         out.append("")
+    if org is None:
+        # The device-side data rules (G17), commented out as in policy.toml.
+        out.append("; Device-side data rules for every organisation app (remove the ; to use):")
+        out.append(";[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Krate\\apps\\*]")
+        for r in APP_RULES:
+            out.append(f';"{r["key"]}"=dword:{int(r["narrows"]):08x}')
+        out.append("")
     # regedit reads UTF-16 with a byte-order mark; a UTF-8 file imports wrongly.
     return "\r\n".join(out)
 
@@ -451,7 +522,9 @@ def build_reg(policy_keys=None, org=None):
 def build_keys_json():
     """The table itself, for docs/landing/kit/policy.js: krate.tech builds an
     organisation's pack in the browser from these same keys and words."""
-    return json.dumps({"keys": KEYS, "org_pack": sorted([t, k] for t, k in ORG_PACK)}, indent=1, ensure_ascii=False) + "\n"
+    return json.dumps({"keys": KEYS, "org_pack": sorted([t, k] for t, k in ORG_PACK),
+                       "app_rules": APP_RULES, "app_rules_example_id": APP_RULES_EXAMPLE_ID},
+                      indent=1, ensure_ascii=False) + "\n"
 
 
 FILES = {
@@ -575,7 +648,11 @@ def self_test():
     # Every key but version is a policy, and each writes version = 1.
     a = ET.fromstring(admx)
     pols = list(a.iter(f"{{{NS}}}policy"))
-    assert len(pols) == len(KEYS) - 1
+    assert len(pols) == len(KEYS) - 1 + len(APP_RULES)
+    # G17: every device-side rule is a policy on apps\*, by its key name.
+    for r in APP_RULES:
+        assert f'valueName="{r["key"]}"' in admx and APP_RULES_KEY in admx, r["key"]
+        assert f'# {r["key"]} = ' in toml, r["key"]
     for p in pols:
         assert 'valueName="version"' in ET.tostring(p, encoding="unicode"), p.get("name")
     # Registry value names are exactly the TOML key names.

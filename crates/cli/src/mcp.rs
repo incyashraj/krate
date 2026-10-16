@@ -439,7 +439,10 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
         None => SessionPolicy::from_cli_grants(&grants).context("parse grants")?,
     };
     // The organisation's ceiling on whatever was granted (IC-949 P4).
-    let policy = crate::fleet::narrow(policy);
+    let rules_app = crate::fleet::Subject::new(opened.as_ref(), None, None)
+        .with_manifest(manifest.as_ref())
+        .app_ref();
+    let policy = crate::fleet::narrow(policy, &rules_app);
 
     // Who this is, for the policy and the open record. A loose component
     // is unsigned, so a computer that allows only signed apps refuses it

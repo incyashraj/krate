@@ -188,6 +188,46 @@ app did not fit, and who to ask, in a window when a window opened the app.
 `krate policy check app.krate` answers in advance: it prints the exact words
 a person would see, and exits 0 if the app would open and 1 if not.
 
+### Rules for your organisation's own apps
+
+`[apps."*"]` sets what every one of your organisation's private apps may do
+on these computers, and `[apps."<app id>"]` sets it for one app (its id as
+its manifest spells it, such as `dev.acme.payroll`). Both apply together; a
+key left out keeps Krate's default, and each rule only narrows.
+
+```toml
+[apps."*"]
+clipboard_write = false          # nothing leaves by the clipboard
+wipe_when_offline_ends = true    # team data goes when offline access runs out
+
+[apps."dev.acme.payroll"]
+clipboard_read = false           # no reading the clipboard, pasting included
+printing = false                 # no printing or saving as PDF
+screen_capture = false           # kept out of screenshots and recordings
+```
+
+- `clipboard_read = false` and `clipboard_write = false` refuse the app's
+  clipboard calls. A paste the person makes with Cmd+V or Ctrl+V into a
+  field the app draws is refused too.
+- `printing = false` refuses the app's print calls: the print dialog does
+  not open, so there is no Save as PDF either.
+- `screen_capture = false` keeps the app's windows out of screenshots,
+  screen recordings and screen sharing on macOS and Windows, which honour
+  the request; Linux has no such setting. Krate also takes no picture of
+  the app itself (`krate run --shoot`, check pictures). A camera pointed at
+  the screen is outside what any software can stop.
+- `wipe_when_offline_ends = true` deletes the app's team data on this
+  computer when its offline access has run out, at the next open, and writes
+  a `team-data-wiped` line to the open record. Writes not yet sent are lost
+  with it, which is what the rule is for.
+
+A rule the app needs (a required `ui.clipboard:write`, say) stops the app
+opening, with words saying your organisation blocks it. `krate policy`
+lists the rules in force; in the Windows template they are the policies
+under "Organisation apps' data on this computer", which set them for every
+organisation app (`HKLM\SOFTWARE\Policies\Krate\apps\*`); one app's rules go
+under `apps\<app id>` beside it.
+
 ### Send the policy with your MDM
 
 The same settings come ready for each tool, each a download from krate.tech:

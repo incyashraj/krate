@@ -251,6 +251,12 @@ impl SessionPolicy {
         self.organisation.blocks(cap)
     }
 
+    /// Does the organisation stop this host call ([`PRINT_CALL`],
+    /// [`SCREEN_CAPTURE_CALL`]) for this app?
+    pub fn organisation_blocks_call(&self, call: &str) -> bool {
+        self.organisation.blocks_call(call)
+    }
+
     /// Withdraw a grant mid-run.
     ///
     /// The grant stays in `grants` and joins `revoked`, so `decide` can say
@@ -613,6 +619,15 @@ pub fn reaches_outside_the_run(cap: &Capability) -> bool {
         .any(|entry| *entry == name || *entry == with_resource)
 }
 
+/// The host call an organisation's per-app rules stop when they say no
+/// printing (`[apps] printing = false`, G17). No manifest declares it: any
+/// app with a window may print unless the machine policy says otherwise.
+pub const PRINT_CALL: &str = "ui.print";
+/// What the runtime asks the ceiling before letting an app's windows be
+/// captured by the system, or taking a picture of one itself
+/// (`[apps] screen_capture = false`, G17).
+pub const SCREEN_CAPTURE_CALL: &str = "ui.screen-capture";
+
 /// How an organisation blocks a capability (IC-949 P4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrgBlock {
@@ -653,12 +668,23 @@ impl DenyRule {
         ))
     }
 
+    /// A rule for exactly one capability, resource included
+    /// (`ui.clipboard:write`): what an organisation's per-app rules
+    /// (`[apps]`, G17) block. Never parsed from `[capabilities] deny`, which names whole
+    /// capabilities only.
+    pub fn exact(cap: &Capability) -> Self {
+        Self(cap.to_string())
+    }
+
     /// The capability name this rule blocks.
     pub fn name(&self) -> &str {
         &self.0
     }
 
     fn covers(&self, cap: &Capability) -> bool {
+        if self.0.contains(':') {
+            return cap.to_string() == self.0;
+        }
         format!("{}.{}", cap.module(), cap.action()) == self.0
     }
 }
@@ -679,6 +705,9 @@ pub struct OrgCeiling {
     pub deny: Vec<DenyRule>,
     /// `[network] allow`, each pattern normalised. `None` is no ceiling.
     pub network: Option<Vec<String>>,
+    /// Host calls no manifest declares that the per-app rules stop
+    /// ([`PRINT_CALL`], [`SCREEN_CAPTURE_CALL`], G17).
+    pub calls: Vec<String>,
 }
 
 impl OrgCeiling {
@@ -693,7 +722,12 @@ impl OrgCeiling {
 
     /// Is this the ceiling that blocks nothing?
     pub fn is_empty(&self) -> bool {
-        self.deny.is_empty() && self.network.is_none()
+        self.deny.is_empty() && self.network.is_none() && self.calls.is_empty()
+    }
+
+    /// Does this ceiling stop one of the host calls no manifest declares?
+    pub fn blocks_call(&self, call: &str) -> bool {
+        self.calls.iter().any(|c| c == call)
     }
 
     /// Does this ceiling block `cap`, and how?
@@ -1942,6 +1976,27 @@ rationale = "listens"
     /// An organisation's ceiling refuses what it blocks whoever granted it,
     /// with its own reason, and leaves everything else alone (IC-949 P4).
     #[test]
+    fn an_exact_rule_blocks_only_its_own_resource() {
+        let write = DenyRule::exact(&cap("ui.clipboard:write"));
+        let ceiling = OrgCeiling {
+            deny: vec![write],
+            network: None,
+            calls: vec![PRINT_CALL.to_string()],
+        };
+        assert_eq!(
+            ceiling.blocks(&cap("ui.clipboard:write")),
+            Some(OrgBlock::Denied)
+        );
+        assert_eq!(ceiling.blocks(&cap("ui.clipboard:read")), None);
+        assert!(ceiling.blocks_call(PRINT_CALL) && !ceiling.blocks_call(SCREEN_CAPTURE_CALL));
+        assert!(!ceiling.is_empty());
+        assert!(
+            DenyRule::parse("ui.clipboard:write").is_err(),
+            "still whole names only"
+        );
+    }
+
+    #[test]
     fn an_organisation_ceiling_only_narrows() {
         let ceiling = OrgCeiling {
             deny: vec![
@@ -1952,6 +2007,7 @@ rationale = "listens"
                 OrgCeiling::parse_network("*.acme.com:443").expect("pattern"),
                 OrgCeiling::parse_network("api.github.com:443").expect("pattern"),
             ]),
+            calls: Vec::new(),
         };
         let granted = SessionPolicy::from_grants([
             cap("camera.capture"),
@@ -1982,6 +2038,7 @@ rationale = "listens"
         let nothing = SessionPolicy::default().with_organisation(OrgCeiling {
             deny: Vec::new(),
             network: Some(vec!["*:*".to_string()]),
+            calls: Vec::new(),
         });
         assert!(!nothing.allows(&cap("net.connect:api.acme.com:443")));
         // A declared pattern wider than the ceiling is outside it.
@@ -2028,6 +2085,7 @@ rationale = "listens"
             .with_organisation(OrgCeiling {
                 deny: vec![DenyRule::parse("net.connect").expect("name")],
                 network: None,
+                calls: Vec::new(),
             });
         assert!(!net.allows(&cap("net.connect:api.acme.com:443")));
         assert!(OrgCeiling::parse_network("acme.com").is_err());
@@ -2037,6 +2095,7 @@ rationale = "listens"
             SessionPolicy::from_grants([cap("ui.clipboard:read")]).with_organisation(OrgCeiling {
                 deny: vec![rule],
                 network: None,
+                calls: Vec::new(),
             });
         assert!(!policy.allows(&cap("ui.clipboard:read")));
     }
@@ -2055,6 +2114,7 @@ rationale = "listens"
             network: Some(vec![
                 OrgCeiling::parse_network("*.acme.com:443").expect("pattern")
             ]),
+            calls: Vec::new(),
         };
         assert!(
             ceiling.blocks(&cap("net.connection:finance-api")).is_none(),

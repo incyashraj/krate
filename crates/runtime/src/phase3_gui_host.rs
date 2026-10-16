@@ -3034,6 +3034,13 @@ impl Phase3GuiHost {
         scale: f32,
         path: &std::path::Path,
     ) -> Result<(), UiDispatchError> {
+        // No picture of an app its organisation keeps out of pictures (G17).
+        if self
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL)
+        {
+            return Err(UiDispatchError::PermissionDenied);
+        }
         let Some((size, placements)) = self.window_placements(window)? else {
             return Err(UiDispatchError::Layout(format!(
                 "window {} has nothing to render yet",
@@ -3941,6 +3948,13 @@ impl Phase3GuiHost {
         &self,
         raw: u64,
     ) -> Result<crate::print_host::Page, ui::types::UiError> {
+        // No printing where the organisation says so for this app (G17).
+        if self
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::PRINT_CALL)
+        {
+            return Err(ui::types::UiError::PermissionDenied);
+        }
         let window = self.window_id(raw)?;
         let Some((size, placements)) = self
             .window_placements(window)
@@ -8952,6 +8966,61 @@ mod tests {
             "an app without ui.dialog:file-save must be refused, not shown a \
              dialog: {refused:?}"
         );
+    }
+
+    /// G17: where the organisation's rules for this app say no printing
+    /// and no pictures, a print and a picture of the window are refused;
+    /// without them neither is.
+    #[test]
+    fn an_organisations_app_rules_stop_printing_and_pictures() {
+        let ceiling = krate_policy::OrgCeiling {
+            deny: Vec::new(),
+            network: None,
+            calls: vec![
+                krate_policy::PRINT_CALL.to_string(),
+                krate_policy::SCREEN_CAPTURE_CALL.to_string(),
+            ],
+        };
+        let policy = krate_policy::SessionPolicy::from_cli_grants(&["ui.window:create".into()])
+            .expect("policy")
+            .with_organisation(ceiling);
+        let kept = Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host");
+        assert!(matches!(
+            kept.capture_print_page(1),
+            Err(ui::types::UiError::PermissionDenied)
+        ));
+        let dir = tempfile::tempdir().expect("dir");
+        let shot = dir.path().join("shot.png");
+        let window = kept
+            .dispatcher()
+            .create_window(
+                krate_adapter_common::ui::WindowOptions::new(
+                    "Payroll",
+                    krate_adapter_common::ui::WindowSize::new(320, 240).expect("size"),
+                )
+                .expect("options"),
+            )
+            .expect("window");
+        assert!(matches!(
+            kept.render_window_png(window, 1.0, &shot),
+            Err(UiDispatchError::PermissionDenied)
+        ));
+        assert!(kept
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL));
+        let plain = headless_host();
+        assert!(!matches!(
+            plain.capture_print_page(1),
+            Err(ui::types::UiError::PermissionDenied)
+        ));
+        assert!(!matches!(
+            plain.render_window_png(window, 1.0, &shot),
+            Err(UiDispatchError::PermissionDenied)
+        ));
+        assert!(!plain
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL));
     }
 
     fn headless_host() -> Phase3GuiHost {

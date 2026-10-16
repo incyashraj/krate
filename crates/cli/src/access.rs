@@ -447,6 +447,20 @@ pub fn org_data_path(slug: &str, app_id: &str, principal: Option<&str>) -> PathB
     org_data_dir(slug).join(format!("{}.json", &name[..32]))
 }
 
+/// Delete this app's team data in `slug` on this computer, for the person
+/// signed in and for nobody signed in: what a machine policy's
+/// `wipe_when_offline_ends` asks once offline access runs out (G17).
+/// Answers how many files went.
+pub fn wipe_team_data(slug: &str, app_id: &str) -> usize {
+    let app_id = app_id.to_ascii_lowercase();
+    let me = github_auth::current().map(|identity| org::principal_of(&identity.login));
+    [me.as_deref(), None]
+        .into_iter()
+        .map(|principal| org_data_path(slug, &app_id, principal))
+        .filter(|path| std::fs::remove_file(path).is_ok())
+        .count()
+}
+
 fn org_data_dir(slug: &str) -> PathBuf {
     crate::krate_home().join("org-data").join(slug)
 }
