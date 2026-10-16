@@ -160,8 +160,14 @@
           el("p", { text: "Pick one and " + nameOf() + " can use it in a few seconds. You can add your own apps any time." }),
         ]));
       }
+      // With more than a handful of ready apps: a row of kinds and a search
+      // above them, so the one wanted is two clicks away, not a scroll.
+      var filter = el("div", { class: "st-filter", hidden: true });
+      wrap.appendChild(filter);
       var list = el("div", { class: "starters", role: "radiogroup", "aria-label": "Ready apps" }, [el("p", { class: "loading", text: "Loading the ready apps" })]);
       wrap.appendChild(list);
+      var none = el("p", { class: "sub st-none", hidden: true });
+      wrap.appendChild(none);
       var why = el("p", { class: "fa-why", hidden: true });
       wrap.appendChild(why);
       var go = el("button", { class: "btn dark fa-go", type: "button", text: "Release to " + nameOf() });
@@ -207,10 +213,13 @@
         // A radio group: arrow keys move the choice, Tab leaves the group.
         b.addEventListener("keydown", function (e) {
           var k = e.key, i = cards.indexOf(b);
-          var to = k === "ArrowRight" || k === "ArrowDown" ? i + 1 : k === "ArrowLeft" || k === "ArrowUp" ? i - 1 : k === "Home" ? 0 : k === "End" ? cards.length - 1 : null;
-          if (to === null) return;
+          // Only the ones on show: a kind or a search hides the rest.
+          var shown = cards.filter(function (x) { return !x.hidden; });
+          i = shown.indexOf(b);
+          var to = k === "ArrowRight" || k === "ArrowDown" ? i + 1 : k === "ArrowLeft" || k === "ArrowUp" ? i - 1 : k === "Home" ? 0 : k === "End" ? shown.length - 1 : null;
+          if (to === null || !shown.length) return;
           if (e.preventDefault) e.preventDefault();
-          var next = cards[(to + cards.length) % cards.length];
+          var next = shown[(to + shown.length) % shown.length];
           next.click();
           if (next.focus) next.focus();
         });
@@ -220,8 +229,11 @@
       starters().then(function (all) {
         list.textContent = "";
         all.forEach(function (s) {
-          list.appendChild(card({ kind: "starter", s: s }, s.name, s.says || "", s.top || (s.can || []).slice(0, 3), s.placeholder ? "Placeholder" : "", s.shot || "", (s.can || []).join(". ")));
+          var c = card({ kind: "starter", s: s }, s.name, s.says || "", s.top || (s.can || []).slice(0, 3), s.placeholder ? "Placeholder" : "", s.shot || "", (s.can || []).join(". "));
+          c._starter = s;
+          list.appendChild(c);
         });
+        if (all.length > 6) kinds(all);
         // Decided for them: the first ready app is already picked.
         if (all.length) choose({ kind: "starter", s: all[0] }, cards[0]);
         else {
@@ -230,6 +242,43 @@
           go.textContent = "Choose a .krate to release";
         }
       });
+      /// The kinds the ready apps come in (starters.json `category`), each a
+      /// chip with how many, then a search over names and what they do.
+      function kinds(all) {
+        var cats = [];
+        all.forEach(function (s) { if (s.category && cats.indexOf(s.category) < 0) cats.push(s.category); });
+        var want = "", words = "";
+        var chips = [];
+        function apply() {
+          var q = words.trim().toLowerCase(), shown = 0;
+          cards.forEach(function (c) {
+            var s = c._starter;
+            if (!s) return; // a file of their own stays on show
+            var hay = [s.name, s.says || "", (s.top || []).join(" "), (s.can || []).join(" "), s.category || ""].join(" ").toLowerCase();
+            var on = (!want || s.category === want) && (!q || hay.indexOf(q) >= 0);
+            c.hidden = !on;
+            if (on) shown++;
+          });
+          chips.forEach(function (ch) { ch.setAttribute("aria-pressed", ch._cat === want ? "true" : "false"); });
+          none.hidden = shown > 0;
+          none.textContent = shown ? "" : "No ready app matches “" + words.trim() + "”. Clear the search, or upload a .krate you have.";
+        }
+        var row = el("div", { class: "st-kinds", role: "group", "aria-label": "Kinds of app" });
+        [["", "All " + all.length]].concat(cats.map(function (c) {
+          return [c, c + " " + all.filter(function (s) { return s.category === c; }).length];
+        })).forEach(function (pair) {
+          var ch = el("button", { class: "chip", type: "button", "aria-pressed": pair[0] ? "false" : "true", text: pair[1] });
+          ch._cat = pair[0];
+          ch.addEventListener("click", function () { want = pair[0]; apply(); });
+          chips.push(ch);
+          row.appendChild(ch);
+        });
+        var find = el("input", { class: "inp st-find", type: "search", placeholder: "Find an app", "aria-label": "Find a ready app", autocomplete: "off" });
+        find.addEventListener("input", function () { words = find.value || ""; apply(); });
+        filter.appendChild(row);
+        filter.appendChild(find);
+        filter.hidden = false;
+      }
       file.addEventListener("change", function () {
         var f = file.files && file.files[0];
         if (!f) return;

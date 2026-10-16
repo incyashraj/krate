@@ -1027,6 +1027,13 @@ body.console #rulesCard .rwarn .note { margin-top: 8px; }
 /* New app: four ways, two to a row until a phone takes them one by one */
 body.console .ways.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 720px) { body.console .ways.four { grid-template-columns: minmax(0, 1fr); } }
+/* fifteen ready apps in a narrow panel: a small picture beside the words */
+body.console .cr-release .starters { gap: 8px; }
+body.console .cr-release .starter.has-shot { flex-direction: row; align-items: stretch; }
+body.console .cr-release .st-shot { flex: none; width: 104px; aspect-ratio: auto; border-bottom: 0; border-right: 1px solid var(--line-2); }
+body.console .cr-release .has-shot .st-t { padding: 12px 14px; }
+body.console .cr-release .st-top { display: none; }
+body.console .cr-release .st-find { width: 100%; }
 </style>
 </head>
 <body class="console" data-kit="app">

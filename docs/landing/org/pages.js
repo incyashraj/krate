@@ -176,7 +176,7 @@
         way("From a spreadsheet", "A .csv or .xlsx the team keeps today. Krate builds an app around its rows, kept as " + nameOf() + "'s team data.", [
           el("a", { class: "btn ghost sm", href: studio + "&start=sheet", text: "Start from a spreadsheet" }),
         ]),
-        way("From a ready app", "Team Notes, Expenses or Stock List, released as it is, then changed to fit.", [
+        way("From a ready app", "Fifteen to pick from: help desk, leave, timesheets, a shift rota and more. Release one as it is, then change it to fit.", [
           el("button", { class: "btn ghost sm", type: "button", text: "Pick one", onclick: function () { D.releaseFlow(); } }),
         ]),
         way("From your code", "Rust, C or Go, to one .krate, sent from the terminal.", [
