@@ -8639,6 +8639,38 @@ fn a_removed_app_is_refused_offline_by_the_held_blocklist() {
     );
 }
 
+/// K-1126: `krate check-app apps/x`, the folder given relative as a
+/// person types it, runs the app's own task. Before, the task path was
+/// handed on relative to a run that starts inside the folder, so the task
+/// never ran and check-app still said OK.
+#[test]
+fn check_app_runs_the_task_when_given_a_relative_folder() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = krate()
+        .current_dir(&repo)
+        .args(["check-app", "apps/krate-leave", "--json"])
+        .output()
+        .expect("check-app");
+    let text = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&text).unwrap_or_else(|_| {
+        panic!(
+            "no json: {text}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    assert_eq!(report["ok"], true, "{report}");
+    let notes = report["usability_notes"].to_string();
+    assert!(
+        notes.contains("completes its task: book a week of holiday"),
+        "the task ran: {notes}"
+    );
+}
+
 /// The task oracle through the binary (IC-743, test 1506): a task file's
 /// steps are driven after the usability checks, the report says whether
 /// the task completed, and a failing step says what WAS on screen.

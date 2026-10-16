@@ -21626,9 +21626,14 @@ fn run_usability_stage(
                   expect_text = \"what should then be on screen\")."
                 .to_string(),
         })?;
+        // Absolute: the run below starts inside `dir`, so a relative
+        // `apps/x/krate-check.toml` would be looked for at
+        // apps/x/apps/x/krate-check.toml and the task never ran (K-1126).
+        let task_file = task_file.canonicalize().unwrap_or(task_file.clone());
         args.push("--task".into());
         args.push(task_file.to_string_lossy().into_owned());
     }
+    let has_task = args.iter().any(|arg| arg == "--task");
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let exit = run_self(dir, &arg_refs).map_err(|error| CheckFailure {
         stage: CheckStage::Usability,
@@ -21638,6 +21643,21 @@ fn run_usability_stage(
 
     let report = match krate_runtime::usability::UsabilityReport::read(&report_path) {
         Ok(report) => report,
+        Err(error) if has_task => {
+            // The author wrote the app's task down and it never ran: that is
+            // not a gap to note, it is the one check that proves the app does
+            // its job, and passing without it says the app was proved when it
+            // was not (K-1126).
+            return Err(CheckFailure {
+                stage: CheckStage::Usability,
+                detail: format!(
+                    "the app's task (krate-check.toml) did not run: exit {exit}, no report: {error}"
+                ),
+                fix: "Run `krate run --task krate-check.toml` with the app's wasm and manifest \
+                      from the app's folder to see why the task could not start."
+                    .to_string(),
+            });
+        }
         Err(error) => {
             // No report at all means the driver never got far enough to write
             // one. That is a gap in the measurement, not proof of a defect, so
