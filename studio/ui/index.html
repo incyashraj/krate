@@ -405,6 +405,10 @@
           <!-- Where dictation says what it is doing. Empty by default so
                the screen stays quiet until something needs saying. -->
           <p class="composer-hint home-hint" id="homeHint"></p>
+          <!-- Start from a spreadsheet (G6): in a browser tab, where the
+               sheet is read in the page. app.js shows it when the bridge
+               is there. -->
+          <p class="home-sheet" id="homeSheetLine" hidden><a href="#" id="homeSheet">Start from a spreadsheet</a><span> · a .csv or .xlsx becomes an app around its rows</span></p>
           <div class="kr-under" id="homeIdeUnder" hidden>
             <p class="kr-lab">Recent projects</p>
             <div class="kr-starts" id="homeIdeRows"></div>
@@ -1167,6 +1171,41 @@
         <button class="btn btn-ghost sheet-close" data-close="makeitSheet">Close</button>
       </div>
       <p class="detail-note" id="makeitNote"></p>
+    </div>
+  </div>
+
+  <!-- Start from a spreadsheet (G6): the file is read here, its columns
+       and first rows shown, then a normal build starts from Home. -->
+  <div class="sheet-wrap hidden" id="sheetSheet">
+    <div class="sheet sheet-start" role="dialog" aria-modal="true" aria-labelledby="sheetH">
+      <button class="sheet-x" data-close="sheetSheet" aria-label="Close"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      <h2 id="sheetH">Start from a spreadsheet</h2>
+      <p class="sheet-sub">A .csv or .xlsx up to 5 MB and 20,000 rows. It is read here, in this tab; every row goes into the app, and only the first few go to the AI.</p>
+      <div class="sheet-pick">
+        <button class="btn" id="sheetChoose" type="button">Choose a file</button>
+        <span class="sheet-file" id="sheetFile" role="status"></span>
+      </div>
+      <label class="pub-label hidden" id="sheetTabRow">Sheet
+        <select id="sheetTab"></select>
+      </label>
+      <p class="sheet-problem hidden" id="sheetProblem" role="alert"></p>
+      <div class="sheet-cols hidden" id="sheetCols"></div>
+      <div class="hidden" id="sheetForm">
+        <label class="pub-label">Name of the app
+          <input id="sheetName" type="text" maxlength="60" autocomplete="off" />
+        </label>
+        <label class="pub-label">What it is for, in one sentence
+          <input id="sheetPurpose" type="text" maxlength="300" autocomplete="off" placeholder="Track what the warehouse holds and reorder in time" />
+        </label>
+        <label class="pub-label hidden" id="sheetForRow">Who keeps the records
+          <select id="sheetFor"></select>
+        </label>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="sheetMake" type="button" disabled>Make the app</button>
+        <button class="btn btn-ghost sheet-close" data-close="sheetSheet" type="button">Cancel</button>
+      </div>
+      <p class="detail-note" id="sheetNote" role="status"></p>
     </div>
   </div>
 

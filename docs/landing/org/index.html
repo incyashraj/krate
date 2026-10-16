@@ -999,6 +999,9 @@ body.console #rulesCard .rwarn .note { margin-top: 8px; }
   body.console #rulesCard .rule .seg button { flex: 1; }
   body.console #rulesCard .rule select.inp { width: 100%; }
 }
+/* New app: four ways, two to a row until a phone takes them one by one */
+body.console .ways.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 720px) { body.console .ways.four { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body class="console" data-kit="app">

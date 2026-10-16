@@ -1544,7 +1544,8 @@
     ? window.KrateOrgSetup({ slug: slug, here: HERE, org: function () { return S.org; }, role: roleOf, members: function () { return S.members; } })
     : null;
   var Pub = window.KrateOrgPublishers
-    ? window.KrateOrgPublishers({ S: S, slug: slug, words: words, toast: toast, roleOf: roleOf, drawTabs: function () { drawTabs(); }, show: function (id) { show(id); } })
+    ? window.KrateOrgPublishers({ S: S, slug: slug, words: words, toast: toast, roleOf: roleOf, drawTabs: function () { drawTabs(); }, show: function (id) { show(id); },
+        device: function () { return Setup ? Setup.device() : Promise.resolve(null); } })
     : null;
 
   // Release control and groups (releases.js); absent, the flat list.

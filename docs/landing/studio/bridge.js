@@ -1333,6 +1333,162 @@ function watchJob(jobId, request, sessionId) {
   });
 }
 
+
+/* ---- an organisation's apps, made here (G5 and G6) -----------------------
+ *
+ * /app/?org=<slug> is the console's New app page opening Studio for one
+ * organisation. The slug is kept for this tab (it survives the sign-in
+ * round trip) and only ever ORDERS things: the Send menu offers that
+ * organisation first, and a spreadsheet start keeps its records as that
+ * organisation's team data. It never sends, builds or signs anything by
+ * itself -- nothing a link says starts work (K-885). /app/?start=sheet
+ * opens "Start from a spreadsheet" once, with nothing chosen yet.
+ */
+const ORG_PICK_KEY = "krate_org_pick";
+const SHEET_START_KEY = "krate_start_sheet";
+/// Who may send an app to an organisation: the hub's role matrix,
+/// `candidate.publish` (cloud/worker/src/org.js, docs/landing/kit/org.js).
+const ORG_SENDERS = ["owner", "developer"];
+try {
+  const asked = new URLSearchParams(location.search);
+  const pick = String(asked.get("org") || "").trim().toLowerCase();
+  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(pick)) sessionStorage.setItem(ORG_PICK_KEY, pick);
+  if (asked.get("start") === "sheet") sessionStorage.setItem(SHEET_START_KEY, "1");
+} catch (e) {}
+window.krOrgPick = () => {
+  try { return sessionStorage.getItem(ORG_PICK_KEY) || null; } catch (e) { return null; }
+};
+window.krStartSheet = () => {
+  try {
+    const due = sessionStorage.getItem(SHEET_START_KEY) === "1";
+    if (due) sessionStorage.removeItem(SHEET_START_KEY);
+    return due;
+  } catch (e) { return false; }
+};
+
+/// One of the site's own scripts (/kit/...), loaded the first time a
+/// command needs it: the organisation's signing in this tab, and the
+/// spreadsheet reader. Same origin, nothing from anywhere else.
+const siteKits = {};
+function loadSiteKit(file, global) {
+  if (window[global]) return Promise.resolve(window[global]);
+  if (!siteKits[file]) {
+    siteKits[file] = new Promise((resolve, reject) => {
+      const tag = document.createElement("script");
+      tag.src = `/kit/${file}`;
+      tag.async = true;
+      tag.onload = () => (window[global] ? resolve(window[global]) : reject(refusal("This part of Studio did not load. Reload the page and try again.")));
+      tag.onerror = () => {
+        delete siteKits[file];
+        reject(refusal("This part of Studio did not load. Check the connection and try again."));
+      };
+      document.head.appendChild(tag);
+    });
+  }
+  return siteKits[file];
+}
+
+/// "Alice", "Alice or Bob", "Alice and 2 others".
+function orgNames(list) {
+  const names = (list || []).map(String).filter(Boolean);
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} or ${names[1]}`;
+  return `${names[0]} and ${names.length - 1} others`;
+}
+function sentence(text) {
+  const t = String(text || "").trim().replace(/[.\s]+$/, "");
+  return t ? t[0].toUpperCase() + t.slice(1) + "." : "";
+}
+
+/// What Studio shows for an answer from KrateOrgDevice.publish, in the
+/// shape the desktop's send_to_org gives: {org, state, words, digest, url,
+/// waiting_url}. A developer's console has My apps, an owner's Approvals.
+function orgSendAnswer(out, slug, orgName, role) {
+  const consoleAt = (tab) => `https://krate.tech/org/?o=${encodeURIComponent(slug)}&tab=${tab}`;
+  if (out.state === "waiting-for-publisher") {
+    const p = out.publisher || {};
+    const can = orgNames(p.can_sign);
+    // Whole sentences: Studio says them alone, then adds its own.
+    const words = p.by_hand && p.state === "waiting"
+      ? `${orgName} approves new publishers by hand: an owner or admin says yes once, in People.`
+      : can
+        ? `Waiting for ${can} to approve you as a publisher. It happens by itself when one of them opens Krate or the ${orgName} console.`
+        : `Waiting for an owner of ${orgName} to open Krate or the ${orgName} console, which approves you as a publisher by itself.`;
+    return { org: slug, state: "waiting-for-publisher", words, waiting_url: consoleAt("home") };
+  }
+  if (out.state === "released") {
+    return { org: slug, state: "released", words: `Released. Everyone in ${orgName} can use it now`, digest: out.digest, url: out.url || null, waiting_url: consoleAt(role === "developer" ? "myapps" : "releases") };
+  }
+  return { org: slug, state: "waiting-for-approval", words: "It waits for a second person to approve it", digest: out.digest, waiting_url: consoleAt(role === "developer" ? "myapps" : "waiting") };
+}
+
+/// A refusal on the way to the organisation, in words that say what to do.
+function orgSendWords(err, orgName, appName) {
+  const reason = err && err.reason;
+  if (reason === "offline") return "Could not reach Krate, so nothing was sent. Check the connection and send it again.";
+  if (reason === "role-cannot") return `You cannot send apps to ${orgName}. An owner of ${orgName} can make you a developer in People.`;
+  if (reason === "removed" || reason === "not-a-member") return `You are not in ${orgName} any more, so nothing was sent.`;
+  if (err && (err.status === 401 || reason === "not-signed-in")) return "Your sign-in ran out, so nothing was sent. Sign in again and send it.";
+  if (err && err.status === 413) return `${appName || "This app"} is larger than ${orgName} takes from a browser. Send it from Krate Studio on your computer.`;
+  return sentence(err && err.message) || `${orgName} did not take it. Try again in a minute.`;
+}
+
+/* The spreadsheet chosen in this tab: its sheets, which one is in use, and
+ * the whole table, kept here. Studio gets the columns and the first rows;
+ * the full sheet only ever leaves as the app's asset (an attachment). */
+const sheetChosen = { file: "", sheets: [], index: 0, table: null };
+const SHEET_SAMPLE = 5;
+
+/// One file from the browser's picker, or null when it was cancelled.
+function pickOneFile(accept) {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.style.display = "none";
+    document.body.appendChild(input);
+    let settled = false;
+    const done = (file) => {
+      if (settled) return;
+      settled = true;
+      try { input.remove(); } catch (e) {}
+      resolve(file);
+    };
+    window.addEventListener("focus", () => { setTimeout(() => done(null), 400); }, { once: true });
+    input.addEventListener("change", () => done((input.files && input.files[0]) || null));
+    input.click();
+  });
+}
+
+/// What Studio draws for the sheet in use: its columns with their kinds,
+/// the first rows, how many there are, and the refusal when it is not one
+/// Krate starts from.
+function sheetSummary(K) {
+  const sheet = sheetChosen.sheets[sheetChosen.index] || { name: "", rows: [] };
+  const t = K.table(sheet.rows);
+  sheetChosen.table = t;
+  const problem = K.check(t, sheetChosen.sheets.length > 1 ? `The sheet "${sheet.name}"` : sheetChosen.file);
+  const stem = sheetChosen.file.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+  return {
+    file: sheetChosen.file,
+    sheets: sheetChosen.sheets.map((s) => s.name),
+    sheet: sheetChosen.index,
+    rows: t.rows.length,
+    columns: t.columns,
+    sample: t.rows.slice(0, SHEET_SAMPLE),
+    problem: problem ? problem.message : null,
+    name: stem ? stem[0].toUpperCase() + stem.slice(1) : "",
+  };
+}
+
+function utf8Base64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 const COMMANDS = {
   /* ---- who they are ---------------------------------------------------- */
 
@@ -2361,6 +2517,111 @@ const COMMANDS = {
       method: "POST",
       body: JSON.stringify({ id, key: key || "", text: message || "" }),
     });
+  },
+
+  /* The organisations this person may send an app to for approval (G5),
+   * the shape the desktop's `krate org list --json` gives: an owner or a
+   * developer, by the hub's role matrix. Signed out, none. */
+  async org_targets() {
+    if (!bridge.token) return [];
+    let list;
+    try {
+      list = await hub("/orgs");
+    } catch (e) {
+      return [];
+    }
+    const orgs = (Array.isArray(list) ? list : (list && Array.isArray(list.orgs) ? list.orgs : []))
+      .filter((o) => o && o.slug && ORG_SENDERS.includes(o.role))
+      .map((o) => ({ slug: String(o.slug), name: String(o.name || o.slug), role: o.role }));
+    bridge.orgTargets = orgs;
+    return orgs;
+  },
+
+  /* "Send to <org> for approval" (G5): what `krate publish --org` does on
+   * a computer, done in this tab. The app's bytes come from the build
+   * service; KrateOrgDevice (/kit/org-device.js) marks them as the
+   * organisation's private app and signs them -- as the organisation when
+   * this browser holds its signing key, otherwise with this browser's own
+   * release key, which the organisation approves in the background -- and
+   * sends them with the release note. Answers the desktop's shape. */
+  async send_to_org({ path, slug, name, note } = {}) {
+    if (!bridge.token) return goSignIn();
+    const targets = bridge.orgTargets || await COMMANDS.org_targets();
+    const org = targets.find((o) => o.slug === slug);
+    if (!org) return refuse(`You cannot send apps to ${slug || "that organisation"}. An owner there can make you a developer in People.`);
+    if (String(note || "").trim().length > 1000) return refuse("A release note is up to 1,000 characters. Say what changed in a line or two.");
+    const app = currentWebApp(path);
+    if (!app) return refuse("This app is not on the build service. Send it from Krate Studio on your computer.");
+    const got = await fetch(app.url, { headers: { authorization: `Bearer ${bridge.token}` } });
+    if (!got.ok) throw await fileFetchError(got);
+    const bytes = new Uint8Array(await got.arrayBuffer());
+    const device = await loadSiteKit("org-device.js", "KrateOrgDevice");
+    if (!bridge.orgDeviceReady) {
+      device.configure({ hub: HUB, token: () => bridge.token });
+      bridge.orgDeviceReady = true;
+    }
+    const appName = String(name || app.name || "").replace(/\.krate$/i, "").replace(/ v\d+$/, "").trim();
+    let out;
+    try {
+      out = await device.publish(slug, bytes, { name: appName, note: String(note || "").trim(), role: org.role });
+    } catch (err) {
+      throw refusal(orgSendWords(err, org.name, appName));
+    }
+    return orgSendAnswer(out, slug, org.name, org.role);
+  },
+
+  /* "Start from a spreadsheet" (G6): one .csv or .xlsx from the browser's
+   * picker, read here. Over 5 MB it is refused before a byte is read; over
+   * 20,000 rows, or with nothing under its header, the summary carries the
+   * refusal so the person can pick another sheet or file. */
+  async sheet_pick() {
+    const K = await loadSiteKit("sheet.js", "KrateSheet");
+    const file = await pickOneFile(".csv,.tsv,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!file) return null;
+    const early = K.fileProblem(file.name, file.size);
+    if (early) throw refusal(early.message);
+    let read;
+    try {
+      read = await K.read(file.name, new Uint8Array(await file.arrayBuffer()));
+    } catch (err) {
+      throw refusal(err.message || `${file.name} could not be read.`);
+    }
+    sheetChosen.file = file.name;
+    sheetChosen.sheets = read.sheets;
+    // The first sheet with something in it.
+    const first = read.sheets.findIndex((s) => K.table(s.rows).rows.length > 0);
+    sheetChosen.index = first >= 0 ? first : 0;
+    return sheetSummary(K);
+  },
+  async sheet_use({ sheet } = {}) {
+    const K = await loadSiteKit("sheet.js", "KrateSheet");
+    if (!sheetChosen.sheets.length) return refuse("Choose a spreadsheet first.");
+    const i = Number(sheet);
+    if (!(i >= 0 && i < sheetChosen.sheets.length)) return refuse("That sheet is not in this file.");
+    sheetChosen.index = i;
+    return sheetSummary(K);
+  },
+  /* The request a build starts from, and the whole sheet as the app's
+   * asset: the asset waits here as an attachment, the way a picked file
+   * does, and is sent with the build; the request carries the columns and
+   * a sample of rows only. `org` is a slug this person may send to. */
+  async sheet_request({ name, purpose, org } = {}) {
+    const K = await loadSiteKit("sheet.js", "KrateSheet");
+    const t = sheetChosen.table;
+    if (!t) return refuse("Choose a spreadsheet first.");
+    const problem = K.check(t, sheetChosen.file);
+    if (problem) return refuse(problem.message);
+    if (!String(name || "").trim()) return refuse("Give the app a name.");
+    let forOrg = null;
+    if (org) {
+      const targets = bridge.orgTargets || await COMMANDS.org_targets();
+      const found = targets.find((o) => o.slug === org);
+      if (!found) return refuse(`You cannot make apps for ${org}. An owner there can make you a developer in People.`);
+      forOrg = { slug: found.slug, name: found.name };
+    }
+    const out = K.request({ app: name, purpose, org: forOrg, table: t, file: sheetChosen.file });
+    attached.set(out.asset.name, { name: out.asset.name, type: "text/csv", bytes: utf8Base64(out.asset.text) });
+    return { request: out.request, attachment: out.asset.name, rows: t.rows.length };
   },
 };
 

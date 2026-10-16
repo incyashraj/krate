@@ -318,6 +318,15 @@ jobs:
           # itself, joining from the email, and the signing ring's places
           # hidden where the hub has not got them.
           node docs/landing/studio/org-setup-test.mjs
+          # Describe it, approve it, ship it in the browser (G5): only owners
+          # and developers are offered Send to <org>, the app goes with its
+          # note and the answer is said in words; a spreadsheet's build
+          # carries its columns and a sample, the whole sheet only as the
+          # app's asset (G6).
+          node docs/landing/studio/org-send-test.mjs
+          # The spreadsheet reader itself: CSV and XLSX, kinds of value, the
+          # 5 MB and 20,000-row caps.
+          node docs/landing/studio/sheet-test.mjs
           # And the IT pack the dashboard makes in the browser is
           # scripts/build-policy-templates.py's, byte for byte.
           node docs/landing/studio/org-policy-test.mjs

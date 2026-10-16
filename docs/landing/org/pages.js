@@ -159,11 +159,17 @@
     // -------------------------------------------------------------- new app
 
     function build(p) {
-      D.head(p, "New app", "Three ways to start. Whichever you pick, the app is signed for " + nameOf() + " and waits for a second person before anyone opens it.");
-      p.appendChild(el("div", { class: "ways" }, [
-        way("Describe it", "Say what the team needs; Krate Studio builds it, and you send it from there.", [
-          el("a", { class: "btn dark sm", href: "/app/", text: "Open Studio in the browser" }),
+      // Studio in the browser, opened for this organisation: its Send menu
+      // offers it first, and a spreadsheet's records become its team data.
+      var studio = "/app/?org=" + encodeURIComponent(slug);
+      D.head(p, "New app", "Four ways to start. Whichever you pick, the app is signed for " + nameOf() + " and waits for a second person before anyone opens it.");
+      p.appendChild(el("div", { class: "ways four" }, [
+        way("Describe it", "Say what the team needs. Krate Studio builds it in the browser, and you send it to " + nameOf() + " from there.", [
+          el("a", { class: "btn dark sm", href: studio, text: "Describe it" }),
           el("a", { class: "btn ghost sm", href: "/download/", text: "Get Studio for the desktop" }),
+        ]),
+        way("From a spreadsheet", "A .csv or .xlsx the team keeps today. Krate builds an app around its rows, kept as " + nameOf() + "'s team data.", [
+          el("a", { class: "btn ghost sm", href: studio + "&start=sheet", text: "Start from a spreadsheet" }),
         ]),
         way("From a ready app", "Team Notes, Expenses or Stock List, released as it is, then changed to fit.", [
           el("button", { class: "btn ghost sm", type: "button", text: "Pick one", onclick: function () { D.releaseFlow(); } }),
