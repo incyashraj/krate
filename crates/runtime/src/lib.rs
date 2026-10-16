@@ -75,6 +75,9 @@ mod fs_watch;
 mod gamepad;
 /// The merge rule, from the crate the browser tab shares (`krate-orgdata`).
 pub use krate_orgdata::merge as org_merge;
+/// The team data's live socket: push instead of poll (SMART-FIXES 7).
+#[cfg(not(target_arch = "wasm32"))]
+mod org_live;
 pub mod org_store;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;

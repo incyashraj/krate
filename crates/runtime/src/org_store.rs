@@ -200,6 +200,10 @@ struct Inner {
     syncing: bool,
     /// When this device last reached the organisation, in hub milliseconds.
     reached_at: Option<u64>,
+    /// The live socket's shared flags (org_live.rs), once the background
+    /// thread runs: a sync asks it for a ticket and hands one over.
+    #[cfg(not(target_arch = "wasm32"))]
+    live: Option<Arc<crate::org_live::Live>>,
 }
 
 /// This device's hold of the organisation's key.
@@ -286,6 +290,76 @@ struct Asks {
     now: bool,
     /// The app is closing: one last sync, then stop.
     stop: bool,
+    /// The live socket says someone else wrote, or it dropped and what it
+    /// might have missed wants catching up: sync now, whatever the floor.
+    pushed: bool,
+}
+
+/// Why the background thread woke.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Turn {
+    /// Its pace ran out.
+    Timer,
+    /// The app asked.
+    Asked,
+    /// The live socket said something changed.
+    Pushed,
+    /// The app is closing.
+    Stop,
+}
+
+/// Wait for the background thread's next turn: its pace, the app asking,
+/// the live socket, or the close. Never called on the app's thread.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn wait_turn(asks: &(Mutex<Asks>, std::sync::Condvar), pace: std::time::Duration) -> Turn {
+    let (asks_lock, wake) = asks;
+    let Ok(mut ask) = asks_lock.lock() else {
+        return Turn::Stop;
+    };
+    let until = std::time::Instant::now() + pace;
+    while !ask.now && !ask.stop && !ask.pushed {
+        let left = until.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        ask = match wake.wait_timeout(ask, left) {
+            Ok((ask, _)) => ask,
+            Err(_) => return Turn::Stop,
+        };
+    }
+    if ask.stop {
+        return Turn::Stop;
+    }
+    let pushed = std::mem::take(&mut ask.pushed);
+    let asked = std::mem::take(&mut ask.now);
+    if pushed {
+        Turn::Pushed
+    } else if asked {
+        Turn::Asked
+    } else {
+        Turn::Timer
+    }
+}
+
+/// Tell the background thread the live socket has news (org_live.rs).
+#[cfg(not(target_arch = "wasm32"))]
+fn push(asks: &(Mutex<Asks>, std::sync::Condvar)) {
+    let (lock, wake) = asks;
+    if let Ok(mut ask) = lock.lock() {
+        ask.pushed = true;
+    }
+    wake.notify_all();
+}
+
+/// An app asking faster than the floor, with nothing of its own to send,
+/// is answered from here, so a timer loop cannot hammer the hub. Neither
+/// the pace nor the live socket is floored.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn floored(turn: Turn, inner: &Inner) -> bool {
+    turn == Turn::Asked
+        && inner.last_sync.is_some_and(|at| at.elapsed() < SYNC_FLOOR)
+        && inner.mirror.pending() == 0
 }
 
 /// One app's organisation data for this run.
@@ -299,6 +373,9 @@ pub struct AppOrg {
     /// a windowed app's never does (K-1107).
     waits: std::sync::atomic::AtomicBool,
     background: Option<std::thread::JoinHandle<()>>,
+    /// The live socket's flags, to close it with the app.
+    #[cfg(not(target_arch = "wasm32"))]
+    live: Option<Arc<crate::org_live::Live>>,
 }
 
 impl AppOrg {
@@ -353,6 +430,8 @@ impl AppOrg {
                     tried: false,
                     syncing: false,
                     reached_at: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    live: None,
                 })))
             }
         };
@@ -362,6 +441,8 @@ impl AppOrg {
             asks: Arc::new((Mutex::new(Asks::default()), std::sync::Condvar::new())),
             waits: std::sync::atomic::AtomicBool::new(true),
             background: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            live: None,
         }
     }
 
@@ -370,53 +451,52 @@ impl AppOrg {
         let Some(inner) = self.access.clone() else {
             return;
         };
+        // The live socket: its own thread, so neither the window nor the
+        // sync thread ever waits on it (K-1107).
+        let live = crate::org_live::Live::new(crate::org_live::Paces::default());
+        if let Ok(mut i) = inner.lock() {
+            i.live = Some(live.clone());
+        }
+        let (on_change, on_gone) = (self.asks.clone(), self.asks.clone());
+        crate::org_live::spawn(
+            live.clone(),
+            move || push(&on_change),
+            // Never opened: the backoff paces the next try, no sync needed.
+            move |opened| {
+                if opened {
+                    push(&on_gone)
+                }
+            },
+        );
+        self.live = Some(live.clone());
         let (lock, asks) = (self.sync_lock.clone(), self.asks.clone());
         self.background = std::thread::Builder::new()
             .name("krate-org-sync".into())
             .spawn(move || {
-                let mut asked = false;
+                let mut turn = Turn::Timer;
                 loop {
                     let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
                     if refused {
+                        live.shutdown();
                         return;
                     }
-                    // Asked by the app faster than the floor, with nothing of
-                    // its own to send: answered from here, so a timer loop
-                    // cannot hammer the hub.
-                    let floor = asked
-                        && inner.lock().is_ok_and(|i| {
-                            i.last_sync.is_some_and(|at| at.elapsed() < SYNC_FLOOR)
-                                && i.mirror.pending() == 0
-                        });
+                    let floor = inner.lock().is_ok_and(|i| floored(turn, &i));
                     if !floor {
                         let _ = sync_now(&inner, &lock);
                     }
-                    let (asks_lock, wake) = &*asks;
-                    let Ok(mut ask) = asks_lock.lock() else {
-                        return;
-                    };
-                    let until = std::time::Instant::now() + BACKGROUND_EVERY;
-                    while !ask.now && !ask.stop {
-                        let left = until.saturating_duration_since(std::time::Instant::now());
-                        if left.is_zero() {
-                            break;
-                        }
-                        ask = match wake.wait_timeout(ask, left) {
-                            Ok((ask, _)) => ask,
-                            Err(_) => return,
-                        };
-                    }
-                    if ask.stop {
-                        drop(ask);
+                    // Every few seconds, or every half minute while the live
+                    // socket is open and healthy.
+                    turn = wait_turn(&asks, live.pace(BACKGROUND_EVERY));
+                    if turn == Turn::Stop {
                         // Once more on close, so what the person did last
                         // reaches the team.
+                        live.shutdown();
                         let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
                         if !refused {
                             let _ = sync_now(&inner, &lock);
                         }
                         return;
                     }
-                    asked = std::mem::take(&mut ask.now);
                 }
             })
             .ok();
@@ -587,6 +667,10 @@ impl Drop for AppOrg {
     /// so a slow network never holds the close up for long. A write that has
     /// not gone up is kept here and goes on the next open.
     fn drop(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(live) = &self.live {
+            live.shutdown();
+        }
         {
             let (asks, wake) = &*self.asks;
             if let Ok(mut ask) = asks.lock() {
@@ -647,6 +731,10 @@ fn refused(inner: &mut Inner, reason: String, message: String) -> OrgError {
         let _ = std::fs::remove_file(&inner.grant.mirror);
         inner.mirror = Mirror::fresh(random_device());
         inner.held = None;
+    }
+    // Nothing more comes for this run: the live socket closes too.
+    if let Some(live) = &inner.live {
+        live.shutdown();
     }
     let reason = if reason.is_empty() {
         "not-a-member".to_string()
@@ -740,13 +828,30 @@ fn sync_rounds(inner_arc: &Arc<Mutex<Inner>>) -> Result<SyncState, OrgError> {
     let mut rounds = 0;
     while rounds < MAX_ROUNDS {
         rounds += 1;
-        let (round, app_id) = {
+        let (round, app_id, live) = {
             let inner = lock_inner()?;
             inner.check()?;
-            (prepare(&inner), inner.grant.app_id.clone())
+            // A ticket for the live socket, when it has none (org_live.rs).
+            let live = inner
+                .live
+                .clone()
+                .filter(|live| rounds == 1 && live.wants_ticket())
+                .map(|live| {
+                    let url = crate::org_live::live_url(
+                        &inner.grant.hub,
+                        &inner.grant.slug,
+                        &inner.grant.digest,
+                    );
+                    (live, url)
+                });
+            (prepare(&inner), inner.grant.app_id.clone(), live)
         };
         let sealed = seal_writes(&round.writes, &held, &app_id)?;
-        let body = round.body(sealed).to_string();
+        let mut body = round.body(sealed);
+        if live.is_some() {
+            body["live"] = serde_json::Value::Bool(true);
+        }
+        let body = body.to_string();
         let agent = krate_http::builder(&round.url)
             .timeout_connect(std::time::Duration::from_secs(4))
             .timeout_read(std::time::Duration::from_secs(10))
@@ -813,6 +918,11 @@ fn sync_rounds(inner_arc: &Arc<Mutex<Inner>>) -> Result<SyncState, OrgError> {
             });
         };
         online = true;
+        if let Some((live, url)) = live {
+            if let Some(ticket) = crate::org_live::ticket_of(&answer, url) {
+                live.offer(ticket);
+            }
+        }
         let (plain, rejected) = open_rows(&answer, &held, &app_id);
         let mut inner = lock_inner()?;
         inner.last_online = true;
@@ -1468,5 +1578,110 @@ mod tests {
             Link::Syncing,
             "a write is on its way"
         );
+    }
+
+    /// The background thread's wait, as it runs with the live socket open:
+    /// a half-minute pace, woken by a "changed" from a hub at once.
+    #[test]
+    fn a_changed_message_wakes_the_sync_thread_at_once() {
+        use crate::org_live::{spawn, test_hub::hub, Live, Paces, Ticket, LIVE_EVERY};
+        let (url, _) = hub(|ws| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            ws.send(tungstenite::Message::text(r#"{"t":"changed","s":"9"}"#))
+                .unwrap();
+            while ws.read().is_ok() {}
+        });
+        let asks = Arc::new((Mutex::new(Asks::default()), std::sync::Condvar::new()));
+        let live = Live::new(Paces::default());
+        let (a, b) = (asks.clone(), asks.clone());
+        spawn(live.clone(), move || push(&a), move |_| push(&b));
+        live.offer(Ticket {
+            url,
+            ticket: "ab".repeat(32),
+            protocol: "krate-live".into(),
+        });
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !live.healthy() && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(live.healthy());
+        let pace = live.pace(BACKGROUND_EVERY);
+        assert_eq!(
+            pace, LIVE_EVERY,
+            "the poll slows while the socket is healthy"
+        );
+        let started = std::time::Instant::now();
+        let turn = wait_turn(&asks, pace);
+        assert_eq!(turn, Turn::Pushed);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        live.shutdown();
+    }
+
+    /// A push is never floored: two changes a second apart both sync. An
+    /// app asking that fast with nothing to send still is.
+    #[test]
+    fn a_push_is_not_floored_but_an_app_asking_too_fast_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let org = AppOrg::open_quiet(OrgAccess::Granted(grant(dir.path(), "carol", 0)));
+        let mut inner = org.inner().unwrap();
+        inner.last_sync = Some(std::time::Instant::now());
+        assert!(floored(Turn::Asked, &inner));
+        assert!(!floored(Turn::Pushed, &inner));
+        assert!(!floored(Turn::Timer, &inner));
+        drop(inner);
+        // A push and an ask together: the push wins, the ask is spent.
+        push(&org.asks);
+        org.ask_now();
+        assert_eq!(
+            wait_turn(&org.asks, std::time::Duration::from_secs(30)),
+            Turn::Pushed
+        );
+        assert_eq!(
+            wait_turn(&org.asks, std::time::Duration::from_millis(1)),
+            Turn::Timer
+        );
+    }
+
+    /// The socket dies under a waiting sync thread: it is woken to catch up
+    /// and its pace is back to every few seconds.
+    #[test]
+    fn a_dead_socket_wakes_the_sync_thread_and_the_quick_poll_returns() {
+        use crate::org_live::{spawn, test_hub::hub, Live, Paces, Ticket, LIVE_EVERY};
+        let (url, _) = hub(|ws| {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = ws.close(None);
+            let _ = ws.flush();
+        });
+        let asks = Arc::new((Mutex::new(Asks::default()), std::sync::Condvar::new()));
+        let live = Live::new(Paces::default());
+        let (a, b) = (asks.clone(), asks.clone());
+        spawn(live.clone(), move || push(&a), move |_| push(&b));
+        live.offer(Ticket {
+            url,
+            ticket: "ab".repeat(32),
+            protocol: "krate-live".into(),
+        });
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !live.healthy() && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(live.pace(BACKGROUND_EVERY), LIVE_EVERY);
+        let started = std::time::Instant::now();
+        assert_eq!(
+            wait_turn(&asks, LIVE_EVERY),
+            Turn::Pushed,
+            "woken to catch up"
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(!live.healthy());
+        assert!(
+            live.pace(BACKGROUND_EVERY) <= BACKGROUND_EVERY,
+            "the quick poll again"
+        );
+        live.shutdown();
     }
 }
