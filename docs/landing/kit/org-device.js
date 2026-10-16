@@ -477,8 +477,11 @@
       var rot = mod.keys({
         op: "keyring_rotate", org: o.slug, envelope: keys.envelope.blob, device_secret: secret, secret: await x25519Secret(),
         to: keys.seal_to, recovery_public: keys.recovery && keys.recovery.public_key,
+        credentials: keys.credentials || [],
       });
-      await call("POST", "/keys/rotate", { version: rot.version, public_key: rot.public_key, by_device: id, envelopes: rot.envelopes, recovery_blob: rot.recovery_blob });
+      // The company connections' credentials go with it, sealed again to the
+      // new key: the hub refuses a renewal that leaves one on the old key.
+      await call("POST", "/keys/rotate", { version: rot.version, public_key: rot.public_key, by_device: id, envelopes: rot.envelopes, recovery_blob: rot.recovery_blob, credentials: rot.credentials || {} });
     }
     var view = await call("GET", "/signing?device=" + id);
     if (view.envelope && view.ring && view.ring.current) {

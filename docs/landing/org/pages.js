@@ -144,7 +144,12 @@
       D.device().then(function (dev) {
         if (!dev) { D.toast("Renewing needs a computer that holds the key: open Krate on an owner's computer, or this page in the browser that set " + nameOf() + " up."); return; }
         return Promise.resolve(dev.ready(slug, {})).then(function () { D.toast("The team data key is renewed. Computers that left cannot read anything new."); security(p); });
-      }).catch(function () { D.toast("This browser does not hold " + nameOf() + "'s key. Renew it from a computer that does."); });
+      }).catch(function (err) {
+        // The hub's own words when it answered; the key message only when
+        // this browser really does not hold the key (K-1120).
+        if (err && err.reason && err.message) { D.toast("Renewing did not finish: " + err.message); return; }
+        D.toast("This browser does not hold " + nameOf() + "'s key. Renew it from a computer that does.");
+      });
     }
 
     // --------------------------------------------------------- connections
