@@ -3,8 +3,30 @@ name = "log a day's hours on a project"
 click = "Try it here"
 [[step]]
 click = "Log the first hours"
+# Select and replace (K-1109): a draft, all of it selected and pasted
+# over, then the last word selected with Shift and typed over.
 [[step]]
-type = "Website"
+type = "a first draft"
+[[step]]
+key = "Primary+a"
+[[step]]
+paste = "Webshop"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+type = "site"
+[[step]]
+expect_text = "Website"
+[[step]]
+expect_no_text = "a first draft"
+[[step]]
+expect_no_text = "Webshop"
 [[step]]
 key = "Tab"
 [[step]]

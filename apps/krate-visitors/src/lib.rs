@@ -25,7 +25,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use krate::gfx::{canvas2d, types as gfx};
-use krate::layout::{Look, Rect, Said, Screen};
+use krate::layout::{selected_on_line, Field, Look, Rect, Said, Screen};
 use krate::math::F32Ext as _;
 use krate::math::F64Ext as _;
 use krate::org::{self, Entry, OrgError, Value};
@@ -744,112 +744,15 @@ fn parse_time(text: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// A text field the app edits itself
+// A text field the app edits itself: krate::layout::Field, which selects
+// with Shift and Cmd/Ctrl+A and takes the person's paste as typed text
 // ---------------------------------------------------------------------------
 
-struct Field {
-    text: String,
-    /// Caret, a byte offset on a char boundary.
-    caret: usize,
-    multiline: bool,
-}
-
-impl Field {
-    fn new(multiline: bool) -> Self {
-        Field {
-            text: String::new(),
-            caret: 0,
-            multiline,
-        }
-    }
-
-    fn with(text: &str, multiline: bool) -> Self {
-        let mut f = Field::new(multiline);
-        f.set(text);
-        f
-    }
-
-    fn set(&mut self, text: &str) {
-        self.text = String::from(text);
-        self.caret = self.text.len();
-    }
-
-    fn insert(&mut self, typed: &str) -> bool {
-        let mut clean = String::new();
-        for ch in typed.chars() {
-            if ch == '\n' || ch == '\r' {
-                if self.multiline {
-                    clean.push('\n');
-                }
-            } else if ch == '\t' {
-                clean.push(' ');
-            } else if !ch.is_control() {
-                clean.push(ch);
-            }
-        }
-        if clean.is_empty() {
-            return false;
-        }
-        self.text.insert_str(self.caret, &clean);
-        self.caret += clean.len();
-        true
-    }
-
-    fn prev(&self, at: usize) -> usize {
-        self.text[..at]
-            .char_indices()
-            .next_back()
-            .map(|(i, _)| i)
-            .unwrap_or(0)
-    }
-
-    fn next(&self, at: usize) -> usize {
-        self.text[at..]
-            .chars()
-            .next()
-            .map(|c| at + c.len_utf8())
-            .unwrap_or(at)
-    }
-
-    /// The editing keys every field shares: (text changed, key handled).
-    fn key(&mut self, key: &str) -> (bool, bool) {
-        match key {
-            "Backspace" if self.caret > 0 => {
-                let from = self.prev(self.caret);
-                self.text.replace_range(from..self.caret, "");
-                self.caret = from;
-                (true, true)
-            }
-            "Delete" if self.caret < self.text.len() => {
-                let to = self.next(self.caret);
-                self.text.replace_range(self.caret..to, "");
-                (true, true)
-            }
-            "ArrowLeft" => {
-                self.caret = self.prev(self.caret);
-                (false, true)
-            }
-            "ArrowRight" => {
-                self.caret = self.next(self.caret);
-                (false, true)
-            }
-            "Home" => {
-                self.caret = self.text[..self.caret]
-                    .rfind('\n')
-                    .map(|i| i + 1)
-                    .unwrap_or(0);
-                (false, true)
-            }
-            "End" => {
-                self.caret = self.text[self.caret..]
-                    .find('\n')
-                    .map(|i| self.caret + i)
-                    .unwrap_or(self.text.len());
-                (false, true)
-            }
-            _ => (false, false),
-        }
-    }
+/// A field holding `text`, the caret at its end.
+fn field_with(text: &str, multiline: bool) -> Field {
+    let mut f = Field::new(multiline);
+    f.set(text);
+    f
 }
 
 // ---------------------------------------------------------------------------
@@ -869,6 +772,14 @@ struct Ink {
     good: gfx::Color,
     warn: gfx::Color,
     danger: gfx::Color,
+}
+
+/// Behind selected text: the accent, faint enough to read through.
+fn selection_ink(k: &Ink) -> gfx::Color {
+    gfx::Color {
+        a: 0.28,
+        ..k.accent
+    }
 }
 
 const fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
@@ -1356,6 +1267,20 @@ impl Pen {
         }
         let caret_x = width_of(c, &field.text[..field.caret], size, weight);
         let shift = (caret_x - (inner.w - 4.0)).max(0.0);
+        if let Some((a, b)) = field.selection().filter(|_| focused) {
+            let x0 = width_of(c, &field.text[..a], size, weight);
+            let x1 = width_of(c, &field.text[..b], size, weight);
+            fill(
+                c,
+                Rect::new(
+                    inner.x - shift + x0,
+                    base - size * 0.95,
+                    x1 - x0,
+                    size * 1.2,
+                ),
+                selection_ink(&k),
+            );
+        }
         text(c, &field.text, inner.x - shift, base, size, k.ink, weight);
         if focused {
             fill(
@@ -1411,8 +1336,24 @@ impl Pen {
             .unwrap_or(0);
         let rows = ((inner.h / lh).floor() as usize).max(1);
         let first = (caret_line + 1).saturating_sub(rows);
+        let selection = field.selection().filter(|_| focused);
         let mut y = inner.y;
         for (i, (a, b)) in lines.iter().enumerate().skip(first) {
+            if let Some((s, e)) = selected_on_line((*a, *b), selection) {
+                let x0 = width_of(c, &field.text[*a..s], size, 400);
+                let x1 = width_of(c, &field.text[*a..e], size, 400);
+                // A selected line break shows as a sliver, as text fields do.
+                let w = if selection.is_some_and(|(_, end)| end > *b) {
+                    (x1 - x0).max(4.0)
+                } else {
+                    x1 - x0
+                };
+                fill(
+                    c,
+                    Rect::new(inner.x + x0, y + 2.0, w, size * 1.25),
+                    selection_ink(&k),
+                );
+            }
             text(c, &field.text[*a..*b], inner.x, y + size, size, k.ink, 400);
             if focused && i == caret_line {
                 let cx = inner.x + width_of(c, &field.text[*a..field.caret.max(*a)], size, 400);
@@ -1513,7 +1454,7 @@ impl Form {
             .iter()
             .map(|s| {
                 let text = rec.map(|r| r.shown(s.key)).unwrap_or_default();
-                Field::with(&text, s.kind == Kind::Long)
+                field_with(&text, s.kind == Kind::Long)
             })
             .collect();
         Form {
@@ -3152,7 +3093,7 @@ impl App {
                 self.focus = Focus::Search;
                 let size = self.screen.look.text(14.0);
                 let t = self.search.text.clone();
-                self.search.caret = nearest(
+                let at = nearest(
                     self.c,
                     &t,
                     0,
@@ -3161,6 +3102,7 @@ impl App {
                     size,
                     400,
                 );
+                self.search.move_to(at, false);
             }
             Hit::ClearSearch => {
                 self.search.set("");
@@ -3184,13 +3126,13 @@ impl App {
                     };
                     let field = &mut form.vals[i];
                     if field.multiline {
-                        field.caret = field.text.len();
+                        field.move_to(field.text.len(), false);
                     } else {
                         let t = field.text.clone();
                         let caret_x = width_of(c, &t[..field.caret], size, weight);
                         let shift = (caret_x - (r.w - 28.0)).max(0.0);
-                        field.caret =
-                            nearest(c, &t, 0, t.len(), x - r.x - 12.0 + shift, size, weight);
+                        let at = nearest(c, &t, 0, t.len(), x - r.x - 12.0 + shift, size, weight);
+                        field.move_to(at, false);
                     }
                 }
             }
@@ -3316,9 +3258,11 @@ impl App {
         }
     }
 
-    fn key(&mut self, key: &str, shift: bool) -> bool {
+    /// A key press. `shift` selects; `primary` is Cmd on a Mac and Ctrl
+    /// elsewhere (Cmd+A selects all).
+    fn key(&mut self, key: &str, shift: bool, primary: bool) -> bool {
         if self.form.is_some() {
-            return self.form_key(key, shift);
+            return self.form_key(key, shift, primary);
         }
         match (self.focus, key) {
             (_, "Escape") if self.focus != Focus::None => {
@@ -3382,18 +3326,18 @@ impl App {
                 before != *scroll
             }
             (Focus::Search, k) => {
-                let (changed, handled) = self.search.key(k);
+                let (changed, handled) = self.search.key_with(k, shift, primary);
                 if changed {
                     self.list_scroll = 0.0;
                 }
                 handled
             }
-            (Focus::Note, k) => self.note.key(k).1,
+            (Focus::Note, k) => self.note.key_with(k, shift, primary).1,
             _ => false,
         }
     }
 
-    fn form_key(&mut self, key: &str, shift: bool) -> bool {
+    fn form_key(&mut self, key: &str, shift: bool, primary: bool) -> bool {
         let Focus::Form(i) = self.focus else {
             return match key {
                 "Escape" => {
@@ -3440,11 +3384,12 @@ impl App {
             }
             "ArrowUp" | "ArrowDown" if form.specs[i].kind == Kind::Long => {
                 let f = &mut form.vals[i];
-                f.caret = if key == "ArrowUp" { 0 } else { f.text.len() };
+                let to = if key == "ArrowUp" { 0 } else { f.text.len() };
+                f.move_to(to, shift);
                 true
             }
             _ => {
-                let (changed, handled) = form.vals[i].key(key);
+                let (changed, handled) = form.vals[i].key_with(key, shift, primary);
                 if changed {
                     form.error = None;
                 }
@@ -3758,7 +3703,10 @@ impl krate::Guest for Component {
                 Some(types::Event::Wheel(w)) => dirty = app.wheel(w.x, w.y, w.dy),
                 Some(types::Event::TextInput(s)) => dirty = app.typed(&s),
                 Some(types::Event::Key(k)) if k.pressed => {
-                    dirty = app.key(&k.key, k.modifiers.shift)
+                    // Cmd on a Mac, Ctrl elsewhere: the app cannot tell
+                    // which system it is on, and needs not.
+                    let m = k.modifiers;
+                    dirty = app.key(&k.key, m.shift, m.meta || m.control);
                 }
                 _ => {}
             }

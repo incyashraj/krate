@@ -3,8 +3,34 @@ name = "add a company and log a call"
 click = "Try it here"
 [[step]]
 click = "Add the first company"
+# Select and replace (K-1109): a draft, all of it selected and pasted
+# over, then the last word selected with Shift and typed over.
 [[step]]
-type = "Northwind Trading"
+type = "a first draft"
+[[step]]
+key = "Primary+a"
+[[step]]
+paste = "Northwind Travel"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+type = "Trading"
+[[step]]
+expect_text = "Northwind Trading"
+[[step]]
+expect_no_text = "a first draft"
+[[step]]
+expect_no_text = "Northwind Travel"
 [[step]]
 click = "Add company"
 [[step]]

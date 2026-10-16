@@ -3,8 +3,32 @@ name = "file a ticket and solve it"
 click = "Try it here"
 [[step]]
 click = "File the first ticket"
+# Select and replace (K-1109): a draft, all of it selected and pasted
+# over, then the last word selected with Shift and typed over.
 [[step]]
-type = "Printer on floor 2 jams"
+type = "a first draft"
+[[step]]
+key = "Primary+a"
+[[step]]
+paste = "Printer on floor 2 beeps"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+type = "jams"
+[[step]]
+expect_text = "Printer on floor 2 jams"
+[[step]]
+expect_no_text = "a first draft"
+[[step]]
+expect_no_text = "Printer on floor 2 beeps"
 [[step]]
 click = "Urgent"
 [[step]]

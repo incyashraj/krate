@@ -11,8 +11,32 @@ click = "Add shift"
 expect_text = "Put you on the early shift"
 [[step]]
 click = "Ask for a swap"
+# Select and replace (K-1109): a draft, all of it selected and pasted
+# over, then the last word selected with Shift and typed over.
 [[step]]
-type = "Hospital appointment"
+type = "a first draft"
+[[step]]
+key = "Primary+a"
+[[step]]
+paste = "Hospital visit"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+type = "appointment"
+[[step]]
+expect_text = "Hospital appointment"
+[[step]]
+expect_no_text = "a first draft"
+[[step]]
+expect_no_text = "Hospital visit"
 [[step]]
 click = "Ask for a swap"
 [[step]]
