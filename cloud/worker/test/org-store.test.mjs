@@ -88,6 +88,8 @@ test("the executable matrix is the contract's table", () => {
     // the people who approve, and a version's own sender, read its code.
     "candidate.changes": "y - own y -",
     "approval.policy": "y - - - -",
+    // Staged rollout (org-rollout.js): who chooses which version opens.
+    "release.rollout": "y y - - -",
   };
   assert.deepStrictEqual(Object.keys(MATRIX).sort(), Object.keys(table).sort());
   for (const [action, row] of Object.entries(table)) {

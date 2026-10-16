@@ -46,6 +46,8 @@ import { leaseRoute, leaseKeyRoute } from "./org-lease.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
+// Staged rollout: a pilot group first, pinned groups (G10).
+import { orgRolloutRoute } from "./org-rollout.js";
 // What an approver sees and must confirm (IC-950); after release control.
 import { judgementCaps } from "./org-review.js";
 // Company connections (IC-952). After org-releases.js, whose checks a
@@ -7611,7 +7613,7 @@ async function orgRouteCore(request, url, env, identity, ctx) {
   const routed =
     (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) ||
     (await orgDeclineRoute(h)) || (await orgNotesRoute(h)) || (await orgRequestsRoute(h)) || (await orgNotifyRoute(h)) || (await orgApprovalsRoute(h)) ||
-    (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
+    (await orgRolloutRoute(h)) || (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
     (await orgScimRoute(h)) || (await auditExportRoute(h)) || (await orgSamlRoute(h)) ||
     (await orgKeysRoute(h)) ||
     (await orgSigningRoute(h)) ||
@@ -7725,6 +7727,9 @@ async function fetchPrivate(request, url, hash, object, slug, big, env) {
         size: object.size,
         org: { slug, name: answer.body.org_name },
         offline: answer.body.offline,
+        // The version this person should have now (staged rollout,
+        // org-rollout.js): a check-in on another one hears it.
+        ...(answer.body.for_you ? { for_you: answer.body.for_you } : {}),
       }),
       { headers: { "content-type": "application/json", ...noStore } },
     );

@@ -195,6 +195,8 @@
     // an owner sets the rules.
     "candidate.changes": { owner: "yes", reviewer: "yes", developer: "own" },
     "approval.policy": { owner: "yes" },
+    // Staged rollout (org-rollout.js): a pilot group first, pinned groups.
+    "release.rollout": { owner: "yes", admin: "yes" },
   };
 
   function can(role, action) {
