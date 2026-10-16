@@ -27,8 +27,204 @@
 //! plain path has no redirect code), so a redirect off the base cannot carry
 //! it; a new request the app makes to the redirect's target is routed again,
 //! and gets the credential only if that target is inside the base too.
+//!
+//! When the connection is set to tell the API who is calling, a request it
+//! sends also carries [`IDENTITY_HEADER`]: a short-lived token the hub
+//! signed, naming the person, organisation, app, release and connection,
+//! for the connection's address. It is added and replaced exactly like the
+//! credential header, and never on a request outside the base. See
+//! [`Identity`].
+
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use krate_adapter_common::net::PlainHttpUrl;
+
+use crate::uapi_dispatch::Header;
+
+/// The header that tells a company API who is calling: a compact JWT
+/// (EdDSA) the hub signed, checked by the API against the hub's
+/// `/.well-known/jwks.json`.
+pub const IDENTITY_HEADER: &str = "Krate-Identity";
+
+/// A token lives five minutes (cloud/worker org-identity-token.js). A new
+/// one is fetched once fewer than this many seconds remain, so a running
+/// app swaps it about a minute before it would stop being good, with room
+/// for a slow hub.
+pub const IDENTITY_REFRESH_SECONDS: u64 = 60;
+
+/// After a refresh that got nothing, wait this long before asking again,
+/// so a hub that is down is not asked on every request.
+const IDENTITY_RETRY_SECONDS: u64 = 30;
+
+/// One identity token and when, by this computer's clock, it stops being
+/// good. Shown as hidden in every `Debug` print: it names a person.
+#[derive(Clone, PartialEq, Eq)]
+pub struct IdentityToken {
+    jwt: String,
+    expires_at: u64,
+}
+
+impl IdentityToken {
+    /// `expires_at` is seconds since the epoch on this computer's clock:
+    /// the hub's `expires_in` added to the time it answered, so a computer
+    /// whose clock is off still sends it for its whole life.
+    pub fn new(jwt: impl Into<String>, expires_at: u64) -> Self {
+        Self {
+            jwt: jwt.into(),
+            expires_at,
+        }
+    }
+}
+
+impl std::fmt::Debug for IdentityToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "IdentityToken(<hidden>, until {})", self.expires_at)
+    }
+}
+
+/// Asks the hub for a fresh token for this run; `None` when it could not
+/// (offline, refused, or the setting was turned off).
+pub type IdentityRefresh = Box<dyn Fn() -> Option<IdentityToken> + Send + Sync>;
+
+/// A connection's identity token for this run, kept fresh off the app's
+/// path: reading it never waits on the hub. When fewer than
+/// [`IDENTITY_REFRESH_SECONDS`] remain, the read starts one refresh on a
+/// thread of its own and answers the token it has while it is still good.
+///
+/// If the token has run out and no fresh one has come (the hub is down, or
+/// the app was idle for longer than a token lives), the request is sent
+/// without it rather than refused: the credential still decides who gets
+/// in, and the token is information for the API's log, so a missing one
+/// must never break an app that works.
+#[derive(Clone)]
+pub struct Identity(Arc<IdentityInner>);
+
+struct IdentityInner {
+    token: Mutex<Option<IdentityToken>>,
+    refreshing: AtomicBool,
+    retry_after: AtomicU64,
+    refresh: Option<IdentityRefresh>,
+}
+
+impl Identity {
+    pub fn new(token: IdentityToken, refresh: Option<IdentityRefresh>) -> Self {
+        Self(Arc::new(IdentityInner {
+            token: Mutex::new(Some(token)),
+            refreshing: AtomicBool::new(false),
+            retry_after: AtomicU64::new(0),
+            refresh,
+        }))
+    }
+
+    /// The token to send at `now` (seconds since the epoch), or `None`
+    /// when there is no good one.
+    pub fn current(&self, now: u64) -> Option<String> {
+        let token = self
+            .0
+            .token
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let remaining = token
+            .as_ref()
+            .map_or(0, |t| t.expires_at.saturating_sub(now));
+        if remaining < IDENTITY_REFRESH_SECONDS {
+            self.start_refresh(now);
+        }
+        token.filter(|_| remaining > 0).map(|t| t.jwt)
+    }
+
+    /// One refresh at a time, on its own thread; none while waiting after
+    /// one that failed.
+    fn start_refresh(&self, now: u64) {
+        if self.0.refresh.is_none() || now < self.0.retry_after.load(Ordering::Relaxed) {
+            return;
+        }
+        if self.0.refreshing.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let me = self.clone();
+        let job = move || {
+            if let Some(refresh) = &me.0.refresh {
+                match refresh() {
+                    Some(fresh) => {
+                        *me.0.token.lock().unwrap_or_else(|p| p.into_inner()) = Some(fresh);
+                    }
+                    // Counted from the moment the refresh was asked for,
+                    // on the same clock the reads use.
+                    None => {
+                        me.0.retry_after
+                            .store(now + IDENTITY_RETRY_SECONDS, Ordering::Relaxed)
+                    }
+                }
+            }
+            me.0.refreshing.store(false, Ordering::Release);
+        };
+        // A browser build has no threads, and no connections either (only
+        // the CLI resolves them); it simply never refreshes.
+        #[cfg(not(target_arch = "wasm32"))]
+        if std::thread::Builder::new()
+            .name("krate-identity".into())
+            .spawn(job)
+            .is_err()
+        {
+            self.0.refreshing.store(false, Ordering::Release);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            drop(job);
+            self.0.refreshing.store(false, Ordering::Release);
+        }
+    }
+}
+
+impl PartialEq for Identity {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for Identity {}
+
+impl std::fmt::Debug for Identity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Identity(<hidden>)")
+    }
+}
+
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Put a connection's headers on a request [`Connections::route`] said is
+/// the connection's: the credential, and the identity token when there is
+/// one. Any header of either name the app set is dropped first, so the app
+/// can neither send its own guess beside the credential nor put words of
+/// its own in the identity header -- also when there is no token to add.
+pub fn add_connection_headers(
+    headers: &mut Vec<Header>,
+    header_name: &str,
+    value: &str,
+    identity: Option<&str>,
+) {
+    headers.retain(|header| {
+        !header.name.eq_ignore_ascii_case(header_name)
+            && !header.name.eq_ignore_ascii_case(IDENTITY_HEADER)
+    });
+    headers.push(Header {
+        name: header_name.to_string(),
+        value: value.to_string(),
+    });
+    if let Some(token) = identity {
+        headers.push(Header {
+            name: IDENTITY_HEADER.to_string(),
+            value: token.to_string(),
+        });
+    }
+}
 
 /// A credential value: shown as hidden in every `Debug` print.
 #[derive(Clone, PartialEq, Eq)]
@@ -152,6 +348,9 @@ pub struct Connection {
     /// The path prefixes under the base it allows, each starting with `/`.
     pub paths: Vec<String>,
     pub state: ConnectionState,
+    /// The token that tells the API who is calling, when the connection is
+    /// set to and the hub issued one.
+    pub identity: Option<Identity>,
 }
 
 /// A connection's base, parsed once.
@@ -204,12 +403,14 @@ pub enum Route<'a> {
     Plain,
     /// Inside a base, and not sent: the words say why.
     Refused(String),
-    /// Inside a base and allowed: add this header. `host` and `port` are
-    /// where it goes, for the organisation's network ceiling.
+    /// Inside a base and allowed: add this header, and the identity token
+    /// when there is a good one ([`add_connection_headers`]). `host` and
+    /// `port` are where it goes, for the organisation's network ceiling.
     Credential {
         name: &'a str,
         header_name: &'a str,
         value: &'a str,
+        identity: Option<String>,
         host: String,
         port: u16,
     },
@@ -276,6 +477,17 @@ impl Connections {
     /// `net.connection:<name>`: a connection the run was not granted is not
     /// its own, and a request to its base is an ordinary one.
     pub fn route(&self, method: &str, url: &str, granted: impl Fn(&str) -> bool) -> Route<'_> {
+        self.route_at(method, url, granted, now_seconds())
+    }
+
+    /// [`Connections::route`] at `now`, seconds since the epoch.
+    pub fn route_at(
+        &self,
+        method: &str,
+        url: &str,
+        granted: impl Fn(&str) -> bool,
+        now: u64,
+    ) -> Route<'_> {
         let Ok(target) = PlainHttpUrl::parse(url) else {
             return Route::Plain;
         };
@@ -349,6 +561,7 @@ impl Connections {
             name,
             header_name,
             value: value.reveal(),
+            identity: connection.identity.as_ref().and_then(|i| i.current(now)),
             host: target.host,
             port: target.port,
         }
@@ -383,6 +596,7 @@ mod tests {
             methods: vec!["GET".into(), "POST".into()],
             paths: vec!["/invoices".into(), "/rates/".into()],
             state,
+            identity: None,
         }
     }
 
@@ -412,6 +626,7 @@ mod tests {
                     value,
                     host,
                     port,
+                    ..
                 } => {
                     assert_eq!(
                         (name, header_name, value),
@@ -590,6 +805,173 @@ mod tests {
                 "{bad:?}"
             );
         }
+    }
+
+    // ------------------------------------- telling the API who is calling
+
+    const TOKEN: &str = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJnaXRodWI6ZGFuIn0.c2ln";
+    const NOW: u64 = 1_800_000_000;
+
+    fn with_identity(
+        token: Option<IdentityToken>,
+        refresh: Option<IdentityRefresh>,
+    ) -> Connections {
+        let mut c = finance(ready());
+        c.identity = token.map(|t| Identity::new(t, refresh));
+        Connections::new(vec![c])
+    }
+
+    /// The headers a request leaves with: the app's, then what the route
+    /// adds, as the dispatcher applies it.
+    fn sent(c: &Connections, url: &str, app: Vec<Header>, now: u64) -> Option<Vec<Header>> {
+        match c.route_at("GET", url, yes, now) {
+            Route::Credential {
+                header_name,
+                value,
+                identity,
+                ..
+            } => {
+                let mut headers = app;
+                add_connection_headers(&mut headers, header_name, value, identity.as_deref());
+                Some(headers)
+            }
+            Route::Plain => None,
+            Route::Refused(words) => panic!("{url}: {words}"),
+        }
+    }
+
+    fn named<'h>(headers: &'h [Header], name: &str) -> Vec<&'h str> {
+        headers
+            .iter()
+            .filter(|h| h.name.eq_ignore_ascii_case(name))
+            .map(|h| h.value.as_str())
+            .collect()
+    }
+
+    fn header(name: &str, value: &str) -> Header {
+        Header {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+
+    #[test]
+    fn the_identity_token_rides_inside_the_base_replacing_the_apps_own() {
+        let c = with_identity(Some(IdentityToken::new(TOKEN, NOW + 300)), None);
+        let app = vec![
+            header("KRATE-IDENTITY", "github:alice, trust me"),
+            header("Accept", "application/json"),
+        ];
+        let headers = sent(&c, "https://api.acme.example/finance/invoices", app, NOW)
+            .expect("inside the base");
+        assert_eq!(named(&headers, IDENTITY_HEADER), vec![TOKEN]);
+        assert_eq!(named(&headers, "Authorization"), vec![SECRET]);
+        assert_eq!(named(&headers, "Accept"), vec!["application/json"]);
+    }
+
+    #[test]
+    fn the_identity_token_never_goes_outside_the_base() {
+        let c = with_identity(Some(IdentityToken::new(TOKEN, NOW + 300)), None);
+        for url in [
+            "https://api.acme.example/other",
+            "https://api.acme.example/finance-old/invoices",
+            "https://evil.example/finance/invoices",
+            "http://api.acme.example/finance/invoices",
+        ] {
+            assert_eq!(c.route_at("GET", url, yes, NOW), Route::Plain, "{url}");
+        }
+        // Refused inside the base: nothing is sent at all.
+        assert!(matches!(
+            c.route_at(
+                "DELETE",
+                "https://api.acme.example/finance/invoices",
+                yes,
+                NOW
+            ),
+            Route::Refused(_)
+        ));
+    }
+
+    #[test]
+    fn no_token_no_header_and_the_request_still_goes() {
+        let url = "https://api.acme.example/finance/invoices";
+        let forged = || vec![header("Krate-Identity", "forged")];
+        // The setting is off, or the hub issued none.
+        let off = with_identity(None, None);
+        let headers = sent(&off, url, forged(), NOW).expect("still sent");
+        assert!(named(&headers, IDENTITY_HEADER).is_empty(), "{headers:?}");
+        assert_eq!(named(&headers, "Authorization"), vec![SECRET]);
+        // A token that has run out, with no refresh to be had.
+        let stale = with_identity(Some(IdentityToken::new(TOKEN, NOW)), None);
+        let headers = sent(&stale, url, forged(), NOW).expect("still sent");
+        assert!(named(&headers, IDENTITY_HEADER).is_empty(), "{headers:?}");
+    }
+
+    #[test]
+    fn a_token_near_its_end_is_refreshed_off_the_path() {
+        use std::sync::atomic::AtomicUsize;
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counted = asked.clone();
+        let refresh: IdentityRefresh = Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Some(IdentityToken::new("fresh.token.sig", NOW + 300))
+        });
+        let c = with_identity(Some(IdentityToken::new(TOKEN, NOW + 30)), Some(refresh));
+        let url = "https://api.acme.example/finance/invoices";
+        // Thirty seconds left: the one it has goes now, a new one is asked
+        // for beside it.
+        let first = sent(&c, url, Vec::new(), NOW).unwrap();
+        assert_eq!(named(&first, IDENTITY_HEADER), vec![TOKEN]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let headers = sent(&c, url, Vec::new(), NOW).unwrap();
+            if named(&headers, IDENTITY_HEADER) == vec!["fresh.token.sig"] {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "never refreshed");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            asked.load(Ordering::SeqCst),
+            1,
+            "one refresh, not one per request"
+        );
+    }
+
+    #[test]
+    fn a_failed_refresh_sends_without_and_waits_before_asking_again() {
+        use std::sync::atomic::AtomicUsize;
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counted = asked.clone();
+        let refresh: IdentityRefresh = Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            None
+        });
+        let c = with_identity(Some(IdentityToken::new(TOKEN, NOW - 1)), Some(refresh));
+        let url = "https://api.acme.example/finance/invoices";
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while asked.load(Ordering::SeqCst) == 0 {
+            let headers = sent(&c, url, Vec::new(), NOW).expect("sent without it");
+            assert!(named(&headers, IDENTITY_HEADER).is_empty());
+            assert!(std::time::Instant::now() < deadline, "never asked");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        // Let the failed refresh finish, then ask more: no new refresh
+        // inside the wait.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        for _ in 0..20 {
+            let headers = sent(&c, url, Vec::new(), NOW).expect("sent without it");
+            assert!(named(&headers, IDENTITY_HEADER).is_empty());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn the_identity_token_never_shows_in_a_debug_print() {
+        let c = with_identity(Some(IdentityToken::new(TOKEN, NOW + 300)), None);
+        let printed = format!("{c:?}");
+        assert!(!printed.contains(TOKEN), "{printed}");
     }
 
     #[test]
