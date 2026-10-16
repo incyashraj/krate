@@ -1,0 +1,21 @@
+name = "ask for something and approve it"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Make the first request"
+[[step]]
+type = "A second monitor"
+[[step]]
+click = "you"
+[[step]]
+click = "Send request"
+[[step]]
+expect_text = "Waiting for you"
+[[step]]
+click = "Approve"
+[[step]]
+type = "Yes, order the 27 inch one"
+[[step]]
+click = "Approve"
+[[step]]
+expect_text = "Approved it: Yes, order the 27 inch one"

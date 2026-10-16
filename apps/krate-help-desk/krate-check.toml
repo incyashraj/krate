@@ -1,0 +1,17 @@
+name = "file a ticket and solve it"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "File the first ticket"
+[[step]]
+type = "Printer on floor 2 jams"
+[[step]]
+click = "Urgent"
+[[step]]
+click = "File ticket"
+[[step]]
+expect_text = "Printer on floor 2 jams"
+[[step]]
+click = "Mark solved"
+[[step]]
+expect_text = "Marked it solved"

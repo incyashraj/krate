@@ -1,0 +1,19 @@
+name = "add a laptop and hand it to someone"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Add the first asset"
+[[step]]
+type = "MacBook Air 13 inch"
+[[step]]
+click = "Add asset"
+[[step]]
+expect_text = "In store"
+[[step]]
+click = "Hand to someone"
+[[step]]
+type = "dana"
+[[step]]
+click = "Hand over"
+[[step]]
+expect_text = "Handed it to dana"

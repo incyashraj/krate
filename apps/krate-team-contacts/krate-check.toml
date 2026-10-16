@@ -1,0 +1,29 @@
+name = "add a company and log a call"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Add the first company"
+[[step]]
+type = "Northwind Trading"
+[[step]]
+click = "Add company"
+[[step]]
+click = "Add a person"
+[[step]]
+type = "Priya Shah"
+[[step]]
+click = "Add person"
+[[step]]
+expect_text = "Priya Shah"
+[[step]]
+click = "Log a contact"
+[[step]]
+type = "Called about the quote"
+[[step]]
+key = "Tab"
+[[step]]
+type = "Send the revised quote"
+[[step]]
+click = "Save contact"
+[[step]]
+expect_text = "Contact: Called about the quote"
