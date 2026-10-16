@@ -14,11 +14,18 @@
 //! does not need the connection. The app's request to the address is refused
 //! with the hub's words, and the run says once, at the start, which
 //! connection is not available and why.
+//!
+//! When the connection is set to tell the API who is calling, the hub's
+//! answer also carries a short-lived identity token. The runtime adds it to
+//! the app's requests to the address as `Krate-Identity`, and asks the hub
+//! for a new one (GET .../connections/<name>/identity/<digest>, the same
+//! checks as the credential) on a thread of its own before it runs out.
 
 use krate_manifest::Manifest;
 use krate_policy::SessionPolicy;
 use krate_runtime::connections::{
-    open_credential, Connection, ConnectionState, Connections, Delivered,
+    open_credential, Connection, ConnectionState, Connections, Delivered, Identity,
+    IdentityRefresh, IdentityToken,
 };
 use serde_json::Value;
 
@@ -86,6 +93,52 @@ fn ask(session: &access::OrgSession, name: &str, digest: &str) -> Answer {
         }
         Err(_) => Answer::Unreachable,
     }
+}
+
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// The identity token in a hub answer (`{"identity": {"token",
+/// "expires_in"}}`), timed by this computer's clock from now. `None` when
+/// the connection does not tell the API who is calling, or the hub has no
+/// key to sign one with.
+fn identity_token(answer: &Value) -> Option<IdentityToken> {
+    let identity = &answer["identity"];
+    let token = identity["token"].as_str()?;
+    // A compact JWT is three base64url parts: anything else is not sent.
+    let compact = token.split('.').count() == 3
+        && token.len() <= 4096
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.');
+    let life = identity["expires_in"].as_u64()?.min(60 * 60);
+    compact.then(|| IdentityToken::new(token, now_seconds() + life))
+}
+
+/// Ask the hub for a fresh identity token for this run: what the runtime
+/// calls, off the app's path, when the one it holds is nearly done.
+fn identity_refresh(session: &access::OrgSession, name: &str, digest: &str) -> IdentityRefresh {
+    let url = format!(
+        "{}/orgs/{}/connections/{name}/identity/{digest}",
+        session.hub, session.slug
+    );
+    let authorization = session.authorization.clone();
+    Box::new(move || {
+        let mut request = agent(&url).get(&url).set("Accept", "application/json");
+        if let Some(authorization) = &authorization {
+            request = request.set("Authorization", authorization);
+        }
+        let answer: Value = request
+            .call()
+            .ok()?
+            .into_string()
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())?;
+        identity_token(&answer)
+    })
 }
 
 /// The credential part of the hub's answer, as the runtime's seam takes it:
@@ -222,6 +275,9 @@ pub fn resolve(
             Answer::Ready(answer) => {
                 let base = answer["base"].as_str().unwrap_or_default().to_string();
                 access::remember_connection(&digest, &name, &base, &answer["allow"]);
+                let identity = identity_token(&answer).map(|token| {
+                    Identity::new(token, Some(identity_refresh(&session, &name, &digest)))
+                });
                 out.push(Connection {
                     name: name.clone(),
                     base,
@@ -244,6 +300,7 @@ pub fn resolve(
                         eprintln!("{words}");
                         ConnectionState::Unavailable(words)
                     }),
+                    identity,
                 });
             }
             Answer::Refused { words, base } => {
@@ -258,6 +315,7 @@ pub fn resolve(
                         methods,
                         paths,
                         state: ConnectionState::Unavailable(words),
+                        identity: None,
                     });
                 }
             }
@@ -277,10 +335,32 @@ pub fn resolve(
                         methods,
                         paths,
                         state: ConnectionState::Unavailable(words),
+                        identity: None,
                     });
                 }
             }
         }
     }
     Connections::new(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_identity_token_is_taken_only_in_its_compact_shape() {
+        let good =
+            serde_json::json!({ "identity": { "token": "eyJh.eyJz.c2ln", "expires_in": 300 } });
+        assert!(identity_token(&good).is_some());
+        for bad in [
+            serde_json::json!({}),
+            serde_json::json!({ "identity": null }),
+            serde_json::json!({ "identity": { "token": "eyJh.eyJz", "expires_in": 300 } }),
+            serde_json::json!({ "identity": { "token": "a.b.c\r\nX-Evil: 1", "expires_in": 300 } }),
+            serde_json::json!({ "identity": { "token": "eyJh.eyJz.c2ln" } }),
+        ] {
+            assert!(identity_token(&bad).is_none(), "{bad}");
+        }
+    }
 }
