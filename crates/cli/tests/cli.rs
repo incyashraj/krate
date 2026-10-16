@@ -22867,7 +22867,21 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
             ("click", "Write a note"),
             ("type", title),
             ("key", "Enter"),
-            ("type", "Twelve, stackable. Bob has the budget."),
+            // A paste with no clipboard permission, over a selection
+            // (K-1109): typed text, all of it selected, replaced by what
+            // the person pasted; then Shift+Home selects the last line and
+            // typing replaces it.
+            ("type", "a first draft"),
+            ("key", "Primary+a"),
+            ("paste", "Twelve, stackable.\nBob has the budget."),
+            ("expect_text", "Twelve, stackable."),
+            ("expect_no_text", "a first draft"),
+            ("key", "Shift+Home"),
+            ("shoot", "team-notes-selected.png"),
+            ("type", "Bob pays."),
+            ("expect_text", "Bob pays."),
+            ("expect_no_text", "Bob has the budget"),
+            ("shoot", "team-notes-pasted.png"),
             ("wait_ms", "900"),
             ("expect_text", title),
             ("expect_text", "Waiting for your team's key"),

@@ -325,6 +325,63 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.read_clipboard_text().map_err(Into::into)
     }
 
+    /// What the person pasted with their own keystroke (Cmd+V on a Mac,
+    /// Ctrl+V elsewhere) into the app's window, as text input (K-1109).
+    ///
+    /// The keystroke is the person's, as a paste into a system text field
+    /// is, so it needs no `ui.clipboard:read`: the app is handed exactly
+    /// what was pasted, when it was pasted, and cannot read the clipboard
+    /// at any other time. An app that holds `ui.clipboard:read` reads the
+    /// clipboard itself on that keystroke, so it gets nothing here and a
+    /// paste is never typed twice. The organisation's ceiling still
+    /// applies: where the machine policy blocks clipboard reads for this
+    /// app, nothing is pasted.
+    pub fn person_paste_text(&self) -> Option<String> {
+        let read = krate_manifest::Capability::new("ui", "clipboard", Some("read")).ok()?;
+        let policy = self.guard.policy();
+        if policy.organisation_blocks(&read).is_some() || policy.allows(&read) {
+            return None;
+        }
+        self.adapter
+            .read_clipboard_text()
+            .ok()
+            .filter(|text| !text.is_empty())
+    }
+
+    /// A key the person pressed: when it is their paste keystroke, queue
+    /// what they pasted as text input for the focused field. True when
+    /// something was pasted.
+    pub fn paste_for_person(
+        &self,
+        window: WindowId,
+        widget: Option<WidgetId>,
+        key: &str,
+        modifiers: Modifiers,
+    ) -> bool {
+        if !is_paste_chord(key, modifiers) {
+            return false;
+        }
+        let Some(text) = self.person_paste_text() else {
+            return false;
+        };
+        let mut pasted = false;
+        for piece in paste_pieces(&text) {
+            if let Ok(event) = TextInputEvent::new(window, widget, piece) {
+                pasted |= self.queue_text_input(event).is_ok();
+            }
+        }
+        pasted
+    }
+
+    /// Put text on the run's clipboard for a check task's `paste` step. A
+    /// check run is headless, so this is Krate's in-process clipboard.
+    /// Never the system clipboard: a run with native windows puts nothing.
+    pub(crate) fn put_on_run_clipboard(&self, text: &str) {
+        if !self.adapter.info().native_windows {
+            let _ = self.adapter.write_clipboard_text(text);
+        }
+    }
+
     pub fn write_clipboard_text(&self, text: &str) -> UiDispatchResult<()> {
         self.check(&UapiCall::Ui(UiCall::ClipboardWrite))?;
         self.adapter.write_clipboard_text(text).map_err(Into::into)
@@ -745,6 +802,38 @@ impl<'a> Phase3UiDispatcher<'a> {
     fn check(&self, call: &UapiCall) -> UiDispatchResult<()> {
         self.guard.check(call).map(|_| ()).map_err(map_ui_policy)
     }
+}
+
+/// The keystroke a person pastes with: Cmd+V on a Mac, Ctrl+V elsewhere,
+/// with no other modifier but Shift.
+pub(crate) fn is_paste_chord(key: &str, m: Modifiers) -> bool {
+    let primary = if cfg!(target_os = "macos") {
+        m.meta && !m.control
+    } else {
+        m.control && !m.meta
+    };
+    primary && !m.alt && key.eq_ignore_ascii_case("v")
+}
+
+/// A paste as text-input events: each at most as long as one may be, cut
+/// on character boundaries.
+pub(crate) fn paste_pieces(text: &str) -> Vec<&str> {
+    const MOST: usize = 4_096;
+    let mut pieces = Vec::new();
+    let mut start = 0;
+    let mut count = 0;
+    for (at, _) in text.char_indices() {
+        if count == MOST {
+            pieces.push(&text[start..at]);
+            start = at;
+            count = 0;
+        }
+        count += 1;
+    }
+    if start < text.len() {
+        pieces.push(&text[start..]);
+    }
+    pieces
 }
 
 fn discover_host_ui_adapter() -> Box<dyn UiAdapter> {
@@ -1820,6 +1909,80 @@ mod tests {
             .expect_err("clipboard should need explicit grant");
 
         assert!(matches!(err, UiDispatchError::PermissionDenied));
+    }
+
+    /// K-1109: the person's own Cmd/Ctrl+V reaches a field the app draws
+    /// itself as typed text, with no clipboard grant; an app that holds the
+    /// grant reads it itself and gets nothing twice; the organisation's
+    /// ceiling blocks it; any other key pastes nothing.
+    #[test]
+    fn the_persons_paste_arrives_as_text_input_without_the_clipboard_grant() {
+        let primary = if cfg!(target_os = "macos") {
+            Modifiers {
+                meta: true,
+                ..Default::default()
+            }
+        } else {
+            Modifiers {
+                control: true,
+                ..Default::default()
+            }
+        };
+        let paste_with = |policy: SessionPolicy, key: &str, m: Modifiers| {
+            let guard = UapiGuard::new(policy);
+            let adapter = DraftUiAdapter::default();
+            adapter
+                .write_clipboard_text("Twelve chairs\nstackable")
+                .expect("clipboard");
+            let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+            let window = dispatcher
+                .create_window(
+                    WindowOptions::new("Notes", WindowSize::new(400, 300).expect("size"))
+                        .expect("options"),
+                )
+                .expect("window");
+            let pasted = dispatcher.paste_for_person(window, None, key, m);
+            let typed: Vec<String> = dispatcher
+                .drain_events()
+                .expect("events")
+                .into_iter()
+                .filter_map(|e| match e {
+                    UiEvent::TextInput(t) => Some(t.text),
+                    _ => None,
+                })
+                .collect();
+            (pasted, typed)
+        };
+        let window_only =
+            SessionPolicy::from_cli_grants(&["ui.window:create".to_string()]).expect("policy");
+        assert_eq!(
+            paste_with(window_only.clone(), "v", primary),
+            (true, vec!["Twelve chairs\nstackable".to_string()])
+        );
+        assert_eq!(
+            paste_with(window_only.clone(), "x", primary),
+            (false, vec![])
+        );
+        assert_eq!(
+            paste_with(window_only.clone(), "v", Modifiers::default()),
+            (false, vec![])
+        );
+        let reads_itself = SessionPolicy::from_cli_grants(&[
+            "ui.window:create".to_string(),
+            "ui.clipboard:read".to_string(),
+        ])
+        .expect("policy");
+        assert_eq!(paste_with(reads_itself, "v", primary), (false, vec![]));
+        let blocked = window_only.with_organisation(krate_policy::OrgCeiling {
+            deny: vec![krate_policy::DenyRule::parse("ui.clipboard").expect("rule")],
+            network: None,
+        });
+        assert_eq!(paste_with(blocked, "v", primary), (false, vec![]));
+        // A long paste is cut into pieces a text-input event may carry.
+        let long = "é".repeat(4_097);
+        let pieces = paste_pieces(&long);
+        assert_eq!(pieces.len(), 2);
+        assert_eq!(pieces.concat(), long);
     }
 
     #[test]

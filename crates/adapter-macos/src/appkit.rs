@@ -2875,9 +2875,21 @@ mod platform {
             // Command shortcuts belong to the menu, not the game. Capturing
             // them here would eat Cmd-Q and Cmd-W at the pump, and an app you
             // cannot quit is a worse bug than the one this function fixes.
+            //
+            // One exception: Cmd-V in a window the app draws itself. No
+            // responder there takes the menu's paste:, so the keystroke did
+            // nothing (K-1109). It goes to the runtime as a key, which hands
+            // the app what the person pasted.
             let flags = event.modifierFlags();
             if flags.contains(NSEventModifierFlags::Command) {
-                return false;
+                let paste = !flags.contains(NSEventModifierFlags::Control)
+                    && !flags.contains(NSEventModifierFlags::Option)
+                    && event
+                        .charactersIgnoringModifiers()
+                        .is_some_and(|c| c.to_string().eq_ignore_ascii_case("v"));
+                if !paste {
+                    return false;
+                }
             }
 
             let characters = event.charactersIgnoringModifiers();
@@ -2903,7 +2915,8 @@ mod platform {
 
             // Printable text travels with the press, the same shape the winit
             // adapters produce, so the host's text synthesis works unchanged.
-            let text = if pressed {
+            // A Command chord types nothing: Cmd-V is a paste, not a "v".
+            let text = if pressed && !flags.contains(NSEventModifierFlags::Command) {
                 characters.filter(|value| {
                     value.chars().next().is_some_and(|ch| {
                         !ch.is_control() && !('\u{f700}'..='\u{f8ff}').contains(&ch)

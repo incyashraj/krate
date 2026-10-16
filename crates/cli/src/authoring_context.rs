@@ -202,8 +202,10 @@ key = \"Enter\"\n\
 expect_text = \"milk\"   # a label containing this must now be on screen\n\
 ```\n\
 \n\
-Steps: `click`, `type`, `key`, `wait_ms`, `expect_text`, `expect_no_text`,\n\
-one per step. A task with no expectation is refused: completing it has to\n\
+Steps: `click`, `type`, `key`, `paste`, `wait_ms`, `expect_text`,\n\
+`expect_no_text`, one per step; `key = \"Shift+ArrowLeft\"` or\n\
+`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord, and\n\
+`paste = \"text\"` pastes it as a person would. A task with no expectation is refused: completing it has to\n\
 mean something. In an app drawn on a canvas, `click` and `expect_text`\n\
 find what the app tells the screen reader (`krate::layout::Said`), at the\n\
 place it said. `krate run <app> --task steps.toml` does the steps alone\n\
@@ -454,7 +456,13 @@ A window wider than tall plays in landscape on a phone. A text field \
 the app draws itself (a name box in a game, a canvas editor) calls \
 `krate::ui::text_entry::start(win)` when it takes focus and `stop(win)` \
 when it loses it: a phone shows its keyboard, and the typing arrives as \
-the usual `TextInput` and key events. A game that reads keys and never \
+the usual `TextInput` and key events. Keep such a field in a \
+`krate::layout::Field`: `insert` the `TextInput` text, pass keys to \
+`key_with(&k.key, k.modifiers.shift, k.modifiers.meta || \
+k.modifiers.control)`, draw `selection()` behind the text. It selects with \
+Shift and Cmd/Ctrl+A, and the person's own Cmd+V or Ctrl+V arrives as \
+`TextInput` with no clipboard permission: never ask for \
+`ui.clipboard:read` just to paste. A game that reads keys and never \
 reads touch gets an on-screen pad on a phone by itself, built from the \
 keys it asks `key_held` about (Space or Enter is the big button): do not \
 draw one too. On a phone the game should also tap back: \

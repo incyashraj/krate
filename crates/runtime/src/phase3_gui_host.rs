@@ -2691,17 +2691,39 @@ impl Phase3GuiHost {
                     modifiers: Default::default(),
                 })
                 .is_ok()
-        } else if let Some(key) = &step.key {
+        } else if let Some((key, shift, primary)) = step.key_chord() {
+            let modifiers = chord_modifiers(shift, primary);
             [true, false].iter().all(|&pressed| {
-                dispatcher
+                let routed = dispatcher
                     .route_key_event(crate::phase3_ui::KeyRouteRequest {
                         window,
                         key: key.clone(),
                         pressed,
-                        modifiers: Default::default(),
+                        modifiers,
+                    })
+                    .is_ok();
+                if pressed {
+                    let focused = dispatcher.focused_widget(window).ok().flatten();
+                    dispatcher.paste_for_person(window, focused, &key, modifiers);
+                }
+                routed
+            })
+        } else if let Some(text) = &step.paste {
+            // The run's own clipboard: a check run is headless, so this is
+            // Krate's in-process one, never the person's.
+            dispatcher.put_on_run_clipboard(text);
+            let modifiers = chord_modifiers(false, true);
+            let focused = dispatcher.focused_widget(window).ok().flatten();
+            [true, false].iter().all(|&pressed| {
+                dispatcher
+                    .route_key_event(crate::phase3_ui::KeyRouteRequest {
+                        window,
+                        key: "v".to_string(),
+                        pressed,
+                        modifiers,
                     })
                     .is_ok()
-            })
+            }) && dispatcher.paste_for_person(window, focused, "v", modifiers)
         } else if let Some(text) = &step.type_text {
             // Typed text is a text-input event, the way a host delivers it,
             // not one key event per character: an app reads its text field
@@ -3330,6 +3352,10 @@ impl Phase3GuiHost {
                         let _ = dispatcher.queue_text_input(event);
                     }
                 }
+                // The person's own paste: what they pasted arrives as typed
+                // text, so every text field an app draws itself takes a
+                // paste (K-1109).
+                dispatcher.paste_for_person(sample.window, focused, &sample.key, sample.modifiers);
             }
         }
 
@@ -6058,6 +6084,17 @@ impl ui::image::Host for Phase3GuiHost {
         Ok(self
             .sync_native_widgets(window_id)
             .map_err(dispatch_error_to_ui_error))
+    }
+}
+
+/// A check step's chord: Shift, and Cmd on a Mac or Ctrl elsewhere.
+fn chord_modifiers(shift: bool, primary: bool) -> krate_adapter_common::ui::Modifiers {
+    let mac = cfg!(target_os = "macos");
+    krate_adapter_common::ui::Modifiers {
+        shift,
+        control: primary && !mac,
+        alt: false,
+        meta: primary && mac,
     }
 }
 
