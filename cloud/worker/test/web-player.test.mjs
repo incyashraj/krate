@@ -136,3 +136,49 @@ test("a sign-in the Player started comes back to that app's page on this hub, wi
   const other = await worker.fetch(new Request("https://hub.example/login/email/verify?t=tok2"), env);
   assert.ok(other.headers.get("location").startsWith("https://krate.tech/login/done/"), other.headers.get("location"));
 });
+
+test("a company app can go on a home screen as itself: its manifest, its icon, and an address that opens the current release", async () => {
+  const env = withAssets(orgEnv());
+  const hash = "c".repeat(64);
+  const get = (path) => worker.fetch(new Request(`https://hub.example${path}`), env);
+  // The organisation's address for an app serves the same page.
+  const page = await get("/run/org/acme/dev.acme.inspections");
+  assert.strictEqual(page.status, 200);
+  assert.strictEqual(page.headers.get("cross-origin-embedder-policy"), "require-corp");
+  for (const bad of ["/run/org/Acme/x", "/run/org/acme/", "/run/org/acme/a/b", `/run/${hash}/other.json`, "/run/org/a/x"]) {
+    assert.strictEqual((await get(bad)).status, 404, bad);
+  }
+  const res = await get("/run/org/acme/dev.acme.inspections/app.webmanifest?name=" + encodeURIComponent("Site inspections\u0007<b>"));
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get("content-type"), /application\/manifest\+json/);
+  const m = await res.json();
+  assert.deepStrictEqual(
+    [m.id, m.start_url, m.scope, m.display, m.name, m.short_name],
+    ["/run/org/acme/dev.acme.inspections", "/run/org/acme/dev.acme.inspections", "/run/", "standalone", "Site inspectionsb", "Site"],
+  );
+  assert.ok(m.icons.some((i) => i.type === "image/png" && i.src === "/player/krate-app-icon.png"));
+  const svgIcon = m.icons.find((i) => i.type === "image/svg+xml");
+  const icon = await get(svgIcon.src);
+  assert.strictEqual(icon.status, 200);
+  assert.match(icon.headers.get("content-type"), /image\/svg\+xml/);
+  const svg = await icon.text();
+  assert.match(svg, />S<\/text><\/svg>$/, "the name's initial");
+  // A name cannot write into the icon.
+  const evil = await (await get(`/run/${hash}/icon.svg?name=${encodeURIComponent("\"/><script>1</script>")}`)).text();
+  assert.ok(!evil.includes("<script"), evil);
+  const one = await (await get(`/run/${hash}/app.webmanifest`)).json();
+  assert.deepStrictEqual([one.start_url, one.name], [`/run/${hash}`, "Krate app"]);
+});
+
+test("a sign-in started from an organisation's app address comes back to it", async () => {
+  const env = withAssets(orgEnv());
+  const nonce = "n0nce-n0nce-n0nce-2";
+  env._kv.set("email:tok3", JSON.stringify({ email: "erin@example.com", from: "player:org/acme/dev.acme.inspections", nonce, app_nonce: "" }));
+  const res = await worker.fetch(new Request("https://hub.example/login/email/verify?t=tok3"), env);
+  assert.ok(res.headers.get("location").startsWith("/run/org/acme/dev.acme.inspections#"), res.headers.get("location"));
+  for (const from of ["player:org/acme/../x", "player:org/ACME/x", "player:org/acme/x/y"]) {
+    env._kv.set("email:tok4", JSON.stringify({ email: "erin@example.com", from, nonce, app_nonce: "" }));
+    const other = await worker.fetch(new Request("https://hub.example/login/email/verify?t=tok4"), env);
+    assert.ok(other.headers.get("location").startsWith("https://krate.tech/login/done/"), `${from}: ${other.headers.get("location")}`);
+  }
+});

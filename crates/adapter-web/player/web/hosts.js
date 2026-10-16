@@ -123,6 +123,7 @@ export function buildImports(ctx) {
       case 'move': ui.pointer_moved(w, r.x, r.y); break;
       case 'leave': ui.pointer_left(w); break;
       case 'wheel': ui.wheel(w, r.x, r.y, r.dx, r.dy, r.mods); ctx.inputAt(r.at); break;
+      case 'touch': ui.touch(w, r.phase, r.finger, r.x, r.y); if (r.phase !== 'move') ctx.inputAt(r.at); break;
       case 'key': ui.key(w, r.key, r.pressed, r.mods, r.text); if (r.pressed) ctx.inputAt(r.at); break;
       case 'text': ui.text(w, r.text); ctx.inputAt(r.at); break;
       case 'close': ui.close_requested(w); break;
@@ -156,6 +157,50 @@ export function buildImports(ctx) {
     headers: req.headers,
     timeout: req.timeoutMillis,
   });
+
+  // ----------------------------------------------------------------- org
+  // An organisation's team data (store.org, G1). The page holds the copy,
+  // the merge and the sealing (org-data.js over crates/orgdata in the
+  // validator module); this only moves values between jco's shapes and the
+  // copy's wire shapes: null, {t}, {n}, {b}, {x: base64}.
+  const toB64 = (bytes) => {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  };
+  const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+  const toWire = (v) => {
+    switch (v.tag) {
+      case 'text': return { t: v.val };
+      case 'number': return { n: v.val };
+      case 'boolean': return { b: v.val };
+      case 'bytes': return { x: toB64(v.val) };
+      default: return null;
+    }
+  };
+  const fromWire = (w) => {
+    if (w === null || w === undefined) return { tag: 'null' };
+    if ('t' in w) return { tag: 'text', val: w.t };
+    if ('n' in w) return { tag: 'number', val: w.n };
+    if ('b' in w) return { tag: 'boolean', val: w.b };
+    return { tag: 'bytes', val: fromB64(w.x) };
+  };
+  const entry = (e) => ({
+    id: e.id,
+    fields: e.fields.map(([name, w]) => [name, fromWire(w)]),
+    changedBy: e.changed_by,
+    changedAt: BigInt(e.changed_at),
+  });
+  const big = (n) => (n === null || n === undefined ? undefined : BigInt(n));
+  const orgCall = (op, args) => {
+    if (!allows('store.org')) throw new HostError({ tag: 'denied' });
+    // Not an organisation's app opened as its release: no team data, as on
+    // a computer. `unsupported` when this browser cannot be a device.
+    if (ctx.org !== 'on') throw new HostError({ tag: ctx.org === 'unsupported' ? 'unsupported' : 'not-an-org-app' });
+    const { json } = bridge.call(op, args);
+    if (json.err) throw new HostError(json.err);
+    return json.ok;
+  };
 
   // ------------------------------------------------------------------ kv
   const kvCall = (op, args, value) => {
@@ -277,6 +322,33 @@ export function buildImports(ctx) {
         unwrap(kv.check_clear());
         kvCall('kv.clear', {});
         kv.commit_clear();
+      },
+    },
+    'krate:store/org': {
+      put(collection, id, fields) {
+        orgCall('org.put', { collection, id, fields: fields.map(([name, v]) => [name, toWire(v)]) });
+      },
+      get(collection, id) {
+        const e = orgCall('org.get', { collection, id });
+        return e ? entry(e) : undefined;
+      },
+      delete(collection, id) { orgCall('org.delete', { collection, id }); },
+      records(collection, since) {
+        const p = orgCall('org.records', { collection, since: since === undefined ? null : since });
+        return { entries: p.entries.map(entry), removed: p.removed, next: p.next, more: p.more };
+      },
+      sync() {
+        const s = orgCall('org.sync', {});
+        return { online: s.online, changed: s.changed, pending: s.pending, lastSynced: big(s.last_synced) };
+      },
+      who() {
+        const m = orgCall('org.who', {});
+        return m ? { name: m.name, role: m.role, org: m.org } : undefined;
+      },
+      // Where this tab stands, never waiting (K-1108's status).
+      status() {
+        const s = orgCall('org.status', {});
+        return { link: s.link, pending: s.pending, reachedAt: big(s.reached_at), org: s.org };
       },
     },
     'krate:ui/types': {},

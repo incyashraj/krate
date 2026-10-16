@@ -60,7 +60,15 @@ self.onmessage = async ({ data }) => {
         }
         // ?probe=1 (the proofs): what is on screen rides with the frame.
         const screen = data.probe ? ui.on_screen(id) : undefined;
-        post({ t: 'frame', id, seq, inputAt: pendingInputAt, paintedAt: now(), screen });
+        // On a touch screen, where the text fields are, when that changed:
+        // the page raises the keyboard inside the tap that lands on one.
+        let fields;
+        if (data.touch) {
+          const r = Array.from(ui.text_rects(id));
+          const key = r.join(',');
+          if (key !== w.fieldsKey) { w.fieldsKey = key; fields = r; }
+        }
+        post({ t: 'frame', id, seq, inputAt: pendingInputAt, paintedAt: now(), screen, fields });
         pendingInputAt = undefined;
       }
     };
@@ -70,6 +78,8 @@ self.onmessage = async ({ data }) => {
       ui, grants, kv, ring, bridge,
       args: data.args,
       storeKey: data.storeKey,
+      // store.org: on, not-org or unsupported, as the page found it.
+      org: data.org,
       sleepCell: new Int32Array(new SharedArrayBuffer(4)),
       output: (fd, text) => post({ t: 'out', fd, text }),
       notice: (iface, fname) => {

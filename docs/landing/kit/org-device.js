@@ -45,6 +45,9 @@
  *   approvePublisher({hub, token, slug, device, mod, key})
  *        -> the publisher record, signed by this tab when it can
  *   restore({hub, token, slug, device, mod, code}) -> {keyring, signing}
+ *   refresh({hub, token, slug, device, mod, held})
+ *        -> {status: "holds"|"waiting"|"no-key", envelope}  a member's
+ *           browser and the key: what a computer does before each sync
  * Every hub refusal is thrown as an Error with .reason and .status and the
  * hub's own sentence as its message.
  */
@@ -131,6 +134,15 @@
       },
       judge: function (bytes) {
         return JSON.parse(dec.decode(raw("krate_judge", bytes)));
+      },
+      /// One team-data call (crates/validator-wasm teamdata.rs): the
+      /// device's copy of an app's data, its merge and its sealing. Answers
+      /// the module's JSON as it is, {ok, ...} or {ok:false, error}: an
+      /// error here is the app's to see. `random` bytes of entropy are added
+      /// for a call that seals.
+      data: function (op, random) {
+        var input = random ? Object.assign({ entropy: b64(root.crypto.getRandomValues(new Uint8Array(random))) }, op) : op;
+        return JSON.parse(dec.decode(raw("krate_org_data", enc.encode(JSON.stringify(input)))));
       },
     };
   }
@@ -379,6 +391,61 @@
     return did;
   }
 
+  /// Where this browser stands with the organisation's key, as a member's
+  /// device -- what a computer's Krate does before every sync
+  /// (krate_orgkeys::agent::Agent::refresh): register this browser if the
+  /// hub does not know it, take the keyring from its envelope (opened here,
+  /// by the module), check that the hub's current public key is the one
+  /// held, and pass the key on to the organisation's waiting devices.
+  /// `held` is the envelope this browser kept from last time. Answers
+  /// {status: "holds", envelope, version}, {status: "waiting"} (another
+  /// member's device has not passed it yet, or a newer version is coming)
+  /// or {status: "no-key"} (the organisation has no key yet). A new key
+  /// after someone leaves is made by a computer or an owner's browser, not
+  /// here.
+  async function refresh(o) {
+    var call = client(o.hub, o.token, o.slug);
+    var mod = o.mod;
+    var id = await deviceIdOf(mod, o.device);
+    var view = await call("GET", "/keys?device=" + id);
+    if (!view.device) {
+      await call("PUT", "/keys/devices/" + id, { public_key: o.device.public_key, name: o.device.name, kind: "browser" });
+      view = await call("GET", "/keys?device=" + id);
+    }
+    if (!view.current) return { status: "no-key" };
+    var secret = await o.device.secret();
+    var held = o.held || null;
+    var blob = view.envelope && view.envelope.blob;
+    if (blob && blob !== held) {
+      // Throws when it does not open: an envelope for another key.
+      mod.keys({ op: "keyring_open", org: o.slug, envelope: blob, device_secret: secret });
+      held = blob;
+    }
+    if (!held) return { status: "waiting" };
+    var opened = mod.keys({ op: "keyring_open", org: o.slug, envelope: held, device_secret: secret });
+    if (opened.version < view.current.version) return { status: "waiting", envelope: held };
+    if (opened.version !== view.current.version || opened.public_key !== view.current.public_key) {
+      var odd = new Error("the organisation key the hub names is not the one this browser holds");
+      odd.reason = "key-mismatch";
+      throw odd;
+    }
+    if (view.current.state !== "stale") {
+      for (var i = 0; i < (view.requests || []).length; i++) {
+        var q = view.requests[i];
+        if (q.device_id === id) continue;
+        if ((await deviceIdOf(mod, { public_key: q.public_key })) !== q.device_id) continue;
+        var g = mod.keys({ op: "keyring_grant", org: o.slug, envelope: held, device_secret: secret, to_public: q.public_key });
+        try {
+          await call("POST", "/keys/grants", { device_id: q.device_id, version: g.version, blob: g.blob, by_device: id });
+        } catch (e) {
+          if (e.reason === "offline") throw e;
+        }
+      }
+    }
+    secret = null;
+    return { status: "holds", envelope: held, version: opened.version };
+  }
+
   /// "Approve" on a waiting publisher, when the organisation approves new
   /// publishers by hand: recorded, then signed from this tab at once when
   /// this browser holds the signing key (otherwise the next owner's
@@ -519,5 +586,6 @@
     duties: duties,
     approvePublisher: approvePublisher,
     restore: restore,
+    refresh: refresh,
   };
 })(typeof window !== "undefined" ? window : globalThis);

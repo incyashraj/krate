@@ -3168,7 +3168,9 @@ function signInStart(from, nonce, appNonce) {
   // `player:<hash>`: the browser Player asking for an organisation's app it
   // is about to open in this tab (IC-956). It comes back to that app's page
   // on this hub, never anywhere a caller names.
-  const player = /^player:[0-9a-f]{64}$/.test(from || "") ? from : null;
+  // `player:org/<slug>/<app-id>`: the same for an organisation's app as it
+  // is now (the address a phone keeps on its home screen).
+  const player = /^player:(?:[0-9a-f]{64}|org\/[a-z][a-z0-9-]{1,38}\/[a-z0-9][a-z0-9._-]{0,127})$/.test(from || "") ? from : null;
   return { from: from === "app" ? "app" : player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
 }
 

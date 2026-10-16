@@ -33,6 +33,10 @@ pub fn works_in_a_tab(cap: &Capability) -> bool {
             | ("ui", "window" | "clipboard" | "open-url")
             | ("net", "connect")
             | ("store", "kv")
+            // An organisation's team data (G1): the copy, merge and sealing
+            // are crates/orgdata in the validator module, the page keeps the
+            // copy and syncs it (player/web/org-data.js).
+            | ("store", "org")
     )
 }
 
@@ -170,6 +174,7 @@ mod tests {
         let rows = consent_rows(
             r#"[{"cap":"ui.window:create","rationale":"Open the window","required":true},
                 {"cap":"store.kv","rationale":"Save your list","required":true},
+                {"cap":"store.org","rationale":"The team's inspections","required":true},
                 {"cap":"camera.capture","rationale":"Scan","required":false},
                 {"cap":"net.connect:api.example.com:443","rationale":"Weather","required":true}]"#,
         );
@@ -177,6 +182,9 @@ mod tests {
         let kv = rows.iter().find(|r| r["cap"] == "store.kv").unwrap();
         assert_eq!(kv["plain"], "save its own settings and data");
         assert_eq!(kv["in_tab"], true);
+        // An organisation's team data works in a tab too (G1).
+        let org = rows.iter().find(|r| r["cap"] == "store.org").unwrap();
+        assert_eq!(org["in_tab"], true);
         let cam = rows.iter().find(|r| r["cap"] == "camera.capture").unwrap();
         assert_eq!(cam["in_tab"], false);
         assert_eq!(cam["plain"], "use your camera");

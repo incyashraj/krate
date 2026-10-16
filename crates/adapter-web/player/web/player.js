@@ -17,13 +17,22 @@
 import init, { consent } from './krate_web.js';
 import { makeBridgeMemory, pageBridge } from './bridge.js';
 import { makeRing, pageRing } from './ring.js';
+import { TeamData } from './org-data.js';
+// The browser as an organisation's device (window.KrateSigning): the same
+// file the console uses on krate.tech, served here beside the Player.
+import './org-device.js';
 
 const $ = (id) => document.getElementById(id);
 const report = (window.__krate = { marks: {}, frames: 0, latencies: [], paintLatencies: [], notices: [], out: '', state: 'loading' });
 const mark = (name) => { report.marks[name] = performance.now(); };
 const SITE = 'https://krate.tech';
 const params = new URLSearchParams(location.search);
-const HASH = (location.pathname.match(/^\/run\/([0-9a-f]{64})\/?$/) || [])[1];
+// /run/<hash> opens one release; /run/org/<slug>/<app-id> opens an
+// organisation's app as it is now (the address a home screen keeps).
+const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127}))\/?$/) || [];
+let HASH = RUN[1];
+const ORG_APP = RUN[2] ? { slug: RUN[2], app: RUN[3] } : null;
+const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH}`;
 const SESSION_KEY = 'krate-player-session';
 const NONCE_KEY = 'krate-player-nonce';
 
@@ -118,7 +127,7 @@ function takeSignIn() {
 function signIn(words) {
   const nonce = Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, '0')).join('');
   try { sessionStorage.setItem(NONCE_KEY, nonce); } catch {}
-  const q = (path) => `${path}?${new URLSearchParams({ from: `player:${HASH}`, nonce })}`;
+  const q = (path) => `${path}?${new URLSearchParams({ from: FROM, nonce })}`;
   $('signinGithub').href = q('/login/start');
   $('signinGoogle').href = q('/login/google/start');
   if (words) $('signinWords').textContent = words;
@@ -158,9 +167,81 @@ async function judge(validatorModule, bytes) {
   return JSON.parse(text);
 }
 
+/// The release an organisation's app opens now, with the person's session.
+/// True when HASH is set; otherwise the page already says what to do.
+async function resolveOrgApp() {
+  const me = session();
+  if (!me || !me.token) {
+    report.private = true;
+    signIn(`It belongs to ${ORG_APP.slug}. Sign in with the account your team invited.`);
+    return false;
+  }
+  const res = await fetch(`/orgs/${ORG_APP.slug}/apps/${encodeURIComponent(ORG_APP.app)}/current`, {
+    headers: { accept: 'application/json', authorization: `Bearer ${me.token}` },
+    cache: 'no-store',
+  }).catch(() => null);
+  if (!res) {
+    refuse('This app did not open', 'Krate could not be reached. Check the connection and try again.', { act: 'home' });
+    return false;
+  }
+  const body = await res.json().catch(() => ({}));
+  if (res.ok && /^[0-9a-f]{64}$/.test(body.digest || '')) {
+    HASH = body.digest;
+    report.private = true;
+    return true;
+  }
+  if (res.status === 401) { signIn(); return false; }
+  if (body.error === 'removed') refuse('You are no longer in this team', body.message || 'Ask the team to add you again.', { act: 'home' });
+  else if (res.status === 403) refuse('This app was not shared with you', body.message || 'Ask whoever sent the link to invite you.', { act: 'home' });
+  else refuse('This app is not on Krate', body.message || 'The link may be mistyped, or the app was removed.', { act: 'home' });
+  return false;
+}
+
+/// Make the page addable to a home screen as the app: its name, its icon,
+/// and for an organisation's app the address that always opens the version
+/// the team released last.
+async function installable(name, slug, appId) {
+  const id = String(appId || '').toLowerCase();
+  const base = slug && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(id) ? `/run/org/${slug}/${id}` : `/run/${HASH}`;
+  const link = (rel, href) => {
+    let el = document.querySelector(`link[rel="${rel}"]`);
+    if (!el) { el = document.createElement('link'); el.rel = rel; document.head.appendChild(el); }
+    el.href = href;
+  };
+  link('manifest', `${base}/app.webmanifest?name=${encodeURIComponent(name)}`);
+  let meta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (!meta) { meta = document.createElement('meta'); meta.name = 'apple-mobile-web-app-title'; document.head.appendChild(meta); }
+  meta.content = name;
+  report.install = { base, name };
+  // An iPhone takes its home screen picture from here, not the manifest:
+  // the same initial on the same colour the hub draws (web-player.js).
+  try {
+    await document.fonts.load('600 100px Geist');
+    const c = document.createElement('canvas');
+    c.width = c.height = 180;
+    const g = c.getContext('2d');
+    g.fillStyle = colourOf(base);
+    g.fillRect(0, 0, 180, 180);
+    g.fillStyle = '#fff';
+    g.font = '600 100px Geist, -apple-system, BlinkMacSystemFont, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const m = /[\p{L}\p{N}]/u.exec(name);
+    g.fillText(m ? m[0].toLocaleUpperCase() : 'K', 90, 96);
+    link('apple-touch-icon', c.toDataURL('image/png'));
+  } catch { /* the page still works; the home screen takes a picture of it */ }
+}
+const ICON_COLOURS = ['#3d6df0', '#22a35a', '#b7791f', '#7c4dff', '#e5484d', '#0f9d9a', '#d6409f', '#52525b'];
+function colourOf(text) {
+  let h = 5381;
+  for (const c of text) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return ICON_COLOURS[h % ICON_COLOURS.length];
+}
+
 async function main() {
   mark('start');
   takeSignIn();
+  if (ORG_APP && self.crossOriginIsolated && !(await resolveOrgApp())) return;
   if (!HASH) {
     refuse('This is not an app link', 'A Krate app link ends in the app’s 64-character address.', { act: 'home' });
     return;
@@ -194,7 +275,7 @@ async function main() {
       report.private = true;
       $('inKrate').href = openInKrate();
       signIn();
-    } else if (reason === 'not-a-member') {
+    } else if (reason === 'not-a-member' || reason === 'not-in-audience') {
       refuse('This app was not shared with you', body.message || 'Ask whoever sent the link to invite you.', { act: 'home' });
     } else if (reason === 'removed') {
       refuse('You are no longer in this team', body.message || 'Ask the team to add you again.', { act: 'home' });
@@ -259,6 +340,7 @@ async function main() {
   $('whoSig').textContent = release ? `Signed by ${release.namespace.split('/')[0]}` : 'Not signed';
   $('who').hidden = false;
   report.app = { id: app.id, name, world: app.world, signature: sig };
+  installable(name, sig === 'valid' ? j.org_mark : null, app.id);
 
   // ---- consent: the desktop's words, the tab's reach
   const rows = JSON.parse(consent(JSON.stringify(j.manifest.capabilities || []))).rows || [];
@@ -298,7 +380,80 @@ async function main() {
 
   say(`Starting ${name}...`);
   show('loading');
-  await start({ meta, modules, glue: new TextDecoder().decode(glue), granted, storeKey, playerModule, world: app.world, name });
+  // An organisation's app, signed and marked for it, opened by a signed-in
+  // member: its team data, as on a computer (store.org).
+  const org = { slug: (sig === 'valid' && j.org_mark) || null, appId: app.id, digest: HASH, session: me, validatorModule };
+  await start({ meta, modules, glue: new TextDecoder().decode(glue), granted, storeKey, playerModule, world: app.world, name, org });
+}
+
+// ------------------------------------------------------------- team data
+const SYNC_WORDS = {
+  synced: 'Synced',
+  syncing: 'Syncing',
+  offline: 'Offline',
+  'waiting-for-key': 'Waiting for the team key',
+  'no-key': 'Team data not set up',
+  refused: 'No team data',
+};
+const isSafari = () => /Safari\//.test(navigator.userAgent) && !/Chrome\/|Chromium\/|Edg\/|Android/.test(navigator.userAgent);
+
+/// What the chip by the app's name says, and the line under it when it is
+/// opened.
+function showSync(state) {
+  report.sync = state;
+  const chip = $('sync');
+  chip.hidden = false;
+  chip.dataset.link = state.link;
+  const n = state.pending;
+  let words = SYNC_WORDS[state.link] || 'Syncing';
+  if (state.link === 'offline' && n) words = `Offline, ${n} change${n === 1 ? '' : 's'} kept here`;
+  $('syncWords').textContent = words;
+  const org = state.org || 'your team';
+  const say = {
+    synced: `Your changes reach everyone in ${org}, and theirs show up here.`,
+    syncing: n ? `Sending ${n} change${n === 1 ? '' : 's'} to ${org}.` : `Checking with ${org} for changes.`,
+    offline: 'You can keep working. Changes are kept in this browser and go to your team when you are back online.',
+    'waiting-for-key': `This browser is new to ${org}. A teammate's Krate gives it the team key by itself the next time it is open. Until then your changes are kept here.`,
+    'no-key': `${org} has not set up its team key yet. An owner sets it up once in Krate. Until then your changes are kept here.`,
+    refused: (state.refused && state.refused.message) || 'Your team did not give this app its data. Ask an owner.',
+  }[state.link] || '';
+  $('syncSay').textContent = say;
+  // WebKit deletes what a site keeps after seven days of Safari use without
+  // a visit; said where it matters, in the person's words.
+  $('syncSafari').hidden = !(isSafari() && (n > 0 || state.link === 'offline' || state.link === 'waiting-for-key'));
+}
+$('sync').onclick = () => {
+  const open = $('syncInfo').hidden;
+  $('syncInfo').hidden = !open;
+  $('sync').setAttribute('aria-expanded', String(open));
+};
+
+/// This tab as one of the organisation's devices, and its copy of the app's
+/// team data. `mode`: on, not-org (no team data, as on a computer), or
+/// unsupported (this browser cannot keep the team key).
+async function openTeam({ slug, appId, digest, session: me, validatorModule }, windowed) {
+  if (!slug || !me || !me.token) return { mode: 'not-org' };
+  const S = window.KrateSigning;
+  try {
+    await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits']);
+    if (!window.indexedDB) throw new Error('no IndexedDB');
+  } catch {
+    return { mode: 'unsupported' };
+  }
+  const mod = await S.loadModule(validatorModule);
+  const store = S.indexedStore('krate-org');
+  const device = await S.openDevice({ store });
+  // The organisation's own name, for the words the page shows before the
+  // first sync says it.
+  const named = await fetch(`/orgs/${slug}`, { headers: { accept: 'application/json', authorization: `Bearer ${me.token}` } })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const orgName = (named && named.org && named.org.name) || slug;
+  const team = new TeamData({ mod, signing: S, hub: location.origin, token: me.token, slug, appId, digest, me: me.login || me.name || '', store, device, windowed, orgName, onState: showSync });
+  await team.open();
+  team.start();
+  // For the proofs: the tab's team data, outside the report they serialise.
+  window.__krateTeam = team;
+  return { mode: 'on', team };
 }
 
 // ------------------------------------------------------------- storage
@@ -326,9 +481,24 @@ async function loadKv(d, store) {
 }
 
 // ------------------------------------------------------------- running
-async function start({ meta, modules, glue, granted, storeKey, playerModule, world, name }) {
+async function start({ meta, modules, glue, granted, storeKey, playerModule, world, name, org }) {
   const gui = /\/gui@/.test(world || '');
   const d = gui || granted.includes('store.kv') ? await db().catch(() => null) : null;
+  const team = granted.includes('store.org') ? await openTeam(org, gui).catch((e) => {
+    report.teamError = String((e && e.message) || e);
+    return { mode: 'unsupported' };
+  }) : { mode: 'off' };
+  report.teamMode = team.mode;
+  const teamCall = (fn) => async (args) => {
+    if (!team.team) return { json: { err: { tag: team.mode === 'unsupported' ? 'unsupported' : 'not-an-org-app' } } };
+    const out = await fn(team.team, args);
+    return { json: out.err ? { err: out.err } : { ok: out.ok === undefined ? null : out.ok } };
+  };
+  if (team.team) {
+    // Once more when the tab goes away, so what the person did last reaches
+    // the team; what does not make it waits here for the next open.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') team.team.kick(); });
+  }
   const kv = d && granted.includes('store.kv') ? await loadKv(d, storeKey).catch(() => []) : [];
 
   const ringBuf = makeRing();
@@ -339,6 +509,8 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   const ctx2d = canvas.getContext('2d');
   const term = $('term');
   const windows = new Map();
+  // Where each window's text fields are, for the phone's keyboard.
+  const textRects = new Map();
   let current = null;
   const now = () => performance.timeOrigin + performance.now();
 
@@ -424,6 +596,13 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
       try { await navigator.clipboard.writeText(text); return { json: { ok: null } }; }
       catch { return { json: { err: { tag: 'platform', val: 'the browser did not let this tab write to the clipboard' } } }; }
     },
+    'org.put': teamCall((t, a) => t.put(a.collection, a.id, a.fields)),
+    'org.delete': teamCall((t, a) => t.delete(a.collection, a.id)),
+    'org.get': teamCall((t, a) => t.get(a.collection, a.id)),
+    'org.records': teamCall((t, a) => t.records(a.collection, a.since)),
+    'org.sync': teamCall((t) => t.sync()),
+    'org.who': teamCall((t) => t.who()),
+    'org.status': teamCall((t) => t.standing()),
     'open-url': ({ url }) => {
       const opened = window.open(url, '_blank', 'noopener,noreferrer');
       if (!opened) notice(`${name} wants to open ${url}. Your browser held it back.`, false);
@@ -491,6 +670,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
           (report.paintLatencies = report.paintLatencies || []).push(data.paintedAt - data.inputAt);
         }
         if (data.screen) report.screen = JSON.parse(data.screen);
+        if (data.fields) textRects.set(data.id, data.fields);
         break;
       }
       case 'title': document.title = `${data.title} - Krate`; break;
@@ -541,15 +721,47 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   const mods = (e) => (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
   const at = (e) => performance.timeOrigin + e.timeStamp;
   const win = () => current;
+  // A finger is not a mouse: the Player module maps it as a phone does (a
+  // tap presses, a drag scrolls, a canvas follows the finger).
+  const touchPhase = { pointerdown: 'start', pointermove: 'move', pointerup: 'end', pointercancel: 'cancel' };
+  const touch = (e) => {
+    ring.push({ type: 'touch', window: win(), phase: touchPhase[e.type], finger: e.pointerId, x: e.offsetX, y: e.offsetY, at: at(e) });
+    // The keyboard comes up only inside the tap itself, so the page raises
+    // it here when the finger lifts on a text field.
+    if (e.type === 'pointerup') {
+      const r = textRects.get(win()) || [];
+      for (let i = 0; i + 3 < r.length; i += 4) {
+        if (e.offsetX >= r[i] && e.offsetX < r[i] + r[i + 2] && e.offsetY >= r[i + 1] && e.offsetY < r[i + 1] + r[i + 3]) {
+          resetIme();
+          ime.focus({ preventScroll: true });
+          break;
+        }
+      }
+    }
+    e.preventDefault();
+  };
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') {
+      canvas.setPointerCapture(e.pointerId);
+      touch(e);
+      return;
+    }
     canvas.focus();
     canvas.setPointerCapture(e.pointerId);
     ring.push({ type: 'down', window: win(), x: e.offsetX, y: e.offsetY, button: e.button, mods: mods(e), at: at(e) });
     e.preventDefault();
   });
-  canvas.addEventListener('pointerup', (e) => ring.push({ type: 'up', window: win(), x: e.offsetX, y: e.offsetY, button: e.button, mods: mods(e), at: at(e) }));
-  canvas.addEventListener('pointermove', (e) => ring.push({ type: 'move', window: win(), x: e.offsetX, y: e.offsetY }));
-  canvas.addEventListener('pointerleave', () => ring.push({ type: 'leave', window: win() }));
+  canvas.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'touch') return touch(e);
+    ring.push({ type: 'up', window: win(), x: e.offsetX, y: e.offsetY, button: e.button, mods: mods(e), at: at(e) });
+  });
+  canvas.addEventListener('pointercancel', (e) => { if (e.pointerType === 'touch') touch(e); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return touch(e);
+    ring.push({ type: 'move', window: win(), x: e.offsetX, y: e.offsetY });
+  });
+  canvas.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') ring.push({ type: 'leave', window: win() }); });
+  canvas.addEventListener('contextmenu', (e) => { if (matchMedia('(pointer: coarse)').matches) e.preventDefault(); });
   canvas.addEventListener('wheel', (e) => {
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
     ring.push({ type: 'wheel', window: win(), x: e.offsetX, y: e.offsetY, dx: e.deltaX * unit, dy: e.deltaY * unit, mods: mods(e), at: at(e) });
@@ -570,23 +782,66 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     if (text) ring.push({ type: 'text', window: win(), text, at: performance.timeOrigin + performance.now() });
     e.preventDefault();
   });
-  // A phone's keyboard types into the hidden field; its text goes to the app.
+  // A phone's keyboard types into the hidden field; its text goes to the
+  // app. One placeholder character stays in the field so Backspace always
+  // has something to delete (an empty field sends no event for it), and a
+  // word being composed (predictive text, accents, CJK) goes once it is
+  // committed, not letter by letter.
   const ime = $('ime');
+  const HOLD = ' ';
+  function resetIme() {
+    ime.value = HOLD;
+    try { ime.setSelectionRange(1, 1); } catch {}
+  }
+  resetIme();
+  let composing = false;
+  const typed = (text, e) => { if (text) ring.push({ type: 'text', window: win(), text, at: at(e) }); };
+  const press = (name, e) => {
+    ring.push({ type: 'key', window: win(), key: name, pressed: true, mods: 0, at: at(e) });
+    ring.push({ type: 'key', window: win(), key: name, pressed: false, mods: 0, at: at(e) });
+  };
+  ime.addEventListener('compositionstart', () => { composing = true; });
+  ime.addEventListener('compositionend', (e) => {
+    composing = false;
+    typed(ime.value.replace(HOLD, '') || e.data || '', e);
+    resetIme();
+  });
   ime.addEventListener('input', (e) => {
-    if (e.inputType === 'deleteContentBackward') ring.push({ type: 'key', window: win(), key: 'Backspace', pressed: true, mods: 0, at: at(e) });
-    else if (ime.value) ring.push({ type: 'text', window: win(), text: ime.value, at: at(e) });
-    ime.value = '';
+    if (composing || e.isComposing) return;
+    if (e.inputType === 'deleteContentBackward') press('Backspace', e);
+    else if (e.inputType === 'insertLineBreak') press('Enter', e);
+    else typed(ime.value.replace(HOLD, ''), e);
+    resetIme();
+  });
+  // Keys a phone keyboard sends as keys: Enter, Tab, arrows, Escape.
+  ime.addEventListener('keydown', (e) => {
+    if (composing || !/^(Enter|Tab|Escape|Arrow\w+)$/.test(e.key)) return;
+    ring.push({ type: 'key', window: win(), key: e.key, pressed: true, mods: mods(e), at: at(e) });
+    e.preventDefault();
+  });
+  ime.addEventListener('keyup', (e) => {
+    if (composing || !/^(Enter|Tab|Escape|Arrow\w+)$/.test(e.key)) return;
+    ring.push({ type: 'key', window: win(), key: e.key, pressed: false, mods: mods(e), at: at(e) });
   });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (!forced) ring.push({ type: 'theme', dark: dark() });
   });
   window.addEventListener('blur', () => ring.push({ type: 'blur' }));
-  // The window takes the room the tab has, up to what the app asked for.
+  // The window takes the room the tab has, up to what the app asked for:
+  // on a phone, above the keyboard when it is up (the visual viewport).
   const room = () => {
-    const s = $('stage').getBoundingClientRect();
-    return { width: Math.max(1, Math.floor(s.width - 32)), height: Math.max(1, Math.floor(s.height - 32)) };
+    const stage = $('stage');
+    const s = stage.getBoundingClientRect();
+    const cs = getComputedStyle(stage);
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const vv = window.visualViewport;
+    const bottom = vv ? Math.min(s.bottom, vv.offsetTop + vv.height) : s.bottom;
+    return { width: Math.max(1, Math.floor(s.width - padX)), height: Math.max(1, Math.floor(bottom - s.top - padY)) };
   };
-  new ResizeObserver(() => { if (current !== null) ring.push({ type: 'resize', window: win(), ...room() }); }).observe($('stage'));
+  const resized = () => { if (current !== null) ring.push({ type: 'resize', window: win(), ...room() }); };
+  new ResizeObserver(resized).observe($('stage'));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resized);
   $('closeApp').onclick = () => {
     if (current === null) { worker.terminate(); finish(`${name} closed.`); return; }
     ring.push({ type: 'close', window: win() });
@@ -605,6 +860,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     granted,
     kv,
     storeKey,
+    org: team.mode,
     args: params.getAll('arg').join('\n'),
     scale: Math.min(4, Math.max(1, window.devicePixelRatio || 1)),
     dark: dark(),

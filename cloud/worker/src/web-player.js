@@ -115,6 +115,7 @@ const TYPES = {
   woff2: "font/woff2",
   png: "image/png",
   json: "application/json",
+  svg: "image/svg+xml",
 };
 
 /// The files the Player page is made of, by name. Anything else under
@@ -127,12 +128,15 @@ const PLAYER_FILES = new Set([
   "hosts.js",
   "bridge.js",
   "ring.js",
+  "org-data.js",
+  "org-device.js",
   "krate_web.js",
   "krate_web_bg.wasm",
   "validator.wasm",
   "geist-var-latin.woff2",
   "krate-mark-3d-96.png",
   "krate-favicon.png",
+  "krate-app-icon.png",
 ]);
 
 async function asset(env, url, name) {
@@ -150,11 +154,80 @@ async function asset(env, url, name) {
   });
 }
 
-/// GET /run/<hash>: the Player page for one app. The page itself decides
-/// nothing about the app until it has fetched and judged it.
+/// The Player's addresses: one release (`/run/<hash>`), or an
+/// organisation's app as it is now (`/run/org/<slug>/<app-id>`, which the
+/// page resolves to the current release with the person's session -- the
+/// address a phone keeps on its home screen, so an update never breaks it),
+/// each with its web app manifest and icon.
+export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127}))(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
+
+/// What a home screen calls an app: the name the page judged, trimmed, with
+/// nothing that is not printable.
+function appName(raw) {
+  const name = String(raw || "").replace(/[\u0000-\u001f\u007f-\u009f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 45);
+  return name || "Krate app";
+}
+
+/// The icon's colour: one of the site's own, chosen by the address, so each
+/// app keeps its colour and two apps rarely share one.
+const ICON_COLOURS = ["#3d6df0", "#22a35a", "#b7791f", "#7c4dff", "#e5484d", "#0f9d9a", "#d6409f", "#52525b"];
+function colourOf(text) {
+  let h = 5381;
+  for (const c of text) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return ICON_COLOURS[h % ICON_COLOURS.length];
+}
+
+/// The letter on the icon: the name's first letter or digit.
+function initialOf(name) {
+  const m = /[\p{L}\p{N}]/u.exec(name);
+  return m ? m[0].toLocaleUpperCase() : "K";
+}
+
+const escapeXml = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
+
+/// GET /run/<...>/app.webmanifest?name=<name>: what lets a phone (or a
+/// computer's browser) add the app to its home screen as itself -- its name,
+/// its icon, opening on its own without the browser's bar.
+function manifestFor(base, name) {
+  const body = {
+    id: base,
+    name,
+    short_name: name.length > 12 ? name.split(" ")[0].slice(0, 12) : name,
+    description: `${name}, a Krate app`,
+    start_url: base,
+    // The whole Player, so the address a release opens from is inside it too.
+    scope: "/run/",
+    display: "standalone",
+    background_color: "#fbfbfd",
+    theme_color: "#fbfbfd",
+    icons: [
+      { src: `${base}/icon.svg?name=${encodeURIComponent(name)}`, sizes: "any", type: "image/svg+xml", purpose: "any" },
+      { src: "/player/krate-app-icon.png", sizes: "1024x1024", type: "image/png", purpose: "any" },
+    ],
+  };
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/manifest+json; charset=utf-8", "cache-control": "public, max-age=300", ...ISOLATED },
+  });
+}
+
+/// GET /run/<...>/icon.svg?name=<name>: the app's initial on its colour.
+function iconFor(base, name) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="${colourOf(base)}"/>` +
+    `<text x="256" y="256" dy=".35em" text-anchor="middle" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="280" font-weight="600" fill="#fff">${escapeXml(initialOf(name))}</text></svg>`;
+  return new Response(svg, {
+    headers: { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "public, max-age=86400", ...ISOLATED },
+  });
+}
+
+/// GET /run/<hash> or /run/org/<slug>/<app-id>: the Player page for one
+/// app. The page itself decides nothing about the app until it has fetched
+/// and judged it.
 export async function playerPage(request, url, env) {
-  const m = /^\/run\/([0-9a-f]{64})\/?$/.exec(url.pathname);
+  const m = RUN_PATH.exec(url.pathname);
   if (!m) return null;
+  const base = m[1] ? `/run/${m[1]}` : `/run/org/${m[2]}/${m[3]}`;
+  if (m[4] === "app.webmanifest") return manifestFor(base, appName(url.searchParams.get("name")));
+  if (m[4] === "icon.svg") return iconFor(base, appName(url.searchParams.get("name")));
   const page = await asset(env, url, "run.html");
   if (page) return page;
   return new Response("The Player is not installed on this hub yet: run scripts/build-web-player.sh before deploying.", {

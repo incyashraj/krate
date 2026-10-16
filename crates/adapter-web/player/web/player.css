@@ -38,20 +38,33 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
-body { background: var(--bg); color: var(--ink); font: 400 16px/1.55 Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -.006em; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; overflow: hidden; }
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+body { touch-action: manipulation;  background: var(--bg); color: var(--ink); font: 400 16px/1.55 Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -.006em; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; overflow: hidden; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 img { display: block; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 [hidden] { display: none !important; }
 
-.bar { flex: none; height: 56px; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--bg); }
+/* A phone's notch and home bar (viewport-fit=cover): the bar sits below the
+   one, the app above the other. */
+.bar { flex: none; height: calc(56px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 14px; padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--line); background: var(--bg); }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; letter-spacing: -.035em; }
 .who { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
 .who #whoName { font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .who .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
 .who .sig { flex: none; font-size: 12.5px; color: var(--ink-3); }
 .acts { margin-left: auto; display: flex; gap: 6px; }
+
+/* team data: where this tab stands, and what that means when tapped */
+.sync { flex: none; height: 28px; padding: 0 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2); white-space: nowrap; }
+.sync:hover { box-shadow: inset 0 0 0 1px var(--ink-4); }
+.sync .sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
+.sync[data-link="synced"] .sdot { background: var(--green); }
+.sync[data-link="syncing"] .sdot { background: var(--accent); }
+.sync[data-link="offline"] .sdot, .sync[data-link="waiting-for-key"] .sdot, .sync[data-link="no-key"] .sdot { background: var(--warn); }
+.syncinfo { position: absolute; z-index: 5; top: calc(62px + env(safe-area-inset-top, 0px)); right: 16px; width: min(360px, calc(100% - 32px)); padding: 12px 14px; border-radius: 14px; background: var(--s1); box-shadow: var(--sh-2); font-size: 13.5px; color: var(--ink-2); }
+.syncinfo .safari { margin-top: 8px; font-size: 12.5px; color: var(--ink-3); }
 
 .btn { height: 40px; padding: 0 18px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 14.5px; font-weight: 500; white-space: nowrap; transition: background .2s, box-shadow .2s; }
 .btn.small { height: 32px; padding: 0 12px; font-size: 13.5px; }
@@ -60,7 +73,7 @@ img { display: block; }
 .btn.ghost { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
 .btn.ghost:hover { box-shadow: inset 0 0 0 1px var(--ink-4); }
 
-#stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; padding: 16px; overflow: auto; }
+#stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); overflow: auto; }
 .card { width: min(440px, 100%); border-radius: 22px; padding: 26px 24px; background: var(--s1); box-shadow: var(--sh-2); }
 .card h1 { font-size: 21px; line-height: 1.25; letter-spacing: -.025em; font-weight: 600; }
 .card .say { margin-top: 8px; font-size: 15px; color: var(--mute); }
@@ -96,7 +109,7 @@ img { display: block; }
 
 .app { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
 .frame { position: relative; flex: none; border-radius: 14px; overflow: hidden; box-shadow: var(--sh-2); background: var(--s1); }
-.frame canvas { display: block; touch-action: none; outline: none; }
+.frame canvas { display: block; touch-action: none; outline: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .ime { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; resize: none; border: 0; }
 .term { width: min(760px, 100%); max-height: 100%; overflow: auto; padding: 16px 18px; border-radius: 14px; background: var(--s1); box-shadow: var(--sh-2); font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .term .err { color: var(--warn); }
@@ -110,6 +123,11 @@ img { display: block; }
 @media (max-width: 560px) {
   .bar { padding: 0 12px; gap: 10px; }
   .who .sig { display: none; }
+  .brand span { display: none; }
+  /* A phone: the app gets the width, with a thin edge. */
+  #stage { padding: 8px max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+  .frame { border-radius: 12px; }
+  .syncinfo { right: 12px; width: calc(100% - 24px); }
   #inKrate { display: none; }
   .card .stack .btn { width: 100%; }
   .notice { flex-wrap: wrap; }
