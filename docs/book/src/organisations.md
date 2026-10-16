@@ -297,6 +297,62 @@ The request goes from the person's computer, so an API on the company
 network works. The limit to know: a server that echoes request headers back
 would show the credential to the app.
 
+### Telling the API who is calling
+
+One credential serves the whole organisation, so on its own your API sees
+only "the app". With **Tell the API who is calling** on (the default, in
+the connection's form in Settings, or `--no-identity` on
+`krate org connection create` to turn it off), every request an app sends
+through the connection also carries a `Krate-Identity` header: a short
+token, signed by Krate, that names the person. Your API can log who did
+what, with no sign-in work of its own. The credential still decides who
+gets in; the token tells you who it was.
+
+The token is a JWT (RFC 7519) signed with EdDSA over Ed25519 (RFC 8037).
+Its claims:
+
+| Claim | What it is |
+|-------|------------|
+| `sub` | The person: `github:<login>` or `email:<address>` |
+| `org` | The organisation's short name |
+| `app` | The app's id from its manifest, such as `com.acme.ledger` |
+| `release` | The SHA-256 of the exact release the person opened |
+| `connection` | The connection's name, such as `finance-api` |
+| `aud` | The connection's address, exactly as shown in Settings |
+| `iss` | `https://hub.krate.tech` |
+| `iat`, `nbf`, `exp` | Issued, valid from, valid until: five minutes |
+| `jti` | A random id for this token |
+
+To check one: take the key whose `kid` matches the token's header from
+`https://hub.krate.tech/.well-known/jwks.json`, and accept the token only if
+the signature holds with `alg` `EdDSA`, `aud` is your connection's address,
+`iss` is `https://hub.krate.tech`, and `exp` has not passed (allow a minute
+for clocks). Krate refreshes the token about a minute before it runs out,
+and only for people who still pass every check the credential does: someone
+removed from the organisation stops being named within five minutes. If a
+fresh token cannot be had, the request still goes, without the header, so
+treat a missing header as "unknown person", not as a refusal. Krate drops
+any `Krate-Identity` an app sets itself, and never sends one outside the
+connection's address.
+
+In Node 18 or later, with the `jose` package:
+
+```js
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
+const keys = createRemoteJWKSet(new URL("https://hub.krate.tech/.well-known/jwks.json"));
+
+export async function whoIsCalling(request) {
+  const token = request.headers["krate-identity"];
+  if (!token) return null; // sent without one: an unknown person
+  const { payload } = await jwtVerify(token, keys, {
+    algorithms: ["EdDSA"], issuer: "https://hub.krate.tech",
+    audience: "https://api.acme.com/finance", clockTolerance: 60,
+  });
+  return payload; // payload.sub, payload.app, payload.release ...
+}
+```
+
 ## Company sign-in
 
 An owner connects the company's own sign-in in Settings, so people sign in
