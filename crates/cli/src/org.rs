@@ -682,6 +682,9 @@ pub fn words(refusal: &HubRefusal, org: &str, me: &str, action: Action) -> Strin
         "self-approval" => {
             format!("you can't approve your own upload: ask a reviewer in {org}")
         }
+        "approval-policy" | "already-approved" => {
+            format!("nothing was approved: {}", refusal.message)
+        }
         "new-capabilities" => format!(
             "nothing was approved: {}. `krate org candidates {org}` lists what is new; approve \
              with --accept and each one's name",
@@ -1014,6 +1017,29 @@ fn join_url(answer: &serde_json::Value, slug: &str, code: &str, hub: &str) -> Op
         "https://krate.tech/join/?o={}&c={}",
         q(slug),
         q(code)
+    ))
+}
+
+/// What to say for an approval the hub recorded without releasing (its
+/// approval rules need more), or None when the answer is a release.
+fn partial_approval(answer: &serde_json::Value, digest: &str) -> Option<String> {
+    if !answer["release"].is_null() || text(answer, "state") != "waiting-for-approval" {
+        return None;
+    }
+    let still = text(&answer["approval"], "words");
+    let still = if still.is_empty() {
+        "it needs more approvals".to_string()
+    } else {
+        let mut chars = still.chars();
+        match chars.next() {
+            Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
+            None => String::new(),
+        }
+    };
+    Some(format!(
+        "approved. {} is not released yet: {still}. It is released once the \
+         organisation's approval rules are met.",
+        short(digest)
     ))
 }
 
@@ -1527,6 +1553,13 @@ fn run_command(client: &Client, command: OrgCommand) -> Result<u8> {
                 &me,
                 Action::Approve(&digest),
             )?;
+            // Under the organisation's approval rules this approval may be
+            // one of several: the version keeps waiting, and the hub says
+            // what is still needed.
+            if let Some(line) = partial_approval(&answer, &digest) {
+                println!("{line}");
+                return Ok(0);
+            }
             let release = &answer["release"];
             let released = Some(text(release, "digest"))
                 .filter(|d| !d.is_empty())
@@ -2634,6 +2667,25 @@ fn write_private_key(path: &Path, bytes: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_approval_the_rules_need_more_of_is_not_called_a_release() {
+        let digest = "ab".repeat(32);
+        let waiting = serde_json::json!({
+            "digest": digest,
+            "state": "waiting-for-approval",
+            "approval": { "words": "Needs one more approval from security" },
+        });
+        assert_eq!(
+            super::partial_approval(&waiting, &digest).as_deref(),
+            Some(
+                "approved. abababababab is not released yet: needs one more approval from \
+                 security. It is released once the organisation's approval rules are met."
+            )
+        );
+        let released = serde_json::json!({ "release": { "digest": digest, "url": "u" } });
+        assert_eq!(super::partial_approval(&released, &digest), None);
+    }
 
     #[test]
     fn new_capabilities_are_the_asked_additions_against_a_release() {
