@@ -327,6 +327,10 @@ jobs:
           # The spreadsheet reader itself: CSV and XLSX, kinds of value, the
           # 5 MB and 20,000-row caps.
           node docs/landing/studio/sheet-test.mjs
+          # An API's OpenAPI description made a company connection: the
+          # address, exact path prefixes, the credential kind, the 24 KB
+          # summary Studio's AI reads, and the presets (SMART-FIXES 4).
+          node docs/landing/studio/connect-test.mjs
           # And the IT pack the dashboard makes in the browser is
           # scripts/build-policy-templates.py's, byte for byte.
           node docs/landing/studio/org-policy-test.mjs
