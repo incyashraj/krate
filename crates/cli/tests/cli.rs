@@ -19000,6 +19000,94 @@ fn the_mcp_door_fetches_a_private_link_with_the_session() {
     );
 }
 
+/// K-1102: an organisation's app opened through the MCP door gets its team
+/// data as `krate run` gives it -- the same gate, the same grant -- rather
+/// than answering not-an-org-app; without the store.org grant it is denied.
+#[test]
+fn the_mcp_door_gives_an_org_app_its_team_data() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping the_mcp_door_gives_an_org_app_its_team_data: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (bundle, _) = released_probe(&world, &root, "1.0.0");
+    let copy = world.homes["carol"].path().join("Acme Tasks.krate");
+    std::fs::copy(&bundle, &copy).expect("copy");
+    let run = |grants: &[&str], steps: &[&str]| -> serde_json::Value {
+        let root_dir = world.homes["carol"].path().join("mcp");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        let mut child = org_command(&world, "carol", &["mcp"])
+            .env("KRATE_MCP_ROOT", &root_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("krate mcp");
+        {
+            let mut stdin = child.stdin.take().unwrap();
+            for message in [
+                serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": { "protocolVersion": "2024-11-05", "capabilities": {},
+                                "clientInfo": { "name": "test", "version": "0" } } }),
+                serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+                serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                    "params": { "name": "run_component",
+                                "arguments": { "bundle": copy.to_str().unwrap(),
+                                               "grants": grants, "app_args": steps } } }),
+            ] {
+                writeln!(stdin, "{message}").unwrap();
+            }
+        }
+        let output = child.wait_with_output().expect("mcp output");
+        let answer = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|answer| answer["id"] == 2)
+            .expect("an answer to the tool call");
+        let text = answer["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("");
+        serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!({ "said": text }))
+    };
+    let all = ["io.stdout", "io.args", "store.org"];
+    let report = run(
+        &all,
+        &[
+            "put",
+            "tasks",
+            "m1",
+            "title=from mcp",
+            "then",
+            "sync",
+            "then",
+            "who",
+        ],
+    );
+    let out = report["stdout"].as_str().unwrap_or_default();
+    assert!(out.contains("put m1 ok"), "{out}");
+    assert!(
+        out.contains("sync online=true changed=false pending=0"),
+        "{out}"
+    );
+    assert!(out.contains("who carol developer Acme"), "{out}");
+    // The write reached the team: the same app through `krate run` reads it.
+    let (lines, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["sync", "then", "get", "tasks", "m1"],
+        &[],
+    );
+    assert!(
+        lines[1].starts_with("get m1 title=from mcp"),
+        "{lines:?} {err}"
+    );
+    // Without the grant it is denied, as everywhere.
+    let denied = run(&["io.stdout", "io.args"], &["get", "tasks", "m1"]);
+    assert_eq!(denied["exit"]["class"], "permission-denied", "{denied}");
+    assert_eq!(denied["capabilities"]["denied"][0], "store.org", "{denied}");
+}
+
 /// I (the CLI half Studio drives): `krate org release-key` makes a release
 /// key and prints the exact `krate delegate` line for an owner, with the
 /// key's public half -- never the private file. Once the delegation is

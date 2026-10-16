@@ -16276,33 +16276,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // The organisation's team data (store.org, IC-951): only for the
     // private app the gate above just let through, as that release, for
     // the person signed in. Anything else is not an org app.
-    let app_org = Some(match (org_opened.as_ref(), manifest) {
-        (Some(opened), Some(manifest)) => krate_runtime::org_store::OrgAccess::Granted(Box::new(
-            krate_runtime::org_store::OrgGrant {
-                slug: opened.slug.clone(),
-                hub: opened.hub.clone(),
-                digest: opened.digest.clone(),
-                authorization: opened.authorization.clone(),
-                me: opened
-                    .principal
-                    .as_deref()
-                    .map(|p| p.split_once(':').map_or(p, |(_, v)| v).to_string()),
-                mirror: access::org_data_path(
-                    &opened.slug,
-                    &manifest.app.id.to_ascii_lowercase(),
-                    opened.principal.as_deref(),
-                ),
-                clock_skew_ms: org_clock_skew_ms(),
-                app_id: manifest.app.id.to_ascii_lowercase(),
-                device_secret: krate_runtime::org_store::DeviceSecret(
-                    *access::org_device_key()?.secret(),
-                ),
-                device_name: access::device_name(opened.principal.as_deref()),
-                org_name: opened.org_name.clone(),
-            },
-        )),
-        _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
-    });
+    let app_org = Some(org_run_access(org_opened.as_ref(), manifest)?);
     // The run starts now: the open record says so, with what the app was
     // given and what it was not (IC-949 A). A picture is Krate looking, not
     // a person opening.
@@ -16338,15 +16312,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     let connections = if request.for_screenshot {
         krate_runtime::connections::Connections::default()
     } else {
-        connections::resolve(manifest, &policy, || {
-            let access::Mark::Signed(slug) = access::mark_of(bundle.as_ref()?) else {
-                return None;
-            };
-            let digest = match fetched_sha256.as_deref() {
+        run_connections(manifest, &policy, bundle.as_ref(), || {
+            Some(match fetched_sha256.as_deref() {
                 Some(sha256) => sha256.to_string(),
                 None => krate_bundle::sha256_hex(&std::fs::read(&request.target).ok()?),
-            };
-            Some((slug, digest))
+            })
         })
     };
     let config = Config {
@@ -23972,6 +23942,63 @@ fn shared_hub_url() -> String {
 /// The env var a debug build reads to move the clock an app's organisation
 /// data is stamped with, so a test can be a device whose clock is wrong.
 const ORG_CLOCK_SKEW_ENV: &str = "KRATE_TEST_ORG_CLOCK_SKEW_MS";
+
+/// The organisation's team data (store.org, IC-951) for a run the
+/// organisation gate let through: only the private app it opened, as that
+/// release, for the person signed in; anything else is not an org app.
+/// Every door that runs an app builds it here, `krate run` and the MCP
+/// tools alike (K-1102).
+pub(crate) fn org_run_access(
+    opened: Option<&access::Opened>,
+    manifest: Option<&krate_manifest::Manifest>,
+) -> Result<krate_runtime::org_store::OrgAccess> {
+    Ok(match (opened, manifest) {
+        (Some(opened), Some(manifest)) => krate_runtime::org_store::OrgAccess::Granted(Box::new(
+            krate_runtime::org_store::OrgGrant {
+                slug: opened.slug.clone(),
+                hub: opened.hub.clone(),
+                digest: opened.digest.clone(),
+                authorization: opened.authorization.clone(),
+                me: opened
+                    .principal
+                    .as_deref()
+                    .map(|p| p.split_once(':').map_or(p, |(_, v)| v).to_string()),
+                mirror: access::org_data_path(
+                    &opened.slug,
+                    &manifest.app.id.to_ascii_lowercase(),
+                    opened.principal.as_deref(),
+                ),
+                clock_skew_ms: org_clock_skew_ms(),
+                app_id: manifest.app.id.to_ascii_lowercase(),
+                device_secret: krate_runtime::org_store::DeviceSecret(
+                    *access::org_device_key()?.secret(),
+                ),
+                device_name: access::device_name(opened.principal.as_deref()),
+                org_name: opened.org_name.clone(),
+            },
+        )),
+        _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
+    })
+}
+
+/// Company connections (IC-952) for a run: an organisation's private app
+/// granted `net.connection:<name>` gets that connection's credential, from
+/// the hub, into memory only. `digest` is the opened bytes' sha256, worked
+/// out only when the app asks for a connection. One place for every door
+/// (K-1102).
+pub(crate) fn run_connections(
+    manifest: Option<&krate_manifest::Manifest>,
+    policy: &krate_policy::SessionPolicy,
+    bundle: Option<&krate_bundle::OpenBundle>,
+    digest: impl FnOnce() -> Option<String>,
+) -> krate_runtime::connections::Connections {
+    connections::resolve(manifest, policy, || {
+        let access::Mark::Signed(slug) = access::mark_of(bundle?) else {
+            return None;
+        };
+        Some((slug, digest()?))
+    })
+}
 
 /// How far a test moves this device's clock for `store.org`. Zero in a
 /// release build, whatever the environment says.

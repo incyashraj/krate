@@ -323,6 +323,9 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
     // been fetched.
     let bundle_target = arguments.get("bundle").and_then(Value::as_str);
     let mut fetched_sha: Option<String> = None;
+    // The private app the organisation gate let through, for its team data
+    // and company connections, as `krate run` gives them (K-1102).
+    let mut org_opened: Option<crate::access::Opened> = None;
     let opened = match bundle_target {
         Some(target) if krate_bundle::is_url(target) => {
             let allow_http = arguments
@@ -337,7 +340,7 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
             // The same check every other door makes before an app runs
             // (IC-948 G): an organisation's private app runs only for a
             // current member, and offline only on a lease that holds.
-            crate::fleet::org_gate(
+            org_opened = crate::fleet::org_gate_opened(
                 &subject,
                 crate::access::Bytes::Fetched {
                     sha256: &fetched.sha256,
@@ -354,7 +357,7 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
                 krate_bundle::open(Path::new(target)).with_context(|| format!("open {target}"))?;
             let subject = crate::fleet::Subject::new(Some(&bundle), Some(Path::new(target)), None);
             crate::fleet::admit(&subject, RecordDoor::Mcp)?;
-            crate::fleet::org_gate(
+            org_opened = crate::fleet::org_gate_opened(
                 &subject,
                 crate::access::Bytes::File(Path::new(target)),
                 crate::access::mark_of(&bundle),
@@ -549,12 +552,34 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
     let component = std::fs::read(component_path)
         .with_context(|| format!("read component {component_path}"))?;
 
+    // The organisation's team data and company connections, through the
+    // same builders `krate run` uses (K-1102), and this computer's share
+    // for the organisation beside the app, as at every other door (IC-958).
+    let app_org = crate::org_run_access(org_opened.as_ref(), manifest.as_ref())?;
+    let connections = crate::run_connections(manifest.as_ref(), &policy, opened.as_ref(), || {
+        Some(match (&fetched_sha, bundle_target) {
+            (Some(sha256), _) => sha256.clone(),
+            (None, Some(target)) => krate_bundle::sha256_hex(&std::fs::read(target).ok()?),
+            (None, None) => return None,
+        })
+    });
+    if let Some(org) = org_opened.as_ref() {
+        crate::org::in_background(
+            org.hub.clone(),
+            org.slug.clone(),
+            org.authorization.clone(),
+            org.principal.clone(),
+        );
+    }
+
     crate::fleet::opened(&subject, RecordDoor::Mcp, &policy);
     let config = Config {
         session_policy: policy,
         interpreter: crate::fleet::interpreter(),
         app_args,
         sandbox_root,
+        app_org: Some(app_org),
+        connections,
         ..Config::default()
     };
 
