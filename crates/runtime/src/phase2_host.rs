@@ -211,6 +211,14 @@ impl<'a> Phase2Host<'a> {
         self
     }
 
+    /// This run draws a window: the app's code runs where the window is
+    /// drawn, so `store.org` sync must never wait on the network (K-1107).
+    pub fn set_windowed(&self) {
+        if let Some(org) = self.org.as_ref() {
+            org.set_windowed();
+        }
+    }
+
     fn org(&self) -> Result<&crate::org_store::AppOrg, store::org::OrgError> {
         self.org.as_ref().ok_or(store::org::OrgError::Denied)
     }

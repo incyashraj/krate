@@ -16298,6 +16298,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     *access::org_device_key()?.secret(),
                 ),
                 device_name: access::device_name(opened.principal.as_deref()),
+                org_name: opened.org_name.clone(),
             },
         )),
         _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,

@@ -433,6 +433,9 @@ pub struct Opened {
     pub authorization: Option<String>,
     /// The signed-in person as a principal (`github:<login>`).
     pub principal: Option<String>,
+    /// The organisation's name, as its hub last gave it; the slug before
+    /// the hub has said.
+    pub org_name: String,
 }
 
 /// Where this person's copy of one app's data in one organisation lives:
@@ -564,12 +567,13 @@ pub fn gate_opened(bytes: Bytes, mark: Mark, door: Door) -> Result<Option<Opened
         })
     });
 
-    let opened = Opened {
+    let mut opened = Opened {
         slug: slug.clone(),
         hub: hub.clone(),
         digest: digest.clone(),
         authorization: authorization.clone(),
         principal: me.clone(),
+        org_name: slug.clone(),
     };
     let result = match check_in(&hub, &digest, authorization.as_deref()) {
         CheckIn::NotReleased => {
@@ -628,7 +632,16 @@ pub fn gate_opened(bytes: Bytes, mark: Mark, door: Door) -> Result<Option<Opened
             door,
         ),
     };
-    result.map(|()| Some(opened))
+    result.map(|()| {
+        if let Some(name) = load_record(&digest)
+            .as_ref()
+            .and_then(|r| r["org"]["name"].as_str())
+            .filter(|n| !n.is_empty())
+        {
+            opened.org_name = name.to_string();
+        }
+        Some(opened)
+    })
 }
 
 fn refuse_opened(door: Door, reason: &str, words: &str) -> Result<Option<Opened>> {

@@ -9,6 +9,13 @@
 //! every few seconds while the app is open and once when it closes; offline
 //! is never an error.
 //!
+//! **Never in the window's way (K-1107).** Every exchange runs on the
+//! background thread. In a windowed app `sync` only asks that thread to go
+//! now and answers at once with where this device stands; [`AppOrg::status`]
+//! says the same without asking for anything. A command-line app has no
+//! window to freeze, so its `sync` still waits for the exchange, as a script
+//! that syncs and exits expects.
+//!
 //! Which write wins is [`crate::org_merge`]'s rule, the one the hub applies
 //! too. The part only a device does is keep its stamps on the hub's clock:
 //! after a sync it knows how far its clock is from the hub's
@@ -75,6 +82,9 @@ pub struct OrgGrant {
     pub device_secret: DeviceSecret,
     /// What the organisation's device list calls this device.
     pub device_name: String,
+    /// The organisation's name as the check-in gave it, for the words an
+    /// app shows before the first sync names it (the slug when unknown).
+    pub org_name: String,
 }
 
 /// A device's private key, never printed.
@@ -125,6 +135,34 @@ pub struct SyncState {
     pub last_synced: Option<u64>,
 }
 
+/// Where this device stands with the organisation's store, as the runtime
+/// last saw it (K-1107, K-1108).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Link {
+    /// The last exchange reached the organisation and nothing waits here.
+    Synced,
+    /// An exchange is under way, or due: something written here is on its
+    /// way, or this run has not reached the organisation yet.
+    Syncing,
+    /// The last try did not reach the organisation.
+    Offline,
+    /// This device does not hold the organisation's key yet. Writes wait
+    /// here until another member's computer passes the key on.
+    WaitingForKey,
+}
+
+/// [`Link`], with what an app shows beside it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    pub link: Link,
+    pub pending: u32,
+    /// When this device last reached the organisation's store, in
+    /// milliseconds since the Unix epoch; reading counts, not only sending.
+    pub reached_at: Option<u64>,
+    /// The organisation's name, for words like "someone in Acme".
+    pub org: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Member {
     pub name: String,
@@ -145,6 +183,10 @@ const PUSH_BYTES: usize = 512 * 1024;
 const PUSH_WRITES: usize = 1000;
 /// Rounds of push and pull in one sync before it stops for now.
 const MAX_ROUNDS: usize = 64;
+/// How long closing a windowed app waits for its last sync before letting
+/// it finish on its own (K-1107): what was written is kept here and goes up
+/// on the next open.
+const CLOSE_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// One field as this device holds it.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -353,6 +395,26 @@ struct Inner {
     /// The organisation's keyring, while this device holds it.
     #[cfg(not(target_arch = "wasm32"))]
     held: Option<krate_orgkeys::agent::Held>,
+    /// Whether this device holds the organisation's key, as the last try
+    /// found (K-1108).
+    key: KeyHold,
+    /// A try at the organisation has finished this run, reached or not.
+    tried: bool,
+    /// The background thread is in an exchange now.
+    syncing: bool,
+    /// When this device last reached the organisation, in hub milliseconds.
+    reached_at: Option<u64>,
+}
+
+/// This device's hold of the organisation's key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyHold {
+    /// Not asked yet this run, and no keyring on disk.
+    Unknown,
+    Holds,
+    /// The organisation has no key yet, or another member's device has not
+    /// passed it to this one.
+    Waiting,
 }
 
 impl Inner {
@@ -503,12 +565,25 @@ impl Inner {
     }
 }
 
+/// What the app asks of the background thread.
+#[derive(Default)]
+struct Asks {
+    /// Sync now, not at the next tick.
+    now: bool,
+    /// The app is closing: one last sync, then stop.
+    stop: bool,
+}
+
 /// One app's organisation data for this run.
 pub struct AppOrg {
     access: Option<Arc<Mutex<Inner>>>,
     /// Serialises syncs: the app's own and the background one.
     sync_lock: Arc<Mutex<()>>,
-    stop: Arc<std::sync::atomic::AtomicBool>,
+    /// Wakes the background thread early.
+    asks: Arc<(Mutex<Asks>, std::sync::Condvar)>,
+    /// Whether `sync` waits for the exchange: a command-line app's does,
+    /// a windowed app's never does (K-1107).
+    waits: std::sync::atomic::AtomicBool,
     background: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -516,6 +591,14 @@ impl AppOrg {
     /// Open this run's organisation data. `None` means the app was not
     /// granted `store.org`, which every call answers as `denied`.
     pub fn open(access: OrgAccess) -> AppOrg {
+        let mut org = Self::open_quiet(access);
+        org.start_background();
+        org
+    }
+
+    /// [`AppOrg::open`] without the background thread, for tests that set
+    /// the state themselves.
+    fn open_quiet(access: OrgAccess) -> AppOrg {
         let access = match access {
             OrgAccess::NotAnOrgApp => None,
             OrgAccess::Granted(grant) => {
@@ -536,6 +619,14 @@ impl AppOrg {
                         envelope: envelope.clone(),
                     })
                 });
+                #[cfg(not(target_arch = "wasm32"))]
+                let key = if held.is_some() {
+                    KeyHold::Holds
+                } else {
+                    KeyHold::Unknown
+                };
+                #[cfg(target_arch = "wasm32")]
+                let key = KeyHold::Unknown;
                 Some(Arc::new(Mutex::new(Inner {
                     grant: *grant,
                     mirror,
@@ -545,17 +636,20 @@ impl AppOrg {
                     unseen_change: false,
                     #[cfg(not(target_arch = "wasm32"))]
                     held,
+                    key,
+                    tried: false,
+                    syncing: false,
+                    reached_at: None,
                 })))
             }
         };
-        let mut org = AppOrg {
+        AppOrg {
             access,
             sync_lock: Arc::new(Mutex::new(())),
-            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            asks: Arc::new((Mutex::new(Asks::default()), std::sync::Condvar::new())),
+            waits: std::sync::atomic::AtomicBool::new(true),
             background: None,
-        };
-        org.start_background();
-        org
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -563,28 +657,70 @@ impl AppOrg {
         let Some(inner) = self.access.clone() else {
             return;
         };
-        let (lock, stop) = (self.sync_lock.clone(), self.stop.clone());
+        let (lock, asks) = (self.sync_lock.clone(), self.asks.clone());
         self.background = std::thread::Builder::new()
             .name("krate-org-sync".into())
-            .spawn(move || loop {
-                if stop.load(std::sync::atomic::Ordering::SeqCst) {
-                    return;
-                }
-                let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
-                if refused {
-                    return;
-                }
-                let _ = sync_now(&inner, &lock);
-                // Sleep in small steps, so closing the app is not held up.
-                let until = std::time::Instant::now() + BACKGROUND_EVERY;
-                while std::time::Instant::now() < until {
-                    if stop.load(std::sync::atomic::Ordering::SeqCst) {
+            .spawn(move || {
+                let mut asked = false;
+                loop {
+                    let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
+                    if refused {
                         return;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    // Asked by the app faster than the floor, with nothing of
+                    // its own to send: answered from here, so a timer loop
+                    // cannot hammer the hub.
+                    let floor = asked
+                        && inner.lock().is_ok_and(|i| {
+                            i.last_sync.is_some_and(|at| at.elapsed() < SYNC_FLOOR)
+                                && i.mirror.pending() == 0
+                        });
+                    if !floor {
+                        let _ = sync_now(&inner, &lock);
+                    }
+                    let (asks_lock, wake) = &*asks;
+                    let Ok(mut ask) = asks_lock.lock() else {
+                        return;
+                    };
+                    let until = std::time::Instant::now() + BACKGROUND_EVERY;
+                    while !ask.now && !ask.stop {
+                        let left = until.saturating_duration_since(std::time::Instant::now());
+                        if left.is_zero() {
+                            break;
+                        }
+                        ask = match wake.wait_timeout(ask, left) {
+                            Ok((ask, _)) => ask,
+                            Err(_) => return,
+                        };
+                    }
+                    if ask.stop {
+                        drop(ask);
+                        // Once more on close, so what the person did last
+                        // reaches the team.
+                        let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
+                        if !refused {
+                            let _ = sync_now(&inner, &lock);
+                        }
+                        return;
+                    }
+                    asked = std::mem::take(&mut ask.now);
                 }
             })
             .ok();
+    }
+
+    /// A windowed app: `sync` never waits for the network from here on.
+    pub fn set_windowed(&self) {
+        self.waits.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Wake the background thread for a sync now.
+    fn ask_now(&self) {
+        let (asks, wake) = &*self.asks;
+        if let Ok(mut ask) = asks.lock() {
+            ask.now = true;
+        }
+        wake.notify_all();
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -717,13 +853,62 @@ impl AppOrg {
         }))
     }
 
-    /// Sync now, for the app. Faster than every two seconds answers from
-    /// here.
-    ///
-    /// A sync already under way (the background one) is waited for, so
-    /// what the app reads next includes it.
+    /// Where this device stands, from here: it never reaches the network and
+    /// never waits behind a sync (K-1107, K-1108).
+    pub fn status(&self) -> Result<Status, OrgError> {
+        let inner = self.inner()?;
+        inner.check()?;
+        let asked = self.asks.0.lock().is_ok_and(|ask| ask.now);
+        let pending = inner.mirror.pending();
+        let link = if inner.tried && !inner.last_online {
+            Link::Offline
+        } else if inner.key == KeyHold::Waiting {
+            Link::WaitingForKey
+        } else if !inner.tried || inner.syncing || asked || pending > 0 {
+            Link::Syncing
+        } else {
+            Link::Synced
+        };
+        let org = inner
+            .mirror
+            .me
+            .as_ref()
+            .map(|me| me.org.clone())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| {
+                if inner.grant.org_name.is_empty() {
+                    inner.grant.slug.clone()
+                } else {
+                    inner.grant.org_name.clone()
+                }
+            });
+        Ok(Status {
+            link,
+            pending,
+            reached_at: inner.reached_at,
+            org,
+        })
+    }
+
+    /// Sync now, for the app. In a windowed app it asks the background
+    /// thread to go now and answers at once with where this device stands;
+    /// `changed` says so on a later call once that sync brings something
+    /// (K-1107). In a command-line app it waits for the exchange. Faster
+    /// than every two seconds answers from here.
     pub fn sync(&self) -> Result<SyncState, OrgError> {
         let inner_arc = self.access.as_ref().ok_or(OrgError::NotAnOrgApp)?.clone();
+        if !self.waits.load(std::sync::atomic::Ordering::SeqCst) {
+            let mut inner = self.inner()?;
+            inner.check()?;
+            self.ask_now();
+            let changed = std::mem::take(&mut inner.unseen_change);
+            return Ok(SyncState {
+                online: inner.last_online,
+                changed,
+                pending: inner.mirror.pending(),
+                last_synced: inner.mirror.synced_at,
+            });
+        }
         let _one = self
             .sync_lock
             .lock()
@@ -752,16 +937,31 @@ impl AppOrg {
 }
 
 impl Drop for AppOrg {
-    /// Once more on close, so what the person did last reaches the team.
+    /// Once more on close, so what the person did last reaches the team: the
+    /// background thread's last sync. A command-line app waits for it; a
+    /// windowed one gives it [`CLOSE_LIMIT`] and lets it finish on its own,
+    /// so a slow network never holds the close up for long. A write that has
+    /// not gone up is kept here and goes on the next open.
     fn drop(&mut self) {
-        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
-        if let Some(inner) = self.access.clone() {
-            let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
-            if !refused {
-                let _ = sync_now(&inner, &self.sync_lock);
+        {
+            let (asks, wake) = &*self.asks;
+            if let Ok(mut ask) = asks.lock() {
+                ask.stop = true;
             }
+            wake.notify_all();
         }
-        if let Some(handle) = self.background.take() {
+        let Some(handle) = self.background.take() else {
+            return;
+        };
+        if self.waits.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = handle.join();
+            return;
+        }
+        let until = std::time::Instant::now() + CLOSE_LIMIT;
+        while !handle.is_finished() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if handle.is_finished() {
             let _ = handle.join();
         }
     }
@@ -907,8 +1107,13 @@ fn sync_now(inner_arc: &Arc<Mutex<Inner>>, lock: &Arc<Mutex<()>>) -> Result<Sync
 /// whether it changed anything the app has not been told about.
 #[cfg(not(target_arch = "wasm32"))]
 fn sync_locked(inner_arc: &Arc<Mutex<Inner>>) -> Result<SyncState, OrgError> {
+    if let Ok(mut inner) = inner_arc.lock() {
+        inner.syncing = true;
+    }
     let result = sync_rounds(inner_arc);
     if let Ok(mut inner) = inner_arc.lock() {
+        inner.syncing = false;
+        inner.tried = true;
         inner.last_sync = Some(std::time::Instant::now());
         if let Ok(state) = &result {
             inner.unseen_change |= state.changed;
@@ -1032,6 +1237,7 @@ fn sync_rounds(inner_arc: &Arc<Mutex<Inner>>) -> Result<SyncState, OrgError> {
         let (plain, rejected) = open_rows(&answer, &held, &app_id);
         let mut inner = lock_inner()?;
         inner.last_online = true;
+        inner.reached_at = answer["now"].as_u64().or_else(|| Some(inner.now_ms()));
         inner.mirror.rejected += rejected;
         changed |= apply(&mut inner.mirror, &round, &plain);
         inner.save()?;
@@ -1080,11 +1286,15 @@ fn refresh_key(
                 inner.save()?;
             }
             inner.held = Some(held.clone());
+            inner.key = KeyHold::Holds;
             inner.last_online = true;
+            inner.reached_at = Some(inner.now_ms());
             Ok(Some(held))
         }
         Ok(Status::NoKey) | Ok(Status::Waiting) => {
+            inner.key = KeyHold::Waiting;
             inner.last_online = true;
+            inner.reached_at = Some(inner.now_ms());
             Ok(None)
         }
         Err(AgentError::Offline) => {
@@ -1285,6 +1495,7 @@ mod tests {
             app_id: "dev.acme.tasks".into(),
             device_secret: DeviceSecret(*krate_orgkeys::KeyPair::generate().secret()),
             device_name: format!("{name}'s laptop"),
+            org_name: "Acme".into(),
         })
     }
 
@@ -1735,6 +1946,94 @@ mod tests {
         assert_eq!(
             hub.rows[&("tasks".into(), "t1".into(), "title".into())].0,
             serde_json::json!({ "t": "two" })
+        );
+    }
+
+    /// A hub that takes the connection and never answers: the slow train.
+    fn hanging_hub() -> (String, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut held = Vec::new();
+            listener.set_nonblocking(true).unwrap();
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(40);
+            while std::time::Instant::now() < until {
+                if let Ok((stream, _)) = listener.accept() {
+                    held.push(stream);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        });
+        (url, handle)
+    }
+
+    /// K-1107: a windowed app's `sync` and `status` answer at once while
+    /// the hub takes the connection and never answers, and closing the app
+    /// is held up for at most CLOSE_LIMIT. Before, `sync` waited behind the
+    /// background sync and then on the network itself: 30 s measured here.
+    #[test]
+    fn a_windowed_sync_never_waits_on_a_hub_that_never_answers() {
+        let dir = tempfile::tempdir().unwrap();
+        let (url, _hub) = hanging_hub();
+        let mut g = grant(dir.path(), "carol", 0);
+        g.hub = url;
+        let org = AppOrg::open(OrgAccess::Granted(g));
+        org.set_windowed();
+        org.put("c", "i", vec![("a".into(), text("x"))]).unwrap();
+        // Let the background sync get stuck on the network first.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let started = std::time::Instant::now();
+        let state = org.sync().expect("answers");
+        let status = org.status().expect("answers");
+        let took = started.elapsed();
+        eprintln!("MEASURE sync()+status() held the caller for {took:?}");
+        assert!(
+            took < std::time::Duration::from_millis(250),
+            "sync and status waited {took:?} on the network"
+        );
+        assert_eq!(state.pending, 1, "the write waits here");
+        assert_eq!(status.link, Link::Syncing, "a sync is under way");
+        assert_eq!(status.org, "Acme");
+        let closing = std::time::Instant::now();
+        drop(org);
+        let closed = closing.elapsed();
+        eprintln!("MEASURE closing waited {closed:?}");
+        assert!(
+            closed < CLOSE_LIMIT + std::time::Duration::from_secs(1),
+            "closing waited {closed:?}"
+        );
+    }
+
+    /// K-1108: a device the organisation knows and has not given the key
+    /// says so, and an unreachable hub says offline; neither is an error.
+    #[test]
+    fn status_says_waiting_for_the_key_and_offline() {
+        let dir = tempfile::tempdir().unwrap();
+        let org = AppOrg::open_quiet(OrgAccess::Granted(grant(dir.path(), "carol", 0)));
+        org.set_windowed();
+        assert_eq!(org.status().unwrap().link, Link::Syncing, "not reached yet");
+        {
+            let mut inner = org.inner().unwrap();
+            inner.tried = true;
+            inner.last_online = true;
+            inner.key = KeyHold::Waiting;
+        }
+        let status = org.status().unwrap();
+        assert_eq!(status.link, Link::WaitingForKey);
+        assert_eq!(status.org, "Acme");
+        org.inner().unwrap().last_online = false;
+        assert_eq!(org.status().unwrap().link, Link::Offline);
+        {
+            let mut inner = org.inner().unwrap();
+            inner.last_online = true;
+            inner.key = KeyHold::Holds;
+        }
+        assert_eq!(org.status().unwrap().link, Link::Synced);
+        org.put("c", "i", vec![("a".into(), text("x"))]).unwrap();
+        assert_eq!(
+            org.status().unwrap().link,
+            Link::Syncing,
+            "a write is on its way"
         );
     }
 }

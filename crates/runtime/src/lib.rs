@@ -1432,6 +1432,8 @@ impl Runtime {
             .any(|(name, _)| name.starts_with("krate:ui/screen@"));
         gui_host.set_adapts(adapts);
         store.data_mut().phase3_gui = Some(gui_host);
+        // A windowed app's team-data sync never waits on the network.
+        store.data().phase2.set_windowed();
 
         let linker = self.phase4_gui_linker()?;
 
