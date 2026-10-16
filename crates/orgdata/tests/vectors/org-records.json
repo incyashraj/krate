@@ -1,0 +1,111 @@
+{
+  "about": "Team data rows (store.org, F-316) sealed by crates/orgdata on a computer and by the same crate in validator.wasm in a browser tab. The organisation key is Keyring::from_secret(org, org_secret) at version 1; the app's data key is AppDataKey::derive(keyring, 1, app_id). r and k are the opaque record and field names, payload is the sealed plaintext, ct is base64 of nonce || XChaCha20-Poly1305(payload) bound to version, r, k and kind. Both suites must make exactly ct from the inputs and open it. Remake with KRATE_WRITE_ORG_RECORD_VECTORS=1 cargo test -p krate-orgdata --test record_vectors.",
+  "app_id": "dev.acme.inspections",
+  "cases": [
+    {
+      "c": "sites",
+      "ct": "ZU4sh9eCDL6xtbVQ9DFmVJWCtbNT4A4n4wfVXYARmkDRkaTbD/0IpohdXWByStVF++6EGe9JEMK43mnd1D3o/Kk4PhhpWDfsgr2p0HOLcWciYCGKCGPLOjoHQXY7f4g8B72BvECWmO0S+qQ7",
+      "f": "name",
+      "i": "s1",
+      "k": "eae64e551218c2a07a998b59eb99b3fa8942361e7abcdd3d36e91aa277cb8694",
+      "kind": "v",
+      "nonce": "654e2c87d7820cbeb1b5b550f43166549582b5b353e00e27",
+      "payload": "{\"c\":\"sites\",\"f\":\"name\",\"i\":\"s1\",\"v\":{\"t\":\"North depot\"},\"w\":\"dana\"}",
+      "r": "4c57ddd4570277f25309ffb12d34dc1c35f325ae3fcaa3824f6b9a8b1bf3a8f0",
+      "v": {
+        "t": "North depot"
+      },
+      "w": "dana"
+    },
+    {
+      "c": "sites",
+      "ct": "6InTC4VCHozIMNFfO1AIwYlmAOmpEp4JEjzhxTEEhHho+x+V+mwxaO1IjPRPQlsmZYp5CPV4FBPpNNeig6Dw8beVjB8rtOAaFWzRPuamqQj3l6kHt+nvEGNTDCTZHYPte+XH",
+      "f": "score",
+      "i": "s1",
+      "k": "91b0883850905037d16967d70ca013ba4f123c03d36fb9b0c5e104302af26708",
+      "kind": "v",
+      "nonce": "e889d30b85421e8cc830d15f3b5008c1896600e9a9129e09",
+      "payload": "{\"c\":\"sites\",\"f\":\"score\",\"i\":\"s1\",\"v\":{\"n\":7.5},\"w\":\"dana\"}",
+      "r": "4c57ddd4570277f25309ffb12d34dc1c35f325ae3fcaa3824f6b9a8b1bf3a8f0",
+      "v": {
+        "n": 7.5
+      },
+      "w": "dana"
+    },
+    {
+      "c": "sites",
+      "ct": "gBElE20ypih85CsmMPBtU9yzoMjefRrOUdajYD7XUONYPulz6lm2uxIgWqlxBM3/0jLzh144VL6tEfYTVeb1GsGH08Av9/eGKQCYxw6I4We18Io5K+DzwoKy03JjbM9wmHRKcJX58/z43ov2gX4gXODr",
+      "f": "passed",
+      "i": "s1",
+      "k": "66e91bfe8ef445e894a07e66b85dc6da2a9125e10147dc7daa70c1d2b4c92632",
+      "kind": "v",
+      "nonce": "801125136d32a6287ce42b2630f06d53dcb3a0c8de7d1ace",
+      "payload": "{\"c\":\"sites\",\"f\":\"passed\",\"i\":\"s1\",\"v\":{\"b\":true},\"w\":\"dana@acme.example\"}",
+      "r": "4c57ddd4570277f25309ffb12d34dc1c35f325ae3fcaa3824f6b9a8b1bf3a8f0",
+      "v": {
+        "b": true
+      },
+      "w": "dana@acme.example"
+    },
+    {
+      "c": "sites",
+      "ct": "9UKd66tVmrM70wiCSkrHSC4Bj/OzIY0yiGXREf2lNeFoUKw/Ai3VO7QZV8UoVaAA/fDHQb/kKcMsXGWdoIi7hdyV7Mkcv1j+PZpQeB+oFsZFT7wX2/e50uTg7UZK7OuMdJGwPXx+A5lf",
+      "f": "photo",
+      "i": "s2",
+      "k": "f9b1c9cbec5792b1c75a036ae853f5b0fbd941b91fa3fdeabbb39c9d9602877b",
+      "kind": "v",
+      "nonce": "f5429debab559ab33bd308824a4ac7482e018ff3b3218d32",
+      "payload": "{\"c\":\"sites\",\"f\":\"photo\",\"i\":\"s2\",\"v\":{\"x\":\"AAEC/f7/\"},\"w\":\"lee\"}",
+      "r": "cc1fed8d00b22bac21007595ef7d483e37c04f1cb715a9a9ba7d7b098ccafe51",
+      "v": {
+        "x": "AAEC/f7/"
+      },
+      "w": "lee"
+    },
+    {
+      "c": "sites",
+      "ct": "hCJ2M93QlcpivO47TsvmlaLCORHPxu9oNXZPx/ceGOrm0ETIaGdImVUnsX6Q4LqgPTjX0A2hFHSUcL8xcf7EG3AK2ikjXMzZ3DBCmgnOLOO13XgrknhzG68EBqg=",
+      "f": "note",
+      "i": "s2",
+      "k": "51f2a6aa87f70f81c201d3ab7fe51a249d47878d5d2396e12ef3017b7b6965a8",
+      "kind": "n",
+      "nonce": "84227633ddd095ca62bcee3b4ecbe695a2c23911cfc6ef68",
+      "payload": "{\"c\":\"sites\",\"f\":\"note\",\"i\":\"s2\",\"v\":null,\"w\":\"lee\"}",
+      "r": "cc1fed8d00b22bac21007595ef7d483e37c04f1cb715a9a9ba7d7b098ccafe51",
+      "v": null,
+      "w": "lee"
+    },
+    {
+      "c": "sites",
+      "ct": "GkjMd/QroKd3C7HpP4jTzTPhacEOKdf59ev+IrMK6dyGwdGVAiPNxPji1VbtuyUd2gPuGNyGkwvGWDW/A7p2UWWt5BFlaSyYe0thnJ6Ewnb8L1tBHn9+Gg==",
+      "f": "",
+      "i": "s3",
+      "k": "5140fad5ca79c5e5f3bc1443d9b0de95d240c99ecbaf1952a9fc1e0c82a8fbf0",
+      "kind": "t",
+      "nonce": "1a48cc77f42ba0a7770bb1e93f88d3cd33e169c10e29d7f9",
+      "payload": "{\"c\":\"sites\",\"f\":\"\",\"i\":\"s3\",\"v\":null,\"w\":\"lee\"}",
+      "r": "115226b4dc4bf0a16dd52d38fa08da8ebdca101ce3d88f34624bb17ad62b035c",
+      "v": null,
+      "w": "lee"
+    },
+    {
+      "c": "notes",
+      "ct": "WWcv88jZBlMXzaVDdStawniDKyug27NFt9fRmNXj8fezmvnKQpI2lTrflhHDfJWvK0BKrDdaYDIGADHXkG2lc6pbvyI5qZux/WRmDT2p97pWB9mrd4thm+8xfs557QIE7OkK2emvwQdHYHUEYUBiLcTWyFwdyZK+",
+      "f": "body",
+      "i": "n-é",
+      "k": "ec5d68e79ec6745c92c18fbe741349e0bb9e99ef41085ed0531b4df02f9b14f7",
+      "kind": "v",
+      "nonce": "59672ff3c8d9065317cda543752b5ac278832b2ba0dbb345",
+      "payload": "{\"c\":\"notes\",\"f\":\"body\",\"i\":\"n-é\",\"v\":{\"t\":\"Façade crack ✓ 2 m\"},\"w\":\"dana\"}",
+      "r": "7c1dae3a5414b22f6d67437ced2ef67ccb75e68a6a5382e12cbcd6ab28f6f633",
+      "v": {
+        "t": "Façade crack ✓ 2 m"
+      },
+      "w": "dana"
+    }
+  ],
+  "org": "acme",
+  "org_public": "03f8f4ebf6389a99a662580bae4307c81a646a2c75281190dcadfd61beca9e1d",
+  "org_secret": "7e985170f9e4f25fe43daf8603d692ce6aaba1a9c2b25b681d5713ca45ba9dd1",
+  "version": 1
+}

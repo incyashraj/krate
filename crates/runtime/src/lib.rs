@@ -73,7 +73,8 @@ pub mod desktop_host;
 pub mod embed;
 mod fs_watch;
 mod gamepad;
-pub mod org_merge;
+/// The merge rule, from the crate the browser tab shares (`krate-orgdata`).
+pub use krate_orgdata::merge as org_merge;
 pub mod org_store;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;

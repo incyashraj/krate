@@ -1,0 +1,20 @@
+[package]
+name = "krate-orgdata"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "An organisation's team data on one device (store.org): the merge rule and the device's copy, with no disk, clock or network, so a computer (crates/runtime) and a browser tab (crates/validator-wasm) run the same code."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# Sealing and opening rows (F-316). Optional because a wasm32 build of the
+# runtime, which never syncs, cannot draw randomness without a backend.
+krate-orgkeys = { path = "../orgkeys", optional = true }
+
+[features]
+default = ["seal"]
+seal = ["dep:krate-orgkeys"]

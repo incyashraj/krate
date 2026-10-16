@@ -656,12 +656,28 @@ impl AppDataKey {
         plaintext: &[u8],
     ) -> Result<String, KeyError> {
         let nonce: [u8; 24] = random()?;
+        self.seal_with_nonce(record, field, kind, plaintext, &nonce)
+    }
+
+    /// [`AppDataKey::seal`] with the nonce given, for the cross-language
+    /// test vectors (`crates/orgdata/tests/vectors/org-records.json`): the
+    /// same bytes in, the same bytes out, on a computer and in a browser
+    /// tab. A nonce must never be used twice under one key; everything else
+    /// calls [`AppDataKey::seal`], which draws a fresh one.
+    pub fn seal_with_nonce(
+        &self,
+        record: &str,
+        field: &str,
+        kind: RowKind,
+        plaintext: &[u8],
+        nonce: &[u8; 24],
+    ) -> Result<String, KeyError> {
         let cipher = XChaCha20Poly1305::new_from_slice(&self.enc)
             .map_err(|_| KeyError::Malformed("data key"))?;
         let aad = self.aad(record, field, kind);
         let ct = cipher
             .encrypt(
-                XNonce::from_slice(&nonce),
+                XNonce::from_slice(nonce),
                 Payload {
                     msg: plaintext,
                     aad: &aad,
