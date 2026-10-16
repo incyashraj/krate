@@ -77,6 +77,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
   check(details && /Details/.test(details.shown) && /version 3/.test(details.shown) && /HPKE \(RFC 9180/.test(details.shown), "the exact terms are behind Details");
   check(!/HPKE|version 3|sealed blob|key version/i.test(plain), "and no machinery words outside it");
   check(!shown.includes("sk-"), "no credential anywhere on the page");
+  check(/Tells the API who is calling: each request carries a signed Krate-Identity header naming the person/.test(shown), "a connection from before the setting says it tells the API who is calling");
   check(/cap = "net\.connection:finance-api"/.test(shown), "how an app asks for it, with the real name");
   check(button(c, "New connection") && button(c, "Replace credential") && button(c, "Change") && button(c, "Remove"), "an owner can add, replace, change and remove");
 }
@@ -135,6 +136,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
   check(!clearIn(leftThePage(p), [SECRET, "sk-page-test-only"]), "nothing but the sealed blob left the browser: no request carries the credential or its base64");
   check(created && JSON.stringify(created.allow) === JSON.stringify({ methods: ["GET", "POST"], paths: ["/runs", "/people"] }), "and what it allows");
   check(created && JSON.stringify(created.audience) === JSON.stringify({ groups: ["finance"] }) && JSON.stringify(created.apps) === JSON.stringify({ ids: ["com.acme.payroll"] }), "and who and which apps");
+  check(created && created.identity === true && inputs(form, "identity")[0].checked === true && /Tell the API who is calling/.test(form.shown), "Tell the API who is calling starts on, and is sent");
   const post = p.sent.find((s) => s.key === "POST /orgs/acme/connections");
   check(post && post.headers["idempotency-key"], "with an Idempotency-Key");
   check(/The payroll-api connection is ready/.test(p.el("toast").shown), "and says it is ready");
@@ -176,6 +178,11 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
   button(ch, "Save changes").click();
   await settle();
   check(seen.change && JSON.stringify(seen.change.allow) === JSON.stringify({ methods: ["GET"], paths: ["/invoices"] }) && !seen.change.header, "Change sends what it allows and who, never a credential");
+  check(seen.change && seen.change.identity === true, "and whether it tells the API who is calling");
+  inputs(ch, "identity")[0].checked = false;
+  button(ch, "Save changes").click();
+  await settle();
+  check(seen.change && seen.change.identity === false, "turning it off sends identity false");
   check(/A new address needs its credential again/.test(ch.shown), "a refusal is said in words");
 
   button(card(p), "Remove").click();

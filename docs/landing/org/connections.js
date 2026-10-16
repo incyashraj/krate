@@ -54,6 +54,9 @@
     }
     var name = String(typed.header || "").trim();
     if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/.test(name)) return { problem: ["The header name is one word", "Such as Authorization or X-Api-Key."] };
+    if (name.toLowerCase() === "krate-identity") {
+      return { problem: ["That header cannot carry a credential", "Krate-Identity is the one Krate uses to tell the API who is calling. Use the header your API names, like Authorization."] };
+    }
     if (TRANSPORT.indexOf(name.toLowerCase()) >= 0 || name.toLowerCase().indexOf("proxy-") === 0) {
       return { problem: ["That header cannot carry a credential", name + " is one the connection itself sets. Use the header your API names, like Authorization."] };
     }
@@ -178,6 +181,7 @@
         el("b", {}, [c.name, " ", el("span", { class: "tag blue", text: allowWords(c) })]),
         el("small", { class: "dg", text: c.base }),
         el("small", { text: scopeWords(c) }),
+        el("small", { text: c.identity === false ? "Does not tell the API who is calling" : "Tells the API who is calling: each request carries a signed Krate-Identity header naming the person" }),
         el("small", { text: "Credential: the " + (cred.kind === "basic" ? "user and password" : cred.header + " header") + ", set by " + K.who(cred.set_by).label + " on " + K.day(cred.set_at) +
           " · used " + (uses.today || 0) + (uses.today === 1 ? " time" : " times") + " today, " + (uses.last_30_days || 0) + " in 30 days" }),
         again ? K.refusalBlock({
@@ -330,6 +334,22 @@
       };
     }
 
+    /// "Tell the API who is calling": on unless turned off. When on, each
+    /// request also carries a short-lived Krate-Identity token, signed by
+    /// Krate, naming the person, the app and the release, so the API can
+    /// log who did what. The credential still decides access.
+    function identityPart(cur) {
+      var box = el("input", { type: "checkbox", name: "identity" });
+      box.checked = cur !== false;
+      return {
+        node: el("div", { class: "fld" }, [
+          el("label", { class: "chk" }, [box, el("span", { text: "Tell the API who is calling" })]),
+          el("small", { text: "Each request also carries a Krate-Identity header, signed by Krate, naming the person, the app and its version. Your API can log it and check it; it needs no sign-in work. Docs: krate.tech/docs/organisations.html#telling-the-api-who-is-calling" }),
+        ]),
+        value: function () { return box.checked; },
+      };
+    }
+
     function outBox() { return el("div", { class: "connout" }); }
     function hint(out, t, b) { out.textContent = ""; out.appendChild(K.refusalBlock({ title: t, body: b, action: null }, "warn")); }
 
@@ -348,6 +368,7 @@
       var cred = credentialPart();
       var allow = allowPart();
       var scope = scopePart();
+      var who = identityPart(true);
       var out = outBox();
       var save = el("button", { class: "btn dark", type: "button", text: "Add connection" });
       var cancel = el("button", { class: "btn ghost", type: "button", text: "Cancel", onclick: function () { box.hidden = true; } });
@@ -369,7 +390,7 @@
         var done = saving(save, "Encrypting and adding");
         sealForHub(c, where).then(function (sealed) {
           if (sealed.problem || sealed.refused) return sealed;
-          var body = { name: n, base: where.base, allow: a, audience: s.audience, apps: s.apps, credential: sealed.credential };
+          var body = { name: n, base: where.base, allow: a, audience: s.audience, apps: s.apps, identity: who.value(), credential: sealed.credential };
           return K.api("POST", path(), body, { key: K.key() });
         }).then(function (res) {
           done();
@@ -384,7 +405,7 @@
       return el("div", { class: "connbox" }, [
         el("b", { text: "New connection" }),
         el("div", { class: "form" }, [fld("Name", name, "Apps ask for it as net.connection:<name>."), fld("Address", base, "Requests under this address get the credential. Anything else never does.")]),
-        cred.node, allow.node, scope.node, out,
+        cred.node, allow.node, scope.node, who.node, out,
         el("div", { class: "row2" }, [save, cancel]),
       ]);
     }
@@ -422,6 +443,7 @@
     function changeForm(card, c, box) {
       var allow = allowPart(c.allow);
       var scope = scopePart(c);
+      var who = identityPart(c.identity);
       var out = outBox();
       var save = el("button", { class: "btn dark", type: "button", text: "Save changes" });
       var cancel = el("button", { class: "btn ghost", type: "button", text: "Cancel", onclick: function () { box.hidden = true; } });
@@ -432,7 +454,7 @@
         if (s.pickedNone) return hint(out, "Pick at least one group", "Or choose Everyone.");
         out.textContent = "";
         var done = saving(save, "Saving");
-        K.api("PUT", path("/" + encodeURIComponent(c.name)), { allow: a, audience: s.audience, apps: s.apps }, { key: K.key() }).then(function (res) {
+        K.api("PUT", path("/" + encodeURIComponent(c.name)), { allow: a, audience: s.audience, apps: s.apps, identity: who.value() }, { key: K.key() }).then(function (res) {
           done();
           if (!res.ok) { out.appendChild(K.refusalBlock(D.words(res, ctx), "bad")); return; }
           D.toast(c.name + " is changed. Apps follow it the next time they open.");
@@ -442,7 +464,7 @@
       return el("div", { class: "connbox" }, [
         el("b", { text: "Change " + c.name }),
         el("p", { class: "sub", text: "Its address stays " + c.base + ". To send the credential somewhere else, remove this connection and add it again with the new address." }),
-        allow.node, scope.node, out, el("div", { class: "row2" }, [save, cancel]),
+        allow.node, scope.node, who.node, out, el("div", { class: "row2" }, [save, cancel]),
       ]);
     }
 
