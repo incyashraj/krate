@@ -81,6 +81,9 @@ import { orgDeclineRoute } from "./org-decline.js";
 import { orgNotesRoute, noteHeader } from "./org-notes.js";
 import { orgRequestsRoute } from "./org-requests.js";
 import { orgNotifyRoute, sendNotices } from "./org-notify.js";
+// Approval rules, and the code behind each approval: after everything
+// whose approving and candidates list they wrap.
+import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
 import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
 // The organisation store (IC-946), one SQLite-backed Durable Object per
@@ -7607,7 +7610,7 @@ async function orgRouteCore(request, url, env, identity, ctx) {
   };
   const routed =
     (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) ||
-    (await orgDeclineRoute(h)) || (await orgNotesRoute(h)) || (await orgRequestsRoute(h)) || (await orgNotifyRoute(h)) ||
+    (await orgDeclineRoute(h)) || (await orgNotesRoute(h)) || (await orgRequestsRoute(h)) || (await orgNotifyRoute(h)) || (await orgApprovalsRoute(h)) ||
     (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
     (await orgScimRoute(h)) || (await auditExportRoute(h)) || (await orgSamlRoute(h)) ||
     (await orgKeysRoute(h)) ||

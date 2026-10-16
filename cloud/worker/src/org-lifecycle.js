@@ -355,6 +355,9 @@ export async function sweepOrgs(env, orgAsk) {
         await env.BUNDLES.delete(digest);
         deleted.push(digest);
       }
+      // Its code comparison (org-approvals.js) holds source: it goes too.
+      const changes = await env.BUNDLES.head(`changes:${digest}`);
+      if (changes && changes.customMetadata && changes.customMetadata.org === slug) await env.BUNDLES.delete(`changes:${digest}`);
       const blob = await env.APPS.get(`bigkey:${digest}`).catch(() => null);
       if (blob) {
         const bigHead = await env.BUNDLES.head(blob);

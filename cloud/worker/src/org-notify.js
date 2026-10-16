@@ -176,7 +176,7 @@ const ops = {
     const { event } = ctx.args;
     const site = String(ctx.args.site || "https://krate.tech").replace(/\/$/, "");
     const orgName = this.org().name;
-    const link = (tab) => `${site}/org/?o=${encodeURIComponent(ctx.slug)}&tab=${tab}`;
+    const link = (tab, digest) => `${site}/org/?o=${encodeURIComponent(ctx.slug)}&tab=${tab}${digest ? `&c=${digest}` : ""}`;
     const footer = (why) => `\n\nYou get this because ${why} in ${orgName} on Krate. Turn it off under Notifications on that page.`;
     const wants = (principal, kind) => {
       const m = this.member(principal);
@@ -191,10 +191,12 @@ const ops = {
       if (event === "waiting" && c.state === "waiting-for-approval") {
         mails = this.rows("SELECT principal, role FROM members WHERE state = 'active' ORDER BY added_at, rowid")
           .filter((m) => allows(m.role, "candidate.approve") === "yes" && m.principal !== c.uploaded_by && wants(m.principal, "approval-waiting"))
+          // Under approval rules, only those whose approval would count (org-approvals.js).
+          .filter((m) => typeof this.approvalView !== "function" || this.policyIsDefault() || (this.approvalView(c, [m.principal]).you || { can: true }).can)
           .map((m) => ({
             principal: m.principal,
             subject: `${appWords(c)} waits for your approval`,
-            text: `${personWords(c.uploaded_by)} sent ${appWords(c)} to ${orgName}. It waits for someone who approves to look at it.${c.note ? `\n\nTheir note: ${clip(c.note, 1000)}` : ""}\n\nLook at it: ${link("waiting")}${footer("you approve apps")}`,
+            text: `${personWords(c.uploaded_by)} sent ${appWords(c)} to ${orgName}. It waits for someone who approves to look at it.${c.note ? `\n\nTheir note: ${clip(c.note, 1000)}` : ""}\n\nSee its code and what it can do, then approve or decline it: ${link("waiting", c.digest)}${footer("you approve apps")}`,
           }));
       } else if (event === "approved" && c.state === "released" && c.approved_by && c.approved_by !== c.uploaded_by && wants(c.uploaded_by, "version-decided")) {
         mails = [{
