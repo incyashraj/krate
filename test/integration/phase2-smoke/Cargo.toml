@@ -31,3 +31,6 @@ world = "cli"
 
 [profile.release]
 panic = "abort"
+
+# Standalone, so a copy in a nested worktree never finds the outer checkout.
+[workspace]
