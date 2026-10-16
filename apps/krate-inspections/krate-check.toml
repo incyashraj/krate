@@ -1,0 +1,17 @@
+name = "run a fire safety inspection"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Fire safety"
+[[step]]
+type = "Main office"
+[[step]]
+click = "Start inspection"
+[[step]]
+expect_text = "0 of 6 checked"
+[[step]]
+click = "Pass: Fire exits are clear"
+[[step]]
+click = "Fail: Exit signs are lit"
+[[step]]
+expect_text = "2 of 6 checked, 1 failed"

@@ -1,0 +1,25 @@
+name = "report an incident, act on it, close it"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Report the first incident"
+[[step]]
+type = "Water leak in the server room"
+[[step]]
+click = "High"
+[[step]]
+click = "Report it"
+[[step]]
+click = "Add an action"
+[[step]]
+type = "Call the plumber"
+[[step]]
+click = "Add action"
+[[step]]
+click = "Done: Call the plumber"
+[[step]]
+expect_text = "1 of 1 actions done"
+[[step]]
+click = "Close incident"
+[[step]]
+expect_text = "Closed it"

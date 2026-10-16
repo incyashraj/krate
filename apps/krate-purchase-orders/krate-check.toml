@@ -1,0 +1,33 @@
+name = "ask to buy chairs, approve and receive them"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Make the first order"
+[[step]]
+type = "Six office chairs"
+[[step]]
+key = "Tab"
+[[step]]
+type = "Ikea"
+[[step]]
+key = "Tab"
+[[step]]
+type = "480"
+[[step]]
+click = "you"
+[[step]]
+click = "Send for approval"
+[[step]]
+expect_text = "Waiting for you"
+[[step]]
+click = "Approve"
+[[step]]
+type = "Fine, within budget"
+[[step]]
+click = "Approve"
+[[step]]
+click = "Mark ordered"
+[[step]]
+click = "Mark received"
+[[step]]
+expect_text = "Received it"

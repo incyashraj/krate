@@ -1,0 +1,17 @@
+name = "sign a visitor in and out"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Sign the first visitor in"
+[[step]]
+type = "Sam Lee"
+[[step]]
+click = "you"
+[[step]]
+click = "Sign in"
+[[step]]
+expect_text = "On site since"
+[[step]]
+click = "Sign out"
+[[step]]
+expect_text = "Left at"

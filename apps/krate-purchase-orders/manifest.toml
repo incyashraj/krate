@@ -1,0 +1,20 @@
+# Purchase Orders: ask to buy, get it approved, and mark it received (a
+# starter an organisation releases in its first minute on Krate). Its data is
+# the team's, kept with store.org, and it asks for nothing else.
+
+[app]
+id = "dev.krate.purchase-orders"
+name = "Purchase Orders"
+version = "1.0.0"
+entry = "target/wasm32-wasip1/release/krate_purchase_orders.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show your team's purchase orders"
+required = true
+
+[[capabilities]]
+cap = "store.org"
+rationale = "Keep the purchase orders with your team, encrypted, so the people who ask and approve see the same ones"
+required = true
