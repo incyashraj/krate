@@ -1,0 +1,19 @@
+name = "put a shift on the rota and ask to swap it"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Add the first shift"
+[[step]]
+click = "Early"
+[[step]]
+click = "Add shift"
+[[step]]
+expect_text = "Put you on the early shift"
+[[step]]
+click = "Ask for a swap"
+[[step]]
+type = "Hospital appointment"
+[[step]]
+click = "Ask for a swap"
+[[step]]
+expect_text = "Asked for a swap: Hospital appointment"

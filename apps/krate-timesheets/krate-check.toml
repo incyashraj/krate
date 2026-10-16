@@ -1,0 +1,15 @@
+name = "log a day's hours on a project"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Log the first hours"
+[[step]]
+type = "Website"
+[[step]]
+key = "Tab"
+[[step]]
+type = "7.5"
+[[step]]
+click = "Save hours"
+[[step]]
+expect_text = "Logged 7.5 h on Website"

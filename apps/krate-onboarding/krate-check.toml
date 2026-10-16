@@ -1,0 +1,15 @@
+name = "add a new joiner and tick off a task"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Add the first joiner"
+[[step]]
+type = "Priya Shah"
+[[step]]
+click = "Add joiner"
+[[step]]
+expect_text = "Checklist, 0 of 8 done"
+[[step]]
+click = "Done: Order the laptop and phone"
+[[step]]
+expect_text = "Checklist, 1 of 8 done"

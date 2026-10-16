@@ -1,0 +1,17 @@
+name = "book a week of holiday"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Book the first time off"
+[[step]]
+key = "Tab"
+[[step]]
+type = "2027-03-01"
+[[step]]
+key = "Tab"
+[[step]]
+type = "2027-03-05"
+[[step]]
+click = "Book it"
+[[step]]
+expect_text = "Booked 5 working days of holiday"
