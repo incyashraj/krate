@@ -63,9 +63,9 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
 
 /* ---- the list ----------------------------------------------------------- */
 {
-  const p = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: as(ALICE) });
+  const p = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, { token: "t", routes: as(ALICE) });
   const c = card(p);
-  check(c && /Company connections/.test(c.shown), "Settings has a Company connections card");
+  check(c && /Company connections/.test(c.shown), "Connections has the Company connections card");
   const shown = t(c.shown);
   check(/finance-api GET on \/invoices/.test(shown), "each connection says its name and what it allows");
   check(shown.includes("https://api.acme.example/finance"), "and its address");
@@ -84,7 +84,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
 /* ---- adding one --------------------------------------------------------- */
 {
   let created = null;
-  const p = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, {
+  const p = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, {
     token: "t",
     routes: as("github:erin", { "POST /orgs/acme/connections": (_h, body) => { created = body; return [201, { connection: { ...CONN, name: body.name } }]; } }),
   });
@@ -144,7 +144,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
 /* ---- replacing the credential, changing, removing ------------------------ */
 {
   const seen = {};
-  const p = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, {
+  const p = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, {
     token: "t",
     routes: as(ALICE, {
       "PUT /orgs/acme/connections/finance-api/credential": (_h, b) => { seen.cred = b; return [200, { connection: CONN }]; },
@@ -187,15 +187,15 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
 
 /* ---- who sees what ------------------------------------------------------ */
 {
-  const dev = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: as("github:carol") });
+  const dev = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, { token: "t", routes: as("github:carol") });
   const c = card(dev);
   check(c && /finance-api/.test(c.shown), "a developer sees the connections, to build apps that use them");
   check(!button(c, "New connection") && !button(c, "Replace credential") && !button(c, "Remove") && !button(c, "Change"), "and nothing to change them");
-  const none = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [200, { connections: [] }] }) });
+  const none = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [200, { connections: [] }] }) });
   check(/No connections yet/.test(card(none).shown), "an empty list says so, and how to begin");
-  const older = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [404, { error: "hub-error", message: "" }] }) });
+  const older = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [404, { error: "hub-error", message: "" }] }) });
   check(!older.el("pane").querySelector(".conn"), "a hub from before connections shows no card that can only fail");
-  const refused = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [503, { error: "connections-off", message: "" }] }) });
+  const refused = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [503, { error: "connections-off", message: "" }] }) });
   check(/Connections are not switched on on this hub yet/.test(card(refused).shown), "a hub with them switched off says so in words");
 }
 
@@ -203,7 +203,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
 {
   // No organisation key yet: the page says the one step, and sends nothing.
   let posted = false;
-  const p = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, {
+  const p = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, {
     token: "t",
     routes: as(ALICE, { "GET /orgs/acme/keys": () => [200, { current: null, devices: [] }], "POST /orgs/acme/connections": () => { posted = true; return [201, {}]; } }),
   });
@@ -221,7 +221,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
 
   // A credential kept the old way says it must be entered again, and how.
   const old = { ...CONN, credential: { ...CONN.credential, state: "needs-entry", version: null } };
-  const q = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [200, { connections: [old] }] }) });
+  const q = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, { token: "t", routes: as(ALICE, { "GET /orgs/acme/connections": () => [200, { connections: [old] }] }) });
   const shown = t(card(q).shown);
   check(/Enter this credential again/.test(shown) && /deleted it rather than keep a copy it could read/.test(shown) && /Replace credential/.test(shown), "a credential kept the old way says to enter it again, with the button that does it");
   check(!/Encrypted: Krate cannot read this credential/.test(shown), "and does not claim to be encrypted");

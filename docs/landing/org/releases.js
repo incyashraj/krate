@@ -419,6 +419,6 @@
       return el("div", {}, [form, out]);
     }
 
-    return { pane: pane, groupsCard: groupsCard };
+    return { pane: pane, groupsCard: groupsCard, appCard: appCard, audienceWords: audienceWords };
   };
 })(typeof window !== "undefined" ? window : globalThis);

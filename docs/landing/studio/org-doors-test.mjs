@@ -169,7 +169,7 @@ const settings = (me, extra = {}) => page("https://krate.tech/org/?o=acme&tab=se
   const p = await settings(ALICE);
   const K = p.win.KrateOrg;
   const say = (e) => K.eventWords({ actor: "scim", result: "allowed", ...e }, {});
-  check(say({ action: "member.add", target: "member:email:erin@acme.test", reason: "recipient; created by the directory" }) === "Your directory (SCIM) added erin@acme.test as recipient.", "a person the directory adds");
+  check(say({ action: "member.add", target: "member:email:erin@acme.test", reason: "recipient; created by the directory" }) === "Your directory (SCIM) added erin@acme.test as member.", "a person the directory adds");
   check(say({ action: "member.remove", target: "member:email:erin@acme.test", reason: "recipient; deactivated in the directory" }) === "Your directory (SCIM) removed erin@acme.test, deactivated in the directory.", "a person the directory deactivates");
   check(say({ action: "member.add", target: "member:email:erin@acme.test", reason: "developer; reactivated by the directory" }) === "Your directory (SCIM) brought back erin@acme.test as developer.", "a person the directory brings back");
   check(K.eventWords({ actor: ALICE, result: "allowed", action: "audit-export.set", target: "audit-export:siem.acme.test" }, {}) === "@alice started sending the activity to siem.acme.test.", "starting the export");

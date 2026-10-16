@@ -73,8 +73,26 @@ const ticksIn = (row) => row.all((n) => n.tagName === "INPUT" && n.getAttribute(
 }
 
 {
-  // The person who sent it sees the list and cannot tick or approve.
-  const p = await page("https://krate.tech/org/?o=acme&tab=waiting", DASH, { token: "t", routes: as("github:carol") });
+  // A reviewer declines with a reason; an empty reason is not sent.
+  const p = await page("https://krate.tech/org/?o=acme&tab=waiting", DASH, {
+    token: "t", routes: as("github:bob", { [`POST /orgs/acme/candidates/${D2}/decline`]: (h, b) => [200, { digest: D2, state: "declined", decline_reason: b.reason }] }),
+  });
+  const upd = rowOf(p, "Expenses");
+  button(upd, "Decline").click();
+  const go = button(upd, "Decline it");
+  go.click();
+  await settle();
+  check(!p.sent.some((s) => s.key.endsWith("/decline")) && /Say why in a few words/.test(upd.shown), "declining needs a reason");
+  upd.all((n) => n.tagName === "TEXTAREA")[0].value = "Scan receipts without the camera first";
+  go.click();
+  await settle();
+  const sent = p.sent.find((s) => s.key === `POST /orgs/acme/candidates/${D2}/decline`);
+  check(sent && sent.body.reason === "Scan receipts without the camera first", "a reviewer declines with a reason the sender reads");
+}
+
+{
+  // The person who sent it reads what changed on its app's page, and cannot tick or approve.
+  const p = await page("https://krate.tech/org/?o=acme&tab=apps&app=com.acme.expenses", DASH, { token: "t", routes: as("github:carol") });
   const upd = rowOf(p, "Expenses");
   check(/use your camera/.test(upd.shown) && !button(upd, "Approve") && ticksIn(upd).every((x) => x.disabled), "the sender sees what changed, and nothing to tick or approve");
 }

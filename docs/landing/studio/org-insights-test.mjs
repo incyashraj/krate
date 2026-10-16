@@ -137,9 +137,9 @@ const linkTo = (root, tab) => root.all((n) => n.tagName === "A" && n.className =
   check(/Nobody opened these in 30 days/.test(s) && button(pane(p), "Withdraw") === undefined && pane(p).all((n) => n.tagName === "A" && n.textContent === "Ask the owner" && n.attrs.href.startsWith("mailto:frank@acme.test")).length === 1, "an unused app offers Ask the owner (a mail) and Withdraw");
   check(linkTo(pane(p), "releases").some((a) => a.textContent === "Withdraw"), "Withdraw goes to Releases, where the confirmation is");
   // People.
-  check(/Not seen for 30 days 1 no app opened and no visit here/.test(s) && /hal@acme\.test Recipient · last opened an app on \d+ Sep/.test(s), "who has stopped coming, by name, for an owner");
+  check(/Not seen for 30 days 1 no app opened and no visit here/.test(s) && /hal@acme\.test Member · last opened an app on \d+ Sep/.test(s), "who has stopped coming, by name, for an owner");
   check(/Company sign-in Off .* Set up company sign-in/.test(s) && /Invitations waiting 1 sent and not yet accepted Manage invitations/.test(s), "company sign-in off, and invitations waiting");
-  check(/By role: 1 owner, 1 admin, 2 developers, 1 reviewer, 4 recipients\. Signing in: 6 with GitHub, 3 with an email address\./.test(s), "members by role and by sign-in");
+  check(/By role: 1 owner, 1 admin, 2 developers, 1 reviewer, 4 members\. Signing in: 6 with GitHub, 3 with an email address\./.test(s), "members by role and by sign-in");
   // Security.
   check(/Every release of Acme is signed by Acme, and a second person approves it before anyone can open it\./.test(s), "why Krate, where it is felt");
   check(/Computers with access 2 computers that can open Acme's encrypted team data; 1 has been silent for 60 days/.test(s), "computers with access, the silent one counted");
@@ -223,10 +223,10 @@ const linkTo = (root, tab) => root.all((n) => n.tagName === "A" && n.className =
   check(/Approved by you, last 30 days 2 of 2 approvals in Acme/.test(s), "what they approved this month");
   const a = await open("admin", body("admin"));
   check(cardsOf(a).map((c) => c.attrs.id).join(",") === "ins-adoption,ins-people,ins-security,ins-releases,ins-cost,ins-g-yours", "an admin reads the organisation and their own");
+  // A member's console is their apps: no Insights section (their own
+  // computers and apps are on My apps).
   const d = await open("recipient", body("recipient"));
-  const ds = shown(d);
-  check(cardsOf(d).map((c) => c.attrs.id).join(",") === "ins-yours" && !d.el("pane").all((n) => n.tagName === "NAV").length, "a recipient reads only their own, with no section links");
-  check(/Your computers and the apps you used\./.test(ds) && /Dan's ThinkPad Added .* · last seen today/.test(ds) && /Expenses On 5 days · last today/.test(ds), "their computers and the apps they used");
+  check(d.location.href.endsWith("tab=home"), "a member asked for Insights lands on My apps");
   check(!d.el("pane").all((n) => n.tagName === "FIGURE").length, "no analytics for a recipient");
 }
 
@@ -355,7 +355,7 @@ const linkTo = (root, tab) => root.all((n) => n.tagName === "A" && n.className =
   const K = ctx.KrateOrg;
   const row = (a) => ["owner", "admin", "developer", "reviewer", "recipient"].map((r) => (K.MATRIX[a][r] ? "y" : "-")).join(" ");
   check(row("insights.view") === "y y y y y" && row("insights.org") === "y y - - -" && row("insights.developer") === "y - y - -" && row("insights.reviewer") === "y - - y -" && row("insights.people") === "y y - - -", "the page's matrix has IC-959's rows, as the hub's (org.js MATRIX)");
-  check(K.tabsFor("recipient").join(",") === "home,releases,insights,people" && K.tabsFor("developer").includes("insights"), "every role has the Insights tab");
+  check(K.tabsFor("recipient").join(",") === "home,requests,help" && ["owner", "admin", "developer", "reviewer"].every((r) => K.tabsFor(r).includes("insights")), "every role but members has the Insights tab");
 }
 
 console.log(failures() ? `${failures()} check(s) failed` : "ok  the Insights tab");

@@ -75,6 +75,14 @@ import { insightsRoute } from "./org-insights.js";
 import { orgTimeRoute } from "./org-time.js";
 // The organisation's logo, kept small and only as a picture.
 import { orgBrandRoute } from "./org-brand.js";
+// Declining a version with a reason, release notes, app requests and
+// notifications: after everything whose commands they wrap.
+import { orgDeclineRoute } from "./org-decline.js";
+import { orgNotesRoute, noteHeader } from "./org-notes.js";
+import { orgRequestsRoute } from "./org-requests.js";
+import { orgNotifyRoute, sendNotices } from "./org-notify.js";
+// Signed-in sessions, and signing out everywhere.
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -343,7 +351,7 @@ export default {
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -422,27 +430,27 @@ export default {
         return noteStep(env, "signin", "github-start", loginStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/callback") {
-        return noteStep(env, "signin", "github-done", loginCallback(url, env));
+        return noteStep(env, "signin", "github-done", loginCallback(url, env, request));
       }
       if (request.method === "GET" && pathname === "/login/google/start") {
         return noteStep(env, "signin", "google-start", googleStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/google/callback") {
-        return noteStep(env, "signin", "google-done", googleCallback(url, env));
+        return noteStep(env, "signin", "google-done", googleCallback(url, env, request));
       }
       // Company sign-in for an organisation (IC-948, F).
       if (request.method === "GET" && pathname === "/login/oidc/start") {
         return noteStep(env, "signin", "oidc-start", oidcStart(url, env, signInDeps()));
       }
       if (request.method === "GET" && pathname === "/login/oidc/callback") {
-        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps()));
+        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps(request)));
       }
       // ... and by SAML 2.0 (IC-955): SP-initiated, the Response posted back.
       if (request.method === "GET" && pathname === "/login/saml/start") {
         return noteStep(env, "signin", "saml-start", samlStart(url, env, signInDeps()));
       }
       if (request.method === "POST" && /^\/login\/saml\/acs\/[a-z0-9-]+$/.test(pathname)) {
-        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(), readBounded }));
+        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(request), readBounded }));
       }
       if (request.method === "GET" && /^\/saml\/[a-z0-9-]+$/.test(pathname)) {
         return samlMetadata(url, env, signInDeps());
@@ -458,7 +466,7 @@ export default {
         return cors(await noteStep(env, "signin", "email-start", emailStart(request, env)));
       }
       if (request.method === "GET" && pathname === "/login/email/verify") {
-        return noteStep(env, "signin", "email-done", emailVerify(url, env));
+        return noteStep(env, "signin", "email-done", emailVerify(url, env, request));
       }
       if (request.method === "POST" && pathname === "/auth/start") {
         return cors(await noteStep(env, "signin", "desktop-start", authStart(env)));
@@ -766,9 +774,14 @@ export default {
       if (pathname.startsWith("/scim/v2/")) {
         return await scimRoute(request, url, env, { orgAsk, readBounded, noteOrgOf, rateLimited, slugOk: (s) => SLUG.test(s) });
       }
+      // Signed-in sessions: list them, sign one out, sign out the others.
+      if (pathname.startsWith("/account/sessions")) {
+        const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
+        if (res) return cors(res);
+      }
       // Organisations (IC-946).
       if (pathname === "/orgs" || pathname.startsWith("/orgs/")) {
-        return cors(await orgRoute(request, url, env));
+        return cors(await orgRoute(request, url, env, ctx));
       }
       return cors(text("not found", 404));
     } catch (err) {
@@ -3121,11 +3134,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
   return { sent };
 }
 
-async function newSession(env, userId) {
+async function newSession(env, userId, meta = {}) {
   const token = `krs_${crypto.randomUUID().replaceAll("-", "")}`;
   await env.APPS.put(`session:${token}`, userId, { expirationTtl: 90 * 24 * 3600 });
-  // Indexed per user so support can revoke a person's sessions.
-  await env.APPS.put(`usess:${userId}:${token}`, "1", { expirationTtl: 90 * 24 * 3600 });
+  // Indexed per user so support can revoke a person's sessions, and so the
+  // person can see and sign out their own (account-sessions.js): the entry
+  // holds the kind and the browser it came from, in the same write.
+  await recordSession(env, userId, token, meta);
   return token;
 }
 
@@ -3159,8 +3174,11 @@ function signInStart(from, nonce, appNonce) {
 
 /// What the company sign-in routes (org-sso.js) borrow from here: the same
 /// accounts, sessions and K-909 delivery every other sign-in uses.
-function signInDeps() {
-  return { SLUG, signInStart, deliver, ensureUser, newSession, orgAsk, noteOrgOf };
+function signInDeps(request) {
+  const label = sessionLabel(request && request.headers.get("user-agent"));
+  // Company sign-in's sessions say so in the session list.
+  const companySession = (env, userId, meta) => newSession(env, userId, meta || { kind: "company", label });
+  return { SLUG, signInStart, deliver, ensureUser, newSession: companySession, orgAsk, noteOrgOf };
 }
 
 /// Read a stored start. Before K-909 the record was the bare word "app" or
@@ -3219,7 +3237,7 @@ async function googleStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function googleCallback(url, env) {
+async function googleCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const stored = await env.APPS.get(`login:${state}`);
   if (!stored) return signInFailed(url, "expired");
@@ -3258,7 +3276,7 @@ async function googleCallback(url, env) {
     name: claims.name,
     avatar_url: claims.picture,
   });
-  return deliver(start, user, await newSession(env, user.id));
+  return deliver(start, user, await newSession(env, user.id, { kind: "google", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // -------------------------------------------------------------------- email
@@ -3505,7 +3523,7 @@ async function emailStart(request, env) {
   return json({ sent: true });
 }
 
-async function emailVerify(url, env) {
+async function emailVerify(url, env, request) {
   const token = url.searchParams.get("t") || "";
   const stored = await env.APPS.get(`email:${token}`);
   if (!stored) return signInFailed(url, "used");
@@ -3513,7 +3531,8 @@ async function emailVerify(url, env) {
   const record = JSON.parse(stored);
   // The link reached this inbox, so the inbox is proved (IC-947).
   const user = await ensureUser(env, "email", record.email, { email: record.email, verified_email: record.email });
-  return deliver(signInStart(record.from, record.nonce, record.app_nonce), user, await newSession(env, user.id));
+  const start = signInStart(record.from, record.nonce, record.app_nonce);
+  return deliver(start, user, await newSession(env, user.id, { kind: "email", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // --------------------------------------------------------------- web sign-in
@@ -3553,7 +3572,7 @@ async function loginStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function loginCallback(url, env) {
+async function loginCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
   const stored = await env.APPS.get(`login:${state}`);
@@ -3594,7 +3613,18 @@ async function loginCallback(url, env) {
   // The GitHub token itself is handed over (not a krs_ session): the engine
   // already publishes with it and the hub already verifies it. The account
   // record exists either way, so a later Google or email sign-in with the
-  // same address lands on this same user.
+  // same address lands on this same user. Indexed once, so the person can
+  // see this sign-in and sign it out (account-sessions.js): the one write a
+  // GitHub sign-in adds.
+  try {
+    await recordSession(env, account.id, result.access_token, {
+      kind: "github",
+      label: sessionLabel(request && request.headers.get("user-agent"), start.from),
+      ttl: GITHUB_INDEX_TTL_SECONDS,
+    });
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
   return deliver(start, { ...account, login: profile.login }, result.access_token);
 }
 
@@ -3650,6 +3680,21 @@ async function authPoll(request, env) {
   });
   if (!user.ok) return text("signed in, but the profile could not be read", 502);
   const profile = await user.json();
+  // Indexed for the person's session list when their account is known
+  // (one write per sign-in; account-sessions.js). A first-ever sign-in from
+  // the desktop has no account yet, and is listed only while it is in use.
+  try {
+    const userId = profile.login ? await env.APPS.get(`ghlogin:${String(profile.login).toLowerCase()}`) : null;
+    if (userId) {
+      await recordSession(env, userId, result.access_token, {
+        kind: "github",
+        label: sessionLabel(request.headers.get("user-agent"), "app"),
+        ttl: GITHUB_INDEX_TTL_SECONDS,
+      });
+    }
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
 
   return json({
     identity: {
@@ -6747,13 +6792,8 @@ async function adminApi(request, pathname, env) {
     return json({ ok: true });
   }
   if (route === "user/logout" && request.method === "POST") {
-    const sess = await env.APPS.list({ prefix: `usess:${body.id}:`, limit: 1000 });
-    for (const k of sess.keys) {
-      const token = k.name.split(":").pop();
-      await env.APPS.delete(`session:${token}`);
-      await env.APPS.delete(k.name);
-    }
-    return json({ revoked: sess.keys.length });
+    // Krate sessions, and GitHub sign-ins the hub indexed (account-sessions.js).
+    return json({ revoked: await endEverySession(env, String(body.id || ""), GITHUB_CLIENT_ID) });
   }
   if (route === "tickets") {
     const listing = await env.APPS.list({ prefix: "tick:", limit: 1000 });
@@ -7196,6 +7236,10 @@ boot();
 //   POST   /orgs/<slug>/candidates                (bundle bytes)
 //   GET    /orgs/<slug>/candidates                (history, for members who publish or approve)
 //   POST   /orgs/<slug>/candidates/<digest>/approve
+//   POST   /orgs/<slug>/candidates/<digest>/decline {reason}      (org-decline.js)
+//   PUT    /orgs/<slug>/candidates/<digest>/note    {note}        (org-notes.js)
+//   GET    /orgs/<slug>/requests, POST {text}, PUT /<id>          (org-requests.js)
+//   GET    /orgs/<slug>/notifications, GET/PUT /me/notify         (org-notify.js)
 //   GET    /orgs/<slug>/releases
 //   GET    /orgs/<slug>/audit
 //   GET    /a/<hash>                              (a private release: see fetchPrivate)
@@ -7335,16 +7379,16 @@ async function noteOrgOf(env, principal, slug, name, role) {
 /// Every organisation route, behind the refused-attempt limit (IC-948 B):
 /// a principal with 30 refusals this minute gets 429 before any store is
 /// asked, and each refusal the store gives is counted.
-async function orgRoute(request, url, env) {
+async function orgRoute(request, url, env, ctx) {
   const identity = await verifyGitHub(request, env);
   const principals = principalsOf(identity);
   if (principals.length && (await refusalsExhausted(env, principals))) return rateLimitedAnswer();
-  const res = await orgRouteCore(request, url, env, identity);
+  const res = await orgRouteCore(request, url, env, identity, ctx);
   if (principals.length && isRefusal(res.status)) await noteRefusal(env, principals);
   return res;
 }
 
-async function orgRouteCore(request, url, env, identity) {
+async function orgRouteCore(request, url, env, identity, ctx) {
   if (!env.ORGS) {
     return json({ error: "orgs-off", message: "organisations are not switched on on this hub" }, 503);
   }
@@ -7436,6 +7480,17 @@ async function orgRouteCore(request, url, env, identity) {
     return askRaw(op, argsOf(body.value), idempotency);
   };
   const mutate = async (op, argsOf) => orgAnswer(await mutateRaw(op, argsOf));
+  // Work that must not hold up or fail the answer -- notification mail --
+  // runs after it when the platform allows; a test, with no context, waits.
+  const later = (pending) => {
+    const safe = Promise.resolve(pending).catch((e) => console.error("after the answer:", e && e.message ? e.message : String(e)));
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(safe);
+      return Promise.resolve();
+    }
+    return safe;
+  };
+  const notices = { env, smtpSend, askRaw, site };
 
   // Company sign-in and offline access (IC-948, F and G).
   {
@@ -7512,7 +7567,15 @@ async function orgRouteCore(request, url, env, identity) {
     return ask("set-root", { public_key: publicKey, revocations }, idempotency);
   }
   if (rest[0] === "candidates") {
-    if (rest.length === 1 && method === "POST") return orgCandidate(request, env, slug, principals, url.pathname, base);
+    if (rest.length === 1 && method === "POST") {
+      const res = await orgCandidate(request, env, slug, principals, url.pathname, base);
+      // A new version waits: the people who may approve it hear (org-notify.js).
+      if (res.status === 201) {
+        const made = await res.clone().json().catch(() => null);
+        if (made && made.digest && made.state === "waiting-for-approval") await later(sendNotices(notices, { event: "waiting", digest: made.digest }));
+      }
+      return res;
+    }
     if (rest.length === 1 && method === "GET") return ask("candidates");
     if (rest.length === 3 && rest[2] === "approve" && method === "POST") {
       const digest = String(rest[1]).toLowerCase();
@@ -7520,7 +7583,10 @@ async function orgRouteCore(request, url, env, identity) {
         return orgError(404, "digest-mismatch", slug, "a digest is the candidate's 64-hex sha256");
       }
       // `accept`: the new capabilities the approver confirmed (IC-950).
-      return mutate("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      const answer = await mutateRaw("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      // Its sender hears it is out; never holds up or fails the approval.
+      if (answer.status === 200 && !answer.replayed) await later(sendNotices(notices, { event: "approved", digest }));
+      return orgAnswer(answer);
     }
   }
   if (rest[0] === "releases" && rest.length === 1 && method === "GET") return ask("releases", { base });
@@ -7535,10 +7601,12 @@ async function orgRouteCore(request, url, env, identity) {
   const h = {
     request, url, env, slug, rest, method, principals, identity, site, base,
     askRaw, mutateRaw, orgAsk, orgAnswer, json, readBody, readBounded, isAdmin, smtpSend, fetchBundle, idempotencyOf,
-    validate: callValidator,
+    validate: callValidator, later, notices,
   };
   const routed =
-    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) || (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
+    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) ||
+    (await orgDeclineRoute(h)) || (await orgNotesRoute(h)) || (await orgRequestsRoute(h)) || (await orgNotifyRoute(h)) ||
+    (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
     (await orgScimRoute(h)) || (await auditExportRoute(h)) || (await orgSamlRoute(h)) ||
     (await orgKeysRoute(h)) ||
     (await orgSigningRoute(h)) ||
@@ -7570,6 +7638,8 @@ async function orgCandidate(request, env, slug, principals, path, base) {
     );
   }
   const body = read.body;
+  const note = noteHeader(request.headers.get("x-krate-note"));
+  if (note.bad) return json({ error: "bad-request", message: note.bad }, 400);
   const invalid = (problem) => json({ error: "invalid-bundle", message: `not a valid .krate bundle: ${problem}` }, 422);
   if (body.length === 0) return invalid("the body is empty");
   const problem = archiveProblem(body);
@@ -7579,6 +7649,7 @@ async function orgCandidate(request, env, slug, principals, path, base) {
   const digest = await sha256Hex(body);
   const idempotency = await idempotencyOf(request, path, digest);
   const args = candidateArgs(judged.judgement, digest, body.length, base);
+  if (note.value) args.note = note.value;
 
   const check = await orgAsk(env, slug, { op: "check-candidate", principals, args, idempotency });
   if (check.replayed || check.status !== 200) return orgAnswer(check);

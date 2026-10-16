@@ -110,7 +110,7 @@
   // ------------------------------------------------------------- roles
 
   var ROLES = ["owner", "admin", "developer", "reviewer", "recipient"];
-  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Recipient" };
+  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Member" };
   /// What each role is for, in one line (the same words as docs/book's
   /// organisations page).
   var ROLE_SAYS = {
@@ -185,6 +185,11 @@
     // F-319: the organisation's time zone (org-time.js).
     "org.time-zone": { owner: "yes", admin: "yes" },
     "org.logo": { owner: "yes", admin: "yes" },
+    // App requests (org-requests.js): anyone asks; owners, admins and
+    // developers see and answer them all; everyone else sees their own.
+    "request.create": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
+    "request.view": { owner: "yes", admin: "yes", developer: "yes", reviewer: "own", recipient: "own" },
+    "request.manage": { owner: "yes", admin: "yes", developer: "yes" },
   };
 
   function can(role, action) {
@@ -193,22 +198,29 @@
   }
 
   /// The tabs a role sees on /org/, in order.
+  /// Each role's console: the sections it came for, in its order (the
+  /// org console by role, approved 2026-10-16). Owners and admins run the
+  /// organisation; developers make its apps; reviewers clear the queue;
+  /// members open what was released.
   function tabsFor(role) {
-    // The Dashboard first, for everyone: where an organisation starts.
-    var out = ["home", "releases"];
-    // Every app the organisation has, with its record (IC-954).
-    if (can(role, "inventory.view")) out.push("apps");
-    // The numbers each role's decisions need (IC-959).
-    if (can(role, "insights.view")) out.push("insights");
-    // The candidates list is for the people who send, approve or run the
-    // organisation; a recipient only ever opens what was released.
-    if (can(role, "candidate.publish") || can(role, "candidate.approve") || can(role, "audit.read")) out.push("waiting");
-    out.push("people");
-    if (can(role, "audit.read")) out.push("activity");
-    // Billing is the owners' and admins' (Addendum 3 E: GET billing).
-    if (can(role, "billing.read")) out.push("billing");
-    if (role && role !== "recipient") out.push("settings");
-    return out;
+    var out;
+    if (role === "owner" || role === "admin") {
+      out = ["home", "apps", "waiting", "requests", "releases", "people", "computers", "security", "connections", "insights", "activity", "billing", "settings"];
+    } else if (role === "developer") {
+      out = ["home", "myapps", "build", "requests", "releases", "connections", "insights", "people", "settings"];
+    } else if (role === "reviewer") {
+      out = ["home", "waiting", "apps", "releases", "insights", "people", "settings"];
+    } else {
+      out = ["home", "requests", "help"];
+    }
+    return out.filter(function (id) {
+      if (id === "billing") return can(role, "billing.read");
+      if (id === "connections") return can(role, "connection.view");
+      if (id === "apps") return can(role, "inventory.view");
+      if (id === "insights") return can(role, "insights.view");
+      if (id === "activity") return can(role, "audit.read");
+      return true;
+    });
   }
 
   /// The roles `role` may invite, in order.
@@ -464,6 +476,12 @@
     "app-not-allowed": "the connection does not allow that app",
     "connection-not-requested": "that version did not ask for it",
     "credential-needs-entry": "its credential must be entered again",
+    // Declining, release notes and app requests.
+    declined: "it was declined",
+    "not-waiting": "it was not waiting for approval",
+    "note-closed": "a declined or withdrawn version keeps its note",
+    "no-such-request": "no such request",
+    "requests-full": "too many open requests",
   };
 
   /// One audit event as a sentence. `names` maps a digest to "Ledger 1.2".
@@ -531,6 +549,17 @@
         "usage.view": "see how the apps are used",
         "org.logo": "change the organisation's logo",
         "org.time-zone": "change the organisation's time zone",
+        // Declining, release notes and app requests.
+        "candidate.decline": "decline " + app(),
+        decline: "decline " + app(),
+        "candidate.note": "write the release note on " + app(),
+        "note-set": "write a release note",
+        "request.create": "ask for an app",
+        "request-create": "ask for an app",
+        "request.view": "see the app requests",
+        "request.manage": "answer an app request",
+        "request-update": "answer an app request",
+        "notify-prefs-set": "change their notifications",
       }[ev.action] || "do " + ev.action;
       // Shown beside a Refused badge, so the sentence says why, not "refused" again.
       return a + " tried to " + tried + ": " + (SHORT_WHY[ev.reason] || ev.reason || "not allowed") + ".";
@@ -601,6 +630,14 @@
       case "root-key.rotate": return a + " replaced the root key with " + fingerprint(t.value) + ".";
       case "release-key.revoke": return a + " withdrew the release key " + fingerprint(t.value) + ".";
       case "candidate.publish": return a + " sent " + app() + " for approval.";
+      case "candidate.decline": return a + " declined " + app() + (ev.reason ? ": " + ev.reason : "") + ".";
+      case "candidate.note": return a + (ev.reason === "cleared" ? " cleared the release note on " : " wrote the release note on ") + app() + ".";
+      case "request.create": return a + " asked for an app.";
+      case "request.update": {
+        var rs = String(ev.reason || "").split(",")[0];
+        var rw = { open: "open again", planned: "planned", done: "done", declined: "declined" }[rs] || rs;
+        return a + " marked an app request " + rw + (/replied/.test(ev.reason || "") ? ", with a reply." : ".");
+      }
       // Solo release (IC-958 addendum): the hub marks a release its sender
       // made while nobody else could approve with the reason "solo".
       case "candidate.approve":
@@ -828,9 +865,12 @@
   /// travels to /login/ in this tab's session storage, never in the link,
   /// and /login/ sends it at once, keeping the one place that knows how a
   /// sign-in comes back here.
-  function signInChoices(here) {
+  /// `opts.first`: "email" puts the email box first (an invitation sent to
+  /// an inbox); otherwise GitHub and Google lead.
+  function signInChoices(here, opts) {
+    var emailFirst = !!(opts && opts.first === "email");
     var input = el("input", { class: "inp", type: "email", placeholder: "you@company.com", "aria-label": "Work email", autocomplete: "email", required: "" });
-    var go = el("button", { class: "btn ghost", type: "submit", text: "Continue" });
+    var go = el("button", { class: "btn " + (emailFirst ? "dark" : "ghost"), type: "submit", text: "Continue" });
     var form = el("form", { class: "si-email" }, [input, go]);
     form.addEventListener("submit", function (e) {
       if (e && e.preventDefault) e.preventDefault();
@@ -839,14 +879,12 @@
       try { root.sessionStorage.setItem("krate-login-email", v); } catch (x) {}
       root.location.href = signInHref(here, "email");
     });
-    return el("div", { class: "si" }, [
-      el("div", { class: "si-row" }, [
-        el("a", { class: "btn dark si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
-        el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
-      ]),
-      el("div", { class: "or" }, [el("span", { text: "or" })]),
-      form,
+    var row = el("div", { class: "si-row" }, [
+      el("a", { class: "btn " + (emailFirst ? "ghost" : "dark") + " si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
+      el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
     ]);
+    var or = el("div", { class: "or" }, [el("span", { text: "or" })]);
+    return el("div", { class: "si" }, emailFirst ? [form, or, row] : [row, or, form]);
   }
 
   /// Copy text, with the button saying it worked.

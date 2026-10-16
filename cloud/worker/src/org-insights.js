@@ -186,6 +186,27 @@ const ops = {
 
   // ------------------------------------------------------------- helpers
 
+  /// This week's refusals by reason, the weekly average of the four weeks
+  /// before, and whether this week is a spike: Security's numbers, and the
+  /// notification an owner or admin gets for a spike (org-notify.js).
+  refusalWeek(now) {
+    const today = this.orgDay(now);
+    const ago = (k) => dayBefore(today, k);
+    const refusalsBetween = (from, to) => {
+      const out = new Map();
+      for (const r of this.rows("SELECT key, SUM(n) AS n FROM insights_daily WHERE metric = 'refusal' AND day >= ? AND day <= ? GROUP BY key", from, to)) {
+        const reason = r.key.split("|")[0];
+        out.set(reason, (out.get(reason) || 0) + r.n);
+      }
+      return out;
+    };
+    const week = refusalsBetween(ago(6), today);
+    const weekTotal = [...week.values()].reduce((a, b) => a + b, 0);
+    const before = [...refusalsBetween(ago(34), ago(7)).values()].reduce((a, b) => a + b, 0);
+    const average = Math.round((before / 4) * 100) / 100;
+    return { week, weekTotal, average, spike: weekTotal >= SPIKE_MIN && weekTotal > 2 * average };
+  },
+
   /// How many versions were released by their own sender because nobody
   /// else could approve (IC-958). A store from before solo release has no
   /// such column, and none.
@@ -363,18 +384,7 @@ const ops = {
       .filter((m) => allows(m.role, "candidate.publish") === "yes")
       .map((m) => ({ ...person(m.principal), role: m.role, since: m.added_at, last_sent_at: lastSent.get(m.principal) || null }));
     const approvers = members.filter((m) => allows(m.role, "candidate.approve") === "yes").length;
-    const refusalsBetween = (from, to) => {
-      const out = new Map();
-      for (const r of this.rows("SELECT key, SUM(n) AS n FROM insights_daily WHERE metric = 'refusal' AND day >= ? AND day <= ? GROUP BY key", from, to)) {
-        const reason = r.key.split("|")[0];
-        out.set(reason, (out.get(reason) || 0) + r.n);
-      }
-      return out;
-    };
-    const week = refusalsBetween(ago(6), today);
-    const weekTotal = [...week.values()].reduce((a, b) => a + b, 0);
-    const before = [...refusalsBetween(ago(34), ago(7)).values()].reduce((a, b) => a + b, 0);
-    const average = Math.round((before / 4) * 100) / 100;
+    const { week, weekTotal, average, spike } = this.refusalWeek(now);
     const withdrawnOffline = this.rows("SELECT digest, name, version, app_id, withdrawn_at FROM candidates WHERE state = 'withdrawn' ORDER BY withdrawn_at DESC")
       .map((c) => ({ c, held: this.leasesOutstanding(c.digest, now) }))
       .filter((x) => x.held.active > 0)
@@ -439,7 +449,7 @@ const ops = {
           week: [...week.entries()].map(([reason, n]) => ({ reason, n })).sort((a, b) => b.n - a.n || a.reason.localeCompare(b.reason)),
           week_total: weekTotal,
           weekly_average_before: average,
-          spike: weekTotal >= SPIKE_MIN && weekTotal > 2 * average,
+          spike,
         },
         withdrawn_offline: withdrawnOffline,
         sign_in: {

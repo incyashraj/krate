@@ -265,7 +265,7 @@ const two = [member(ALICE, "owner"), member("github:olga", "owner"), member("git
   sel.dispatch("change");
   await settle();
   check(own.sent.some((s) => s.key === "PUT /orgs/acme/apps/Bounce/offline" && s.body.class === "online"), "and the choice is sent for that app's name");
-  const rec = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: routes("github:dan", "recipient") });
+  const rec = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: routes("github:bob", "reviewer") });
   check(!rec.el("pane").querySelector("select") && /30 days offline/.test(rec.el("pane").shown), "everyone else reads the class in words");
   const set = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: routes(ALICE, "owner") });
   const def = set.el("pane").all((n) => n.tagName === "SELECT" && /new apps/i.test(n.attrs["aria-label"] || ""))[0];
