@@ -483,7 +483,32 @@ p.connsafe::before, small.connsafe::before { content: ""; display: inline-block;
 .connuse { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .connuse span { display: block; font-size: 14px; color: var(--ink-2); }
 .connuse pre.k { margin-top: 6px; white-space: pre; overflow-x: auto; font-size: 12.5px; }
+/* SMART-FIXES 4: start from a preset or the API's OpenAPI description */
+.connpresets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.connguide p { max-width: 62ch; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+.connguide .btn { margin-top: 8px; }
+.connimport summary { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--ink); list-style: none; }
+.connimport summary::-webkit-details-marker { display: none; }
+.connimport summary::before { content: ""; width: 7px; height: 7px; margin: 0 2px 0 1px; border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); transform: rotate(-45deg); transition: transform .15s; }
+.connimport[open] summary::before { transform: rotate(45deg); }
+.connimport summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.connimport > .form { margin-top: 8px; }
+.connimport small.sub { display: block; max-width: 62ch; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.connimport textarea.inp { min-height: 88px; resize: vertical; font-family: var(--mono, ui-monospace, Menlo, monospace); font-size: 12.5px; }
+.connimport .row2 { margin-top: 0; }
+.connfetch { display: flex; gap: 8px; }
+.connfetch .inp { flex: 1; min-width: 0; }
+.connfetch .btn, body.console .connfetch .btn.sm { flex: none; height: 40px; }
+.connreview { padding: 12px 14px; border-radius: 12px; background: var(--s1); box-shadow: var(--sh-1); }
+.connreview b { display: block; font-weight: 500; }
+.connreview p { margin-top: 2px; font-size: 13.5px; color: var(--ink-2); }
+.connreview small { display: block; margin-top: 6px; max-width: 70ch; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.connapi .btn.link, body.console .connapi .btn.link { display: inline; height: auto; min-height: 0; padding: 0; border-radius: 0; font: inherit; color: var(--accent); background: none; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
+@media (pointer: coarse) { body.console .connapi .btn.link { display: inline-flex; min-height: 44px; align-items: center; } }
 @media (max-width: 680px) {
+  .connfetch { flex-wrap: wrap; }
+  .connfetch .btn, body.console .connfetch .btn.sm { flex: 1 1 100%; height: 44px; }
+  .connpresets .chip { min-height: 40px; }
   .connrow .ra { padding-left: 0; }
   .connbox { padding: 14px 12px; }
   .connbox .row2 .btn { flex: 1; }
@@ -1104,6 +1129,7 @@ body.console .ways.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 <script src="/org/releases.js"></script>
 <script src="/org/vendor/hpke-js-1.9.0.js"></script>
 <script src="/org/orgseal.js"></script>
+<script src="/kit/connect.js"></script>
 <script src="/org/connections.js"></script>
 <script src="/org/inventory.js"></script>
 <script src="/org/insights.js"></script>

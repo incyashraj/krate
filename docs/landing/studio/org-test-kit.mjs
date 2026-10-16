@@ -12,7 +12,7 @@ const ORGS = SETUP + "\n;\n" + readFileSync("docs/landing/orgs/orgs.js", "utf8")
 // The page loads parts.js (Addendum 3) before dashboard.js; so does this.
 // And doors.js (IC-955), releases.js (IC-949 R), connections.js (IC-952), inventory.js (IC-954) and publishers.js (IC-958) between them, in the page's order,
 // with the sealing it uses (F-316): the vendored hpke-js and orgseal.js.
-const DASH = SETUP + "\n;\n" + ["doors.js", "parts.js", "releases.js", "vendor/hpke-js-1.9.0.js", "orgseal.js", "connections.js", "inventory.js", "insights.js", "publishers.js", "approvals.js", "pages.js", "app.js", "find.js", "home.js", "dashboard.js"]
+const DASH = SETUP + "\n;\n" + readFileSync("docs/landing/kit/connect.js", "utf8") + "\n;\n" + ["doors.js", "parts.js", "releases.js", "vendor/hpke-js-1.9.0.js", "orgseal.js", "connections.js", "inventory.js", "insights.js", "publishers.js", "approvals.js", "pages.js", "app.js", "find.js", "home.js", "dashboard.js"]
   .map((f) => readFileSync(`docs/landing/org/${f}`, "utf8"))
   .join("\n;\n");
 const JOIN = readFileSync("docs/landing/join/join.js", "utf8");
