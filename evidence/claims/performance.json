@@ -164,6 +164,53 @@
       "owner": "lead",
       "measured_on": "2026-09-28",
       "stale_after_days": 365
+    },
+    {
+      "id": "doom-file-size",
+      "metric": "Doom as one .krate",
+      "workload": "apps/krate-doom with the shareware WAD built in",
+      "them": "no comparison: a file size",
+      "us": "2.8 MB",
+      "source": "evidence/benchmarks/2026-10-16-app-sizes.md",
+      "source_row": "wrote Doom.krate (2758035 bytes)",
+      "scope": "apps/krate-doom at 80a34d375, packed with Krate 0.5.4 on an Apple M4",
+      "confidence": "reproducible: build command, WAD checksum and output retained",
+      "caveat": "the size of the packed file, which includes the WAD, source and SDK; not a speed claim",
+      "owner": "lead",
+      "measured_on": "2026-10-16",
+      "stale_after_days": 120
+    },
+    {
+      "id": "template-app-size",
+      "metric": "the template's compiled app",
+      "workload": "krate-app-template (Tally)",
+      "them": "no comparison: a file size",
+      "us": "28 KB",
+      "source": "evidence/benchmarks/2026-10-16-app-sizes.md",
+      "source_row": "28355 target/wasm32-wasip1/release/tally.wasm",
+      "scope": "krate-app-template CI on ubuntu-latest, Krate 0.5.4",
+      "confidence": "reproducible: public CI run",
+      "caveat": "the compiled component only; the .krate is 534,608 bytes because it carries source and SDK",
+      "owner": "lead",
+      "measured_on": "2026-10-16",
+      "stale_after_days": 120
+    },
+    {
+      "id": "runtime-installed-size",
+      "metric": "the shared runtime, installed once",
+      "workload": "notes app",
+      "them": "284.6 MiB installed",
+      "us": "88.6 MiB",
+      "source": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md",
+      "source_row": "Shared Krate Studio/runtime installed once: 88.6 MiB",
+      "scope": "MarkText 0.17.1 ARM64 vs the Krate notes replica, Apple M4, macOS 27 (build 26A5388g), on AC power; equivalent-workload comparison, not feature parity",
+      "confidence": "reproducible measurement, raw samples and seal retained",
+      "caveat": "installed once and shared by every Krate app on the machine; always state it beside the per-app payload, never instead of it",
+      "owner": "lead",
+      "measured_on": "2026-08-25",
+      "stale_after_days": 120,
+      "evidence_run": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z",
+      "seal": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/seal.sha256"
     }
   ],
   "forbidden": [

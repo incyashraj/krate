@@ -1,22 +1,17 @@
 <p align="center">
-  <img src="docs/landing/krate-logo.png" width="128" alt="Krate logo">
+  <img src="docs/landing/krate-logo.png" width="112" alt="Krate logo">
 </p>
 
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Ship your application faster, as one file that works natively on every desktop.</strong>
+  <strong>Ship a desktop app as one file that opens natively on macOS, Windows and Linux.</strong>
 </p>
 
 <p align="center">
-  AI made building apps easy. Krate makes shipping them easy. One small <code>.krate</code> file<br>
-  runs natively on macOS, Windows and Linux through the Krate runtime, which people install once.<br>
-  It is fast, efficient and sandboxed: it asks before it touches files or the network,<br>
-  and you send it in one click. Open-source runtime. No per-OS builds. No browser inside every app.
-</p>
-
-<p align="center">
-  <sub>Status: Krate 0.5.4 (30 September 2026). Published runtimes: macOS (Apple silicon, Intel), Windows (x64, ARM64), Linux (x86_64, arm64). Tested in CI: macOS arm64, Ubuntu x86_64, Windows x86_64. Limits: <a href="https://krate.tech/docs/limits.html">krate.tech/docs/limits.html</a></sub>
+  Write the app in Rust, build it into a WebAssembly component, and send one <code>.krate</code>.<br>
+  The runtime is open source, runs on Wasmtime, and is installed once per machine.<br>
+  The same bytes open on all three systems, and an app can reach only what its manifest declares.
 </p>
 
 <p align="center">
@@ -32,33 +27,15 @@
 </p>
 
 <p align="center">
-  <a href="https://krate.tech/">Website</a>
+  <a href="https://github.com/incyashraj/krate-app-template"><b>Start from the template</b></a>
   ·
-  <a href="https://krate.tech/app/">Make an app in your browser</a>
+  <a href="https://krate.tech/docs/quickstart.html">Quickstart</a>
   ·
-  <a href="https://krate.tech/download/">Download Studio</a>
-  ·
-  <a href="https://krate.tech/docs/quickstart.html">Docs</a>
+  <a href="https://krate.tech/docs/">Docs</a>
   ·
   <a href="https://github.com/incyashraj/krate/releases">Releases</a>
-</p>
-
-<p align="center">
-  <a href="#start-with-the-runtime">Run a sample app</a>
   ·
-  <a href="#build-your-app">Build your app</a>
-  ·
-  <a href="#a-measured-notes-workload">See the benchmark</a>
-  ·
-  <a href="https://github.com/incyashraj/krate/discussions">Talk to us</a>
-</p>
-
-<p align="center">
-  <a href="https://krate.tech/">
-    <img src="docs/landing/readme/studio-build.gif" width="860" alt="A real build in Krate Studio: one sentence, a plan, the AI writing and checking the app, then the finished colour palette app">
-  </a>
-  <br>
-  <sub>A real build, recorded in one take: one sentence in, a 24 KB app out. The AI's 2 min 47 s of work is sped up.</sub>
+  <a href="https://github.com/incyashraj/krate/discussions">Discussions</a>
 </p>
 
 <table align="center">
@@ -71,77 +48,97 @@
     <td align="center"><img src="docs/landing/showcase/editor.webp" width="280" alt="Editor, a code editor with tree, tabs and minimap"><br><sub><b>Editor</b> · code editor</sub></td>
   </tr>
 </table>
-<p align="center"><sub>Made with Krate. Each is one <code>.krate</code> file; see them running at <a href="https://krate.tech/#made">krate.tech</a>.</sub></p>
+<p align="center"><sub>Each is one <code>.krate</code> file built with Krate, with its source in <a href="apps/">apps/</a>. See them running at <a href="https://krate.tech/#made">krate.tech</a>.</sub></p>
 
-## Start with the runtime
+## In numbers
 
-Krate is for developers who want to ship one application file instead of a
-package per operating system. Build once, send the file, and let the native
-runtime handle the platform.
+The same 50,000-line notes workload on the same Apple M4 Mac, against
+MarkText 0.17.1, an Electron editor. Both ARM64, measured 25 August 2026.
 
-Install the CLI/runtime on the machine that will open the app. These commands
-download and execute the published installer; read the
-[Unix script](scripts/install.sh) or [PowerShell script](scripts/install.ps1)
-first, or download a matching archive from
-[Releases](https://github.com/incyashraj/krate/releases/latest).
+| | MarkText (Electron) | Krate |
+|---|---:|---:|
+| Memory with the document open | 2,299.4 MiB across four processes | **178.5 MiB, one process** |
+| Warm open to a visible window | 611.5 ms, median of 10 | **237.1 ms, median of 10** |
+| The app on disk | 284.6 MiB installed | **36.6 KiB**, plus the 88.6 MiB runtime installed once for every app |
 
-**macOS or Linux**
+That is one workload, and other apps will measure differently. The
+[benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md) and
+[this run's analysis](evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md)
+say how it was measured.
+
+Also in [apps/](apps/): id Software's 1993 [Doom](apps/krate-doom), running
+under Krate as one 2.8 MB `.krate` that asks for three permissions: a
+window, printing its start-up lines, and reading its arguments. Runtimes
+ship for macOS (Apple silicon, Intel), Windows (x64, ARM64) and Linux
+(x86_64, arm64).
+
+## Start here
+
+**Build your own app.** Press **Use this template** on
+[krate-app-template](https://github.com/incyashraj/krate-app-template).
+It is a small working app (a counter that keeps its value) whose CI builds
+one `.krate` and then opens that same file on Linux, macOS and Windows.
+To build it on your machine:
+
+```sh
+rustup target add wasm32-wasip1
+curl -fsSL https://krate.tech/install.sh | sh
+krate check-app .
+```
+
+`check-app` builds the app, confirms it imports only Krate's interfaces,
+runs it once, and tells you which stage failed and how to fix it. In CI,
+[setup-krate](https://github.com/incyashraj/setup-krate) installs Krate on
+any GitHub runner.
+
+**Open an app someone sent you.** Install Krate once:
 
 ```sh
 curl -fsSL https://krate.tech/install.sh | sh
 ```
 
-**Windows PowerShell**
+On Windows, use `irm https://krate.tech/install.ps1 | iex`. Read the
+[Unix script](scripts/install.sh) or [PowerShell script](scripts/install.ps1)
+first if you prefer, or download an archive from
+[Releases](https://github.com/incyashraj/krate/releases/latest).
 
-```powershell
-irm https://krate.tech/install.ps1 | iex
-```
-
-Try a ready-made app: download [Chart](https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate),
-our rainfall-chart sample, then run these commands in your download folder:
+Then try [Chart](https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate),
+a small rainfall chart ([source](https://github.com/incyashraj/krate/tree/c46d29500f2b894c89285b04e1b5e2f75184e972/apps/krate-chart),
+[checksum](https://krate.tech/docs/quickstart.html#try-the-chart-sample)):
 
 ```sh
-krate --version
 krate run chart.krate --dump-caps
 krate run chart.krate --prompt
 ```
 
-The [sample source](https://github.com/incyashraj/krate/tree/c46d29500f2b894c89285b04e1b5e2f75184e972/apps/krate-chart)
-and [checksum and terminal check](https://krate.tech/docs/quickstart.html#try-the-chart-sample)
-are available to inspect. This sample requests no file or network access.
-Use the same commands with any other `.krate` filename from a source you trust.
-Inspection does not execute the application. Review permissions before granting them. Running a packaged
-app does not require the author's Rust toolchain or AI account; Linux X11
-users may need [an additional system library](docs/build.md#running-an-app-on-linux-without-building-anything).
-
-Have an app you want to ship? Tell us what it does and which operating systems
-you need to support in the [welcome discussion](https://github.com/incyashraj/krate/discussions/1).
-If you want to come back to Krate later, star this repository to save it.
+`--dump-caps` lists what the app asks for without running it. Chart asks
+for a window and nothing on your files or the network. On Linux X11 you may
+need [one system library](docs/build.md#running-an-app-on-linux-without-building-anything).
 
 ## Build your app
 
 | Your starting point | Next step |
 | --- | --- |
-| Write the code yourself | [Developer quickstart](https://krate.tech/docs/quickstart.html) and [Rust SDK](crates/bindings-rust/README.md) |
+| Start fresh in Rust | [krate-app-template](https://github.com/incyashraj/krate-app-template), then the [Rust SDK](crates/bindings-rust/README.md) |
 | Bring an existing project | [Porting guide](https://krate.tech/docs/porting.html); start with the read-only `krate port ./my-project` scan |
-| Build with AI | [Krate Studio](https://krate.tech/studio/) or the CLI example below |
-| Evaluate the architecture | [Portable format](https://krate.tech/portable-desktop-app-format.html), [distribution comparison](https://krate.tech/desktop-app-distribution.html) and [current limits](https://krate.tech/docs/limits.html) |
+| Build with AI | [Krate Studio](https://krate.tech/studio/), or `krate create` with the coding agent you already use |
+| Judge the design | [Portable format](https://krate.tech/portable-desktop-app-format.html), [distribution comparison](https://krate.tech/desktop-app-distribution.html) and [current limits](https://krate.tech/docs/limits.html) |
 
-For CLI authoring, you need the Rust/component build tools and an installed,
-authenticated coding agent. Check the environment first; the agent's own
-subscription or API charges are separate from Krate:
+To build with AI from the terminal, you need the Rust and component tools
+and an installed, signed-in coding agent. Its subscription or API costs are
+your own:
 
 ```sh
 krate doctor
-krate ai
 krate create "a regex tester with a pattern box and live matches" --agent claude --output regex.krate
 krate run regex.krate --dump-caps
-krate run regex.krate --prompt
 ```
 
-`krate check-app` checks build, imports and basic execution/rendering. You still
-need to use the app, test its behavior and test the same artifact on each OS
-you intend to support. A passing build is not a functional or security audit.
+`krate check-app` checks the build, the imports and a first run. Use the app
+yourself and try it on each system you plan to support before you send it.
+
+Have an app in mind? Tell us what it does and which systems it needs in the
+[welcome discussion](https://github.com/incyashraj/krate/discussions/1).
 
 ## Nothing installed? Start in the browser
 
@@ -156,40 +153,6 @@ Krate Studio on your own machine is free and unlimited when you point it at
 an AI you already have (Claude, Codex, Gemini, or an API key you hold). The
 session follows your account, so anything you start in the browser opens on
 the desktop ready to edit.
-
-## A measured notes workload
-
-The same 50,000-line notes workload, same Apple M4 Mac, head to head against
-MarkText 0.17.1 (Electron), measured on 25 August 2026. Both builds ARM64.
-This is an equivalent document workload, not full editor feature parity
-or a prediction for every Krate app. Raw samples, input digests and machine
-state are retained beside the run.
-
-| | MarkText | Krate |
-|---|---:|---:|
-| Installed app / historical app bundle (different boundaries) | 284.6 MiB installed | **36.6 KiB bundle**, runtime excluded |
-| Memory, 50,000 lines | 2,299.4 MiB across four processes | **178.5 MiB, one process** |
-| Warm open, 50,000 lines | 611.5 ms median of 10 | **237.1 ms median of 10** |
-
-Krate does not put another browser inside every app. The 36.6 KiB is the
-historical notes-app bundle: the shared player is installed once at 88.6 MiB, so the
-runtime plus this measured bundle is about 3.21 times smaller than the
-MarkText installed application. This does not include the editable source
-bundle, saved user data or the authoring toolchain. Further apps still add
-their own code, assets and data.
-
-A `.krate` file can carry source, SDK interfaces and assets beside the
-compiled code, so this historical bundle does not predict every app's size. Compare
-the complete download with other downloads, and the installed runtime plus
-app with other installed applications. Payload size is not download size.
-
-Method and published analysis: the
-[reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md)
-and [this run](evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md).
-The published run includes the analysis, audit result, redacted machine details
-and checksum seal; the original raw samples are not currently included in the
-public repository.
-Energy was not measured and no battery-life claim is made from it.
 
 ## Why a file
 
@@ -213,6 +176,14 @@ The goal is to make `.krate` a standard way developers ship software.
 Today, that depends on the app fitting Krate's supported interfaces.
 
 ## Krate Studio
+
+<p align="center">
+  <a href="https://krate.tech/">
+    <img src="docs/landing/readme/studio-build.gif" width="860" alt="A real build in Krate Studio: one sentence, a plan, the AI writing and checking the app, then the finished colour palette app">
+  </a>
+  <br>
+  <sub>A real build, recorded in one take: one sentence in, a 24 KB app out. The AI's 2 min 47 s of work is sped up.</sub>
+</p>
 
 <p align="center">
   <img src="docs/landing/readme/studio-session.png" width="900" alt="Krate Studio: the conversation on the left, the finished app in the Preview panel on the right, with Files, Code and Details beside it">
