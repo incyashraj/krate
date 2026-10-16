@@ -399,7 +399,7 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
     // security boundary becomes a surprise.
     if arguments.get("auto_grant").is_some() {
         anyhow::bail!(
-            "auto_grant is not available: an AI may ask for a capability but cannot approve one.              Pass explicit `grants`, or run the app yourself and answer the permission screen."
+            "auto_grant is not available: an AI may ask for a capability but cannot approve one. Pass explicit `grants`, or run the app yourself and answer the permission screen."
         );
     }
     let grants: Vec<String> = string_list(arguments.get("grants"))?;

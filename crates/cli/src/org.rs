@@ -961,13 +961,43 @@ pub fn spoken_principal(value: &serde_json::Value) -> String {
     }
 }
 
-/// The join page for an invitation, as the hub's answer gives it or as
-/// the addendum spells it.
-fn join_url(answer: &serde_json::Value, slug: &str, code: &str) -> String {
+/// Is this origin this machine (`http://127.0.0.1:8787`, a `wrangler dev`
+/// hub or a copy of the site served here)?
+fn loopback(url: &str) -> bool {
+    origin(url).is_some_and(|o| {
+        let host = o.split_once("://").map_or("", |(_, h)| h);
+        let bare = host.rsplit_once(':').map_or(host, |(h, _)| h);
+        matches!(bare, "127.0.0.1" | "localhost" | "[::1]")
+    })
+}
+
+/// Is this Krate's own hub, whose site is krate.tech?
+fn krates_hub(hub: &str) -> bool {
+    matches!(
+        origin(hub).as_deref(),
+        Some("https://hub.krate.tech") | Some("https://krate.tech")
+    )
+}
+
+/// The join page for an invitation on `hub`, as the hub's answer gives it
+/// or as the addendum spells it. A link must go to a site that talks to
+/// that hub: krate.tech's join page talks to Krate's hub only, so a local
+/// or company hub that names no site of its own gets no link -- its
+/// invitation is taken with `krate org join` (K-1105). A hub on this
+/// machine may name a site on this machine (`SITE_BASE`), over http.
+fn join_url(answer: &serde_json::Value, slug: &str, code: &str, hub: &str) -> Option<String> {
     for key in ["join_url", "url"] {
-        if let Some(url) = answer[key].as_str().filter(|u| u.starts_with("https://")) {
-            return url.to_string();
+        let Some(url) = answer[key].as_str() else {
+            continue;
+        };
+        let reachable = url.starts_with("https://") || (loopback(hub) && loopback(url));
+        let krate_site = origin(url).as_deref() == Some("https://krate.tech");
+        if reachable && (krates_hub(hub) || !krate_site) {
+            return Some(url.to_string());
         }
+    }
+    if !krates_hub(hub) {
+        return None;
     }
     let q = |text: &str| {
         text.bytes()
@@ -980,7 +1010,11 @@ fn join_url(answer: &serde_json::Value, slug: &str, code: &str) -> String {
             })
             .collect::<String>()
     };
-    format!("https://krate.tech/join/?o={}&c={}", q(slug), q(code))
+    Some(format!(
+        "https://krate.tech/join/?o={}&c={}",
+        q(slug),
+        q(code)
+    ))
 }
 
 /// The first twelve characters of a digest, which is how one is spoken.
@@ -1268,7 +1302,9 @@ fn run_command(client: &Client, command: OrgCommand) -> Result<u8> {
                 println!("Send them this. It works once, only for {who}, until {expires}:");
             }
             println!("  krate org join {slug} {code}");
-            println!("  or open {}", join_url(&answer, &slug, code));
+            if let Some(link) = join_url(&answer, &slug, code, &client.hub) {
+                println!("  or open {link}");
+            }
             Ok(0)
         }
         OrgCommand::CancelInvite { slug, code } => {
@@ -2386,7 +2422,7 @@ fn keys_command(client: &Client, command: KeysCommand) -> Result<u8> {
             match status {
                 Status::NoKey => println!("{slug} has no key yet: an owner runs `krate org keys init {slug}`"),
                 Status::Waiting => println!(
-                    "this computer is waiting for {slug}'s key: the next time another member's                      computer is online with one of {slug}'s apps open, it passes the key on"
+                    "this computer is waiting for {slug}'s key: the next time another member's computer is online with one of {slug}'s apps open, it passes the key on"
                 ),
                 Status::Holds(held) => {
                     println!("this computer holds {slug}'s key, version {}", held.keyring.current().0)
@@ -2725,9 +2761,36 @@ mod tests {
             seg(&principal_of("bob@corp.com")).unwrap(),
             "email%3Abob%40corp.com"
         );
+        let live = "https://hub.krate.tech";
         assert_eq!(
-            join_url(&serde_json::json!({}), "acme", "abc+/="),
-            "https://krate.tech/join/?o=acme&c=abc%2B%2F%3D"
+            join_url(&serde_json::json!({}), "acme", "abc+/=", live).as_deref(),
+            Some("https://krate.tech/join/?o=acme&c=abc%2B%2F%3D")
+        );
+    }
+
+    /// K-1105: an invitation on a hub on this machine links to the site on
+    /// this machine the hub names, never to krate.tech, whose join page
+    /// talks to another hub; a hub that names no site gets no link.
+    #[test]
+    fn a_local_invitation_never_links_to_krate_tech() {
+        let local = "http://127.0.0.1:8787";
+        let named = serde_json::json!({ "join_url": "http://127.0.0.1:8000/join/?o=acme&c=x" });
+        assert_eq!(
+            join_url(&named, "acme", "x", local).as_deref(),
+            Some("http://127.0.0.1:8000/join/?o=acme&c=x")
+        );
+        let unset = serde_json::json!({ "join_url": "https://krate.tech/join/?o=acme&c=x" });
+        assert_eq!(join_url(&unset, "acme", "x", local), None);
+        assert_eq!(join_url(&serde_json::json!({}), "acme", "x", local), None);
+        // A company's own hub with a site of its own keeps its link; plain
+        // http off this machine is never offered.
+        let own = serde_json::json!({ "join_url": "https://krate.acme.com/join/?o=acme&c=x" });
+        assert!(join_url(&own, "acme", "x", "https://hub.acme.com").is_some());
+        let plain = serde_json::json!({ "join_url": "http://krate.acme.com/join/?o=acme&c=x" });
+        assert_eq!(join_url(&plain, "acme", "x", "https://hub.acme.com"), None);
+        assert_eq!(
+            join_url(&unset, "acme", "x", "https://hub.krate.tech").as_deref(),
+            Some("https://krate.tech/join/?o=acme&c=x")
         );
     }
 

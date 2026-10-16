@@ -469,7 +469,7 @@ pub fn org_device_key() -> Result<krate_orgkeys::KeyPair> {
                         .map_err(|err| anyhow::anyhow!("this computer's organisation key: {err}"))
                 }
                 Err(_) => anyhow::bail!(
-                    "this computer's organisation key at {} does not open with this computer's                      machine key (was it copied from another computer?): move it aside and open                      the app again to make a new one, which another member's device then passes                      the key to",
+                    "this computer's organisation key at {} does not open with this computer's machine key (was it copied from another computer?): move it aside and open the app again to make a new one, which another member's device then passes the key to",
                     path.display()
                 ),
             }

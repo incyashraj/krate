@@ -6042,7 +6042,7 @@ fn sign_bundle_command(
         // an unrecoverable loss from a mistyped path.
         if key_path.exists() {
             anyhow::bail!(
-                "{} already exists. Signing keys are not overwritten: a lost                  key is a lost publisher identity, and every app signed with                  it becomes uncheckable.",
+                "{} already exists. Signing keys are not overwritten: a lost key is a lost publisher identity, and every app signed with it becomes uncheckable.",
                 key_path.display()
             );
         }
@@ -8608,7 +8608,7 @@ fn publish_big(
     while status["status"] == "judging" || status["status"] == "uploading" {
         if std::time::Instant::now() > deadline {
             anyhow::bail!(
-                "Krate Cloud is still checking it; it will be listed when the check passes                  (run the same publish again to ask)"
+                "Krate Cloud is still checking it; it will be listed when the check passes (run the same publish again to ask)"
             );
         }
         std::thread::sleep(std::time::Duration::from_secs(3));
@@ -20452,7 +20452,7 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
     if let Some(secs) = pace_note {
         if !json {
             println!(
-                "  pace: this is your second full check in {secs}s. Iterate with                  `check-app . --no-run` (about 2s) and save the full check for when                  you believe the app is done -- full checks this frequent are the                  single biggest time cost in authoring."
+                "  pace: this is your second full check in {secs}s. Iterate with `check-app . --no-run` (about 2s) and save the full check for when you believe the app is done -- full checks this frequent are the single biggest time cost in authoring."
             );
         }
     }
@@ -20647,7 +20647,13 @@ fn run_check_app(
             return Err(CheckFailure {
                 stage: CheckStage::Layout,
                 detail,
-                fix: "Bound the `quick` path, never the interactive one:\n\n                          if quick {\n        // draw one frame, print key:value, exit 0\n                          }\n    // interactive: no round limit at all\n    loop {\n                              match events::wait(None) {\n                                  Some(Event::CloseRequested(_)) => break,\n            _ => {}\n                              }\n    }\n\nA real session ends when the person closes the window,                       and only then."
+                fix: "Bound the `quick` path, never the interactive one:\n\n    \
+                      if quick {\n        // draw one frame, print key:value, exit 0\n    }\n    \
+                      // interactive: no round limit at all\n    loop {\n        \
+                      match events::wait(None) {\n            \
+                      Some(Event::CloseRequested(_)) => break,\n            _ => {}\n        \
+                      }\n    }\n\nA real session ends when the person closes the window, \
+                      and only then."
                     .to_string(),
             });
         }

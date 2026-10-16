@@ -14374,6 +14374,9 @@ struct FakeOrgHub {
     connections_down: bool,
     /// The per-app data quota (store.org); 0 is the hub's 50 MiB.
     data_quota: u64,
+    /// The hub's SITE_BASE: where its join links point. `None` is the
+    /// hub's default, krate.tech.
+    site: Option<String>,
     /// While true every request answers 503: the hub is out of reach, as
     /// on a train. A private app then opens on its lease, offline.
     down: bool,
@@ -15651,7 +15654,10 @@ impl FakeOrgHub {
                     serde_json::json!({
                         "code": code, "expires_at": expires, "principal": principal,
                         "role": invited,
-                        "join_url": format!("https://krate.tech/join/?o={slug}&c={code}"),
+                        "join_url": format!(
+                            "{}/join/?o={slug}&c={code}",
+                            self.site.as_deref().unwrap_or("https://krate.tech")
+                        ),
                     }),
                 )
             }
@@ -16894,9 +16900,12 @@ impl OrgWorld {
             .unwrap_or_else(|| panic!("no join line: {said}"))
             .trim()
             .to_string();
+        // This hub is on this machine and names no site of its own, so no
+        // link is offered: krate.tech's join page talks to another hub
+        // (K-1105).
         assert!(
-            said.contains(&format!("or open https://krate.tech/join/?o=acme&c={code}")),
-            "the join link is printed beside the command: {said}"
+            !said.contains("krate.tech/join"),
+            "a local invitation links to krate.tech: {said}"
         );
         code
     }
@@ -17236,6 +17245,20 @@ fn org_invite_prints_the_join_command_and_an_admin_cannot_invite_an_owner() {
     );
     assert!(
         said.contains("invited erin (GitHub) to acme as developer."),
+        "{said}"
+    );
+    // This hub is on this machine and names no site: no krate.tech link,
+    // whose join page talks to another hub (K-1105). Once it names the site
+    // on this machine (SITE_BASE), that is the link.
+    assert!(!said.contains("krate.tech/join"), "{said}");
+    world.hub.lock().unwrap().site = Some("http://127.0.0.1:8000".into());
+    let said = world.says(
+        "alice",
+        &["org", "invite", "acme", "Dan", "--role", "developer"],
+        true,
+    );
+    assert!(
+        said.contains("or open http://127.0.0.1:8000/join/?o=acme&c="),
         "{said}"
     );
 }
