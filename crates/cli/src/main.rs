@@ -14260,6 +14260,10 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         // A fresh leaf starts with the dependencies a finished leaf already
         // compiled, so only this app's own crate is left to build (K-774).
         seed_leaf_from_a_finished_one(&shared, &per_app, app_dir);
+        // The cache would otherwise grow without end: a leaf per app
+        // directory ever built and a whole tree per SDK version (K-1125).
+        mark_leaf_used(&per_app, app_dir);
+        prune_build_cache(&shared, &per_app);
         command.env("CARGO_TARGET_DIR", &per_app);
     }
 
@@ -14456,6 +14460,195 @@ fn seed_leaf_from_a_finished_one(shared: &Path, leaf: &Path, app_dir: &Path) {
         }
         return;
     }
+}
+
+/// A cache tree an older Krate (another SDK fingerprint) built goes once it
+/// has gone unused this long. Long enough that a Studio carrying an older
+/// Krate, used this week, keeps its warm cache.
+const CACHE_OLD_SDK_UNUSED: std::time::Duration = std::time::Duration::from_secs(3 * 24 * 3600);
+/// A leaf nobody built in this long goes; the next build of that app is
+/// seeded warm again (K-774), so this costs seconds, not minutes.
+const CACHE_LEAF_UNUSED: std::time::Duration = std::time::Duration::from_secs(14 * 24 * 3600);
+/// A leaf whose app directory is gone (a test's or a made-and-moved app's
+/// temporary directory) goes after this.
+const CACHE_ORPHAN_AFTER: std::time::Duration = std::time::Duration::from_secs(3600);
+/// The least time between two prunes of the cache.
+const CACHE_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Note that this leaf was just used, and for which app directory, so a
+/// later prune can tell a live leaf from one whose app is gone.
+fn mark_leaf_used(leaf: &Path, app_dir: &Path) {
+    let _ = fs::create_dir_all(leaf);
+    // Absolute: a prune run from another directory must not read a
+    // relative `apps/x` as gone.
+    let absolute = app_dir
+        .canonicalize()
+        .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(app_dir)))
+        .unwrap_or_else(|_| app_dir.to_path_buf());
+    let _ = fs::write(
+        leaf.join(".krate-app-dir"),
+        absolute.to_string_lossy().as_bytes(),
+    );
+    if let Some(root) = leaf.parent() {
+        let _ = fs::write(root.join(".krate-used"), b"");
+    }
+}
+
+/// Prune the shared build cache, at most once an hour across every Krate
+/// on this machine. Never fails a build: every error is skipped.
+fn prune_build_cache(shared: &Path, building: &Path) {
+    let Some(root) = shared.parent() else {
+        return;
+    };
+    let stamp = root.join(".krate-pruned");
+    let recent = fs::metadata(&stamp)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|at| at.elapsed().ok())
+        .is_some_and(|age| age < CACHE_PRUNE_EVERY);
+    if recent {
+        return;
+    }
+    // Stamped first, so two builds starting together do not both prune.
+    let _ = fs::write(&stamp, b"");
+    let trash = prune_build_cache_at(shared, building, std::time::SystemTime::now());
+    // Moved aside already, so nothing can build in or seed from them; the
+    // deleting itself happens off the build's path.
+    if !trash.is_empty() {
+        let _ = std::thread::Builder::new()
+            .name("krate-cache-prune".into())
+            .spawn(move || {
+                for dir in trash {
+                    let _ = fs::remove_dir_all(dir);
+                }
+            });
+    }
+}
+
+/// When a leaf (or a whole cache tree) was last used: its own mark, its
+/// artifact directory (cargo rewrites it on every build, an older Krate's
+/// too), or the directory itself.
+fn cache_last_used(dir: &Path) -> Option<std::time::SystemTime> {
+    [
+        dir.join(".krate-app-dir"),
+        dir.join(".krate-used"),
+        dir.join("wasm32-wasip1/release"),
+        dir.to_path_buf(),
+    ]
+    .iter()
+    .filter_map(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok())
+    .max()
+}
+
+/// Whether some build holds this leaf now.
+fn leaf_in_use(leaf: &Path) -> bool {
+    let Ok(file) = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(leaf.join(".krate-build.lock"))
+    else {
+        return false;
+    };
+    file.try_lock().is_err()
+}
+
+/// Decide what goes and move it aside as `trash-*` (a rename, so it is
+/// instant and a half-deleted leaf can never be picked as a seed). Returns
+/// what to delete. Never touches the leaf being built, a leaf some build
+/// holds, or the newest finished leaf (the seed every new app starts from).
+fn prune_build_cache_at(
+    shared: &Path,
+    building: &Path,
+    now: std::time::SystemTime,
+) -> Vec<PathBuf> {
+    let age = |dir: &Path| {
+        cache_last_used(dir)
+            .and_then(|at| now.duration_since(at).ok())
+            .unwrap_or_default()
+    };
+    let mut trash = Vec::new();
+    let Some(root) = shared.parent() else {
+        return trash;
+    };
+    // Everything set aside lands in the cache root, where the next prune
+    // finds it again if this process ends before deleting it.
+    let mut counter = 0u32;
+    let mut set_aside = |dir: &Path, trash: &mut Vec<PathBuf>| {
+        counter += 1;
+        let stamp = now
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let aside = root.join(format!("trash-{stamp:x}-{}-{counter}", std::process::id()));
+        if fs::rename(dir, &aside).is_ok() {
+            trash.push(aside);
+        }
+    };
+    let leaves = |tree: &Path| -> Vec<PathBuf> {
+        fs::read_dir(tree)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| {
+                        path.is_dir()
+                            && path
+                                .file_name()
+                                .is_some_and(|name| name.to_string_lossy().starts_with("app-"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // Trees another SDK version built, and what an earlier prune left.
+    for entry in fs::read_dir(root).into_iter().flatten().flatten() {
+        let tree = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !tree.is_dir() || tree == shared {
+            continue;
+        }
+        if name.starts_with("trash-") {
+            trash.push(tree);
+            continue;
+        }
+        let tree_leaves = leaves(&tree);
+        if tree_leaves.iter().any(|leaf| leaf_in_use(leaf)) {
+            continue;
+        }
+        let newest = tree_leaves
+            .iter()
+            .map(|leaf| age(leaf))
+            .chain(std::iter::once(age(&tree)))
+            .min()
+            .unwrap_or_default();
+        if newest > CACHE_OLD_SDK_UNUSED {
+            set_aside(&tree, &mut trash);
+        }
+    }
+    // This SDK's leaves.
+    let all = leaves(shared);
+    let seed = all
+        .iter()
+        .filter_map(|leaf| {
+            let at = fs::metadata(leaf.join("wasm32-wasip1/release/.fingerprint"))
+                .and_then(|meta| meta.modified())
+                .ok()?;
+            Some((at, leaf.clone()))
+        })
+        .max_by_key(|(at, _)| *at)
+        .map(|(_, leaf)| leaf);
+    for leaf in all {
+        if leaf == building || Some(&leaf) == seed.as_ref() || leaf_in_use(&leaf) {
+            continue;
+        }
+        let unused = age(&leaf);
+        let orphan = fs::read_to_string(leaf.join(".krate-app-dir"))
+            .is_ok_and(|dir| !Path::new(dir.trim()).exists());
+        if unused > CACHE_LEAF_UNUSED || (orphan && unused > CACHE_ORPHAN_AFTER) {
+            set_aside(&leaf, &mut trash);
+        }
+    }
+    trash
 }
 
 /// Whether a target-dir entry belongs to the crate named `krate_name`
@@ -24117,6 +24310,142 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod build_cache_prune_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    /// A finished leaf for `app` (whose directory may or may not exist).
+    fn leaf(shared: &Path, name: &str, app: &Path) -> PathBuf {
+        let leaf = shared.join(name);
+        fs::create_dir_all(leaf.join("wasm32-wasip1/release/.fingerprint")).unwrap();
+        mark_leaf_used(&leaf, app);
+        leaf
+    }
+
+    fn kept(dir: &Path) -> bool {
+        dir.is_dir()
+    }
+
+    /// K-1125: a leaf whose app directory is gone goes after an hour, one
+    /// still in use or still with its app stays, and the leaf being built,
+    /// a locked leaf and the newest finished leaf (the seed) always stay.
+    #[test]
+    fn orphaned_leaves_go_and_live_ones_stay() {
+        let home = tempfile::tempdir().unwrap();
+        let shared = home.path().join("build/0123456789abcdef");
+        let app = home.path().join("live-app");
+        fs::create_dir_all(&app).unwrap();
+        let gone = home.path().join("gone-app");
+        let live = leaf(&shared, "app-live", &app);
+        let orphan = leaf(&shared, "app-orphan", &gone);
+        let locked = leaf(&shared, "app-locked", &gone);
+        let building = leaf(&shared, "app-building", &gone);
+        std::thread::sleep(Duration::from_millis(20));
+        // The newest finished leaf, orphaned too: it stays as the seed.
+        let seed = leaf(&shared, "app-seed", &gone);
+        let hold = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(locked.join(".krate-build.lock"))
+            .unwrap();
+        hold.lock().unwrap();
+
+        let soon = SystemTime::now() + Duration::from_secs(60);
+        assert!(prune_build_cache_at(&shared, &building, soon).is_empty());
+        assert!(kept(&orphan), "an orphan stays for its first hour");
+
+        let later = SystemTime::now() + Duration::from_secs(2 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, later);
+        assert!(!kept(&orphan), "the orphan went");
+        assert_eq!(trash.len(), 1, "{trash:?}");
+        assert!(
+            trash[0].starts_with(home.path().join("build")),
+            "set aside in the root"
+        );
+        for (dir, why) in [
+            (&live, "its app is still there"),
+            (&locked, "a build holds it"),
+            (&building, "it is being built"),
+            (&seed, "it is the seed"),
+        ] {
+            assert!(kept(dir), "kept because {why}");
+        }
+        drop(hold);
+    }
+
+    /// A leaf nobody built for two weeks goes even when its app is still
+    /// there; another SDK version's whole tree goes after three idle days,
+    /// and what an earlier prune set aside is collected again.
+    #[test]
+    fn idle_leaves_and_old_sdk_trees_go() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("build");
+        let shared = root.join("aaaaaaaaaaaaaaaa");
+        let old = root.join("bbbbbbbbbbbbbbbb");
+        let app = home.path().join("app");
+        fs::create_dir_all(&app).unwrap();
+        let idle = leaf(&shared, "app-idle", &app);
+        let building = leaf(&shared, "app-building", &app);
+        std::thread::sleep(Duration::from_millis(20));
+        let seed = leaf(&shared, "app-seed", &app);
+        leaf(&old, "app-old", &app);
+        let left = root.join("trash-1-2-3");
+        fs::create_dir_all(&left).unwrap();
+
+        let in_two_days = SystemTime::now() + Duration::from_secs(2 * 24 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, in_two_days);
+        assert_eq!(trash, vec![left.clone()], "only the earlier leftovers");
+        assert!(kept(&old) && kept(&idle));
+
+        let in_three_weeks = SystemTime::now() + Duration::from_secs(21 * 24 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, in_three_weeks);
+        assert!(!kept(&old), "the old SDK's tree went");
+        assert!(!kept(&idle), "the idle leaf went");
+        assert!(kept(&seed) && kept(&building));
+        assert!(trash.contains(&left));
+        assert_eq!(trash.len(), 3, "{trash:?}");
+    }
+
+    /// The mark names the app by its absolute path, so a relative app
+    /// directory is not read as gone from wherever the next prune runs.
+    #[test]
+    fn a_relative_app_directory_is_marked_absolute() {
+        let home = tempfile::tempdir().unwrap();
+        let leaf = home.path().join("build/aaaaaaaaaaaaaaaa/app-x");
+        mark_leaf_used(&leaf, Path::new("."));
+        let marked = fs::read_to_string(leaf.join(".krate-app-dir")).unwrap();
+        assert!(Path::new(&marked).is_absolute(), "{marked}");
+        assert!(Path::new(&marked).exists());
+    }
+
+    /// A tree another SDK version is building in right now stays.
+    #[test]
+    fn an_old_sdk_tree_in_use_stays() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("build");
+        let shared = root.join("aaaaaaaaaaaaaaaa");
+        let app = home.path().join("app");
+        fs::create_dir_all(&app).unwrap();
+        let building = leaf(&shared, "app-building", &app);
+        let old = leaf(&root.join("bbbbbbbbbbbbbbbb"), "app-old", &app);
+        let hold = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(old.join(".krate-build.lock"))
+            .unwrap();
+        hold.lock().unwrap();
+        let later = SystemTime::now() + Duration::from_secs(30 * 24 * 3600);
+        prune_build_cache_at(&shared, &building, later);
+        assert!(kept(&old));
+        drop(hold);
+    }
 }
 
 #[cfg(test)]
