@@ -379,7 +379,11 @@ const ops = {
         added_at: d.added_at,
         last_seen: d.last_seen || null,
         holds_current: Boolean(key && d.holds === key.version),
-        silent: now - last > SILENT_DAYS * DAY,
+        // K-1115: a computer says which one it is when it checks in
+        // (?device=) only from IC-959's Krate on. One that never has is
+        // "not identified" -- it may check in every day -- never silent.
+        identified: Boolean(d.last_seen),
+        silent: Boolean(d.last_seen) && now - last > SILENT_DAYS * DAY,
       };
     });
     const lastSent = new Map(this.rows("SELECT uploaded_by, MAX(uploaded_at) AS at FROM candidates GROUP BY uploaded_by").map((r) => [r.uploaded_by, r.at]));
@@ -616,7 +620,7 @@ const ops = {
        LEFT JOIN key_envelopes e ON e.device_id = d.device_id
        WHERE d.principal = ? AND d.state = 'active' ORDER BY d.added_at`,
       me.principal,
-    ).map((d) => ({ device_id: d.device_id, name: d.name || null, added_at: d.added_at, last_seen: d.last_seen || null, holds_current: Boolean(key && d.holds === key.version) }));
+    ).map((d) => ({ device_id: d.device_id, name: d.name || null, added_at: d.added_at, last_seen: d.last_seen || null, identified: Boolean(d.last_seen), holds_current: Boolean(key && d.holds === key.version) }));
     const names = new Map(this.insightsApps().map((a) => [a.app_id, a.name]));
     const marks = ctx.principals.map(() => "?").join(", ") || "''";
     const apps = this.rows(
