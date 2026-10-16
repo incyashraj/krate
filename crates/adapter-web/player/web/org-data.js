@@ -20,6 +20,18 @@
 
 /// How often a sync runs while the app is open.
 export const BACKGROUND_EVERY = 5000;
+/// How often while the live socket is open and healthy: the socket says
+/// when something changed, so this is only the fallback.
+export const LIVE_EVERY = 30000;
+/// The live socket's heartbeat: a "ping" this often, and the socket is
+/// dead when nothing came back for this long after one.
+export const LIVE_PING = 25000;
+export const LIVE_PONG_WAIT = 10000;
+/// Reconnecting: the first wait, the longest, and how long a socket must
+/// have stayed open for the waits to start over.
+export const LIVE_BACKOFF = 1000;
+export const LIVE_BACKOFF_MAX = 60000;
+export const LIVE_STEADY = 30000;
 /// An app asking faster than this, with nothing to send, is answered from here.
 export const SYNC_FLOOR = 2000;
 /// Rounds of push and pull in one sync before it stops for now.
@@ -47,12 +59,20 @@ export class TeamData {
   ///   device   KrateSigning.openDevice(...): this browser's key
   ///   windowed a windowed app's sync never waits (K-1107); a command-line
   ///            app's does
+  ///   socketOf (url, protocols) => a WebSocket (the browser's, unless a
+  ///            test gives one); null turns the live socket off
+  ///   every, liveEvery, backoff  the paces above, for a test
   constructor(o) {
     Object.assign(this, {
       now: () => Date.now(),
       fetch: (...a) => globalThis.fetch(...a),
       onState: () => {},
       windowed: false,
+      socketOf: typeof globalThis.WebSocket === 'function' ? (url, protocols) => new globalThis.WebSocket(url, protocols) : null,
+      random: Math.random,
+      every: BACKGROUND_EVERY,
+      liveEvery: LIVE_EVERY,
+      backoff: LIVE_BACKOFF,
     }, o);
     this.appId = String(o.appId || '').toLowerCase();
     this.key = `data/${o.slug}/${this.appId}/${o.me || ''}`;
@@ -69,6 +89,13 @@ export class TeamData {
     this.chain = Promise.resolve();
     this.timer = null;
     this.writes = Promise.resolve();
+    // The live socket (SMART-FIXES 7): one at most, opened with a ticket a
+    // sync hands out, telling this tab to sync when someone else wrote.
+    this.live = null;
+    this.liveFails = 0;
+    this.liveNextAt = 0;
+    this.liveQueued = false;
+    this.started = false;
   }
 
   /// Load this browser's copy (or start one).
@@ -214,14 +241,124 @@ export class TeamData {
   }
 
   start() {
-    if (this.timer || this.refused) return;
+    if (this.started || this.refused) return;
+    this.started = true;
+    this.tick();
+  }
+
+  /// One background sync, then the next at the pace the socket allows:
+  /// every few seconds without it, every half minute with it.
+  tick() {
+    if (this.refused) return this.stop();
     this.kick();
-    this.timer = setInterval(() => { if (this.refused) this.stop(); else this.kick(); }, BACKGROUND_EVERY);
+    this.schedule(this.pace());
+  }
+
+  schedule(ms) {
+    if (!this.started) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.tick(), ms);
+  }
+
+  pace() {
+    return this.live && this.live.open ? this.liveEvery : this.every;
   }
 
   stop() {
-    if (this.timer) clearInterval(this.timer);
+    this.started = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.liveClose();
+  }
+
+  // ------------------------------------------------------- the live socket
+
+  /// Whether this sync should ask for a ticket: no socket, not waiting out
+  /// a backoff, and a WebSocket to open.
+  wantsLive() {
+    return Boolean(this.started && this.socketOf && !this.live && !this.refused && this.now() >= this.liveNextAt);
+  }
+
+  /// Open the socket a sync's ticket allows. Never throws: a socket that
+  /// does not open is the poll carrying on.
+  liveOpen(grant) {
+    if (!grant || !grant.ticket || this.live || this.refused || !this.started) return;
+    const url = `${this.hub.replace(/\/$/, '').replace(/^http/, 'ws')}/orgs/${this.slug}/data/${this.digest}/live`;
+    let ws;
+    try {
+      ws = this.socketOf(url, [grant.protocol || 'krate-live', grant.ticket]);
+    } catch (_) {
+      return this.liveDrop(null);
+    }
+    const live = { ws, open: false, openedAt: 0, heard: this.now(), beat: null };
+    this.live = live;
+    ws.onopen = () => {
+      if (this.live !== live) return;
+      live.open = true;
+      live.openedAt = live.heard = this.now();
+      live.beat = setInterval(() => this.liveBeat(live), LIVE_PING);
+      // Polled from now on at the slow pace.
+      this.schedule(this.pace());
+      this.emit();
+    };
+    ws.onmessage = (event) => {
+      if (this.live !== live) return;
+      live.heard = this.now();
+      let m = null;
+      try { m = typeof event.data === 'string' && event.data !== 'pong' ? JSON.parse(event.data) : null; } catch (_) { m = null; }
+      if (m && m.t === 'changed') this.liveKick();
+    };
+    ws.onclose = () => this.liveDrop(live);
+    ws.onerror = () => this.liveDrop(live);
+  }
+
+  /// The heartbeat: a ping, and a socket that has said nothing for too
+  /// long is dead (a laptop that slept, a proxy that dropped it).
+  liveBeat(live) {
+    if (this.live !== live) return;
+    if (this.now() - live.heard > LIVE_PING + LIVE_PONG_WAIT) {
+      try { live.ws.close(); } catch (_) { /* gone already */ }
+      return this.liveDrop(live);
+    }
+    try { live.ws.send('ping'); } catch (_) { this.liveDrop(live); }
+  }
+
+  /// Someone else wrote: sync now. Changes that arrive while a sync waits
+  /// to start ride on it; one that arrives after it started gets another.
+  liveKick() {
+    if (this.liveQueued || this.refused) return;
+    this.liveQueued = true;
+    const next = this.chain.catch(() => {}).then(() => {
+      this.liveQueued = false;
+      return this.rounds();
+    });
+    this.chain = next.catch(() => {});
+  }
+
+  /// The socket is gone: back to the quick pace, and a new one after a
+  /// wait that grows with each quick failure, with jitter so a whole
+  /// office does not reconnect in the same second.
+  liveDrop(live) {
+    if (live && this.live !== live) return;
+    if (live && live.beat) clearInterval(live.beat);
+    const steady = live && live.open && this.now() - live.openedAt >= LIVE_STEADY;
+    this.liveFails = steady ? 0 : this.liveFails + 1;
+    const wait = Math.min(LIVE_BACKOFF_MAX, this.backoff * 2 ** Math.max(0, this.liveFails - 1));
+    const jittered = Math.round(wait * (0.5 + 0.5 * this.random()));
+    this.live = null;
+    this.liveNextAt = this.now() + jittered;
+    // The next sync catches up on what the socket might have missed and
+    // asks for a new ticket.
+    this.schedule(Math.min(this.every, jittered));
+    this.emit();
+  }
+
+  liveClose() {
+    const live = this.live;
+    this.live = null;
+    if (!live) return;
+    if (live.beat) clearInterval(live.beat);
+    try { live.ws.close(1000, 'closed'); } catch (_) { /* gone already */ }
   }
 
   fail(org) {
@@ -307,6 +444,9 @@ export class TeamData {
       const pending = Math.min(this.status().pending, PUSH_WRITES);
       const begin = this.mod.data({ ...keys, envelope, op: 'sync_begin', now: this.now() }, 24 * pending + 64);
       if (!begin.ok) throw this.fail(begin.error);
+      // A ticket for the live socket, when there is none (org-data-live.js).
+      const askLive = round === 0 && this.wantsLive();
+      if (askLive) begin.body.live = true;
       let res;
       try {
         res = await this.fetch(url, {
@@ -349,6 +489,7 @@ export class TeamData {
       this.lastOnline = true;
       this.reachedAt = answer.now;
       if (answer.org && answer.org.name) this.orgName = answer.org.name;
+      if (askLive && answer.live) this.liveOpen(answer.live);
       const end = this.mod.data({ ...keys, envelope, op: 'sync_end', answer });
       if (!end.ok) throw this.fail(end.error);
       await this.keep(end.mirror);

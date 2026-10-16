@@ -327,6 +327,223 @@ test("outside the app's audience the tab is refused in the hub's words, and some
   assert.strictEqual(await tab.store.get(tab.t.key), undefined);
 });
 
+/* ---- the live socket (SMART-FIXES 7) ------------------------------------ */
+
+/* The hub's hibernation API, stood in (Node has no Workers runtime; see
+ * org-data-live.test.mjs), and a browser WebSocket whose upgrade really goes
+ * through the worker's route and the Org object's ticket check. The server
+ * end's "changed" reaches the tab's onmessage on the next turn, as a
+ * network would deliver it; "ping" is answered "pong" as the platform's
+ * auto-response does. */
+function liveHub(env) {
+  const org = env.ORGS.object("acme");
+  const sockets = [];
+  Object.assign(org.ctx, {
+    acceptWebSocket(ws, tags = []) {
+      ws.tags = tags;
+      sockets.push(ws);
+    },
+    getWebSockets(tag) {
+      return sockets.filter((x) => !x.closed && (tag === undefined || x.tags.includes(tag)));
+    },
+  });
+  let handed = null;
+  org.liveResponse = (client) => {
+    handed = client;
+    return new Response("upgraded", { status: 200 });
+  };
+  class ServerEnd {
+    constructor() {
+      this.sent = [];
+      this.closed = null;
+      this.att = null;
+    }
+    send(m) {
+      if (this.closed) throw new Error("closed");
+      this.sent.push(m);
+      setTimeout(() => this.client && this.client.onmessage && this.client.onmessage({ data: m }), 0);
+    }
+    close(code, reason) {
+      if (this.closed) return;
+      this.closed = { code, reason };
+      setTimeout(() => this.client && this.client.fireClose(code), 0);
+    }
+    serializeAttachment(v) {
+      this.att = structuredClone(v);
+    }
+    deserializeAttachment() {
+      return this.att == null ? null : structuredClone(this.att);
+    }
+  }
+  globalThis.WebSocketPair = class {
+    constructor() {
+      const server = new ServerEnd();
+      this[0] = { server };
+      this[1] = server;
+    }
+  };
+  const opened = [];
+  const socketOf = (url, protocols) => {
+    const client = {
+      url,
+      gone: false,
+      send(m) {
+        if (client.gone) throw new Error("closed");
+        if (m === "ping") setTimeout(() => client.onmessage && client.onmessage({ data: "pong" }), 0);
+      },
+      close() {
+        if (client.gone) return;
+        client.gone = true;
+        if (client.server && !client.server.closed) client.server.closed = { code: 1000 };
+        setTimeout(() => client.onclose && client.onclose({ code: 1000 }), 0);
+      },
+      fireClose(code) {
+        if (client.gone) return;
+        client.gone = true;
+        client.onclose && client.onclose({ code });
+      },
+    };
+    opened.push(client);
+    (async () => {
+      const res = await worker.fetch(new Request(url.replace(/^ws/, "http"), { headers: { upgrade: "websocket", "sec-websocket-protocol": protocols.join(", ") } }), env);
+      if (res.status !== 200) return client.fireClose(1006);
+      client.server = handed.server;
+      handed.server.client = client;
+      client.onopen && client.onopen();
+    })();
+    return client;
+  };
+  return { sockets, socketOf, opened };
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(what, ok, ms = 3000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await ok()) return;
+    await sleep(2);
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+/* A tab that holds the key, ready to start. */
+async function keyedTab(w, desk, who, extra) {
+  // Its own copy: tabs in one test share the module, which keeps copies by
+  // name, and two tabs on one name would read each other's.
+  const store = S.memoryStore();
+  const device = await S.openDevice({ store, name: `${who}'s browser` });
+  const t = new TeamData({ mod: w.m, signing: S, hub: HUB, token: tokenFor(w.env, who), slug: "acme", appId: w.appId, digest: w.digest, me: who, store, device, ...extra });
+  t.name += `-${who}-${Math.random()}`;
+  await t.open();
+  const tab = { t, store, device };
+  await tab.t.run();
+  await desk.duties();
+  tab.t.lastSync = 0;
+  await tab.t.run();
+  assert.strictEqual(tab.t.keyState, "holds", who);
+  return tab;
+}
+
+test("a write in one tab reaches another tab's copy at once over the live socket, not at the next poll", async (ctx) => {
+  const w = await world();
+  const desk = computerOf(w);
+  await desk.duties();
+  const hub = liveHub(w.env);
+  // Polls a minute apart: anything that arrives sooner came by the socket.
+  const slow = { socketOf: hub.socketOf, every: 60000, liveEvery: 60000 };
+  const carol = await keyedTab(w, desk, "carol", slow);
+  const dan = await keyedTab(w, desk, "dan", slow);
+  // Stopped whatever happens, so a failure reports instead of hanging.
+  ctx.after(() => (carol.t.stop(), dan.t.stop()));
+  carol.t.start();
+  dan.t.start();
+  await until("both sockets open", () => carol.t.live && carol.t.live.open && dan.t.live && dan.t.live.open);
+  assert.strictEqual(dan.t.pace(), 60000);
+  await carol.t.chain;
+  await dan.t.chain;
+
+  const times = [];
+  for (let i = 0; i < 20; i += 1) {
+    const id = `live-${i}`;
+    await carol.t.put("inspections", id, [["site", { t: `Depot ${i}` }]]);
+    const t0 = performance.now();
+    await carol.t.run();
+    await until(`dan reads ${id}`, () => dan.t.get("inspections", id).ok);
+    times.push(performance.now() - t0);
+  }
+  times.sort((a, b) => a - b);
+  const median = times[Math.floor(times.length / 2)];
+  console.log(`# live: write in one tab to read in another, median ${median.toFixed(1)} ms, max ${times.at(-1).toFixed(1)} ms (20 writes, in-process hub)`);
+  assert.ok(times.at(-1) < 2000, `${times.at(-1)} ms`);
+  assert.strictEqual(Object.fromEntries(dan.t.get("inspections", "live-3").ok.fields).site.t, "Depot 3");
+  // The tab's own writes do not bounce back to it as "changed".
+  const own = hub.sockets.find((x) => x.client === carol.t.live.ws);
+  assert.deepStrictEqual(own.sent, []);
+  carol.t.stop();
+  dan.t.stop();
+  assert.strictEqual(carol.t.live, null);
+});
+
+test("a dead socket falls back to the quick poll, and reconnects after a backoff with jitter", async (ctx) => {
+  const w = await world();
+  const desk = computerOf(w);
+  await desk.duties();
+  const hub = liveHub(w.env);
+  const { t } = await keyedTab(w, desk, "carol", { socketOf: hub.socketOf, every: 40, liveEvery: 60000, backoff: 30 });
+  ctx.after(() => t.stop());
+  t.start();
+  await until("the socket opens", () => t.live && t.live.open);
+  assert.strictEqual(t.pace(), 60000, "slow while it is healthy");
+  const first = t.live.ws;
+  // The hub goes away under it (a deploy, a dropped connection).
+  hub.sockets.find((x) => x.client === first).close(1006, "gone");
+  await until("the drop is noticed", () => t.live === null || t.live.ws !== first);
+  assert.ok(t.liveFails >= 1);
+  assert.ok(t.liveNextAt > 0);
+  await until("a new socket opens", () => t.live && t.live.open && t.live.ws !== first);
+  assert.strictEqual(hub.opened.length, 2, "one reconnect, not a loop");
+  assert.strictEqual(hub.sockets.filter((x) => !x.closed).length, 1, "one socket, never a pile");
+  assert.strictEqual(t.state().link, "synced");
+  t.stop();
+
+  // Offline for sockets entirely: syncing carries on and nothing is an error.
+  const w2 = await world();
+  const desk2 = computerOf(w2);
+  await desk2.duties();
+  const tries = [];
+  const off = await keyedTab(w2, desk2, "carol", { socketOf: () => { tries.push(performance.now()); throw new Error("offline"); }, every: 20, backoff: 10, random: () => 1 });
+  ctx.after(() => off.t.stop());
+  off.t.start();
+  await until("a few tries", () => tries.length >= 4);
+  assert.strictEqual(off.t.pace(), 20, "the quick poll carries on");
+  await off.t.put("inspections", "x", [["site", { t: "Depot" }]]);
+  await until("the write goes up by poll", () => off.t.status().pending === 0);
+  assert.notStrictEqual(off.t.state().link, "refused");
+  // The waits grow (10, 20, 40 ms here): the tries are not one per sync.
+  assert.ok(tries[3] - tries[2] >= 39, `${tries[3] - tries[2]} ms after the third`);
+  assert.ok(tries[3] - tries[2] > tries[1] - tries[0], tries.join(" "));
+  off.t.stop();
+});
+
+test("removed while the socket is open: the hub closes it, the tab syncs at once and its copy leaves", async (ctx) => {
+  const w = await world();
+  const desk = computerOf(w);
+  await desk.duties();
+  const hub = liveHub(w.env);
+  const dan = await keyedTab(w, desk, "dan", { socketOf: hub.socketOf, every: 60000, liveEvery: 60000, backoff: 10 });
+  await dan.t.put("inspections", "i1", [["site", { t: "Depot" }]]);
+  ctx.after(() => dan.t.stop());
+  dan.t.start();
+  await until("the socket opens", () => dan.t.live && dan.t.live.open);
+  const ws = hub.sockets.find((x) => x.client === dan.t.live.ws);
+  assert.strictEqual((await call(w.env, "alice", "DELETE", `/orgs/acme/members/${encodeURIComponent("github:dan")}`)).status, 204);
+  assert.strictEqual(ws.closed && ws.closed.code, 4001, "closed by the hub on the removal");
+  await until("the tab hears it", () => dan.t.refused);
+  assert.strictEqual(dan.t.refused.reason, "removed");
+  assert.strictEqual(await dan.store.get(dan.t.key), undefined, "the copy left this browser");
+  assert.strictEqual(dan.t.live, null);
+});
+
 /* ---- the worker's imports ---------------------------------------------- */
 
 test("the worker's store.org imports move jco's values to the copy's wire shapes and back", () => {

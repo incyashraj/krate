@@ -101,7 +101,9 @@ export const ISOLATED = {
   "cross-origin-resource-policy": "same-origin",
   "content-security-policy":
     "default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; worker-src 'self' blob:; " +
-    "connect-src *; img-src 'self' data: blob:; style-src 'self'; font-src 'self'; " +
+    // ws: and wss: named: a bare * has not always covered them, and the
+    // team data's live socket (org-data-live.js) is one.
+    "connect-src * ws: wss:; img-src 'self' data: blob:; style-src 'self'; font-src 'self'; " +
     "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
