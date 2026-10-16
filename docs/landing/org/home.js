@@ -261,6 +261,9 @@
           el("span", { class: "apptile lg", "aria-hidden": "true", text: String(name).slice(0, 1).toUpperCase() }),
           el("span", { class: "lc-t" }, [el("b", { text: name }), el("small", { class: fresh ? "fresh" : "", text: fresh ? "Updated " + when(r.at) : used ? "You opened it " + plural(used.days, "day", "days") + " this month" : "Version " + (r.version || "") })]),
         ]),
+        // Staged rollout: why this person has the version they have.
+        a.for_you && a.for_you.ring === "pilot" ? el("small", { class: "lc-ring", text: "Version " + (r.version || "") + ", early: you are in the " + a.for_you.group + " group, which gets new versions first." }) : null,
+        a.for_you && a.for_you.ring === "pin" ? el("small", { class: "lc-ring", text: "Version " + (r.version || "") + ": your " + a.for_you.group + " group is kept on it for now." }) : null,
         el("div", { class: "lc-a" }, [open, copy]),
         say,
       ]);

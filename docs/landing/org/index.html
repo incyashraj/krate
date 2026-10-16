@@ -343,6 +343,11 @@ dialog.sheet h2 { font-size: 21px; letter-spacing: -.03em; }
 dialog.sheet p { margin-top: 8px; font-size: 14.5px; color: var(--mute); text-wrap: pretty; }
 dialog.sheet .dgbox { margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--soft); font: 500 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; color: var(--ink); }
 dialog.sheet .dgbox span { display: block; margin-bottom: 4px; font: 500 12px Geist, sans-serif; color: var(--ink-3); }
+/* K-1114: the fingerprint is folded under Technical details. */
+dialog.sheet .dgbox { padding: 0; background: none; }
+dialog.sheet .dgbox summary { font: 500 13px Geist, sans-serif; color: var(--ink-3); cursor: pointer; }
+dialog.sheet .dgbox details[open] { padding: 10px 14px 12px; border-radius: 12px; background: var(--soft); }
+dialog.sheet .dgbox details[open] summary { margin-bottom: 8px; }
 dialog.sheet .acts2 { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
 dialog.sheet #sheetWhy { margin-top: 14px; }
 dialog.sheet .sheetpts { margin-top: 10px; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
@@ -412,6 +417,18 @@ dialog.sheet .sheetin { margin-top: 14px; text-align: left; }
 .rw.rel .aud { color: var(--ink-2); }
 .rw.rel.gone b { color: var(--ink-2); }
 .rw.rel .why { color: var(--ink-2); }
+/* Staged rollout: who gets which version, on an app's card. */
+.lcard .lc-ring { display: block; font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.rings { padding: 10px 0 4px; border-bottom: 1px solid var(--line); }
+.rings .rw.ring { border-top: 0; padding: 8px 0; flex-wrap: wrap; }
+.rings .rw.ring .t { min-width: 0; flex: 1 1 260px; }
+.rings .rw.ring b { overflow-wrap: anywhere; }
+.rings .rw.ring small { color: var(--ink-2); }
+.rings .ring-me { padding: 4px 0 8px; font-size: 14px; color: var(--ink-2); }
+.rings .ring-acts { flex-wrap: wrap; gap: 8px; padding: 6px 0 10px; }
+.rings .audbox { margin: 4px 0 12px; }
+.rings .audbox .row2 { flex-wrap: wrap; }
+.rings .audbox .sel { max-width: 100%; }
 .audbox { padding: 14px; border-radius: 14px; background: var(--soft); }
 .audbox > * + * { margin-top: 12px; }
 .audbox .seg { flex-wrap: wrap; }

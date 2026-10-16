@@ -112,6 +112,8 @@
     // What a withdrawn version and an app for other groups say (IC-949, R).
     if (res.body && res.body.withdrawn) ctx.withdrawn = res.body.withdrawn;
     if (res.body && res.body.groups) ctx.groups = res.body.groups;
+    // A version with a pilot group first says which version is theirs.
+    if (res.body && res.body.for_you) ctx.for_you = res.body.for_you;
     return K.refusal(res.body ? res.body.error : "hub-error", ctx);
   }
 
@@ -371,6 +373,7 @@
     [/^Company sign-in/, "Company sign-in", "Connected to"],
     [/SCIM/, "Directory", "Connected to"],
     [/activity to your logs/, "Activity export", "Connected to"],
+    [/^Slack and Teams/, "Slack and Teams", "Connected to"],
     [/^Export/, "Download everything", "Data"],
     [/^Close /, "Close the organisation", "Data"],
   ];
@@ -525,8 +528,13 @@
     inp.value = "";
     if (opts.input) { $("sheetInLabel").textContent = opts.input.label; inp.placeholder = opts.input.placeholder || ""; }
     if (opts.digest) {
-      dg.appendChild(el("span", { text: opts.digestLabel || "Fingerprint of these exact bytes" }));
-      dg.appendChild(document.createTextNode(opts.digest));
+      // The exact bytes' fingerprint, for whoever checks it, folded away
+      // (K-1114: no sha256 on the default path).
+      dg.appendChild(el("details", { class: "cr-tech" }, [
+        el("summary", { text: "Technical details" }),
+        el("span", { text: opts.digestLabel || "Fingerprint of these exact bytes" }),
+        document.createTextNode(opts.digest),
+      ]));
       dg.hidden = false;
     } else dg.hidden = true;
     var why = $("sheetWhy");
@@ -1549,7 +1557,7 @@
     R = window.KrateOrgReleases({
       S: S, slug: slug, words: words, confirmSheet: confirmSheet, head: head, failed: failed,
       toast: toast, show: function (id) { show(id); }, roleOf: roleOf, P: P, flat: flatReleases, empty: emptyReleases,
-      inspect: inspect, releaseFlow: releaseFlow,
+      inspect: inspect, releaseFlow: releaseFlow, openApp: function (id, t) { openApp(id, t); },
     });
   }
   // The Dashboard (home.js): where an organisation starts.

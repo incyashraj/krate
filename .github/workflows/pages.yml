@@ -276,6 +276,10 @@ jobs:
           # reason, Make current sends the exact digest, and each role is
           # shown only the controls the matrix gives it (IC-949 R).
           node docs/landing/studio/org-releases-test.mjs
+          # Staged rollout (pilot group, kept groups), Slack and Teams channels,
+          # the SIEM presets of the activity export, and Insights' computer
+          # words (K-1114, K-1115): each asks before it changes anything.
+          node docs/landing/studio/org-rollout-chat-test.mjs
           node docs/landing/studio/org-review-test.mjs
           # And approving with the code in view (G15, G16, G22): the code
           # changes and their risk rows on the card, the approval rules'
