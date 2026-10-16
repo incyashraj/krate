@@ -487,12 +487,19 @@ test("500 people, 50 apps and 90 days of opens answer in well under a second", a
   await insights(env, "alice", T0 - 60);
   // The one-pass current release is the one org-releases.js decides.
   for (const a of store.insightsApps()) assert.strictEqual(a.current ? a.current.digest : null, store.currentOf(a.app_id), a.app_id);
+  // Each read is timed three times and the fastest is judged (K-1123): a
+  // busy machine adds a spike to one read, while the regression this
+  // guards against, a read that scans every open, is slow every time.
   const timings = {};
   for (const who of ["alice", "carol", "email:p001@acme.test"]) {
     const login = who.startsWith("email:") ? who.slice(6) : who;
-    const started = performance.now();
-    const body = await insights(env, login);
-    timings[login] = Math.round(performance.now() - started);
+    let body;
+    for (let round = 0; round < 3; round++) {
+      const started = performance.now();
+      body = await insights(env, login);
+      const ms = Math.round(performance.now() - started);
+      timings[login] = Math.min(timings[login] ?? Infinity, ms);
+    }
     if (who === "alice") {
       assert.strictEqual(body.org.adoption.members, PEOPLE + 2);
       assert.strictEqual(body.org.adoption.apps, APPS);
