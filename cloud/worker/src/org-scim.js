@@ -954,7 +954,7 @@ export async function scimRoute(request, url, env, deps) {
     // Answered only for a good token: a stranger learns nothing here.
     const check = await ask("scim-users-list", { count: 0 });
     if (check.response.status !== 200) return check.response;
-    return scimJson(SERVICE_PROVIDER_CONFIG(`${String(env.SITE_BASE || "https://krate.tech").replace(/\/$/, "")}/docs/organisations/#provisioning`));
+    return scimJson(SERVICE_PROVIDER_CONFIG(`${String(env.SITE_BASE || "https://krate.tech").replace(/\/$/, "")}/docs/organisations.html#provisioning`));
   }
   if (resource === "Users") {
     if (!id && method === "GET") {

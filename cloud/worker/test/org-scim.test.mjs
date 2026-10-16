@@ -407,4 +407,7 @@ test("ServiceProviderConfig answers only a good token", async () => {
   assert.strictEqual((await scim(env, null, "GET", "/ServiceProviderConfig")).status, 401);
   const c = await scim(env, token, "GET", "/ServiceProviderConfig");
   assert.deepStrictEqual([c.status, c.body.patch.supported, c.body.bulk.supported], [200, true, false]);
+  // The book publishes organisations.md as organisations.html; the section an
+  // IT admin needs is #provisioning. /docs/organisations/ is a 404 (K-1118).
+  assert.strictEqual(c.body.documentationUri, "https://krate.tech/docs/organisations.html#provisioning");
 });
