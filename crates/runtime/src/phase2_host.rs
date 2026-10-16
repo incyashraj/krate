@@ -212,10 +212,14 @@ impl<'a> Phase2Host<'a> {
     }
 
     /// This run draws a window: the app's code runs where the window is
-    /// drawn, so `store.org` sync must never wait on the network (K-1107).
+    /// drawn, so neither `store.org` sync (K-1107) nor `store.shared` sync
+    /// (K-1121) may wait on the network.
     pub fn set_windowed(&self) {
         if let Some(org) = self.org.as_ref() {
             org.set_windowed();
+        }
+        if let Some(shared) = self.shared.as_ref() {
+            shared.set_windowed();
         }
     }
 
