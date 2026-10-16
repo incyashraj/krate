@@ -48,6 +48,8 @@ import { GROUP, appOf } from "./org-releases.js";
 import "./org-keys.js";
 // Days are the organisation's own (org-time.js, F-319).
 import { dayBefore } from "./org-time.js";
+// Telling the API who is calling: the token, signed by the Worker.
+import { issueIdentity, IDENTITY_HEADER } from "./org-identity-token.js";
 
 export const CONNECTION = /^[a-z][a-z0-9-]{1,38}$/;
 export const METHODS = ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"];
@@ -119,7 +121,13 @@ const SCHEMA = [
 // version of the organisation key each credential is sealed to (F-316).
 // NULL is a credential kept the old way, sealed with this hub's own key;
 // 0 is one that must be entered again (the one-time migration below).
-const COLUMNS = [["candidates", "connections", "TEXT"], ["connections", "credential_v", "INTEGER"]];
+// `identity`: whether each request also tells the API who is calling (a
+// signed Krate-Identity token, org-identity-token.js). NULL, as every
+// connection made before the setting has, is on: the default.
+const COLUMNS = [["candidates", "connections", "TEXT"], ["connections", "credential_v", "INTEGER"], ["connections", "identity", "INTEGER"]];
+
+/// The setting as kept: on unless an admin turned it off.
+const identityOn = (c) => c.identity !== 0;
 
 
 const list = (text) => {
@@ -224,7 +232,7 @@ export function sealedCredentialOf(v) {
   if (!kind) return { problem: "the credential is one header, or a user and password" };
   const name = kind === "basic" ? "Authorization" : String(c.header || "").trim();
   if (!HEADER_NAME.test(name)) return { problem: "the header name is one word, such as Authorization or X-Api-Key" };
-  if (TRANSPORT_HEADERS.has(name.toLowerCase()) || name.toLowerCase().startsWith("proxy-")) {
+  if (TRANSPORT_HEADERS.has(name.toLowerCase()) || name.toLowerCase().startsWith("proxy-") || name.toLowerCase() === IDENTITY_HEADER.toLowerCase()) {
     return { problem: `${name} is a header the connection itself sets, so it cannot carry a credential` };
   }
   if (!Number.isInteger(c.v) || c.v < 1) return { problem: "the credential says which version of the organisation's key it is sealed to" };
@@ -251,6 +259,7 @@ const ops = {
       allow: { methods: JSON.parse(c.methods), paths: JSON.parse(c.paths) },
       audience: list(c.audience),
       apps: list(c.apps),
+      identity: identityOn(c),
       // `sealed`: to version `version` of the organisation key, so only
       // members' devices open it. `needs-entry`: it was kept the old way and
       // is gone; an owner or admin enters it again.
@@ -360,11 +369,11 @@ const ops = {
     if (scope.refusal) return scope.refusal;
     this.sql.exec(
       `INSERT INTO connections (name, base, methods, paths, audience, apps, kind, header_name, sealed,
-         created_at, created_by, changed_at, changed_by, credential_at, credential_by, credential_v)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         created_at, created_by, changed_at, changed_by, credential_at, credential_by, credential_v, identity)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       name, a.base, JSON.stringify(a.allow.methods), JSON.stringify(a.allow.paths), scope.audience, scope.apps,
       a.kind, a.header_name, a.sealed,
-      ctx.now, me.principal, ctx.now, me.principal, ctx.now, me.principal, a.credential_v,
+      ctx.now, me.principal, ctx.now, me.principal, ctx.now, me.principal, a.credential_v, a.identity === false ? 0 : 1,
     );
     this.audit(me.principal, "connection.create", target, "allowed", a.base);
     return this.ok({ connection: this.connectionView(this.connectionRow(name), ctx.now) }, 201);
@@ -395,11 +404,13 @@ const ops = {
     if (methods !== c.methods || paths !== c.paths) said.push(`allow ${JSON.parse(methods).join(",")} ${JSON.parse(paths).join(",")}`);
     if (scope.audience !== c.audience) said.push(scope.audience ? `audience groups:${list(scope.audience).join(",")}` : "audience everyone");
     if (scope.apps !== c.apps) said.push(scope.apps ? `apps ${list(scope.apps).join(",")}` : "apps any");
+    const identity = a.identity === undefined ? identityOn(c) : a.identity === true;
+    if (identity !== identityOn(c)) said.push(identity ? "tells the API who is calling" : "does not tell the API who is calling");
     if (a.sealed) said.push("credential replaced");
     if (said.length) {
       this.sql.exec(
-        `UPDATE connections SET base = ?, methods = ?, paths = ?, audience = ?, apps = ?, changed_at = ?, changed_by = ? WHERE name = ?`,
-        base, methods, paths, scope.audience, scope.apps, ctx.now, me.principal, name,
+        `UPDATE connections SET base = ?, methods = ?, paths = ?, audience = ?, apps = ?, identity = ?, changed_at = ?, changed_by = ? WHERE name = ?`,
+        base, methods, paths, scope.audience, scope.apps, identity ? 1 : 0, ctx.now, me.principal, name,
       );
       if (a.sealed) this.connectionNewCredential(name, a, me, ctx.now);
       this.audit(me.principal, "connection.change", target, "allowed", said.join("; "));
@@ -448,7 +459,12 @@ const ops = {
 
   /// GET /orgs/<slug>/connections/<name>/credential/<digest>: may this
   /// person's copy of this release use this connection now? Checked like a
-  /// lease, then counted. Answers the sealed credential for the Worker.
+  /// lease, then counted. Answers the sealed credential for the Worker, and,
+  /// when the connection tells the API who is calling, what the Worker signs
+  /// into the identity token. The token's refresh (.../identity/<digest>)
+  /// asks this same question, so it passes exactly the same checks; each
+  /// one is counted as a use, in the same daily count, never one audit line
+  /// per token.
   op_connection_use(ctx) {
     const name = String(ctx.args.name || "").toLowerCase();
     const digest = String(ctx.args.digest || "");
@@ -503,6 +519,9 @@ const ops = {
       header_name: conn.header_name,
       credential_v: conn.credential_v,
       sealed: conn.sealed,
+      identity: identityOn(conn)
+        ? { sub: me.principal, org: this.org().slug || ctx.slug, app, release: digest, connection: name, aud: conn.base, now: ctx.now }
+        : null,
     });
   },
 
@@ -702,6 +721,10 @@ export async function connectionRoute(h) {
     }
     if (v.audience !== undefined) args.audience = v.audience;
     if (v.apps !== undefined) args.apps = v.apps;
+    if (v.identity !== undefined) {
+      if (typeof v.identity !== "boolean") return { refusal: bad("identity is true (tell the API who is calling) or false") };
+      args.identity = v.identity;
+    }
     if (stored) {
       Object.assign(args, { sealed: stored.sealed, credential_v: stored.v, kind: stored.kind, header_name: stored.header_name });
     } else if (needsCredential) {
@@ -753,7 +776,22 @@ export async function connectionRoute(h) {
     const decided = await askRaw("connection-use", { name, digest });
     if (decided.status !== 200) return noStore(decided.body, decided.status);
     const d = decided.body;
-    return noStore({ name: d.name, base: d.base, allow: d.allow, ...credentialForDevice(d) });
+    const identity = d.identity ? await issueIdentity(env, d.identity) : null;
+    return noStore({ name: d.name, base: d.base, allow: d.allow, ...credentialForDevice(d), ...(identity ? { identity } : {}) });
+  }
+  // A fresh identity token for the same run: the same question as the
+  // credential fetch, so the same checks, answering only the token. A
+  // person removed since the app opened is refused here, so their name
+  // stops reaching the API within one token's life.
+  if (rest.length === 4 && rest[2] === "identity" && method === "GET") {
+    const digest = String(rest[3]).toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(digest)) {
+      return orgAnswer({ status: 404, body: { error: "digest-mismatch", message: "a digest is the release's 64-hex sha256" } });
+    }
+    const decided = await askRaw("connection-use", { name, digest });
+    if (decided.status !== 200) return noStore(decided.body, decided.status);
+    const d = decided.body;
+    return noStore({ name: d.name, identity: d.identity ? await issueIdentity(env, d.identity) : null });
   }
   return null;
 }

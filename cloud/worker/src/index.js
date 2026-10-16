@@ -53,6 +53,7 @@ import { judgementCaps } from "./org-review.js";
 // Company connections (IC-952). After org-releases.js, whose checks a
 // credential fetch reuses.
 import { connectionRoute, connectionsAsked } from "./org-connections.js";
+import { jwksRoute } from "./org-identity-token.js";
 // SCIM 2.0 provisioning (IC-955); after release control, whose groups it fills.
 import { scimRoute, orgScimRoute } from "./org-scim.js";
 // Audit export over a signed webhook (IC-955).
@@ -467,6 +468,11 @@ export default {
       // The public half of the hub's offline-lease key (IC-948, G).
       if (request.method === "GET" && pathname === "/lease-key") {
         return cors(await leaseKeyRoute(env));
+      }
+      // The public keys a company API checks a Krate-Identity token with
+      // (org-identity-token.js): an empty set on a hub with no lease key.
+      if (request.method === "GET" && pathname === "/.well-known/jwks.json") {
+        return cors(await jwksRoute(env));
       }
       if (request.method === "POST" && pathname === "/login/email") {
         // Fetched from page scripts on krate.tech, unlike the login
