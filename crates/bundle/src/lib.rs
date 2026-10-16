@@ -9798,6 +9798,9 @@ required = true
         let now = opened_cache_entries(&root);
         assert_eq!(now.len(), 1, "one entry per app: {now:?}");
         assert_ne!(now, old, "a new entry for the new bytes");
+        // The old entry's lock file is gone too.
+        let old_lock = root.join(".locks").join(format!("{}.lock", old[0]));
+        assert!(!old_lock.exists(), "swept entry's lock is removed");
     }
 
     /// An entry a running app holds is not swept from under it; once it is

@@ -333,8 +333,16 @@ fn sweep_app(root: &Path, app_id: &str, keep: &str) {
         // Held through the removal, so no open can take the entry meanwhile;
         // the lock is not in the entry, so holding it does not pin it.
         remove_entry(&path);
+        // Remove the lock file while we still hold it exclusively. Safe on
+        // Unix (unlink while open is fine); on Windows an open file cannot
+        // be deleted, so this may fail -- stale locks are cleaned later.
+        let lock_path = root.join(LOCKS).join(format!("{name}.lock"));
+        let _ = fs::remove_file(&lock_path);
         drop(lock);
     }
+    // Clean any leftover lock files whose entries are gone and that are not
+    // currently held (covers the Windows case and any races).
+    clean_stale_locks(root);
 }
 
 /// Remove an entry: renamed aside first, so nothing ever sees it half gone
@@ -353,6 +361,38 @@ fn remove_entry(entry: &Path) {
     let _ = fs::remove_dir_all(&aside);
     if fs::rename(entry, &aside).is_ok() {
         let _ = fs::remove_dir_all(&aside);
+    }
+}
+
+/// Remove lock files that have no corresponding entry and are not held.
+/// Covers the case where removal while open failed (Windows) and any
+/// other leftovers.
+fn clean_stale_locks(root: &Path) {
+    let locks_dir = root.join(LOCKS);
+    let Ok(entries) = fs::read_dir(&locks_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if !name.ends_with(".lock") {
+            continue;
+        }
+        let digest = &name[..name.len() - 5];
+        // Still has an entry: leave it.
+        if root.join(digest).join(MARKER).is_file() {
+            continue;
+        }
+        // Try to take the lock exclusively; if we can, nobody holds it.
+        if let Ok(file) = File::options().read(true).write(true).open(&path) {
+            if file.try_lock().is_ok() {
+                drop(file);
+                let _ = fs::remove_file(&path);
+            }
+        }
     }
 }
 
