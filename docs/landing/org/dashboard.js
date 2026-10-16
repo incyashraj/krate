@@ -15,6 +15,8 @@
   var slug = (q.get("o") || "").toLowerCase();
   var HERE = "/org/?o=" + encodeURIComponent(slug);
   var S = { org: null, me: null, members: [], tab: q.get("tab") || "", waiting: 0, names: {} };
+  // The approval email's link names one version: ?tab=waiting&c=<digest>.
+  var deepC = /^[0-9a-f]{64}$/.test(String(q.get("c") || "").toLowerCase()) ? String(q.get("c")).toLowerCase() : "";
 
   // The sidebar: each section's name, its group, and its icon (16px, drawn
   // with the stroke the rest of Krate uses).
@@ -201,7 +203,10 @@
     if (inWindow) { openSettings(id); return; }
     if (dlg && isOpen(dlg)) closeSettings(true);
     S.tab = id;
-    try { history.replaceState(null, "", HERE + "&tab=" + id); } catch (e) {}
+    // One version on its own, from the approval email or the bell.
+    S.focus = id === "waiting" ? (S.opts.c !== undefined ? S.opts.c : deepC) : "";
+    deepC = "";
+    try { history.replaceState(null, "", HERE + "&tab=" + id + (S.focus ? "&c=" + S.focus : "")); } catch (e) {}
     drawTabs();
     setText("cbarTab", tabName(id));
     drawCrumb(tabName(id));
@@ -359,6 +364,7 @@
     [/signature$/, "Signature", "Organisation"],
     [/^Send an app/, "Sending apps", "Organisation"],
     [/^Who approves/, "Approvals", "Organisation"],
+    [/^Approval rules/, "Approval rules", "Organisation"],
     [/^Offline/, "Offline access", "Organisation"],
     [/^Company connections/, "Connections", "Connected to"],
     [/^Company sign-in by SAML/, "SAML sign-in", "Connected to"],
@@ -663,6 +669,12 @@
       var list = all.filter(function (c) { return c.state === "waiting-for-approval"; });
       S.waiting = list.length;
       drawTabs();
+      var approver = K.can(roleOf(), "candidate.approve") === "yes";
+      var closing = S.org && S.org.state === "closing";
+      if (S.focus && Ap) {
+        Ap.focus(pane, S.focus, all, function (c) { return waitCard(c, approver, closing, Date.now() / 1000, { focus: true }); });
+        return;
+      }
       if (!list.length) {
         var none = el("div", { class: "card rows" });
         pane.appendChild(none);
@@ -673,14 +685,12 @@
         decided(pane, all);
         return;
       }
-      var approver = K.can(roleOf(), "candidate.approve") === "yes";
       // While the organisation is closing nothing new is released
       // (Addendum 3 D), so Approve is not offered then.
-      var closing = S.org && S.org.state === "closing";
       var now = Date.now() / 1000;
       // Oldest first: the one that has waited longest is the one to do.
       list.sort(function (x, y) { return (x.uploaded_at || 0) - (y.uploaded_at || 0); });
-      var forMe = list.filter(function (c) { return approver && !isMe(c.uploaded_by) && !closing; });
+      var forMe = list.filter(function (c) { return approver && !isMe(c.uploaded_by) && !closing && !(c.approval && c.approval.you && !c.approval.you.can); });
       var others = list.filter(function (c) { return forMe.indexOf(c) < 0; });
       pane.appendChild(el("div", { class: "ptools" }, [el("p", { class: "sub", text: plural(list.length, "version is", "versions are") + " waiting · the oldest for " + age(now - list[0].uploaded_at) + (forMe.length ? " · " + forMe.length + " for you" : "") })]));
       function group(title, items) {
@@ -701,14 +711,22 @@
   }
   /// One version waiting: what it is, how long it has waited, what it can
   /// do and what changed, and the one thing to do about it.
-  function waitCard(c, approver, closing, now) {
+  function waitCard(c, approver, closing, now, opts) {
+    opts = opts || {};
     var mine = isMe(c.uploaded_by);
     var acts = [], note = null, btn = null;
+    // What the approval rules say about this person (org-approvals.js).
+    var you = c.approval && c.approval.you;
     // What it can do, and what changed (IC-950). Built first so the
     // Approve button can wait on its ticks.
     var review = capsReview(c, approver && !mine && !closing);
     if (closing) {
       note = el("p", { class: "note", text: "Approvals stop while " + (S.org.name || slug) + " is closing. If an owner cancels the closing, this can be approved again." });
+    } else if (approver && !mine && you && !you.can) {
+      note = el("p", { class: "note", text: you.approved
+        ? "You approved this. " + (c.approval.words || "It is released once the rest are in") + "."
+        : "Your approval would not count: " + you.why + "." });
+      acts.push(el("button", { class: "btn ghost sm", type: "button", text: "Decline", onclick: function () { declineBox.hidden = !declineBox.hidden; if (!declineBox.hidden && why.focus) why.focus(); } }));
     } else if (approver && !mine) {
       btn = el("button", {
         class: "btn dark sm", type: "button", text: "Approve",
@@ -746,13 +764,15 @@
       el("div", { class: "wc-h" }, [
         el("span", { class: "apptile", "aria-hidden": "true", text: String(c.name || name).slice(0, 1).toUpperCase() }),
         el("div", { class: "t" }, [
-          el("b", {}, [name, " ", el("span", { class: "tag", text: update ? "Update from " + update : "New app" })]),
+          el("b", {}, [name, " ", el("span", { class: "tag", text: update ? "Update from " + (typeof update === "string" ? update : update.version || "the version that opens now") : "New app" })]),
           el("small", { text: "Sent by " + K.who(c.uploaded_by).label + " · " + K.moment(c.uploaded_at) }),
         ]),
         el("span", { class: "tag" + (waited > 2 * 86400 ? " warn" : ""), text: "Waiting " + age(waited) }),
       ]),
       c.note ? el("blockquote", { class: "wnote", text: "\u201c" + c.note + "\u201d, " + K.who(c.uploaded_by).label }) : null,
       review.node,
+      Ap ? Ap.standing(c) : null,
+      Ap ? Ap.codeBox(c, { focus: opts.focus }) : null,
       note,
       el("div", { class: "row2" }, acts),
       declineBox,
@@ -768,7 +788,7 @@
     pane.appendChild(el("div", { class: "card rows" }, [el("p", { class: "grp", text: "Recently decided" })].concat(done.map(function (c) {
       return el("div", { class: "rw flat opens", onclick: function () { inspectCandidate(c); } }, [el("div", { class: "t" }, [
         el("b", { text: K.appName(c) }),
-        el("small", { text: (c.state === "withdrawn" ? "Withdrawn" : "Approved") + " by " + K.who(c.approved_by).label + " · " + K.moment(c.approved_at) + (c.approved_by === c.uploaded_by ? " · released by its sender alone" : "") }),
+        el("small", { text: (c.state === "withdrawn" ? "Withdrawn" : "Approved") + " by " + (c.approved_with && c.approved_with.length ? c.approved_with : [c.approved_by]).map(function (p) { return K.who(p).label; }).join(" and ") + " · " + K.moment(c.approved_at) + (c.approved_by === c.uploaded_by ? " · released by its sender alone" : "") }),
       ])]);
     }))));
   }
@@ -781,7 +801,7 @@
         el("dt", { text: "Sent by" }), el("dd", { text: K.who(c.uploaded_by).label }),
         el("dt", { text: "Sent" }), el("dd", { text: K.moment(c.uploaded_at) }),
         c.approved_by ? el("dt", { text: "Approved by" }) : null, c.approved_by ? el("dd", { text: K.who(c.approved_by).label }) : null,
-        c.changes && c.changes.against ? el("dt", { text: "Replaces" }) : null, c.changes && c.changes.against ? el("dd", { text: c.changes.against }) : null,
+        c.changes && c.changes.against ? el("dt", { text: "Replaces" }) : null, c.changes && c.changes.against ? el("dd", { text: typeof c.changes.against === "string" ? c.changes.against : c.changes.against.version || c.changes.against.digest }) : null,
       ]),
       caps.length ? el("div", { class: "cr-sec" }, [el("h3", { text: "It can" }), el("div", { class: "cr-list" }, caps.map(function (x) { return el("div", {}, [el("b", { text: x.words || x.cap })]); }))]) : null,
       el("details", { class: "cr-tech" }, [el("summary", { text: "Technical details" }), el("dl", { class: "cr-kv" }, [el("dt", { text: "Fingerprint" }), el("dd", { class: "dg", text: c.digest })])]),
@@ -856,16 +876,27 @@
   function approve(c, accepted) {
     var key = K.key();
     var added = (c.changes && c.changes.against ? c.changes.added : []).filter(function (x) { return x.asks; });
+    var you = c.approval && c.approval.you;
+    var partial = you && you.can && you.releases === false;
     confirmSheet({
       title: "Approve " + K.appName(c) + "?",
-      body: "This releases exactly these bytes to everyone in " + (S.org.name || slug) + ". If the app changes, the new version waits for its own approval.",
+      body: partial
+        ? "Your approval is recorded, and it keeps waiting: " + String(you.after || "it needs more approvals").replace(/^Needs/, "it needs") + ". It is released once the rules are met."
+        : "This releases exactly these bytes to everyone in " + (S.org.name || slug) + ". If the app changes, the new version waits for its own approval.",
       points: added.map(function (x) { return { key: true, text: "New: it can " + (x.words || x.cap) }; }),
       digest: c.digest,
-      yes: "Approve and release",
-      busy: "Releasing",
+      yes: partial ? "Approve" : "Approve and release",
+      busy: partial ? "Approving" : "Releasing",
       ctx: { what: "approve releases", whoCan: "owners and reviewers" },
       act: function () { return K.api("POST", "/orgs/" + slug + "/candidates/" + c.digest + "/approve", { accept: accepted || [] }, { key: key }); },
-      done: function () {
+      done: function (res) {
+        if (res.status === 202) {
+          var a = (res.body && res.body.approval) || {};
+          toast("Your approval is in. " + K.appName(c) + " " + String(a.words || "needs more approvals").replace(/^Needs/, "needs") + ".");
+          show("waiting", { c: S.focus || "" });
+          countWaiting();
+          return;
+        }
         toast(K.appName(c) + " is released. Everyone in " + (S.org.name || slug) + " can open it now.");
         show("releases");
         countWaiting();
@@ -1356,6 +1387,7 @@
       // Solo release and new publishers (IC-958): drawn only when the hub
       // has them.
       if (Pub) Pub.settings(pane);
+      if (Ap) Ap.rulesCard(pane);
 
 
       P.settings(pane, techBody);
@@ -1540,6 +1572,10 @@
   // The Apps tab (inventory.js, IC-954).
   var I = window.KrateOrgInventory
     ? window.KrateOrgInventory({ S: S, slug: slug, words: words, head: head, failed: failed, toast: toast, show: function (id) { show(id); }, roleOf: roleOf, inspect: inspect, releaseFlow: releaseFlow, openApp: openApp })
+    : null;
+  // The code behind an approval, the rules, one version on its own (approvals.js).
+  var Ap = window.KrateOrgApprovals
+    ? window.KrateOrgApprovals({ S: S, slug: slug, roleOf: roleOf, show: function (id, o) { show(id, o); }, words: words, toast: toast })
     : null;
   if (window.KrateOrgApp) A = window.KrateOrgApp({ S: S, slug: slug, head: head, crumb: drawCrumb, tabName: tabName, show: function (id, o) { show(id, o); }, openApp: openApp, roleOf: roleOf, inspect: inspect, waitCard: waitCard, R: R, I: I });
   // Search and the bell in the top bar (find.js).

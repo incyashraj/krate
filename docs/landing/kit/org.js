@@ -190,6 +190,11 @@
     "request.create": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
     "request.view": { owner: "yes", admin: "yes", developer: "yes", reviewer: "own", recipient: "own" },
     "request.manage": { owner: "yes", admin: "yes", developer: "yes" },
+    // Approval rules and the code behind an approval (org-approvals.js):
+    // the people who approve, and a version's own sender, read its code;
+    // an owner sets the rules.
+    "candidate.changes": { owner: "yes", reviewer: "yes", developer: "own" },
+    "approval.policy": { owner: "yes" },
   };
 
   function can(role, action) {
@@ -409,6 +414,14 @@
       case "app-not-allowed":
       case "connection-not-requested":
         return { title: "This app cannot use that connection", body: (ctx.message ? String(ctx.message).split(" -- ")[0] + ". " : "") + "Ask an admin of " + org + ".", action: null };
+      // Approval rules (org-approvals.js): the hub's sentence says whose
+      // approval is needed; this says it as the next step.
+      case "approval-policy":
+        return { title: "Someone else's approval is needed", body: (ctx.message ? String(ctx.message).split(" -- ")[0].replace(/\.?$/, ". ") : "") + "Nothing was approved.", action: null };
+      case "already-approved":
+        return { title: "You approved this already", body: (ctx.message ? "It " + String(ctx.message).split(" -- it ")[1].replace(/\.?$/, ". ") : "") + "It is released once the rest are in.", action: null };
+      case "policy-invalid":
+        return { title: "Those rules will not work", body: (ctx.message ? String(ctx.message).replace(/ -- /g, ". ").replace(/\.?$/, ". ") : "") + "Nothing changed.", action: null };
       default:
         return { title: "That did not work", body: (ctx.message ? String(ctx.message) + ". " : "") + "Nothing changed. Try again in a moment.", action: null };
     }
@@ -482,6 +495,10 @@
     "note-closed": "a declined or withdrawn version keeps its note",
     "no-such-request": "no such request",
     "requests-full": "too many open requests",
+    // Approval rules.
+    "approval-policy": "the approval rules need someone else",
+    "already-approved": "they approved it already",
+    "policy-invalid": "the rules were not complete",
   };
 
   /// One audit event as a sentence. `names` maps a digest to "Ledger 1.2".
@@ -560,6 +577,9 @@
         "request.manage": "answer an app request",
         "request-update": "answer an app request",
         "notify-prefs-set": "change their notifications",
+        "candidate.changes": "read the code of " + app(),
+        "approval.policy": "change the approval rules",
+        "approval-policy-set": "change the approval rules",
       }[ev.action] || "do " + ev.action;
       // Shown beside a Refused badge, so the sentence says why, not "refused" again.
       return a + " tried to " + tried + ": " + (SHORT_WHY[ev.reason] || ev.reason || "not allowed") + ".";
@@ -631,6 +651,12 @@
       case "release-key.revoke": return a + " withdrew the release key " + fingerprint(t.value) + ".";
       case "candidate.publish": return a + " sent " + app() + " for approval.";
       case "candidate.decline": return a + " declined " + app() + (ev.reason ? ": " + ev.reason : "") + ".";
+      // Approval rules: an approval that does not release yet, and the rules changing.
+      case "candidate.approve.partial": {
+        var still = String(ev.reason || "").split(" -- ")[1];
+        return a + " approved " + app() + ". It " + (still || "waits for more approvals") + ".";
+      }
+      case "settings.approvals": return a + " changed the approval rules: " + (ev.reason || "see Settings") + ".";
       case "candidate.note": return a + (ev.reason === "cleared" ? " cleared the release note on " : " wrote the release note on ") + app() + ".";
       case "request.create": return a + " asked for an app.";
       case "request.update": {

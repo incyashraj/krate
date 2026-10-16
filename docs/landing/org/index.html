@@ -925,6 +925,63 @@ body.console .abody > .grp, body.console .pane > .grp { margin: 22px 0 -4px; fon
 body.console .cr-body .starter.has-shot { width: 100%; }
 body.console .cr-body .st-shot { aspect-ratio: 16 / 9; }
 body.console .cr-body .st-shot img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+/* Approval rules and the code behind an approval (approvals.js) */
+body.console .wcard > * { min-width: 0; }
+body.console .apol { display: grid; gap: 4px; justify-items: start; }
+body.console .apol small { font-size: 12.5px; color: var(--ink-3); }
+body.console .apol small.met { color: var(--green); }
+body.console .cchg { display: grid; gap: 10px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+body.console .cchg h4 { margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+body.console .cchg > .sub { margin: -4px 0 0; font-size: 13px; color: var(--ink-3); }
+body.console .crisk { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+body.console .crisk li { display: flex; align-items: baseline; gap: 9px; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
+body.console .crisk li i { flex: none; width: 6px; height: 6px; border-radius: 99px; background: var(--ink-4); transform: translateY(-1px); }
+body.console .crisk li.high { color: var(--ink); font-weight: 500; }
+body.console .crisk li.high i { background: var(--warn); }
+body.console .cfh { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+body.console .cfh .sub { font-size: 12.5px; color: var(--ink-3); }
+body.console .cfiles { display: grid; min-width: 0; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+body.console .cfile { min-width: 0; }
+body.console .cfile + .cfile { border-top: 1px solid var(--line); }
+body.console .cfile > summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; list-style: none; cursor: pointer; font-size: 13px; }
+body.console .cfile > summary::-webkit-details-marker { display: none; }
+body.console .cfile > summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); transform: rotate(-45deg); transition: transform .2s var(--ease); }
+body.console .cfile[open] > summary::before { transform: rotate(45deg); }
+body.console .cfile > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 10px; }
+body.console .cst { flex: none; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+body.console .cst.added { color: var(--green); } body.console .cst.removed { color: var(--danger); }
+body.console .cpath { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+body.console .cnum { flex: none; font-size: 12px; color: var(--ink-3); }
+body.console .cbody { min-width: 0; border-top: 1px solid var(--line); }
+body.console .cdiff { max-height: 480px; overflow: auto; background: var(--s2); overscroll-behavior: contain; }
+body.console .cdiff:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+body.console .dtab { border-collapse: collapse; width: max-content; min-width: 100%; font: 12.5px/1.55 var(--mono); }
+body.console .dtab td { padding: 0 10px 0 0; vertical-align: top; }
+body.console .dtab .ln { width: 1px; white-space: nowrap; padding: 0 8px; text-align: right; color: var(--ink-4); user-select: none; font-variant-numeric: tabular-nums; }
+body.console .dtab .cd { white-space: pre; color: var(--ink-2); }
+body.console .dtab .sg { display: inline-block; width: 1.4ch; color: var(--ink-4); user-select: none; }
+body.console .dtab tr.add .cd { color: var(--ink); background: color-mix(in srgb, var(--green) 13%, transparent); }
+body.console .dtab tr.add .sg { color: var(--green); }
+body.console .dtab tr.del .cd { color: var(--ink); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+body.console .dtab tr.del .sg { color: var(--danger); }
+body.console .dtab tr.hh td { padding: 6px 12px; font: 500 12px/1.4 "Geist", system-ui, sans-serif; color: var(--ink-3); background: var(--s3); }
+body.console .cnote { margin: 0; padding: 10px 12px; font-size: 13px; color: var(--ink-3); }
+body.console .card.decided .empty { padding: 8px 0 4px; }
+body.console #rulesCard .rule { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+body.console #rulesCard .rule:first-of-type { margin-top: 12px; }
+body.console #rulesCard .rl { flex: 1 1 220px; min-width: 0; font-size: 14px; color: var(--ink); }
+body.console #rulesCard .rule select.inp, body.console #rulesCard .rapp select.inp { width: auto; min-width: 0; max-width: 100%; padding: 0 10px; }
+body.console #rulesCard .rapps { display: grid; gap: 8px; }
+body.console #rulesCard .rapp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+body.console #rulesCard .rapp select.inp { flex: 1 1 140px; }
+body.console #rulesCard .rwarn .note { margin-top: 8px; }
+@media (max-width: 520px) {
+  body.console .dtab .ln { padding: 0 5px; }
+  body.console .wcard > .row2 .btn, body.console .card.decided .btn, body.console .pane > .row2 .btn { min-height: 44px; padding-left: 16px; padding-right: 16px; }
+  body.console #rulesCard .rule .seg { width: 100%; }
+  body.console #rulesCard .rule .seg button { flex: 1; }
+  body.console #rulesCard .rule select.inp { width: 100%; }
+}
 </style>
 </head>
 <body class="console" data-kit="app">
@@ -1031,6 +1088,7 @@ body.console .cr-body .st-shot img { width: 100%; height: 100%; object-fit: cove
 <script src="/org/inventory.js"></script>
 <script src="/org/insights.js"></script>
 <script src="/org/publishers.js"></script>
+<script src="/org/approvals.js"></script>
 <script src="/org/pages.js"></script>
 <script src="/org/app.js"></script>
 <script src="/org/find.js"></script>

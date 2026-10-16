@@ -142,6 +142,13 @@
     }
 
     function versions(b, a) {
+      // A version waiting: what it can do, what changed in its code, and,
+      // for whoever may, Approve and Decline -- the Waiting tab's own card.
+      if (D.waitCard) {
+        var approver = K.can(D.roleOf(), "candidate.approve") === "yes" && K.tabsFor(D.roleOf()).indexOf("waiting") >= 0;
+        var closing = D.S.org && D.S.org.state === "closing";
+        a.waiting.forEach(function (c) { b.appendChild(D.waitCard(c, approver, closing, Date.now() / 1000)); });
+      }
       b.appendChild(versionList(a));
       // Who opens each one, which opens now, and taking one back: the
       // release controls, where the person may use them.

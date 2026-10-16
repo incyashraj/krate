@@ -111,6 +111,48 @@ Once approved, the app is released to the organisation, and the hub checks
 the person's sign-in against the organisation every time the app is
 fetched.
 
+### Approving with the code in view
+
+Every app sent to an organisation carries its source. On the organisation's
+page, each waiting version shows what changed in its code since the version
+that opens now: every file added, removed or changed, and a line-by-line
+diff of each one. Above the files are the things worth a second look,
+worked out from the files themselves with no AI: a new network host or
+permission, a new or changed dependency in `Cargo.toml` or `Cargo.lock`,
+new `unsafe` Rust, a new binary file, how much the compiled app grew, and
+whether it was made with AI and which model. Only the people who approve,
+and whoever sent the version, can read its code. A very large change is cut
+at 400 KB, and the page says where.
+
+The email that says a version is waiting links straight to that version,
+with its code and what it can do, and Approve and Decline beside them. It
+works on a phone. If someone else has already decided, the page says who
+and when.
+
+### Approval rules
+
+An owner sets the organisation's approval rules under Settings, Approval
+rules:
+
+- how many people approve each version: one or two, never its sender;
+- a stricter count, one or two, for a version that asks for the network,
+  files or the camera, or that adds any permission;
+- a group one approver must be in, for every app or for one app;
+- a group one approver must be in when a version connects to a network
+  host the version before it did not.
+
+The hub checks the rules when someone approves. An approval that does not
+meet them yet is recorded and the version keeps waiting; the page says what
+is still needed, for example "Needs one more approval from security". The
+approval that meets them releases the version. An approval that could not
+count, from someone outside the group the rules still need, is refused and
+says whose approval is needed. Each approval is in the audit.
+
+With the rules left as they are (one approval, no groups), an owner who is
+the only person who can approve still releases their own apps, marked as
+released by their sender. Any other rules need someone besides the sender,
+so they cannot be met by one person alone.
+
 ## Opening it offline
 
 The first time a member opens a private app, Krate shows the terms with the
