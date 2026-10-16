@@ -14539,12 +14539,33 @@ fn build_leaf_lock(app_dir: &Path) -> Option<fs::File> {
     Some(file)
 }
 
+/// The target directory the person chose with CARGO_TARGET_DIR, as cargo
+/// reads it for a build run in `app_dir`: a relative one is relative to
+/// there.
+fn person_target_dir(app_dir: &Path) -> Option<PathBuf> {
+    let dir = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR")?);
+    Some(if dir.is_absolute() {
+        dir
+    } else {
+        app_dir.join(dir)
+    })
+}
+
 fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
+    // Look where cargo wrote it. A person's own CARGO_TARGET_DIR wins over
+    // the shared cache (the sandbox advice says to set one), and cargo
+    // honours it for this build, so the artifact is there and not under
+    // the app's target/ (K-967, K-1036).
     let target_root = match shared_build_dir() {
         Some(shared) => per_app_target_dir(&shared, app_dir),
-        None => app_dir.join("target"),
+        None => person_target_dir(app_dir).unwrap_or_else(|| app_dir.join("target")),
     };
     let release = target_root.join("wasm32-wasip1/release");
+    let local = app_dir.join("target/wasm32-wasip1/release");
+    let at_home = |dir: &Path| match (dir.canonicalize(), local.canonicalize()) {
+        (Ok(dir), Ok(local)) => dir == local,
+        _ => dir == local,
+    };
     // The shared cache holds every app's artifact side by side, so the match
     // must be by THIS crate's name, not "any wasm in the directory".
     let wanted = app_crate_name(app_dir).map(|name| format!("{name}.wasm"));
@@ -14554,9 +14575,9 @@ fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
             // The manifest's entry names target/wasm32-wasip1/release/<name>
             // relative to the app, and the permission wall verifies the file
             // RUN is the file DECLARED. The deps stay in the shared cache;
-            // the artifact itself always comes home to the declared path.
-            if shared_build_dir().is_some() {
-                let local = app_dir.join("target/wasm32-wasip1/release");
+            // the artifact itself always comes home to the declared path,
+            // from the shared cache and from a target dir of the person's.
+            if !at_home(&release) {
                 fs::create_dir_all(&local)?;
                 let home = local.join(name);
                 fs::copy(&exact, &home).with_context(|| format!("copying {}", exact.display()))?;

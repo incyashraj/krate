@@ -11310,6 +11310,53 @@ fn create_without_an_agent_builds_a_real_app_from_a_template() {
     }
 }
 
+/// K-967, K-1036: a developer with CARGO_TARGET_DIR set (a shared target
+/// is a common Rust setup) gets a built app, not "the build produced no
+/// <name>.wasm". Cargo honours the variable, so the artifact lands there;
+/// Krate looked only under the app's own target/. Both forms: a directory
+/// outside the app, and the relative `./target` the sandbox advice names.
+#[test]
+fn create_builds_with_the_persons_own_cargo_target_dir() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let elsewhere = work.path().join("my-shared-target");
+    for (target, label) in [
+        (
+            elsewhere.clone().into_os_string(),
+            "a directory outside the app",
+        ),
+        (std::ffi::OsString::from("./target"), "./target"),
+    ] {
+        let run = tempfile::tempdir().expect("temp dir");
+        let out = run.path().join("made.krate");
+        let output = krate()
+            .arg("create")
+            .arg("a grocery list app")
+            .arg("--output")
+            .arg(&out)
+            .arg("--work-dir")
+            .arg(run.path().join("inspect"))
+            .env("CARGO_TARGET_DIR", &target)
+            .output()
+            .expect("run create");
+        assert!(
+            output.status.success(),
+            "with CARGO_TARGET_DIR={label}, create must build:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(out.is_file(), "{label}: the .krate was written");
+    }
+    // The first build really did go to the person's directory.
+    assert!(
+        elsewhere.join("wasm32-wasip1/release").is_dir(),
+        "cargo built into CARGO_TARGET_DIR"
+    );
+}
+
 /// An unrecognized `--agent` must list the providers that do exist.
 ///
 /// The failure this prevents is a dead end: someone tries the AI they actually
