@@ -1489,6 +1489,66 @@ function utf8Base64(text) {
   return btoa(s);
 }
 
+/* The company connections a request names (SMART-FIXES 4). A developer
+ * who asks for "an app that lists our open jira tickets" in an
+ * organisation with a `jira` connection gets that connection handed to the
+ * build as a file: how to declare it, its address, what it allows, and the
+ * operations its API's description lists, so the AI writes calls against
+ * the real API instead of guessing. Read from the hub by whoever may see
+ * connections (the role matrix's connection.view); a request naming none,
+ * or someone in no organisation, sends nothing extra. The list is kept
+ * five minutes; each connection's API is read fresh for the build. */
+const CONNECTION_VIEWERS = ["owner", "admin", "developer", "reviewer"];
+const CONNECTION_FILES = 3;
+/// The build service takes at most this many attachments (cloud/builder).
+const BUILD_ATTACHMENTS = 6;
+const knownConnections = { at: 0, list: null };
+async function connectionsNamed(text) {
+  if (!bridge.token || !text) return [];
+  if (!knownConnections.list || Date.now() - knownConnections.at > 5 * 60 * 1000) {
+    let orgs = [];
+    try {
+      const l = await hub("/orgs");
+      orgs = (Array.isArray(l) ? l : (l && Array.isArray(l.orgs) ? l.orgs : []))
+        .filter((o) => o && o.slug && CONNECTION_VIEWERS.includes(o.role));
+    } catch (e) {
+      return [];
+    }
+    const found = [];
+    for (const o of orgs.slice(0, 10)) {
+      try {
+        const r = await hub(`/orgs/${encodeURIComponent(o.slug)}/connections`);
+        for (const c of (r && r.connections) || []) found.push({ slug: String(o.slug), org: String(o.name || o.slug), name: String(c.name) });
+      } catch (e) {}
+    }
+    knownConnections.list = found;
+    knownConnections.at = Date.now();
+  }
+  const words = String(text).toLowerCase();
+  return knownConnections.list
+    .filter((c) => /^[a-z][a-z0-9-]{1,38}$/.test(c.name) && new RegExp(`(^|[^a-z0-9-])${c.name}([^a-z0-9-]|$)`).test(words))
+    .slice(0, CONNECTION_FILES);
+}
+/// The attachments a build sends, with a file for each connection named.
+async function withConnections(text, names) {
+  const out = (names || []).slice();
+  let named = [];
+  try { named = await connectionsNamed(text); } catch (e) { return out; }
+  if (!named.length) return out;
+  let C;
+  try { C = await loadSiteKit("connect.js", "KrateConnect"); } catch (e) { return out; }
+  for (const c of named) {
+    if (out.length >= BUILD_ATTACHMENTS) break;
+    try {
+      const full = await hub(`/orgs/${encodeURIComponent(c.slug)}/connections/${encodeURIComponent(c.name)}/api`);
+      const file = `connection-${c.name}.md`;
+      attached.set(file, { name: file, type: "text/markdown", bytes: utf8Base64(C.contextText(full, c.org)) });
+      if (!out.includes(file)) out.push(file);
+    } catch (e) {}
+  }
+  return out;
+}
+
 const COMMANDS = {
   /* ---- who they are ---------------------------------------------------- */
 
@@ -1743,6 +1803,8 @@ const COMMANDS = {
     }
 
     bridge.stopAsked = false;
+    // A company connection the request names goes with what they attached.
+    attachments = await withConnections(request, attachments);
     let started;
     try {
       started = await builder("/build", {
@@ -1797,6 +1859,7 @@ const COMMANDS = {
     if (overChange) return overChange;
     const id = jobIdOf(path);
     if (!id) return refuse("This app was not made here, so it cannot be changed here. Open it in Studio on your computer.");
+    attachments = await withConnections(change, attachments);
     let started;
     try {
       started = await builder(`/build/${id}/revise`, {

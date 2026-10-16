@@ -15,11 +15,14 @@
 //   and the whole sheet only as the app's asset.
 // - An owner's browser that holds the key approves waiting publishers when
 //   the console opens.
+// - A request that names a company connection sends that connection's API
+//   with the build, as a file the AI reads (SMART-FIXES 4).
 //
 //   node docs/landing/studio/org-send-test.mjs
 import { readFileSync } from "node:fs";
 import { DASH, page, settle, orgRoutes, member, ACME } from "./org-test-kit.mjs";
 import "../kit/sheet.js";
+import "../kit/connect.js";
 
 const bridgeSrc = readFileSync("docs/landing/studio/bridge.js", "utf8");
 const appSrc = readFileSync("studio/ui/app.js", "utf8");
@@ -72,11 +75,11 @@ function fakeDocument(pickFile) {
 }
 
 /// The bridge's org and spreadsheet commands in a world of stand-ins.
-function bridgeWorld({ url = "https://krate.tech/app/", orgs = [], device = null, appBytes = new Uint8Array([80, 75, 3, 4, 9]), file = null, token = "tok-carol" } = {}) {
+function bridgeWorld({ url = "https://krate.tech/app/", orgs = [], device = null, appBytes = new Uint8Array([80, 75, 3, 4, 9]), file = null, token = "tok-carol", routes = {} } = {}) {
   const calls = { hub: [], fetch: [], build: [], configure: [], publish: [], kit: [] };
   const session = new Map();
   const u = new URL(url);
-  const win = { KrateSheet: globalThis.KrateSheet, addEventListener() {} };
+  const win = { KrateSheet: globalThis.KrateSheet, KrateConnect: globalThis.KrateConnect, addEventListener() {} };
   const bridge = { token, jobResult: { name: "Stock", download: "/build/abc/file" } };
   const attached = new Map();
   const HUB = "https://hub.krate.tech";
@@ -84,6 +87,7 @@ function bridgeWorld({ url = "https://krate.tech/app/", orgs = [], device = null
   async function hub(path) {
     calls.hub.push(path);
     if (path === "/orgs") return orgs;
+    if (routes[path]) return routes[path]();
     throw Object.assign(new Error("no route"), { status: 404 });
   }
   async function fetch(to, init = {}) {
@@ -139,6 +143,42 @@ const ORGS = [
   { slug: "delta", name: "Delta", role: "reviewer" },
   { slug: "eps", name: "Eps", role: "recipient" },
 ];
+
+/* ---- a company connection the request names (SMART-FIXES 4) ------------- */
+{
+  const JIRA_API = {
+    name: "jira", base: "https://acme.atlassian.net/rest/api/3", allow: { methods: ["GET"], paths: ["/search/jql", "/project"] },
+    api: { title: "Jira Cloud", version: "3", source: "preset:jira", notes: "Search issues with GET /search/jql.", operations: [
+      { method: "GET", path: "/search/jql", id: "searchJql", summary: "Search issues", query: ["jql", "fields"] },
+      { method: "GET", path: "/project/{key}", id: "getProject" },
+      { method: "POST", path: "/issue", id: "createIssue", body: true },
+    ], more: 0 },
+  };
+  const routes = {
+    "/orgs/acme/connections": () => ({ connections: [{ name: "jira" }, { name: "finance-api" }] }),
+    "/orgs/acme/connections/jira/api": () => JIRA_API,
+    "/orgs/eps/connections": () => { throw new Error("a recipient never asks"); },
+  };
+  const w = bridgeWorld({ orgs: ORGS, routes });
+  await w.COMMANDS.create_app({ request: "An app that lists our open Jira tickets by project", session: "s9", attachments: [] });
+  const att = (w.calls.build[0].body.attachments || []);
+  const text = att.length === 1 ? Buffer.from(att[0].bytes, "base64").toString("utf8") : "";
+  check(att.length === 1 && att[0].name === "connection-jira.md", "a request that names the jira connection sends it with the build, as connection-jira.md");
+  check(text.includes('cap = "net.connection:jira"') && text.includes("https://acme.atlassian.net/rest/api/3") && /WITHOUT any Authorization/.test(text), "it says how to declare it, its address, and to send no credential");
+  check(text.includes("`GET /search/jql` (searchJql) -- Search issues Query: jql, fields.") && text.includes("`GET /project/{key}`"), "it lists the operations the connection allows, from the API's description");
+  check(!text.includes("createIssue") && /1 more operation is in the API but not allowed here/.test(text), "and only counts the ones it does not allow");
+  check(text.includes("About this API: Search issues with GET /search/jql."), "with the preset's words about the API");
+  check(!w.calls.hub.includes("/orgs/eps/connections"), "only organisations where this person may see connections are asked");
+  const none = bridgeWorld({ orgs: ORGS, routes });
+  await none.COMMANDS.create_app({ request: "A tiny timer", session: "s10", attachments: [] });
+  check((none.calls.build[0].body.attachments || []).length === 0 && !none.calls.hub.some((p) => /\/api$/.test(p)), "a request that names no connection sends nothing extra");
+  const part = bridgeWorld({ orgs: ORGS, routes });
+  await part.COMMANDS.create_app({ request: "A jira-like board for our team", session: "s11", attachments: [] });
+  check((part.calls.build[0].body.attachments || []).length === 0, "a name inside another word (jira-like) is not the connection");
+  const down = bridgeWorld({ orgs: ORGS, routes: { "/orgs/acme/connections": () => { throw new Error("offline"); } } });
+  await down.COMMANDS.create_app({ request: "our jira tickets", session: "s12", attachments: [] });
+  check(down.calls.build.length === 1, "a hub that cannot answer never stops the build");
+}
 
 /* ---- who is offered Send to <org> --------------------------------------- */
 {
