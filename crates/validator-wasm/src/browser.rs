@@ -60,7 +60,10 @@ unsafe extern "Rust" fn __getrandom_v03_custom(
 /// The least a call that seals anything must bring.
 const MIN_ENTROPY: usize = 256;
 
-fn with_entropy<T>(input: &Value, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+pub(crate) fn with_entropy<T>(
+    input: &Value,
+    f: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
     let bytes = match input["entropy"].as_str() {
         Some(text) => b64_decode(text).ok_or("entropy is base64")?,
         None => Vec::new(),
@@ -88,14 +91,14 @@ fn needs_entropy(input: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn text<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
+pub(crate) fn text<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
     input[key]
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("{key} is required"))
 }
 
-fn org_of(input: &Value) -> Result<&str, String> {
+pub(crate) fn org_of(input: &Value) -> Result<&str, String> {
     let org = text(input, "org")?;
     if !krate_bundle::valid_org_slug(org) {
         return Err(format!("{org:?} is not an organisation's name"));
@@ -103,13 +106,13 @@ fn org_of(input: &Value) -> Result<&str, String> {
     Ok(org)
 }
 
-fn key32(input: &Value, key: &str) -> Result<[u8; 32], String> {
+pub(crate) fn key32(input: &Value, key: &str) -> Result<[u8; 32], String> {
     unhex(text(input, key)?)
         .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
         .ok_or_else(|| format!("{key} is 64 hex characters"))
 }
 
-fn device_of(input: &Value) -> Result<KeyPair, String> {
+pub(crate) fn device_of(input: &Value) -> Result<KeyPair, String> {
     let mut secret = key32(input, "device_secret")?;
     let pair = KeyPair::from_secret(&secret).map_err(|e| e.to_string());
     secret.zeroize();

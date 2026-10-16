@@ -21,6 +21,11 @@ use std::alloc::{alloc as raw_alloc, dealloc, Layout};
 mod browser;
 pub use browser::{delegation_to_json, keys_to_json, sign_frame};
 
+/// An organisation's team data in a browser tab (store.org, G1): the
+/// device's copy, the merge and the sealing a computer runs.
+mod teamdata;
+pub use teamdata::org_data_to_json;
+
 /// Verification never needs randomness; a request for it is a bug, and it
 /// is answered as one rather than with bytes that are not random.
 fn no_randomness_here(_dest: &mut [u8]) -> Result<(), getrandom::Error> {
@@ -235,6 +240,17 @@ pub unsafe extern "C" fn krate_keys(ptr: *const u8, len: u32) -> *mut u8 {
 pub unsafe extern "C" fn krate_sign(ptr: *const u8, len: u32) -> *mut u8 {
     let bytes = std::slice::from_raw_parts(ptr, len as usize);
     answer_bytes(sign_frame(bytes))
+}
+
+/// [`org_data_to_json`] over the JSON at `ptr`: one team-data call for a
+/// browser tab, answered the way [`krate_judge`] answers.
+///
+/// # Safety
+/// As [`krate_judge`].
+#[no_mangle]
+pub unsafe extern "C" fn krate_org_data(ptr: *const u8, len: u32) -> *mut u8 {
+    let bytes = std::slice::from_raw_parts(ptr, len as usize);
+    answer(org_data_to_json(bytes))
 }
 
 /// [`delegation_to_json`] over the JSON at `ptr`: the hub's reading of a
