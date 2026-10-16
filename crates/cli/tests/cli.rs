@@ -23412,11 +23412,15 @@ fn starter_expenses_is_shared_by_two_people_through_its_window() {
             ("type", "42.50"),
             ("click", "EUR"),
             ("click", "What was it for"),
+            // Typing over a selection replaces it (K-1109, the SDK's Field).
+            ("type", "a first draft"),
+            ("key", "Primary+a"),
             ("type", "Train to Leeds"),
             ("click", "Receipt note"),
             ("type", "Client visit"),
             ("click", "Save expense"),
             ("expect_text", "Train to Leeds, \u{20ac}42.50"),
+            ("expect_no_text", "a first draft"),
         ],
     );
     keys_show(&world, "alice");
@@ -23530,6 +23534,11 @@ fn starter_stock_list_is_shared_by_two_people_through_its_window() {
             ("click", "Printer paper"),
             ("expect_text", "Add an item"),
             ("type", "1"),
+            // The suggestion filled the count with 3: select it and type 3
+            // over it. Without selection (K-1109) this reads 33.
+            ("click", "How many there are"),
+            ("key", "Primary+a"),
+            ("type", "3"),
             ("shoot", "stock-list-form.png"),
             ("click", "Add item"),
             ("expect_text", "Printer paper, 3 left"),
