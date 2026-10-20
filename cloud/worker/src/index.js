@@ -2610,19 +2610,23 @@ async function usage(request, env) {
 /// Returns a Map of app id -> opens in the window. Empty on any failure --
 /// the gallery must still render when the analytics API is unreachable, and
 /// a shelf that quietly falls back to "newest" is better than an error page.
-async function openCounts(env, days = 30) {
-  if (!env.ACCOUNT_ID || !env.ANALYTICS_TOKEN) return new Map();
+export async function openCounts(env, days = 30) {
+  // The same names every other analytics read uses. This one read
+  // ACCOUNT_ID and ANALYTICS_TOKEN, which the hub never had, so every
+  // gallery app showed 0 opens.
+  if (!env.CF_ACCOUNT_ID || !env.CF_ANALYTICS_TOKEN) return new Map();
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-  // blob1 is the action and blob8 is the app id; see writeDataPoint above.
+  // blob1 is the action, blob8 the app id and blob9 the network; see
+  // writeDataPoint above. CI and build farms (cloud) are not people.
   const sql = `
     SELECT blob8 AS app, SUM(_sample_interval) AS opens
     FROM krate_usage
-    WHERE blob1 = 'open' AND blob8 != '-' AND timestamp >= toDateTime('${since} 00:00:00')
+    WHERE blob1 = 'open' AND blob8 != '-' AND blob9 != 'cloud' AND timestamp >= toDateTime('${since} 00:00:00')
     GROUP BY app ORDER BY opens DESC LIMIT 200`;
   try {
     const r = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.ACCOUNT_ID}/analytics_engine/sql`,
-      { method: "POST", headers: { Authorization: `Bearer ${env.ANALYTICS_TOKEN}` }, body: sql },
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+      { method: "POST", headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` }, body: sql },
     );
     if (!r.ok) return new Map();
     const out = await r.json();
