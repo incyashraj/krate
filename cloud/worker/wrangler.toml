@@ -86,8 +86,10 @@ zone_name = "krate.tech"
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"
 # The gallery's "Start here" shelf, in order (id prefixes): Markdown Editor,
-# Pad, Krate Nova, Diff, Query. A stranger's first look is the best apps.
-GALLERY_PICKS = "f2f8027ed3,06ab97a141,5042343660,f631ea50f4,953a8d4128"
+# Krate Nova, Diff, Bigtable, Track Dash. Each works fully in a browser tab
+# (Pad's sharing and Query's database are greyed out there), so a stranger's
+# first tap shows the whole app.
+GALLERY_PICKS = "f2f8027ed3,5042343660,f631ea50f4,c4f9dd7a47,8801996a2c"
 # The account whose Analytics Engine dataset /stats reads. Not a secret --
 # it is already in `account_id` above -- but the worker cannot see that field
 # at runtime, so without this the SQL URL becomes /accounts/undefined/... and
