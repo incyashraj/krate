@@ -88,7 +88,7 @@ rusqlite = { version = "0.32", features = ["bundled", "hooks"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.18"
-zip = { version = "2.2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # Native file dialogs on all three systems. Default features use the XDG
 # portal on Linux rather than GTK, so no GTK development libraries are
 # needed to build.
@@ -104,7 +104,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 # pulley: the portable interpreter backend, selected at engine init on
 # iOS where executable pages are forbidden. Compiled in everywhere, used
 # only where JIT cannot be.
-wasmtime = { version = "46.0.3", features = ["component-model", "pulley"] }
+wasmtime = { version = "48.0.7", features = ["component-model", "pulley"] }
 wasmparser = "0.244.0"
 wit-parser = "0.244.0"
 

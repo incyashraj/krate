@@ -4164,7 +4164,7 @@ fn rewrite_bundle_entry(
         .compression_method(zip::CompressionMethod::Deflated);
     for index in 0..archive.len() {
         let mut existing = archive.by_index(index).expect("entry");
-        let name = existing.name().to_string();
+        let name = existing.name().expect("entry name").to_string();
         let mut bytes = Vec::new();
         existing.read_to_end(&mut bytes).expect("read entry");
         writer.start_file(name.clone(), options).expect("start");
@@ -9542,7 +9542,7 @@ fn saved_data_exports_and_imports_to_the_app_it_came_from() {
         let options = zip::write::SimpleFileOptions::default();
         for index in 0..source.len() {
             let mut entry = source.by_index(index).unwrap();
-            let name = entry.name().to_string();
+            let name = entry.name().expect("entry name").to_string();
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
             if name == "data/dev.krate.notes.sqlite" {
@@ -9829,7 +9829,7 @@ fn an_editable_bundle_rebuilds_locked_from_what_it_carries() {
         let mut archive = zip::ZipArchive::new(std::fs::File::open(&bundle).unwrap()).expect("zip");
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index).unwrap();
-            let name = entry.name().to_string();
+            let name = entry.name().expect("entry name").to_string();
             if !(name.starts_with("source/") || name.starts_with("sdk/")) {
                 continue;
             }
@@ -10761,7 +10761,13 @@ fn a_mac_gift_from_named_parts_is_one_zip_with_a_player_per_architecture() {
     );
     let mut zip = zip::ZipArchive::new(std::fs::File::open(&zip_path).unwrap()).expect("a zip");
     let names: Vec<String> = (0..zip.len())
-        .map(|i| zip.by_index(i).unwrap().name().to_string())
+        .map(|i| {
+            zip.by_index(i)
+                .unwrap()
+                .name()
+                .expect("entry name")
+                .to_string()
+        })
         .collect();
     let top: std::collections::BTreeSet<&str> =
         names.iter().map(|n| n.split('/').next().unwrap()).collect();
@@ -18630,7 +18636,7 @@ fn strip_mark(bundle: &std::path::Path, out: &std::path::Path) {
     let mut writer = zip::ZipWriter::new(std::fs::File::create(out).unwrap());
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).unwrap();
-        let name = entry.name().to_string();
+        let name = entry.name().expect("entry name").to_string();
         let mut body = Vec::new();
         entry.read_to_end(&mut body).unwrap();
         if name == krate_bundle::ORG_MARK_ENTRY {

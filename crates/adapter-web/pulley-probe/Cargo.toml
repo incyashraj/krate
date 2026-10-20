@@ -24,10 +24,10 @@ name = "precompile"
 path = "src/precompile.rs"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-wasmtime = { version = "=46.0.3", default-features = false, features = ["component-model", "cranelift", "pulley", "runtime", "std"] }
+wasmtime = { version = "=48.0.7", default-features = false, features = ["component-model", "cranelift", "pulley", "runtime", "std"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasmtime = { version = "=46.0.3", default-features = false, features = ["component-model", "runtime", "pulley", "std", "custom-virtual-memory"] }
+wasmtime = { version = "=48.0.7", default-features = false, features = ["component-model", "runtime", "pulley", "std", "custom-virtual-memory"] }
 wasm-bindgen = "=0.2.120"
 js-sys = "0.3"
 

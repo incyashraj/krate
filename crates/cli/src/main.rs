@@ -6330,8 +6330,11 @@ fn report_heavy_assets(bundle: &Path, assets_dir: &Path) {
         };
         let packed = entry.compressed_size();
         shipped = shipped.saturating_add(packed);
-        if entry.name().starts_with("assets/") && !entry.name().ends_with('/') {
-            entries.push((entry.name().to_string(), packed));
+        let Ok(name) = entry.name() else {
+            return;
+        };
+        if name.starts_with("assets/") && !name.ends_with('/') {
+            entries.push((name.to_string(), packed));
         }
     }
     if shipped == 0 {
