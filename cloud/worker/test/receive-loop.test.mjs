@@ -9,6 +9,8 @@
  *   - every chat app's previewer gets a card with the app's name, one line
  *     and its picture; a person's browser and the runtime get what they got
  *     before; a team's private app names nothing;
+ *   - anyone can report an app from the Player, without an account, into a
+ *     record the desk lists beside a takedown.
  *
  *   node --experimental-wasm-modules --test cloud/worker/test/receive-loop.test.mjs
  */
@@ -318,4 +320,62 @@ test("a taken-down app gets no card, only the notice", async () => {
     assert.equal(res.status, 451);
     assert.ok(!res.text.includes("og:title"));
   }
+});
+
+// ---------------------------------------------------------- the report
+
+test("anyone can report an app with no account; one person once a day; the desk lists it beside a takedown", async () => {
+  const { env, hash } = await hub();
+  const first = await ask(env, "POST", `/report/app/${hash}`, { body: { why: "scam", note: "It asks for my bank password" } });
+  assert.deepEqual([first.status, first.body], [200, { ok: true }]);
+  assert.equal(env.kvWrites(), 1);
+  const again = await ask(env, "POST", `/report/app/${hash}`, { body: { why: "scam" } });
+  assert.deepEqual(again.body, { ok: true, again: true });
+  assert.equal(env.kvWrites(), 1, "the same person again writes nothing");
+  await ask(env, "POST", `/report/app/${hash}`, { body: { why: "harmful" }, ip: "198.51.100.4" });
+  const record = JSON.parse(env._kv.get(`app-report:${hash}`));
+  assert.equal(record.count, 2);
+  assert.deepEqual(record.reasons, { scam: 1, harmful: 1 });
+  assert.equal(record.reports[0].note, "It asks for my bank password");
+  assert.ok(!JSON.stringify(record).includes("203.0.113.9"), "no address is kept");
+  assert.equal(env.points.filter((p) => p.blobs[0] === "report").length, 2);
+
+  // Refused: no reason, a made-up app.
+  assert.equal((await ask(env, "POST", `/report/app/${hash}`, { body: { why: "meh" }, ip: "192.0.2.7" })).status, 400);
+  assert.equal((await ask(env, "POST", `/report/app/${"e".repeat(64)}`, { body: { why: "scam" } })).status, 404);
+
+  // The desk: the app, its count, and the takedown it takes in one action.
+  const admin = { authorization: "Bearer gho_boss" };
+  const list = await call(env, null, "GET", "/admin/api/app-reports", { headers: admin });
+  assert.equal(list.status, 200);
+  assert.equal(list.body.apps[0].hash, hash);
+  assert.equal(list.body.apps[0].name, JSON.parse(env._kv.get(`app:${hash}`)).name);
+  assert.equal(list.body.apps[0].taken_down, false);
+  assert.equal((await call(env, "bob", "GET", "/admin/api/app-reports")).status, 404, "not for anyone else");
+  const down = await call(env, null, "POST", `/admin/takedown/${hash}`, { headers: admin, json: { reason: "a scam", scope: "listing" } });
+  assert.equal(down.status, 200);
+  const done = await call(env, null, "POST", "/admin/api/app-report/state", { headers: admin, json: { hash, state: "done" } });
+  assert.equal(done.status, 200);
+  const after = await call(env, null, "GET", "/admin/api/app-reports", { headers: admin });
+  assert.deepEqual([after.body.apps[0].taken_down, after.body.apps[0].state], [true, "done"]);
+  const overview = await call(env, null, "GET", "/admin/api/overview", { headers: admin });
+  assert.equal(overview.body.app_reports, 1);
+});
+
+test("reports from one address stop at five a minute", async () => {
+  const { env, hash } = await hub();
+  const statuses = [];
+  for (let i = 0; i < 6; i += 1) {
+    statuses.push((await ask(env, "POST", `/report/app/${hash}`, { body: { why: "other" }, ip: "192.0.2.50" })).status);
+  }
+  assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429]);
+});
+
+test("the desk's page script still parses with the App reports tab in it", async () => {
+  const { env } = await hub();
+  const page = await worker.fetch(new Request("https://hub.example/admin"), env);
+  const html = await page.text();
+  assert.ok(html.includes('data-t="apps"'));
+  const script = /<script>([\s\S]*?)<\/script>/.exec(html)[1];
+  assert.doesNotThrow(() => new Function(script));
 });

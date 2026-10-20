@@ -13,6 +13,8 @@
 //    kind "open" in the slots the native opens use, so one query counts
 //    both, plus whether the person is the app's maker and which post's link
 //    (`?via=`) they came from. No KV, no cookie, nothing kept on the device.
+// 3. A report a stranger can send from the Player, with no account, into a
+//    record the desk lists beside a one-click takedown (IC-669's record).
 //
 // Nothing here decides who may open what: the takedown, the private-release
 // and the bytes checks stay in index.js, and run before any of this.
@@ -229,4 +231,120 @@ export async function tabEvent(request, env, d) {
   return new Response(JSON.stringify({ ok: true, maker: maker === "maker" }), {
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
+}
+
+/// What a person can say is wrong with an app, in the Player's words.
+export const REPORT_REASONS = ["scam", "harmful", "copyright", "other"];
+
+/// How many reports one app's record keeps word for word; past this they
+/// are counted only.
+const REPORTS_KEPT = 50;
+
+/// POST /report/app/<hash> {why, note}: a report from anyone, no account.
+///
+/// One KV record per app (`app-report:<hash>`), so the desk lists apps, not
+/// a pile of rows, and a takedown is one click beside it. The same person
+/// (the daily visitor hash) reporting the same app again writes nothing:
+/// KV's 1,000 writes a day are what sign-ins and publishes live on (K-952),
+/// and a report must never be able to spend them faster than one per
+/// person per app per day, under the per-minute wall index.js puts in
+/// front of this.
+export async function appReport(request, env, hash, d) {
+  if (!/^[0-9a-f]{64}$/.test(hash)) return d.json({ error: "not-found" }, 404);
+  const app = await whichApp(env, hash);
+  if (!app) return d.json({ error: "not-found", message: "There is no app at this address." }, 404);
+  const raw = await request.text().catch(() => "");
+  if (raw.length > 4096) return d.json({ error: "too-long" }, 413);
+  let body = {};
+  try {
+    body = JSON.parse(raw || "{}") || {};
+  } catch (_) {
+    return d.json({ error: "bad-request" }, 400);
+  }
+  const why = REPORT_REASONS.includes(body.why) ? body.why : null;
+  if (!why) return d.json({ error: "why", message: `Say what is wrong: one of ${REPORT_REASONS.join(", ")}.` }, 400);
+  const note = line(body.note, 500);
+  const visitor = await d.visitorHash(request, env);
+  const key = `app-report:${hash}`;
+  let record = null;
+  try {
+    record = JSON.parse((await env.APPS.get(key)) || "null");
+  } catch (_) {
+    record = null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (!record) {
+    record = {
+      hash,
+      name: (app.record && line(app.record.name, 80)) || "",
+      scope: app.scope,
+      count: 0,
+      reasons: {},
+      reports: [],
+      first: now,
+      last: now,
+      state: "new",
+    };
+  }
+  if (record.reports.some((r) => r.visitor === visitor)) {
+    return d.json({ ok: true, again: true });
+  }
+  const identity = request.headers.get("authorization") ? await d.verifyGitHub(request, env).catch(() => null) : null;
+  record.count += 1;
+  record.reasons[why] = (record.reasons[why] || 0) + 1;
+  record.last = now;
+  // A new report on an app the desk had closed opens it again.
+  record.state = "new";
+  if (record.reports.length < REPORTS_KEPT) {
+    record.reports.push({
+      why,
+      note,
+      at: now,
+      visitor,
+      country: String((request.cf && request.cf.country) || "-"),
+      net: d.netOf(request),
+      ...(identity && identity.login ? { login: String(identity.login) } : {}),
+    });
+  }
+  await env.APPS.put(key, JSON.stringify(record));
+  if (env.USAGE) {
+    env.USAGE.writeDataPoint({
+      blobs: ["report", why, "tab", "ok", "-", new Date().toISOString().slice(0, 10), "-", hash, d.netOf(request)],
+      doubles: [1],
+      indexes: [visitor],
+    });
+  }
+  return d.json({ ok: true });
+}
+
+/// Every reported app for the desk, most recently reported first, each
+/// with whether it is already taken down.
+export async function appReportsList(env, listAllKeys) {
+  const keys = await listAllKeys(env.APPS, "app-report:");
+  const out = [];
+  for (const key of keys) {
+    let record = null;
+    try {
+      record = JSON.parse((await env.APPS.get(key)) || "null");
+    } catch (_) {
+      record = null;
+    }
+    if (!record) continue;
+    record.taken_down = Boolean(await env.APPS.get(`takedown:${record.hash}`));
+    out.push(record);
+  }
+  out.sort((a, b) => (b.last || 0) - (a.last || 0));
+  return out;
+}
+
+/// The desk marks an app's reports seen or done.
+export async function appReportState(env, hash, state) {
+  if (!/^[0-9a-f]{64}$/.test(String(hash || ""))) return { status: 404, body: "no such report" };
+  if (!["new", "seen", "done"].includes(state)) return { status: 400, body: "state is new, seen or done" };
+  const key = `app-report:${hash}`;
+  const record = JSON.parse((await env.APPS.get(key)) || "null");
+  if (!record) return { status: 404, body: "no such report" };
+  record.state = state;
+  await env.APPS.put(key, JSON.stringify(record));
+  return { status: 200, body: { ok: true } };
 }

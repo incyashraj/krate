@@ -75,7 +75,7 @@ import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH } from "./web-player.js";
 // The receive loop (F-320): the link card, the open counted per person, a
 // stranger's report (receive.js).
-import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent } from "./receive.js";
+import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState } from "./receive.js";
 // Insights (IC-959), after everything whose counts it reads.
 import { insightsRoute } from "./org-insights.js";
 // The organisation's own day (F-319): its time zone, set by an owner or admin.
@@ -211,6 +211,9 @@ const RATE_WINDOW_SECONDS = 60;
 /// action, so it gets the loosest ceiling.
 const RATE_LIMITS = {
   report: 5,
+  // A stranger's report on an app from the Player (receive.js). One person
+  // sends one; the record itself takes one per person per app per day.
+  "report/app": 5,
   // The Player's open and "Make your own" beacons: one each per app opened.
   tab: 30,
   "share/new": 10,
@@ -609,6 +612,12 @@ export default {
         const over = await rateLimited(request, env, "tab");
         if (over) return cors(over);
         return cors(await tabEvent(request, env, { verifyGitHub, ownerOf, ownerOfRecord, netOf, isBot, visitorHash }));
+      }
+      // A report on an app from anyone who opened it, no account needed.
+      if (request.method === "POST" && /^\/report\/app\/[0-9a-f]{64}$/.test(pathname)) {
+        const over = await rateLimited(request, env, "report/app");
+        if (over) return cors(over);
+        return cors(await appReport(request, env, pathname.slice("/report/app/".length), { verifyGitHub, netOf, visitorHash, json }));
       }
       if (request.method === "POST" && pathname === "/report") {
         const over = await rateLimited(request, env, "report");
@@ -6836,10 +6845,12 @@ async function adminApi(request, pathname, env) {
     const ticks = await env.APPS.list({ prefix: "tick:", limit: 1000 });
     const pays = await env.APPS.list({ prefix: "pay:", limit: 1000 });
     const reps = await env.APPS.list({ prefix: "report:", limit: 1000 });
+    const appReps = await env.APPS.list({ prefix: "app-report:", limit: 1000 });
     return json({
       users: users.keys.length,
       tickets: ticks.keys.length,
       reports: reps.keys.length,
+      app_reports: appReps.keys.length,
       payments: pays.keys.length,
       billing_live: billingLive(env),
     });
@@ -6973,6 +6984,15 @@ async function adminApi(request, pathname, env) {
     }
     reports.sort((a, b) => (b.received || 0) - (a.received || 0));
     return json({ reports });
+  }
+  // Reports on apps from the people who opened them (receive.js), one
+  // record per app, with the takedown beside each (POST /admin/takedown/).
+  if (route === "app-reports") {
+    return json({ apps: await appReportsList(env, listAllKeys) });
+  }
+  if (route === "app-report/state" && request.method === "POST") {
+    const done = await appReportState(env, body.hash, body.state);
+    return done.status === 200 ? json(done.body) : text(done.body, done.status);
   }
   if (route === "report/state" && request.method === "POST") {
     const id = String(body.id || "");
@@ -7181,6 +7201,7 @@ textarea{min-height:70px;resize:vertical}
   <button data-t="people">People</button>
   <button data-t="tickets">Tickets</button>
   <button data-t="reports">Reports</button>
+  <button data-t="apps">App reports</button>
   <button data-t="users">Users</button>
   <button data-t="makeit">Make-it queue</button>
 </nav>
@@ -7196,7 +7217,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -7291,6 +7312,22 @@ async function show(tab){
       d.querySelector(".dl").onclick=async()=>{const res=await fetch(HUB+"/admin/report/"+r.id,{headers:{authorization:"Bearer "+TOKEN}});if(!res.ok){alert("Download failed: "+res.status);return;}const b=await res.blob();const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="krate-report-"+r.id+".zip";a.click();if(!r.state||r.state==="new")api("report/state",{method:"POST",body:JSON.stringify({id:r.id,state:"seen"})});};
       d.querySelector(".ses").onclick=()=>sessionsInto(d.querySelector(".sbox"),"login="+encodeURIComponent(r.from||""),r.session);
       d.querySelector(".st").onclick=async()=>{await api("report/state",{method:"POST",body:JSON.stringify({id:r.id,state:r.state==="done"?"seen":"done"})});show("reports");};
+      v.appendChild(d);
+    }
+  }
+  if(tab==="apps"){
+    const {apps}=await api("app-reports");
+    v.innerHTML=apps.length?'<p class="mut" style="margin-bottom:10px">Sent from the Player by people who opened the app, no account needed. One card per app, most recently reported first.</p>':'<p class="mut">No app has been reported.</p>';
+    for(const a of apps){
+      const d=document.createElement("div");d.className="card";
+      const why=Object.entries(a.reasons||{}).map(([k,n])=>esc(k)+" "+n).join(" · ");
+      d.innerHTML='<div class="row"><b>'+esc(a.name||"(no listing)")+'</b> <span class="mut">'+esc(a.hash.slice(0,12))+' · '+esc(a.scope||"")+'</span><span class="pill '+(a.state==="done"?"closed":"open")+'">'+esc(a.state||"new")+'</span>'+(a.taken_down?'<span class="pill">taken down</span>':'')+'<span class="grow"></span><span class="mut">'+when((a.last||0)*1000)+'</span></div>'
+        +'<div class="mut" style="margin:6px 0">'+a.count+' report'+(a.count===1?'':'s')+' · '+why+'</div>'
+        +(a.reports||[]).filter(r=>r.note).slice(-5).map(r=>'<div class="msg user">'+esc(r.why)+': '+esc(r.note)+' <span class="mut">'+esc(r.country||"")+(r.login?' @'+esc(r.login):'')+'</span></div>').join("")
+        +'<div class="row" style="margin-top:8px"><a class="ghost" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px" href="'+HUB+'/run/'+esc(a.hash)+'" target="_blank" rel="noopener">Open it</a>'+(a.taken_down?'':'<button class="act td">Take it down</button>')+'<button class="ghost st">'+(a.state==="done"?"Reopen":"Mark done")+'</button></div>';
+      const td=d.querySelector(".td");
+      if(td)td.onclick=async()=>{const reason=prompt("The reason the notice shows to anyone who opens it:","It broke Krate's rules after a report.");if(!reason)return;const res=await fetch(HUB+"/admin/takedown/"+a.hash,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify({reason,scope:"listing"})});if(!res.ok){alert("Takedown failed: "+res.status+" "+await res.text());return;}await api("app-report/state",{method:"POST",body:JSON.stringify({hash:a.hash,state:"done"})});show("apps");};
+      d.querySelector(".st").onclick=async()=>{await api("app-report/state",{method:"POST",body:JSON.stringify({hash:a.hash,state:a.state==="done"?"seen":"done"})});show("apps");};
       v.appendChild(d);
     }
   }
