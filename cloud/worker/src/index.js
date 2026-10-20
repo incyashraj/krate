@@ -2053,8 +2053,11 @@ async function mobileLanding(hash, env) {
   h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
   .by { color: rgba(255,255,255,0.45); font-size: 14px; margin: 0 0 18px; }
   p { color: rgba(255,255,255,0.6); font-size: 15px; line-height: 1.55; margin: 0 0 24px; }
-  button { width: 100%; padding: 14px; border: 0; border-radius: 999px; background: #fff;
-           color: #0a0a0a; font-size: 15.5px; font-weight: 600; margin-bottom: 14px; }
+  .go { display: block; box-sizing: border-box; width: 100%; padding: 14px; border-radius: 999px;
+         background: #fff; color: #0a0a0a; font-size: 15.5px; font-weight: 600; text-decoration: none;
+         margin-bottom: 10px; }
+  button.second { width: 100%; padding: 13px; border: 1px solid #2a2d33; border-radius: 999px;
+                  background: transparent; color: #fff; font-size: 15px; font-weight: 500; margin-bottom: 18px; }
   a { color: rgba(255,255,255,0.5); font-size: 13px; }
 </style>
 </head>
@@ -2063,9 +2066,10 @@ async function mobileLanding(hash, env) {
   ${shot ? `<div class="card"><img src="${shot}" alt=""></div>` : ""}
   <h1>${esc(name)}</h1>
   ${author ? `<p class="by">by ${esc(author)}</p>` : ""}
-  <p>Someone made this and shared it. It runs on computers today: open this link on your Mac, Windows, or Linux machine, install Krate once (small and free), and it opens -- after showing you what it may touch.</p>
-  <button onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link</button>
-  <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file anyway</a>
+  <p>Someone made this and sent it to you. It opens right here, with nothing to install, and shows you first what it may touch.</p>
+  <a class="go" href="${base}/run/${hash}">Open it</a>
+  <button class="second" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link for a computer</button>
+  <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file</a>
 </main>
 </body>
 </html>`;

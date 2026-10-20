@@ -136,7 +136,7 @@
       <p class="ta-kicker" id="taKick">Waiting for you</p>
       <h2 id="taName">Your app</h2>
       <p class="ta-sub" id="taSize"></p>
-      <p class="dlrow" id="taRow" hidden><a class="btn dark" id="taGet" href="#">Download the app</a><a class="btn ghost" id="taTab" href="#" hidden>Open in this tab</a></p>
+      <p class="dlrow" id="taRow" hidden><a class="btn dark" id="taTab" href="#" hidden>Open in this tab</a><a class="btn ghost" id="taGet" href="#">Download the app</a></p>
       <div id="taMore" hidden></div>
     </div>
   </div>
@@ -419,16 +419,18 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
   try { hash = new URLSearchParams(location.search).get("a"); } catch (e) { return; }
   // The app in this browser tab, nothing installed (IC-956): the Player on
   // the hub, which can send the headers a tab needs to run it. Offered for
-  // a full link only, beside the download; on a phone it is the way in.
-  function inThisTab(primary) {
+  // a full link only, and always first (K-1129): a person who was sent an
+  // app wants to see it now, and the download is the second step for the
+  // native app. On a phone it is the only way in.
+  function inThisTab(phone) {
     if (!/^[0-9a-f]{64}$/.test(hash)) return;
     var tab = document.getElementById("taTab");
+    var get = document.getElementById("taGet");
     tab.href = "https://hub.krate.tech/run/" + hash;
     tab.hidden = false;
-    if (primary) {
-      tab.className = "btn dark";
-      document.getElementById("taGet").hidden = true;
-    }
+    tab.className = "btn dark";
+    if (phone) get.hidden = true;
+    else get.className = "btn ghost";
     document.getElementById("taRow").hidden = false;
   }
   if (!hash || !/^[0-9a-f]{8,64}$/.test(hash)) return;

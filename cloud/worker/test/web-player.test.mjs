@@ -182,3 +182,20 @@ test("a sign-in started from an organisation's app address comes back to it", as
     assert.ok(other.headers.get("location").startsWith("https://krate.tech/login/done/"), `${from}: ${other.headers.get("location")}`);
   }
 });
+
+/* K-1129: a shared link tapped on a phone opens the app in the tab. It used
+ * to say the app runs on computers and offer only to copy the link, though
+ * the Player runs in the phone's own browser. */
+test("a phone that opens a shared link is offered to open it here, in the tab", async () => {
+  const env = withAssets(orgEnv());
+  const hash = await sha256Hex(BOUNCE);
+  assert.strictEqual((await call(env, "alice", "POST", "/publish", { bytes: BOUNCE })).status, 200);
+  const iphone =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+  const page = await call(env, null, "GET", `/a/${hash}`, { headers: { "user-agent": iphone, accept: "text/html" } });
+  assert.strictEqual(page.status, 200);
+  const html = String(page.body);
+  assert.match(html, new RegExp(`<a class="go" href="[^"]*/run/${hash}">Open it</a>`), html);
+  assert.ok(!/runs on computers/.test(html), "no longer sends a phone to a computer");
+  assert.ok(html.indexOf(`/run/${hash}`) < html.indexOf("Copy the link"), "opening comes before copying");
+});
