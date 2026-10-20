@@ -139,6 +139,9 @@ const PLAYER_FILES = new Set([
   "krate-mark-3d-96.png",
   "krate-favicon.png",
   "krate-app-icon.png",
+  // The link card a chat shows for an app with no picture of its own, and
+  // for a team's private app (receive.js).
+  "krate-card.png",
 ]);
 
 async function asset(env, url, name) {
@@ -152,6 +155,8 @@ async function asset(env, url, name) {
       "content-type": TYPES[ext] || "application/octet-stream",
       "cache-control": name === "run.html" ? "no-cache" : "public, max-age=300",
       ...ISOLATED,
+      // The link card is fetched by chat apps from anywhere, not by this page.
+      ...(name === "krate-card.png" ? { "cross-origin-resource-policy": "cross-origin" } : {}),
     },
   });
 }
@@ -278,7 +283,7 @@ export async function webPackRoute(env, hash, { lookup, access, judgedComponent 
   const cache = privateOrg ? noStore : { "cache-control": "public, max-age=300" };
   if (object.size > MAX_PACK_SOURCE_BYTES) {
     try { if (object.body && object.body.cancel) await object.body.cancel(); } catch (_) {}
-    return webJson({ error: "no-tab", message: "This app is too big to open in a tab. Open it in Krate on your computer." }, 422, cache);
+    return webJson({ error: "no-tab", message: "This app is too big to open in a tab. It opens in Krate on a computer." }, 422, cache);
   }
   const bundle = new Uint8Array(await object.arrayBuffer());
   const pack = await ensureWebPack(env, hash, bundle, judgedComponent);

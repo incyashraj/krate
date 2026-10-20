@@ -72,7 +72,10 @@ import { orgLiveRoute } from "./org-data-live.js";
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
 // serves it behind /a/'s own checks, and the cross-origin-isolated page.
-import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack } from "./web-player.js";
+import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH } from "./web-player.js";
+// The receive loop (F-320): the link card, the open counted per person, a
+// stranger's report (receive.js).
+import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent } from "./receive.js";
 // Insights (IC-959), after everything whose counts it reads.
 import { insightsRoute } from "./org-insights.js";
 // The organisation's own day (F-319): its time zone, set by an owner or admin.
@@ -208,6 +211,8 @@ const RATE_WINDOW_SECONDS = 60;
 /// action, so it gets the loosest ceiling.
 const RATE_LIMITS = {
   report: 5,
+  // The Player's open and "Make your own" beacons: one each per app opened.
+  tab: 30,
   "share/new": 10,
   usage: 60,
   founding: 5,
@@ -598,6 +603,13 @@ export default {
       if (request.method === "GET" && pathname.startsWith("/icon/")) {
         return cors(await getIcon(pathname.slice(6), env));
       }
+      // The Player: an app opened in a tab, or "Make your own" pressed
+      // (K-1132). Counted in Analytics Engine only, never KV.
+      if (request.method === "POST" && pathname === "/tab") {
+        const over = await rateLimited(request, env, "tab");
+        if (over) return cors(over);
+        return cors(await tabEvent(request, env, { verifyGitHub, ownerOf, ownerOfRecord, netOf, isBot, visitorHash }));
+      }
       if (request.method === "POST" && pathname === "/report") {
         const over = await rateLimited(request, env, "report");
         if (over) return cors(over);
@@ -757,6 +769,12 @@ export default {
       // the files it is made of. Not wrapped in CORS: nothing but this
       // origin loads them.
       if (request.method === "GET" && pathname.startsWith("/run/")) {
+        // A chat app showing a /run/ link gets the app's card, as for /a/.
+        const run = RUN_PATH.exec(pathname);
+        if (run && run[1] && !run[4] && isPreviewer(request)) {
+          const card = await previewCard(run[1], env);
+          if (card) return card;
+        }
         const page = await playerPage(request, url, env);
         if (page) return page;
       }
@@ -1868,6 +1886,8 @@ async function getShot(hash, env) {
 /// This is the M0 measurement from the mobile plan: what fraction of
 /// shared-link opens land on a device that cannot run the app today.
 function classifyClient(request) {
+  // A chat app drawing a card for the link: not a person, not a runtime.
+  if (isPreviewer(request)) return "preview";
   const accept = request.headers.get("accept") || "";
   if (!accept.includes("text/html")) return "tool";
   const ua = request.headers.get("user-agent") || "";
@@ -1875,6 +1895,22 @@ function classifyClient(request) {
   if (/iPhone|iPad|iPod/i.test(ua)) return "mobile-ios";
   if (/Mobile/i.test(ua)) return "mobile-other";
   return "desktop-browser";
+}
+
+/// Let go of a stored object's body that will not be sent.
+async function dropBody(object) {
+  try {
+    if (object && object.body && typeof object.body.cancel === "function") await object.body.cancel();
+  } catch (_) {}
+}
+
+/// The card for a /run/<hash> link, behind /a/'s own checks: a takedown
+/// answers 451, a private release gets the card that names nothing.
+async function previewCard(hash, env) {
+  const found = await bundleObject(hash, env);
+  if (found.response) return found.response;
+  await dropBody(found.object);
+  return linkCard(env, hash, { privateOrg: found.privateOrg });
 }
 
 async function fetchBundle(request, url, hash, env) {
@@ -1916,7 +1952,14 @@ async function fetchBundle(request, url, hash, env) {
   // bytes are: there is no moment at which the object exists and the
   // check does not. The organisation's store is asked on every fetch.
   const privateOrg = object.customMetadata && object.customMetadata.org;
+  const wantsBytes = url.searchParams.has("dl");
   if (privateOrg) {
+    // The card for a private release names nothing: no app, no
+    // organisation, no picture -- no more than the link itself says.
+    if (!wantsBytes && isPreviewer(request)) {
+      await dropBody(object);
+      return linkCard(env, hash, { privateOrg });
+    }
     return await fetchPrivate(request, url, hash, object, privateOrg, big, env);
   }
 
@@ -1927,7 +1970,7 @@ async function fetchBundle(request, url, hash, env) {
   // "landing" is a person being walked to the receive page first -- the
   // number that tells us whether first-click is working.
   const client = classifyClient(request);
-  const wantsBytes = url.searchParams.has("dl");
+  const via = viaOf(url.searchParams.get("via"));
   const landing = wantsBytes
     ? null
     : client.startsWith("mobile-")
@@ -1937,6 +1980,11 @@ async function fetchBundle(request, url, hash, env) {
         : null;
   // A HEAD is a link checker or an unfurler looking, not a person or a
   // runtime fetching; it is answered but not counted as a hit.
+  //
+  // blob7 is the post's tag (`?via=`), blob8 the app and blob9 home|cloud,
+  // the slots the opens use, and index1 the daily visitor hash: a hit is a
+  // tap, and the visitor says how many people tapped (K-1132). A previewer
+  // drawing a card is client "preview", so a chat's card is not a tap.
   if (env.USAGE && request.method !== "HEAD") {
     env.USAGE.writeDataPoint({
       blobs: [
@@ -1946,17 +1994,28 @@ async function fetchBundle(request, url, hash, env) {
         "ok",
         landing ? "landing" : "direct",
         new Date().toISOString().slice(0, 10),
+        via,
+        hash,
+        netOf(request),
       ],
       doubles: [1],
-      indexes: [hash],
+      indexes: [await visitorHash(request, env)],
     });
+  }
+
+  // A chat app asking for the link draws its card from this: the app's
+  // name, one line on what it is, and its picture. `?dl=1` still gets bytes.
+  if (client === "preview" && !wantsBytes) {
+    await dropBody(object);
+    return linkCard(env, hash);
   }
 
   // A phone browser gets a small page instead of a file the phone cannot
   // open -- the soft landing from the mobile plan. `?dl=1` still hands the
   // raw bytes to anyone who insists.
   if (landing === "mobile") {
-    return await mobileLanding(hash, env);
+    await dropBody(object);
+    return await mobileLanding(hash, env, via);
   }
 
   // A desktop browser holding this link is a person, not a runtime -- the
@@ -1966,9 +2025,10 @@ async function fetchBundle(request, url, hash, env) {
   // button comes back here with `?dl=1`, so the two can never loop, and
   // `krate run <url>` never sees this branch (it does not ask for HTML).
   if (landing === "desktop") {
+    await dropBody(object);
     return new Response(null, {
       status: 302,
-      headers: { location: `https://krate.tech/open/?a=${hash}` },
+      headers: { location: `https://krate.tech/open/?a=${hash}${viaQuery(via, "&")}` },
     });
   }
 
@@ -2015,7 +2075,7 @@ async function fetchBundle(request, url, hash, env) {
 /// The page a phone sees when it taps a shared app link. Honest about
 /// today's boundary, and it keeps the link alive instead of dumping a file
 /// the phone cannot open: copy the link, open it on a computer, done.
-async function mobileLanding(hash, env) {
+async function mobileLanding(hash, env, via = "-") {
   let name = "A Krate app";
   let author = "";
   const meta = await env.APPS.get(`app:${hash}`);
@@ -2067,7 +2127,7 @@ async function mobileLanding(hash, env) {
   <h1>${esc(name)}</h1>
   ${author ? `<p class="by">by ${esc(author)}</p>` : ""}
   <p>Someone made this and sent it to you. It opens right here, with nothing to install, and shows you first what it may touch.</p>
-  <a class="go" href="${base}/run/${hash}">Open it</a>
+  <a class="go" href="${base}/run/${hash}${viaQuery(via)}">Open it</a>
   <button class="second" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link for a computer</button>
   <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file</a>
 </main>
