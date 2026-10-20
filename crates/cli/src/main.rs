@@ -4793,6 +4793,7 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
         if text.contains(krate_bundle::SDK_PLACEHOLDER) {
             // The SDK inside the bundle wins: it is the one this source was
             // written against, so it compiles where the current one may not.
+            let mut current_sdk = false;
             let sdk = match opened.sdk_path() {
                 Some(bundled) => {
                     // A sibling of the app inside this call's own transaction
@@ -4808,16 +4809,90 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
                     copy_tree(bundled, &kept)?;
                     kept
                 }
-                None => sdk::ensure_materialized()?,
+                None => {
+                    current_sdk = true;
+                    sdk::ensure_materialized()?
+                }
             };
-            let resolved = text.replace(
+            let mut resolved = text.replace(
                 krate_bundle::SDK_PLACEHOLDER,
                 &sdk.to_string_lossy().replace('\\', "/"),
             );
+            // An app that carries no SDK of its own builds against this
+            // machine's, whose world may import interfaces that did not exist
+            // when the app was made (krate:gpu joined phase4 later). Its own
+            // dependency list then lacks them and the build fails before the
+            // app's code is reached (K-1132).
+            if current_sdk {
+                resolved = add_missing_wit_deps(&resolved);
+            }
             fs::write(&manifest, resolved)?;
         }
     }
     Ok(Some(target))
+}
+
+/// Add a `"krate:<name>"` entry for every interface in the SDK's world
+/// deps directory that an app's `[package.metadata.component.target
+/// .dependencies]` does not list yet, in the same shape as the entries it
+/// has. The deps directory is read from the first existing entry's path, so
+/// a Cargo.toml with none is returned unchanged.
+fn add_missing_wit_deps(cargo_toml: &str) -> String {
+    let entry = |line: &str| -> Option<(String, String)> {
+        let name = line
+            .strip_prefix("\"krate:")?
+            .split('"')
+            .next()?
+            .to_string();
+        let path = line
+            .split("path = \"")
+            .nth(1)?
+            .split('"')
+            .next()?
+            .to_string();
+        Some((name, path))
+    };
+    let lines: Vec<&str> = cargo_toml.lines().collect();
+    let found: Vec<(usize, String, String)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| entry(line.trim()).map(|(n, p)| (i, n, p)))
+        .collect();
+    let (Some((last, _, _)), Some((_, first_name, first_path))) = (found.last(), found.first())
+    else {
+        return cargo_toml.to_string();
+    };
+    let last = *last;
+    let Some(deps_dir) = first_path.strip_suffix(&format!("/{first_name}")) else {
+        return cargo_toml.to_string();
+    };
+    let have: std::collections::BTreeSet<&str> = found.iter().map(|(_, n, _)| n.as_str()).collect();
+    let mut missing: Vec<String> = fs::read_dir(deps_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| e.file_name().to_str().map(str::to_string))
+                .filter(|n| !have.contains(n.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+    if missing.is_empty() {
+        return cargo_toml.to_string();
+    }
+    missing.sort();
+    let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    for (k, name) in missing.into_iter().enumerate() {
+        out.insert(
+            last + 1 + k,
+            format!("\"krate:{name}\" = {{ path = \"{deps_dir}/{name}\" }}"),
+        );
+    }
+    let mut joined = out.join("\n");
+    if cargo_toml.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
@@ -24330,6 +24405,49 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod wit_deps_tests {
+    use super::*;
+
+    /// K-1132: an app made before an interface joined the world lists fewer
+    /// deps than the SDK's world imports; the missing ones are added in the
+    /// same shape, and a complete list is left alone.
+    #[test]
+    fn an_older_apps_dependency_list_gains_the_interfaces_it_lacks() {
+        let sdk = tempfile::tempdir().unwrap();
+        let deps = sdk.path().join("wit/krate/phase4/deps");
+        for name in ["gfx", "gpu", "io", "ui"] {
+            fs::create_dir_all(deps.join(name)).unwrap();
+        }
+        let d = deps.to_string_lossy().replace('\\', "/");
+        let old = format!(
+            "[package.metadata.component.target.dependencies]\n\"krate:io\" = {{ path = \"{d}/io\" }}\n\"krate:gfx\" = {{ path = \"{d}/gfx\" }}\n\n[profile.release]\n"
+        );
+        let new = add_missing_wit_deps(&old);
+        assert!(
+            new.contains(&format!("\"krate:gpu\" = {{ path = \"{d}/gpu\" }}")),
+            "{new}"
+        );
+        assert!(
+            new.contains(&format!("\"krate:ui\" = {{ path = \"{d}/ui\" }}")),
+            "{new}"
+        );
+        assert!(
+            new.find("krate:gpu").unwrap() < new.find("[profile.release]").unwrap(),
+            "added inside the dependency table"
+        );
+        assert_eq!(
+            add_missing_wit_deps(&new),
+            new,
+            "a complete list is unchanged"
+        );
+        assert_eq!(
+            add_missing_wit_deps("[package]\nname = \"x\"\n"),
+            "[package]\nname = \"x\"\n"
+        );
+    }
 }
 
 #[cfg(test)]
