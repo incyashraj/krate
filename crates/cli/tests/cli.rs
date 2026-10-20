@@ -8,7 +8,39 @@ use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 
 fn krate() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_krate"));
+    krate_at(std::path::Path::new(env!("CARGO_BIN_EXE_krate")))
+}
+
+/// `krate` for a test whose engine puts ITSELF into a file: a Linux gift
+/// carries the player that made it.
+///
+/// The engine a person has is a stripped release build of about 30 MB. This
+/// test binary is a debug build, and on Linux its debug info makes it several
+/// hundred MB or more; gzip -9 and a SHA-256 over that outran the full lane's
+/// 90 s watchdog, so `krate wrap --for linux` was shot before it finished
+/// (K-1128). On Linux the test runs a copy with the debug info stripped: the
+/// same program, at the size a person ships. Where `strip` is missing the
+/// whole binary is used, which is slower and still correct. macOS keeps its
+/// debug info outside the binary, so there is nothing to strip there.
+fn krate_to_carry(dir: &std::path::Path) -> Command {
+    let engine = std::path::PathBuf::from(env!("CARGO_BIN_EXE_krate"));
+    if cfg!(target_os = "linux") {
+        let copy = dir.join("krate-stripped");
+        let stripped = std::fs::copy(&engine, &copy).is_ok()
+            && Command::new("strip")
+                .arg("--strip-debug")
+                .arg(&copy)
+                .status()
+                .is_ok_and(|status| status.success());
+        if stripped {
+            return krate_at(&copy);
+        }
+    }
+    krate_at(&engine)
+}
+
+fn krate_at(engine: &std::path::Path) -> Command {
+    let mut command = Command::new(engine);
     // A hung child must name itself rather than eat the run.
     //
     // This suite makes 200-odd unbounded `.output()` calls. On Windows one
@@ -10462,7 +10494,7 @@ fn a_linux_wrap_is_one_file_that_is_still_a_bundle() {
         return;
     };
     let out = dir.path().join("gift.sh");
-    let status = krate()
+    let status = krate_to_carry(dir.path())
         .args(["wrap", "--for", "linux"])
         .arg(&bundle)
         .arg("-o")
@@ -10823,7 +10855,7 @@ fn a_linux_gift_installs_the_player_it_carries_then_opens_the_app() {
         return;
     };
     let gift = dir.path().join("gift.sh");
-    let out = krate()
+    let out = krate_to_carry(dir.path())
         .args(["wrap", "--for", "linux"])
         .arg(&bundle)
         .arg("-o")
@@ -12274,8 +12306,15 @@ fn an_app_plays_a_video_from_its_assets() {
         );
         bundle
     };
+    // The probe plays for about three seconds after the clip loads: 4.4 s
+    // end to end on an M-series Mac, against a headless budget of 5 s. On a
+    // loaded CI runner the budget ran out first, the runtime closed the
+    // window, and the app was gone before it printed its line -- an empty
+    // stdout and a clean exit (K-1128). The probe bounds itself, so the
+    // budget here is only a ceiling.
     let run = |bundle: &std::path::Path| -> String {
         let out = krate()
+            .env("KRATE_HEADLESS_SECS", "30")
             .arg("run")
             .arg("--headless")
             .arg(bundle)
@@ -12353,7 +12392,13 @@ fn an_app_draws_and_computes_on_the_gpu_and_a_bad_shader_is_refused() {
         .expect("run");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if stdout.starts_with("adapter=Unsupported") {
+    // The probe prints the error's Debug form, which the bindings write as
+    // `GpuError::Unsupported(..)`; older bindings wrote `Unsupported(..)`.
+    // Either one means there is no GPU here, and only then does this stand
+    // down (K-1128: the shorter prefix alone missed a GPU-less CI runner).
+    if stdout.starts_with("adapter=Unsupported")
+        || stdout.starts_with("adapter=GpuError::Unsupported")
+    {
         eprintln!("skipping: this machine has no GPU: {stdout}");
         return;
     }

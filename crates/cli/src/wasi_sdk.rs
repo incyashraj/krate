@@ -426,11 +426,18 @@ mod tests {
                 .map(|(_, v)| v.clone())
                 .unwrap_or_default()
         };
-        assert!(get(&plain, "CC_wasm32_wasip1").ends_with("clang"));
-        assert!(get(&plain, "AR_wasm32_wasip1").ends_with("llvm-ar"));
+        // The tools carry .exe on Windows and the sysroot is joined with the
+        // system's separator, so both are asked for the way this system
+        // writes them.
+        let exe = std::env::consts::EXE_SUFFIX;
+        assert!(get(&plain, "CC_wasm32_wasip1").ends_with(&format!("clang{exe}")));
+        assert!(get(&plain, "AR_wasm32_wasip1").ends_with(&format!("llvm-ar{exe}")));
         let flags = get(&plain, "CFLAGS_wasm32_wasip1");
         assert!(flags.contains("--target=wasm32-wasip1"), "{flags}");
-        assert!(flags.contains("share/wasi-sysroot"), "{flags}");
+        assert!(
+            flags.contains(&format!("--sysroot={}", sdk.sysroot().display())),
+            "{flags}"
+        );
         assert!(!flags.contains("-pthread"), "{flags}");
         let threads = variables(&sdk, "wasm32-wasip1-threads");
         assert!(
