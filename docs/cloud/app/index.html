@@ -314,7 +314,7 @@
 
         <h2>Open it</h2>
         <ol class="steps">
-          <li><div><b>Open it here.</b><span>It runs in this tab, on a phone too, with nothing to install. It shows you first what it may touch.</span><br /><a class="get" id="runHere" href="${HUB}/run/${esc(app.id)}">Open ${esc(name)} here</a></div></li>
+          <li><div><b>Open it here.</b><span>It runs in this tab, on a phone too, with nothing to install. It shows you first what it may touch.</span><br /><a class="get" id="runHere" href="${HUB}/run/${esc(app.id)}?via=gallery">Open ${esc(name)} here</a></div></li>
           <li><div><b>Keep it on your computer.</b><span>Install Krate once (free, a minute), then download the file: ${esc(name)} is ${kb(m.size || 0)}. <a href="/open/">How to install it.</a></span><br /><a class="get ghost" href="${esc(app.url)}?dl=1">Download ${esc(name)}</a></div></li>
           <li><div>${openStep}</div></li>
         </ol>

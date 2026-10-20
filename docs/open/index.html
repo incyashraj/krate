@@ -426,7 +426,9 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
     if (!/^[0-9a-f]{64}$/.test(hash)) return;
     var tab = document.getElementById("taTab");
     var get = document.getElementById("taGet");
-    tab.href = "https://hub.krate.tech/run/" + hash;
+    // The post the link came from (?via=reddit) goes on to the open's count.
+    var via = (new URLSearchParams(location.search).get("via") || "").toLowerCase();
+    tab.href = "https://hub.krate.tech/run/" + hash + (/^[a-z0-9][a-z0-9_-]{0,31}$/.test(via) ? "?via=" + via : "");
     tab.hidden = false;
     tab.className = "btn dark";
     if (phone) get.hidden = true;
