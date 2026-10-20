@@ -2241,8 +2241,21 @@ async function list(env, url) {
       const c = a.meta.category || "apps";
       (cats[c] ||= []).push(a);
     }
+    // "Start here": the apps chosen to show first (GALLERY_PICKS in
+    // wrangler.toml, comma-separated id prefixes, in order), so a stranger's
+    // first look is the best of the gallery, not whatever came last.
+    const picks = String(env.GALLERY_PICKS || "")
+      .split(",")
+      .map((p) => p.trim().toLowerCase())
+      .filter((p) => /^[0-9a-f]{6,64}$/.test(p))
+      .map((p) => apps.find((a) => a.id.startsWith(p)))
+      .filter(Boolean);
+    // "New this week" only when it is: an older newest app is just newest.
+    const weekAgo = Date.now() - 7 * 86400_000;
+    const fresh = byNew.length && (byNew[0].meta.published || 0) >= weekAgo;
     const shelves = [
-      { id: "new", label: "New this week", apps: take(byNew, SHELF) },
+      ...(picks.length ? [{ id: "picks", label: "Start here", apps: take(picks, SHELF) }] : []),
+      { id: "new", label: fresh ? "New this week" : "Newest", apps: take(byNew, SHELF) },
     ];
     // Only when there is something to rank. Before any opens are recorded,
     // "most opened" would be an arbitrary order wearing a confident label.
