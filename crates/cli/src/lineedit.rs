@@ -150,20 +150,18 @@ impl Editor {
                         // Up and Down walk history. Stash whatever was being
                         // typed so coming back down restores it rather than
                         // losing it.
-                        b'A' => {
-                            if !self.history.is_empty() {
-                                let next = match recalled {
-                                    None => {
-                                        stashed = Some(buffer.clone());
-                                        self.history.len() - 1
-                                    }
-                                    Some(0) => 0,
-                                    Some(index) => index - 1,
-                                };
-                                recalled = Some(next);
-                                buffer = self.history[next].chars().collect();
-                                cursor = buffer.len();
-                            }
+                        b'A' if !self.history.is_empty() => {
+                            let next = match recalled {
+                                None => {
+                                    stashed = Some(buffer.clone());
+                                    self.history.len() - 1
+                                }
+                                Some(0) => 0,
+                                Some(index) => index - 1,
+                            };
+                            recalled = Some(next);
+                            buffer = self.history[next].chars().collect();
+                            cursor = buffer.len();
                         }
                         b'B' => match recalled {
                             Some(index) if index + 1 < self.history.len() => {
@@ -193,10 +191,8 @@ impl Editor {
                             match digit {
                                 b'1' | b'7' => cursor = 0,
                                 b'4' | b'8' => cursor = buffer.len(),
-                                b'3' => {
-                                    if cursor < buffer.len() {
-                                        buffer.remove(cursor);
-                                    }
+                                b'3' if cursor < buffer.len() => {
+                                    buffer.remove(cursor);
                                 }
                                 _ => {}
                             }

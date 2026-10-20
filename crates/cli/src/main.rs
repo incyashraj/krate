@@ -9969,13 +9969,11 @@ fn balanced_json_objects(text: &str) -> Vec<String> {
                 }
                 depth += 1;
             }
-            b'}' => {
-                if depth > 0 {
-                    depth -= 1;
-                    if depth == 0 {
-                        out.push(text[start.unwrap()..=i].to_string());
-                        start = None;
-                    }
+            b'}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push(text[start.unwrap()..=i].to_string());
+                    start = None;
                 }
             }
             _ => {}
@@ -14416,7 +14414,7 @@ fn seed_leaf_from_a_finished_one(shared: &Path, leaf: &Path, app_dir: &Path) {
             Some((stamp, path))
         })
         .collect();
-    finished.sort_by(|a, b| b.0.cmp(&a.0));
+    finished.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     for (_, seed) in finished.into_iter().take(3) {
         let Ok(hold) = fs::OpenOptions::new()
             .read(true)

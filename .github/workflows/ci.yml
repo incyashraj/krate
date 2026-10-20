@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           components: rustfmt
       - name: Check formatting
@@ -81,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           components: clippy
       - name: Install Linux audio and window-system development files
@@ -117,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Cache cargo registry
@@ -140,7 +140,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2, wasm32-unknown-unknown
       - name: Install Linux audio, window-system and Studio (Tauri) development files
@@ -305,7 +305,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Cache cargo registry
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -360,7 +360,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1
       - name: Install Linux audio and window-system development files
@@ -395,7 +395,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Cache cargo registry
@@ -458,7 +458,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2
       - name: Install Linux audio and window-system development files
@@ -568,7 +568,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2, wasm32-unknown-unknown
       - name: Cache cargo registry
@@ -1160,7 +1160,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
@@ -1301,7 +1301,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
@@ -1383,7 +1383,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install cross
         run: cargo install cross --locked
       - name: Build the release binary the way the release does
@@ -1417,7 +1417,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1
       - name: Install Linux audio and window-system development files
@@ -1602,7 +1602,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux language-variant evidence
@@ -1639,7 +1639,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux UCap evidence
@@ -1676,7 +1676,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux adapter evidence
@@ -1713,7 +1713,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux sample evidence
@@ -1966,7 +1966,7 @@ jobs:
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2
       - name: Cache cargo registry
@@ -2044,7 +2044,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked --version 0.19.4
       - name: Run cargo-deny

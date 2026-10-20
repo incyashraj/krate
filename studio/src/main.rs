@@ -364,10 +364,8 @@ fn strip_personal_paths(value: &mut serde_json::Value, home: &Path) {
                 strip_personal_paths(v, home);
             }
         }
-        serde_json::Value::String(s) => {
-            if looks_personal(s) {
-                s.clear();
-            }
+        serde_json::Value::String(s) if looks_personal(s) => {
+            s.clear();
         }
         _ => {}
     }
@@ -798,7 +796,7 @@ fn sessions_list() -> Vec<Session> {
                 .collect()
         })
         .unwrap_or_default();
-    sessions.sort_by(|a, b| b.updated.cmp(&a.updated));
+    sessions.sort_by_key(|session| std::cmp::Reverse(session.updated));
     sessions
 }
 
