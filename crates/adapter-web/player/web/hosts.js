@@ -63,7 +63,7 @@ function liftEvent(e) {
   }
 }
 
-const OPEN_IN_KRATE = 'This works in Krate on your computer, not in a browser tab yet. Open the app in Krate to use it.';
+const OPEN_IN_KRATE = 'This works in Krate on a computer, not in a browser tab yet. Open the app in Krate to use it.';
 
 /// What the hub's table says to answer for a function the tab lacks.
 function refusalStub(iface, fname, shape, notice) {

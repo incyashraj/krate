@@ -33,6 +33,10 @@ const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-
 let HASH = RUN[1];
 const ORG_APP = RUN[2] ? { slug: RUN[2], app: RUN[3] } : null;
 const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH}`;
+// The post a link came from (`?via=reddit`), carried to the open's count.
+const VIA = ((params.get('via') || '').toLowerCase().match(/^[a-z0-9][a-z0-9_-]{0,31}$/) || [''])[0];
+// A phone or a tablet: nothing here may tell it to use "your computer".
+const PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 const SESSION_KEY = 'krate-player-session';
 const NONCE_KEY = 'krate-player-nonce';
 
@@ -53,10 +57,27 @@ function refuse(title, words, { act = 'krate', detail } = {}) {
   $('refusedDetails').hidden = !detail;
   $('refusedDetail').textContent = detail || '';
   const a = $('refusedAct');
-  if (act === 'krate') { a.textContent = 'Open in Krate'; a.href = openInKrate(); }
+  a.onclick = null;
+  if (act === 'krate' && PHONE) { a.textContent = 'Send it to a computer'; a.href = '#'; a.onclick = sendToComputer; }
+  else if (act === 'krate') { a.textContent = 'Open in Krate'; a.href = openInKrate(); }
   else if (act === 'home') { a.textContent = 'Go to krate.tech'; a.href = SITE + '/'; }
   report.refused = { title, words, detail };
   show('refused');
+}
+/// A phone cannot keep the app as one: hand the link to the share sheet
+/// (AirDrop, a note, a message to oneself), or copy it.
+async function sendToComputer(e) {
+  if (e) e.preventDefault();
+  const button = e && e.currentTarget;
+  const url = `${location.origin}/a/${HASH}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: (report.app && report.app.name) || 'A Krate app', url }); return; }
+    catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    if (button) { const was = button.textContent; button.textContent = 'Link copied'; setTimeout(() => { button.textContent = was; }, 1500); }
+  } catch { prompt('Copy this link:', url); }
 }
 function openInKrate() {
   return HASH ? `${SITE}/open/?a=${HASH}${report.private ? '&private=1' : ''}` : `${SITE}/open/`;
@@ -75,8 +96,8 @@ const WHAT = {
   'krate:camera/capture': 'your camera',
   'krate:speech/transcription': 'speech',
   'krate:speech/synthesis': 'speaking aloud',
-  'krate:fs/files': 'files on your computer',
-  'krate:fs/watch': 'files on your computer',
+  'krate:fs/files': 'your files',
+  'krate:fs/watch': 'your files',
   'krate:store/sql': 'its own database',
   'krate:store/org': "your team's shared data",
   'krate:store/secret': 'saved sign-in details',
@@ -101,11 +122,88 @@ const whatOf = (iface) => WHAT[iface.replace(/@.*$/, '')] || 'something only Kra
 
 function notice(words, act = true) {
   $('noticeWords').textContent = words;
-  $('noticeAct').hidden = !act;
+  // On a phone the button would lead to a computer's install page.
+  $('noticeAct').hidden = !act || PHONE;
   $('noticeAct').href = openInKrate();
   $('notice').hidden = false;
 }
 $('noticeClose').onclick = () => { $('notice').hidden = true; };
+
+// ------------------------------------------------------- around the app
+// One small line under the app, for as long as it is open: who made the
+// thing it runs on and how to make one (the receiver is the next maker),
+// and a way to report it that needs no account. Not on a team's private
+// app: a coworker is not a lead, and the team answers for its own apps.
+function beacon(event) {
+  if (!HASH) return Promise.resolve(null);
+  const me = session();
+  return fetch('/tab', {
+    method: 'POST',
+    keepalive: true,
+    headers: { 'content-type': 'application/json', ...(me && me.token ? { authorization: `Bearer ${me.token}` } : {}) },
+    body: JSON.stringify({ event, app: HASH, via: VIA }),
+  }).then((r) => (r.status === 200 ? r.json() : { ok: r.ok })).catch(() => ({ ok: false }));
+}
+/// The app is on the screen: count one open (K-1132), once.
+function opened() {
+  if (report.counted !== undefined) return;
+  report.counted = null;
+  beacon('open').then((b) => { report.counted = b; });
+}
+function madeWith(teamApp) {
+  if (teamApp || !HASH) return;
+  $('makeOwn').href = `${SITE}/app/?via=player&from=${HASH}`;
+  $('makeOwn').onclick = () => { beacon('make'); };
+  $('made').hidden = false;
+  document.body.classList.add('has-made');
+}
+function reportSheet(open) {
+  const sheet = $('reportSheet');
+  sheet.hidden = !open;
+  if (open) {
+    $('reportSay').textContent = '';
+    const first = sheet.querySelector('input[name="why"]');
+    if (first) first.focus();
+  } else {
+    $('reportOpen').focus();
+  }
+}
+$('reportOpen').onclick = () => reportSheet(true);
+$('reportCancel').onclick = () => reportSheet(false);
+$('reportSheet').addEventListener('click', (e) => { if (e.target === $('reportSheet')) reportSheet(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('reportSheet').hidden) reportSheet(false); });
+$('reportForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const picked = $('reportForm').querySelector('input[name="why"]:checked');
+  if (!picked) { $('reportSay').textContent = 'Choose what is wrong first.'; return; }
+  const send = $('reportSend');
+  send.disabled = true;
+  $('reportSay').textContent = 'Sending...';
+  const me = session();
+  const res = await fetch(`/report/app/${HASH}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(me && me.token ? { authorization: `Bearer ${me.token}` } : {}) },
+    body: JSON.stringify({ why: picked.value, note: $('reportNote').value }),
+  }).catch(() => null);
+  send.disabled = false;
+  if (res && res.ok) {
+    report.reported = picked.value;
+    $('reportTitle').textContent = 'Sent. Thank you.';
+    $('reportLede').textContent = 'An app that breaks Krate’s rules is taken down, and anyone who opens it is told why.';
+    $('reportWhy').hidden = true;
+    $('reportNote').hidden = true;
+    $('reportSay').textContent = '';
+    send.hidden = true;
+    $('reportCancel').textContent = 'Close';
+    $('reportCancel').focus();
+    $('reportOpen').textContent = 'Reported';
+    $('reportOpen').disabled = true;
+  } else {
+    $('reportSay').textContent = res && res.status === 429
+      ? 'Too many reports from here just now. Wait a minute and send it again.'
+      : 'It did not send. Check the connection and try again.';
+  }
+};
 
 // ------------------------------------------------------------------ sign-in
 function session() {
@@ -249,8 +347,10 @@ async function main() {
   report.private = params.get('private') === '1';
   $('inKrate').href = openInKrate();
   if (!self.crossOriginIsolated || typeof SharedArrayBuffer !== 'function') {
-    refuse('This browser cannot open Krate apps in a tab',
-      'It does not allow the shared memory a Krate app needs here. The app opens in Krate on your computer.',
+    refuse(PHONE ? 'Open this in your browser' : 'This browser cannot open Krate apps in a tab',
+      PHONE
+        ? 'This in-app browser cannot run Krate apps. Open the link in Safari or Chrome.'
+        : 'It does not allow the shared memory a Krate app needs here. The app opens in Krate on this computer.',
       { detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
     return;
   }
@@ -281,10 +381,12 @@ async function main() {
       refuse('You are no longer in this team', body.message || 'Ask the team to add you again.', { act: 'home' });
     } else if (res.status === 410) {
       refuse('This version was withdrawn', body.message || 'Ask whoever sent it for the current link.', { act: 'home' });
+    } else if (res.status === 451) {
+      refuse('This app was taken down', body.reason ? `Krate took it down: ${body.reason}` : 'Krate took it down, and it does not open.', { act: 'home' });
     } else if (res.status === 404) {
       refuse('This app is not on Krate', 'The link may be mistyped, or the app was removed.', { act: 'home' });
     } else if (reason === 'no-tab') {
-      refuse('This app opens in Krate, not in a tab yet', body.message || 'Open it in Krate on your computer.', { detail: body.detail });
+      refuse('This app opens in Krate, not in a tab yet', body.message || 'It opens in Krate on a computer.', { detail: body.detail });
     } else {
       refuse('This app did not open', body.message || `The hub answered ${res.status}. Try again in a moment.`, { act: 'home' });
     }
@@ -340,6 +442,7 @@ async function main() {
   $('whoSig').textContent = release ? `Signed by ${release.namespace.split('/')[0]}` : 'Not signed';
   $('who').hidden = false;
   report.app = { id: app.id, name, world: app.world, signature: sig };
+  madeWith(report.private || Boolean(sig === 'valid' && j.org_mark));
   installable(name, sig === 'valid' ? j.org_mark : null, app.id);
 
   // ---- consent: the desktop's words, the tab's reach
@@ -356,16 +459,16 @@ async function main() {
       if (!r.in_tab) li.className = 'away';
       li.innerHTML = '<i><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span><b></b><em></em></span>';
       li.querySelector('b').textContent = r.plain;
-      li.querySelector('em').textContent = r.in_tab ? r.rationale : `${r.rationale ? r.rationale + ' - ' : ''}works in Krate on your computer`;
+      li.querySelector('em').textContent = r.in_tab ? r.rationale : `${r.rationale ? r.rationale + ' - ' : ''}works in Krate on a computer`;
       list.appendChild(li);
     }
     if (blocked.length) {
-      $('consentNote').textContent = `${name} needs ${blocked.map((r) => r.plain).join(', ')}, which works in Krate on your computer, not in a tab yet.`;
-      $('consentAllow').textContent = 'Open in Krate';
-      $('consentAllow').onclick = () => { location.href = openInKrate(); };
+      $('consentNote').textContent = `${name} needs ${blocked.map((r) => r.plain).join(', ')}, which works in Krate on a computer, not in a tab yet.`;
+      $('consentAllow').textContent = PHONE ? 'Send it to a computer' : 'Open in Krate';
+      $('consentAllow').onclick = PHONE ? sendToComputer : () => { location.href = openInKrate(); };
     } else {
       $('consentNote').textContent = rows.some((r) => !r.in_tab)
-        ? 'Greyed out: works in Krate on your computer. The app opens here without it.' : '';
+        ? 'Greyed out: works in Krate on a computer. The app opens here without it.' : '';
       $('consentAllow').textContent = 'Allow and open';
     }
     $('consentCancel').onclick = () => refuse('Not opened', `${name} did not open. Nothing was allowed.`, { act: 'home' });
@@ -518,10 +621,10 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   const fetches = new Map();
   let nextFetch = 1;
   const MAX = 1024 * 1024;
-  const CORS = 'the server did not answer this tab. It may not allow requests from a browser tab (CORS), or be unreachable from here; the app reaches it from Krate on your computer.';
+  const CORS = 'the server did not answer this tab. It may not allow requests from a browser tab (CORS), or be unreachable from here; the app reaches it from Krate on a computer.';
   const doFetch = async ({ method, url, headers, body, timeout }) => {
     if (location.protocol === 'https:' && /^http:/i.test(url)) {
-      return { json: { err: { tag: 'connect-failure', val: 'a page on https cannot reach a plain http address; the app reaches it from Krate on your computer.' } } };
+      return { json: { err: { tag: 'connect-failure', val: 'a page on https cannot reach a plain http address; the app reaches it from Krate on a computer.' } } };
     }
     const abort = new AbortController();
     const timer = timeout ? setTimeout(() => abort.abort('timeout'), timeout) : null;
@@ -540,7 +643,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
         signal: abort.signal,
       });
       if (res.type === 'opaqueredirect') {
-        return { json: { err: { tag: 'other', val: 'the server answered with a redirect, which a browser tab does not follow or show; the app can follow it from Krate on your computer.' } } };
+        return { json: { err: { tag: 'other', val: 'the server answered with a redirect, which a browser tab does not follow or show; the app can follow it from Krate on a computer.' } } };
       }
       const reader = res.body ? res.body.getReader() : null;
       const parts = [];
@@ -626,7 +729,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     scratch.set(new Uint8Array(w.frame));
     ctx2d.putImageData(new ImageData(scratch, w.pw, w.ph), 0, 0);
     report.frames += 1;
-    if (report.marks.firstFrame === undefined) report.marks.firstFrame = performance.now();
+    if (report.marks.firstFrame === undefined) { report.marks.firstFrame = performance.now(); opened(); }
     return now();
   };
   let seen = 0;
@@ -682,13 +785,13 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
           if (data.fd === 2) span.className = 'err';
           span.textContent = data.text;
           term.appendChild(span);
-          if (report.marks.firstOutput === undefined) report.marks.firstOutput = performance.now();
+          if (report.marks.firstOutput === undefined) { report.marks.firstOutput = performance.now(); opened(); }
         }
         break;
       }
       case 'notice': {
         report.notices.push({ iface: data.iface, fname: data.fname });
-        notice(`${name} wanted to use ${whatOf(data.iface)}, which works in Krate on your computer, not in a tab yet.`);
+        notice(`${name} wanted to use ${whatOf(data.iface)}, which works in Krate on a computer, not in a tab yet.`);
         break;
       }
       case 'text-entry': if (data.on) $('ime').focus({ preventScroll: true }); else canvas.focus(); break;

@@ -47,7 +47,7 @@
         <button class="btn dark" id="consentAllow" type="button">Allow and open</button>
       </div>
     </div>
-    <p class="fine" id="consentFine">It gets nothing else. It runs in this tab, on your computer, and stops when you close it.</p>
+    <p class="fine" id="consentFine">It gets nothing else. It runs in this tab and stops when you close it.</p>
   </section>
 
   <section class="card state" id="signin" hidden aria-labelledby="signinTitle">
@@ -81,6 +81,31 @@
     <button class="x" id="noticeClose" type="button" aria-label="Hide this">&times;</button>
   </div>
 </main>
+
+<footer class="made" id="made" hidden>
+  <a class="mk" id="makeOwn" href="https://krate.tech/app/" target="_blank" rel="noopener"><img src="/player/krate-mark-3d-96.png" alt="" width="16" height="16"><span class="by">Made with Krate</span><span class="own">Make your own</span></a>
+  <button class="rep" id="reportOpen" type="button" aria-haspopup="dialog">Report</button>
+</footer>
+
+<div class="sheet" id="reportSheet" hidden>
+  <form class="perm" id="reportForm" role="dialog" aria-modal="true" aria-labelledby="reportTitle" novalidate>
+    <h1 id="reportTitle">Report this app</h1>
+    <p class="lede" id="reportLede">Tell Krate what is wrong with it. No account needed.</p>
+    <fieldset class="why" id="reportWhy">
+      <legend>What is wrong</legend>
+      <label><input type="radio" name="why" value="scam"><span>It is a scam, or asks for passwords or money</span></label>
+      <label><input type="radio" name="why" value="harmful"><span>It is harmful, hateful or sexual</span></label>
+      <label><input type="radio" name="why" value="copyright"><span>It copies someone else's work</span></label>
+      <label><input type="radio" name="why" value="other"><span>Something else</span></label>
+    </fieldset>
+    <textarea id="reportNote" maxlength="500" rows="3" placeholder="Anything that helps (optional)"></textarea>
+    <p class="note" id="reportSay" role="status"></p>
+    <div class="row-acts">
+      <button class="btn ghost" id="reportCancel" type="button">Cancel</button>
+      <button class="btn dark" id="reportSend" type="submit">Send report</button>
+    </div>
+  </form>
+</div>
 <script type="module" src="/player/player.js"></script>
 </body>
 </html>
