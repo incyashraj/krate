@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Windows appearance now follows the current user's app theme, high contrast and text size, with a half-second cache and defaults for unavailable settings.
 - Manifest `net.connect` host-pattern hardening: capability parsing now rejects invalid dot placement, invalid label-edge `-` forms, and malformed numeric IPv4 host forms before runtime policy matching, with manifest tests for accepted wildcard/label forms and malformed host cases.
 - Docs: added `First Go CLI` and `First TypeScript CLI` walkthroughs under `docs/book/src/uapi/`, and linked them in mdBook navigation so Phase 2 now has one onboarding tutorial per language track (Rust, Go, TypeScript).
 - CI dependency audit hardening: hosted and self-hosted workflows now run `scripts/check-dependencies.sh`, which preserves hard gates for `licenses`, `bans`, and `sources` while downgrading known advisory-db parser/lock-path failures to warnings until `cargo-deny` catches up.

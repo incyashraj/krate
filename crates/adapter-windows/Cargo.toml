@@ -29,6 +29,14 @@ pollster = "0.4"
 # so it pulls only the Win32 clipboard backend.
 arboard.workspace = true
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_UI_Accessibility",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [features]
 # Compile the real winit+GPU path on any OS, for local dev proof.
 dev-anyos = []
