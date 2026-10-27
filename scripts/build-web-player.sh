@@ -55,9 +55,14 @@ wasm-bindgen --target web --no-typescript --out-name krate_web --out-dir "$out" 
 #    and mark (a cross-origin-isolated page cannot load krate.tech's).
 web=crates/adapter-web/player/web
 cp "$web"/run.html "$web"/player.js "$web"/player.css "$web"/app-worker.js \
-  "$web"/hosts.js "$web"/bridge.js "$web"/ring.js "$out"/
+  "$web"/hosts.js "$web"/bridge.js "$web"/ring.js "$web"/audio.js "$web"/audio-worklet.js \
+  "$web"/org-data.js "$web"/krate-card.png "$out"/
+# The browser as an organisation's device: the console's own file, so a tab
+# that keeps an app's team data registers and holds the key the same way.
+cp docs/landing/kit/org-device.js "$out"/
 cp "$validator" "$out"/validator.wasm
-cp docs/landing/fonts/geist-var-latin.woff2 docs/landing/krate-mark-3d-96.png docs/landing/krate-favicon.png "$out"/
+cp docs/landing/fonts/geist-var-latin.woff2 docs/landing/krate-mark-3d-96.png docs/landing/krate-favicon.png \
+  docs/landing/krate-app-icon.png "$out"/
 
 printf 'wrote %s (%s bytes) and %s:\n' cloud/worker/src/transpiler.wasm \
   "$(wc -c < cloud/worker/src/transpiler.wasm | tr -d ' ')" "$out"

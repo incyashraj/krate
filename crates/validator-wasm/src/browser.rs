@@ -60,7 +60,10 @@ unsafe extern "Rust" fn __getrandom_v03_custom(
 /// The least a call that seals anything must bring.
 const MIN_ENTROPY: usize = 256;
 
-fn with_entropy<T>(input: &Value, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+pub(crate) fn with_entropy<T>(
+    input: &Value,
+    f: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
     let bytes = match input["entropy"].as_str() {
         Some(text) => b64_decode(text).ok_or("entropy is base64")?,
         None => Vec::new(),
@@ -88,14 +91,14 @@ fn needs_entropy(input: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn text<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
+pub(crate) fn text<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
     input[key]
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("{key} is required"))
 }
 
-fn org_of(input: &Value) -> Result<&str, String> {
+pub(crate) fn org_of(input: &Value) -> Result<&str, String> {
     let org = text(input, "org")?;
     if !krate_bundle::valid_org_slug(org) {
         return Err(format!("{org:?} is not an organisation's name"));
@@ -103,13 +106,13 @@ fn org_of(input: &Value) -> Result<&str, String> {
     Ok(org)
 }
 
-fn key32(input: &Value, key: &str) -> Result<[u8; 32], String> {
+pub(crate) fn key32(input: &Value, key: &str) -> Result<[u8; 32], String> {
     unhex(text(input, key)?)
         .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
         .ok_or_else(|| format!("{key} is 64 hex characters"))
 }
 
-fn device_of(input: &Value) -> Result<KeyPair, String> {
+pub(crate) fn device_of(input: &Value) -> Result<KeyPair, String> {
     let mut secret = key32(input, "device_secret")?;
     let pair = KeyPair::from_secret(&secret).map_err(|e| e.to_string());
     secret.zeroize();
@@ -247,9 +250,15 @@ fn keys_op(input: &Value) -> Result<Value, String> {
                 ),
                 None => None,
             };
+            // Every company connection's credential, sealed again to the new
+            // version: the hub refuses a renewal that leaves one behind, and
+            // this is the same code a computer runs (K-1120).
+            let credentials =
+                krate_orgkeys::reseal_credentials(&keyring, org, &input["credentials"]);
             Ok(json!({
                 "version": version, "public_key": keyring.current().1.public_hex(),
                 "envelopes": envelopes, "mine": mine, "recovery_blob": recovery_blob,
+                "credentials": credentials,
             }))
         }
         "keyring_recover" => {
@@ -650,6 +659,63 @@ mod tests {
 
     /// Without the page's randomness nothing is sealed: no silent, guessable
     /// fallback.
+    /// K-1120: a browser that renews the company key re-seals every
+    /// connection credential to the new version, as a computer does, so the
+    /// hub takes the renewal; one that does not open here is answered
+    /// unopened instead of being left on the old key.
+    #[test]
+    fn a_browser_renewal_reseals_the_company_connections() {
+        let device = KeyPair::generate();
+        let first = KeyPair::generate();
+        let made = call(json!({
+            "op": "keyring_create", "org": "acme", "secret": hex(first.secret()),
+            "device_public": device.public_hex(), "entropy": entropy(),
+        }));
+        assert_eq!(made["ok"], true, "{made}");
+        let context = krate_orgkeys::connection_context(
+            "acme",
+            "finance-api",
+            "authorization",
+            "https://api.acme.test/",
+        );
+        let sealed =
+            krate_orgkeys::seal_for_org(&first.public(), &context, b"Bearer s3cret").unwrap();
+        let elsewhere = krate_orgkeys::seal_for_org(
+            &first.public(),
+            &krate_orgkeys::connection_context(
+                "acme",
+                "hr",
+                "authorization",
+                "https://elsewhere.test/",
+            ),
+            b"Bearer other",
+        )
+        .unwrap();
+        let next = KeyPair::generate();
+        let rot = call(json!({
+            "op": "keyring_rotate", "org": "acme", "envelope": made["envelope"],
+            "device_secret": hex(device.secret()), "secret": hex(next.secret()), "to": [],
+            "entropy": entropy(),
+            "credentials": [
+                { "name": "finance-api", "base": "https://api.acme.test/", "header": "authorization", "v": 1, "sealed": sealed },
+                { "name": "hr", "base": "https://api.acme.test/hr/", "header": "authorization", "v": 1, "sealed": elsewhere },
+            ],
+        }));
+        assert_eq!(rot["ok"], true, "{rot}");
+        assert_eq!(rot["version"], 2, "{rot}");
+        let back = &rot["credentials"]["finance-api"];
+        assert_eq!(back["v"], 2, "sealed again to the new version: {rot}");
+        let renewed = Keyring::open(rot["mine"].as_str().unwrap(), &device, "acme").unwrap();
+        let opened =
+            krate_orgkeys::open_for_org(&renewed, 2, &context, back["sealed"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(opened, b"Bearer s3cret");
+        assert_eq!(
+            rot["credentials"]["hr"]["unopened"], true,
+            "one sealed for another address is not kept: {rot}"
+        );
+    }
+
     #[test]
     fn sealing_without_entropy_is_refused() {
         let device = KeyPair::generate();

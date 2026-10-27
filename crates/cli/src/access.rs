@@ -433,6 +433,9 @@ pub struct Opened {
     pub authorization: Option<String>,
     /// The signed-in person as a principal (`github:<login>`).
     pub principal: Option<String>,
+    /// The organisation's name, as its hub last gave it; the slug before
+    /// the hub has said.
+    pub org_name: String,
 }
 
 /// Where this person's copy of one app's data in one organisation lives:
@@ -442,6 +445,20 @@ pub fn org_data_path(slug: &str, app_id: &str, principal: Option<&str>) -> PathB
     let key = format!("{app_id}\n{}", principal.unwrap_or("signed-out"));
     let name = krate_bundle::sha256_hex(key.as_bytes());
     org_data_dir(slug).join(format!("{}.json", &name[..32]))
+}
+
+/// Delete this app's team data in `slug` on this computer, for the person
+/// signed in and for nobody signed in: what a machine policy's
+/// `wipe_when_offline_ends` asks once offline access runs out (G17).
+/// Answers how many files went.
+pub fn wipe_team_data(slug: &str, app_id: &str) -> usize {
+    let app_id = app_id.to_ascii_lowercase();
+    let me = github_auth::current().map(|identity| org::principal_of(&identity.login));
+    [me.as_deref(), None]
+        .into_iter()
+        .map(|principal| org_data_path(slug, &app_id, principal))
+        .filter(|path| std::fs::remove_file(path).is_ok())
+        .count()
 }
 
 fn org_data_dir(slug: &str) -> PathBuf {
@@ -466,7 +483,7 @@ pub fn org_device_key() -> Result<krate_orgkeys::KeyPair> {
                         .map_err(|err| anyhow::anyhow!("this computer's organisation key: {err}"))
                 }
                 Err(_) => anyhow::bail!(
-                    "this computer's organisation key at {} does not open with this computer's                      machine key (was it copied from another computer?): move it aside and open                      the app again to make a new one, which another member's device then passes                      the key to",
+                    "this computer's organisation key at {} does not open with this computer's machine key (was it copied from another computer?): move it aside and open the app again to make a new one, which another member's device then passes the key to",
                     path.display()
                 ),
             }
@@ -564,12 +581,13 @@ pub fn gate_opened(bytes: Bytes, mark: Mark, door: Door) -> Result<Option<Opened
         })
     });
 
-    let opened = Opened {
+    let mut opened = Opened {
         slug: slug.clone(),
         hub: hub.clone(),
         digest: digest.clone(),
         authorization: authorization.clone(),
         principal: me.clone(),
+        org_name: slug.clone(),
     };
     let result = match check_in(&hub, &digest, authorization.as_deref()) {
         CheckIn::NotReleased => {
@@ -628,7 +646,16 @@ pub fn gate_opened(bytes: Bytes, mark: Mark, door: Door) -> Result<Option<Opened
             door,
         ),
     };
-    result.map(|()| Some(opened))
+    result.map(|()| {
+        if let Some(name) = load_record(&digest)
+            .as_ref()
+            .and_then(|r| r["org"]["name"].as_str())
+            .filter(|n| !n.is_empty())
+        {
+            opened.org_name = name.to_string();
+        }
+        Some(opened)
+    })
 }
 
 fn refuse_opened(door: Door, reason: &str, words: &str) -> Result<Option<Opened>> {

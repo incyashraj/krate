@@ -556,6 +556,243 @@ impl Screen {
     }
 }
 
+// ---------------------------------------------------------------------------
+// A text field an app draws itself (K-1109)
+// ---------------------------------------------------------------------------
+
+/// The text, caret and selection of one field an app draws on its canvas.
+///
+/// Feed it what the window sends: `Event::TextInput` to [`Field::insert`]
+/// (a paste the person makes with Cmd+V or Ctrl+V arrives that way too, with
+/// no clipboard permission) and `Event::Key` to [`Field::key_with`]. Draw
+/// [`Field::selection`] behind the text and the caret at [`Field::caret`].
+/// Shift with an arrow, Home or End selects; Cmd+A or Ctrl+A selects all;
+/// typing, pasting, Backspace and Delete replace what is selected.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Field {
+    pub text: alloc::string::String,
+    /// The caret, a byte offset on a character boundary.
+    pub caret: usize,
+    /// Where a selection began; it runs from here to the caret.
+    pub anchor: Option<usize>,
+    /// Whether Enter makes a new line.
+    pub multiline: bool,
+}
+
+impl Field {
+    pub fn new(multiline: bool) -> Self {
+        Field {
+            multiline,
+            ..Field::default()
+        }
+    }
+
+    /// Put text in, the caret at its end, nothing selected.
+    pub fn set(&mut self, text: &str) {
+        self.text = alloc::string::String::from(text);
+        self.caret = self.text.len();
+        self.anchor = None;
+    }
+
+    /// Replace the text from elsewhere (a teammate's edit), keeping the
+    /// caret and selection where they still fit.
+    pub fn replace(&mut self, text: &str) {
+        self.text = alloc::string::String::from(text);
+        self.caret = self.fit(self.caret);
+        self.anchor = self.anchor.map(|a| self.fit(a));
+    }
+
+    fn fit(&self, at: usize) -> usize {
+        let mut at = at.min(self.text.len());
+        while !self.text.is_char_boundary(at) {
+            at -= 1;
+        }
+        at
+    }
+
+    /// What is selected, as `(start, end)` byte offsets; `None` when
+    /// nothing is.
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        let anchor = self.anchor?;
+        (anchor != self.caret).then(|| (anchor.min(self.caret), anchor.max(self.caret)))
+    }
+
+    /// The selected text, empty when nothing is selected.
+    pub fn selected(&self) -> &str {
+        self.selection().map_or("", |(a, b)| &self.text[a..b])
+    }
+
+    pub fn select_all(&mut self) {
+        self.anchor = Some(0);
+        self.caret = self.text.len();
+    }
+
+    /// Move the caret to `at` (a tap, a drag, a line up or down). With
+    /// `extend` the selection grows from where it began; without, nothing
+    /// is selected.
+    pub fn move_to(&mut self, at: usize, extend: bool) {
+        let at = self.fit(at);
+        if extend {
+            self.anchor.get_or_insert(self.caret);
+        } else {
+            self.anchor = None;
+        }
+        self.caret = at;
+    }
+
+    fn cut_selection(&mut self) -> bool {
+        let Some((a, b)) = self.selection() else {
+            self.anchor = None;
+            return false;
+        };
+        self.text.replace_range(a..b, "");
+        self.caret = a;
+        self.anchor = None;
+        true
+    }
+
+    /// Type or paste text at the caret, over what is selected. Line breaks
+    /// stay only in a multi-line field; tabs become spaces; other control
+    /// characters are dropped. True when the text changed.
+    pub fn insert(&mut self, typed: &str) -> bool {
+        let mut clean = alloc::string::String::new();
+        let mut chars = typed.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\r' || ch == '\n' {
+                if ch == '\r' && chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                clean.push(if self.multiline { '\n' } else { ' ' });
+            } else if ch == '\t' {
+                clean.push(' ');
+            } else if !ch.is_control() {
+                clean.push(ch);
+            }
+        }
+        if clean.is_empty() {
+            return false;
+        }
+        self.cut_selection();
+        self.text.insert_str(self.caret, &clean);
+        self.caret += clean.len();
+        true
+    }
+
+    /// The character boundary before `at`.
+    pub fn prev(&self, at: usize) -> usize {
+        self.text[..at]
+            .char_indices()
+            .next_back()
+            .map(|(i, _)| i)
+            .unwrap_or(0)
+    }
+
+    /// The character boundary after `at`.
+    pub fn next(&self, at: usize) -> usize {
+        self.text[at..]
+            .chars()
+            .next()
+            .map(|c| at + c.len_utf8())
+            .unwrap_or(at)
+    }
+
+    /// The editing keys, without modifiers. `(changed, moved)`.
+    pub fn key(&mut self, key: &str) -> (bool, bool) {
+        self.key_with(key, false, false)
+    }
+
+    /// The editing keys every field shares: `shift` selects, `primary` is
+    /// Cmd on a Mac and Ctrl elsewhere -- pass `m.meta || m.control`, since
+    /// an app cannot tell which system it runs on. `(changed, moved)`: whether the
+    /// text changed, and whether the caret or selection did.
+    pub fn key_with(&mut self, key: &str, shift: bool, primary: bool) -> (bool, bool) {
+        if primary {
+            return match key {
+                "a" | "A" => {
+                    self.select_all();
+                    (false, true)
+                }
+                _ => (false, false),
+            };
+        }
+        match key {
+            "Backspace" | "Delete" if self.selection().is_some() => (self.cut_selection(), true),
+            "Backspace" if self.caret > 0 => {
+                let from = self.prev(self.caret);
+                self.text.replace_range(from..self.caret, "");
+                self.caret = from;
+                self.anchor = None;
+                (true, true)
+            }
+            "Delete" if self.caret < self.text.len() => {
+                let to = self.next(self.caret);
+                self.text.replace_range(self.caret..to, "");
+                self.anchor = None;
+                (true, true)
+            }
+            "ArrowLeft" | "ArrowRight" => {
+                let left = key == "ArrowLeft";
+                let to = match (self.selection(), shift) {
+                    // An arrow without Shift leaves a selection at its edge.
+                    (Some((a, b)), false) => {
+                        if left {
+                            a
+                        } else {
+                            b
+                        }
+                    }
+                    _ if left => self.prev(self.caret),
+                    _ => self.next(self.caret),
+                };
+                self.move_to(to, shift);
+                (false, true)
+            }
+            "Home" => {
+                let to = if self.multiline {
+                    self.text[..self.caret]
+                        .rfind('\n')
+                        .map(|i| i + 1)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                self.move_to(to, shift);
+                (false, true)
+            }
+            "End" => {
+                let to = if self.multiline {
+                    self.text[self.caret..]
+                        .find('\n')
+                        .map(|i| self.caret + i)
+                        .unwrap_or(self.text.len())
+                } else {
+                    self.text.len()
+                };
+                self.move_to(to, shift);
+                (false, true)
+            }
+            "Escape" if self.anchor.is_some() => {
+                self.anchor = None;
+                (false, true)
+            }
+            _ => (false, false),
+        }
+    }
+}
+
+/// The selected part of one drawn line, as byte offsets into the field's
+/// text: `line` is the line's `(start, end)`, `selection` the field's.
+/// `None` when the selection does not touch the line.
+pub fn selected_on_line(
+    line: (usize, usize),
+    selection: Option<(usize, usize)>,
+) -> Option<(usize, usize)> {
+    let (s, e) = selection?;
+    let (a, b) = line;
+    let (from, to) = (s.max(a), e.min(b));
+    (from < to || (s <= a && e > b)).then_some((from, to.max(from)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -654,5 +891,44 @@ mod tests {
     #[test]
     fn the_safe_area_keeps_clear_of_the_notch_and_home_bar() {
         assert_eq!(phone().safe_area(), Rect::new(0.0, 89.0, 390.0, 721.0));
+    }
+
+    #[test]
+    fn a_field_selects_and_typing_or_a_paste_replaces_the_selection() {
+        let mut f = Field::new(false);
+        f.set("Order chairs");
+        // Shift+Left twice selects "rs"; typing replaces it.
+        f.key_with("ArrowLeft", true, false);
+        f.key_with("ArrowLeft", true, false);
+        assert_eq!(f.selected(), "rs");
+        assert!(f.insert("r"));
+        assert_eq!(f.text, "Order chair");
+        assert_eq!(f.selection(), None);
+        // Select all, then a paste of two lines into a one-line field.
+        assert_eq!(f.key_with("a", false, true), (false, true));
+        assert_eq!(f.selected(), "Order chair");
+        assert!(f.insert("Twelve\r\nstackable"));
+        assert_eq!(f.text, "Twelve stackable");
+        // Backspace removes a selection whole; an arrow leaves it at its edge.
+        f.move_to(0, false);
+        f.key_with("End", true, false);
+        f.key_with("ArrowLeft", true, false);
+        assert_eq!(f.selected(), "Twelve stackabl");
+        assert_eq!(f.key_with("Backspace", false, false), (true, true));
+        assert_eq!(f.text, "e");
+        let mut g = Field::new(true);
+        g.set("one\ntwo");
+        g.move_to(1, false);
+        g.move_to(5, true);
+        g.key_with("ArrowRight", false, false);
+        assert_eq!((g.caret, g.selection()), (5, None));
+        g.insert("x\ny");
+        assert_eq!(g.text, "one\ntx\nywo");
+        // A teammate's shorter text keeps caret and selection inside it.
+        g.select_all();
+        g.replace("on");
+        assert_eq!(g.selection(), Some((0, 2)));
+        assert_eq!(selected_on_line((0, 3), Some((1, 6))), Some((1, 3)));
+        assert_eq!(selected_on_line((4, 7), Some((1, 3))), None);
     }
 }

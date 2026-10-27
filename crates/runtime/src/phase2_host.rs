@@ -211,6 +211,18 @@ impl<'a> Phase2Host<'a> {
         self
     }
 
+    /// This run draws a window: the app's code runs where the window is
+    /// drawn, so neither `store.org` sync (K-1107) nor `store.shared` sync
+    /// (K-1121) may wait on the network.
+    pub fn set_windowed(&self) {
+        if let Some(org) = self.org.as_ref() {
+            org.set_windowed();
+        }
+        if let Some(shared) = self.shared.as_ref() {
+            shared.set_windowed();
+        }
+    }
+
     fn org(&self) -> Result<&crate::org_store::AppOrg, store::org::OrgError> {
         self.org.as_ref().ok_or(store::org::OrgError::Denied)
     }
@@ -731,6 +743,25 @@ impl store::org::Host for Phase2Host<'_> {
                         role: m.role,
                         org: m.org,
                     })
+                })
+                .map_err(org_error_to_wit)
+        }))
+    }
+
+    fn status(&mut self) -> wasmtime::Result<Result<store::org::Standing, store::org::OrgError>> {
+        use crate::org_store::Link;
+        Ok(self.org().and_then(|org| {
+            org.status()
+                .map(|status| store::org::Standing {
+                    link: match status.link {
+                        Link::Synced => store::org::Link::Synced,
+                        Link::Syncing => store::org::Link::Syncing,
+                        Link::Offline => store::org::Link::Offline,
+                        Link::WaitingForKey => store::org::Link::WaitingForKey,
+                    },
+                    pending: status.pending,
+                    reached_at: status.reached_at,
+                    org: status.org,
                 })
                 .map_err(org_error_to_wit)
         }))

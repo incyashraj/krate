@@ -14,6 +14,7 @@
     <category name="Krate" displayName="$(string.Krate)" />
     <category name="Krate_Trust" displayName="$(string.Krate_Trust)"><parentCategory ref="Krate" /></category>
     <category name="Krate_Apps" displayName="$(string.Krate_Apps)"><parentCategory ref="Krate" /></category>
+    <category name="Krate_Data" displayName="$(string.Krate_Data)"><parentCategory ref="Krate" /></category>
     <category name="Krate_Krate" displayName="$(string.Krate_Krate)"><parentCategory ref="Krate" /></category>
     <category name="Krate_Studio" displayName="$(string.Krate_Studio)"><parentCategory ref="Krate" /></category>
   </categories>
@@ -144,6 +145,46 @@
     </policy>
     <policy name="RuntimeInterpreter" class="Machine" displayName="$(string.RuntimeInterpreter)" explainText="$(string.RuntimeInterpreter_Help)" key="Software\Policies\Krate\runtime" valueName="interpreter">
       <parentCategory ref="Krate_Apps" />
+      <supportedOn ref="SUPPORTED_KratePolicy1" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+      <enabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></enabledList>
+      <disabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></disabledList>
+    </policy>
+    <policy name="AppsAllClipboardRead" class="Machine" displayName="$(string.AppsAllClipboardRead)" explainText="$(string.AppsAllClipboardRead_Help)" key="Software\Policies\Krate\apps\*" valueName="clipboard_read">
+      <parentCategory ref="Krate_Data" />
+      <supportedOn ref="SUPPORTED_KratePolicy1" />
+      <enabledValue><decimal value="0" /></enabledValue>
+      <disabledValue><decimal value="1" /></disabledValue>
+      <enabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></enabledList>
+      <disabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></disabledList>
+    </policy>
+    <policy name="AppsAllClipboardWrite" class="Machine" displayName="$(string.AppsAllClipboardWrite)" explainText="$(string.AppsAllClipboardWrite_Help)" key="Software\Policies\Krate\apps\*" valueName="clipboard_write">
+      <parentCategory ref="Krate_Data" />
+      <supportedOn ref="SUPPORTED_KratePolicy1" />
+      <enabledValue><decimal value="0" /></enabledValue>
+      <disabledValue><decimal value="1" /></disabledValue>
+      <enabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></enabledList>
+      <disabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></disabledList>
+    </policy>
+    <policy name="AppsAllPrinting" class="Machine" displayName="$(string.AppsAllPrinting)" explainText="$(string.AppsAllPrinting_Help)" key="Software\Policies\Krate\apps\*" valueName="printing">
+      <parentCategory ref="Krate_Data" />
+      <supportedOn ref="SUPPORTED_KratePolicy1" />
+      <enabledValue><decimal value="0" /></enabledValue>
+      <disabledValue><decimal value="1" /></disabledValue>
+      <enabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></enabledList>
+      <disabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></disabledList>
+    </policy>
+    <policy name="AppsAllScreenCapture" class="Machine" displayName="$(string.AppsAllScreenCapture)" explainText="$(string.AppsAllScreenCapture_Help)" key="Software\Policies\Krate\apps\*" valueName="screen_capture">
+      <parentCategory ref="Krate_Data" />
+      <supportedOn ref="SUPPORTED_KratePolicy1" />
+      <enabledValue><decimal value="0" /></enabledValue>
+      <disabledValue><decimal value="1" /></disabledValue>
+      <enabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></enabledList>
+      <disabledList><item key="Software\Policies\Krate" valueName="version"><value><decimal value="1" /></value></item></disabledList>
+    </policy>
+    <policy name="AppsAllWipeWhenOfflineEnds" class="Machine" displayName="$(string.AppsAllWipeWhenOfflineEnds)" explainText="$(string.AppsAllWipeWhenOfflineEnds_Help)" key="Software\Policies\Krate\apps\*" valueName="wipe_when_offline_ends">
+      <parentCategory ref="Krate_Data" />
       <supportedOn ref="SUPPORTED_KratePolicy1" />
       <enabledValue><decimal value="1" /></enabledValue>
       <disabledValue><decimal value="0" /></disabledValue>

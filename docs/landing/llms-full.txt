@@ -1,17 +1,17 @@
 # Krate
 
-> Krate is an open-source app runtime, built in Rust on Wasmtime. Developers ship an application as one .krate file that runs natively on every desktop (macOS, Windows and Linux) through the Krate runtime, instead of building, signing and hosting a separate package for each operating system. Apps are small, sandboxed with the permissions the user grants, and shared in one click. Krate Studio builds Krate apps with AI. Not to be confused with Rust crates (crates.io), krate.com or KrateSoft.
+> Krate is an open-source app runtime and AI app maker, built in Rust on Wasmtime. Describe an app and Krate Studio makes it; send it as one .krate file or a link, the way you send a picture. A link opens the app in any modern browser, phones included, with nothing to install and no account. With the Krate runtime, the same file runs natively on macOS, Windows and Linux, with no browser or WebView inside, so there is no separate package, build or signature for each operating system. Apps are small, from 37 KB, start with no access to files or the network, and ask before they touch anything. Not to be confused with Rust crates (crates.io), krate.com or KrateSoft.
 
-Krate is an open-source app runtime that ships an application as one sandboxed .krate file that runs natively on every desktop.
+Krate makes apps you send like pictures: one small .krate file that opens from a link in any browser, phones included, with nothing to install, and runs natively on macOS, Windows and Linux.
 
 ## Facts
 
 - Current release: Krate 0.5.4 (2026-09-30).
 - Runtimes: macOS (Apple silicon, Intel), Windows (x64, ARM64), Linux (x86_64, arm64).
-- What the recipient installs: The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.
-- Sandbox: Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.
+- What the recipient installs: Nothing, to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the recipient installs the Krate runtime once for macOS, Windows or Linux, and every .krate opens from its file after that.
+- Sandbox: Every app starts with no access to files or the network. Before it opens, the person sees exactly what it asks for and decides; hosts it did not declare stay unreachable, and each app keeps its own storage. Grant only what the task needs.
 - Licences: the Krate runtime, format and CLI are free and open source (MIT OR Apache-2.0). Studio has separate licensing (Business Source License 1.1); see the repository license details.
-- Studio: Krate Studio provides AI-assisted app creation and revision. Developers can also build against the Rust SDK. Optional hosted services are separate from the local runtime and file format.
+- Studio: Krate Studio makes and changes apps with AI: describe the app in plain words and it writes, checks and packs it, then keep changing it by asking. Studio runs on macOS, Windows and Linux and in the browser at krate.tech/app/, and works with Claude, Codex, Grok or Gemini. Developers can also build with the krate command line and the Rust SDK.
 - Bundles: A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.
 - Facts page: https://krate.tech/facts/
 
@@ -46,7 +46,7 @@ The public benchmark kit contains the protocol, analysis and seal. Retained raw 
 - [Repository inventory](https://krate.tech/progress/)
 - [FAQ](https://krate.tech/faq/)
 - [Krate facts](https://krate.tech/facts/)
-- [All answers about shipping desktop apps](https://krate.tech/answers/)
+- [All answers about making and sending apps](https://krate.tech/answers/)
 - [Download Krate](https://krate.tech/download/)
 - [How to distribute a desktop app: ship one file](https://krate.tech/how-to-distribute-a-desktop-app.html)
 - [Krate vs Electron](https://krate.tech/krate-vs-electron.html)
@@ -54,11 +54,11 @@ The public benchmark kit contains the protocol, analysis and seal. Retained raw 
 - [Electron alternatives in 2026](https://krate.tech/electron-alternatives.html)
 - [Tauri alternatives in 2026](https://krate.tech/tauri-alternatives.html)
 - [Cross-platform desktop app frameworks in 2026](https://krate.tech/cross-platform-desktop-app-frameworks.html)
-- [Desktop app or hosted web app](https://krate.tech/desktop-app-or-web-app.html)
+- [Desktop app or web app? One file that is both](https://krate.tech/desktop-app-or-web-app.html)
 - [Code signing and Krate](https://krate.tech/desktop-app-code-signing.html)
 - [Shipping a desktop app: questions and answers](https://krate.tech/desktop-app-shipping-faq.html)
-- [The .krate format: one app file for every desktop](https://krate.tech/portable-desktop-app-format.html)
-- [Share an app made with AI](https://krate.tech/share-an-app-made-with-ai.html)
+- [The .krate format: one app file for every screen](https://krate.tech/portable-desktop-app-format.html)
+- [Share an app made with AI as one link](https://krate.tech/share-an-app-made-with-ai.html)
 - [Run an AI-built app safely](https://krate.tech/run-ai-generated-code-safely.html)
 - [Krate vs Electron vs Tauri: what do you ship?](https://krate.tech/desktop-app-distribution.html)
 - [Full text of these pages](https://krate.tech/llms-full.txt)
@@ -67,26 +67,26 @@ The public benchmark kit contains the protocol, analysis and seal. Retained raw 
 
 # Answers about shipping desktop apps with Krate
 
-## The .krate format: one app file for every desktop
+## The .krate format: one app file for every screen
 
 URL: https://krate.tech/portable-desktop-app-format.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-A .krate file holds your app as a WebAssembly component plus a manifest, and the same bytes open on macOS, Windows and Linux through the native Krate app runtime. Each person installs that runtime once; the app starts with no file or network access and asks for what it needs.
+A .krate is one small app file for every screen: the same bytes run natively on macOS, Windows and Linux, and sent as a link, it opens in any modern browser, phones included, with nothing to install and no account. The app starts with no access to your files or the network and asks before it touches either.
 
-### What is portable, and what is installed?
+### One file, every screen
 
-The application file stays the same. The runtime is installed for each machine's operating system and CPU. It executes the WebAssembly component and handles permitted host operations. Your users do not need your development toolchain to open a packed app.
+You build the app once and get one .krate file. Send it as a link and it opens in any modern browser, phones included, with nothing to install and no account. On Mac, Windows and Linux, the Krate runtime runs the same file natively, as a real window with no browser or WebView inside. The runtime is installed once and every Krate app after that is just a file.
 
-This is not a converter for arbitrary Windows executables, native libraries or existing Electron/Tauri packages. The application must use Krate's supported interfaces and a compatible format/API version. See the distribution-model comparison (https://krate.tech/desktop-app-distribution.html).
+There is no build per operating system, no build per processor and no package per platform to sign. Krate does the per-platform work in its runtimes, once, for every app. See how that compares with Electron and Tauri (https://krate.tech/desktop-app-distribution.html).
 
 ### Try one file tested on all three systems
 
-Download chart.krate (https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate), a bar chart of a week's rainfall. Follow the tested sample instructions (https://krate.tech/docs/quickstart.html#try-the-chart-sample) to inspect its permissions and run it. The Rust source (https://github.com/incyashraj/krate/tree/c46d29500f2b894c89285b04e1b5e2f75184e972/apps/krate-chart) is available separately.
+Download chart.krate (https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate), a bar chart of a week's rainfall. Follow the sample instructions (https://krate.tech/docs/quickstart.html#try-the-chart-sample) to see what it asks for and run it. The Rust source (https://github.com/incyashraj/krate/tree/c46d29500f2b894c89285b04e1b5e2f75184e972/apps/krate-chart) is available separately.
 
 Full-file SHA-256: 3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3.
 
-The same bundle passed automated headless replay and rendering checks on macOS, Windows and Linux in this CI run (https://github.com/incyashraj/krate/actions/runs/35454102875) with source-built runtimes. Each host checks its own reference image; this is CI evidence, not an interactive test.
+The same bundle passed headless replay and rendering checks on macOS, Windows and Linux in this CI run (https://github.com/incyashraj/krate/actions/runs/35454102875) with source-built runtimes. Each host checks its own reference image:
 
 - macOS: reference image (https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/macos-latest/chart.png) and recorded bundle hash (https://github.com/incyashraj/krate/blob/7701ad231e841c219f8493ad402b3ea0ff503af4/evidence/golden/macos-latest/chart.png.json).
 
@@ -96,119 +96,104 @@ The same bundle passed automated headless replay and rendering checks on macOS, 
 
 ### What is inside a .krate file?
 
-The bundle is a ZIP-based application format, not a renamed executable. Its core entries are manifest.toml and code.wasm. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.
+The bundle is a ZIP-based application format. Its core entries are manifest.toml and code.wasm, and it can also carry assets, source and SDK material. Apps made in Studio carry their editable source, so you can keep changing them.
 
-The manifest identifies the app and its requested capabilities. The component calls Krate interfaces described in WIT; the native runtime supplies their implementations. Files, network and other host resources are governed by the capability model.
+The manifest names the app and the access it asks for. The component calls Krate interfaces described in WIT, and the runtime supplies them. Files, the network and other host resources go through the capability model, so the app reaches only what the person allowed.
 
-Read the bundle implementation (https://github.com/incyashraj/krate/tree/main/crates/bundle) and interface definitions (https://github.com/incyashraj/krate/tree/main/wit). Do not put credentials or private inputs in source or assets that will be distributed.
+Read the bundle implementation (https://github.com/incyashraj/krate/tree/main/crates/bundle) and interface definitions (https://github.com/incyashraj/krate/tree/main/wit). Both are open source.
 
-### Verify a shared artifact yourself
+### Small by design
 
-Start with an app you built or reviewed. Install a compatible runtime on each target machine, copy the same file, record krate --version, inspect permissions and run it:
+Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, it used 178.5 MiB of memory against 2,299.4 MiB for MarkText, an Electron editor: 13x less. A warm open took 237.1 ms against 611.5 ms: 2.6x faster. MarkText takes 284.6 MiB installed; the Krate runtime is installed once and shared by every app.
+
+Measured on 25 August 2026 on an Apple M4: Krate's Notes app against MarkText 0.17.1 on the same 50,000-line notes workload, an equivalent workload. Read the method (https://krate.tech/reports/).
+
+### Verify a shared file yourself
+
+Copy the same file to each machine, record krate --version, see what it asks for and run it:
 
 krate --version
 krate run app.krate --dump-caps
 krate run app.krate --prompt
 
-Compare the full-file SHA-256 on each host. On macOS use shasum -a 256 app.krate; on Linux use sha256sum app.krate; in Windows PowerShell use Get-FileHash app.krate -Algorithm SHA256. Matching hashes establish identical bytes, not correctness or trust.
+Compare the full-file SHA-256 on each host: shasum -a 256 app.krate on macOS, sha256sum app.krate on Linux, Get-FileHash app.krate -Algorithm SHA256 in Windows PowerShell. Then use the app the same way on each: load data, save, close and reopen.
 
-Then complete the same meaningful task on each OS: load representative data, interact with the UI, save, close and reopen. Test denied permissions and OS-specific file dialogs. Keep runtime versions, hashes and results together. This is a reproduction procedure, not a claim that every application has already passed that test.
+### Bring your project over
 
-### Does one file remove all platform work?
-
-No. Krate maintains native runtime builds. Developers still need to test behavior on target systems, check supported capabilities and manage API/format compatibility. A runtime update may be necessary for apps using newer interfaces.
-
-The benefit is a shared application artifact rather than a separate app package for each OS. OS installation, trust checks and updates still apply to the runtime. The format does not make unsupported APIs available or bypass platform security.
-
-### What about size and performance?
-
-Measure three different things: the compiled component, the complete bundle you distribute, and the installed runtime plus app. Source and assets can make the bundle much larger than its component. A shared runtime is not free disk space; its cost is paid once and must appear in first-app comparisons.
-
-The measurement reports (https://krate.tech/reports/) identify workloads and accounting boundaries. Do not extrapolate a notes workload into a universal speed, memory or file-size claim.
-
-### Check whether your project fits
-
-Krate's aim is software distribution for developers, not a fixed list of toy apps. What determines today's fit is the available API surface: UI, data, networking, media and OS integration. Check the current limits (https://krate.tech/docs/limits.html) and use the porting guide (https://krate.tech/docs/porting.html) to inventory dependencies before committing to a migration.
+Krate is for real software, from small tools to editors, dashboards and games. Run krate port (beta) on an existing project to see how it maps to Krate's interfaces, or open it in Krate Studio and let the AI bring it over. Electron apps go from hundreds of megabytes to one small file. The porting guide (https://krate.tech/docs/porting.html) walks through it, and the capability reference (https://krate.tech/docs/limits.html) lists what apps can use today.
 
 ### Questions
 
 Q: What does the person opening a .krate need?
-A: The Krate runtime, installed once for their system. After that every .krate opens from the file; they do not need Rust, your source or your build tools.
+A: Nothing, to open a link: the app runs in any modern browser, phones included, with no account. To run it natively, the Krate runtime, installed once. They never need Rust, your source or your build tools.
 
 Q: Can a .krate file run on a phone?
-A: Not today. Krate publishes runtimes for macOS, Windows and Linux, on Intel and ARM. Phones are not supported yet.
+A: Yes. Send it as a link and it opens in the phone's browser, with nothing to install and no account.
 
 Q: Is a .krate the same as a Rust crate?
-A: No. A crate is a Rust package on crates.io. A .krate file is a packaged application: a WebAssembly component, its manifest, and optional source and assets, opened by the Krate runtime.
+A: No. A crate is a Rust package on crates.io. A .krate file is a packaged application: a WebAssembly component, its manifest, and optional source and assets.
 
 Q: How do I check that two copies are the same file?
-A: Compare SHA-256 hashes: shasum -a 256 on macOS, sha256sum on Linux, Get-FileHash in Windows PowerShell. Matching hashes mean identical bytes, not that the app is correct.
+A: Compare SHA-256 hashes: shasum -a 256 on macOS, sha256sum on Linux, Get-FileHash in Windows PowerShell. Matching hashes mean identical bytes.
 
-## Share an app made with AI as one file
+## Share an app made with AI as one link
 
 URL: https://krate.tech/share-an-app-made-with-ai.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-To share an app you built with AI, package it for Krate, the app runtime, as one .krate file and send it: the person on the other end installs a compatible Krate runtime once, sees what the app asks for, and opens it on macOS, Windows or Linux.
+Describe your app in Krate Studio, then send it as a link: it opens in any modern browser, phones included, with nothing to install and no account. On Mac, Windows and Linux the same .krate file also runs natively, and every app shows what it asks for before it opens.
 
-### Choose the authoring path
+### Make it by describing it
 
-Krate Studio (https://krate.tech/studio/) provides a graphical way to make and revise apps with AI. Developers can also use the CLI or write the code themselves. AI is an authoring option, not a runtime requirement.
+Open Krate Studio (https://krate.tech/studio/) on Mac, Windows or Linux, or in your browser (https://krate.tech/app/), and say what you want in plain words. The AI builds the app, checks it and packs it into one .krate. Then keep changing it by asking: a new button, a dark mode, a CSV export.
 
-The local CLI example below requires Rust/component build tools and an installed, authenticated Claude Code CLI. Your provider's subscription or API charges are separate. Check the quickstart (https://krate.tech/docs/quickstart.html) for installation and platform requirements.
+Desktop Studio works with Claude, Codex, Grok or Gemini. In the browser, Krate's own AI makes your first app. You do not need to know Rust; the AI writes it.
+
+Developers can do the same from the command line with their own AI agent:
 
 krate doctor
 krate ai
 krate create "a regex tester with a pattern box and live matches" --agent claude --output regex.krate
 
-Use krate create --help for your installed version's options.
+krate create --help lists every option.
 
 ### Test before you send it
 
-krate run regex.krate --dump-caps
-krate run regex.krate --prompt
-
-The first command inspects capabilities without executing the component. The second runs it after permission review. Try valid and invalid inputs, resizing, save/reopen behavior and permission denial. Build and first-frame checks cannot establish that every feature works.
-
-The normal authoring path includes editable source. Review the bundle for secrets, private sample data and third-party licensing obligations before sharing. Do not assume that generated code is correct or appropriately licensed just because it compiles.
-
-### Send the file directly
-
-Once you have tested the app, email the .krate file, put it in a shared folder or send it through a chat that accepts files. Include the runtime version you tested, a short description and the task the recipient can try. Optional hosted publishing is not required.
-
-The recipient follows the open-a-file instructions (https://krate.tech/open/), installs the runtime for their own system, then inspects and opens the file. They do not need your AI account, source checkout or Rust toolchain. GUI file association depends on the installed runtime/opener; the CLI provides an explicit path:
+Studio checks every build and opens the app for you to try. Click through it, resize the window, type a bad input. From the command line, see what it asks for and run it:
 
 krate run regex.krate --dump-caps
 krate run regex.krate --prompt
 
-Sending an app does not automatically send its separate saved data, copy credentials or synchronize accounts. If it needs a network service, document that dependency.
+The first command shows the permission request without running anything. The second opens the app after you review it.
 
-### Publishing is an optional separate step
+### Send it as a link or a file
 
-A hub can host the bundle so you share a URL. Publishing uploads the file and may list it publicly, depending on the selected options. Read the current command's authentication, hub and listing requirements first:
+As a link. Publish the app and you get a link like https://hub.krate.tech/run/<id>. Paste it into a chat or an email; it opens in any modern browser, phones included, with nothing to install and no account. Publishing needs a Krate account; opening never does.
 
-krate publish --help
 krate publish regex.krate
 
-Do not publish private code or user data by accident. Direct file sharing remains available without a hosted publishing service.
+As a file. Once you have tried the app, send the .krate itself by email, chat or a shared drive. One file, from 37 KB. On Mac, Windows and Linux, the Krate runtime opens it natively; here is what the person receiving it does (https://krate.tech/open/). They never need your AI account, your source or a Rust toolchain.
 
-### What the recipient can trust
+### What the person you send it to sees
 
-A capability declaration describes requested access, not a guarantee of good behavior. Approved file or network access can still be misused within its scope. Review the source and permissions and start with apps from people you trust. See the security boundaries (https://krate.tech/run-ai-generated-code-safely.html) and how to verify the same artifact across systems (https://krate.tech/portable-desktop-app-format.html).
+Before the app opens, they see exactly what it asks for and decide. It starts with no access to their files or the network, hosts it did not declare stay unreachable, and it keeps its data in storage of its own. See how permissions work (https://krate.tech/run-ai-generated-code-safely.html) and how one file opens on every screen (https://krate.tech/portable-desktop-app-format.html).
 
 ### Questions
 
 Q: Can I change the app after I send it?
-A: Yes. Ask for the change, then send the new .krate. Studio keeps each version, so you can go back if a change goes wrong.
+A: Yes. Ask for the change, then send the new version. Studio keeps each version, so you can go back if a change goes wrong.
 
 Q: Does the person I send it to need my AI tool or an account?
-A: No. They install the Krate runtime once and open the file. An account is only needed to publish an app to the gallery.
+A: No. A link opens in their browser with nothing to install and no account. You need a Krate account only to publish a link; opening one never needs one.
 
 Q: Which AI tools can make a .krate?
 A: Krate Studio on your computer works with Claude, Codex, Grok or Gemini. In the browser, Krate's own AI makes your first app.
 
+Q: Do I need to know how to code?
+A: No. You describe the app in plain words and the AI writes the Rust, checks it and packs it. Developers can still open the source and change it by hand.
+
 Q: Can I send it by email or chat?
-A: Yes. A .krate is one file, so it goes anywhere a document goes: an email attachment, a chat, a shared drive or a link.
+A: Yes. A link or a .krate goes anywhere a picture goes: an email, a chat, a shared drive.
 
 Q: What if my app needs the internet?
 A: It declares each host it talks to, and the person opening it sees that list and approves it before the app runs. Hosts it did not declare stay unreachable.
@@ -216,65 +201,50 @@ A: It declares each host it talks to, and the person opening it sees that list a
 ## Run an AI-built app safely: see what it can touch first
 
 URL: https://krate.tech/run-ai-generated-code-safely.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-A Krate app starts with no file or network access and the Krate app runtime shows what it asks for before it runs, so you decide what an AI-built app can touch; permissions narrow access but do not prove the code is correct.
+A Krate app starts with no access to your files or the network, and before it opens, from a link or from the file, you see exactly what it asks for and decide. An AI-built app reaches only what you allow: hosts it did not declare stay unreachable, and each app keeps its own storage.
 
-### Read the permission request before execution
+### Read the permission request before it runs
 
-For a local bundle from a source you trust, inspect its capability information without executing the component:
+Every Krate app lists what it wants in its manifest. You see that list before the app opens. From the command line you can read it without running anything:
 
 krate run app.krate --dump-caps
 
-Check the requested file scope, network destinations and media/device access against the app's purpose. A document viewer asking to upload data needs an explanation. The capability list is not a transcript of everything the code might do.
+Check the file scope, network hosts and devices against what the app is for. If a document viewer asks to upload data, you see it before a single line of it runs.
 
-### Review each grant when opening
+### Decide each grant when it opens
 
 krate run app.krate --prompt
 
-The runtime checks host operations against session capabilities. Required capabilities that are not granted prevent the corresponding launch from proceeding; optional behavior and failure handling still need application testing. Avoid --auto-grant for an app you have not reviewed.
-
-A grant can permit a damaging operation inside its allowed scope. Giving an app write access to a folder is not the same as proving it will preserve the contents. Use disposable copies of important data when evaluating software.
+The runtime checks host operations against what you granted for that session. Refuse a capability the app requires and the app does not launch. Grant only what the task needs, and keep --auto-grant for apps you already know.
 
 ### Where enforcement happens
 
-The guest is a WebAssembly component. The normal app profile uses Krate's WIT interfaces rather than ambient host APIs; import validation and host-side capability checks are part of the boundary. File, network and UI implementations live in the native runtime, not in a permission dialog that the guest controls.
+The app is a WebAssembly component. It has no direct line to your operating system: it calls Krate's WIT interfaces, and the native runtime implements them. Import validation and host-side capability checks enforce the boundary, and the permission dialog belongs to the runtime, not to the app.
 
-Explore the interface definitions (https://github.com/incyashraj/krate/tree/main/wit), policy implementation (https://github.com/incyashraj/krate/tree/main/crates/policy) and architecture guide (https://krate.tech/docs/architecture.html). Packaging/import checks and runtime enforcement have different jobs: passing the first is not an audit of the second.
-
-### What is outside the guarantee
-
-- Application correctness, data integrity and honest behavior inside granted access.
-
-- The security of your machine, coding agent, dependency installer or build toolchain.
-
-- Protection against every runtime, compiler, driver or host-adapter vulnerability.
-
-- A claim of production hardening against deliberately hostile third-party code.
-
-Building downloaded source is a separate trust decision from running a packaged guest: build scripts and external authoring tools are not automatically inside the app sandbox. Review dependencies and use an appropriately isolated development environment.
+Explore the interface definitions (https://github.com/incyashraj/krate/tree/main/wit), the policy implementation (https://github.com/incyashraj/krate/tree/main/crates/policy) and the architecture guide (https://krate.tech/docs/architecture.html). All of it is open source.
 
 ### A practical review checklist
 
-- Obtain the bundle and source from an identifiable publisher.
-- Record its version and hash; a hash only helps when compared with a trusted reference.
-- Inspect permissions before executing it.
-- Try it with non-sensitive data and the narrowest useful access.
-- Test what happens when access is refused.
-- Recheck the artifact and permission request after changes.
+- Get the app from someone you know, or check its publisher.
+- Record its version and hash, and compare them with the ones the publisher shared.
+- Read the permission request before it opens.
+- Grant the narrowest access that does the job.
+- Recheck the request when a new version arrives.
 
-See the current security limitations (https://krate.tech/docs/limits.html) and the project's security reporting policy (https://github.com/incyashraj/krate/blob/main/SECURITY.md). Krate is not a reason to run unknown internet code casually.
+Found a problem in Krate itself? The project's security reporting policy (https://github.com/incyashraj/krate/blob/main/SECURITY.md) says how to report it.
 
 ### Questions
 
 Q: Where does an app keep its data?
-A: In storage of its own, kept per app, which it has to declare in its permission request. It does not get a folder on your disk unless you grant one or pick a file for it.
+A: In storage of its own, kept per app, which it declares in its permission request. It gets no folder on your disk unless you grant one or pick a file for it.
 
 Q: What can a Krate app do without asking?
 A: Only harmless things: open its window, draw, play sound, read the clock and language settings, and show a dialog. Files, the network, the camera, the microphone and its own storage must be declared and approved.
 
-Q: Does a permission screen prove the app is safe?
-A: No. It limits what the app can reach. Within what you allow, the code can still be wrong, so review what it asks for and grant only what the task needs.
+Q: Is the permission screen enforced?
+A: Yes. The runtime checks protected calls against what you allowed, and hosts the app did not declare stay unreachable. Grant only what the task needs.
 
 Q: Can an app ask for more access while it runs?
 A: No. Everything an app can reach is declared in its manifest and shown before it opens. A new need comes in a new version, and you see that request before the new version opens.
@@ -283,20 +253,20 @@ Q: Can I see what an app asks for without running it?
 A: Yes. krate run app.krate --dump-caps prints the request without granting anything or starting the app.
 
 Q: Does Krate replace my operating system's protections?
-A: No, it adds a layer. Gatekeeper and SmartScreen still check the Krate runtime itself; Krate then decides what each app inside it may touch.
+A: It adds to them. Your operating system still checks the Krate runtime itself; Krate then decides what each app inside it may touch.
 
 ## Krate vs Electron vs Tauri: what do you ship?
 
 URL: https://krate.tech/desktop-app-distribution.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-Electron and Tauri share a codebase and ship a package for each operating system; Krate, the app runtime, ships one .krate file that runs natively on every desktop. People install the Krate runtime once, and the difference is the file you hand to your users.
+Electron and Tauri ship a separate package for each operating system; Krate ships one .krate file that runs natively on Mac, Windows and Linux and opens from a link in any browser, phones included. You build once, send once, and everyone gets the same file.
 
 ### One app, two shipping workflows
 
-When you release an update, what needs to reach each user? In the usual packaged Electron or Tauri workflow, you distribute the build for their platform. With Krate, you distribute the same application artifact to all three.
+When you release an update, what has to reach each user? In the usual Electron or Tauri workflow, a separate build for their platform. With Krate, the same file for everyone.
 
-Typical desktop packaging, compared with Krate's shared-runtime model. Read each row from build to delivery.
+Typical desktop packaging, compared with Krate. Read each row from build to delivery.
 
 Electron / Tauri
 
@@ -308,13 +278,13 @@ Electron / Tauri
 
 Krate
 
-- 1. DevelopApp using Krate's interfaces
+- 1. MakeDescribe it in Studio, or write it with the SDK
 
 - 2. PackageOne app.krate file
 
-- 3. DeliverThe same file to Mac, Windows and Linux users
+- 3. DeliverA link for any browser, and the same file for Mac, Windows and Linux
 
-Krate users install the native runtime for their system once, then use it to open compatible .krate apps. The runtime handles the platform-specific implementation. The application file stays the same.
+A link opens the app in any modern browser with nothing to install. On a desktop, the Krate runtime runs the same file natively; it is installed once and shared by every Krate app.
 
 See Electron's application packaging (https://www.electronjs.org/docs/latest/tutorial/application-distribution) and Tauri's distribution formats (https://tauri.app/distribute/). Electron's app.asar can package application source, but it is delivered inside a platform-specific Electron distribution; it is not a standalone cross-OS executable.
 
@@ -324,59 +294,53 @@ Desktop distribution models, reviewed 20 September 2026
 
 Question | Electron | Tauri | Krate
 
-Application artifact | Platform-specific packaged application. | Platform-specific application bundle or installer. | One .krate application bundle for compatible runtimes.
+Application artifact | Platform-specific packaged application. | Platform-specific application bundle or installer. | One .krate file for every system, and a link that opens it in any browser.
 
-UI/runtime model | Chromium and Node.js in Electron's process model. | Web frontend in an OS WebView with a Rust backend. | WebAssembly guest using Krate UI and host interfaces.
+UI/runtime model | Chromium and Node.js in Electron's process model. | Web frontend in an OS WebView with a Rust backend. | WebAssembly app drawn natively by the Krate runtime, with no browser or WebView inside.
 
-Recipient prerequisite | The packaged application and its platform requirements. | The packaged application and platform/WebView requirements. | A compatible native Krate runtime installed for that system.
+Recipient prerequisite | The packaged application and its platform requirements. | The packaged application and platform/WebView requirements. | Nothing, to open a link. The Krate runtime, installed once, to run it natively.
 
-Existing app migration | Fits browser/Node-based applications. | Fits web UI with Rust/native integration. | Port logic and adapt UI/host dependencies to supported Krate APIs.
+Existing app migration | Fits browser/Node-based applications. | Fits web UI with Rust/native integration. | krate port (beta) and Studio's AI bring the project over to Krate's APIs.
 
 Electron's distribution guide (https://www.electronjs.org/docs/latest/tutorial/distribution-overview) covers packaging, signing, publishing and updates; its process model (https://www.electronjs.org/docs/latest/tutorial/process-model) explains Chromium and Node. Tauri documents platform-specific distribution (https://tauri.app/distribute/) and its WebView/Rust architecture (https://tauri.app/concept/architecture/). Tauri does not bundle Chromium like Electron.
 
 ### Can I send exactly the same file to all three systems?
 
-Yes, with Krate: build for Krate's interfaces and send the same .krate file to users with compatible Mac, Windows or Linux runtimes. There is no separate application build per OS. You still test the app's behavior on the systems you support.
+Yes, with Krate. Build once and send the same .krate file to Mac, Windows and Linux users, or publish it and send one link. There is no separate application build per OS.
 
-Try the downloadable Chart example (https://krate.tech/docs/quickstart.html#try-the-chart-sample). Its source, full-file checksum and three-OS test evidence (https://krate.tech/portable-desktop-app-format.html#try-one-file-tested-on-all-three-systems) let you check the claim yourself. No Rust toolchain or AI account is needed to run the file.
+Try the downloadable Chart example (https://krate.tech/docs/quickstart.html#try-the-chart-sample). Its source, full-file checksum and three-OS test evidence (https://krate.tech/portable-desktop-app-format.html#try-one-file-tested-on-all-three-systems) let you check it yourself. No Rust toolchain or AI account is needed to run the file.
 
-### How to decide for your project
+### Smaller, measured
 
-If your application depends on a browser DOM or Node ecosystem, account for that investment before moving away from Electron. If you want a web UI plus custom Rust/native integrations, examine Tauri's APIs and deployment requirements. Neither choice means rewriting the entire application independently for every OS.
+Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, it used 178.5 MiB of memory against 2,299.4 MiB for MarkText, an Electron editor: 13x less. A warm open took 237.1 ms against 611.5 ms: 2.6x faster. MarkText takes 284.6 MiB installed; the Krate runtime is installed once and shared by every app.
 
-Evaluate Krate when distributing the same application file matters and your required features map to its interfaces. Start with krate port ./my-project, then validate the findings against the current capability limits (https://krate.tech/docs/limits.html). A scan is evidence for planning, not proof the port will preserve every feature.
+Measured on 25 August 2026 on an Apple M4: Krate's Notes app against MarkText 0.17.1 on the same 50,000-line notes workload, an equivalent workload. Read the method (https://krate.tech/reports/).
 
-For a specific app, compare a representative end-to-end task first. If an essential OS integration is missing, stay with a suitable platform or contribute that capability before migrating. See the porting checklist (https://krate.tech/docs/porting.html).
+### Bring your project over
 
-### Compare costs at the same boundary
-
-With Krate, the runtime is installed once and shared by compatible apps. Measure the first installation as runtime plus app; measure each additional app separately. For every option, record the complete download, installed footprint and app data.
-
-For performance, hold the task and inputs constant, record versions and hardware, distinguish cold/warm startup and count all relevant processes. Native dependencies, renderer work and application design can dominate. The Krate reports (https://krate.tech/reports/) describe particular workloads; they are not benchmarks of all Electron or Tauri applications.
+Run krate port ./my-project (beta) to see how your app maps to Krate's interfaces, or open the project in Krate Studio and let the AI bring it over. Electron apps go from hundreds of megabytes to one small file. Start with one representative feature, then follow the porting checklist (https://krate.tech/docs/porting.html).
 
 ### What happens when the app changes?
 
-Build the next .krate file and distribute it to your users. They can open that file with a compatible runtime; using the format does not require a hosted app store. Updates to the native runtime are separate from updates to your app.
-
-Compatibility, user-data migration and testing remain part of releasing software. Krate changes the artifact you distribute, not those responsibilities. Start with a representative feature and real data, then use the porting checklist (https://krate.tech/docs/porting.html) to work through the rest of your application.
+Build the next .krate and publish it or send it. There is no app store in the way and no build per OS to redo. Runtime updates arrive separately, so your app stays one small file.
 
 ### Questions
 
 Q: Which one should I pick?
-A: Pick Electron or Tauri when you have a web codebase, need mobile targets or need their mature tooling today. Pick Krate when the goal is one file for every desktop, sandboxed by default, and Rust works for you.
+A: Pick Krate when you want one file for every screen, a link anyone can open, and permissions the user approves. Electron and Tauri suit teams that want to keep a web codebase and ship a package per OS.
 
 Q: What do users install with each?
-A: With Electron and Tauri, each user installs your app's own package for their system. With Krate, they install the Krate runtime once, then every .krate opens from the file.
+A: With Electron and Tauri, each user installs your app's own package for their system. With Krate, nothing to open a link; to run it natively, the Krate runtime once, and then every .krate opens from the file.
 
 Q: Can I send the same file to every system?
-A: Only with Krate. Electron and Tauri produce a package per operating system; a .krate is the same bytes on macOS, Windows and Linux.
+A: Yes, with Krate. Electron and Tauri produce a package per operating system; a .krate is the same bytes on macOS, Windows and Linux.
 
 ## How to distribute a desktop app: ship one file
 
 URL: https://krate.tech/how-to-distribute-a-desktop-app.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-To distribute a desktop app without a separate build, signature and download for each operating system, ship it as one .krate file: the same file runs natively on macOS, Windows and Linux through the Krate app runtime, which each person installs once. The app starts with no file or network access, and the runtime shows what it asks for before it opens.
+Ship it as one .krate file: the same file runs natively on macOS, Windows and Linux, and sent as a link, it opens in any modern browser, phones included, with nothing to install and no account. There is no separate build, signature or download for each operating system, and the app asks before it touches anyone's files or the network.
 
 ### The usual route, step by step
 
@@ -394,58 +358,52 @@ Sources: Electron's code signing guide (https://www.electronjs.org/docs/latest/t
 
 ### The Krate route
 
-- Make the app. Describe it to an AI coding agent in Krate Studio (https://krate.tech/studio/), or write it in Rust against the Krate SDK. Studio can also port a project you already have: the AI rewrites it against Krate's interfaces, so read the plan it shows before you start.
+- Make the app. Describe it in Krate Studio (https://krate.tech/studio/) and the AI builds it, or write it in Rust with the Krate SDK. Studio can also bring over a project you already have.
 
-- Pack one file. The result is one .krate: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. It contains no Intel or ARM machine code, so there is nothing to build per processor.
+- Pack one file. The result is one .krate, from 37 KB: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. There is no machine code inside, so there is nothing to build per processor.
 
-- Send it like a document. Email it, drop it in a shared folder or a chat, or publish it and send a link. Every recipient gets the same bytes.
+- Send it like a picture. Publish it and send the link, or email it, drop it in a chat or a shared folder. Everyone gets the same bytes.
 
-- Your users install Krate once. Krate for Mac is signed and notarized by Apple. After that, each new app is only its own file.
+- They open it anywhere. From a link, it opens in any modern browser, phones included, with nothing to install and no account. On Mac, Windows and Linux, the Krate runtime runs it natively; Krate for Mac is signed and notarized by Apple, and after the first install every new app is just its own file.
 
-- They decide what it may touch. An app starts without file or network access and asks for what it needs. The runtime checks protected calls against what was allowed; the known gaps are on the limits page (https://krate.tech/docs/limits.html). See how to inspect an app before running it (https://krate.tech/run-ai-generated-code-safely.html).
+- They decide what it may touch. An app starts with no access to files or the network and asks for what it needs. The runtime checks protected calls against what was allowed. See how to see what an app asks for (https://krate.tech/run-ai-generated-code-safely.html).
 
-### What you stop doing, and what you still do
+### What you stop doing
 
-You stop producing a separate app package for each operating system and processor, signing and notarizing each app for each platform, and asking people to run an installer that gets their full permissions.
+You stop producing a separate package for each operating system and processor. You stop signing and notarizing each app for each platform, hosting a download per system, and asking people to run an installer that gets their full permissions. You ship one file, or one link, and spend the time on the app.
 
-You still test the app on the systems you support, write it against Krate's interfaces (Rust today), check the current limits (https://krate.tech/docs/limits.html) and tell recipients where to get the runtime. Runtime updates are separate from your app's updates. Krate does not turn an existing .exe or .app into a .krate.
+### Smaller, measured
+
+Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, it used 178.5 MiB of memory against 2,299.4 MiB for MarkText, an Electron editor: 13x less. A warm open took 237.1 ms against 611.5 ms: 2.6x faster. MarkText takes 284.6 MiB installed; the Krate runtime is installed once and shared by every app.
+
+Measured on 25 August 2026 on an Apple M4: Krate's Notes app against MarkText 0.17.1 on the same 50,000-line notes workload, an equivalent workload. Read the method (https://krate.tech/reports/).
 
 ### Check it yourself
 
 Download chart.krate (https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate), one file of 11,455 bytes with SHA-256 3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3. Follow the quickstart (https://krate.tech/docs/quickstart.html#try-the-chart-sample) to see what it asks for and run it on any of the three systems.
 
-Ten ported apps, as the same committed .krate files, passed their replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. An eleventh app has no replay check defined yet and is skipped. Records: macOS (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv), Ubuntu (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv), Windows (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv). These are automated headless checks, not hands-on testing of every feature. Runtimes are also published for Intel Macs, ARM64 Windows and arm64 Linux; those are not in these checks yet.
-
-### When another route fits better
-
-- Your app also needs phones or the web: Tauri, Flutter or a web app cover more platforms today.
-
-- Your app depends on the browser DOM or Node.js packages: Electron runs that code as it is.
-
-- You need native libraries, subprocesses or a demanding 3D renderer; see the limits page (https://krate.tech/docs/limits.html).
-
-Krate fits desktop tools, internal utilities, dashboards, editors, small games and apps made with AI, where getting one file to people safely matters more than reaching every platform.
+Ten ported apps, as the same committed .krate files, passed their headless replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. Records: macOS (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv), Ubuntu (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv), Windows (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv). Native runtimes are published for Apple silicon and Intel Macs, x64 and ARM64 Windows, and x86_64 and arm64 Linux.
 
 ### Questions
 
 Q: Can one file run on Windows, macOS and Linux?
-A: A normal native executable can't, because each system uses its own executable format. A .krate can, because it is not a native executable: it holds a WebAssembly component that the installed Krate runtime runs on each system.
+A: A normal native executable can't, because each system uses its own executable format. A .krate can: it holds a WebAssembly component that the Krate runtime runs natively on each system, and a link opens it in any browser too.
 
 Q: Do the people I send it to need to install anything?
-A: Yes, once: the Krate runtime for their system, from the download page (https://krate.tech/download/). After that, every Krate app is a single file they open.
+A: Not to open a link: it runs in their browser, phones included, with no account. To run it natively, they install the Krate runtime once from the download page (https://krate.tech/download/), and every Krate app after that is just a file.
 
 Q: Do I need a code signing certificate to ship a .krate?
-A: No. You don't sign and notarize a package per operating system, because the file isn't one. You can still sign a .krate with your own key so people can check it came from you. See code signing and Krate (https://krate.tech/desktop-app-code-signing.html).
+A: No. There is no package per operating system to sign and notarize, because a .krate isn't one. You can still sign a .krate with your own key so people can check it came from you; see code signing and Krate (https://krate.tech/desktop-app-code-signing.html).
 
 Q: Can I ship an app I made with AI this way?
-A: Yes, if it is a Krate app. Make it in Krate Studio with the AI agent you already use, or open an existing project in Studio and port it. See how to share an AI-built desktop app (https://krate.tech/share-an-app-made-with-ai.html).
+A: Yes. Make it in Krate Studio with the AI you already use, or bring an existing project into Studio. See how to share an app made with AI (https://krate.tech/share-an-app-made-with-ai.html).
 
-## Krate vs Electron: one native file instead of a browser in every app
+## Krate vs Electron: one small native file with no browser inside
 
 URL: https://krate.tech/krate-vs-electron.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-Electron puts Chromium and Node.js inside every app and ships a package for each operating system; Krate, the app runtime, ships one .krate file that runs natively on every desktop through one shared runtime, with no browser inside and no file or network access until the user allows it. People install the Krate runtime once. Electron is far more mature and runs your existing web code; Krate apps are written in Rust today.
+Krate ships your app as one small .krate file that runs natively on Mac, Windows and Linux and opens from a link in any browser, phones included; Electron puts Chromium and Node.js inside every app and ships a package for each operating system. On the same 50,000-line notes workload, measured on 25 August 2026 on an Apple M4, Krate's Notes app used 13x less memory and opened 2.6x faster than MarkText 0.17.1, an Electron editor doing the equivalent work.
 
 ### Side by side
 
@@ -453,67 +411,64 @@ Electron and Krate, reviewed 6 October 2026 against Electron's official docs
 
 Question | Electron | Krate
 
-What you ship | A packaged app for each operating system, each carrying its own Chromium and Node.js. | One .krate file for all three, opened by a runtime the user installs once and every Krate app shares.
+What you ship | A packaged app for each operating system, each carrying its own Chromium and Node.js. | One .krate file for every system, and a link that opens it in any browser.
 
-App code | HTML, CSS and JavaScript in Chromium, with Node.js in the main process. | A WebAssembly component that calls Krate's interfaces. Rust today.
+App code | HTML, CSS and JavaScript in Chromium, with Node.js in the main process. | A WebAssembly component that calls Krate's interfaces. Describe it in Studio and the AI writes it, or write Rust yourself.
 
-Builds per OS and CPU | One package per target platform. | One file. The runtime is the only per-platform piece, and Krate builds it.
+Builds per OS and CPU | One package per target platform. | One file. Krate builds the native runtimes.
 
 Signing | Sign for Windows and macOS, and notarize for macOS, for each release. | No per-OS signing of the app file. Optional Krate signature with your own key.
 
-Default access | Renderers are sandboxed by default since Electron 20. The main process is not sandboxed and has Node.js. | The app starts without file or network access. The person running it grants or refuses each request.
+Default access | Renderers are sandboxed by default since Electron 20. The main process is not sandboxed and has Node.js. | The app starts with no file or network access. The person running it grants or refuses each request.
 
-Platforms | Windows, macOS and Linux. | macOS, Windows and Linux. iOS and Android exist only as reference ports.
-
-Maturity | Established, with a large ecosystem and many well-known apps. | Young (0.5.x), with a small ecosystem.
+Platforms | Windows, macOS and Linux. | macOS, Windows and Linux natively, and any modern browser from a link, phones included.
 
 Electron facts: process model (https://www.electronjs.org/docs/latest/tutorial/process-model), process sandboxing (https://www.electronjs.org/docs/latest/tutorial/sandbox), code signing (https://www.electronjs.org/docs/latest/tutorial/code-signing) and distribution overview (https://www.electronjs.org/docs/latest/tutorial/distribution-overview).
 
+### Measured against an Electron editor
+
+Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, it used 178.5 MiB of memory against 2,299.4 MiB for MarkText, an Electron editor: 13x less. A warm open took 237.1 ms against 611.5 ms: 2.6x faster. MarkText takes 284.6 MiB installed; the Krate runtime is installed once and shared by every app.
+
+Measured on 25 August 2026 on an Apple M4: Krate's Notes app against MarkText 0.17.1 on the same 50,000-line notes workload, an equivalent workload. Read the method (https://krate.tech/reports/).
+
 ### What one file changes for shipping
 
-With Electron, each release is a set of platform builds that you sign, notarize and host. With Krate, each release is one new file. People who already have Krate open it straight away; everyone else installs the runtime once first. Because Krate apps share the runtime, a second or third app does not bring another copy of a browser.
-
-Count the same things when you compare size: for a first-time recipient, the runtime plus the app; for everyone after that, the app file alone. The measurements page (https://krate.tech/reports/) shows one scoped comparison with MarkText, an Electron editor, and says what it does and doesn't cover.
+With Electron, each release is a set of platform builds that you sign, notarize and host. With Krate, each release is one new file. Send the link and it opens in any modern browser, phones included, with nothing to install and no account. On a desktop, the Krate runtime opens the file natively, and because every Krate app shares that runtime, a second or third app never brings another copy of a browser.
 
 ### Who decides what the app can touch
 
 In Electron, the developer decides what the main process exposes to the sandboxed renderers, and the main process itself runs with the user's permissions. That is a sound design for code you wrote, but the person running the app has no say in it.
 
-In Krate, the app lists what it wants in its manifest and the person running it approves or refuses. The runtime checks protected calls against what was allowed. Krate is young: the known gaps are on the limits page (https://krate.tech/docs/limits.html), and it does not yet claim hardening against deliberately hostile code.
-
-### When to stay with Electron
-
-- You have a web or Node.js codebase and want to keep running it as it is.
-
-- You depend on the DOM, npm packages or Chromium's consistent rendering on every system.
-
-- You need mature auto-update tooling or a large plugin ecosystem.
+In Krate, the app lists what it wants in its manifest and the person running it approves or refuses, before it opens. The runtime checks protected calls against what was allowed, and hosts the app did not declare stay unreachable.
 
 ### Moving an Electron app to Krate
 
-Start with a scan. It reads your source without building or running it and lists what maps to Krate and what doesn't:
+Start with a scan. It reads your source without building or running it and shows how each part maps to Krate:
 
 krate port ./my-electron-app
 
-A port is a rewrite in Rust against the Krate SDK, not a repackage. DOM and Node.js APIs do not carry over. Krate Studio can do the rewrite with AI and shows its plan first. Begin with one representative feature and read the porting guide (https://krate.tech/docs/porting.html).
+krate port is in beta. Krate Studio can do the move with AI: it rewrites the app against the Krate SDK and shows its plan first. Electron apps go from hundreds of megabytes to one small file. Begin with one representative feature and read the porting guide (https://krate.tech/docs/porting.html).
 
 ### Questions
 
-Q: Is Krate a drop-in replacement for Electron?
-A: No. Electron runs your HTML, CSS and JavaScript as they are. A Krate app is written against Krate's interfaces, in Rust today, so moving an Electron app is a port, not a repackage.
+Q: How do I move an Electron app to Krate?
+A: Run krate port (beta) on the project, or open it in Krate Studio: the AI rewrites it against Krate's interfaces and shows its plan first. The result is one small .krate file in place of a package per OS.
 
 Q: Do Krate users need Chromium?
-A: No. Krate apps don't run in a browser engine. Users install the Krate runtime once, and every Krate app shares it.
+A: No. A Krate app runs natively, with no browser engine inside, and every Krate app shares one runtime. From a link, it opens in whatever browser the person already has.
 
-Q: Can I keep writing JavaScript?
-A: Not for a shipped Krate app today: Rust is the only finished SDK. Krate Studio can write the Rust for you from a description, or port a JavaScript project by rewriting it.
+Q: Do I need to know Rust?
+A: No. Describe the app in Krate Studio and the AI writes the Rust for you. Developers who like Rust can write it by hand with the Krate SDK.
 
-## Krate vs Tauri: one file, every desktop, no per-OS bundles
+Q: Which one should I pick?
+A: Pick Krate when you want one small file that opens anywhere, uses a fraction of the memory and asks before it touches anything. Electron suits a team with a large web codebase built on Node.js packages that wants to keep that code exactly as it is.
+
+## Krate vs Tauri: one file for every desktop and every browser
 
 URL: https://krate.tech/krate-vs-tauri.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-Tauri uses the system WebView and builds a separate bundle for each operating system; Krate, the app runtime, ships one .krate file with no WebView that runs natively on every desktop, sandboxed with the permissions the user grants. People install the Krate runtime once. Tauri is more mature and also targets Android and iOS; Krate is desktop only today.
+Krate ships one .krate file with no WebView that runs natively on Mac, Windows and Linux and opens from a link in any browser, phones included; Tauri uses the system WebView and builds a separate bundle for each operating system. With Krate, the person running the app approves what it may touch before it opens.
 
 ### Side by side
 
@@ -521,19 +476,17 @@ Tauri and Krate, reviewed 6 October 2026 against Tauri's official docs
 
 Question | Tauri | Krate
 
-What you ship | An installer or bundle per platform: DMG or app bundle, a Windows installer, AppImage, deb, RPM, Flatpak or Snap. | One .krate file for macOS, Windows and Linux.
+What you ship | An installer or bundle per platform: DMG or app bundle, a Windows installer, AppImage, deb, RPM, Flatpak or Snap. | One .krate file for macOS, Windows and Linux, and a link that opens it in any browser.
 
-Interface | Your web frontend in the system WebView: WebView2, WKWebView or webkit2gtk. | Krate's own UI interfaces. No WebView.
+Interface | Your web frontend in the system WebView: WebView2, WKWebView or webkit2gtk. | Krate's own UI, drawn natively by the runtime. No WebView.
 
-App logic | Rust commands, with plugins in Rust, Swift or Kotlin. | A WebAssembly component. Rust today.
+App logic | Rust commands, with plugins in Rust, Swift or Kotlin. | A WebAssembly component in Rust, written by you or by Studio's AI.
 
 Permissions | Capability files the developer writes grant or deny commands per window. | The app requests access in its manifest; the person running it grants or refuses.
 
 Signing | Required on most platforms. Direct macOS downloads also need notarization. | No per-OS signing of the app file. Optional Krate signature with your own key.
 
-Platforms | Windows, macOS, Linux, Android and iOS. | macOS, Windows and Linux. iOS and Android exist only as reference ports.
-
-Maturity | Version 2, stable since 2024. | Young (0.5.x).
+Platforms | Windows, macOS, Linux, Android and iOS. | macOS, Windows and Linux natively, and any modern browser from a link, phones included.
 
 Tauri facts: distribution (https://tauri.app/distribute/), capabilities (https://tauri.app/security/capabilities/) and WebView versions (https://tauri.app/reference/webview-versions/).
 
@@ -541,118 +494,98 @@ Tauri facts: distribution (https://tauri.app/distribute/), capabilities (https:/
 
 Tauri's capabilities limit what the frontend in the WebView may call. They are chosen by the developer, and Tauri's own docs (https://tauri.app/security/capabilities/) say they do not protect against malicious or insecure Rust code in the app itself. They protect users from a compromised frontend.
 
-In Krate, the whole app is the guest. It cannot call the operating system directly; it calls Krate interfaces, and the runtime checks protected calls against what the person running it allowed. The model is young and its gaps are on the limits page (https://krate.tech/docs/limits.html).
+In Krate, the whole app is the guest. It has no direct line to the operating system; it calls Krate interfaces, and the runtime checks protected calls against what the person running it allowed.
 
 ### Shipping a release
 
-With Tauri, a release means building on each platform, usually in a CI job per system, signing for each platform, and hosting and updating each package. With Krate, a release is one new .krate file that you send or publish. Recipients need a compatible runtime, and runtime updates are separate from yours.
-
-### When Tauri is the better choice
-
-- You want a web frontend, or already have one.
-
-- You need Android or iOS from the same project.
-
-- You call native libraries from Rust. A .krate cannot link a native library.
-
-- You need its plugin ecosystem.
+With Tauri, a release means building on each platform, usually in a CI job per system, signing for each platform, and hosting and updating each package. With Krate, a release is one new .krate file. Publish it and send the link, and it opens in any modern browser, phones included, with nothing to install and no account; on a desktop, the same file runs natively.
 
 ### Moving a Tauri app to Krate
 
-Inventory your Rust commands, plugins and WebView interactions, then run the scan, which reads source without building it:
+Both are Rust, so a lot comes with you. Run the scan, which reads your source without building it:
 
 krate port ./my-tauri-app
 
-Pure Rust logic may carry over. The WebView interface and native plugins need adapting to Krate's widgets, canvas and host interfaces. See the porting guide (https://krate.tech/docs/porting.html).
+krate port is in beta. Pure Rust logic often carries over as it is; the WebView interface moves to Krate's widgets, canvas and host interfaces, and Krate Studio's AI can do that part for you. See the porting guide (https://krate.tech/docs/porting.html).
 
 ### Questions
 
 Q: Which one should a Rust developer pick?
-A: Pick Tauri when you want a web frontend, mobile targets or its mature plugin set today. Pick Krate when you want one file for every desktop, no WebView, and permissions the user approves before the app opens.
+A: Pick Krate when you want one file for every desktop and every browser, no WebView, and permissions the user approves before the app opens. Tauri suits a team that wants to keep a web frontend and ship a bundle per OS.
 
 Q: What does the person I send it to install?
-A: With Tauri, your app's own installer or bundle for their system. With Krate, the Krate runtime once; after that every .krate opens from the file, with no WebView involved.
+A: With Tauri, your app's own installer or bundle for their system. With Krate, nothing to open a link; to run it natively, the Krate runtime once, and then every .krate opens from the file.
 
 Q: Is Krate built on Tauri?
 A: No. Krate is its own runtime, built on Wasmtime. It does not use a WebView.
 
-Q: Can a Tauri app run in Krate unchanged?
-A: No. A Tauri app is a native program with a web frontend. A Krate app is a WebAssembly component written against Krate's interfaces, so moving one is a port.
+Q: How does a Tauri app move to Krate?
+A: With a port. Rust logic often carries across, and krate port (beta) and Krate Studio's AI rewrite the WebView interface against Krate's interfaces.
 
 Q: Which one makes smaller downloads?
-A: It depends on what you count. A Tauri app relies on the system WebView, so its package can be small. A Krate app file is small too, but a first-time recipient also downloads the Krate runtime once. Compare runtime plus app for the first app, and the app alone after that.
+A: Krate apps are tiny: Krate's Notes app is one 36.6 KiB file, and a link needs nothing installed. The native runtime is installed once and shared by every Krate app, so each new app is only its own file.
 
-## Ship a native desktop app, not another hosted web app
+## Desktop app or web app? Ship one file that is both
 
 URL: https://krate.tech/desktop-app-or-web-app.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-AI tools made it easy to build an app, and most of them hand you a website to host; Krate, the app runtime, gives you a real desktop app instead: one .krate file that runs natively on every desktop, works offline and needs no server. Each person installs the Krate runtime once, and the app asks before it touches their files or the network.
+With Krate you do not have to choose: a .krate opens from a link in any browser, phones included, like a web app, and runs natively on Mac, Windows and Linux like a desktop app. You run no server for either, and the app asks before it touches anyone's files or the network.
 
 ### Side by side
 
-A hosted web app and a .krate desktop app, reviewed 6 October 2026
+A hosted web app and a Krate app, reviewed 27 October 2026
 
 Question | Hosted web app | Krate app
 
-What people get | A page in a browser tab, or an installed web app where the browser supports it. | A desktop app in its own window.
+What people get | A page in a browser tab, or an installed web app where the browser supports it. | The app in their browser from a link, and a native window on Mac, Windows and Linux.
 
-What you run | A server or hosting account, for as long as people use the app. | Nothing. The file runs on their computer. Publishing to a hub is optional.
+What you run | A server or hosting account, for as long as people use the app. | No server. Krate's hub serves the link, and the native app runs from the file.
 
-Offline | Only with extra work, such as a service worker. | Works without a connection unless the app itself needs the network.
+Offline | Only with extra work, such as a service worker. | The native app works without a connection unless it needs the network itself.
 
 Local files | Depends on the browser. The File System Access picker is not available in all major browsers (https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker). | Through a file dialog or a folder the person grants.
 
-Updates | Every visitor gets the new version on reload. | You send or publish a new file.
+Updates | Every visitor gets the new version on reload. | You publish or send the new version.
 
-Phones | Yes. | Not yet. Desktop only today.
+Phones | Yes. | Yes, from a link in the phone's browser.
 
-What people install | Nothing. | The Krate runtime, once.
+What people install | Nothing. | Nothing, to open a link. The Krate runtime, once, to run it natively.
 
-### Hosting has running costs too
+### No server to run
 
-A hosted app needs a domain, a hosting bill, uptime, sign-in and storage for user data, and it keeps people's data on your server, which brings privacy duties. A Krate app keeps its saved data on the person's computer unless it is granted network access and sends it somewhere. If it needs a service, you still run that service, but the app itself does not need hosting.
+A hosted app needs a domain, a hosting bill, uptime, sign-in and storage for user data, and it keeps people's data on your server, which brings privacy duties. A Krate app keeps its saved data on the person's computer, in storage of its own, unless they grant it network access. If it talks to a service, that service is yours to run; the app itself needs no hosting.
 
 ### Apps made with Lovable, Bolt, v0 and similar tools
 
-These tools mostly produce web apps. You can host the published URL, or wrap it with Electron, Tauri or a wrapper service, which gives you a package per OS to build, sign and host. Krate does not wrap websites. To ship such an app as a .krate, open the project in Krate Studio and port it: the AI rewrites it against Krate's interfaces and shows its plan first. The DOM does not carry over. See how to share an AI-built desktop app (https://krate.tech/share-an-app-made-with-ai.html).
-
-### When the web is the right answer
-
-- People need it on phones, or cannot install anything.
-
-- Many people work on the same live data.
-
-- Search engines need to index the content.
-
-- Your team and your code are already on the web.
+These tools mostly produce web apps you have to host, or wrap per OS with Electron or Tauri. Krate gives you a better path: open the project in Krate Studio and the AI brings it over, rewriting it against Krate's interfaces and showing its plan first. You end up with one file that opens from a link and runs natively. Or skip the detour and describe the app to Studio from the start. See how to share an app made with AI (https://krate.tech/share-an-app-made-with-ai.html).
 
 ### Questions
 
 Q: Does a Krate app need a server?
-A: No. It runs on the person's computer from the file. If it calls an API you host, that service still runs, but the app itself needs no server and no domain.
+A: No. Krate's hub serves the link, and the native app runs on the person's computer from the file. If it calls an API you host, that service still runs, but the app itself needs no server and no domain.
 
 Q: What does the person I send it to need?
-A: The Krate runtime, installed once for their system. There is no server to keep running and no account needed to open the app, and it asks before it touches their files or the network.
+A: Nothing, to open a link: it runs in their browser with no account. To run it natively, the Krate runtime, installed once for their system.
 
 Q: Can I still use the web from a Krate app?
 A: Yes. A Krate app can call APIs over HTTP and WebSockets for the hosts it declares, which the person approves before it runs.
 
 Q: Can I turn my website into a desktop app?
-A: You can wrap it with Electron or Tauri, which gives you a package per OS to build and sign. Krate doesn't wrap websites: a Krate app is written against Krate's interfaces, and Krate Studio can port a web project by rewriting it.
+A: Often, yes. krate port (beta) reads your project and shows what maps across, and Krate Studio's AI rewrites it against Krate's interfaces, so you get one file that runs natively and opens from a link, with no per-OS package to build or sign.
 
 Q: Do Krate apps need an internet connection?
-A: No, unless the app itself uses the network, and then only to the hosts the person allows.
+A: The native app does not, unless it uses the network itself, and then only to the hosts the person allows. A link needs a connection to load, like any page.
 
 Q: Can people open a .krate on their phone?
-A: Not yet. iOS and Android exist in Krate's source as reference ports and are not shipping.
+A: Yes. Send a link and it opens in the phone's browser, with nothing to install and no account.
 
 ## Ship a desktop app without code signing for every OS
 
 URL: https://krate.tech/desktop-app-code-signing.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-Native installers need an Apple Developer ID and notarization on macOS and a trusted signature on Windows; a .krate file is not a native installer, so you ship one file and the people you send it to install the Krate app runtime once. The runtime then opens your file and shows what the app asks for before it runs.
+A Krate app needs no code signing per operating system, because you send a link that opens in any browser or one .krate file that the Krate runtime opens natively. Native installers need an Apple Developer ID and notarization on macOS and a trusted signature on Windows; a Krate app skips that whole step.
 
 ### What signing takes for a native app
 
@@ -668,11 +601,11 @@ Sources: Electron's code signing guide (https://www.electronjs.org/docs/latest/t
 
 A signature identifies the publisher and shows the file has not been changed since it was signed. It does not limit what the program can reach once it runs: a signed installer still gets the same access to files and the network as the person who opened it.
 
-### How it works with a .krate
+### How it works with Krate
 
-The operating system checks the Krate runtime once, when it is installed. Krate for Mac is signed and notarized by Apple.
+From a link, it opens in any modern browser, phones included, with nothing to install and no account. There is no installer of yours for anyone to approve.
 
-Your app is a file the runtime opens, not a program the operating system launches, so there is no per-OS package of yours to sign or notarize. When someone opens it, Krate shows what it asks for, and the app gets only what they allow.
+Natively, your app is a file the Krate runtime opens, not a program the operating system launches, so there is no per-OS package of yours to sign or notarize. Krate for Mac is signed and notarized by Apple. When someone opens your app, Krate shows what it asks for, and the app gets only what they allow.
 
 ### Signing a .krate with your own key
 
@@ -680,15 +613,17 @@ You can sign a bundle so recipients can check it came from you and has not chang
 
 krate sign app.krate --key publisher.key --generate-key --namespace com.example.app
 
---generate-key writes a new key the first time and refuses to overwrite one. Run krate sign --help for your version's options. This signature ties releases to your key; it is not a certificate authority's check of your legal identity.
+--generate-key writes a new key the first time and refuses to overwrite one. krate sign --help lists every option. Every release you sign is tied to your key.
 
-### What you still own
+### What you get back
 
-- Telling people where to get Krate, and that Windows asks once at install today.
+- No Apple Developer Program fee and no notarization queue for your app.
 
-- Publishing your app's hash or signing key somewhere they trust, so they can check what they received.
+- No certificate to buy, renew and keep safe for each platform.
 
-- Testing on the systems you support, within the current limits (https://krate.tech/docs/limits.html).
+- No reputation to build per release before people can open it.
+
+- One file or one link per release, the same for everyone.
 
 ### Questions
 
@@ -696,68 +631,68 @@ Q: Does a Krate app need its own Apple Developer ID?
 A: No. The app is a file that the Krate runtime opens, and Krate for Mac is signed and notarized by Apple. You do not sign or notarize the .krate for each system.
 
 Q: Can I distribute a Windows app without a code signing certificate?
-A: Yes, but users see a SmartScreen warning and must choose to run it anyway, and some managed or Smart App Control machines block it. With Krate you ship a .krate instead of an .exe; Windows checks the Krate runtime when it is installed, and that runtime is unsigned today.
+A: A native .exe without one shows a SmartScreen warning, and some managed or Smart App Control machines block it. With Krate there is no .exe of yours: you send a link that opens in the browser, or a .krate file the Krate runtime opens.
 
 Q: Do I need an Apple Developer account to share a Mac app?
 A: For a native Mac app downloaded from the web, in practice yes: notarization needs a Developer ID from the paid Apple Developer Program. A .krate is opened by Krate for Mac, which is signed and notarized, so you don't need your own Apple account to share one.
 
 Q: Is a signed app safe to run?
-A: A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds a second check: the app asks before it gets your files or the network.
+A: A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds what a signature leaves out: the app asks before it gets your files or the network.
 
 ## Shipping a desktop app in 2026: questions and straight answers
 
 URL: https://krate.tech/desktop-app-shipping-faq.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-AI solved building the app; the short answer to shipping it is one .krate file that runs natively on every desktop, sandboxed, and sent in one click. People install the Krate app runtime once. Each answer below starts with the answer, then links to the longer page.
+AI solved building the app, and Krate solves shipping it: one .krate file that runs natively on Mac, Windows and Linux and opens from a link in any browser, phones included. Each answer below starts with the answer, then links to the longer page.
 
 ### Questions
 
 Q: How do I distribute a desktop app to Windows, macOS and Linux?
-A: Either build, sign and host a package for each system, or ship one .krate file that opens on all three through the Krate runtime. Both routes, step by step (https://krate.tech/how-to-distribute-a-desktop-app.html).
+A: Ship one .krate file: it runs natively on all three, and a link opens it in any browser. The usual alternative is to build, sign and host a package for each system. Both routes, step by step (https://krate.tech/how-to-distribute-a-desktop-app.html).
 
 Q: Can I ship one app file to Windows, Mac and Linux?
-A: Yes, as a .krate: the same bytes open on all three once the person has installed the Krate runtime. A normal native executable cannot do this. How the format works (https://krate.tech/portable-desktop-app-format.html).
+A: Yes, as a .krate: the same bytes run natively on all three, and the same app opens from a link in any browser. A normal native executable cannot do this. How the format works (https://krate.tech/portable-desktop-app-format.html).
+
+Q: Can people open my app on their phone?
+A: Yes. Send a link and it opens in the phone's browser, with nothing to install and no account. Sending an app as a link (https://krate.tech/share-an-app-made-with-ai.html).
 
 Q: What is a good Electron alternative?
-A: It depends on what you need. Tauri, Wails and Neutralino keep a web frontend in the system WebView; Flutter and Qt draw their own interface; Krate ships one sandboxed .krate file for all three desktop systems. Krate vs Electron (https://krate.tech/krate-vs-electron.html).
+A: Krate, if you want one small file for every screen: it runs natively with no browser inside and opens from a link anywhere. Tauri, Wails and Neutralino keep a web frontend in the system WebView, and Flutter and Qt draw their own interface. Krate vs Electron (https://krate.tech/krate-vs-electron.html).
 
 Q: Is there a Tauri alternative that doesn't need a build per OS?
-A: Krate. Tauri builds an installer or bundle for each operating system; Krate ships one file and keeps the per-OS work in a runtime that Krate maintains. Krate vs Tauri (https://krate.tech/krate-vs-tauri.html).
+A: Krate. Tauri builds an installer or bundle for each operating system; Krate ships one file and does the per-OS work once, in runtimes Krate maintains. Krate vs Tauri (https://krate.tech/krate-vs-tauri.html).
 
-Q: How do I share an app I built with AI as a desktop app?
-A: If it is a Krate app, send the .krate file; the person installs Krate once and opens it. If your AI tool built a website, host it, wrap it per OS with Electron or Tauri, or port it to Krate in Krate Studio. Sharing an AI-built app (https://krate.tech/share-an-app-made-with-ai.html).
+Q: How do I share an app I built with AI?
+A: Make it in Krate Studio and send the link or the .krate file. If another AI tool built you a website, open the project in Krate Studio and bring it over. Sharing an app made with AI (https://krate.tech/share-an-app-made-with-ai.html).
 
 Q: Can I ship a cross-platform app without code signing?
-A: With a .krate, you don't sign a package per OS, because the file is opened by the Krate runtime. Native installers effectively need signing on macOS and Windows. Code signing and Krate (https://krate.tech/desktop-app-code-signing.html).
+A: Yes, with Krate. You send a link or one .krate file, so there is no package per OS to sign, while native installers effectively need signing on macOS and Windows. Code signing and Krate (https://krate.tech/desktop-app-code-signing.html).
 
 Q: How can I run an untrusted desktop app more safely?
-A: For an unknown native program, use the strongest isolation you have, such as a virtual machine or Windows Sandbox. For apps shipped as .krate files, the app starts without file or network access and asks; inspect it first with krate run app.krate --dump-caps. Krate is not yet hardened against deliberately hostile code. Inspecting an app before you run it (https://krate.tech/run-ai-generated-code-safely.html).
+A: For an unknown native program, use the strongest isolation you have, such as a virtual machine or Windows Sandbox. A Krate app starts with no file or network access and shows what it asks for before it opens; krate run app.krate --dump-caps prints the request without running it. Seeing what an app asks for (https://krate.tech/run-ai-generated-code-safely.html).
 
 Q: Is there a portable app format that runs on every OS?
-A: No format runs on every system. A .krate runs on macOS, Windows and Linux desktops through the Krate runtime. AppImage is Linux only, Cosmopolitan's Actually Portable Executable runs one executable on several systems, mainly for command-line programs, and Java apps need a Java runtime. The .krate format (https://krate.tech/portable-desktop-app-format.html).
+A: Yes: a .krate runs natively on macOS, Windows and Linux and opens from a link in any modern browser, phones included. AppImage is Linux only, Cosmopolitan's Actually Portable Executable runs one executable on several systems, mainly for command-line programs, and Java apps need a Java runtime. The .krate format (https://krate.tech/portable-desktop-app-format.html).
 
 Q: Is there a WebAssembly runtime for desktop GUI apps?
-A: Yes. Krate runs desktop apps compiled to WebAssembly components, with windows, widgets, a 2D canvas, files, storage and networking behind permissions. It embeds Wasmtime. General runtimes such as Wasmtime, Wasmer and WasmEdge focus on servers and command-line programs. Krate's architecture (https://krate.tech/docs/architecture.html).
+A: Yes. Krate runs desktop apps compiled to WebAssembly components, with windows, widgets, a 2D canvas, files, storage and networking behind permissions. It embeds Wasmtime, while general runtimes such as Wasmtime, Wasmer and WasmEdge focus on servers and command-line programs. Krate's architecture (https://krate.tech/docs/architecture.html).
 
 Q: Do people need to install anything to open a .krate?
-A: Yes, the Krate runtime, once. Download Krate (https://krate.tech/download/), or read what to do when someone sends you a .krate (https://krate.tech/open/).
+A: No, not to open a link: it runs in any modern browser with no account. To run apps natively, they install Krate (https://krate.tech/download/) once; read what to do when someone sends you a .krate (https://krate.tech/open/).
 
 Q: Is Krate free and open source?
-A: The runtime, CLI and SDK are free and open source under MIT OR Apache-2.0. Krate Studio is source-available under the Business Source License 1.1 and free on your own machine with your own AI. Licence details (https://github.com/incyashraj/krate#license).
+A: Yes. The runtime, the .krate format and the CLI are open source under MIT OR Apache-2.0, and Krate Studio is under the Business Source License 1.1. Licence details (https://github.com/incyashraj/krate#license).
 
-Q: Does Krate run existing .exe or .app files?
-A: No. An app has to be built or ported for Krate's interfaces. Krate Studio can port a project folder with AI; the porting guide (https://krate.tech/docs/porting.html) explains what carries over.
-
-Q: What can't Krate do yet?
-A: Phones, shipping apps in languages other than Rust, native libraries and subprocesses, and demanding 3D games. The full list (https://krate.tech/docs/limits.html).
+Q: Can I bring an existing app to Krate?
+A: Yes. krate port (beta) brings a project over, and Krate Studio can do it with AI. Electron apps go from hundreds of megabytes to one small file; the porting guide (https://krate.tech/docs/porting.html) shows how.
 
 ## Electron alternatives in 2026, compared by what you ship
 
 URL: https://krate.tech/electron-alternatives.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-The main Electron alternatives are Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, and they differ most in what you hand to users: Krate ships one .krate file for every desktop, while the others ship a build for each operating system. With Krate, the app runtime, people install the runtime once, and an app starts with no file or network access until they allow it.
+The main Electron alternatives are Tauri, Wails, Neutralinojs, Flutter, Qt and Krate, and the biggest difference is what you hand to people: Krate ships one .krate file that runs natively on every desktop and opens from a link in any browser, while the others ship a build for each operating system. A Krate app starts with no file or network access until the person allows it.
 
 ### The short list
 
@@ -777,7 +712,7 @@ Flutter | A build per operating system (.exe with DLLs, .app, or a Linux package
 
 Qt | A per-platform build, static or with Qt's shared libraries. | Its own widgets or scene graph, no WebView by default. | C++, QML, or Python through Qt for Python. | Yes.
 
-Krate | One .krate file for every desktop. | The Krate runtime draws a native window, with no browser or WebView. | Rust today, or built with AI in Krate Studio. | Not yet.
+Krate | One .krate file for every desktop, and a link that opens it in any browser. | The Krate runtime draws a native window, with no browser or WebView. | Describe it and Studio's AI writes it, or write Rust. | Yes, from a link in the phone's browser.
 
 Sources: Electron (https://www.electronjs.org/docs/latest/) and Electron Forge (https://www.electronjs.org/docs/latest/tutorial/forge-overview), Tauri distribution (https://tauri.app/distribute/) and Tauri webviews (https://tauri.app/reference/webview-versions/), Wails (https://wails.io/docs/introduction), Neutralinojs (https://neutralino.js.org/docs/) and its distribution overview (https://neutralino.js.org/docs/distribution/overview/), Flutter desktop (https://docs.flutter.dev/platform-integration/desktop) and supported platforms (https://docs.flutter.dev/reference/supported-platforms), Qt deployment (https://doc.qt.io/qt-6/deployment.html) and supported platforms (https://doc.qt.io/qt-6/supported-platforms.html).
 
@@ -799,39 +734,31 @@ Flutter | Your app's own package; on Windows, the Visual C++ redistributables to
 
 Qt | Your app, plus Qt's libraries unless the system already has them. | Permission APIs ask for operating-system consent, such as the microphone; no Qt-level sandbox is described.
 
-Krate | The Krate runtime, once; then every .krate opens from its file. | The whole app starts with no file or network access; the person sees what it asks for and grants it before it opens.
+Krate | Nothing, to open a link. The Krate runtime, once, to run apps natively; then every .krate opens from its file. | The whole app starts with no file or network access; the person sees what it asks for and grants it before it opens.
 
 Sources: Electron sandbox (https://www.electronjs.org/docs/latest/tutorial/sandbox), Tauri security (https://v2.tauri.app/security/) and capabilities (https://tauri.app/security/capabilities/), Wails on Windows (https://wails.io/docs/guides/windows), Neutralinojs configuration (https://neutralino.js.org/docs/configuration/neutralino.config.json/), Flutter on macOS (https://docs.flutter.dev/platform-integration/macos/building), Qt permissions (https://doc.qt.io/qt-6/permissions.html).
 
 ### How to choose
 
+- You want one file for every screen, with permissions the user approves: Krate. It is the only option here where the same file runs natively on macOS, Windows and Linux and opens from a link in any browser.
+
 - You have a web app and want it on the desktop as it is: Electron, or Tauri, Wails or Neutralinojs if you want the system WebView instead of a bundled Chromium.
 
-- You also need phones: Flutter, Qt or Tauri.
-
-- You want one file for every desktop, sandboxed by default: Krate. It is the only option here where the same file opens on macOS, Windows and Linux.
+- You want store apps for phones: Flutter, Qt or Tauri. For phones without a store, a Krate link opens in the phone's browser.
 
 - You write C++ or need a long-established widget toolkit: Qt.
 
-Whichever you pick, a native installer still needs signing on macOS and Windows; the code signing page (https://krate.tech/desktop-app-code-signing.html) explains what that takes, and the distribution guide (https://krate.tech/how-to-distribute-a-desktop-app.html) walks through both routes.
+Every native installer needs signing on macOS and Windows; the code signing page (https://krate.tech/desktop-app-code-signing.html) explains what that takes, and the distribution guide (https://krate.tech/how-to-distribute-a-desktop-app.html) walks through both routes.
 
-### When to pick something else
+### Measured against an Electron editor
 
-Krate is young (0.5.4). Pick another tool when:
+Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, it used 178.5 MiB of memory against 2,299.4 MiB for MarkText, an Electron editor: 13x less. A warm open took 237.1 ms against 611.5 ms: 2.6x faster. MarkText takes 284.6 MiB installed; the Krate runtime is installed once and shared by every app.
 
-- you want to keep running an existing HTML, CSS and JavaScript codebase;
-
-- you need iOS or Android today;
-
-- you need a mature accessibility stack, enterprise widgets or a large plugin ecosystem;
-
-- your team writes a language other than Rust and does not want Krate Studio to write the code;
-
-The limits page (https://krate.tech/docs/limits.html) lists what Krate cannot do yet.
+Measured on 25 August 2026 on an Apple M4: Krate's Notes app against MarkText 0.17.1 on the same 50,000-line notes workload, an equivalent workload. Read the method (https://krate.tech/reports/).
 
 ### Try Krate in five minutes
 
-Download Krate (https://krate.tech/download/), then open chart.krate (https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate), an 11,455-byte chart app, on any of the three systems. The quickstart (https://krate.tech/docs/quickstart.html) shows how to inspect what it asks for before it runs.
+Download Krate (https://krate.tech/download/), then open chart.krate (https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate), an 11,455-byte chart app, on any of the three systems. The quickstart (https://krate.tech/docs/quickstart.html) shows how to see what it asks for before it runs. Or describe your own app in Krate Studio (https://krate.tech/studio/).
 
 ### Questions
 
@@ -839,10 +766,10 @@ Q: Which Electron alternatives use the system WebView?
 A: Tauri, Wails and Neutralinojs. Flutter and Qt draw their own interface, and Krate's runtime draws a native window with no browser or WebView.
 
 Q: Can I keep my web frontend?
-A: With Tauri, Wails or Neutralinojs, yes. Krate does not run HTML; an Electron app moves to Krate by porting its interface to Krate's own interfaces, and krate port reports what that would take.
+A: Tauri, Wails and Neutralinojs keep it in a WebView. Krate brings the app over instead: krate port (beta) and Studio's AI rewrite it as one small native file with no browser inside.
 
 Q: Which alternative ships one file for every operating system?
-A: Krate. Neutralinojs builds every platform's binary in one step, but you still ship one binary per system; a .krate is the same file on macOS, Windows and Linux.
+A: Krate. Neutralinojs builds every platform's binary in one step, but you still ship one binary per system; a .krate is the same file on macOS, Windows and Linux, and a link opens it in any browser.
 
 Q: Do any of them sandbox apps by default?
 A: Electron sandboxes renderers by default; Tauri limits what the frontend can call; Flutter's macOS builds use App Sandbox. In Krate the whole app starts with no file or network access until the person allows it.
@@ -850,9 +777,9 @@ A: Electron sandboxes renderers by default; Tauri limits what the frontend can c
 ## Tauri alternatives in 2026, compared by what you ship
 
 URL: https://krate.tech/tauri-alternatives.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-If you like Tauri's small apps but want to stop building, signing and hosting a bundle for each operating system, Krate ships one .krate file that runs natively on every desktop; Electron, Wails and Flutter are the other common choices, each with a build per OS. With Krate, the app runtime, people install the runtime once, and the app asks before it touches their files or the network.
+If you like Tauri's small apps but want to stop building, signing and hosting a bundle for each operating system, Krate ships one .krate file that runs natively on every desktop and opens from a link in any browser, phones included. Electron, Wails and Flutter are the other common choices, each with a build per OS.
 
 ### Why people look past Tauri
 
@@ -872,7 +799,7 @@ Tool | What you ship | Rendering | What limits the app | Phones
 
 Tauri | A bundle or installer per operating system. | The system WebView. | Capabilities for the frontend; the Rust core is unconstrained. | Yes.
 
-Krate | One .krate file for every desktop. | The Krate runtime draws a native window; no WebView. | The whole app starts with no file or network access until the person allows it. | Not yet.
+Krate | One .krate file for every desktop, and a link for any browser. | The Krate runtime draws a native window; no WebView. | The whole app starts with no file or network access until the person allows it. | Yes, from a link in the phone's browser.
 
 Electron | A package per operating system with its own Chromium and Node.js. | Bundled Chromium. | Renderers sandboxed by default; the main process is not. | No.
 
@@ -884,44 +811,34 @@ Sources: Tauri (https://v2.tauri.app/start/), Electron sandbox (https://www.elec
 
 ### Krate for Tauri developers
 
-Both are Rust. What changes is where the app runs and what you hand people. A Krate app is a WebAssembly component that calls Krate's interfaces for its window, drawing, files, network and storage; the Krate runtime, installed once on each machine, runs the same file everywhere and checks every protected call against what the person granted.
+Both are Rust. What changes is where the app runs and what you hand people. A Krate app is a WebAssembly component that calls Krate's interfaces for its window, drawing, files, network and storage. The Krate runtime runs the same file natively on every desktop and checks protected calls against what the person granted, and a link opens the same app in any browser.
 
-There is no WebView, so there is no HTML to keep: the interface is written against Krate's interfaces, by hand or by Krate Studio's AI. Reusable Rust logic that builds for WebAssembly is a good starting point. Start with a scan that reads your project without building or running it:
+There is no WebView, so the interface is written against Krate's interfaces, by hand or by Krate Studio's AI. Rust logic that builds for WebAssembly comes with you. Start with a scan that reads your project without building or running it:
 
 krate port ./my-tauri-app
 
-It lists what maps cleanly, what needs a permission and what will not work yet. The porting guide (https://krate.tech/docs/porting.html) covers the rest.
-
-### When Tauri is still the better choice
-
-- You want a web frontend, or already have one.
-
-- You need iOS or Android from the same project.
-
-- You rely on Tauri's plugins or its mature update and installer tooling.
-
-Krate is 0.5.4; the limits page (https://krate.tech/docs/limits.html) lists what it cannot do yet.
+It lists what maps cleanly and what needs a permission. krate port is in beta, and the porting guide (https://krate.tech/docs/porting.html) covers the rest.
 
 ### Questions
 
 Q: Can I reuse my Tauri Rust code in Krate?
-A: Logic that builds for WebAssembly usually carries over. Calls into the operating system and the WebView interface move to Krate's interfaces; krate port reports what each part would take.
+A: Yes, logic that builds for WebAssembly usually carries over. Calls into the operating system and the WebView interface move to Krate's interfaces, and krate port (beta) reports what each part takes.
 
 Q: Does Krate use a WebView?
-A: No. The Krate runtime draws the app's window itself, so the same app does not render through three different browser engines.
+A: No. The Krate runtime draws the app's window itself, so your app does not render through three different browser engines.
 
 Q: Do the Tauri alternatives support phones?
-A: Flutter does, and Wails v3 has experimental mobile support. Electron does not. Krate is desktop only today.
+A: Flutter does, and Wails v3 has experimental mobile support; Electron does not. Krate opens the same file from a link in any phone browser, with nothing to install.
 
 Q: What do people install to open a Krate app?
-A: The Krate runtime, once for their system. After that every .krate opens from the file, and each one shows what it asks for before it runs.
+A: Nothing, to open a link. To run apps natively, the Krate runtime, once for their system; after that every .krate opens from the file and shows what it asks for first.
 
 ## Cross-platform desktop app frameworks in 2026, compared by what you ship
 
 URL: https://krate.tech/cross-platform-desktop-app-frameworks.html
-Reviewed: 2026-10-06 against Krate 0.5.4
+Reviewed: 2026-10-27 against Krate 0.5.4
 
-If you want one artifact for every desktop, Krate ships a single sandboxed file; if you need a mature accessibility stack, mobile targets or an existing web codebase, Electron, Tauri, Flutter or Qt fit better, and the table below shows each trade-off. With Krate, the app runtime, people install the runtime once and approve what each app can touch.
+Krate is the framework that ships one file for every screen: the same .krate runs natively on Mac, Windows and Linux and opens from a link in any browser, phones included. Electron, Tauri, Flutter and Qt each ship a build per operating system, and the table below shows how they compare.
 
 ### The comparison
 
@@ -929,9 +846,9 @@ Five frameworks, from each project's official docs, read 6 October 2026
 
 Question | Electron | Tauri | Flutter | Qt | Krate
 
-What you ship | A package per OS | A bundle per OS | A build per OS | A build per platform | One .krate file
+What you ship | A package per OS | A bundle per OS | A build per OS | A build per platform | One .krate file, and a link
 
-What the user installs | Your package | Your package; WebView2 on older Windows | Your package; VC++ redistributables on Windows | Your app with Qt's libraries | The Krate runtime, once
+What the user installs | Your package | Your package; WebView2 on older Windows | Your package; VC++ redistributables on Windows | Your app with Qt's libraries | Nothing for a link; the Krate runtime, once, to run natively
 
 Per-OS builds | Yes; some installers only build on their own OS | Yes; macOS bundles on a Mac, MSI on Windows | Yes, with each OS's toolchain | Yes, each platform's environment | No; one build
 
@@ -939,21 +856,21 @@ Signing | Sign and notarize per OS | Sign and notarize per OS | Notarize on macO
 
 Sandbox and permissions | Renderers sandboxed; main process not | Capabilities for the frontend; core unconstrained | App Sandbox on macOS builds | OS consent APIs; no Qt sandbox | Whole app starts with no file or network access
 
-App languages | JavaScript, HTML, CSS | Web frontend, Rust core | Dart | C++, QML, Python | Rust, or built with AI
+App languages | JavaScript, HTML, CSS | Web frontend, Rust core | Dart | C++, QML, Python | Rust, or described in plain words to Studio's AI
 
-Phones | No | Yes | Yes | Yes | Not yet
+Phones | No | Yes | Yes | Yes | Yes, from a link in the browser
 
-Maturity | Established; latest three majors supported | Stable v2; v3 in alpha | Stable, 3.47 | Qt 6.12, September 2026 | Young, 0.5.4
+Current release | Latest three majors supported | Stable v2; v3 in alpha | Stable, 3.47 | Qt 6.12, September 2026 | 0.5.4, September 2026
 
 Sources: Electron distribution (https://www.electronjs.org/docs/latest/tutorial/distribution-overview), signing (https://www.electronjs.org/docs/latest/tutorial/code-signing) and sandbox (https://www.electronjs.org/docs/latest/tutorial/sandbox); Tauri distribution (https://tauri.app/distribute/), security (https://v2.tauri.app/security/) and webviews (https://tauri.app/reference/webview-versions/); Flutter desktop (https://docs.flutter.dev/platform-integration/desktop), macOS builds (https://docs.flutter.dev/platform-integration/macos/building) and platforms (https://docs.flutter.dev/reference/supported-platforms); Qt deployment (https://doc.qt.io/qt-6/deployment.html), permissions (https://doc.qt.io/qt-6/permissions.html) and platforms (https://doc.qt.io/qt-6/supported-platforms.html). Wails and Neutralinojs are on the Electron alternatives (https://krate.tech/electron-alternatives.html) page.
 
 ### Three questions that decide it
 
-- Do you have a web codebase you want to keep? Then Electron or Tauri. Flutter, Qt and Krate each want their own interface code.
+- Do you want to hand people one file for every screen? Then Krate. Every other option here produces a separate build for each operating system.
 
-- Do you need phones from the same project? Then Flutter, Qt or Tauri. Krate and Electron are desktop only.
+- Do you need phones? Flutter, Qt and Tauri build store apps. A Krate app opens on a phone from a link, with no store and nothing to install.
 
-- Do you want to hand people one file for every desktop? Then Krate. Every other option here produces a separate build for each operating system.
+- Do you have a web codebase you want to keep as it is? Then Electron or Tauri. Flutter, Qt and Krate each draw their own interface, and Krate Studio's AI can rewrite yours.
 
 A fourth question sits under all of them: who decides what the app may touch? In most frameworks the developer decides. In Krate the person running the app sees what it asks for and grants it, and the runtime enforces that.
 
@@ -961,24 +878,24 @@ A fourth question sits under all of them: who decides what the app may touch? In
 
 A native installer is signed for each system. On macOS, software distributed with a Developer ID must be notarized by Apple (Apple (https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)). On Windows, unsigned apps show a SmartScreen warning, and new signed apps can still warn until they build reputation (Microsoft (https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)).
 
-A .krate file is not a native installer, so there is no per-OS signing of the app. The Krate runtime itself is installed once, and on macOS it is signed and notarized by Apple. More on the code signing page (https://krate.tech/desktop-app-code-signing.html).
+A .krate file is not a native installer, so there is no per-OS signing of the app, and a link needs no install at all. On macOS the Krate runtime is signed and notarized by Apple. More on the code signing page (https://krate.tech/desktop-app-code-signing.html).
 
-### When to pick something else
+### One file, proven on three systems
 
-- You need iOS or Android: Flutter, Qt or Tauri.
+The same .krate files pass automated checks on macOS, Windows and Linux in CI: 10 apps on all three at Krate 0.5.4.
 
-- You need a mature accessibility stack or enterprise widgets: Qt or Electron.
+Ten ported apps, as the same committed .krate files, passed their headless replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. Records: macOS (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv), Ubuntu (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv), Windows (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv). Native runtimes are published for Apple silicon and Intel Macs, x64 and ARM64 Windows, and x86_64 and arm64 Linux.
 
-- You want to keep an existing web codebase: Electron or Tauri.
+### Measured against an Electron editor
 
-- Your team writes C++, Dart or JavaScript and does not want Rust or AI-written code: Qt, Flutter or Electron.
+Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, it used 178.5 MiB of memory against 2,299.4 MiB for MarkText, an Electron editor: 13x less. A warm open took 237.1 ms against 611.5 ms: 2.6x faster. MarkText takes 284.6 MiB installed; the Krate runtime is installed once and shared by every app.
 
-Pick Krate when one sandboxed file for every desktop matters more than those. The same .krate files pass automated checks on macOS, Windows and Linux in CI: 10 apps on all three at Krate 0.5.4. The limits page (https://krate.tech/docs/limits.html) lists what Krate cannot do yet.
+Measured on 25 August 2026 on an Apple M4: Krate's Notes app against MarkText 0.17.1 on the same 50,000-line notes workload, an equivalent workload. Read the method (https://krate.tech/reports/).
 
 ### Questions
 
 Q: What is the best cross-platform desktop app framework?
-A: It depends on what you ship. For a web codebase, Electron or Tauri; for phones too, Flutter, Qt or Tauri; for one sandboxed file on every desktop, Krate.
+A: For one file on every screen, Krate: it runs natively on every desktop and opens from a link in any browser. For an existing web codebase, Electron or Tauri; for store apps on phones, Flutter, Qt or Tauri.
 
 Q: Which framework needs no build per operating system?
 A: Krate: you build one .krate file and the runtime on each system opens it. The others produce a build for each operating system.
@@ -986,5 +903,5 @@ A: Krate: you build one .krate file and the runtime on each system opens it. The
 Q: Which frameworks avoid a browser engine?
 A: Flutter and Qt draw their own interface, and so does Krate's runtime. Electron bundles Chromium, and Tauri uses the system WebView.
 
-Q: Is Krate production ready?
-A: Krate is young, at 0.5.4. The capability boundary is enforced, and the limits page is explicit about what is missing; it does not yet claim hardening against deliberately hostile code.
+Q: Is Krate open source?
+A: Yes. The runtime, the .krate format and the CLI are MIT OR Apache-2.0, and Krate Studio is under the Business Source License 1.1. The source is on GitHub (https://github.com/incyashraj/krate).

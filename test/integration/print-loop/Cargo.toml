@@ -16,3 +16,6 @@ package = "krate:print-loop"
 [package.metadata.component.target]
 path = "../../../wit/krate"
 world = "app"
+
+# Standalone, so a copy in a nested worktree never finds the outer checkout.
+[workspace]

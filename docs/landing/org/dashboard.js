@@ -15,6 +15,8 @@
   var slug = (q.get("o") || "").toLowerCase();
   var HERE = "/org/?o=" + encodeURIComponent(slug);
   var S = { org: null, me: null, members: [], tab: q.get("tab") || "", waiting: 0, names: {} };
+  // The approval email's link names one version: ?tab=waiting&c=<digest>.
+  var deepC = /^[0-9a-f]{64}$/.test(String(q.get("c") || "").toLowerCase()) ? String(q.get("c")).toLowerCase() : "";
 
   // The sidebar: each section's name, its group, and its icon (16px, drawn
   // with the stroke the rest of Krate uses).
@@ -27,20 +29,36 @@
     people: '<circle cx="6" cy="5.5" r="2.3"/><path d="M2 13c.4-2.2 2-3.5 4-3.5s3.6 1.3 4 3.5"/><path d="M10.5 3.4a2.2 2.2 0 0 1 0 4.2M11.6 9.7c1.3.4 2.2 1.6 2.4 3.3"/>',
     activity: '<path d="M2 8.5h2.6l1.6-4 3.2 8 1.6-4H14"/>',
     billing: '<rect x="2" y="3.5" width="12" height="9" rx="1.6"/><path d="M2 6.5h12M4.5 10h2.5"/>',
+    myapps: '<rect x="2.5" y="2.5" width="11" height="11" rx="2.4"/><path d="M5.5 8h5M8 5.5v5"/>',
+    build: '<path d="M8 3v10M3 8h10"/>',
+    computers: '<rect x="2" y="3" width="12" height="8" rx="1.4"/><path d="M5.5 13.5h5M8 11v2.5"/>',
+    security: '<path d="M8 1.8l5 2v3.6c0 3.2-2.2 5.6-5 6.8-2.8-1.2-5-3.6-5-6.8V3.8z"/><path d="M5.8 8l1.6 1.6 3-3.2"/>',
+    connections: '<path d="M6.5 9.5l3-3"/><path d="M5 7.5L3.6 8.9a2.5 2.5 0 0 0 3.5 3.5L8.5 11M11 8.5l1.4-1.4a2.5 2.5 0 0 0-3.5-3.5L7.5 5"/>',
+    requests: '<path d="M3 3.5h10v7H7l-3 2.5v-2.5H3z"/><path d="M5.5 6.5h5M5.5 8.5h3"/>',
+    help: '<circle cx="8" cy="8" r="5.8"/><path d="M6.4 6.3a1.7 1.7 0 1 1 2.4 1.6c-.5.3-.8.6-.8 1.2M8 11.2v.1"/>',
     settings: '<circle cx="8" cy="8" r="2.1"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/>',
   };
+  // Each section: its name for this role, and the group it sits in.
   var TAB = {
-    home: { long: "Dashboard", group: "" },
-    releases: { long: "Releases", group: "" },
+    home: { long: function (r) { return r === "owner" || r === "admin" ? "Overview" : r === "developer" || r === "reviewer" ? "Home" : "My apps"; }, group: "" },
+    myapps: { long: "My apps", group: "" },
+    build: { long: "New app", group: "" },
     apps: { long: "Apps", group: "" },
-    waiting: { long: "Waiting for approval", group: "" },
-    insights: { long: "Insights", group: "" },
-    people: { long: "People", group: "Team" },
-    activity: { long: "Activity", group: "Team" },
+    waiting: { long: function (r) { return r === "reviewer" ? "Queue" : "Approvals"; }, group: "" },
+    releases: { long: "Company apps", group: "Use" },
+    people: { long: function (r) { return r === "owner" || r === "admin" ? "People and groups" : "People"; }, group: "Access" },
+    computers: { long: "Computers", group: "Access" },
+    security: { long: "Security", group: "Access" },
+    connections: { long: "Connections", group: "Organisation" },
+    insights: { long: "Insights", group: "Organisation" },
+    activity: { long: "Activity", group: "Organisation" },
     billing: { long: "Billing", group: "Organisation" },
     settings: { long: "Settings", group: "Organisation" },
+    requests: { long: "Requests", group: "" },
+    help: { long: "Help", group: "" },
   };
-  var GROUPS = ["", "Team", "Organisation"];
+  function tabName(id) { var t = TAB[id]; if (!t) return id; return typeof t.long === "function" ? t.long(roleOf()) : t.long; }
+  var GROUPS = ["", "Use", "Access", "Organisation"];
   function icon(id) {
     var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 16 16");
@@ -94,6 +112,8 @@
     // What a withdrawn version and an app for other groups say (IC-949, R).
     if (res.body && res.body.withdrawn) ctx.withdrawn = res.body.withdrawn;
     if (res.body && res.body.groups) ctx.groups = res.body.groups;
+    // A version with a pilot group first says which version is theirs.
+    if (res.body && res.body.for_you) ctx.for_you = res.body.for_you;
     return K.refusal(res.body ? res.body.error : "hub-error", ctx);
   }
 
@@ -124,12 +144,12 @@
       var t = TAB[id];
       var b = el("button", {
         class: "tab", type: "button", role: "tab", id: "tab-" + id,
-        "aria-label": t.long + (id === "waiting" && S.waiting ? ", " + S.waiting + " waiting" : "") + (id === "people" && S.pubWaiting ? ", " + S.pubWaiting + " waiting to publish" : ""),
-        "aria-selected": S.tab === id ? "true" : "false",
+        "aria-label": tabName(id) + (id === "waiting" && S.waiting ? ", " + S.waiting + " waiting" : "") + (id === "people" && S.pubWaiting ? ", " + S.pubWaiting + " waiting to publish" : ""),
+        "aria-selected": (S.under || S.tab) === id ? "true" : "false",
         onclick: function () { show(id); },
       }, [
         icon(id),
-        el("span", { class: "lb", text: t.long }),
+        el("span", { class: "lb", text: tabName(id) }),
         id === "waiting" && S.waiting ? el("span", { class: "n", text: String(S.waiting) }) : null,
         // Publishers an owner's computer has not approved yet (IC-958 A).
         id === "people" && S.pubWaiting ? el("span", { class: "n", text: String(S.pubWaiting) }) : null,
@@ -155,11 +175,29 @@
     if (typeof document.addEventListener === "function") document.addEventListener("keydown", function (e) { if (e.key === "Escape") drawer(false); });
   }
   function setText(id, text) { var n = $(id); if (n) n.textContent = text; }
+  /// The panel's top line: the organisation, then where you are in it.
+  function drawCrumb(here, deeper) {
+    var c = $("crumb");
+    if (!c) return;
+    c.textContent = "";
+    c.appendChild(document.createTextNode((S.org && S.org.name) || slug));
+    c.appendChild(el("i", { text: "/" }));
+    if (deeper) {
+      c.appendChild(el("a", { href: HERE + "&tab=" + (S.under || S.tab), text: here, style: "color:inherit", onclick: function (e) { if (e && e.preventDefault) e.preventDefault(); show(S.under || S.tab); } }));
+      c.appendChild(el("i", { text: "/" }));
+      c.appendChild(el("b", { text: deeper }));
+    } else {
+      c.appendChild(el("b", { text: here }));
+    }
+  }
 
   function show(id, opts) {
     var tabs = tabList();
-    if (tabs.indexOf(id) < 0) id = tabs[0];
+    // A developer's own app opens its page, under My apps, without the Apps list.
+    var ownApp = id === "apps" && tabs.indexOf("apps") < 0 && tabs.indexOf("myapps") >= 0 && ((opts && opts.app) || (firstLoad && q.get("app")));
+    if (tabs.indexOf(id) < 0 && !ownApp) id = tabs[0];
     S.opts = opts || {};
+    S.under = ownApp ? "myapps" : "";
     // Settings and Billing open in the settings window, over the section
     // that was open; the page's pane moves into it and back.
     var dlg = $("setDlg");
@@ -167,9 +205,13 @@
     if (inWindow) { openSettings(id); return; }
     if (dlg && isOpen(dlg)) closeSettings(true);
     S.tab = id;
-    try { history.replaceState(null, "", HERE + "&tab=" + id); } catch (e) {}
+    // One version on its own, from the approval email or the bell.
+    S.focus = id === "waiting" ? (S.opts.c !== undefined ? S.opts.c : deepC) : "";
+    deepC = "";
+    try { history.replaceState(null, "", HERE + "&tab=" + id + (S.focus ? "&c=" + S.focus : "")); } catch (e) {}
     drawTabs();
-    setText("cbarTab", TAB[id] ? TAB[id].long : "");
+    setText("cbarTab", tabName(id));
+    drawCrumb(tabName(id));
     drawer(false);
     // The panel scrolls by itself on a wide screen, the page on a narrow one.
     var wrap = document.querySelector && document.querySelector(".cmainwrap");
@@ -188,8 +230,26 @@
     pane.setAttribute("aria-labelledby", "tab-" + id);
     pane.appendChild(el("p", { class: "loading", text: "Loading" }));
     railHome();
-    ({ home: home, releases: releases, apps: apps, insights: insights, waiting: waiting, people: people, activity: activity, settings: settings, billing: P && P.panes.billing })[id](pane);
+    // One app's page lives under Apps: ?tab=apps&app=<id>.
+    var appId = id === "apps" ? (S.opts.app || (S.opts.app === undefined && firstLoad ? q.get("app") : "")) : "";
+    firstLoad = false;
+    if (appId && A) {
+      S.app = appId;
+      try { history.replaceState(null, "", HERE + "&tab=apps&app=" + encodeURIComponent(appId) + (S.opts.appTab ? "&view=" + S.opts.appTab : "")); } catch (e) {}
+      A.pane(pane, appId, S.opts.appTab || (q.get("view") || ""));
+      return;
+    }
+    S.app = "";
+    var G_ = G || {};
+    var draw = ({ home: home, releases: releases, apps: apps, insights: insights, waiting: waiting, people: people, activity: activity, settings: settings, billing: P && P.panes.billing,
+       computers: G_.computers, security: G_.security, connections: G_.connections, build: G_.build, myapps: G_.myapps, requests: G_.requests, help: G_.help })[id];
+    if (draw) { draw(pane); return; }
+    head(pane, tabName(id), "");
+    pane.appendChild(el("div", { class: "card" }, [el("p", { text: "This page did not load completely. Reload it." })]));
   }
+  var firstLoad = true;
+  /// Open one app's page, at one of its tabs.
+  function openApp(id, tab) { show("apps", { app: id, appTab: tab || "" }); }
 
   // ------------------------------------------------------ settings window
   function openSettings(id) {
@@ -206,6 +266,9 @@
       }
       slot.appendChild(pane);
       dlg.showModal();
+      // Start reading at the top, not on the close button.
+      if (slot.setAttribute) slot.setAttribute("tabindex", "-1");
+      if (slot.focus) { try { slot.focus({ preventScroll: true }); } catch (e) { slot.focus(); } }
     }
     S.tab = id;
     try { history.replaceState(null, "", HERE + "&tab=" + id); } catch (e) {}
@@ -252,13 +315,16 @@
       sections.forEach(function (x) {
         var named = navName(x.title);
         if (named[1] !== group) { group = named[1]; nav.appendChild(el("p", { class: "sd-group", text: group })); }
-        nav.appendChild(el("button", { type: "button", text: named[0], onclick: function () {
+        var nb = el("button", { type: "button", text: named[0], onclick: function () {
           if (!x.card) { S.navGo = x.title; show("settings"); return; }
           Array.prototype.slice.call(nav.querySelectorAll("button")).forEach(function (b) { b.removeAttribute("aria-current"); });
           this.setAttribute("aria-current", "true");
           if (x.card.scrollIntoView) x.card.scrollIntoView({ block: "start" });
-        } }));
+        } });
+        nb.card = x.card;
+        nav.appendChild(nb);
       });
+      spy();
       // Arrived from Billing for one section: go to it once it is drawn.
       if (id === "settings" && S.navGo) {
         var want = sections.filter(function (x) { return x.title === S.navGo; })[0];
@@ -271,6 +337,19 @@
         nav.appendChild(bill);
       }
     }
+    // The section in view is the one marked, as the window scrolls.
+    function spy() {
+      var slot = $("setSlot");
+      var btns = Array.prototype.slice.call(nav.querySelectorAll("button")).filter(function (b) { return b.card; });
+      if (!btns.length || !slot) return;
+      var top = (slot.scrollTop || 0) + 60, at = btns[0];
+      btns.forEach(function (b) { if ((b.card.offsetTop || 0) <= top) at = b; });
+      if (slot.scrollTop + slot.clientHeight >= slot.scrollHeight - 4) at = btns[btns.length - 1];
+      btns.forEach(function (b) { if (b === at) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current"); });
+    }
+    var slotEl = $("setSlot");
+    if (slotEl && !slotEl.spying && slotEl.addEventListener) { slotEl.spying = true; slotEl.addEventListener("scroll", function () { if (S.navSpy) S.navSpy(); }, { passive: true }); }
+    S.navSpy = spy;
     draw();
     // Sections arrive after the window opens: Settings redraws this list
     // when it has drawn its own, and an observer catches the later ones.
@@ -287,12 +366,14 @@
     [/signature$/, "Signature", "Organisation"],
     [/^Send an app/, "Sending apps", "Organisation"],
     [/^Who approves/, "Approvals", "Organisation"],
+    [/^Approval rules/, "Approval rules", "Organisation"],
     [/^Offline/, "Offline access", "Organisation"],
     [/^Company connections/, "Connections", "Connected to"],
     [/^Company sign-in by SAML/, "SAML sign-in", "Connected to"],
     [/^Company sign-in/, "Company sign-in", "Connected to"],
     [/SCIM/, "Directory", "Connected to"],
     [/activity to your logs/, "Activity export", "Connected to"],
+    [/^Slack and Teams/, "Slack and Teams", "Connected to"],
     [/^Export/, "Download everything", "Data"],
     [/^Close /, "Close the organisation", "Data"],
   ];
@@ -351,7 +432,7 @@
     var feed = el("div", { class: "cr-feed" }, [el("p", { class: "cr-sub", text: "Loading" })]);
     // On Activity itself the list is the page: the panel says the week.
     if (S.tab === "activity") {
-      rail("Overview", [
+      rail((S.org && S.org.name) || slug, [
         acts.length ? el("div", { class: "cr-sec" }, [el("h3", { text: "Quick actions" }), el("div", { class: "cr-acts" }, acts)]) : null,
         el("div", { class: "cr-sec" }, [el("h3", { text: "This week" }), feed]),
       ], false);
@@ -368,7 +449,7 @@
       });
       return;
     }
-    rail("Overview", [
+    rail((S.org && S.org.name) || slug, [
       acts.length ? el("div", { class: "cr-sec" }, [el("h3", { text: "Quick actions" }), el("div", { class: "cr-acts" }, acts)]) : null,
       el("div", { class: "cr-sec" }, [el("h3", { text: K.can(role, "audit.read") ? "Lately" : "Your apps" }), feed]),
     ], false);
@@ -404,12 +485,12 @@
   /// One audit entry, in full.
   function inspectEvent(e) {
     inspect(e.result === "denied" ? "Refused" : "What happened", [
-      el("p", { text: K.eventWords(e, S.names) }),
+      el("p", { class: "cr-lead", text: K.eventWords(e, S.names) }),
       el("dl", { class: "cr-kv" }, [
         el("dt", { text: "When" }), el("dd", { text: K.moment(e.at) }),
         el("dt", { text: "Who" }), el("dd", { text: K.who(e.actor).label }),
         el("dt", { text: "Result" }), el("dd", { text: e.result === "denied" ? "Refused" : "Allowed" }),
-        e.reason ? el("dt", { text: "Why" }) : null, e.reason ? el("dd", { text: e.reason }) : null,
+        e.reason ? el("dt", { text: "Why" }) : null, e.reason ? el("dd", { text: (K.refusal(e.reason, { org: (S.org && S.org.name) || slug }).title) || e.reason }) : null,
       ]),
       K.can(roleOf(), "audit.read") ? el("button", { class: "btn ghost sm", type: "button", text: "All activity", onclick: function () { show("activity"); } }) : null,
     ]);
@@ -447,8 +528,13 @@
     inp.value = "";
     if (opts.input) { $("sheetInLabel").textContent = opts.input.label; inp.placeholder = opts.input.placeholder || ""; }
     if (opts.digest) {
-      dg.appendChild(el("span", { text: opts.digestLabel || "Fingerprint of these exact bytes" }));
-      dg.appendChild(document.createTextNode(opts.digest));
+      // The exact bytes' fingerprint, for whoever checks it, folded away
+      // (K-1114: no sha256 on the default path).
+      dg.appendChild(el("details", { class: "cr-tech" }, [
+        el("summary", { text: "Technical details" }),
+        el("span", { text: opts.digestLabel || "Fingerprint of these exact bytes" }),
+        document.createTextNode(opts.digest),
+      ]));
       dg.hidden = false;
     } else dg.hidden = true;
     var why = $("sheetWhy");
@@ -591,6 +677,12 @@
       var list = all.filter(function (c) { return c.state === "waiting-for-approval"; });
       S.waiting = list.length;
       drawTabs();
+      var approver = K.can(roleOf(), "candidate.approve") === "yes";
+      var closing = S.org && S.org.state === "closing";
+      if (S.focus && Ap) {
+        Ap.focus(pane, S.focus, all, function (c) { return waitCard(c, approver, closing, Date.now() / 1000, { focus: true }); });
+        return;
+      }
       if (!list.length) {
         var none = el("div", { class: "card rows" });
         pane.appendChild(none);
@@ -601,14 +693,12 @@
         decided(pane, all);
         return;
       }
-      var approver = K.can(roleOf(), "candidate.approve") === "yes";
       // While the organisation is closing nothing new is released
       // (Addendum 3 D), so Approve is not offered then.
-      var closing = S.org && S.org.state === "closing";
       var now = Date.now() / 1000;
       // Oldest first: the one that has waited longest is the one to do.
       list.sort(function (x, y) { return (x.uploaded_at || 0) - (y.uploaded_at || 0); });
-      var forMe = list.filter(function (c) { return approver && !isMe(c.uploaded_by) && !closing; });
+      var forMe = list.filter(function (c) { return approver && !isMe(c.uploaded_by) && !closing && !(c.approval && c.approval.you && !c.approval.you.can); });
       var others = list.filter(function (c) { return forMe.indexOf(c) < 0; });
       pane.appendChild(el("div", { class: "ptools" }, [el("p", { class: "sub", text: plural(list.length, "version is", "versions are") + " waiting · the oldest for " + age(now - list[0].uploaded_at) + (forMe.length ? " · " + forMe.length + " for you" : "") })]));
       function group(title, items) {
@@ -629,26 +719,52 @@
   }
   /// One version waiting: what it is, how long it has waited, what it can
   /// do and what changed, and the one thing to do about it.
-  function waitCard(c, approver, closing, now) {
+  function waitCard(c, approver, closing, now, opts) {
+    opts = opts || {};
     var mine = isMe(c.uploaded_by);
     var acts = [], note = null, btn = null;
+    // What the approval rules say about this person (org-approvals.js).
+    var you = c.approval && c.approval.you;
     // What it can do, and what changed (IC-950). Built first so the
     // Approve button can wait on its ticks.
     var review = capsReview(c, approver && !mine && !closing);
     if (closing) {
       note = el("p", { class: "note", text: "Approvals stop while " + (S.org.name || slug) + " is closing. If an owner cancels the closing, this can be approved again." });
+    } else if (approver && !mine && you && !you.can) {
+      note = el("p", { class: "note", text: you.approved
+        ? "You approved this. " + (c.approval.words || "It is released once the rest are in") + "."
+        : "Your approval would not count: " + you.why + "." });
+      acts.push(el("button", { class: "btn ghost sm", type: "button", text: "Decline", onclick: function () { declineBox.hidden = !declineBox.hidden; if (!declineBox.hidden && why.focus) why.focus(); } }));
     } else if (approver && !mine) {
       btn = el("button", {
         class: "btn dark sm", type: "button", text: "Approve",
         onclick: function () { approve(c, review.accepted()); },
       });
       acts.push(btn);
+      acts.push(el("button", { class: "btn ghost sm", type: "button", text: "Decline", onclick: function () { declineBox.hidden = !declineBox.hidden; if (!declineBox.hidden && why.focus) why.focus(); } }));
     } else {
       note = el("p", { class: "note", text: mine
         ? "You sent this one, so someone else approves it."
         : "A reviewer or an owner approves this." });
     }
     acts.push(el("button", { class: "btn ghost sm", type: "button", text: "Details", onclick: function () { inspectCandidate(c); } }));
+    // Declining says why, in a sentence the sender reads.
+    var why = el("textarea", { class: "inp", rows: "2", placeholder: "What would make it fine", "aria-label": "Why, for " + K.who(c.uploaded_by).label });
+    var whySay = el("small", { class: "lc-say", role: "status" });
+    var declineBox = el("div", { class: "wdecline", hidden: true }, [
+      el("label", { class: "sub", text: "Tell " + K.who(c.uploaded_by).label + " why. The version stays in the app's history." }), why,
+      el("div", { class: "row2" }, [el("button", { class: "btn dark sm", type: "button", text: "Decline it", onclick: function () {
+        var reason = String(why.value || "").trim();
+        if (!reason) { whySay.textContent = "Say why in a few words, so they know what to change."; return; }
+        K.api("POST", "/orgs/" + slug + "/candidates/" + c.digest + "/decline", { reason: reason }).then(function (out) {
+          if (!out.ok) { whySay.textContent = words(out, { what: "decline versions" }).title || "It did not go through. Try again."; return; }
+          toast(K.appName(c) + " was declined. " + K.who(c.uploaded_by).label + " sees why.");
+          show("waiting");
+          countWaiting();
+        });
+      } })]),
+      whySay,
+    ]);
     var waited = now - (c.uploaded_at || now);
     var update = c.changes && c.changes.against;
     var name = K.appName(c);
@@ -656,14 +772,18 @@
       el("div", { class: "wc-h" }, [
         el("span", { class: "apptile", "aria-hidden": "true", text: String(c.name || name).slice(0, 1).toUpperCase() }),
         el("div", { class: "t" }, [
-          el("b", {}, [name, " ", el("span", { class: "tag", text: update ? "Update from " + update : "New app" })]),
+          el("b", {}, [name, " ", el("span", { class: "tag", text: update ? "Update from " + (typeof update === "string" ? update : update.version || "the version that opens now") : "New app" })]),
           el("small", { text: "Sent by " + K.who(c.uploaded_by).label + " · " + K.moment(c.uploaded_at) }),
         ]),
         el("span", { class: "tag" + (waited > 2 * 86400 ? " warn" : ""), text: "Waiting " + age(waited) }),
       ]),
+      c.note ? el("blockquote", { class: "wnote", text: "\u201c" + c.note + "\u201d, " + K.who(c.uploaded_by).label }) : null,
       review.node,
+      Ap ? Ap.standing(c) : null,
+      Ap ? Ap.codeBox(c, { focus: opts.focus }) : null,
       note,
       el("div", { class: "row2" }, acts),
+      declineBox,
     ]);
     if (btn) review.gate(btn);
     return card;
@@ -676,7 +796,7 @@
     pane.appendChild(el("div", { class: "card rows" }, [el("p", { class: "grp", text: "Recently decided" })].concat(done.map(function (c) {
       return el("div", { class: "rw flat opens", onclick: function () { inspectCandidate(c); } }, [el("div", { class: "t" }, [
         el("b", { text: K.appName(c) }),
-        el("small", { text: (c.state === "withdrawn" ? "Withdrawn" : "Approved") + " by " + K.who(c.approved_by).label + " · " + K.moment(c.approved_at) + (c.approved_by === c.uploaded_by ? " · released by its sender alone" : "") }),
+        el("small", { text: (c.state === "withdrawn" ? "Withdrawn" : "Approved") + " by " + (c.approved_with && c.approved_with.length ? c.approved_with : [c.approved_by]).map(function (p) { return K.who(p).label; }).join(" and ") + " · " + K.moment(c.approved_at) + (c.approved_by === c.uploaded_by ? " · released by its sender alone" : "") }),
       ])]);
     }))));
   }
@@ -689,7 +809,7 @@
         el("dt", { text: "Sent by" }), el("dd", { text: K.who(c.uploaded_by).label }),
         el("dt", { text: "Sent" }), el("dd", { text: K.moment(c.uploaded_at) }),
         c.approved_by ? el("dt", { text: "Approved by" }) : null, c.approved_by ? el("dd", { text: K.who(c.approved_by).label }) : null,
-        c.changes && c.changes.against ? el("dt", { text: "Replaces" }) : null, c.changes && c.changes.against ? el("dd", { text: c.changes.against }) : null,
+        c.changes && c.changes.against ? el("dt", { text: "Replaces" }) : null, c.changes && c.changes.against ? el("dd", { text: typeof c.changes.against === "string" ? c.changes.against : c.changes.against.version || c.changes.against.digest }) : null,
       ]),
       caps.length ? el("div", { class: "cr-sec" }, [el("h3", { text: "It can" }), el("div", { class: "cr-list" }, caps.map(function (x) { return el("div", {}, [el("b", { text: x.words || x.cap })]); }))]) : null,
       el("details", { class: "cr-tech" }, [el("summary", { text: "Technical details" }), el("dl", { class: "cr-kv" }, [el("dt", { text: "Fingerprint" }), el("dd", { class: "dg", text: c.digest })])]),
@@ -764,16 +884,27 @@
   function approve(c, accepted) {
     var key = K.key();
     var added = (c.changes && c.changes.against ? c.changes.added : []).filter(function (x) { return x.asks; });
+    var you = c.approval && c.approval.you;
+    var partial = you && you.can && you.releases === false;
     confirmSheet({
       title: "Approve " + K.appName(c) + "?",
-      body: "This releases exactly these bytes to everyone in " + (S.org.name || slug) + ". If the app changes, the new version waits for its own approval.",
+      body: partial
+        ? "Your approval is recorded, and it keeps waiting: " + String(you.after || "it needs more approvals").replace(/^Needs/, "it needs") + ". It is released once the rules are met."
+        : "This releases exactly these bytes to everyone in " + (S.org.name || slug) + ". If the app changes, the new version waits for its own approval.",
       points: added.map(function (x) { return { key: true, text: "New: it can " + (x.words || x.cap) }; }),
       digest: c.digest,
-      yes: "Approve and release",
-      busy: "Releasing",
+      yes: partial ? "Approve" : "Approve and release",
+      busy: partial ? "Approving" : "Releasing",
       ctx: { what: "approve releases", whoCan: "owners and reviewers" },
       act: function () { return K.api("POST", "/orgs/" + slug + "/candidates/" + c.digest + "/approve", { accept: accepted || [] }, { key: key }); },
-      done: function () {
+      done: function (res) {
+        if (res.status === 202) {
+          var a = (res.body && res.body.approval) || {};
+          toast("Your approval is in. " + K.appName(c) + " " + String(a.words || "needs more approvals").replace(/^Needs/, "needs") + ".");
+          show("waiting", { c: S.focus || "" });
+          countWaiting();
+          return;
+        }
         toast(K.appName(c) + " is released. Everyone in " + (S.org.name || slug) + " can open it now.");
         show("releases");
         countWaiting();
@@ -883,6 +1014,13 @@
     if (f && f.focus) setTimeout(function () { f.focus(); }, 250);
   }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+  /// The IT pack (kit/org-setup.js): installers and the policy files, in the panel.
+  function itPackPanel() {
+    if (!Setup || !Setup.itPack) { show("settings"); return; }
+    var box = el("div");
+    inspect("The IT pack", [box]);
+    Setup.itPack(box, {});
+  }
   /// Releasing an app from anywhere: the first-app flow, in the panel.
   function releaseFlow() {
     if (!Setup) { show("releases"); return; }
@@ -1257,9 +1395,8 @@
       // Solo release and new publishers (IC-958): drawn only when the hub
       // has them.
       if (Pub) Pub.settings(pane);
+      if (Ap) Ap.rulesCard(pane);
 
-      // Company connections (connections.js, IC-952).
-      if (C) C.settings(pane);
 
       P.settings(pane, techBody);
       if (S.navRedraw) S.navRedraw();
@@ -1407,7 +1544,8 @@
     ? window.KrateOrgSetup({ slug: slug, here: HERE, org: function () { return S.org; }, role: roleOf, members: function () { return S.members; } })
     : null;
   var Pub = window.KrateOrgPublishers
-    ? window.KrateOrgPublishers({ S: S, slug: slug, words: words, toast: toast, roleOf: roleOf, drawTabs: function () { drawTabs(); }, show: function (id) { show(id); } })
+    ? window.KrateOrgPublishers({ S: S, slug: slug, words: words, toast: toast, roleOf: roleOf, drawTabs: function () { drawTabs(); }, show: function (id) { show(id); },
+        device: function () { return Setup ? Setup.device() : Promise.resolve(null); } })
     : null;
 
   // Release control and groups (releases.js); absent, the flat list.
@@ -1420,22 +1558,37 @@
     R = window.KrateOrgReleases({
       S: S, slug: slug, words: words, confirmSheet: confirmSheet, head: head, failed: failed,
       toast: toast, show: function (id) { show(id); }, roleOf: roleOf, P: P, flat: flatReleases, empty: emptyReleases,
-      inspect: inspect, releaseFlow: releaseFlow,
+      inspect: inspect, releaseFlow: releaseFlow, openApp: function (id, t) { openApp(id, t); },
     });
   }
   // The Dashboard (home.js): where an organisation starts.
   var H = window.KrateOrgHome
-    ? window.KrateOrgHome({ S: S, slug: slug, head: head, placeStart: placeStart, releaseFlow: releaseFlow, show: function (id, o) { show(id, o); }, roleOf: roleOf, inspect: inspect, tabs: tabList })
+    ? window.KrateOrgHome({ S: S, slug: slug, head: head, placeStart: placeStart, releaseFlow: releaseFlow, openApp: openApp, isMe: isMe, show: function (id, o) { show(id, o); }, roleOf: roleOf, inspect: inspect, tabs: tabList })
     : null;
   function home(pane) {
     if (H) { H.pane(pane); return; }
     head(pane, "Dashboard", "");
     pane.appendChild(el("div", { class: "card" }, [el("p", { text: "This page did not load completely. Reload it." })]));
   }
+  // The console's own sections (pages.js) and one app's page (app.js).
+  var G = window.KrateOrgPages
+    ? window.KrateOrgPages({ S: S, slug: slug, head: head, failed: failed, show: function (id, o) { show(id, o); }, roleOf: roleOf, isMe: isMe,
+        inspect: inspect, inspectEvent: inspectEvent, toast: toast, releaseFlow: releaseFlow, itPack: itPackPanel, openApp: openApp,
+        groups: function (at) { if (R) R.groupsCard(at, (S.members || []).filter(function (m) { return (m.state || "active") === "active"; })); },
+        device: function () { return Setup ? Setup.device() : Promise.resolve(null); }, get C() { return C; } })
+    : null;
+  var A = null;
   // The Apps tab (inventory.js, IC-954).
   var I = window.KrateOrgInventory
-    ? window.KrateOrgInventory({ S: S, slug: slug, words: words, head: head, failed: failed, toast: toast, show: function (id) { show(id); }, roleOf: roleOf, inspect: inspect, releaseFlow: releaseFlow })
+    ? window.KrateOrgInventory({ S: S, slug: slug, words: words, head: head, failed: failed, toast: toast, show: function (id) { show(id); }, roleOf: roleOf, inspect: inspect, releaseFlow: releaseFlow, openApp: openApp })
     : null;
+  // The code behind an approval, the rules, one version on its own (approvals.js).
+  var Ap = window.KrateOrgApprovals
+    ? window.KrateOrgApprovals({ S: S, slug: slug, roleOf: roleOf, show: function (id, o) { show(id, o); }, words: words, toast: toast })
+    : null;
+  if (window.KrateOrgApp) A = window.KrateOrgApp({ S: S, slug: slug, head: head, crumb: drawCrumb, tabName: tabName, show: function (id, o) { show(id, o); }, openApp: openApp, roleOf: roleOf, inspect: inspect, waitCard: waitCard, R: R, I: I });
+  // Search and the bell in the top bar (find.js).
+  if (window.KrateOrgFind) window.KrateOrgFind({ S: S, slug: slug, tabs: tabList, tabName: tabName, show: function (id, o) { show(id, o); }, openApp: openApp, roleOf: roleOf, inspect: inspect, releaseFlow: releaseFlow, toast: toast }).wire($("cfind"), $("cbell"));
   function apps(pane) {
     if (I) { I.pane(pane); return; }
     head(pane, "Apps", "");

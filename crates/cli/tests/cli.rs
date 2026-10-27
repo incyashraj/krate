@@ -8671,6 +8671,38 @@ fn a_removed_app_is_refused_offline_by_the_held_blocklist() {
     );
 }
 
+/// K-1126: `krate check-app apps/x`, the folder given relative as a
+/// person types it, runs the app's own task. Before, the task path was
+/// handed on relative to a run that starts inside the folder, so the task
+/// never ran and check-app still said OK.
+#[test]
+fn check_app_runs_the_task_when_given_a_relative_folder() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = krate()
+        .current_dir(&repo)
+        .args(["check-app", "apps/krate-leave", "--json"])
+        .output()
+        .expect("check-app");
+    let text = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&text).unwrap_or_else(|_| {
+        panic!(
+            "no json: {text}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    assert_eq!(report["ok"], true, "{report}");
+    let notes = report["usability_notes"].to_string();
+    assert!(
+        notes.contains("completes its task: book a week of holiday"),
+        "the task ran: {notes}"
+    );
+}
+
 /// The task oracle through the binary (IC-743, test 1506): a task file's
 /// steps are driven after the usability checks, the report says whether
 /// the task completed, and a failing step says what WAS on screen.
@@ -11346,6 +11378,53 @@ fn create_without_an_agent_builds_a_real_app_from_a_template() {
              the guest's allocator and panic handler:\n{cargo}"
         );
     }
+}
+
+/// K-967, K-1036: a developer with CARGO_TARGET_DIR set (a shared target
+/// is a common Rust setup) gets a built app, not "the build produced no
+/// <name>.wasm". Cargo honours the variable, so the artifact lands there;
+/// Krate looked only under the app's own target/. Both forms: a directory
+/// outside the app, and the relative `./target` the sandbox advice names.
+#[test]
+fn create_builds_with_the_persons_own_cargo_target_dir() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let elsewhere = work.path().join("my-shared-target");
+    for (target, label) in [
+        (
+            elsewhere.clone().into_os_string(),
+            "a directory outside the app",
+        ),
+        (std::ffi::OsString::from("./target"), "./target"),
+    ] {
+        let run = tempfile::tempdir().expect("temp dir");
+        let out = run.path().join("made.krate");
+        let output = krate()
+            .arg("create")
+            .arg("a grocery list app")
+            .arg("--output")
+            .arg(&out)
+            .arg("--work-dir")
+            .arg(run.path().join("inspect"))
+            .env("CARGO_TARGET_DIR", &target)
+            .output()
+            .expect("run create");
+        assert!(
+            output.status.success(),
+            "with CARGO_TARGET_DIR={label}, create must build:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(out.is_file(), "{label}: the .krate was written");
+    }
+    // The first build really did go to the person's directory.
+    assert!(
+        elsewhere.join("wasm32-wasip1/release").is_dir(),
+        "cargo built into CARGO_TARGET_DIR"
+    );
 }
 
 /// An unrecognized `--agent` must list the providers that do exist.
@@ -14425,6 +14504,9 @@ struct FakeOrgHub {
     connections_down: bool,
     /// The per-app data quota (store.org); 0 is the hub's 50 MiB.
     data_quota: u64,
+    /// The hub's SITE_BASE: where its join links point. `None` is the
+    /// hub's default, krate.tech.
+    site: Option<String>,
     /// While true every request answers 503: the hub is out of reach, as
     /// on a train. A private app then opens on its lease, offline.
     down: bool,
@@ -15702,7 +15784,10 @@ impl FakeOrgHub {
                     serde_json::json!({
                         "code": code, "expires_at": expires, "principal": principal,
                         "role": invited,
-                        "join_url": format!("https://krate.tech/join/?o={slug}&c={code}"),
+                        "join_url": format!(
+                            "{}/join/?o={slug}&c={code}",
+                            self.site.as_deref().unwrap_or("https://krate.tech")
+                        ),
                     }),
                 )
             }
@@ -16945,9 +17030,12 @@ impl OrgWorld {
             .unwrap_or_else(|| panic!("no join line: {said}"))
             .trim()
             .to_string();
+        // This hub is on this machine and names no site of its own, so no
+        // link is offered: krate.tech's join page talks to another hub
+        // (K-1105).
         assert!(
-            said.contains(&format!("or open https://krate.tech/join/?o=acme&c={code}")),
-            "the join link is printed beside the command: {said}"
+            !said.contains("krate.tech/join"),
+            "a local invitation links to krate.tech: {said}"
         );
         code
     }
@@ -17287,6 +17375,20 @@ fn org_invite_prints_the_join_command_and_an_admin_cannot_invite_an_owner() {
     );
     assert!(
         said.contains("invited erin (GitHub) to acme as developer."),
+        "{said}"
+    );
+    // This hub is on this machine and names no site: no krate.tech link,
+    // whose join page talks to another hub (K-1105). Once it names the site
+    // on this machine (SITE_BASE), that is the link.
+    assert!(!said.contains("krate.tech/join"), "{said}");
+    world.hub.lock().unwrap().site = Some("http://127.0.0.1:8000".into());
+    let said = world.says(
+        "alice",
+        &["org", "invite", "acme", "Dan", "--role", "developer"],
+        true,
+    );
+    assert!(
+        said.contains("or open http://127.0.0.1:8000/join/?o=acme&c="),
         "{said}"
     );
 }
@@ -19049,6 +19151,94 @@ fn the_mcp_door_fetches_a_private_link_with_the_session() {
         text.contains("you are not signed in") && text.contains("krate account login"),
         "{text}"
     );
+}
+
+/// K-1102: an organisation's app opened through the MCP door gets its team
+/// data as `krate run` gives it -- the same gate, the same grant -- rather
+/// than answering not-an-org-app; without the store.org grant it is denied.
+#[test]
+fn the_mcp_door_gives_an_org_app_its_team_data() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping the_mcp_door_gives_an_org_app_its_team_data: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (bundle, _) = released_probe(&world, &root, "1.0.0");
+    let copy = world.homes["carol"].path().join("Acme Tasks.krate");
+    std::fs::copy(&bundle, &copy).expect("copy");
+    let run = |grants: &[&str], steps: &[&str]| -> serde_json::Value {
+        let root_dir = world.homes["carol"].path().join("mcp");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        let mut child = org_command(&world, "carol", &["mcp"])
+            .env("KRATE_MCP_ROOT", &root_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("krate mcp");
+        {
+            let mut stdin = child.stdin.take().unwrap();
+            for message in [
+                serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": { "protocolVersion": "2024-11-05", "capabilities": {},
+                                "clientInfo": { "name": "test", "version": "0" } } }),
+                serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+                serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                    "params": { "name": "run_component",
+                                "arguments": { "bundle": copy.to_str().unwrap(),
+                                               "grants": grants, "app_args": steps } } }),
+            ] {
+                writeln!(stdin, "{message}").unwrap();
+            }
+        }
+        let output = child.wait_with_output().expect("mcp output");
+        let answer = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|answer| answer["id"] == 2)
+            .expect("an answer to the tool call");
+        let text = answer["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("");
+        serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!({ "said": text }))
+    };
+    let all = ["io.stdout", "io.args", "store.org"];
+    let report = run(
+        &all,
+        &[
+            "put",
+            "tasks",
+            "m1",
+            "title=from mcp",
+            "then",
+            "sync",
+            "then",
+            "who",
+        ],
+    );
+    let out = report["stdout"].as_str().unwrap_or_default();
+    assert!(out.contains("put m1 ok"), "{out}");
+    assert!(
+        out.contains("sync online=true changed=false pending=0"),
+        "{out}"
+    );
+    assert!(out.contains("who carol developer Acme"), "{out}");
+    // The write reached the team: the same app through `krate run` reads it.
+    let (lines, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["sync", "then", "get", "tasks", "m1"],
+        &[],
+    );
+    assert!(
+        lines[1].starts_with("get m1 title=from mcp"),
+        "{lines:?} {err}"
+    );
+    // Without the grant it is denied, as everywhere.
+    let denied = run(&["io.stdout", "io.args"], &["get", "tasks", "m1"]);
+    assert_eq!(denied["exit"]["class"], "permission-denied", "{denied}");
+    assert_eq!(denied["capabilities"]["denied"][0], "store.org", "{denied}");
 }
 
 /// I (the CLI half Studio drives): `krate org release-key` makes a release
@@ -21370,8 +21560,8 @@ fn a_company_connection_reaches_the_api_and_the_app_never_holds_the_credential()
 // ---------------------------------------------------------------------------
 // store.org (IC-951), end to end encrypted (F-316): an organisation's team
 // data, through the binary. The probe is apps/krate-orgstore-probe built
-// (fixtures/orgstore-probe.wasm): `put`, `get`, `delete`, `list`, `sync` and
-// `who` steps joined by `then`, one line each. The fake hub answers
+// (fixtures/orgstore-probe.wasm): `put`, `get`, `delete`, `list`, `sync`,
+// `who` and `status` steps joined by `then`, one line each. The fake hub answers
 // /orgs/<slug>/keys and /orgs/<slug>/data/<digest>/sync the way
 // cloud/worker/src/org-keys.js and org-data.js do, holding only what the
 // devices send; with KRATE_ORG_E2E_HUB set, the online test runs against a
@@ -21464,6 +21654,180 @@ fn probe(
 /// the keyring (registers, takes the key, passes it on) and says so.
 fn keys_show(world: &OrgWorld, who: &str) -> String {
     world.says(who, &["org", "keys", "show", "acme"], true)
+}
+
+/// G17: the machine policy's per-app rules are shown by `krate policy`, and
+/// a required capability one of them blocks stops the app it names from
+/// opening -- only that app.
+#[test]
+fn per_app_rules_are_shown_and_stop_only_the_app_they_name() {
+    let fleet = Fleet::new();
+    fleet.policy(
+        "[apps.\"*\"]\nwipe_when_offline_ends = true\n\
+         [apps.\"com.acme.copier\"]\nclipboard_write = false\nprinting = false\n",
+    );
+    let shown = fleet.krate().arg("policy").output().expect("policy");
+    let words = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        words.contains("com.acme.copier: no copying out by the clipboard; no printing."),
+        "{words}"
+    );
+    assert!(
+        words.contains(
+            "Every organisation app: team data deleted from this computer when offline access ends."
+        ),
+        "{words}"
+    );
+    let json = fleet
+        .krate()
+        .args(["policy", "--json"])
+        .output()
+        .expect("policy --json");
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).expect("json");
+    let rules = &json["policy"]["apps"]["com.acme.copier"];
+    assert_eq!(rules["clipboard_write"], false, "{json}");
+    assert_eq!(rules["printing"], false, "{json}");
+    assert_eq!(rules["clipboard_read"], true, "{json}");
+    // Windowed apps that need to copy out: the same bytes under two ids.
+    let windowed = |name: &str| -> PathBuf {
+        let wasm = fleet.path("code.wasm");
+        std::fs::write(
+            &wasm,
+            include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+        )
+        .expect("component");
+        let manifest = fleet.path(&format!("{name}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+                 [[capabilities]]\ncap = \"ui.clipboard:write\"\nrationale = \"copy\"\nrequired = true\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = fleet.path(&format!("{name}.krate"));
+        let out = krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(out.status.success(), "pack: {}", stderr_of(&out));
+        bundle
+    };
+    let copier = windowed("copier");
+    let other = windowed("other");
+    let refused = fleet
+        .krate()
+        .args(["policy", "check"])
+        .arg(&copier)
+        .output()
+        .expect("check");
+    assert_eq!(refused.status.code(), Some(1), "{}", stderr_of(&refused));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        stderr_of(&refused)
+    );
+    assert!(
+        said.contains("which your organisation (Acme Labs) blocks"),
+        "{said}"
+    );
+    let opens = fleet
+        .krate()
+        .args(["policy", "check"])
+        .arg(&other)
+        .output()
+        .expect("check");
+    assert_eq!(opens.status.code(), Some(0), "{}", stderr_of(&opens));
+}
+
+/// G17: under `[apps."*"] wipe_when_offline_ends = true`, an organisation
+/// app whose offline access has run out leaves no team data on the
+/// computer; without the rule the data stays (the app still does not open).
+#[test]
+fn team_data_goes_when_offline_access_ends_where_the_policy_says() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping team_data_goes_when_offline_access_ends_...: no local port");
+        return;
+    };
+    if world.real_hub().is_some() {
+        eprintln!("skipping team_data_goes_when_offline_access_ends_...: it stops the hub");
+        return;
+    }
+    let root = world.acme();
+    let (bundle, digest) = released_probe(&world, &root, "1.0.0");
+    let (out, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["put", "tasks", "t1", "title=kept here", "then", "sync"],
+        &[],
+    );
+    assert_eq!(out[0], "put t1 ok", "{err}");
+    assert!(
+        !org_data_files(&world, "carol").is_empty(),
+        "the copy is here"
+    );
+    // Offline, and the lease ran out a day ago.
+    world.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(100));
+    let lease_file = world.homes["carol"]
+        .path()
+        .join(".krate/leases")
+        .join(format!("{digest}.json"));
+    let mut record: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&lease_file).expect("a lease")).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut body = record["answer"]["lease"].clone();
+    body["issued_at"] = serde_json::json!(now - 8 * 86_400);
+    body["expires_at"] = serde_json::json!(now - 86_400);
+    let pkcs8 = world.hub.lock().unwrap().lease_pkcs8.clone();
+    record["answer"] = krate_lease::sign(&body, &pkcs8).unwrap();
+    std::fs::write(&lease_file, record.to_string()).unwrap();
+    let keep = world.dir.path().join("keep.toml");
+    std::fs::write(&keep, "version = 1\n").unwrap();
+    let wipe = world.dir.path().join("wipe.toml");
+    std::fs::write(
+        &wipe,
+        "version = 1\nname = \"Acme\"\n[apps.\"*\"]\nwipe_when_offline_ends = true\n",
+    )
+    .unwrap();
+    let keep_s = keep.to_str().unwrap();
+    let (_, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["list", "tasks"],
+        &[("KRATE_TEST_POLICY", keep_s)],
+    );
+    assert!(err.contains("its offline access ran out on"), "{err}");
+    assert!(!org_data_files(&world, "carol").is_empty(), "no rule: kept");
+    let wipe_s = wipe.to_str().unwrap();
+    let (_, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["list", "tasks"],
+        &[("KRATE_TEST_POLICY", wipe_s)],
+    );
+    assert!(err.contains("its offline access ran out on"), "{err}");
+    assert!(
+        err.contains("team data for this app was deleted from this computer"),
+        "{err}"
+    );
+    assert!(
+        org_data_files(&world, "carol").is_empty(),
+        "{:?}",
+        org_data_files(&world, "carol")
+    );
 }
 
 /// The organisation-data files on `who`'s machine.
@@ -21729,6 +22093,35 @@ fn org_team_data_is_sealed_shared_by_two_members_and_its_key_travels_device_to_d
         "{out:?} {err}"
     );
 
+    // Before that, the laptop is new to acme and holds no key: it says it is
+    // waiting for the key, by the organisation's name, keeps the write, and
+    // who() is none (K-1108).
+    let (out, err) = probe(
+        &world,
+        "alice-laptop",
+        &v2,
+        &[
+            "put",
+            "notes",
+            "n-wait",
+            "title=kept",
+            "then",
+            "sync",
+            "then",
+            "status",
+            "then",
+            "who",
+        ],
+        &[],
+    );
+    assert_eq!(out[0], "put n-wait ok", "{err}");
+    assert_eq!(out[1], "sync online=true changed=false pending=1", "{err}");
+    assert_eq!(
+        out[2], "status waiting-for-key pending=1 reached=true org=Acme",
+        "{err}"
+    );
+    assert_eq!(out[3], "who none", "{err}");
+
     // Alice's new laptop: the recovery code restores her key, and she
     // reads the data with no other device involved.
     let restored = world.says(
@@ -21761,12 +22154,21 @@ fn org_team_data_is_sealed_shared_by_two_members_and_its_key_travels_device_to_d
         &world,
         "alice-laptop",
         &v2,
-        &["sync", "then", "get", "tasks", id],
+        &[
+            "sync", "then", "get", "tasks", id, "then", "who", "then", "status",
+        ],
         &[],
     );
     assert_eq!(
         out[1],
         format!("get {id} done=true;title={title} by=dan@acme.example"),
+        "{out:?} {err}"
+    );
+    // The key arrived: who() fills on the same sync, and the write made
+    // while waiting went up with it.
+    assert_eq!(out[2], "who alice owner Acme", "{out:?} {err}");
+    assert_eq!(
+        out[3], "status synced pending=0 reached=true org=Acme",
         "{out:?} {err}"
     );
 
@@ -22874,14 +23276,30 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
         None,
         &[
             ("expect_text", "Your team's notes are on their way"),
+            // The calm line, by the organisation's name (K-1108).
+            ("expect_text", "someone in Acme opens Krate and it"),
             ("shoot", "team-notes-waiting.png"),
             ("click", "Write a note"),
             ("type", title),
             ("key", "Enter"),
-            ("type", "Twelve, stackable. Bob has the budget."),
+            // A paste with no clipboard permission, over a selection
+            // (K-1109): typed text, all of it selected, replaced by what
+            // the person pasted; then Shift+Home selects the last line and
+            // typing replaces it.
+            ("type", "a first draft"),
+            ("key", "Primary+a"),
+            ("paste", "Twelve, stackable.\nBob has the budget."),
+            ("expect_text", "Twelve, stackable."),
+            ("expect_no_text", "a first draft"),
+            ("key", "Shift+Home"),
+            ("shoot", "team-notes-selected.png"),
+            ("type", "Bob pays."),
+            ("expect_text", "Bob pays."),
+            ("expect_no_text", "Bob has the budget"),
+            ("shoot", "team-notes-pasted.png"),
             ("wait_ms", "900"),
             ("expect_text", title),
-            ("expect_text", "Waiting to be let in"),
+            ("expect_text", "Waiting for your team's key"),
         ],
     );
     keys_show(&world, "alice");
@@ -23045,11 +23463,15 @@ fn starter_expenses_is_shared_by_two_people_through_its_window() {
             ("type", "42.50"),
             ("click", "EUR"),
             ("click", "What was it for"),
+            // Typing over a selection replaces it (K-1109, the SDK's Field).
+            ("type", "a first draft"),
+            ("key", "Primary+a"),
             ("type", "Train to Leeds"),
             ("click", "Receipt note"),
             ("type", "Client visit"),
             ("click", "Save expense"),
             ("expect_text", "Train to Leeds, \u{20ac}42.50"),
+            ("expect_no_text", "a first draft"),
         ],
     );
     keys_show(&world, "alice");
@@ -23163,6 +23585,11 @@ fn starter_stock_list_is_shared_by_two_people_through_its_window() {
             ("click", "Printer paper"),
             ("expect_text", "Add an item"),
             ("type", "1"),
+            // The suggestion filled the count with 3: select it and type 3
+            // over it. Without selection (K-1109) this reads 33.
+            ("click", "How many there are"),
+            ("key", "Primary+a"),
+            ("type", "3"),
             ("shoot", "stock-list-form.png"),
             ("click", "Add item"),
             ("expect_text", "Printer paper, 3 left"),

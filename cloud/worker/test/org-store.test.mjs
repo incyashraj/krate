@@ -80,6 +80,18 @@ test("the executable matrix is the contract's table", () => {
     // F-319: the organisation's time zone (org-time.js).
     "org.time-zone": "y y - - -",
     "org.logo": "y y - - -",
+    // App requests (org-requests.js).
+    "request.create": "y y y y y",
+    "request.view": "y y y own own",
+    "request.manage": "y y y - -",
+    // Approval rules and the code behind an approval (org-approvals.js):
+    // the people who approve, and a version's own sender, read its code.
+    "candidate.changes": "y - own y -",
+    "approval.policy": "y - - - -",
+    // Staged rollout (org-rollout.js): who chooses which version opens.
+    "release.rollout": "y y - - -",
+    // Slack and Teams channels (org-chat.js).
+    "chat.manage": "y y - - -",
   };
   assert.deepStrictEqual(Object.keys(MATRIX).sort(), Object.keys(table).sort());
   for (const [action, row] of Object.entries(table)) {

@@ -28,9 +28,57 @@
 // delivered 24 hours after it was queued is given up and counted, so a dead
 // receiver never holds the queue forever. The state is on the dashboard;
 // the audit itself is never touched by any of this.
+//
+// Presets (G19): the same events, in the order and with the retries above,
+// shaped for a SIEM that has its own intake, so nothing sits in between:
+//
+// - "generic": the signed JSON above, to any https receiver.
+// - "splunk": Splunk's HTTP Event Collector. POST <url>/services/collector/event
+//   with `Authorization: Splunk <HEC token>` and the HEC envelope
+//   {time, host, source, sourcetype, index?, event}; `event` is the generic body.
+// - "sentinel": Microsoft Sentinel through the Azure Monitor Logs Ingestion
+//   API, the way Microsoft recommends now (the older HTTP Data Collector API
+//   is deprecated and stops in September 2026). The owner makes a Microsoft
+//   Entra app (tenant id, client id, client secret), a data collection
+//   endpoint and a data collection rule whose stream (Custom-KrateAudit_CL,
+//   say) has the columns TimeGenerated (datetime), Org, Actor, Action,
+//   Target, Result, Reason, PrevHash, Hash (string), Seq and Attempt (int),
+//   and gives the app "Monitoring Metrics Publisher" on the rule. The hub
+//   takes a token with the client credentials (scope
+//   https://monitor.azure.com//.default) and POSTs a one-row JSON array to
+//   <endpoint>/dataCollectionRules/<dcr id>/streams/<stream>?api-version=2023-01-01.
+// - "datadog": Datadog's Logs intake for the chosen site,
+//   https://http-intake.logs.<site>/api/v2/logs, with `DD-API-KEY`; one log
+//   with ddsource "krate", the org as a tag, and the event under `krate`.
+//
+// Every preset's request carries X-Krate-Signature and X-Krate-Event-Id as
+// the generic one does. Its token (HEC token, client secret, API key) is
+// sealed like the signing secret and never shown back.
 
 import { Org, extendOrg, allows } from "./org.js";
 import { sealSecret, openSecret, reachable, devHub } from "./org-sso.js";
+
+export const SIEM_PRESETS = ["generic", "splunk", "sentinel", "datadog"];
+/// Datadog's sites, by the name its pages use; the intake is
+/// http-intake.logs.<site>.
+export const DATADOG_SITES = {
+  "datadoghq.com": "US1",
+  "us3.datadoghq.com": "US3",
+  "us5.datadoghq.com": "US5",
+  "datadoghq.eu": "EU",
+  "ap1.datadoghq.com": "AP1",
+  "ap2.datadoghq.com": "AP2",
+  "ddog-gov.com": "US1-FED",
+};
+/// The Azure clouds a Logs Ingestion endpoint can be in: where its tokens
+/// come from, and the scope they are for.
+const AZURE_CLOUDS = {
+  com: { login: "https://login.microsoftonline.com", scope: "https://monitor.azure.com//.default" },
+  us: { login: "https://login.microsoftonline.us", scope: "https://monitor.azure.us//.default" },
+  cn: { login: "https://login.chinacloudapi.cn", scope: "https://monitor.azure.cn//.default" },
+};
+const INGEST_HOST = /^[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63}){0,4}\.ingest\.monitor\.azure\.(com|us|cn)$/;
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export const EXPORT_GIVE_UP_SECONDS = 24 * 60 * 60;
 export const EXPORT_BATCH = 25;
@@ -51,7 +99,8 @@ const SCHEMA = [
      set_at INTEGER NOT NULL, set_by TEXT NOT NULL,
      delivered INTEGER NOT NULL DEFAULT 0, given_up INTEGER NOT NULL DEFAULT 0,
      last_delivered_at INTEGER, last_delivered_seq INTEGER,
-     last_error TEXT, last_error_at INTEGER, last_status INTEGER)`,
+     last_error TEXT, last_error_at INTEGER, last_status INTEGER,
+     preset TEXT, preset_fields TEXT, preset_secret TEXT)`,
   `CREATE TABLE IF NOT EXISTS audit_outbox (
      seq INTEGER PRIMARY KEY, queued_at INTEGER NOT NULL,
      attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL)`,
@@ -72,6 +121,9 @@ const ops = {
     return {
       url: c.url,
       host: c.host,
+      preset: c.preset || "generic",
+      fields: parsedFields(c.preset_fields),
+      has_token: Boolean(c.preset_secret),
       has_secret: true,
       set_at: c.set_at,
       set_by: c.set_by,
@@ -120,20 +172,42 @@ const ops = {
     const host = String(ctx.args.host || "");
     const secret = ctx.args.secret ? JSON.stringify(ctx.args.secret) : before ? before.secret : null;
     if (!url || !host || !secret) return { status: 400, body: { error: "bad-request", message: "give the webhook's https URL" } };
+    const preset = SIEM_PRESETS.includes(ctx.args.preset) ? ctx.args.preset : "generic";
+    // A preset's token is kept while the preset stays the same; a new
+    // preset needs its own.
+    const samePreset = before && (before.preset || "generic") === preset;
+    const token = preset === "generic" ? null : ctx.args.preset_secret ? JSON.stringify(ctx.args.preset_secret) : samePreset ? before.preset_secret : null;
+    if (preset !== "generic" && !token) {
+      return { status: 400, body: { error: "bad-request", message: `give the ${PRESET_WORDS[preset].token} for ${PRESET_WORDS[preset].name}` } };
+    }
+    const fields = JSON.stringify(ctx.args.fields && typeof ctx.args.fields === "object" ? ctx.args.fields : {});
     if (before) {
-      this.sql.exec("UPDATE audit_export SET url = ?, host = ?, secret = ?, set_at = ?, set_by = ? WHERE id = 1", url, host, secret, ctx.now, me.principal);
-    } else {
       this.sql.exec(
-        "INSERT INTO audit_export (id, url, host, secret, set_at, set_by) VALUES (1, ?, ?, ?, ?, ?)",
+        "UPDATE audit_export SET url = ?, host = ?, secret = ?, set_at = ?, set_by = ?, preset = ?, preset_fields = ?, preset_secret = ? WHERE id = 1",
         url,
         host,
         secret,
         ctx.now,
         me.principal,
+        preset,
+        fields,
+        token,
+      );
+    } else {
+      this.sql.exec(
+        "INSERT INTO audit_export (id, url, host, secret, set_at, set_by, preset, preset_fields, preset_secret) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)",
+        url,
+        host,
+        secret,
+        ctx.now,
+        me.principal,
+        preset,
+        fields,
+        token,
       );
     }
     // The host only: a URL may carry the receiver's own key in its query.
-    this.audit(me.principal, before ? "audit-export.change" : "audit-export.set", `audit-export:${host}`, "allowed");
+    this.audit(me.principal, before ? "audit-export.change" : "audit-export.set", `audit-export:${host}`, "allowed", preset);
     return this.ok(this.exportView(), before ? 200 : 201);
   },
 
@@ -215,6 +289,20 @@ const ops = {
       }
     });
     const secret = await openSecret(this.env, o.slug, JSON.parse(c.secret), `krate-org-webhook:${o.slug}`);
+    const preset = c.preset || "generic";
+    const fields = parsedFields(c.preset_fields);
+    // The preset's credential, and for Sentinel the token it buys: once a run.
+    let cred = null;
+    let credProblem = null;
+    if (preset !== "generic") {
+      const token = c.preset_secret ? await openSecret(this.env, o.slug, JSON.parse(c.preset_secret), `krate-org-siem:${o.slug}`) : null;
+      if (!token) credProblem = `the ${PRESET_WORDS[preset].token} cannot be opened on this hub -- give it again in Settings`;
+      else if (preset === "sentinel") {
+        const got = await sentinelAccess(this, fields, token);
+        if (got.problem) credProblem = got.problem;
+        else cred = got.token;
+      } else cred = token;
+    }
     for (let i = 0; i < EXPORT_BATCH; i++) {
       const head = this.row("SELECT * FROM audit_outbox ORDER BY seq LIMIT 1");
       if (!head || head.next_at > now) break;
@@ -226,8 +314,11 @@ const ops = {
         ok = true; // Nothing to send (cannot happen: the audit is never edited).
       } else if (secret === null) {
         problem = "the signing secret cannot be opened on this hub -- make a new secret in Settings";
+      } else if (credProblem) {
+        problem = credProblem;
       } else {
-        const body = JSON.stringify({ type: "krate.audit.event", v: 1, org: o.slug, attempt: head.attempts + 1, event });
+        const shaped = presetRequest(preset, fields, o.slug, event, head.attempts + 1, cred);
+        const body = shaped.body;
         const t = String(now);
         try {
           const res = await fetch(c.url, {
@@ -237,6 +328,7 @@ const ops = {
               "user-agent": "Krate-Audit-Export/1",
               "x-krate-event-id": `${o.slug}:${event.seq}`,
               "x-krate-signature": `t=${t},v1=${await hmacHex(secret, `${t}.${body}`)}`,
+              ...shaped.headers,
             },
             body,
             redirect: "manual",
@@ -246,7 +338,9 @@ const ops = {
           // Read and drop the answer, so the connection is freed.
           await res.arrayBuffer().catch(() => {});
           ok = status >= 200 && status < 300;
-          if (!ok) problem = status >= 300 && status < 400 ? `the receiver answered a redirect (${status}); redirects are not followed` : `the receiver answered ${status}`;
+          if (!ok) problem = status >= 300 && status < 400 ? `the receiver answered a redirect (${status}); redirects are not followed` : `the receiver answered ${status}${status === 401 || status === 403 ? ` -- check the ${PRESET_WORDS[preset].token}` : ""}`;
+          // A Sentinel token that ran out early is asked for again next run.
+          if (status === 401 && preset === "sentinel") this.sentinelCache = null;
         } catch (err) {
           problem = err && err.name === "TimeoutError" ? "the receiver did not answer within 10 seconds" : `the receiver could not be reached (${String((err && err.message) || err).slice(0, 120)})`;
         }
@@ -280,6 +374,91 @@ const ops = {
     return done;
   },
 };
+
+const PRESET_WORDS = {
+  generic: { name: "your receiver", token: "signing secret" },
+  splunk: { name: "Splunk", token: "HEC token" },
+  sentinel: { name: "Microsoft Sentinel", token: "client secret" },
+  datadog: { name: "Datadog", token: "API key" },
+};
+
+function parsedFields(raw) {
+  try {
+    const v = JSON.parse(raw || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+const isoOf = (seconds) => new Date(seconds * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/// One event's request body and extra headers, in the preset's shape.
+/// `cred` is the preset's token (Splunk, Datadog) or the access token
+/// (Sentinel).
+export function presetRequest(preset, fields, slug, event, attempt, cred) {
+  const generic = { type: "krate.audit.event", v: 1, org: slug, attempt, event };
+  if (preset === "splunk") {
+    const envelope = { time: event.at, host: "krate", source: `krate:${slug}`, sourcetype: fields.sourcetype || "krate:audit", event: generic };
+    if (fields.index) envelope.index = fields.index;
+    return { body: JSON.stringify(envelope), headers: { authorization: `Splunk ${cred}` } };
+  }
+  if (preset === "sentinel") {
+    const row = {
+      TimeGenerated: isoOf(event.at),
+      Org: slug,
+      Seq: event.seq,
+      Actor: event.actor || "",
+      Action: event.action,
+      Target: event.target || "",
+      Result: event.result,
+      Reason: event.reason || "",
+      PrevHash: event.prev_hash,
+      Hash: event.hash,
+      Attempt: attempt,
+    };
+    return { body: JSON.stringify([row]), headers: { authorization: `Bearer ${cred}` } };
+  }
+  if (preset === "datadog") {
+    const log = {
+      ddsource: "krate",
+      service: fields.service || "krate",
+      hostname: "krate-hub",
+      ddtags: `org:${slug},action:${event.action},result:${event.result}`,
+      timestamp: event.at * 1000,
+      message: [event.actor || "krate", event.action, event.target || "", event.result].filter(Boolean).join(" "),
+      krate: generic,
+    };
+    return { body: JSON.stringify([log]), headers: { "dd-api-key": cred } };
+  }
+  return { body: JSON.stringify(generic), headers: {} };
+}
+
+/// A Logs Ingestion token for Sentinel, by the client credentials, kept on
+/// the store for the run after it while it lasts. `{token}` or `{problem}`.
+async function sentinelAccess(store, fields, clientSecret) {
+  const key = `${fields.tenant_id}/${fields.client_id}`;
+  const now = store.now();
+  if (store.sentinelCache && store.sentinelCache.key === key && store.sentinelCache.until > now + 60) return { token: store.sentinelCache.token };
+  const cloud = AZURE_CLOUDS[(String(fields.endpoint || "").match(/\.azure\.(com|us|cn)$/) || [])[1]] || AZURE_CLOUDS.com;
+  try {
+    const res = await fetch(`${cloud.login}/${encodeURIComponent(fields.tenant_id)}/oauth2/v2.0/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: fields.client_id, client_secret: clientSecret, scope: cloud.scope, grant_type: "client_credentials" }).toString(),
+      redirect: "manual",
+      signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
+    });
+    const got = await res.json().catch(() => ({}));
+    if (!res.ok || !got.access_token) {
+      return { problem: `Microsoft did not give a token (${res.status}${got.error ? `, ${String(got.error).slice(0, 60)}` : ""}) -- check the tenant id, client id and client secret` };
+    }
+    store.sentinelCache = { key, token: got.access_token, until: now + (Number(got.expires_in) || 3600) };
+    return { token: got.access_token };
+  } catch (err) {
+    return { problem: `Microsoft's sign-in could not be reached (${String((err && err.message) || err).slice(0, 120)})` };
+  }
+}
 
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -319,7 +498,17 @@ function install(OrgClass) {
   const commands = {};
   for (const [k, fn] of Object.entries(ops)) (k.startsWith("audit-export-") ? commands : helpers)[k] = fn;
   Object.assign(OrgClass.prototype, helpers);
-  extendOrg({ schema: SCHEMA, ops: commands, mutations: ["audit-export-clear"] });
+  extendOrg({
+    schema: SCHEMA,
+    // Stores made before the presets keep their table.
+    columns: [
+      ["audit_export", "preset", "TEXT"],
+      ["audit_export", "preset_fields", "TEXT"],
+      ["audit_export", "preset_secret", "TEXT"],
+    ],
+    ops: commands,
+    mutations: ["audit-export-clear"],
+  });
   const P = OrgClass.prototype;
 
   // Every event appended while an export is set is queued in the same
@@ -389,6 +578,66 @@ export function webhookUrl(raw, env) {
   return { url: u.toString(), host: u.host };
 }
 
+/// What a PUT asks for, checked: the preset, where its events go, the fields
+/// kept in the clear and the token to seal. Answers `{preset, url, host,
+/// fields, token}` (token null to keep the one stored) or `{problem}`.
+export function presetConfig(v, env) {
+  const preset = v.preset == null ? "generic" : String(v.preset);
+  if (!SIEM_PRESETS.includes(preset)) return { problem: `the destination is one of ${SIEM_PRESETS.join(", ")}` };
+  const f = v.fields && typeof v.fields === "object" && !Array.isArray(v.fields) ? v.fields : {};
+  const raw = v.token == null ? "" : String(v.token).trim();
+  const token = raw || null;
+  const str = (x) => (x == null ? "" : String(x).trim());
+  if (preset === "generic") {
+    const c = webhookUrl(v.url, env);
+    return c.problem ? c : { preset, url: c.url, host: c.host, fields: {}, token: null };
+  }
+  if (preset === "splunk") {
+    const c = webhookUrl(v.url, env);
+    if (c.problem) return { problem: "give your HTTP Event Collector's https address, such as https://http-inputs-acme.splunkcloud.com" };
+    const u = new URL(c.url);
+    const p = u.pathname.replace(/\/+$/, "");
+    if (p === "" || p === "/services/collector") u.pathname = "/services/collector/event";
+    else if (p !== "/services/collector/event") return { problem: "the HEC address ends in /services/collector/event, or give just its host" };
+    const index = str(f.index);
+    const sourcetype = str(f.sourcetype);
+    if (index && !/^[a-z0-9_][a-z0-9_-]{0,79}$/.test(index)) return { problem: "a Splunk index name is lower-case letters, digits, _ and -" };
+    if (sourcetype && !/^[A-Za-z0-9:_.-]{1,80}$/.test(sourcetype)) return { problem: "a sourcetype is letters, digits and : _ . -" };
+    if (token && !/^[A-Za-z0-9-]{8,128}$/.test(token)) return { problem: "the HEC token is the long id Splunk shows for the collector, such as 1b2c3d4e-..." };
+    return { preset, url: u.toString(), host: u.host, fields: { ...(index ? { index } : {}), ...(sourcetype ? { sourcetype } : {}) }, token };
+  }
+  if (preset === "sentinel") {
+    let u;
+    try {
+      u = new URL(str(f.endpoint));
+    } catch (_) {
+      u = null;
+    }
+    if (!u || u.protocol !== "https:" || u.username || u.password || (u.port && u.port !== "443") || !INGEST_HOST.test(u.hostname.toLowerCase()) || (u.pathname !== "/" && u.pathname !== "")) {
+      return { problem: "the logs ingestion endpoint is the https address Azure shows on the data collection endpoint or rule, ending in .ingest.monitor.azure.com" };
+    }
+    const tenant = str(f.tenant_id).toLowerCase();
+    const client = str(f.client_id).toLowerCase();
+    const dcr = str(f.dcr_id).toLowerCase();
+    const stream = str(f.stream);
+    if (!GUID.test(tenant) || !GUID.test(client)) return { problem: "the tenant id and client id are the app's two GUIDs from Microsoft Entra" };
+    if (!/^dcr-[0-9a-f]{32}$/.test(dcr)) return { problem: "the rule's immutable id starts with dcr- and is on its JSON view in Azure" };
+    if (!/^(Custom|Microsoft)-[A-Za-z0-9_]{1,100}$/.test(stream)) return { problem: "the stream is the rule's stream name, such as Custom-KrateAudit_CL" };
+    if (token && (token.length > 200 || /\s/.test(token))) return { problem: "the client secret is the value Microsoft Entra showed once, with no spaces" };
+    const endpoint = `https://${u.hostname.toLowerCase()}`;
+    const url = `${endpoint}/dataCollectionRules/${dcr}/streams/${encodeURIComponent(stream)}?api-version=2023-01-01`;
+    return { preset, url, host: u.hostname.toLowerCase(), fields: { endpoint, tenant_id: tenant, client_id: client, dcr_id: dcr, stream }, token };
+  }
+  // datadog
+  const site = str(f.site).toLowerCase() || "datadoghq.com";
+  if (!Object.prototype.hasOwnProperty.call(DATADOG_SITES, site)) return { problem: `the Datadog site is one of ${Object.keys(DATADOG_SITES).join(", ")}` };
+  const service = str(f.service);
+  if (service && !/^[a-z0-9_.-]{1,60}$/.test(service)) return { problem: "a Datadog service name is lower-case letters, digits and _ . -" };
+  if (token && !/^[0-9a-f]{32}$/.test(token)) return { problem: "a Datadog API key is 32 letters and digits, from Organization Settings > API Keys" };
+  const host = `http-intake.logs.${site}`;
+  return { preset, url: `https://${host}/api/v2/logs`, host, fields: { site, ...(service ? { service } : {}) }, token };
+}
+
 /// /orgs/<slug>/audit-export[/secret|/test]. Answers a Response, or null.
 export async function auditExportRoute(h) {
   const { rest, method, env, slug } = h;
@@ -399,7 +648,7 @@ export async function auditExportRoute(h) {
   if (rest.length === 1 && method === "PUT") {
     const body = await h.readBody();
     if (body.bad || body.tooLarge) return h.json({ error: "bad-request", message: "the body is JSON, under 64 KiB" }, 400);
-    const checked = webhookUrl(body.value.url, env);
+    const checked = presetConfig(body.value, env);
     if (checked.problem) return h.json({ error: "bad-request", message: checked.problem }, 400);
     // Who may, before a secret is made: a stranger costs no crypto.
     const current = await h.askRaw("audit-export-get");
@@ -411,7 +660,19 @@ export async function auditExportRoute(h) {
       sealed = await sealSecret(env, slug, secret, `krate-org-webhook:${slug}`);
       if (!sealed) return off();
     }
-    const answer = await h.askRaw("audit-export-set", { url: checked.url, host: checked.host, secret: sealed });
+    let presetSecret;
+    if (checked.token) {
+      presetSecret = await sealSecret(env, slug, checked.token, `krate-org-siem:${slug}`);
+      if (!presetSecret) return off();
+    }
+    const answer = await h.askRaw("audit-export-set", {
+      url: checked.url,
+      host: checked.host,
+      secret: sealed,
+      preset: checked.preset,
+      fields: checked.fields,
+      preset_secret: presetSecret,
+    });
     if (answer.status >= 300 || !secret) return h.orgAnswer(answer);
     const res = h.json({ ...answer.body, secret }, answer.status);
     res.headers.set("cache-control", "no-store");

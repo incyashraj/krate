@@ -10,6 +10,7 @@
       <string id="Krate_Trust">Which apps may open</string>
       <string id="Krate_Apps">What apps may do</string>
       <string id="Krate_Krate">Krate itself</string>
+      <string id="Krate_Data">Organisation apps' data on this computer</string>
       <string id="Krate_Studio">Krate Studio and AI builds</string>
       <string id="Name">Organisation name</string>
       <string id="Name_Help">Your organisation's name. Every message Krate shows about the policy uses it, for example &quot;Acme Labs does not allow this app&quot;. Optional. Registry: the value name in HKLM\SOFTWARE\Policies\Krate.</string>
@@ -46,6 +47,16 @@
       <string id="AuditPath_Help">Where Krate appends its record of every app opened or refused on this computer, one JSON line each. Default: /var/log/krate/opens.jsonl on macOS and Linux, %ProgramData%\Krate\logs\opens.jsonl on Windows. Registry: the value path in HKLM\SOFTWARE\Policies\Krate\audit.</string>
       <string id="RuntimeInterpreter">Run apps on the interpreter</string>
       <string id="RuntimeInterpreter_Help">true: every app runs on Krate's interpreter (Pulley) instead of compiled machine code, so Krate never makes executable memory. For endpoint protection that blocks code generated at run time, and Windows Arbitrary Code Guard. Apps may run slower this way. Enabled sets it to true, Disabled to false, Not configured leaves Krate's default. Registry: the value interpreter in HKLM\SOFTWARE\Policies\Krate\runtime.</string>
+      <string id="AppsAllClipboardRead">Organisation apps: no reading the clipboard</string>
+      <string id="AppsAllClipboardRead_Help">the app cannot read the clipboard, and a paste the person makes into it is refused too. For every organisation app on this computer. Enabled sets it, Disabled or Not configured leaves Krate's default. One app only: the same value in HKLM\SOFTWARE\Policies\Krate\apps\&lt;app id&gt;, or [apps.&quot;&lt;app id&gt;&quot;] in policy.toml. Registry: the value clipboard_read in HKLM\SOFTWARE\Policies\Krate\apps\*.</string>
+      <string id="AppsAllClipboardWrite">Organisation apps: no copying out</string>
+      <string id="AppsAllClipboardWrite_Help">nothing leaves the app by the clipboard. For every organisation app on this computer. Enabled sets it, Disabled or Not configured leaves Krate's default. One app only: the same value in HKLM\SOFTWARE\Policies\Krate\apps\&lt;app id&gt;, or [apps.&quot;&lt;app id&gt;&quot;] in policy.toml. Registry: the value clipboard_write in HKLM\SOFTWARE\Policies\Krate\apps\*.</string>
+      <string id="AppsAllPrinting">Organisation apps: no printing</string>
+      <string id="AppsAllPrinting_Help">the app cannot print, or save as PDF from the print dialog. For every organisation app on this computer. Enabled sets it, Disabled or Not configured leaves Krate's default. One app only: the same value in HKLM\SOFTWARE\Policies\Krate\apps\&lt;app id&gt;, or [apps.&quot;&lt;app id&gt;&quot;] in policy.toml. Registry: the value printing in HKLM\SOFTWARE\Policies\Krate\apps\*.</string>
+      <string id="AppsAllScreenCapture">Organisation apps: kept out of screenshots</string>
+      <string id="AppsAllScreenCapture_Help">the app's windows are kept out of screenshots, screen recordings and screen sharing where the system allows it (macOS and Windows; not Linux), and Krate takes no picture of the app itself. For every organisation app on this computer. Enabled sets it, Disabled or Not configured leaves Krate's default. One app only: the same value in HKLM\SOFTWARE\Policies\Krate\apps\&lt;app id&gt;, or [apps.&quot;&lt;app id&gt;&quot;] in policy.toml. Registry: the value screen_capture in HKLM\SOFTWARE\Policies\Krate\apps\*.</string>
+      <string id="AppsAllWipeWhenOfflineEnds">Organisation apps: delete team data when offline access ends</string>
+      <string id="AppsAllWipeWhenOfflineEnds_Help">when the app's offline access runs out, the app's team data on this computer is deleted at the next open. For every organisation app on this computer. Enabled sets it, Disabled or Not configured leaves Krate's default. One app only: the same value in HKLM\SOFTWARE\Policies\Krate\apps\&lt;app id&gt;, or [apps.&quot;&lt;app id&gt;&quot;] in policy.toml. Registry: the value wipe_when_offline_ends in HKLM\SOFTWARE\Policies\Krate\apps\*.</string>
     </stringTable>
     <presentationTable>
       <presentation id="Name"><textBox refId="name"><label>Organisation name</label></textBox></presentation>

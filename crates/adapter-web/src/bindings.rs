@@ -151,6 +151,16 @@ impl Ui {
         self.inner.wheel(id(window), x, y, dx, dy, mods);
     }
 
+    /// A finger on a touch screen: start, move, end or cancel.
+    pub fn touch(&mut self, window: &str, phase: &str, finger: u32, x: f32, y: f32) {
+        self.inner.touch(id(window), phase, u64::from(finger), x, y);
+    }
+
+    /// The text fields' rectangles on screen, four numbers each.
+    pub fn text_rects(&self, window: &str) -> Vec<f32> {
+        self.inner.text_rects(id(window))
+    }
+
     pub fn key(&mut self, window: &str, key: &str, pressed: bool, mods: u8, text: Option<String>) {
         self.inner
             .key(id(window), key, pressed, mods, text.as_deref());

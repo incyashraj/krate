@@ -49,6 +49,9 @@ krate-http = { path = "../http" }
 # The organisation keyring (F-316): store.org seals and opens with it, and
 # keeps this device's hold of the key current.
 krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
+# The device's copy of the team data, with sealing (the wasm32 build below
+# takes it without: a tab's runtime never syncs).
+krate-orgdata = { path = "../orgdata" }
 rusqlite.workspace = true
 cpal = "0.18.1"
 # Gamepads. Pulls libudev-sys on Linux, which is why every Linux build got the
@@ -79,6 +82,9 @@ wasmtime.workspace = true
 wasmtime = { version = "48.0.7", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
 
 [dependencies]
+# store.org's merge rule and the device's copy: the same code the browser
+# tab runs (crates/validator-wasm).
+krate-orgdata = { path = "../orgdata", default-features = false }
 # Telling a threaded app (a core module over a shared memory) from a
 # component, before either is compiled (IC-929).
 wasmparser.workspace = true

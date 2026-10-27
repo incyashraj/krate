@@ -73,7 +73,11 @@ pub mod desktop_host;
 pub mod embed;
 mod fs_watch;
 mod gamepad;
-pub mod org_merge;
+/// The merge rule, from the crate the browser tab shares (`krate-orgdata`).
+pub use krate_orgdata::merge as org_merge;
+/// The team data's live socket: push instead of poll (SMART-FIXES 7).
+#[cfg(not(target_arch = "wasm32"))]
+mod org_live;
 pub mod org_store;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
@@ -1440,6 +1444,8 @@ impl Runtime {
             .any(|(name, _)| name.starts_with("krate:ui/screen@"));
         gui_host.set_adapts(adapts);
         store.data_mut().phase3_gui = Some(gui_host);
+        // A windowed app's team-data sync never waits on the network.
+        store.data().phase2.set_windowed();
 
         let linker = self.phase4_gui_linker()?;
 

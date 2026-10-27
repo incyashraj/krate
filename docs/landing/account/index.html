@@ -141,6 +141,14 @@
       </div>
 
       <div class="card">
+        <div class="row"><div class="grow"><h2>Signed in now</h2>
+          <p class="sub">Every browser and computer where you are signed in. Sign out any you do not recognise.</p></div>
+          <button class="btn ghost sm" id="sessShow" type="button">Show them</button></div>
+        <div id="sessList"></div>
+        <p class="note hidden" id="sessNote"></p>
+      </div>
+
+      <div class="card">
         <h2>Invite someone</h2>
         <p class="sub">Share your link with someone who builds things.</p>
         <div class="refbox">
@@ -181,7 +189,7 @@
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
   <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 <script>
@@ -231,6 +239,40 @@
     $("refCopy").textContent = "Copied";
     setTimeout(function () { $("refCopy").textContent = "Copy"; }, 1500);
   });
+
+  // Sessions load on a click: each look is one list on the hub.
+  var KIND = { github: "GitHub", google: "Google", email: "Email link", company: "Company sign-in" };
+  function sessions() {
+    var box = $("sessList"), note = $("sessNote");
+    box.innerHTML = '<p class="sub">Loading…</p>';
+    api("/account/sessions").then(function (r) {
+      var list = r.sessions || [];
+      if (!list.length) { box.innerHTML = '<p class="sub">Only this browser.</p>'; return; }
+      box.innerHTML = list.map(function (x) {
+        return '<div class="approw"><span><b>' + esc(x.label || "A browser") + '</b> <span class="m">' + esc(KIND[x.kind] || x.kind || "") + (x.created_at ? " · since " + when(x.created_at) : "") + '</span></span><span class="grow"></span>'
+          + (x.current ? '<span class="m">This one</span>' : '<button class="btn ghost sm" type="button" data-sess="' + esc(x.id) + '">Sign out</button>') + '</div>';
+      }).join("") + (list.some(function (x) { return !x.current; }) ? '<div class="row" style="margin-top:10px"><span class="grow"></span><button class="btn ghost sm" type="button" id="sessOthers">Sign out everywhere else</button></div>' : "");
+      Array.prototype.forEach.call(box.querySelectorAll("[data-sess]"), function (b) {
+        b.addEventListener("click", function () {
+          b.disabled = true;
+          api("/account/sessions/" + encodeURIComponent(b.getAttribute("data-sess")), { method: "DELETE" }).then(function (out) {
+            if (out && out.ok) { sessions(); return; }
+            b.disabled = false; note.textContent = (out && out.message) || "That did not sign out. Try again."; note.classList.remove("hidden");
+          });
+        });
+      });
+      var others = $("sessOthers");
+      if (others) others.addEventListener("click", function () {
+        others.disabled = true;
+        api("/account/sessions/revoke-others", { method: "POST" }).then(function (out) {
+          note.textContent = out && out.revoked != null ? "Signed out of " + out.revoked + (out.revoked === 1 ? " other place." : " other places.") : (out && out.message) || "That did not go through. Try again.";
+          note.classList.remove("hidden");
+          sessions();
+        });
+      });
+    }).catch(function () { box.innerHTML = '<p class="sub">They did not load. Try again in a minute.</p>'; });
+  }
+  $("sessShow").addEventListener("click", function () { $("sessShow").classList.add("hidden"); sessions(); });
 
   api("/my/apps").then(function (r) {
     var box = $("appList");

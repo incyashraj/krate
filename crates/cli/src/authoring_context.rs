@@ -202,8 +202,10 @@ key = \"Enter\"\n\
 expect_text = \"milk\"   # a label containing this must now be on screen\n\
 ```\n\
 \n\
-Steps: `click`, `type`, `key`, `wait_ms`, `expect_text`, `expect_no_text`,\n\
-one per step. A task with no expectation is refused: completing it has to\n\
+Steps: `click`, `type`, `key`, `paste`, `wait_ms`, `expect_text`,\n\
+`expect_no_text`, one per step; `key = \"Shift+ArrowLeft\"` or\n\
+`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord, and\n\
+`paste = \"text\"` pastes it as a person would. A task with no expectation is refused: completing it has to\n\
 mean something. In an app drawn on a canvas, `click` and `expect_text`\n\
 find what the app tells the screen reader (`krate::layout::Said`), at the\n\
 place it said. `krate run <app> --task steps.toml` does the steps alone\n\
@@ -454,7 +456,13 @@ A window wider than tall plays in landscape on a phone. A text field \
 the app draws itself (a name box in a game, a canvas editor) calls \
 `krate::ui::text_entry::start(win)` when it takes focus and `stop(win)` \
 when it loses it: a phone shows its keyboard, and the typing arrives as \
-the usual `TextInput` and key events. A game that reads keys and never \
+the usual `TextInput` and key events. Keep such a field in a \
+`krate::layout::Field`: `insert` the `TextInput` text, pass keys to \
+`key_with(&k.key, k.modifiers.shift, k.modifiers.meta || \
+k.modifiers.control)`, draw `selection()` behind the text. It selects with \
+Shift and Cmd/Ctrl+A, and the person's own Cmd+V or Ctrl+V arrives as \
+`TextInput` with no clipboard permission: never ask for \
+`ui.clipboard:read` just to paste. A game that reads keys and never \
 reads touch gets an on-screen pad on a phone by itself, built from the \
 keys it asks `key_held` about (Space or Enter is the big button): do not \
 draw one too. On a phone the game should also tap back: \
@@ -1047,11 +1055,15 @@ cursor. `org::text(&entry, \"note\")` and `org::field(&entry, name)` read a \
 field; `entry.changed_by` names who changed it last, so the app can say \
 \"added by dana\". `org::who()` is the signed-in person and their role, \
 once a sync has reached the organisation.\n\n\
-3. **Sync on launch, after writes, and every ten seconds.** `org::sync()` \
-returns `changed` (redraw) and `online`; offline is not an error, the \
-writes wait and go up later, and the runtime also syncs in the background \
-and when the app closes. Show a quiet \"offline -- will sync\" note, never \
-an error.\n\n\
+3. **The runtime syncs; the app shows where it stands.** The runtime \
+exchanges changes in the background every five seconds and when the app \
+closes. `org::status()` answers at once, from this device, with `link` -- \
+`Synced`, `Syncing`, `Offline` or `WaitingForKey` -- plus `pending`, \
+`reached_at` and the organisation's name; `org::status_words(&s)` is the \
+calm line for it. Offline is not an error: the writes wait and go up \
+later. `org::sync()` asks for an exchange now; in a window it never waits \
+and a later call says `changed` (read again) once the exchange brought \
+something.\n\n\
 4. **A refusal is the organisation's answer.** `OrgError::Refused(r)` \
 means the person was removed, is outside the release's audience, or the \
 version was withdrawn: show `r.message` (plain words, with what to do) and \
@@ -1061,15 +1073,15 @@ the hub holds ciphertext only, and only the organisation's members' \
 devices hold the key -- a new member's computer gets it from another \
 member's in the background, so the first sync on a new computer can show \
 `pending` until then. Never add encryption of your own on top.\n\n\
-5. **In a window, `sync` is not free.** It can wait on the network (and on \
-the runtime's own background sync), so a GUI app reads with `org::records` \
-from a kept cursor every second -- local, instant -- and calls `sync` only \
-after the first frame is on screen and then every twenty seconds or so \
-while nobody is typing. Never after each write: the runtime sends writes \
-by itself within seconds and again on close. After an online sync, \
-`org::who()` still `None` means this computer is waiting for a teammate's \
-computer to let it in: say \"waiting to be let in\" and keep accepting \
-input, never show an empty list as if the team had nothing.\n\n\
+5. **In a window, read every second, never wait.** A GUI app reads with \
+`org::records` from a kept cursor every second -- local, instant -- and \
+asks `org::status()` for its status line as often as it draws. Never call \
+`sync` after each write: the runtime sends writes by itself within seconds \
+and again on close. `Link::WaitingForKey` means this computer is new to \
+the team and its key has not arrived yet: show the line `status_words` \
+gives (\"Waiting for your team's key: someone in Acme opens Krate and it \
+arrives\") and keep accepting input, never an empty list as if the team \
+had nothing. `org::who()` fills once the key has arrived.\n\n\
 6. **Model the data so two people never overwrite each other.** Who made \
 a record is a field you write (`spent_by`, `made_by`), never \
 `changed_by`, which moves to whoever touched it last; an edit writes only \

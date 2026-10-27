@@ -60,8 +60,6 @@ const DESKTOP_ONLY = {
   // Sending to an organisation signs with this machine's delegated release
   // key, which a tab does not hold (IC-948 I); in a tab the Send menu has
   // no organisation rows.
-  org_targets: "lists organisations for signing with a release key kept on this machine",
-  send_to_org: "signs with a release key kept on this machine",
   // The signing ring's background share and an organisation's setup on this
   // computer (IC-958): in a tab the browser is its own device, and the
   // organisation dashboard does both through kit/org-device.js, so web
@@ -766,11 +764,15 @@ console.log("ok  a dropped connection is not blamed on the app");
 // not on whatever is newest when the row is pressed: the menu resolves the
 // app once and every row closes over it.
 {
-  const menu = app.slice(app.indexOf("function openSendSheet("));
+  // The whole function, not a fixed window: rows added above the gift
+  // pushed it past a 2,600-character slice once already.
+  const from = app.indexOf("function openSendSheet(");
+  const menu = app.slice(from, app.indexOf("\n}\n", from));
   assert.match(menu.slice(0, 600), /const app = \(which && which\.path\) \? which : currentApp\(\);/,
     "the share menu pins the version it was opened for");
-  assert.match(menu.slice(0, 2600), /sendCard\(app, label\)/, "Send the file sends the pinned version");
-  assert.match(menu.slice(0, 2600), /makeWrap\(app, os, label\)/, "and so does the gift");
+  assert.match(menu, /sendCard\(app, label\)/, "Send the file sends the pinned version");
+  assert.match(menu, /makeWrap\(app, os, label\)/, "and so does the gift");
+  assert.match(menu, /sendToOrg\(app, org, row, label\)|openOrgNote\(app, org, row, label\)/, "and so does Send to an organisation");
   assert.match(app, /async function sendCard\(app, label\)/, "sendCard takes the version it is given");
   assert.match(app, /async function makeWrap\(app, os, label\)/, "makeWrap takes the version it is given");
 }

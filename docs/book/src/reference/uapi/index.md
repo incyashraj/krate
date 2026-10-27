@@ -1197,14 +1197,22 @@ Accepted capability strings for this module, generated from the runtime manifest
 > changed after a cursor an earlier page gave.
 
 - `records(collection: string, since: option<cursor>) -> result<page, org-error>`
-> Exchange changes with the organisation now: push this device's,
-> pull everyone else's.
+> Ask for an exchange with the organisation now: push this device's
+> changes, pull everyone else's. In a windowed app it never waits: the
+> exchange runs in the background and this answers at once with where
+> this device stands, and `changed` is said by a later call once the
+> exchange brings something. In a command-line app it waits for the
+> exchange.
 
 - `sync() -> result<sync-state, org-error>`
 > The signed-in person and their role, once a sync has reached the
-> organisation; `none` before that.
+> organisation with its key; `none` before that.
 
 - `who() -> result<option<member>, org-error>`
+> Where this device stands, from this device: it never waits and never
+> reaches the network. Cheap enough to ask every frame.
+
+- `status() -> result<standing, org-error>`
 
 ### Types
 
@@ -1289,6 +1297,46 @@ Accepted capability strings for this module, generated from the runtime manifest
 > milliseconds since the Unix epoch; `none` before the first time.
 
 - `last-synced`: `option<u64>`
+
+#### `link` enum
+
+> Where this device stands with the organisation's store.
+
+> The last exchange reached the organisation and nothing made here
+> is waiting to go up.
+
+- `synced`
+> An exchange is under way or due: changes made here are on their
+> way, or this run has not reached the organisation yet.
+
+- `syncing`
+> The last try did not reach the organisation. Changes wait here.
+
+- `offline`
+> This device does not hold the organisation's key yet. Changes wait
+> here; another member's computer passes the key on by itself the next
+> time it has Krate open.
+
+- `waiting-for-key`
+
+#### `standing` record
+
+> What `status` answers.
+
+> Where this device stands.
+
+- `link`: `link`
+> Changes made here that have not reached the organisation yet.
+
+- `pending`: `u32`
+> When this device last reached the organisation's store, reading or
+> sending, in milliseconds since the Unix epoch; `none` before the
+> first time this run.
+
+- `reached-at`: `option<u64>`
+> The organisation's name, for words such as "someone in Acme".
+
+- `org`: `string`
 
 #### `member` record
 

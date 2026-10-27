@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Krate Studio: build and share desktop apps with AI</title>
-<meta name="description" content="Create and revise desktop apps with AI in Krate Studio. Inspect the source, test the app and share one .krate file for native Krate runtimes on Mac, Windows and Linux." />
-<meta property="og:title" content="Krate Studio: build and share desktop apps with AI" />
-<meta property="og:description" content="Create and revise desktop apps, inspect their source and share one .krate file across compatible runtimes on Mac, Windows and Linux." />
+<title>Krate Studio: make apps with AI and send them like pictures</title>
+<meta name="description" content="Describe an app and Krate Studio's AI builds it, checks it and packs it as one .krate file. Send it as a link that opens in any browser, phones included, or as a file that runs natively on Mac, Windows and Linux." />
+<meta property="og:title" content="Krate Studio: make apps with AI and send them like pictures" />
+<meta property="og:description" content="Describe an app and Krate Studio's AI builds it, checks it and packs it as one .krate file. Send it as a link that opens in any browser, phones included, or as a file that runs natively on Mac, Windows and Linux." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://krate.tech/studio/" />
 <meta property="og:site_name" content="Krate" />
-<meta property="og:image" content="https://krate.tech/og-v4.png" />
+<meta property="og:image" content="https://krate.tech/og-v5.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="/krate-favicon.png" />
 <script type="application/ld+json">
@@ -115,8 +115,8 @@ code.k { font-size: .86em; }
 <main>
 <section class="ph wrap">
   <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Krate Studio</span>
-  <h1>Krate Studio<span class="dim">Make an app. Share the file.</span></h1>
-  <p class="lede">Create and revise desktop software with AI, inspect its source and test what you built. Share one <code class="k">.krate</code> file for Mac, Windows and Linux. Recipients install a compatible Krate runtime to open it.</p>
+  <h1>Krate Studio<span class="dim">Make an app. Send it like a picture.</span></h1>
+  <p class="lede">Describe an app and Studio's AI writes it, builds it, opens it and fixes what it sees. Keep changing it by asking. Then send it: a link opens it in any browser, phones included, with nothing to install, and the same <code class="k">.krate</code> file runs natively on Mac, Windows and Linux.</p>
   <div class="acts">
     <a class="btn dark" href="/#ctaSec" id="dlBtn">Download Studio</a>
     <a class="btn ghost" href="/app/" id="webBtn" hidden>Use it in your browser</a>
@@ -144,7 +144,7 @@ code.k { font-size: .86em; }
     <div class="card rv"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></span>
       <h3>See it render</h3><p>Every build paints a real frame. Screenshot your app in CI with no display attached.</p></div>
     <div class="card rv"><span class="ic" style="color:var(--orange);background:color-mix(in srgb,var(--orange) 13%,transparent)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg></span>
-      <h3>Ship three ways</h3><p>The file, a link, or a card that carries the app inside a picture of it.</p></div>
+      <h3>Send it three ways</h3><p>The file, a link that opens in any browser, or a card that carries the app inside a picture of it.</p></div>
   </div>
 </section>
 
@@ -161,7 +161,7 @@ code.k { font-size: .86em; }
 </section>
 
 <section class="sec wrap" id="apps">
-  <div class="sh rv"><span class="eye">Made in Studio</span><h2>Built with it</h2><p>Each one is a single file, around 110 KB, running from the same bytes on Mac, Windows and Linux.</p></div>
+  <div class="sh rv"><span class="eye">Made in Studio</span><h2>Built with it</h2><p>Each one is a single file, around 110 KB: the same bytes run on Mac, Windows and Linux.</p></div>
   <div class="g4 apps grid-top">
     <a class="card link app rv" href="/cloud/"><div class="frame"><img src="/app-shots/query.png" alt="Query, a SQL client made with Krate" loading="lazy"></div><div class="am"><b>Query</b><span>SQL client, 116 KB</span></div></a>
     <a class="card link app rv" href="/cloud/"><div class="frame"><img src="/app-shots/trace.png" alt="Trace, a log viewer made with Krate" loading="lazy"></div><div class="am"><b>Trace</b><span>logs and traces, 111 KB</span></div></a>
@@ -173,18 +173,18 @@ code.k { font-size: .86em; }
 <section class="sec wrap n" id="faq">
   <div class="sh rv"><span class="eye">Before you start</span><h2>Questions</h2></div>
   <div class="qa qa-wrap rv">
-    <details><summary>What language do I write in?</summary><div class="ans"><p>Rust today, compiled to a WebAssembly component. The guest is ordinary Rust with one rule: it may import only <code class="k">krate:*</code> interfaces, never <code class="k">wasi:*</code>. Host access goes through Krate's capability checks. <code class="k">krate check-app</code> checks the build, imports, execution and rendering; you still need to test the app's behavior.</p></div></details>
-    <details><summary>Can I bring an app I already have?</summary><div class="ans"><p>That is what <code class="k">krate port</code> is for. It reads your project and reports what maps cleanly, what needs a capability, and what will not work at all. It is read-only: it never builds, runs or edits your source. Start there before you decide whether the rest is worth your weekend.</p></div></details>
-    <details><summary>What can it not do yet?</summary><div class="ans"><p>Check the <a href="/docs/limits.html">current capability and limits guide</a> against what your app needs. Some host integrations and UI features are still incomplete; a successful build is not proof that every interaction works on every platform.</p></div></details>
-    <details><summary>How big is the runtime my users install?</summary><div class="ans"><p>Size depends on platform, architecture and release. The <a href="https://github.com/incyashraj/krate/releases/latest">current release</a> lists download sizes; these differ from installed footprint. Users install the runtime once, then receive compatible apps as files. Our <a href="/reports/">measurement guide</a> separates runtime, bundle and application-payload costs.</p></div></details>
-    <details><summary>What happens to my dependencies?</summary><div class="ans"><p>Dependencies must support the guest target and Krate's import boundary. Direct OS calls need a supported Krate interface or a rewrite; not every library or host feature has an equivalent. <code class="k">krate port</code> tells you which of your dependencies land on which side of that line.</p></div></details>
+    <details><summary>What language do I write in?</summary><div class="ans"><p>You do not have to write anything: describe the app and Studio's AI writes it. Under the hood it is ordinary Rust compiled to a WebAssembly component that talks to the system only through Krate's <code class="k">krate:*</code> interfaces, so every protected call is checked. Writing it yourself? <code class="k">krate check-app</code> builds it, checks its imports, runs it and paints a real frame before you ship.</p></div></details>
+    <details><summary>Can I bring an app I already have?</summary><div class="ans"><p>That is what <code class="k">krate port</code> is for. It reads your project and reports what maps cleanly, what needs a capability, and what will not work at all. It only reads, so your project stays exactly as it is. Electron apps go from hundreds of megabytes to one small file.</p></div></details>
+    <details><summary>What can a Krate app do?</summary><div class="ans"><p>Real app things: its own window, drawing and animation on the graphics card, sound, files, the network, its own database and secrets, the camera and the microphone. Each one that touches your data is behind a permission the person sees first. The <a href="/docs/limits.html">capability guide</a> lists every interface.</p></div></details>
+    <details><summary>What do my users need to install?</summary><div class="ans"><p>Nothing, if you send a link: the app opens in their browser, on a phone or a computer. To run apps natively they install the Krate player once, and every app after that is just a file. The <a href="https://github.com/incyashraj/krate/releases/latest">current release</a> has the player for each system, and the <a href="/reports/">measurements</a> show what an app costs next to Electron.</p></div></details>
+    <details><summary>What happens to my dependencies?</summary><div class="ans"><p>Libraries that do their own work, like parsing, maths and data formats, come along as they are. Anything that talks to the system goes through Krate's interfaces instead, and <code class="k">krate port</code> tells you which of your dependencies are ready and which need a swap.</p></div></details>
     <details><summary>Do I have to use the AI?</summary><div class="ans"><p>No. You can write the source yourself and use the CLI to build, pack and run it. <code class="k">krate create</code> is the AI-assisted route and needs a configured provider. The <a href="/docs/quickstart.html">quickstart</a> explains the prerequisites.</p></div></details>
-    <details><summary>Is my app locked to your servers?</summary><div class="ans"><p>A local app can run with the open-source Krate runtime without Krate Cloud. The bundle carries the app and its source. Apps that call APIs or use hosted services still depend on those services; the file format cannot make an online service work offline.</p></div></details>
+    <details><summary>Is my app locked to your servers?</summary><div class="ans"><p>No. Every app is a file you keep, with its source inside, and it runs on the open-source Krate runtime with or without Krate's hub. The hub is there when you want a link to send.</p></div></details>
   </div>
 </section>
 
 <div class="band rv">
-  <div><h2>Build once. Ship one file.</h2><p>Use Studio to create and revise an app, then share the file. The runtime is open source; hosted services are optional.</p></div>
+  <div><h2>Make it once. Send it anywhere.</h2><p>Describe an app, watch Studio build it, and send it as a link or a file. The runtime is open source, and the hub is there when you want a link.</p></div>
   <div class="acts">
     <a class="btn dark" href="/#ctaSec">Download Studio</a>
     <a class="btn ghost" href="/app/" id="webBtnClose" hidden>Use it in your browser</a>
@@ -201,7 +201,7 @@ code.k { font-size: .86em; }
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
   <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 <script>

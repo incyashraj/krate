@@ -293,9 +293,10 @@ interface group {
 /// writes waiting, as it does offline.
 ///
 /// Offline first. Every call works on this device's copy and never waits
-/// for the network; `sync` exchanges changes with the organisation's store,
-/// and the runtime also syncs every five seconds while the app is open and
-/// once when it closes. Being offline is never an error.
+/// for the network. The runtime exchanges changes with the organisation's
+/// store in the background every five seconds while the app is open and
+/// once when it closes; `sync` asks for an exchange now, and `status` says
+/// where this device stands. Being offline is never an error.
 ///
 /// Records merge per field: two people editing different fields of one
 /// record both keep their change, and for one field the later edit wins by
@@ -373,6 +374,36 @@ interface org {
     last-synced: option<u64>,
   }
 
+  /// Where this device stands with the organisation's store.
+  enum link {
+    /// The last exchange reached the organisation and nothing made here
+    /// is waiting to go up.
+    synced,
+    /// An exchange is under way or due: changes made here are on their
+    /// way, or this run has not reached the organisation yet.
+    syncing,
+    /// The last try did not reach the organisation. Changes wait here.
+    offline,
+    /// This device does not hold the organisation's key yet. Changes wait
+    /// here; another member's computer passes the key on by itself the next
+    /// time it has Krate open.
+    waiting-for-key,
+  }
+
+  /// What `status` answers.
+  record standing {
+    /// Where this device stands.
+    link: link,
+    /// Changes made here that have not reached the organisation yet.
+    pending: u32,
+    /// When this device last reached the organisation's store, reading or
+    /// sending, in milliseconds since the Unix epoch; `none` before the
+    /// first time this run.
+    reached-at: option<u64>,
+    /// The organisation's name, for words such as "someone in Acme".
+    org: string,
+  }
+
   /// The signed-in person, as the organisation knows them, so an app can
   /// say who added something.
   record member {
@@ -431,11 +462,19 @@ interface org {
   /// changed after a cursor an earlier page gave.
   records: func(collection: string, since: option<cursor>) -> result<page, org-error>;
 
-  /// Exchange changes with the organisation now: push this device's,
-  /// pull everyone else's.
+  /// Ask for an exchange with the organisation now: push this device's
+  /// changes, pull everyone else's. In a windowed app it never waits: the
+  /// exchange runs in the background and this answers at once with where
+  /// this device stands, and `changed` is said by a later call once the
+  /// exchange brings something. In a command-line app it waits for the
+  /// exchange.
   sync: func() -> result<sync-state, org-error>;
 
   /// The signed-in person and their role, once a sync has reached the
-  /// organisation; `none` before that.
+  /// organisation with its key; `none` before that.
   who: func() -> result<option<member>, org-error>;
+
+  /// Where this device stands, from this device: it never waits and never
+  /// reaches the network. Cheap enough to ask every frame.
+  status: func() -> result<standing, org-error>;
 }

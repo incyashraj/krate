@@ -2875,9 +2875,21 @@ mod platform {
             // Command shortcuts belong to the menu, not the game. Capturing
             // them here would eat Cmd-Q and Cmd-W at the pump, and an app you
             // cannot quit is a worse bug than the one this function fixes.
+            //
+            // One exception: Cmd-V in a window the app draws itself. No
+            // responder there takes the menu's paste:, so the keystroke did
+            // nothing (K-1109). It goes to the runtime as a key, which hands
+            // the app what the person pasted.
             let flags = event.modifierFlags();
             if flags.contains(NSEventModifierFlags::Command) {
-                return false;
+                let paste = !flags.contains(NSEventModifierFlags::Control)
+                    && !flags.contains(NSEventModifierFlags::Option)
+                    && event
+                        .charactersIgnoringModifiers()
+                        .is_some_and(|c| c.to_string().eq_ignore_ascii_case("v"));
+                if !paste {
+                    return false;
+                }
             }
 
             let characters = event.charactersIgnoringModifiers();
@@ -2903,7 +2915,8 @@ mod platform {
 
             // Printable text travels with the press, the same shape the winit
             // adapters produce, so the host's text synthesis works unchanged.
-            let text = if pressed {
+            // A Command chord types nothing: Cmd-V is a paste, not a "v".
+            let text = if pressed && !flags.contains(NSEventModifierFlags::Command) {
                 characters.filter(|value| {
                     value.chars().next().is_some_and(|ch| {
                         !ch.is_control() && !('\u{f700}'..='\u{f8ff}').contains(&ch)
@@ -3034,9 +3047,16 @@ mod platform {
                 NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
             );
             edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
-            add("Cut", sel!(cut:), "x");
-            add("Copy", sel!(copy:), "c");
-            add("Paste", sel!(paste:), "v");
+            // Where the organisation blocks the clipboard for this app, a
+            // native text field may not reach it on its own either (G17).
+            let (read_blocked, write_blocked) = krate_adapter_common::ui::clipboard_kept();
+            if !write_blocked {
+                add("Cut", sel!(cut:), "x");
+                add("Copy", sel!(copy:), "c");
+            }
+            if !read_blocked {
+                add("Paste", sel!(paste:), "v");
+            }
             add("Select All", sel!(selectAll:), "a");
 
             main_menu.addItem(&edit_item);
@@ -3070,6 +3090,11 @@ mod platform {
         let title = NSString::from_str(&options.title);
         window.setTitle(&title);
         window.center();
+        // Out of screenshots, recordings and screen sharing when the
+        // organisation says so for this app (G17).
+        if krate_adapter_common::ui::windows_kept_from_capture() {
+            window.setSharingType(objc2_app_kit::NSWindowSharingType::None);
+        }
         // Without this AppKit sends no movement at all, only presses: an app
         // could never know where the pointer is until it clicked (IC-909).
         window.setAcceptsMouseMovedEvents(true);

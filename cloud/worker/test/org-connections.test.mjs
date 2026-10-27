@@ -26,7 +26,7 @@ import { dirname, join } from "node:path";
 import { orgEnv, call } from "./org-tools.mjs";
 import { device, register, memberDevice, recovery, b64 } from "./org-keys-tools.mjs";
 import { orgKey, sealed, opened } from "./org-seal-tools.mjs";
-import { normalBase, normalAllow, sealedCredentialOf } from "../src/org-connections.js";
+import { normalBase, normalAllow, sealedCredentialOf, normalApi, MAX_API } from "../src/org-connections.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FIX = join(here, "fixtures", "org-connections");
@@ -498,4 +498,88 @@ test("each use is counted per day, and each finished day becomes one audit line"
   assert.deepStrictEqual(next, { today: 1, last_30_days: 4 });
   // The chain still holds.
   assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme/audit")).body.chain_ok, true);
+});
+
+/* ---- the API's summary (SMART-FIXES 4) ------------------------------------ */
+
+const API = {
+  title: "Acme Finance", version: "2.1", source: "https://api.acme.example/finance/openapi.json",
+  operations: [
+    { method: "GET", path: "/invoices", id: "listInvoices", summary: "List invoices", query: ["status", "limit"] },
+    { method: "GET", path: "/invoices/{id}", id: "getInvoice", summary: "One invoice" },
+    { method: "POST", path: "/invoices", id: "createInvoice", body: true },
+  ],
+  more: 0,
+};
+
+test("a connection keeps its API's summary: set with it, changed or removed later, read in full by whoever may see connections", async () => {
+  const { env } = await world();
+  const made = await call(env, "alice", "POST", "/orgs/acme/connections", { json: finance({ api: API }) });
+  assert.strictEqual(made.status, 201, JSON.stringify(made.body));
+  // The list says what it is, never carries the whole.
+  assert.deepStrictEqual(made.body.connection.api, { title: "Acme Finance", version: "2.1", source: API.source, operations: 3, more: 0 });
+  for (const who of ["alice", "erin", "carol", "bob"]) {
+    const r = await call(env, who, "GET", "/orgs/acme/connections/finance-api/api");
+    assert.strictEqual(r.status, 200, who);
+    assert.deepStrictEqual(r.body, { name: "finance-api", base: BASE, allow: { methods: ["GET"], paths: ["/invoices"] }, api: API }, who);
+    noSecretIn(JSON.stringify(r.body), who);
+  }
+  assert.deepStrictEqual(pair(await call(env, "dan", "GET", "/orgs/acme/connections/finance-api/api")), [403, "role-cannot"]);
+  assert.deepStrictEqual(pair(await call(env, "carol", "GET", "/orgs/acme/connections/payroll/api")), [404, "no-such-connection"]);
+
+  // Only an owner or admin changes it; a change says so in the audit.
+  assert.deepStrictEqual(pair(await call(env, "carol", "PUT", "/orgs/acme/connections/finance-api", { json: { api: null } })), [403, "role-cannot"]);
+  const one = { ...API, operations: API.operations.slice(0, 1) };
+  const changed = await call(env, "erin", "PUT", "/orgs/acme/connections/finance-api", { json: { api: one } });
+  assert.strictEqual(changed.status, 200, JSON.stringify(changed.body));
+  assert.strictEqual(changed.body.connection.api.operations, 1);
+  const gone = await call(env, "erin", "PUT", "/orgs/acme/connections/finance-api", { json: { api: null } });
+  assert.strictEqual(gone.body.connection.api, null);
+  assert.strictEqual((await call(env, "carol", "GET", "/orgs/acme/connections/finance-api/api")).body.api, null);
+  // A change that leaves it out keeps it.
+  await call(env, "erin", "PUT", "/orgs/acme/connections/finance-api", { json: { api: API } });
+  await call(env, "erin", "PUT", "/orgs/acme/connections/finance-api", { json: { allow: { methods: ["GET"], paths: ["/invoices", "/rates"] } } });
+  assert.strictEqual((await call(env, "carol", "GET", "/orgs/acme/connections/finance-api/api")).body.api.operations.length, 3);
+  const said = (await events(env)).filter((e) => e.action === "connection.change").map((e) => e.reason);
+  assert.deepStrictEqual(said, ["API description 1 operation", "API description removed", "API description 3 operations", "allow GET /invoices,/rates"]);
+});
+
+test("an API summary is short, plain and on one line per field, or it is refused", async () => {
+  assert.strictEqual(MAX_API, 24 * 1024);
+  const ok = normalApi(API);
+  assert.ok(ok.api && JSON.parse(ok.api).operations.length === 3);
+  assert.deepStrictEqual(normalApi(null), { api: null });
+  // Fields nobody reads are dropped.
+  assert.ok(!JSON.parse(normalApi({ ...API, secret: "x", operations: [{ method: "get", path: "/a", extra: 1 }] }).api).secret);
+  assert.deepStrictEqual(JSON.parse(normalApi({ operations: [{ method: "get", path: "/a", extra: 1 }] }).api).operations, [{ method: "GET", path: "/a" }]);
+  const refused = (v, words) => {
+    const r = normalApi(v);
+    assert.ok(r.problem, JSON.stringify(v).slice(0, 80));
+    if (words) assert.match(r.problem, words);
+  };
+  refused("text");
+  refused([]);
+  refused({ ...API, source: "http://api.acme.example/openapi.json" }, /source/);
+  refused({ ...API, title: "two\nlines" }, /one line/);
+  refused({ operations: [{ method: "BREW", path: "/pot" }] }, /method/);
+  refused({ operations: [{ method: "GET", path: "pot" }] }, /starts with \//);
+  refused({ operations: [{ method: "GET", path: "/a", summary: "x".repeat(161) }] }, /160/);
+  refused({ operations: [{ method: "GET", path: "/a", query: Array(13).fill("q") }] }, /12/);
+  refused({ more: -1 }, /whole number/);
+  // Just under the cap is kept; just over is refused, never cut.
+  const op = (n) => ({ method: "GET", path: `/things/${String(n).padStart(6, "0")}`, summary: "s".repeat(100) });
+  const many = (n) => ({ title: "Big", operations: Array.from({ length: n }, (_, i) => op(i)) });
+  let n = 1;
+  while (!normalApi(many(n + 1)).problem) n += 1;
+  assert.ok(new TextEncoder().encode(normalApi(many(n)).api).length <= MAX_API);
+  refused(many(n + 1), /over 24 KB/);
+  assert.ok(n > 100, `only ${n} operations fit`);
+});
+
+test("the hub refuses an API summary it could not keep, and nothing is saved", async () => {
+  const { env } = await world();
+  const r = await call(env, "alice", "POST", "/orgs/acme/connections", { json: finance({ api: { operations: [{ method: "GET", path: "/a", summary: "line\u0000" }] } }) });
+  assert.deepStrictEqual(pair(r), [400, "connection-invalid"]);
+  assert.match(r.body.message, /one line/);
+  assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme/connections")).body.connections.length, 0);
 });

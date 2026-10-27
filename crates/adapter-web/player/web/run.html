@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Opening an app - Krate</title>
 <meta name="description" content="A Krate app, open in this tab. Nothing to install.">
 <meta name="robots" content="noindex">
@@ -14,13 +17,19 @@
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="https://krate.tech/" rel="noopener"><img src="/player/krate-mark-3d-96.png" alt="" width="24" height="24">Krate</a>
+  <a class="brand" href="https://krate.tech/" rel="noopener"><img src="/player/krate-mark-3d-96.png" alt="" width="24" height="24"><span>Krate</span></a>
   <div class="who" id="who" hidden><span class="dot" aria-hidden="true"></span><span id="whoName"></span><span class="sig" id="whoSig"></span></div>
+  <button class="sync" id="sync" type="button" hidden aria-expanded="false" aria-controls="syncInfo"><span class="sdot" aria-hidden="true"></span><span id="syncWords">Syncing</span></button>
   <div class="acts">
     <a class="btn ghost small" id="inKrate" href="https://krate.tech/open/" rel="noopener">Open in Krate</a>
     <button class="btn ghost small" id="closeApp" type="button" hidden>Close</button>
   </div>
 </header>
+
+<div class="syncinfo" id="syncInfo" hidden role="status">
+  <p id="syncSay"></p>
+  <p class="safari" id="syncSafari" hidden>Safari deletes what a website keeps when you go 7 days of browsing without opening it. Open this app online at least once a week so no change waits here that long.</p>
+</div>
 
 <main id="stage" aria-live="polite">
   <section class="card state" id="loading">
@@ -38,7 +47,7 @@
         <button class="btn dark" id="consentAllow" type="button">Allow and open</button>
       </div>
     </div>
-    <p class="fine" id="consentFine">It gets nothing else. It runs in this tab, on your computer, and stops when you close it.</p>
+    <p class="fine" id="consentFine">It gets nothing else. It runs in this tab and stops when you close it.</p>
   </section>
 
   <section class="card state" id="signin" hidden aria-labelledby="signinTitle">
@@ -72,6 +81,41 @@
     <button class="x" id="noticeClose" type="button" aria-label="Hide this">&times;</button>
   </div>
 </main>
+
+<div class="keep" id="keep" hidden role="status" aria-labelledby="keepTitle">
+  <img class="kicon" id="keepIcon" alt="" width="40" height="40">
+  <div class="kwords">
+    <b id="keepTitle">Keep this app</b>
+    <span id="keepHow"></span>
+  </div>
+  <button class="btn dark small" id="keepAdd" type="button" hidden>Add</button>
+  <button class="x" id="keepClose" type="button" aria-label="Not now">&times;</button>
+</div>
+
+<footer class="made" id="made" hidden>
+  <a class="mk" id="makeOwn" href="https://krate.tech/app/" target="_blank" rel="noopener"><img src="/player/krate-mark-3d-96.png" alt="" width="16" height="16"><span class="by">Made with Krate</span><span class="own">Make your own</span></a>
+  <button class="rep" id="reportOpen" type="button" aria-haspopup="dialog">Report</button>
+</footer>
+
+<div class="sheet" id="reportSheet" hidden>
+  <form class="perm" id="reportForm" role="dialog" aria-modal="true" aria-labelledby="reportTitle" novalidate>
+    <h1 id="reportTitle">Report this app</h1>
+    <p class="lede" id="reportLede">Tell Krate what is wrong with it. No account needed.</p>
+    <fieldset class="why" id="reportWhy">
+      <legend>What is wrong</legend>
+      <label><input type="radio" name="why" value="scam"><span>It is a scam, or asks for passwords or money</span></label>
+      <label><input type="radio" name="why" value="harmful"><span>It is harmful, hateful or sexual</span></label>
+      <label><input type="radio" name="why" value="copyright"><span>It copies someone else's work</span></label>
+      <label><input type="radio" name="why" value="other"><span>Something else</span></label>
+    </fieldset>
+    <textarea id="reportNote" maxlength="500" rows="3" placeholder="Anything that helps (optional)"></textarea>
+    <p class="note" id="reportSay" role="status"></p>
+    <div class="row-acts">
+      <button class="btn ghost" id="reportCancel" type="button">Cancel</button>
+      <button class="btn dark" id="reportSend" type="submit">Send report</button>
+    </div>
+  </form>
+</div>
 <script type="module" src="/player/player.js"></script>
 </body>
 </html>

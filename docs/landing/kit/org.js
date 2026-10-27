@@ -110,7 +110,7 @@
   // ------------------------------------------------------------- roles
 
   var ROLES = ["owner", "admin", "developer", "reviewer", "recipient"];
-  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Recipient" };
+  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Member" };
   /// What each role is for, in one line (the same words as docs/book's
   /// organisations page).
   var ROLE_SAYS = {
@@ -185,6 +185,20 @@
     // F-319: the organisation's time zone (org-time.js).
     "org.time-zone": { owner: "yes", admin: "yes" },
     "org.logo": { owner: "yes", admin: "yes" },
+    // App requests (org-requests.js): anyone asks; owners, admins and
+    // developers see and answer them all; everyone else sees their own.
+    "request.create": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
+    "request.view": { owner: "yes", admin: "yes", developer: "yes", reviewer: "own", recipient: "own" },
+    "request.manage": { owner: "yes", admin: "yes", developer: "yes" },
+    // Approval rules and the code behind an approval (org-approvals.js):
+    // the people who approve, and a version's own sender, read its code;
+    // an owner sets the rules.
+    "candidate.changes": { owner: "yes", reviewer: "yes", developer: "own" },
+    "approval.policy": { owner: "yes" },
+    // Staged rollout (org-rollout.js): a pilot group first, pinned groups.
+    "release.rollout": { owner: "yes", admin: "yes" },
+    // Slack and Teams channels (org-chat.js).
+    "chat.manage": { owner: "yes", admin: "yes" },
   };
 
   function can(role, action) {
@@ -193,22 +207,29 @@
   }
 
   /// The tabs a role sees on /org/, in order.
+  /// Each role's console: the sections it came for, in its order (the
+  /// org console by role, approved 2026-10-16). Owners and admins run the
+  /// organisation; developers make its apps; reviewers clear the queue;
+  /// members open what was released.
   function tabsFor(role) {
-    // The Dashboard first, for everyone: where an organisation starts.
-    var out = ["home", "releases"];
-    // Every app the organisation has, with its record (IC-954).
-    if (can(role, "inventory.view")) out.push("apps");
-    // The numbers each role's decisions need (IC-959).
-    if (can(role, "insights.view")) out.push("insights");
-    // The candidates list is for the people who send, approve or run the
-    // organisation; a recipient only ever opens what was released.
-    if (can(role, "candidate.publish") || can(role, "candidate.approve") || can(role, "audit.read")) out.push("waiting");
-    out.push("people");
-    if (can(role, "audit.read")) out.push("activity");
-    // Billing is the owners' and admins' (Addendum 3 E: GET billing).
-    if (can(role, "billing.read")) out.push("billing");
-    if (role && role !== "recipient") out.push("settings");
-    return out;
+    var out;
+    if (role === "owner" || role === "admin") {
+      out = ["home", "apps", "waiting", "requests", "releases", "people", "computers", "security", "connections", "insights", "activity", "billing", "settings"];
+    } else if (role === "developer") {
+      out = ["home", "myapps", "build", "requests", "releases", "connections", "insights", "people", "settings"];
+    } else if (role === "reviewer") {
+      out = ["home", "waiting", "apps", "releases", "insights", "people", "settings"];
+    } else {
+      out = ["home", "requests", "help"];
+    }
+    return out.filter(function (id) {
+      if (id === "billing") return can(role, "billing.read");
+      if (id === "connections") return can(role, "connection.view");
+      if (id === "apps") return can(role, "inventory.view");
+      if (id === "insights") return can(role, "insights.view");
+      if (id === "activity") return can(role, "audit.read");
+      return true;
+    });
   }
 
   /// The roles `role` may invite, in order.
@@ -354,6 +375,28 @@
           body: "You are in " + org + ", but this app was sent only to certain groups, and you are not in them. Ask an admin of " + org + " to add you.",
           action: null,
         };
+      // Staged rollout (org-rollout.js).
+      case "in-pilot":
+        return {
+          title: "This version goes to a pilot group first",
+          body: (ctx.message ? String(ctx.message).split(" -- ")[0].replace(/\.?$/, ". ") : "") + "You get it when it is released to everyone in " + org + "." + (ctx.for_you && ctx.for_you.version ? " Your version now is " + ctx.for_you.version + "." : ""),
+          action: null,
+        };
+      case "pilot-out":
+        return { title: "A version is still with the pilot group", body: "Release it to everyone, or withdraw it, first. Nothing changed.", action: null };
+      case "no-pilot":
+        return { title: "No version is with the pilot group now", body: "It was released to everyone or withdrawn already. The page below is fresh.", action: null };
+      // Slack and Teams channels (org-chat.js).
+      case "no-such-channel":
+        return { title: "That channel is not connected any more", body: "Someone removed it. The list below is fresh.", action: null };
+      case "too-many-channels":
+        return { title: org + " already posts to 5 channels", body: "Remove one first, then add this one.", action: null };
+      case "chat-off":
+        return { title: "Slack and Teams posts are not switched on on this hub yet", body: "Nothing changed.", action: null };
+      case "chat-failed":
+        return { title: "The test did not arrive", body: (ctx.message ? String(ctx.message).replace(/^the test did not arrive: /, "").replace(/^./, function (c) { return c.toUpperCase(); }).replace(/\.?$/, ".") : "") + " Check the channel's webhook in Slack or Teams, then try again.", action: null };
+      case "chat-full":
+        return { title: org + " has posted 50 times today", body: "That is the most in one day. Posts start again tomorrow.", action: null };
       case "reason-required":
         return { title: "Say why it is withdrawn", body: "The people who had it are shown the reason. Write a few words, up to 300 characters.", action: null };
       case "no-such-group":
@@ -397,6 +440,14 @@
       case "app-not-allowed":
       case "connection-not-requested":
         return { title: "This app cannot use that connection", body: (ctx.message ? String(ctx.message).split(" -- ")[0] + ". " : "") + "Ask an admin of " + org + ".", action: null };
+      // Approval rules (org-approvals.js): the hub's sentence says whose
+      // approval is needed; this says it as the next step.
+      case "approval-policy":
+        return { title: "Someone else's approval is needed", body: (ctx.message ? String(ctx.message).split(" -- ")[0].replace(/\.?$/, ". ") : "") + "Nothing was approved.", action: null };
+      case "already-approved":
+        return { title: "You approved this already", body: (ctx.message ? "It " + String(ctx.message).split(" -- it ")[1].replace(/\.?$/, ". ") : "") + "It is released once the rest are in.", action: null };
+      case "policy-invalid":
+        return { title: "Those rules will not work", body: (ctx.message ? String(ctx.message).replace(/ -- /g, ". ").replace(/\.?$/, ". ") : "") + "Nothing changed.", action: null };
       default:
         return { title: "That did not work", body: (ctx.message ? String(ctx.message) + ". " : "") + "Nothing changed. Try again in a moment.", action: null };
     }
@@ -452,6 +503,11 @@
     "release-withdrawn": "it was withdrawn",
     "not-in-audience": "it is not for their groups",
     "reason-required": "no reason was given",
+    "in-pilot": "it is with a pilot group first",
+    "pilot-out": "a version was still with the pilot group",
+    "no-pilot": "no version was with the pilot group",
+    "no-such-channel": "no such channel",
+    "too-many-channels": "too many channels",
     "no-such-group": "no such group",
     "group-taken": "the group exists already",
     "group-invalid": "not a group name",
@@ -464,6 +520,16 @@
     "app-not-allowed": "the connection does not allow that app",
     "connection-not-requested": "that version did not ask for it",
     "credential-needs-entry": "its credential must be entered again",
+    // Declining, release notes and app requests.
+    declined: "it was declined",
+    "not-waiting": "it was not waiting for approval",
+    "note-closed": "a declined or withdrawn version keeps its note",
+    "no-such-request": "no such request",
+    "requests-full": "too many open requests",
+    // Approval rules.
+    "approval-policy": "the approval rules need someone else",
+    "already-approved": "they approved it already",
+    "policy-invalid": "the rules were not complete",
   };
 
   /// One audit event as a sentence. `names` maps a digest to "Ledger 1.2".
@@ -531,6 +597,20 @@
         "usage.view": "see how the apps are used",
         "org.logo": "change the organisation's logo",
         "org.time-zone": "change the organisation's time zone",
+        // Declining, release notes and app requests.
+        "candidate.decline": "decline " + app(),
+        decline: "decline " + app(),
+        "candidate.note": "write the release note on " + app(),
+        "note-set": "write a release note",
+        "request.create": "ask for an app",
+        "request-create": "ask for an app",
+        "request.view": "see the app requests",
+        "request.manage": "answer an app request",
+        "request-update": "answer an app request",
+        "notify-prefs-set": "change their notifications",
+        "candidate.changes": "read the code of " + app(),
+        "approval.policy": "change the approval rules",
+        "approval-policy-set": "change the approval rules",
       }[ev.action] || "do " + ev.action;
       // Shown beside a Refused badge, so the sentence says why, not "refused" again.
       return a + " tried to " + tried + ": " + (SHORT_WHY[ev.reason] || ev.reason || "not allowed") + ".";
@@ -601,6 +681,20 @@
       case "root-key.rotate": return a + " replaced the root key with " + fingerprint(t.value) + ".";
       case "release-key.revoke": return a + " withdrew the release key " + fingerprint(t.value) + ".";
       case "candidate.publish": return a + " sent " + app() + " for approval.";
+      case "candidate.decline": return a + " declined " + app() + (ev.reason ? ": " + ev.reason : "") + ".";
+      // Approval rules: an approval that does not release yet, and the rules changing.
+      case "candidate.approve.partial": {
+        var still = String(ev.reason || "").split(" -- ")[1];
+        return a + " approved " + app() + ". It " + (still || "waits for more approvals") + ".";
+      }
+      case "settings.approvals": return a + " changed the approval rules: " + (ev.reason || "see Settings") + ".";
+      case "candidate.note": return a + (ev.reason === "cleared" ? " cleared the release note on " : " wrote the release note on ") + app() + ".";
+      case "request.create": return a + " asked for an app.";
+      case "request.update": {
+        var rs = String(ev.reason || "").split(",")[0];
+        var rw = { open: "open again", planned: "planned", done: "done", declined: "declined" }[rs] || rs;
+        return a + " marked an app request " + rw + (/replied/.test(ev.reason || "") ? ", with a reply." : ".");
+      }
       // Solo release (IC-958 addendum): the hub marks a release its sender
       // made while nobody else could approve with the reason "solo".
       case "candidate.approve":
@@ -655,6 +749,38 @@
         var aud = String(ev.reason || "");
         return aud === "everyone" ? a + " opened " + app() + " to everyone." : a + " limited " + app() + " to " + groupsSaid(aud.replace(/^groups:/, "").split(",")) + ".";
       }
+      // Staged rollout (org-rollout.js): a pilot group, pinned groups.
+      case "release.pilot": {
+        var pr = String(ev.reason || "");
+        var pg = (pr.match(/group:([a-z0-9-]+)/) || [])[1];
+        var pd = (pr.match(/([0-9a-f]{64})/) || [])[1];
+        var pv = pd ? names[pd] || "version " + pd.slice(0, 12) : null;
+        var pApp = t.value || "the app";
+        if (/^ended: /.test(pr)) return "The pilot of " + (pv || "a version") + " ended: it was withdrawn.";
+        if (/approved$/.test(pr)) return (pv || "A new version") + " went to the " + pg + " group first; everyone else stays where they are.";
+        if (pd) return a + " gave " + pv + " to the " + pg + " group first.";
+        return a + " set new versions of " + pApp + " to go to the " + pg + " group first.";
+      }
+      case "release.pilot.release": {
+        var rd = String(ev.reason || "");
+        return a + " released " + (names[rd] || "the pilot's version") + " to everyone.";
+      }
+      case "release.pilot.off": return a + " set new versions of " + (t.value || "the app") + " to go to everyone at once.";
+      case "release.pin":
+      case "release.unpin": {
+        var ps = t.value.lastIndexOf("/"), pinApp = ps > 0 ? t.value.slice(0, ps) : t.value, pinG = ps > 0 ? t.value.slice(ps + 1) : "a group";
+        var pinD = (String(ev.reason || "").match(/([0-9a-f]{64})/) || [])[1];
+        var pinV = pinD ? names[pinD] || "version " + pinD.slice(0, 12) : "a version";
+        if (ev.action === "release.pin") return a + " kept the " + pinG + " group on " + pinV + ".";
+        return /withdrawn$/.test(ev.reason || "")
+          ? "The " + pinG + " group is no longer kept on " + pinV + ": it was withdrawn."
+          : a + " let the " + pinG + " group get what everyone gets of " + pinApp + " again.";
+      }
+      // Slack and Teams channels (org-chat.js): the URL is never in an event.
+      case "chat.add": return a + " connected a channel at " + t.value + " for notices.";
+      case "chat.change": return a + " changed what is posted to the channel at " + t.value + ".";
+      case "chat.remove": return a + " disconnected the channel at " + t.value + ".";
+      case "chat.test": return a + " sent a test message to the channel at " + t.value + ".";
       case "group.create": return a + " made the group " + t.value + ".";
       case "group.add":
       case "group.remove": {
@@ -828,9 +954,12 @@
   /// travels to /login/ in this tab's session storage, never in the link,
   /// and /login/ sends it at once, keeping the one place that knows how a
   /// sign-in comes back here.
-  function signInChoices(here) {
+  /// `opts.first`: "email" puts the email box first (an invitation sent to
+  /// an inbox); otherwise GitHub and Google lead.
+  function signInChoices(here, opts) {
+    var emailFirst = !!(opts && opts.first === "email");
     var input = el("input", { class: "inp", type: "email", placeholder: "you@company.com", "aria-label": "Work email", autocomplete: "email", required: "" });
-    var go = el("button", { class: "btn ghost", type: "submit", text: "Continue" });
+    var go = el("button", { class: "btn " + (emailFirst ? "dark" : "ghost"), type: "submit", text: "Continue" });
     var form = el("form", { class: "si-email" }, [input, go]);
     form.addEventListener("submit", function (e) {
       if (e && e.preventDefault) e.preventDefault();
@@ -839,14 +968,12 @@
       try { root.sessionStorage.setItem("krate-login-email", v); } catch (x) {}
       root.location.href = signInHref(here, "email");
     });
-    return el("div", { class: "si" }, [
-      el("div", { class: "si-row" }, [
-        el("a", { class: "btn dark si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
-        el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
-      ]),
-      el("div", { class: "or" }, [el("span", { text: "or" })]),
-      form,
+    var row = el("div", { class: "si-row" }, [
+      el("a", { class: "btn " + (emailFirst ? "ghost" : "dark") + " si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
+      el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
     ]);
+    var or = el("div", { class: "or" }, [el("span", { text: "or" })]);
+    return el("div", { class: "si" }, emailFirst ? [form, or, row] : [row, or, form]);
   }
 
   /// Copy text, with the button saying it worked.

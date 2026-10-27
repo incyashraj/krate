@@ -87,6 +87,37 @@ docs: clarify the runtime installation steps
 chore(ci): pin cargo-deny to v0.14
 ```
 
+### What we merge
+
+- Fixes for something you saw go wrong, with the steps or the test that shows it.
+- Work on an issue labelled `good first issue` or `help wanted`, or one a
+  maintainer said yes to in the issue.
+- Docs that make a real step clearer: a command that did not work as written,
+  a missing permission, a confusing error.
+
+What we usually close:
+
+- Large changes nobody agreed to first. Open an issue; it saves your time.
+- Renames, reformatting or "cleanup" across many files with no behaviour change.
+- New dependencies for something a few lines of code can do.
+- Changes to the permission wall (`crates/policy`, `crates/runtime`) without a
+  test that shows what is allowed and what is refused.
+
+### Using AI to write your change
+
+You are welcome to use an AI coding tool. The change is still yours:
+
+1. Read every line before you open the PR, and be ready to explain it.
+2. Run it. Say in the PR what you ran and what you saw.
+3. Say in the PR that an AI helped, and with which parts.
+4. Do not open PRs an agent produced without your review, and do not open
+   several at once from the same prompt. We close those without a review.
+
+### How many at a time
+
+Keep at most three PRs open at once. Finish or close one before you start
+the next; it keeps reviews quick for everyone.
+
 ### Pull requests
 
 1. Keep PRs focused. One logical change per PR.

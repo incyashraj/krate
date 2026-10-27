@@ -4,23 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>How to distribute a desktop app: ship one file | Krate</title>
-<meta name="description" content="Distribute a desktop app without a build, signature and download for each OS: ship one .krate file that runs natively on macOS, Windows and Linux.">
+<meta name="description" content="Skip the build, signature and download per OS: ship one .krate file that runs natively on macOS, Windows and Linux and opens from a link anywhere.">
 <link rel="canonical" href="https://krate.tech/how-to-distribute-a-desktop-app.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
 <meta property="og:title" content="How to distribute a desktop app: ship one file | Krate">
-<meta property="og:description" content="Distribute a desktop app without a build, signature and download for each OS: ship one .krate file that runs natively on macOS, Windows and Linux.">
+<meta property="og:description" content="Skip the build, signature and download per OS: ship one .krate file that runs natively on macOS, Windows and Linux and opens from a link anywhere.">
 <meta property="og:url" content="https://krate.tech/how-to-distribute-a-desktop-app.html">
-<meta property="og:image" content="https://krate.tech/og-v4.png">
-<meta property="og:image:alt" content="Krate desktop application runtime">
+<meta property="og:image" content="https://krate.tech/og-v5.png">
+<meta property="og:image:alt" content="Krate: make and send apps like pictures">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="How to distribute a desktop app: ship one file | Krate">
-<meta name="twitter:description" content="Distribute a desktop app without a build, signature and download for each OS: ship one .krate file that runs natively on macOS, Windows and Linux.">
-<meta name="twitter:image" content="https://krate.tech/og-v4.png">
+<meta name="twitter:description" content="Skip the build, signature and download per OS: ship one .krate file that runs natively on macOS, Windows and Linux and opens from a link anywhere.">
+<meta name="twitter:image" content="https://krate.tech/og-v5.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/how-to-distribute-a-desktop-app.html#webpage", "url": "https://krate.tech/how-to-distribute-a-desktop-app.html", "name": "How to distribute a desktop app: ship one file | Krate", "description": "Distribute a desktop app without a build, signature and download for each OS: ship one .krate file that runs natively on macOS, Windows and Linux.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Can one file run on Windows, macOS and Linux?", "acceptedAnswer": {"@type": "Answer", "text": "A normal native executable can't, because each system uses its own executable format. A .krate can, because it is not a native executable: it holds a WebAssembly component that the installed Krate runtime runs on each system."}}, {"@type": "Question", "name": "Do the people I send it to need to install anything?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, once: the Krate runtime for their system, from the download page. After that, every Krate app is a single file they open."}}, {"@type": "Question", "name": "Do I need a code signing certificate to ship a .krate?", "acceptedAnswer": {"@type": "Answer", "text": "No. You don't sign and notarize a package per operating system, because the file isn't one. You can still sign a .krate with your own key so people can check it came from you. See code signing and Krate."}}, {"@type": "Question", "name": "Can I ship an app I made with AI this way?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, if it is a Krate app. Make it in Krate Studio with the AI agent you already use, or open an existing project in Studio and port it. See how to share an AI-built desktop app."}}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/how-to-distribute-a-desktop-app.html#webpage", "url": "https://krate.tech/how-to-distribute-a-desktop-app.html", "name": "How to distribute a desktop app: ship one file | Krate", "description": "Skip the build, signature and download per OS: ship one .krate file that runs natively on macOS, Windows and Linux and opens from a link anywhere.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-27", "mainEntity": [{"@type": "Question", "name": "Can one file run on Windows, macOS and Linux?", "acceptedAnswer": {"@type": "Answer", "text": "A normal native executable can't, because each system uses its own executable format. A .krate can: it holds a WebAssembly component that the Krate runtime runs natively on each system, and a link opens it in any browser too."}}, {"@type": "Question", "name": "Do the people I send it to need to install anything?", "acceptedAnswer": {"@type": "Answer", "text": "Not to open a link: it runs in their browser, phones included, with no account. To run it natively, they install the Krate runtime once from the download page, and every Krate app after that is just a file."}}, {"@type": "Question", "name": "Do I need a code signing certificate to ship a .krate?", "acceptedAnswer": {"@type": "Answer", "text": "No. There is no package per operating system to sign and notarize, because a .krate isn't one. You can still sign a .krate with your own key so people can check it came from you; see code signing and Krate."}}, {"@type": "Question", "name": "Can I ship an app I made with AI this way?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Make it in Krate Studio with the AI you already use, or bring an existing project into Studio. See how to share an app made with AI."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -109,8 +109,8 @@
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
   <h1>How to distribute a desktop app: ship one file</h1>
-  <p class="lede">To distribute a desktop app without a separate build, signature and download for each operating system, ship it as one <code>.krate</code> file: the same file runs natively on macOS, Windows and Linux through the Krate app runtime, which each person installs once. The app starts with no file or network access, and the runtime shows what it asks for before it opens.</p>
-  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 3 min read</p>
+  <p class="lede">Ship it as one <code>.krate</code> file: the same file runs natively on macOS, Windows and Linux, and sent as a link, it opens in any modern browser, phones included, with nothing to install and no account. There is no separate build, signature or download for each operating system, and the app asks before it touches anyone's files or the network.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-27">27 October 2026</time> against Krate 0.5.4. 3 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
     <a class="btn dark" href="#the-usual-route-step-by-step">Compare the two routes <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
     <a class="btn ghost" href="/docs/quickstart.html#try-the-chart-sample">Try a .krate file</a>
@@ -123,9 +123,9 @@
       <h6>On this page</h6>
       <a href="#the-usual-route-step-by-step">The usual route, step by step</a>
       <a href="#the-krate-route">The Krate route</a>
-      <a href="#what-you-stop-doing-and-what-you-still-do">What you stop doing, and what you still do</a>
+      <a href="#what-you-stop-doing">What you stop doing</a>
+      <a href="#smaller-measured">Smaller, measured</a>
       <a href="#check-it-yourself">Check it yourself</a>
-      <a href="#when-another-route-fits-better">When another route fits better</a>
       <a href="#questions">Questions</a>
       <a href="#more-answers">More answers</a>
     </nav>
@@ -144,53 +144,48 @@
       <section id="the-krate-route">
         <h2>The Krate route</h2>
 <ol>
-<li><strong>Make the app.</strong> Describe it to an AI coding agent in <a href="/studio/">Krate Studio</a>, or write it in Rust against the Krate SDK. Studio can also port a project you already have: the AI rewrites it against Krate's interfaces, so read the plan it shows before you start.</li>
-<li><strong>Pack one file.</strong> The result is one <code>.krate</code>: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. It contains no Intel or ARM machine code, so there is nothing to build per processor.</li>
-<li><strong>Send it like a document.</strong> Email it, drop it in a shared folder or a chat, or publish it and send a link. Every recipient gets the same bytes.</li>
-<li><strong>Your users install Krate once.</strong> Krate for Mac is signed and notarized by Apple. After that, each new app is only its own file.</li>
-<li><strong>They decide what it may touch.</strong> An app starts without file or network access and asks for what it needs. The runtime checks protected calls against what was allowed; the known gaps are on the <a href="/docs/limits.html">limits page</a>. See <a href="/run-ai-generated-code-safely.html">how to inspect an app before running it</a>.</li>
+<li><strong>Make the app.</strong> Describe it in <a href="/studio/">Krate Studio</a> and the AI builds it, or write it in Rust with the Krate SDK. Studio can also bring over a project you already have.</li>
+<li><strong>Pack one file.</strong> The result is one <code>.krate</code>, from 37 KB: a manifest that names the access the app wants, a WebAssembly component that holds the app, and optionally its assets and source. There is no machine code inside, so there is nothing to build per processor.</li>
+<li><strong>Send it like a picture.</strong> Publish it and send the link, or email it, drop it in a chat or a shared folder. Everyone gets the same bytes.</li>
+<li><strong>They open it anywhere.</strong> From a link, it opens in any modern browser, phones included, with nothing to install and no account. On Mac, Windows and Linux, the Krate runtime runs it natively; Krate for Mac is signed and notarized by Apple, and after the first install every new app is just its own file.</li>
+<li><strong>They decide what it may touch.</strong> An app starts with no access to files or the network and asks for what it needs. The runtime checks protected calls against what was allowed. See <a href="/run-ai-generated-code-safely.html">how to see what an app asks for</a>.</li>
 </ol>
       </section>
-      <section id="what-you-stop-doing-and-what-you-still-do">
-        <h2>What you stop doing, and what you still do</h2>
-<p><strong>You stop</strong> producing a separate app package for each operating system and processor, signing and notarizing each app for each platform, and asking people to run an installer that gets their full permissions.</p>
-<p><strong>You still</strong> test the app on the systems you support, write it against Krate's interfaces (Rust today), check the <a href="/docs/limits.html">current limits</a> and tell recipients where to get the runtime. Runtime updates are separate from your app's updates. Krate does not turn an existing <code>.exe</code> or <code>.app</code> into a <code>.krate</code>.</p>
+      <section id="what-you-stop-doing">
+        <h2>What you stop doing</h2>
+<p>You stop producing a separate package for each operating system and processor. You stop signing and notarizing each app for each platform, hosting a download per system, and asking people to run an installer that gets their full permissions. You ship one file, or one link, and spend the time on the app.</p>
+      </section>
+      <section id="smaller-measured">
+        <h2>Smaller, measured</h2>
+<p>Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, it used 178.5 MiB of memory against 2,299.4 MiB for MarkText, an Electron editor: 13x less. A warm open took 237.1 ms against 611.5 ms: 2.6x faster. MarkText takes 284.6 MiB installed; the Krate runtime is installed once and shared by every app.</p>
+<p>Measured on 25 August 2026 on an Apple M4: Krate's Notes app against MarkText 0.17.1 on the same 50,000-line notes workload, an equivalent workload. <a href="/reports/">Read the method</a>.</p>
       </section>
       <section id="check-it-yourself">
         <h2>Check it yourself</h2>
 <p>Download <a href="https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate">chart.krate</a>, one file of 11,455 bytes with SHA-256 <code>3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3</code>. Follow <a href="/docs/quickstart.html#try-the-chart-sample">the quickstart</a> to see what it asks for and run it on any of the three systems.</p>
-<p>Ten ported apps, as the same committed <code>.krate</code> files, passed their replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. An eleventh app has no replay check defined yet and is skipped. Records: <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a>. These are automated headless checks, not hands-on testing of every feature. Runtimes are also published for Intel Macs, ARM64 Windows and arm64 Linux; those are not in these checks yet.</p>
-      </section>
-      <section id="when-another-route-fits-better">
-        <h2>When another route fits better</h2>
-<ul>
-<li>Your app also needs phones or the web: Tauri, Flutter or a web app cover more platforms today.</li>
-<li>Your app depends on the browser DOM or Node.js packages: Electron runs that code as it is.</li>
-<li>You need native libraries, subprocesses or a demanding 3D renderer; see the <a href="/docs/limits.html">limits page</a>.</li>
-</ul>
-<p>Krate fits desktop tools, internal utilities, dashboards, editors, small games and apps made with AI, where getting one file to people safely matters more than reaching every platform.</p>
+<p>Ten ported apps, as the same committed <code>.krate</code> files, passed their headless replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. Records: <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a>. Native runtimes are published for Apple silicon and Intel Macs, x64 and ARM64 Windows, and x86_64 and arm64 Linux.</p>
       </section>
     <section id="questions">
       <h2>Questions</h2>
       <h3>Can one file run on Windows, macOS and Linux?</h3>
-<p>A normal native executable can't, because each system uses its own executable format. A <code>.krate</code> can, because it is not a native executable: it holds a WebAssembly component that the installed Krate runtime runs on each system.</p>
+<p>A normal native executable can't, because each system uses its own executable format. A <code>.krate</code> can: it holds a WebAssembly component that the Krate runtime runs natively on each system, and a link opens it in any browser too.</p>
       <h3>Do the people I send it to need to install anything?</h3>
-<p>Yes, once: the Krate runtime for their system, from the <a href="/download/">download page</a>. After that, every Krate app is a single file they open.</p>
+<p>Not to open a link: it runs in their browser, phones included, with no account. To run it natively, they install the Krate runtime once from the <a href="/download/">download page</a>, and every Krate app after that is just a file.</p>
       <h3>Do I need a code signing certificate to ship a .krate?</h3>
-<p>No. You don't sign and notarize a package per operating system, because the file isn't one. You can still sign a <code>.krate</code> with your own key so people can check it came from you. See <a href="/desktop-app-code-signing.html">code signing and Krate</a>.</p>
+<p>No. There is no package per operating system to sign and notarize, because a <code>.krate</code> isn't one. You can still sign a <code>.krate</code> with your own key so people can check it came from you; see <a href="/desktop-app-code-signing.html">code signing and Krate</a>.</p>
       <h3>Can I ship an app I made with AI this way?</h3>
-<p>Yes, if it is a Krate app. Make it in Krate Studio with the AI agent you already use, or open an existing project in Studio and port it. See <a href="/share-an-app-made-with-ai.html">how to share an AI-built desktop app</a>.</p>
+<p>Yes. Make it in Krate Studio with the AI you already use, or bring an existing project into Studio. See <a href="/share-an-app-made-with-ai.html">how to share an app made with AI</a>.</p>
     </section>
     <section id="more-answers">
-      <h2>More answers about shipping desktop apps</h2>
+      <h2>More answers about making and sending apps</h2>
       <ul class="answer-related">
-        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every desktop</a></li>
-        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one file</a></li>
+        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every screen</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one link</a></li>
         <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely: see what it can touch first</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
-        <li><a href="/krate-vs-electron.html">Krate vs Electron: one native file instead of a browser in every app</a></li>
-        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
-        <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one small native file with no browser inside</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file for every desktop and every browser</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Desktop app or web app? Ship one file that is both</a></li>
         <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
         <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
         <li><a href="/electron-alternatives.html">Electron alternatives in 2026, compared by what you ship</a></li>
@@ -203,11 +198,11 @@
 </section>
 
 <div class="band st rv">
-  <div><h2>Build with Krate</h2><p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p></div>
+  <div><h2>Make your first app</h2><p>Describe it and Krate makes it. Send it as a link that opens in any browser, phones included, and run the same file natively on Mac, Windows and Linux. The runtime, format and CLI are open source under MIT OR Apache-2.0 (<a href="https://github.com/incyashraj/krate#license">licensing details</a>), and the <a href="/docs/limits.html">capability reference</a> lists everything an app can use today.</p></div>
   <div class="acts">
-    <a class="btn dark" href="/docs/quickstart.html">Developer quickstart <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
-    <a class="btn ghost" href="/docs/porting.html">Evaluate your app</a>
-    <a class="btn ghost" href="/studio/">Make an app in Studio</a>
+    <a class="btn dark" href="/studio/">Make an app in Studio <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/quickstart.html">Developer quickstart</a>
+    <a class="btn ghost" href="/docs/porting.html">Bring your app over</a>
     <a class="btn link" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
   </div>
 </div>
@@ -220,7 +215,7 @@
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
   <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 </body>

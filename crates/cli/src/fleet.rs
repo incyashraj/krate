@@ -31,7 +31,9 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow::Result;
-use krate_policy::{DenyRule, OrgBlock, OrgCeiling, SessionPolicy};
+use krate_policy::{
+    DenyRule, OrgBlock, OrgCeiling, SessionPolicy, PRINT_CALL, SCREEN_CAPTURE_CALL,
+};
 use serde_json::{json, Value};
 
 use crate::audit::{self, RecordDoor, Refused};
@@ -468,6 +470,81 @@ fn redact_proxy(text: &str) -> String {
     }
 }
 
+/// One `[apps."<app id>"]` table, or `[apps."*"]` for every
+/// organisation's private app on this computer (G17): device-side data
+/// rules. Each narrows; none allows anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AppRules {
+    /// `clipboard_read = false`: the app cannot read the clipboard, and the
+    /// person's own paste into it is refused too.
+    pub no_clipboard_read: bool,
+    /// `clipboard_write = false`: nothing leaves the app by the clipboard.
+    pub no_clipboard_write: bool,
+    /// `printing = false`: no printing, and no saving as PDF from the print
+    /// dialog.
+    pub no_printing: bool,
+    /// `screen_capture = false`: the app's windows are kept out of
+    /// screenshots, recordings and screen sharing where the system allows
+    /// it (macOS, Windows), and Krate takes no picture of it.
+    pub no_screen_capture: bool,
+    /// `wipe_when_offline_ends = true`: when the app's offline access runs
+    /// out, its team data on this computer is deleted.
+    pub wipe_when_offline_ends: bool,
+}
+
+impl AppRules {
+    fn merge(&mut self, other: &AppRules) {
+        self.no_clipboard_read |= other.no_clipboard_read;
+        self.no_clipboard_write |= other.no_clipboard_write;
+        self.no_printing |= other.no_printing;
+        self.no_screen_capture |= other.no_screen_capture;
+        self.wipe_when_offline_ends |= other.wipe_when_offline_ends;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        *self == AppRules::default()
+    }
+
+    /// The rules as `krate policy` says them.
+    pub fn words(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.no_clipboard_read {
+            out.push("no reading the clipboard, pasting included");
+        }
+        if self.no_clipboard_write {
+            out.push("no copying out by the clipboard");
+        }
+        if self.no_printing {
+            out.push("no printing");
+        }
+        if self.no_screen_capture {
+            out.push("kept out of screenshots and screen recordings");
+        }
+        if self.wipe_when_offline_ends {
+            out.push("team data deleted from this computer when offline access ends");
+        }
+        out
+    }
+
+    fn json(&self) -> Value {
+        json!({
+            "clipboard_read": !self.no_clipboard_read,
+            "clipboard_write": !self.no_clipboard_write,
+            "printing": !self.no_printing,
+            "screen_capture": !self.no_screen_capture,
+            "wipe_when_offline_ends": self.wipe_when_offline_ends,
+        })
+    }
+}
+
+/// The app an `[apps]` rule is looked up for: its id, and whether it
+/// carries an organisation's mark (a claim is enough: a rule only narrows).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AppRef {
+    pub id: Option<String>,
+    pub org_app: bool,
+}
+
 /// A policy, version 1, every key understood.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Policy {
@@ -494,6 +571,30 @@ pub struct Policy {
     /// listed first, and a person who is not signed in is asked to sign in
     /// with its company sign-in (IC-953). It narrows nothing.
     pub org: Option<String>,
+    /// `[apps]`: device-side data rules by app id, `"*"` for every
+    /// organisation's private app (G17).
+    pub apps: BTreeMap<String, AppRules>,
+}
+
+impl Policy {
+    /// The `[apps]` rules that hold for one app: `"*"` for an organisation's
+    /// app, and its own id's table, together.
+    pub fn rules_for(&self, app: &AppRef) -> AppRules {
+        let mut rules = AppRules::default();
+        if app.org_app {
+            if let Some(all) = self.apps.get("*") {
+                rules.merge(all);
+            }
+        }
+        if let Some(own) = app
+            .id
+            .as_deref()
+            .and_then(|id| self.apps.get(&id.to_ascii_lowercase()))
+        {
+            rules.merge(own);
+        }
+        rules
+    }
 }
 
 /// Reads one tree strictly: every table names only keys Krate knows.
@@ -616,6 +717,7 @@ fn parse(value: &PValue, kind: SourceKind) -> std::result::Result<Policy, String
             "audit",
             "runtime",
             "org",
+            "apps",
         ],
     )?;
     match top.get("version") {
@@ -878,6 +980,49 @@ fn parse(value: &PValue, kind: SourceKind) -> std::result::Result<Policy, String
         }
     }
 
+    let mut apps = BTreeMap::new();
+    if let Some(value) = top.get("apps") {
+        let t = r.table(value, "apps")?;
+        for (id, rules) in t {
+            let at = format!("apps.{id}");
+            let id = id.trim().to_ascii_lowercase();
+            if id != "*" && !app_id_shape(&id) {
+                return Err(format!(
+                    "`{at}` should be named by an app's id, like dev.acme.payroll, or \"*\" for \
+                     every organisation app"
+                ));
+            }
+            let fields = r.table(rules, &at)?;
+            r.only(
+                fields,
+                &at,
+                &[
+                    "clipboard_read",
+                    "clipboard_write",
+                    "printing",
+                    "screen_capture",
+                    "wipe_when_offline_ends",
+                ],
+            )?;
+            let flag = |key: &str| -> std::result::Result<Option<bool>, String> {
+                fields
+                    .get(key)
+                    .map(|v| r.bool(v, &format!("{at}.{key}")))
+                    .transpose()
+            };
+            let rule = AppRules {
+                no_clipboard_read: flag("clipboard_read")? == Some(false),
+                no_clipboard_write: flag("clipboard_write")? == Some(false),
+                no_printing: flag("printing")? == Some(false),
+                no_screen_capture: flag("screen_capture")? == Some(false),
+                wipe_when_offline_ends: flag("wipe_when_offline_ends")? == Some(true),
+            };
+            apps.entry(id)
+                .or_insert_with(AppRules::default)
+                .merge(&rule);
+        }
+    }
+
     Ok(Policy {
         name,
         trust,
@@ -893,7 +1038,21 @@ fn parse(value: &PValue, kind: SourceKind) -> std::result::Result<Policy, String
         audit_path,
         interpreter,
         org,
+        apps,
     })
+}
+
+/// An app id as a manifest spells one: two or more dot-separated parts of
+/// lower-case letters, digits, dashes and underscores.
+fn app_id_shape(id: &str) -> bool {
+    let parts: Vec<&str> = id.split('.').collect();
+    parts.len() >= 2
+        && parts.iter().all(|p| {
+            !p.is_empty()
+                && p.bytes().all(|b| {
+                    b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_')
+                })
+        })
 }
 
 /// An organisation's short name, as the hub allows it (org.js SLUG).
@@ -1071,20 +1230,42 @@ pub fn trust_refusal(policy: &Policy, facts: &SigFacts) -> Option<Refused> {
     }
 }
 
-/// The ceiling this computer's policy puts on every run.
-pub fn ceiling() -> OrgCeiling {
-    match policy() {
-        Some(policy) => OrgCeiling {
-            deny: policy.deny.clone(),
-            network: policy.network.clone(),
-        },
-        None => OrgCeiling::default(),
+/// The ceiling this computer's policy puts on every run of `app`: the
+/// `[capabilities]` and `[network]` limits, and the app's `[apps]` rules as
+/// exact capability rules the runtime enforces at the call (G17).
+pub fn ceiling_for(app: &AppRef) -> OrgCeiling {
+    let Some(policy) = policy() else {
+        return OrgCeiling::default();
+    };
+    let mut deny = policy.deny.clone();
+    let rules = policy.rules_for(app);
+    for (blocked, cap) in [
+        (rules.no_clipboard_read, "read"),
+        (rules.no_clipboard_write, "write"),
+    ] {
+        if blocked {
+            let cap = krate_manifest::Capability::new("ui", "clipboard", Some(cap))
+                .expect("ui.clipboard:read and :write are Krate capabilities");
+            deny.push(DenyRule::exact(&cap));
+        }
+    }
+    let mut calls = Vec::new();
+    if rules.no_printing {
+        calls.push(PRINT_CALL.to_string());
+    }
+    if rules.no_screen_capture {
+        calls.push(SCREEN_CAPTURE_CALL.to_string());
+    }
+    OrgCeiling {
+        deny,
+        network: policy.network.clone(),
+        calls,
     }
 }
 
-/// Put the organisation's ceiling on a policy this run built.
-pub fn narrow(policy: SessionPolicy) -> SessionPolicy {
-    let ceiling = ceiling();
+/// Put the organisation's ceiling for `app` on a policy this run built.
+pub fn narrow(policy: SessionPolicy, app: &AppRef) -> SessionPolicy {
+    let ceiling = ceiling_for(app);
     if ceiling.is_empty() {
         return policy;
     }
@@ -1121,8 +1302,8 @@ fn blocked_words(
 
 /// A required capability the organisation blocks, as the refusal a person
 /// sees. Optional ones are shown as blocked in the consent prompt instead.
-pub fn capability_refusal(manifest: &krate_manifest::Manifest) -> Option<Refused> {
-    let ceiling = ceiling();
+pub fn capability_refusal(manifest: &krate_manifest::Manifest, app: &AppRef) -> Option<Refused> {
+    let ceiling = ceiling_for(app);
     if ceiling.is_empty() {
         return None;
     }
@@ -1184,6 +1365,17 @@ impl<'a> Subject<'a> {
         self.bundle.map(|b| b.manifest()).or(self.manifest)
     }
 
+    /// Who this app is for the `[apps]` rules: its id, and whether it
+    /// carries an organisation's mark.
+    pub fn app_ref(&self) -> AppRef {
+        AppRef {
+            id: self.manifest().map(|m| m.app.id.clone()),
+            org_app: self
+                .bundle
+                .is_some_and(|b| b.org_mark().ok().flatten().is_some()),
+        }
+    }
+
     fn facts(&self) -> &SigFacts {
         self.facts.get_or_init(|| SigFacts::of(self.bundle))
     }
@@ -1210,7 +1402,7 @@ pub fn admit_capabilities(subject: &Subject, door: RecordDoor) -> Result<()> {
     let Some(manifest) = subject.manifest() else {
         return Ok(());
     };
-    if let Some(refused) = capability_refusal(manifest) {
+    if let Some(refused) = capability_refusal(manifest, &subject.app_ref()) {
         return refuse(subject, door, refused);
     }
     Ok(())
@@ -1243,6 +1435,29 @@ pub fn org_gate_opened(
 ) -> Result<Option<crate::access::Opened>> {
     let result = crate::access::gate_opened(bytes, mark, door.access());
     note_refusal(subject, door, &result);
+    // Offline access ran out: where the organisation says so for this app,
+    // its team data leaves this computer now (G17).
+    if let Err(err) = &result {
+        let expired = err
+            .downcast_ref::<Refused>()
+            .is_some_and(|r| r.reason == "offline-expired");
+        let app = subject.app_ref();
+        let wipe = policy().is_some_and(|p| p.rules_for(&app).wipe_when_offline_ends);
+        let slug = subject.bundle.and_then(|b| b.org_mark().ok().flatten());
+        if let (true, true, Some(slug), Some(id)) = (expired, wipe, slug, app.id.as_deref()) {
+            let gone = crate::access::wipe_team_data(&slug, id);
+            let mut record = record_base(subject, door);
+            record["event"] = json!("team-data-wiped");
+            record["files"] = json!(gone);
+            audit::write(record);
+            eprintln!(
+                "{}'s team data for this app was deleted from this computer, as {} asks when its \
+                 offline access ends",
+                slug,
+                who(policy())
+            );
+        }
+    }
     result
 }
 
@@ -1323,10 +1538,13 @@ pub fn check(
     if let Some(refused) = trust_refusal(policy, &SigFacts::of(bundle)) {
         return Some(refused);
     }
+    let app = Subject::new(bundle, None, None)
+        .with_manifest(manifest)
+        .app_ref();
     bundle
         .map(|b| b.manifest())
         .or(manifest)
-        .and_then(capability_refusal)
+        .and_then(|m| capability_refusal(m, &app))
 }
 
 // ---------------------------------------------------------------- hub
@@ -1570,6 +1788,11 @@ fn policy_json(policy: &Policy) -> Value {
         "audit": { "path": policy.audit_path.as_ref().map(|p| p.display().to_string()) },
         "runtime": { "interpreter": policy.interpreter },
         "org": policy.org.as_ref().map(|slug| json!({ "slug": slug })),
+        "apps": policy
+            .apps
+            .iter()
+            .map(|(id, rules)| (id.clone(), rules.json()))
+            .collect::<serde_json::Map<String, Value>>(),
     })
 }
 
@@ -1738,6 +1961,14 @@ fn words_for(state: &State, record: &audit::Location) -> String {
             }
             if let Some(allow) = &policy.network {
                 line(format!("Apps may reach only: {}.", allow.join(", ")));
+            }
+            for (id, rules) in policy.apps.iter().filter(|(_, r)| !r.is_empty()) {
+                let whom = if id == "*" {
+                    "Every organisation app".to_string()
+                } else {
+                    id.clone()
+                };
+                line(format!("{whom}: {}.", rules.words().join("; ")));
             }
             line(format!(
                 "Usage counting: {}.",
@@ -2261,6 +2492,10 @@ interpreter = true
         let mut root: BTreeMap<String, PValue> = BTreeMap::new();
         let mut path: Vec<String> = Vec::new();
         for line in text.lines().map(str::trim) {
+            // A comment, as regedit reads one.
+            if line.starts_with(';') {
+                continue;
+            }
             if let Some(key) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
                 let key = key
                     .strip_prefix(r"HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Krate")
@@ -2330,6 +2565,114 @@ interpreter = true
         }
         let policy = parse(&value, SourceKind::Registry).expect("the registry sample");
         check_the_sample(&policy);
+    }
+
+    /// G17: `[apps]` rules, for every organisation app or one app by id,
+    /// read strictly and fail closed; they narrow only the apps they name.
+    #[test]
+    fn app_rules_are_read_strictly_and_narrow_only_their_apps() {
+        let policy = toml_policy(
+            "version = 1\n\
+             [apps.\"*\"]\nclipboard_write = false\nwipe_when_offline_ends = true\n\
+             [apps.\"Dev.Acme.Payroll\"]\nclipboard_read = false\nprinting = false\n\
+             screen_capture = false\n",
+        )
+        .expect("rules");
+        let payroll = AppRef {
+            id: Some("dev.acme.payroll".into()),
+            org_app: true,
+        };
+        let other_org = AppRef {
+            id: Some("dev.acme.notes".into()),
+            org_app: true,
+        };
+        let not_org = AppRef {
+            id: Some("dev.someone.game".into()),
+            org_app: false,
+        };
+        let all = policy.rules_for(&payroll);
+        assert!(all.no_clipboard_write && all.no_clipboard_read && all.no_printing);
+        assert!(all.no_screen_capture && all.wipe_when_offline_ends);
+        let notes = policy.rules_for(&other_org);
+        assert!(notes.no_clipboard_write && notes.wipe_when_offline_ends);
+        assert!(!notes.no_clipboard_read && !notes.no_printing && !notes.no_screen_capture);
+        assert!(
+            policy.rules_for(&not_org).is_empty(),
+            "not an organisation app"
+        );
+        // A rule that says the default narrows nothing.
+        let open = toml_policy("version = 1\n[apps.\"*\"]\nprinting = true\n").expect("open");
+        assert!(open.rules_for(&other_org).is_empty());
+        // Unknown keys, wrong types and a name that is not an app id refuse.
+        for (bad, says) in [
+            (
+                "[apps.\"*\"]\ncopy = false\n",
+                "`apps.*.copy` is not a setting Krate knows",
+            ),
+            (
+                "[apps.\"*\"]\nprinting = \"no\"\n",
+                "`apps.*.printing` should be true or false",
+            ),
+            (
+                "[apps.payroll]\nprinting = false\n",
+                "`apps.payroll` should be named by an app's id",
+            ),
+            ("apps = 1\n", "`apps` should be a table"),
+        ] {
+            let err = toml_policy(&format!("version = 1\n{bad}")).expect_err(bad);
+            assert!(err.contains(says), "{bad}: {err}");
+        }
+        // The published sample's commented-out section, uncommented, is a
+        // policy this parser reads key for key.
+        let sample = include_str!("../../../docs/landing/deploy/policy.toml");
+        let section: String = sample
+            .lines()
+            .skip_while(|l| !l.starts_with("# [apps."))
+            .filter_map(|l| l.strip_prefix("# "))
+            .filter(|l| l.starts_with("[apps.") || l.contains(" = "))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let rules = toml_policy(&format!("version = 1\n{section}")).expect("the sample's rules");
+        let every = rules.rules_for(&payroll);
+        assert!(every.no_clipboard_read && every.no_clipboard_write && every.no_printing);
+        assert!(every.no_screen_capture && every.wipe_when_offline_ends);
+        // The registry sample's commented-out section, uncommented, is the
+        // same rules as the registry reads them (DWORD 0 and 1).
+        let reg = include_bytes!("../../../docs/landing/deploy/windows/krate-policy-example.reg");
+        let units: Vec<u16> = reg
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        let text: String = String::from_utf16_lossy(&units)
+            .lines()
+            .filter(|l| l.starts_with(";[") || l.starts_with(";\"") || l.starts_with('['))
+            .map(|l| format!("{}\r\n", l.trim_start_matches(';')))
+            .filter(|l| !l.contains("trust"))
+            .collect::<String>()
+            + "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Krate]\r\n\"version\"=dword:00000001\r\n";
+        let bytes: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let from_registry =
+            parse(&read_reg_export(&bytes), SourceKind::Registry).expect("registry rules");
+        let every = from_registry.rules_for(&payroll);
+        assert!(every.no_clipboard_read && every.no_clipboard_write && every.no_printing);
+        assert!(every.no_screen_capture && every.wipe_when_offline_ends);
+        // The Windows template sets them for every organisation app, by
+        // the same key names, in apps\*.
+        let admx = include_str!("../../../docs/landing/deploy/windows/krate.admx");
+        for key in [
+            "clipboard_read",
+            "clipboard_write",
+            "printing",
+            "screen_capture",
+            "wipe_when_offline_ends",
+        ] {
+            assert!(
+                admx.contains(&format!(
+                    "key=\"Software\\Policies\\Krate\\apps\\*\" valueName=\"{key}\""
+                )),
+                "{key}"
+            );
+        }
     }
 
     #[test]

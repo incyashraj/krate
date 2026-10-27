@@ -1,0 +1,35 @@
+name = "book a week of holiday"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Book the first time off"
+[[step]]
+key = "Tab"
+# Select and replace (K-1109): a draft, all of it selected and pasted
+# over, then the last word selected with Shift and typed over.
+[[step]]
+type = "a first draft"
+[[step]]
+key = "Primary+a"
+[[step]]
+paste = "2027-03-09"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+type = "01"
+[[step]]
+expect_text = "2027-03-01"
+[[step]]
+expect_no_text = "a first draft"
+[[step]]
+expect_no_text = "2027-03-09"
+[[step]]
+key = "Tab"
+[[step]]
+type = "2027-03-05"
+[[step]]
+click = "Book it"
+[[step]]
+expect_text = "Booked 5 working days of holiday"

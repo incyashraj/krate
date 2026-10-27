@@ -189,7 +189,7 @@ impl Value {
             Value::Number(n) => serde_json::json!({ "n": n }),
             Value::Boolean(b) => serde_json::json!({ "b": b }),
             Value::Bytes(bytes) => {
-                serde_json::json!({ "x": crate::shared_host::b64_encode(bytes) })
+                serde_json::json!({ "x": crate::b64_encode(bytes) })
             }
         }
     }
@@ -208,10 +208,7 @@ impl Value {
             "t" => inner.as_str().map(|t| Value::Text(t.to_string())),
             "n" => inner.as_f64().filter(|n| n.is_finite()).map(Value::Number),
             "b" => inner.as_bool().map(Value::Boolean),
-            "x" => inner
-                .as_str()
-                .and_then(crate::shared_host::b64_decode)
-                .map(Value::Bytes),
+            "x" => inner.as_str().and_then(crate::b64_decode).map(Value::Bytes),
             _ => None,
         }
     }

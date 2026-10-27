@@ -27,8 +27,12 @@
 .org-why .btn { margin-top: 10px; }
 .loading { margin-top: 10px; font-size: 14.5px; color: var(--ink-3); }
 .panel .stack .btn.link { justify-self: center; width: auto; font-size: 14px; color: var(--ink-2); }
-.jtrouble { margin-top: 18px; text-align: left; border-radius: 14px; background: var(--soft); }
-.jtrouble > summary { min-height: 44px; display: flex; align-items: center; justify-content: center; padding: 0 14px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+.jtrouble { margin-top: 14px; text-align: left; border-radius: 14px; }
+.jtrouble[open] { background: var(--soft); }
+.jtrouble > summary { min-height: 40px; display: flex; align-items: center; justify-content: center; padding: 0 14px; font-size: 13px; color: var(--ink-3); cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
+.jtrouble > summary::-webkit-details-marker { display: none; }
+.jcompany { display: grid; gap: 12px; margin-bottom: 12px; }
+.jcompany .btn { width: 100%; }
 .jtrouble[open] > summary { color: var(--ink); }
 .jtrouble .jt { padding: 0 16px 16px; }
 .jtrouble .jt p { margin-top: 0; font-size: 13.5px; }

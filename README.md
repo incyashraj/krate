@@ -107,8 +107,9 @@ a small rainfall chart ([source](https://github.com/incyashraj/krate/tree/c46d29
 [checksum](https://krate.tech/docs/quickstart.html#try-the-chart-sample)):
 
 ```sh
-krate run chart.krate --dump-caps
-krate run chart.krate --prompt
+CHART=https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate
+krate run "$CHART" --dump-caps
+krate run "$CHART" --prompt
 ```
 
 `--dump-caps` lists what the app asks for without running it. Chart asks
@@ -157,7 +158,7 @@ the desktop ready to edit.
 ## Why a file
 
 <p align="center">
-  <img src="docs/landing/og-v4.png" width="760" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+  <img src="docs/landing/og-v5.png" width="760" alt="Krate: make and send apps like pictures. Opens from a link in any browser, phones included, and natively on Mac, Windows and Linux">
 </p>
 
 Cross-platform frameworks can share source while still producing separate

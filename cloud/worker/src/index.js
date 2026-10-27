@@ -46,11 +46,14 @@ import { leaseRoute, leaseKeyRoute } from "./org-lease.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
+// Staged rollout: a pilot group first, pinned groups (G10).
+import { orgRolloutRoute } from "./org-rollout.js";
 // What an approver sees and must confirm (IC-950); after release control.
 import { judgementCaps } from "./org-review.js";
 // Company connections (IC-952). After org-releases.js, whose checks a
 // credential fetch reuses.
 import { connectionRoute, connectionsAsked } from "./org-connections.js";
+import { jwksRoute } from "./org-identity-token.js";
 // SCIM 2.0 provisioning (IC-955); after release control, whose groups it fills.
 import { scimRoute, orgScimRoute } from "./org-scim.js";
 // Audit export over a signed webhook (IC-955).
@@ -64,17 +67,34 @@ import { orgKeysRoute } from "./org-keys.js";
 // approved in the background, solo release.
 import { orgSigningRoute } from "./org-signing.js";
 import { orgDataRoute } from "./org-data.js";
+import { orgLiveRoute } from "./org-data-live.js";
 // Inventory, provenance and ownership (IC-954), after release control and review.
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
 // serves it behind /a/'s own checks, and the cross-origin-isolated page.
-import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack } from "./web-player.js";
+import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH } from "./web-player.js";
+// The receive loop (F-320): the link card, the open counted per person, a
+// stranger's report (receive.js).
+import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState } from "./receive.js";
 // Insights (IC-959), after everything whose counts it reads.
 import { insightsRoute } from "./org-insights.js";
 // The organisation's own day (F-319): its time zone, set by an owner or admin.
 import { orgTimeRoute } from "./org-time.js";
 // The organisation's logo, kept small and only as a picture.
 import { orgBrandRoute } from "./org-brand.js";
+// Declining a version with a reason, release notes, app requests and
+// notifications: after everything whose commands they wrap.
+import { orgDeclineRoute } from "./org-decline.js";
+import { orgNotesRoute, noteHeader } from "./org-notes.js";
+import { orgRequestsRoute } from "./org-requests.js";
+import { orgNotifyRoute, sendNotices } from "./org-notify.js";
+// Slack and Teams channels (G12).
+import { orgChatRoute, chatSweep } from "./org-chat.js";
+// Approval rules, and the code behind each approval: after everything
+// whose approving and candidates list they wrap.
+import { orgApprovalsRoute } from "./org-approvals.js";
+// Signed-in sessions, and signing out everywhere.
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -191,6 +211,11 @@ const RATE_WINDOW_SECONDS = 60;
 /// action, so it gets the loosest ceiling.
 const RATE_LIMITS = {
   report: 5,
+  // A stranger's report on an app from the Player (receive.js). One person
+  // sends one; the record itself takes one per person per app per day.
+  "report/app": 5,
+  // The Player's open and "Make your own" beacons: one each per app opened.
+  tab: 30,
   "share/new": 10,
   usage: 60,
   founding: 5,
@@ -201,6 +226,11 @@ const RATE_LIMITS = {
   // cannot grow its audit -- and this bounds what they cost. A person
   // opening a private link before signing in sends one.
   "org/anonymous": 20,
+  // Live team-data sockets opening (org-data-live.js): each carries a
+  // ticket a signed-in sync gave, so this only bounds a flood of made-up
+  // ones. Generous, because a whole office behind one address reconnects
+  // together after a hub deploy.
+  "org/live": 240,
   // Requests to /scim/v2/ with no token or a wrong one (IC-955). They are
   // never audited, so this is what bounds them.
   "scim/refused": 20,
@@ -342,8 +372,10 @@ export default {
     await runScrub(env, { repair: false });
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
+    // Security items for organisations with a Slack or Teams channel (G12).
+    await chatSweep(env, orgAsk, siteBase(env));
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -422,27 +454,27 @@ export default {
         return noteStep(env, "signin", "github-start", loginStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/callback") {
-        return noteStep(env, "signin", "github-done", loginCallback(url, env));
+        return noteStep(env, "signin", "github-done", loginCallback(url, env, request));
       }
       if (request.method === "GET" && pathname === "/login/google/start") {
         return noteStep(env, "signin", "google-start", googleStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/google/callback") {
-        return noteStep(env, "signin", "google-done", googleCallback(url, env));
+        return noteStep(env, "signin", "google-done", googleCallback(url, env, request));
       }
       // Company sign-in for an organisation (IC-948, F).
       if (request.method === "GET" && pathname === "/login/oidc/start") {
         return noteStep(env, "signin", "oidc-start", oidcStart(url, env, signInDeps()));
       }
       if (request.method === "GET" && pathname === "/login/oidc/callback") {
-        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps()));
+        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps(request)));
       }
       // ... and by SAML 2.0 (IC-955): SP-initiated, the Response posted back.
       if (request.method === "GET" && pathname === "/login/saml/start") {
         return noteStep(env, "signin", "saml-start", samlStart(url, env, signInDeps()));
       }
       if (request.method === "POST" && /^\/login\/saml\/acs\/[a-z0-9-]+$/.test(pathname)) {
-        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(), readBounded }));
+        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(request), readBounded }));
       }
       if (request.method === "GET" && /^\/saml\/[a-z0-9-]+$/.test(pathname)) {
         return samlMetadata(url, env, signInDeps());
@@ -451,6 +483,11 @@ export default {
       if (request.method === "GET" && pathname === "/lease-key") {
         return cors(await leaseKeyRoute(env));
       }
+      // The public keys a company API checks a Krate-Identity token with
+      // (org-identity-token.js): an empty set on a hub with no lease key.
+      if (request.method === "GET" && pathname === "/.well-known/jwks.json") {
+        return cors(await jwksRoute(env));
+      }
       if (request.method === "POST" && pathname === "/login/email") {
         // Fetched from page scripts on krate.tech, unlike the login
         // redirects around it, so the answer must carry CORS headers or
@@ -458,7 +495,7 @@ export default {
         return cors(await noteStep(env, "signin", "email-start", emailStart(request, env)));
       }
       if (request.method === "GET" && pathname === "/login/email/verify") {
-        return noteStep(env, "signin", "email-done", emailVerify(url, env));
+        return noteStep(env, "signin", "email-done", emailVerify(url, env, request));
       }
       if (request.method === "POST" && pathname === "/auth/start") {
         return cors(await noteStep(env, "signin", "desktop-start", authStart(env)));
@@ -568,6 +605,19 @@ export default {
       }
       if (request.method === "GET" && pathname.startsWith("/icon/")) {
         return cors(await getIcon(pathname.slice(6), env));
+      }
+      // The Player: an app opened in a tab, or "Make your own" pressed
+      // (K-1132). Counted in Analytics Engine only, never KV.
+      if (request.method === "POST" && pathname === "/tab") {
+        const over = await rateLimited(request, env, "tab");
+        if (over) return cors(over);
+        return cors(await tabEvent(request, env, { verifyGitHub, ownerOf, ownerOfRecord, netOf, isBot, visitorHash }));
+      }
+      // A report on an app from anyone who opened it, no account needed.
+      if (request.method === "POST" && /^\/report\/app\/[0-9a-f]{64}$/.test(pathname)) {
+        const over = await rateLimited(request, env, "report/app");
+        if (over) return cors(over);
+        return cors(await appReport(request, env, pathname.slice("/report/app/".length), { verifyGitHub, netOf, visitorHash, json }));
       }
       if (request.method === "POST" && pathname === "/report") {
         const over = await rateLimited(request, env, "report");
@@ -728,6 +778,12 @@ export default {
       // the files it is made of. Not wrapped in CORS: nothing but this
       // origin loads them.
       if (request.method === "GET" && pathname.startsWith("/run/")) {
+        // A chat app showing a /run/ link gets the app's card, as for /a/.
+        const run = RUN_PATH.exec(pathname);
+        if (run && run[1] && !run[4] && isPreviewer(request)) {
+          const card = await previewCard(run[1], env);
+          if (card) return card;
+        }
         const page = await playerPage(request, url, env);
         if (page) return page;
       }
@@ -766,9 +822,21 @@ export default {
       if (pathname.startsWith("/scim/v2/")) {
         return await scimRoute(request, url, env, { orgAsk, readBounded, noteOrgOf, rateLimited, slugOk: (s) => SLUG.test(s) });
       }
+      // Signed-in sessions: list them, sign one out, sign out the others.
+      if (pathname.startsWith("/account/sessions")) {
+        const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
+        if (res) return cors(res);
+      }
+      // A live team-data socket (org-data-live.js): handed to the
+      // organisation's object as it came, and its 101 handed back as it
+      // is -- CORS would rebuild the response and drop the socket.
+      if (pathname.startsWith("/orgs/") && (request.headers.get("upgrade") || "").toLowerCase() === "websocket") {
+        const live = await orgLiveRoute(request, url, env, { rateLimited });
+        if (live) return live;
+      }
       // Organisations (IC-946).
       if (pathname === "/orgs" || pathname.startsWith("/orgs/")) {
-        return cors(await orgRoute(request, url, env));
+        return cors(await orgRoute(request, url, env, ctx));
       }
       return cors(text("not found", 404));
     } catch (err) {
@@ -1827,6 +1895,8 @@ async function getShot(hash, env) {
 /// This is the M0 measurement from the mobile plan: what fraction of
 /// shared-link opens land on a device that cannot run the app today.
 function classifyClient(request) {
+  // A chat app drawing a card for the link: not a person, not a runtime.
+  if (isPreviewer(request)) return "preview";
   const accept = request.headers.get("accept") || "";
   if (!accept.includes("text/html")) return "tool";
   const ua = request.headers.get("user-agent") || "";
@@ -1834,6 +1904,22 @@ function classifyClient(request) {
   if (/iPhone|iPad|iPod/i.test(ua)) return "mobile-ios";
   if (/Mobile/i.test(ua)) return "mobile-other";
   return "desktop-browser";
+}
+
+/// Let go of a stored object's body that will not be sent.
+async function dropBody(object) {
+  try {
+    if (object && object.body && typeof object.body.cancel === "function") await object.body.cancel();
+  } catch (_) {}
+}
+
+/// The card for a /run/<hash> link, behind /a/'s own checks: a takedown
+/// answers 451, a private release gets the card that names nothing.
+async function previewCard(hash, env) {
+  const found = await bundleObject(hash, env);
+  if (found.response) return found.response;
+  await dropBody(found.object);
+  return linkCard(env, hash, { privateOrg: found.privateOrg });
 }
 
 async function fetchBundle(request, url, hash, env) {
@@ -1875,7 +1961,14 @@ async function fetchBundle(request, url, hash, env) {
   // bytes are: there is no moment at which the object exists and the
   // check does not. The organisation's store is asked on every fetch.
   const privateOrg = object.customMetadata && object.customMetadata.org;
+  const wantsBytes = url.searchParams.has("dl");
   if (privateOrg) {
+    // The card for a private release names nothing: no app, no
+    // organisation, no picture -- no more than the link itself says.
+    if (!wantsBytes && isPreviewer(request)) {
+      await dropBody(object);
+      return linkCard(env, hash, { privateOrg });
+    }
     return await fetchPrivate(request, url, hash, object, privateOrg, big, env);
   }
 
@@ -1886,7 +1979,7 @@ async function fetchBundle(request, url, hash, env) {
   // "landing" is a person being walked to the receive page first -- the
   // number that tells us whether first-click is working.
   const client = classifyClient(request);
-  const wantsBytes = url.searchParams.has("dl");
+  const via = viaOf(url.searchParams.get("via"));
   const landing = wantsBytes
     ? null
     : client.startsWith("mobile-")
@@ -1896,6 +1989,11 @@ async function fetchBundle(request, url, hash, env) {
         : null;
   // A HEAD is a link checker or an unfurler looking, not a person or a
   // runtime fetching; it is answered but not counted as a hit.
+  //
+  // blob7 is the post's tag (`?via=`), blob8 the app and blob9 home|cloud,
+  // the slots the opens use, and index1 the daily visitor hash: a hit is a
+  // tap, and the visitor says how many people tapped (K-1132). A previewer
+  // drawing a card is client "preview", so a chat's card is not a tap.
   if (env.USAGE && request.method !== "HEAD") {
     env.USAGE.writeDataPoint({
       blobs: [
@@ -1905,17 +2003,28 @@ async function fetchBundle(request, url, hash, env) {
         "ok",
         landing ? "landing" : "direct",
         new Date().toISOString().slice(0, 10),
+        via,
+        hash,
+        netOf(request),
       ],
       doubles: [1],
-      indexes: [hash],
+      indexes: [await visitorHash(request, env)],
     });
+  }
+
+  // A chat app asking for the link draws its card from this: the app's
+  // name, one line on what it is, and its picture. `?dl=1` still gets bytes.
+  if (client === "preview" && !wantsBytes) {
+    await dropBody(object);
+    return linkCard(env, hash);
   }
 
   // A phone browser gets a small page instead of a file the phone cannot
   // open -- the soft landing from the mobile plan. `?dl=1` still hands the
   // raw bytes to anyone who insists.
   if (landing === "mobile") {
-    return await mobileLanding(hash, env);
+    await dropBody(object);
+    return await mobileLanding(hash, env, via);
   }
 
   // A desktop browser holding this link is a person, not a runtime -- the
@@ -1925,9 +2034,10 @@ async function fetchBundle(request, url, hash, env) {
   // button comes back here with `?dl=1`, so the two can never loop, and
   // `krate run <url>` never sees this branch (it does not ask for HTML).
   if (landing === "desktop") {
+    await dropBody(object);
     return new Response(null, {
       status: 302,
-      headers: { location: `https://krate.tech/open/?a=${hash}` },
+      headers: { location: `https://krate.tech/open/?a=${hash}${viaQuery(via, "&")}` },
     });
   }
 
@@ -1974,7 +2084,7 @@ async function fetchBundle(request, url, hash, env) {
 /// The page a phone sees when it taps a shared app link. Honest about
 /// today's boundary, and it keeps the link alive instead of dumping a file
 /// the phone cannot open: copy the link, open it on a computer, done.
-async function mobileLanding(hash, env) {
+async function mobileLanding(hash, env, via = "-") {
   let name = "A Krate app";
   let author = "";
   const meta = await env.APPS.get(`app:${hash}`);
@@ -2012,8 +2122,11 @@ async function mobileLanding(hash, env) {
   h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
   .by { color: rgba(255,255,255,0.45); font-size: 14px; margin: 0 0 18px; }
   p { color: rgba(255,255,255,0.6); font-size: 15px; line-height: 1.55; margin: 0 0 24px; }
-  button { width: 100%; padding: 14px; border: 0; border-radius: 999px; background: #fff;
-           color: #0a0a0a; font-size: 15.5px; font-weight: 600; margin-bottom: 14px; }
+  .go { display: block; box-sizing: border-box; width: 100%; padding: 14px; border-radius: 999px;
+         background: #fff; color: #0a0a0a; font-size: 15.5px; font-weight: 600; text-decoration: none;
+         margin-bottom: 10px; }
+  button.second { width: 100%; padding: 13px; border: 1px solid #2a2d33; border-radius: 999px;
+                  background: transparent; color: #fff; font-size: 15px; font-weight: 500; margin-bottom: 18px; }
   a { color: rgba(255,255,255,0.5); font-size: 13px; }
 </style>
 </head>
@@ -2022,9 +2135,10 @@ async function mobileLanding(hash, env) {
   ${shot ? `<div class="card"><img src="${shot}" alt=""></div>` : ""}
   <h1>${esc(name)}</h1>
   ${author ? `<p class="by">by ${esc(author)}</p>` : ""}
-  <p>Someone made this and shared it. It runs on computers today: open this link on your Mac, Windows, or Linux machine, install Krate once (small and free), and it opens -- after showing you what it may touch.</p>
-  <button onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link</button>
-  <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file anyway</a>
+  <p>Someone made this and sent it to you. It opens right here, with nothing to install, and shows you first what it may touch.</p>
+  <a class="go" href="${base}/run/${hash}${viaQuery(via)}">Open it</a>
+  <button class="second" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link for a computer</button>
+  <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file</a>
 </main>
 </body>
 </html>`;
@@ -2196,8 +2310,21 @@ async function list(env, url) {
       const c = a.meta.category || "apps";
       (cats[c] ||= []).push(a);
     }
+    // "Start here": the apps chosen to show first (GALLERY_PICKS in
+    // wrangler.toml, comma-separated id prefixes, in order), so a stranger's
+    // first look is the best of the gallery, not whatever came last.
+    const picks = String(env.GALLERY_PICKS || "")
+      .split(",")
+      .map((p) => p.trim().toLowerCase())
+      .filter((p) => /^[0-9a-f]{6,64}$/.test(p))
+      .map((p) => apps.find((a) => a.id.startsWith(p)))
+      .filter(Boolean);
+    // "New this week" only when it is: an older newest app is just newest.
+    const weekAgo = Date.now() - 7 * 86400_000;
+    const fresh = byNew.length && (byNew[0].meta.published || 0) >= weekAgo;
     const shelves = [
-      { id: "new", label: "New this week", apps: take(byNew, SHELF) },
+      ...(picks.length ? [{ id: "picks", label: "Start here", apps: take(picks, SHELF) }] : []),
+      { id: "new", label: fresh ? "New this week" : "Newest", apps: take(byNew, SHELF) },
     ];
     // Only when there is something to rank. Before any opens are recorded,
     // "most opened" would be an arbitrary order wearing a confident label.
@@ -2565,19 +2692,23 @@ async function usage(request, env) {
 /// Returns a Map of app id -> opens in the window. Empty on any failure --
 /// the gallery must still render when the analytics API is unreachable, and
 /// a shelf that quietly falls back to "newest" is better than an error page.
-async function openCounts(env, days = 30) {
-  if (!env.ACCOUNT_ID || !env.ANALYTICS_TOKEN) return new Map();
+export async function openCounts(env, days = 30) {
+  // The same names every other analytics read uses. This one read
+  // ACCOUNT_ID and ANALYTICS_TOKEN, which the hub never had, so every
+  // gallery app showed 0 opens.
+  if (!env.CF_ACCOUNT_ID || !env.CF_ANALYTICS_TOKEN) return new Map();
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-  // blob1 is the action and blob8 is the app id; see writeDataPoint above.
+  // blob1 is the action, blob8 the app id and blob9 the network; see
+  // writeDataPoint above. CI and build farms (cloud) are not people.
   const sql = `
     SELECT blob8 AS app, SUM(_sample_interval) AS opens
     FROM krate_usage
-    WHERE blob1 = 'open' AND blob8 != '-' AND timestamp >= toDateTime('${since} 00:00:00')
+    WHERE blob1 = 'open' AND blob8 != '-' AND blob9 != 'cloud' AND timestamp >= toDateTime('${since} 00:00:00')
     GROUP BY app ORDER BY opens DESC LIMIT 200`;
   try {
     const r = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.ACCOUNT_ID}/analytics_engine/sql`,
-      { method: "POST", headers: { Authorization: `Bearer ${env.ANALYTICS_TOKEN}` }, body: sql },
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+      { method: "POST", headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` }, body: sql },
     );
     if (!r.ok) return new Map();
     const out = await r.json();
@@ -3121,11 +3252,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
   return { sent };
 }
 
-async function newSession(env, userId) {
+async function newSession(env, userId, meta = {}) {
   const token = `krs_${crypto.randomUUID().replaceAll("-", "")}`;
   await env.APPS.put(`session:${token}`, userId, { expirationTtl: 90 * 24 * 3600 });
-  // Indexed per user so support can revoke a person's sessions.
-  await env.APPS.put(`usess:${userId}:${token}`, "1", { expirationTtl: 90 * 24 * 3600 });
+  // Indexed per user so support can revoke a person's sessions, and so the
+  // person can see and sign out their own (account-sessions.js): the entry
+  // holds the kind and the browser it came from, in the same write.
+  await recordSession(env, userId, token, meta);
   return token;
 }
 
@@ -3153,14 +3286,19 @@ function signInStart(from, nonce, appNonce) {
   // `player:<hash>`: the browser Player asking for an organisation's app it
   // is about to open in this tab (IC-956). It comes back to that app's page
   // on this hub, never anywhere a caller names.
-  const player = /^player:[0-9a-f]{64}$/.test(from || "") ? from : null;
+  // `player:org/<slug>/<app-id>`: the same for an organisation's app as it
+  // is now (the address a phone keeps on its home screen).
+  const player = /^player:(?:[0-9a-f]{64}|org\/[a-z][a-z0-9-]{1,38}\/[a-z0-9][a-z0-9._-]{0,127})$/.test(from || "") ? from : null;
   return { from: from === "app" ? "app" : player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
 }
 
 /// What the company sign-in routes (org-sso.js) borrow from here: the same
 /// accounts, sessions and K-909 delivery every other sign-in uses.
-function signInDeps() {
-  return { SLUG, signInStart, deliver, ensureUser, newSession, orgAsk, noteOrgOf };
+function signInDeps(request) {
+  const label = sessionLabel(request && request.headers.get("user-agent"));
+  // Company sign-in's sessions say so in the session list.
+  const companySession = (env, userId, meta) => newSession(env, userId, meta || { kind: "company", label });
+  return { SLUG, signInStart, deliver, ensureUser, newSession: companySession, orgAsk, noteOrgOf };
 }
 
 /// Read a stored start. Before K-909 the record was the bare word "app" or
@@ -3219,7 +3357,7 @@ async function googleStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function googleCallback(url, env) {
+async function googleCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const stored = await env.APPS.get(`login:${state}`);
   if (!stored) return signInFailed(url, "expired");
@@ -3258,7 +3396,7 @@ async function googleCallback(url, env) {
     name: claims.name,
     avatar_url: claims.picture,
   });
-  return deliver(start, user, await newSession(env, user.id));
+  return deliver(start, user, await newSession(env, user.id, { kind: "google", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // -------------------------------------------------------------------- email
@@ -3505,7 +3643,7 @@ async function emailStart(request, env) {
   return json({ sent: true });
 }
 
-async function emailVerify(url, env) {
+async function emailVerify(url, env, request) {
   const token = url.searchParams.get("t") || "";
   const stored = await env.APPS.get(`email:${token}`);
   if (!stored) return signInFailed(url, "used");
@@ -3513,7 +3651,8 @@ async function emailVerify(url, env) {
   const record = JSON.parse(stored);
   // The link reached this inbox, so the inbox is proved (IC-947).
   const user = await ensureUser(env, "email", record.email, { email: record.email, verified_email: record.email });
-  return deliver(signInStart(record.from, record.nonce, record.app_nonce), user, await newSession(env, user.id));
+  const start = signInStart(record.from, record.nonce, record.app_nonce);
+  return deliver(start, user, await newSession(env, user.id, { kind: "email", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // --------------------------------------------------------------- web sign-in
@@ -3553,7 +3692,7 @@ async function loginStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function loginCallback(url, env) {
+async function loginCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
   const stored = await env.APPS.get(`login:${state}`);
@@ -3594,7 +3733,18 @@ async function loginCallback(url, env) {
   // The GitHub token itself is handed over (not a krs_ session): the engine
   // already publishes with it and the hub already verifies it. The account
   // record exists either way, so a later Google or email sign-in with the
-  // same address lands on this same user.
+  // same address lands on this same user. Indexed once, so the person can
+  // see this sign-in and sign it out (account-sessions.js): the one write a
+  // GitHub sign-in adds.
+  try {
+    await recordSession(env, account.id, result.access_token, {
+      kind: "github",
+      label: sessionLabel(request && request.headers.get("user-agent"), start.from),
+      ttl: GITHUB_INDEX_TTL_SECONDS,
+    });
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
   return deliver(start, { ...account, login: profile.login }, result.access_token);
 }
 
@@ -3650,6 +3800,21 @@ async function authPoll(request, env) {
   });
   if (!user.ok) return text("signed in, but the profile could not be read", 502);
   const profile = await user.json();
+  // Indexed for the person's session list when their account is known
+  // (one write per sign-in; account-sessions.js). A first-ever sign-in from
+  // the desktop has no account yet, and is listed only while it is in use.
+  try {
+    const userId = profile.login ? await env.APPS.get(`ghlogin:${String(profile.login).toLowerCase()}`) : null;
+    if (userId) {
+      await recordSession(env, userId, result.access_token, {
+        kind: "github",
+        label: sessionLabel(request.headers.get("user-agent"), "app"),
+        ttl: GITHUB_INDEX_TTL_SECONDS,
+      });
+    }
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
 
   return json({
     identity: {
@@ -5200,6 +5365,8 @@ function json(value, status = 200) {
 }
 
 function cors(response) {
+  // A WebSocket's 101 carries the socket itself; rebuilt, it would not.
+  if (response.status === 101 || response.webSocket) return response;
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
   headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -6678,10 +6845,12 @@ async function adminApi(request, pathname, env) {
     const ticks = await env.APPS.list({ prefix: "tick:", limit: 1000 });
     const pays = await env.APPS.list({ prefix: "pay:", limit: 1000 });
     const reps = await env.APPS.list({ prefix: "report:", limit: 1000 });
+    const appReps = await env.APPS.list({ prefix: "app-report:", limit: 1000 });
     return json({
       users: users.keys.length,
       tickets: ticks.keys.length,
       reports: reps.keys.length,
+      app_reports: appReps.keys.length,
       payments: pays.keys.length,
       billing_live: billingLive(env),
     });
@@ -6747,13 +6916,8 @@ async function adminApi(request, pathname, env) {
     return json({ ok: true });
   }
   if (route === "user/logout" && request.method === "POST") {
-    const sess = await env.APPS.list({ prefix: `usess:${body.id}:`, limit: 1000 });
-    for (const k of sess.keys) {
-      const token = k.name.split(":").pop();
-      await env.APPS.delete(`session:${token}`);
-      await env.APPS.delete(k.name);
-    }
-    return json({ revoked: sess.keys.length });
+    // Krate sessions, and GitHub sign-ins the hub indexed (account-sessions.js).
+    return json({ revoked: await endEverySession(env, String(body.id || ""), GITHUB_CLIENT_ID) });
   }
   if (route === "tickets") {
     const listing = await env.APPS.list({ prefix: "tick:", limit: 1000 });
@@ -6820,6 +6984,15 @@ async function adminApi(request, pathname, env) {
     }
     reports.sort((a, b) => (b.received || 0) - (a.received || 0));
     return json({ reports });
+  }
+  // Reports on apps from the people who opened them (receive.js), one
+  // record per app, with the takedown beside each (POST /admin/takedown/).
+  if (route === "app-reports") {
+    return json({ apps: await appReportsList(env, listAllKeys) });
+  }
+  if (route === "app-report/state" && request.method === "POST") {
+    const done = await appReportState(env, body.hash, body.state);
+    return done.status === 200 ? json(done.body) : text(done.body, done.status);
   }
   if (route === "report/state" && request.method === "POST") {
     const id = String(body.id || "");
@@ -7028,6 +7201,7 @@ textarea{min-height:70px;resize:vertical}
   <button data-t="people">People</button>
   <button data-t="tickets">Tickets</button>
   <button data-t="reports">Reports</button>
+  <button data-t="apps">App reports</button>
   <button data-t="users">Users</button>
   <button data-t="makeit">Make-it queue</button>
 </nav>
@@ -7043,7 +7217,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -7141,6 +7315,22 @@ async function show(tab){
       v.appendChild(d);
     }
   }
+  if(tab==="apps"){
+    const {apps}=await api("app-reports");
+    v.innerHTML=apps.length?'<p class="mut" style="margin-bottom:10px">Sent from the Player by people who opened the app, no account needed. One card per app, most recently reported first.</p>':'<p class="mut">No app has been reported.</p>';
+    for(const a of apps){
+      const d=document.createElement("div");d.className="card";
+      const why=Object.entries(a.reasons||{}).map(([k,n])=>esc(k)+" "+n).join(" · ");
+      d.innerHTML='<div class="row"><b>'+esc(a.name||"(no listing)")+'</b> <span class="mut">'+esc(a.hash.slice(0,12))+' · '+esc(a.scope||"")+'</span><span class="pill '+(a.state==="done"?"closed":"open")+'">'+esc(a.state||"new")+'</span>'+(a.taken_down?'<span class="pill">taken down</span>':'')+'<span class="grow"></span><span class="mut">'+when((a.last||0)*1000)+'</span></div>'
+        +'<div class="mut" style="margin:6px 0">'+a.count+' report'+(a.count===1?'':'s')+' · '+why+'</div>'
+        +(a.reports||[]).filter(r=>r.note).slice(-5).map(r=>'<div class="msg user">'+esc(r.why)+': '+esc(r.note)+' <span class="mut">'+esc(r.country||"")+(r.login?' @'+esc(r.login):'')+'</span></div>').join("")
+        +'<div class="row" style="margin-top:8px"><a class="ghost" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px" href="'+HUB+'/run/'+esc(a.hash)+'" target="_blank" rel="noopener">Open it</a>'+(a.taken_down?'':'<button class="act td">Take it down</button>')+'<button class="ghost st">'+(a.state==="done"?"Reopen":"Mark done")+'</button></div>';
+      const td=d.querySelector(".td");
+      if(td)td.onclick=async()=>{const reason=prompt("The reason the notice shows to anyone who opens it:","It broke Krate's rules after a report.");if(!reason)return;const res=await fetch(HUB+"/admin/takedown/"+a.hash,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify({reason,scope:"listing"})});if(!res.ok){alert("Takedown failed: "+res.status+" "+await res.text());return;}await api("app-report/state",{method:"POST",body:JSON.stringify({hash:a.hash,state:"done"})});show("apps");};
+      d.querySelector(".st").onclick=async()=>{await api("app-report/state",{method:"POST",body:JSON.stringify({hash:a.hash,state:a.state==="done"?"seen":"done"})});show("apps");};
+      v.appendChild(d);
+    }
+  }
   if(tab==="users"){
     v.innerHTML='<div class="card row"><input id="q" placeholder="Search email, login, name…"><button class="act" id="go">Search</button></div><div id="ulist"></div>';
     const load=async()=>{
@@ -7196,6 +7386,10 @@ boot();
 //   POST   /orgs/<slug>/candidates                (bundle bytes)
 //   GET    /orgs/<slug>/candidates                (history, for members who publish or approve)
 //   POST   /orgs/<slug>/candidates/<digest>/approve
+//   POST   /orgs/<slug>/candidates/<digest>/decline {reason}      (org-decline.js)
+//   PUT    /orgs/<slug>/candidates/<digest>/note    {note}        (org-notes.js)
+//   GET    /orgs/<slug>/requests, POST {text}, PUT /<id>          (org-requests.js)
+//   GET    /orgs/<slug>/notifications, GET/PUT /me/notify         (org-notify.js)
 //   GET    /orgs/<slug>/releases
 //   GET    /orgs/<slug>/audit
 //   GET    /a/<hash>                              (a private release: see fetchPrivate)
@@ -7335,16 +7529,16 @@ async function noteOrgOf(env, principal, slug, name, role) {
 /// Every organisation route, behind the refused-attempt limit (IC-948 B):
 /// a principal with 30 refusals this minute gets 429 before any store is
 /// asked, and each refusal the store gives is counted.
-async function orgRoute(request, url, env) {
+async function orgRoute(request, url, env, ctx) {
   const identity = await verifyGitHub(request, env);
   const principals = principalsOf(identity);
   if (principals.length && (await refusalsExhausted(env, principals))) return rateLimitedAnswer();
-  const res = await orgRouteCore(request, url, env, identity);
+  const res = await orgRouteCore(request, url, env, identity, ctx);
   if (principals.length && isRefusal(res.status)) await noteRefusal(env, principals);
   return res;
 }
 
-async function orgRouteCore(request, url, env, identity) {
+async function orgRouteCore(request, url, env, identity, ctx) {
   if (!env.ORGS) {
     return json({ error: "orgs-off", message: "organisations are not switched on on this hub" }, 503);
   }
@@ -7436,6 +7630,19 @@ async function orgRouteCore(request, url, env, identity) {
     return askRaw(op, argsOf(body.value), idempotency);
   };
   const mutate = async (op, argsOf) => orgAnswer(await mutateRaw(op, argsOf));
+  // Work that must not hold up or fail the answer -- notification mail --
+  // runs after it when the platform allows; a test, with no context, waits.
+  const later = (pending) => {
+    const safe = Promise.resolve(pending).catch((e) => console.error("after the answer:", e && e.message ? e.message : String(e)));
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(safe);
+      return Promise.resolve();
+    }
+    return safe;
+  };
+  const notices = { env, smtpSend, askRaw, site };
+  // One committed event's mail and channel posts, after the answer.
+  const notify = (event) => later(sendNotices(notices, event));
 
   // Company sign-in and offline access (IC-948, F and G).
   {
@@ -7489,7 +7696,11 @@ async function orgRouteCore(request, url, env, identity) {
     }
     if (method === "DELETE") {
       const answer = await mutateRaw("remove", () => ({ principal: target }));
-      if (answer.status === 204) await noteOrgOf(env, String(target).toLowerCase(), slug, null, null);
+      if (answer.status === 204) {
+        await noteOrgOf(env, String(target).toLowerCase(), slug, null, null);
+        // A removal can leave the team data key due for renewing.
+        await notify({ event: "security" });
+      }
       return orgAnswer(answer);
     }
   }
@@ -7512,7 +7723,15 @@ async function orgRouteCore(request, url, env, identity) {
     return ask("set-root", { public_key: publicKey, revocations }, idempotency);
   }
   if (rest[0] === "candidates") {
-    if (rest.length === 1 && method === "POST") return orgCandidate(request, env, slug, principals, url.pathname, base);
+    if (rest.length === 1 && method === "POST") {
+      const res = await orgCandidate(request, env, slug, principals, url.pathname, base);
+      // A new version waits: the people who may approve it hear (org-notify.js).
+      if (res.status === 201) {
+        const made = await res.clone().json().catch(() => null);
+        if (made && made.digest && made.state === "waiting-for-approval") await later(sendNotices(notices, { event: "waiting", digest: made.digest }));
+      }
+      return res;
+    }
     if (rest.length === 1 && method === "GET") return ask("candidates");
     if (rest.length === 3 && rest[2] === "approve" && method === "POST") {
       const digest = String(rest[1]).toLowerCase();
@@ -7520,7 +7739,10 @@ async function orgRouteCore(request, url, env, identity) {
         return orgError(404, "digest-mismatch", slug, "a digest is the candidate's 64-hex sha256");
       }
       // `accept`: the new capabilities the approver confirmed (IC-950).
-      return mutate("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      const answer = await mutateRaw("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      // Its sender hears it is out; never holds up or fails the approval.
+      if (answer.status === 200 && !answer.replayed) await later(sendNotices(notices, { event: "approved", digest }));
+      return orgAnswer(answer);
     }
   }
   if (rest[0] === "releases" && rest.length === 1 && method === "GET") return ask("releases", { base });
@@ -7535,13 +7757,16 @@ async function orgRouteCore(request, url, env, identity) {
   const h = {
     request, url, env, slug, rest, method, principals, identity, site, base,
     askRaw, mutateRaw, orgAsk, orgAnswer, json, readBody, readBounded, isAdmin, smtpSend, fetchBundle, idempotencyOf,
-    validate: callValidator,
+    validate: callValidator, later, notices, notify,
   };
   const routed =
-    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) || (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
+    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) ||
+    (await orgDeclineRoute(h)) || (await orgNotesRoute(h)) || (await orgRequestsRoute(h)) || (await orgNotifyRoute(h)) || (await orgApprovalsRoute(h)) ||
+    (await orgRolloutRoute(h)) || (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
     (await orgScimRoute(h)) || (await auditExportRoute(h)) || (await orgSamlRoute(h)) ||
     (await orgKeysRoute(h)) ||
     (await orgSigningRoute(h)) ||
+    (await orgChatRoute(h)) ||
     (await orgDataRoute(h));
   if (routed) return routed;
   return text("not found", 404);
@@ -7570,6 +7795,8 @@ async function orgCandidate(request, env, slug, principals, path, base) {
     );
   }
   const body = read.body;
+  const note = noteHeader(request.headers.get("x-krate-note"));
+  if (note.bad) return json({ error: "bad-request", message: note.bad }, 400);
   const invalid = (problem) => json({ error: "invalid-bundle", message: `not a valid .krate bundle: ${problem}` }, 422);
   if (body.length === 0) return invalid("the body is empty");
   const problem = archiveProblem(body);
@@ -7579,6 +7806,7 @@ async function orgCandidate(request, env, slug, principals, path, base) {
   const digest = await sha256Hex(body);
   const idempotency = await idempotencyOf(request, path, digest);
   const args = candidateArgs(judged.judgement, digest, body.length, base);
+  if (note.value) args.note = note.value;
 
   const check = await orgAsk(env, slug, { op: "check-candidate", principals, args, idempotency });
   if (check.replayed || check.status !== 200) return orgAnswer(check);
@@ -7649,6 +7877,9 @@ async function fetchPrivate(request, url, hash, object, slug, big, env) {
         size: object.size,
         org: { slug, name: answer.body.org_name },
         offline: answer.body.offline,
+        // The version this person should have now (staged rollout,
+        // org-rollout.js): a check-in on another one hears it.
+        ...(answer.body.for_you ? { for_you: answer.body.for_you } : {}),
       }),
       { headers: { "content-type": "application/json", ...noStore } },
     );

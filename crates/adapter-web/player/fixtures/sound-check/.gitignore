@@ -1,0 +1,4 @@
+target/
+# cargo-component writes it on every build (2.5 MB); the app uses the
+# SDK's bindings, as the apps do.
+src/bindings.rs

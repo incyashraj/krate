@@ -232,6 +232,16 @@ h3 { font-size: 19px; line-height: 1.3; font-weight: 500; letter-spacing: -.02em
 .fa-h h2, .rel h2, .cl-h h2 { font-size: 21px; letter-spacing: -.03em; }
 .fa-h p { margin-top: 4px; font-size: 14.5px; color: var(--mute); text-wrap: pretty; }
 .starters { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 20px; }
+/* Many ready apps: their kinds as chips, then a search, above the grid */
+.st-filter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 20px; }
+.st-filter + .starters { margin-top: 14px; }
+.st-kinds { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.st-kinds .chip { min-height: 36px; padding: 0 14px; border-radius: 99px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); }
+.st-kinds .chip:hover { box-shadow: inset 0 0 0 1px var(--ink-4); }
+.st-kinds .chip[aria-pressed="true"] { color: var(--btn-ink); background: var(--btn); box-shadow: none; }
+.st-find { width: min(240px, 100%); height: 40px; }
+@media (max-width: 560px) { .st-find { width: 100%; } }
+.st-none { margin-top: 14px; }
 @media (min-width: 760px) { .starters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* A choice of app: a picture of it in use on top, then its name, its line
    and its three best things. Picked: an accent ring and a filled tick. */

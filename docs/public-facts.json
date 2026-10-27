@@ -1,16 +1,20 @@
 {
   "schema": "krate.public-facts.v1",
   "name": "Krate",
-  "description": "Krate is an open-source app runtime that ships an application as one sandboxed .krate file that runs natively on every desktop.",
-  "prerequisite": "The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.",
+  "description": "Krate makes apps you send like pictures: one small .krate file that opens from a link in any browser, phones included, with nothing to install, and runs natively on macOS, Windows and Linux.",
+  "prerequisite": "Nothing, to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the recipient installs the Krate runtime once for macOS, Windows or Linux, and every .krate opens from its file after that.",
   "bundle_accounting": "A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.",
-  "security": "Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.",
-  "studio": "Krate Studio provides AI-assisted app creation and revision. Developers can also build against the Rust SDK. Optional hosted services are separate from the local runtime and file format.",
+  "security": "Every app starts with no access to files or the network. Before it opens, the person sees exactly what it asks for and decides; hosts it did not declare stay unreachable, and each app keeps its own storage. Grant only what the task needs.",
+  "studio": "Krate Studio makes and changes apps with AI: describe the app in plain words and it writes, checks and packs it, then keep changing it by asking. Studio runs on macOS, Windows and Linux and in the browser at krate.tech/app/, and works with Claude, Codex, Grok or Gemini. Developers can also build with the krate command line and the Rust SDK.",
   "website": "https://krate.tech",
   "repository": "https://github.com/incyashraj/krate",
   "latest_release_url": "https://github.com/incyashraj/krate/releases/latest",
-  "benchmark_claim_ids": ["app-file-size", "memory-50k", "warm-start-50k"],
-  "summary": "Krate is an open-source app runtime, built in Rust on Wasmtime. Developers ship an application as one .krate file that runs natively on every desktop (macOS, Windows and Linux) through the Krate runtime, instead of building, signing and hosting a separate package for each operating system. Apps are small, sandboxed with the permissions the user grants, and shared in one click. Krate Studio builds Krate apps with AI. Not to be confused with Rust crates (crates.io), krate.com or KrateSoft.",
+  "benchmark_claim_ids": [
+    "app-file-size",
+    "memory-50k",
+    "warm-start-50k"
+  ],
+  "summary": "Krate is an open-source app runtime and AI app maker, built in Rust on Wasmtime. Describe an app and Krate Studio makes it; send it as one .krate file or a link, the way you send a picture. A link opens the app in any modern browser, phones included, with nothing to install and no account. With the Krate runtime, the same file runs natively on macOS, Windows and Linux, with no browser or WebView inside, so there is no separate package, build or signature for each operating system. Apps are small, from 37 KB, start with no access to files or the network, and ask before they touch anything. Not to be confused with Rust crates (crates.io), krate.com or KrateSoft.",
   "disambiguation": "Krate (krate.tech) is the Krate app runtime. It is not a Rust crate or crates.io package, and it is not related to krate.com, KrateSoft or the JavaScript project of the same name.",
   "current_release": "0.5.4",
   "current_release_date": "2026-09-30"

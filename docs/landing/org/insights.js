@@ -161,7 +161,8 @@
       var top = exact.length ? Math.max.apply(null, exact) : 0;
       var last = items.length ? items[items.length - 1] : null;
       var said = o.what + ", " + o.span + ": most on one " + o.unit + " " + numSaid(top) + "; " + (o.lastWord || "the last") + " " + (last ? numSaid(last.value) : "0") + ".";
-      var bars = el("div", { class: "bars", role: "img", "aria-label": said });
+      var empty = !top && !few;
+      var bars = el("div", { class: "bars" + (empty ? " zero" : ""), role: "img", "aria-label": said, "data-empty": "Nobody yet in this time." });
       bars.appendChild(el("span", { class: "top", "aria-hidden": "true", text: String(max === 1 && !top ? 1 : max) }));
       items.forEach(function (x) {
         var v = x.value === FEWER ? 2 : Number(x.value) || 0;
@@ -298,8 +299,12 @@
       ]));
       sec.push(sub("Computers with access", s.devices.length
         ? [capped(s.devices.slice().sort(function (x, y) { return Number(y.silent) - Number(x.silent) || Number(x.holds_current) - Number(y.holds_current); }), 8, function (d) {
-            var seen = d.last_seen ? "last seen " + when(d.last_seen, now) : "not seen since it was added on " + K.day(d.added_at);
-            return row([d.name || "A computer", d.silent ? el("span", { class: "tag warn", text: "Silent 60+ days" }) : null], K.who(d.principal).label + " · " + seen + (d.holds_current ? "" : " · waiting for another computer to share access"),
+            // K-1115: an older Krate does not say which computer it is when
+            // it checks in; that computer is "not identified", never silent.
+            var unknown = d.identified === false;
+            var fresh = now - (Number(d.added_at) || 0) < 86400;
+            var seen = d.last_seen ? "last seen " + when(d.last_seen, now) : unknown && !fresh ? "added " + K.day(d.added_at) + "; its Krate is older and does not say when it checks in, so update Krate there to see it here" : unknown ? "added " + K.day(d.added_at) + "; it has not checked in yet" : "not seen since it was added on " + K.day(d.added_at);
+            return row([d.name || "A computer", d.silent ? el("span", { class: "tag warn", text: "Silent 60+ days" }) : unknown ? el("span", { class: "tag", text: "Not identified" }) : null], K.who(d.principal).label + " · " + seen + (d.holds_current ? "" : " · waiting for another computer to share access"),
               d.silent ? [go("people", "Open People", "Open People to decide about " + K.who(d.principal).label)] : null);
           }, "computers"),
           el("details", { class: "nums" }, [el("summary", { text: "Details" }), el("small", { text: s.key ? "These computers hold version " + s.key.version + " of " + name + "'s organisation key" + (s.key.state === "stale" ? "; someone was removed since, so the next member computer online replaces it" : "") + "." : name + " has no organisation key yet." })])]
@@ -471,7 +476,7 @@
       var kids = [];
       kids.push(sub("Your computers", y.devices.length
         ? [rows(y.devices.map(function (d) {
-            return row([d.name || "A computer"], "Added " + K.day(d.added_at) + " · " + (d.last_seen ? "last seen " + when(d.last_seen, now) : "not seen since") + (d.holds_current ? "" : " · waiting for another computer to share access"));
+            return row([d.name || "A computer"], "Added " + K.day(d.added_at) + " · " + (d.last_seen ? "last seen " + when(d.last_seen, now) : d.identified === false ? (now - (Number(d.added_at) || 0) < 86400 ? "not checked in yet" : "computer not identified: its Krate is older, so update it to see when it checks in") : "not seen since") + (d.holds_current ? "" : " · waiting for another computer to share access"));
           }))]
         : [none("Your computers show here once Krate runs on them signed in to " + nameOf() + ".")]));
       kids.push(sub("Apps you opened, last 30 days", y.apps.length

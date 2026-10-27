@@ -4,23 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ship a desktop app without code signing for every OS</title>
-<meta name="description" content="Native installers need an Apple Developer ID and notarization, and a trusted Windows signature. A .krate is one file; people install the runtime once.">
+<meta name="description" content="Native installers need an Apple Developer ID, notarization and a Windows signature. A Krate app is one link or one .krate file, with nothing per OS to sign.">
 <link rel="canonical" href="https://krate.tech/desktop-app-code-signing.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
 <meta property="og:title" content="Ship a desktop app without code signing for every OS">
-<meta property="og:description" content="Native installers need an Apple Developer ID and notarization, and a trusted Windows signature. A .krate is one file; people install the runtime once.">
+<meta property="og:description" content="Native installers need an Apple Developer ID, notarization and a Windows signature. A Krate app is one link or one .krate file, with nothing per OS to sign.">
 <meta property="og:url" content="https://krate.tech/desktop-app-code-signing.html">
-<meta property="og:image" content="https://krate.tech/og-v4.png">
-<meta property="og:image:alt" content="Krate desktop application runtime">
+<meta property="og:image" content="https://krate.tech/og-v5.png">
+<meta property="og:image:alt" content="Krate: make and send apps like pictures">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Ship a desktop app without code signing for every OS">
-<meta name="twitter:description" content="Native installers need an Apple Developer ID and notarization, and a trusted Windows signature. A .krate is one file; people install the runtime once.">
-<meta name="twitter:image" content="https://krate.tech/og-v4.png">
+<meta name="twitter:description" content="Native installers need an Apple Developer ID, notarization and a Windows signature. A Krate app is one link or one .krate file, with nothing per OS to sign.">
+<meta name="twitter:image" content="https://krate.tech/og-v5.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/desktop-app-code-signing.html#webpage", "url": "https://krate.tech/desktop-app-code-signing.html", "name": "Ship a desktop app without code signing for every OS", "description": "Native installers need an Apple Developer ID and notarization, and a trusted Windows signature. A .krate is one file; people install the runtime once.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Does a Krate app need its own Apple Developer ID?", "acceptedAnswer": {"@type": "Answer", "text": "No. The app is a file that the Krate runtime opens, and Krate for Mac is signed and notarized by Apple. You do not sign or notarize the .krate for each system."}}, {"@type": "Question", "name": "Can I distribute a Windows app without a code signing certificate?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, but users see a SmartScreen warning and must choose to run it anyway, and some managed or Smart App Control machines block it. With Krate you ship a .krate instead of an .exe; Windows checks the Krate runtime when it is installed, and that runtime is unsigned today."}}, {"@type": "Question", "name": "Do I need an Apple Developer account to share a Mac app?", "acceptedAnswer": {"@type": "Answer", "text": "For a native Mac app downloaded from the web, in practice yes: notarization needs a Developer ID from the paid Apple Developer Program. A .krate is opened by Krate for Mac, which is signed and notarized, so you don't need your own Apple account to share one."}}, {"@type": "Question", "name": "Is a signed app safe to run?", "acceptedAnswer": {"@type": "Answer", "text": "A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds a second check: the app asks before it gets your files or the network."}}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/desktop-app-code-signing.html#webpage", "url": "https://krate.tech/desktop-app-code-signing.html", "name": "Ship a desktop app without code signing for every OS", "description": "Native installers need an Apple Developer ID, notarization and a Windows signature. A Krate app is one link or one .krate file, with nothing per OS to sign.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-27", "mainEntity": [{"@type": "Question", "name": "Does a Krate app need its own Apple Developer ID?", "acceptedAnswer": {"@type": "Answer", "text": "No. The app is a file that the Krate runtime opens, and Krate for Mac is signed and notarized by Apple. You do not sign or notarize the .krate for each system."}}, {"@type": "Question", "name": "Can I distribute a Windows app without a code signing certificate?", "acceptedAnswer": {"@type": "Answer", "text": "A native .exe without one shows a SmartScreen warning, and some managed or Smart App Control machines block it. With Krate there is no .exe of yours: you send a link that opens in the browser, or a .krate file the Krate runtime opens."}}, {"@type": "Question", "name": "Do I need an Apple Developer account to share a Mac app?", "acceptedAnswer": {"@type": "Answer", "text": "For a native Mac app downloaded from the web, in practice yes: notarization needs a Developer ID from the paid Apple Developer Program. A .krate is opened by Krate for Mac, which is signed and notarized, so you don't need your own Apple account to share one."}}, {"@type": "Question", "name": "Is a signed app safe to run?", "acceptedAnswer": {"@type": "Answer", "text": "A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds what a signature leaves out: the app asks before it gets your files or the network."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -109,8 +109,8 @@
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
   <h1>Ship a desktop app without code signing for every OS</h1>
-  <p class="lede">Native installers need an Apple Developer ID and notarization on macOS and a trusted signature on Windows; a <code>.krate</code> file is not a native installer, so you ship one file and the people you send it to install the Krate app runtime once. The runtime then opens your file and shows what the app asks for before it runs.</p>
-  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 2 min read</p>
+  <p class="lede">A Krate app needs no code signing per operating system, because you send a link that opens in any browser or one <code>.krate</code> file that the Krate runtime opens natively. Native installers need an Apple Developer ID and notarization on macOS and a trusted signature on Windows; a Krate app skips that whole step.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-27">27 October 2026</time> against Krate 0.5.4. 2 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
     <a class="btn dark" href="#signing-a-krate-with-your-own-key">Sign a .krate with your own key <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
     <a class="btn ghost" href="/download/">Install Krate</a>
@@ -123,9 +123,9 @@
       <h6>On this page</h6>
       <a href="#what-signing-takes-for-a-native-app">What signing takes for a native app</a>
       <a href="#what-a-signature-tells-your-users">What a signature tells your users</a>
-      <a href="#how-it-works-with-a-krate">How it works with a .krate</a>
+      <a href="#how-it-works-with-krate">How it works with Krate</a>
       <a href="#signing-a-krate-with-your-own-key">Signing a .krate with your own key</a>
-      <a href="#what-you-still-own">What you still own</a>
+      <a href="#what-you-get-back">What you get back</a>
       <a href="#questions">Questions</a>
       <a href="#more-answers">More answers</a>
     </nav>
@@ -143,23 +143,24 @@
         <h2>What a signature tells your users</h2>
 <p>A signature identifies the publisher and shows the file has not been changed since it was signed. It does not limit what the program can reach once it runs: a signed installer still gets the same access to files and the network as the person who opened it.</p>
       </section>
-      <section id="how-it-works-with-a-krate">
-        <h2>How it works with a .krate</h2>
-<p>The operating system checks the Krate runtime once, when it is installed. Krate for Mac is signed and notarized by Apple.</p>
-<p>Your app is a file the runtime opens, not a program the operating system launches, so there is no per-OS package of yours to sign or notarize. When someone opens it, Krate shows what it asks for, and the app gets only what they allow.</p>
+      <section id="how-it-works-with-krate">
+        <h2>How it works with Krate</h2>
+<p><strong>From a link,</strong> it opens in any modern browser, phones included, with nothing to install and no account. There is no installer of yours for anyone to approve.</p>
+<p><strong>Natively,</strong> your app is a file the Krate runtime opens, not a program the operating system launches, so there is no per-OS package of yours to sign or notarize. Krate for Mac is signed and notarized by Apple. When someone opens your app, Krate shows what it asks for, and the app gets only what they allow.</p>
       </section>
       <section id="signing-a-krate-with-your-own-key">
         <h2>Signing a .krate with your own key</h2>
 <p>You can sign a bundle so recipients can check it came from you and has not changed. The key is an Ed25519 key you create; it stays on your machine, and signing and checking work offline with no account:</p>
 <pre class="answer-cmd" tabindex="0" aria-label="Command example">krate sign app.krate --key publisher.key --generate-key --namespace com.example.app</pre>
-<p><code>--generate-key</code> writes a new key the first time and refuses to overwrite one. Run <code>krate sign --help</code> for your version's options. This signature ties releases to your key; it is not a certificate authority's check of your legal identity.</p>
+<p><code>--generate-key</code> writes a new key the first time and refuses to overwrite one. <code>krate sign --help</code> lists every option. Every release you sign is tied to your key.</p>
       </section>
-      <section id="what-you-still-own">
-        <h2>What you still own</h2>
+      <section id="what-you-get-back">
+        <h2>What you get back</h2>
 <ul>
-<li>Telling people where to get Krate, and that Windows asks once at install today.</li>
-<li>Publishing your app's hash or signing key somewhere they trust, so they can check what they received.</li>
-<li>Testing on the systems you support, within the <a href="/docs/limits.html">current limits</a>.</li>
+<li>No Apple Developer Program fee and no notarization queue for your app.</li>
+<li>No certificate to buy, renew and keep safe for each platform.</li>
+<li>No reputation to build per release before people can open it.</li>
+<li>One file or one link per release, the same for everyone.</li>
 </ul>
       </section>
     <section id="questions">
@@ -167,23 +168,23 @@
       <h3>Does a Krate app need its own Apple Developer ID?</h3>
 <p>No. The app is a file that the Krate runtime opens, and Krate for Mac is signed and notarized by Apple. You do not sign or notarize the <code>.krate</code> for each system.</p>
       <h3>Can I distribute a Windows app without a code signing certificate?</h3>
-<p>Yes, but users see a SmartScreen warning and must choose to run it anyway, and some managed or Smart App Control machines block it. With Krate you ship a <code>.krate</code> instead of an <code>.exe</code>; Windows checks the Krate runtime when it is installed, and that runtime is unsigned today.</p>
+<p>A native <code>.exe</code> without one shows a SmartScreen warning, and some managed or Smart App Control machines block it. With Krate there is no <code>.exe</code> of yours: you send a link that opens in the browser, or a <code>.krate</code> file the Krate runtime opens.</p>
       <h3>Do I need an Apple Developer account to share a Mac app?</h3>
 <p>For a native Mac app downloaded from the web, in practice yes: notarization needs a Developer ID from the paid Apple Developer Program. A <code>.krate</code> is opened by Krate for Mac, which is signed and notarized, so you don't need your own Apple account to share one.</p>
       <h3>Is a signed app safe to run?</h3>
-<p>A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds a second check: the app asks before it gets your files or the network.</p>
+<p>A signature tells you who made it and that it was not changed. It does not limit what the app can do once it runs. Krate adds what a signature leaves out: the app asks before it gets your files or the network.</p>
     </section>
     <section id="more-answers">
-      <h2>More answers about shipping desktop apps</h2>
+      <h2>More answers about making and sending apps</h2>
       <ul class="answer-related">
-        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every desktop</a></li>
-        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one file</a></li>
+        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every screen</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one link</a></li>
         <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely: see what it can touch first</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
         <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
-        <li><a href="/krate-vs-electron.html">Krate vs Electron: one native file instead of a browser in every app</a></li>
-        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
-        <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one small native file with no browser inside</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file for every desktop and every browser</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Desktop app or web app? Ship one file that is both</a></li>
         <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
         <li><a href="/electron-alternatives.html">Electron alternatives in 2026, compared by what you ship</a></li>
         <li><a href="/tauri-alternatives.html">Tauri alternatives in 2026, compared by what you ship</a></li>
@@ -195,11 +196,11 @@
 </section>
 
 <div class="band st rv">
-  <div><h2>Build with Krate</h2><p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p></div>
+  <div><h2>Make your first app</h2><p>Describe it and Krate makes it. Send it as a link that opens in any browser, phones included, and run the same file natively on Mac, Windows and Linux. The runtime, format and CLI are open source under MIT OR Apache-2.0 (<a href="https://github.com/incyashraj/krate#license">licensing details</a>), and the <a href="/docs/limits.html">capability reference</a> lists everything an app can use today.</p></div>
   <div class="acts">
-    <a class="btn dark" href="/docs/quickstart.html">Developer quickstart <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
-    <a class="btn ghost" href="/docs/porting.html">Evaluate your app</a>
-    <a class="btn ghost" href="/studio/">Make an app in Studio</a>
+    <a class="btn dark" href="/studio/">Make an app in Studio <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/quickstart.html">Developer quickstart</a>
+    <a class="btn ghost" href="/docs/porting.html">Bring your app over</a>
     <a class="btn link" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
   </div>
 </div>
@@ -212,7 +213,7 @@
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
   <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 </body>
