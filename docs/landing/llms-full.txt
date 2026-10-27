@@ -460,6 +460,9 @@ A: No. A Krate app runs natively, with no browser engine inside, and every Krate
 Q: Do I need to know Rust?
 A: No. Describe the app in Krate Studio and the AI writes the Rust for you. Developers who like Rust can write it by hand with the Krate SDK.
 
+Q: Which one should I pick?
+A: Pick Krate when you want one small file that opens anywhere, uses a fraction of the memory and asks before it touches anything. Electron suits a team with a large web codebase built on Node.js packages that wants to keep that code exactly as it is.
+
 ## Krate vs Tauri: one file for every desktop and every browser
 
 URL: https://krate.tech/krate-vs-tauri.html

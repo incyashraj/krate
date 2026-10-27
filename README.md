@@ -158,7 +158,7 @@ the desktop ready to edit.
 ## Why a file
 
 <p align="center">
-  <img src="docs/landing/og-v4.png" width="760" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+  <img src="docs/landing/og-v5.png" width="760" alt="Krate: make and send apps like pictures. Opens from a link in any browser, phones included, and natively on Mac, Windows and Linux">
 </p>
 
 Cross-platform frameworks can share source while still producing separate

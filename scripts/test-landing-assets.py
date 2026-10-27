@@ -62,20 +62,20 @@ class Pictures(HTMLParser):
 
 class LandingAssets(unittest.TestCase):
     def test_current_social_preview_is_sized_and_referenced(self):
-        self.assertEqual(png_size(ROOT / "og-v4.png"), (1200, 630))
+        self.assertEqual(png_size(ROOT / "og-v5.png"), (1200, 630))
         for page in ("index.html", "studio/index.html", "privacy/index.html"):
             source = (ROOT / page).read_text()
-            self.assertIn('content="https://krate.tech/og-v4.png"', source)
+            self.assertIn('content="https://krate.tech/og-v5.png"', source)
             self.assertNotIn("og-v3.png", source)
         repo = ROOT.parents[1]
-        self.assertIn('src="docs/landing/og-v4.png"', (repo / "README.md").read_text())
+        self.assertIn('src="docs/landing/og-v5.png"', (repo / "README.md").read_text())
         for page in (repo / "docs/answers").glob("*.html"):
             self.assertNotIn("og-v3.png", page.read_text(), str(page))
-            self.assertIn('content="https://krate.tech/og-v4.png"', page.read_text())
+            self.assertIn('content="https://krate.tech/og-v5.png"', page.read_text())
 
     def test_social_preview_source_keeps_current_positioning(self):
         source = (ROOT.parent / "social/preview.html").read_text()
-        for required in ("krate-glyph-blue.png", "One app file for",
+        for required in ("krate-glyph-blue.png", "Make and send apps", "any browser",
                          "Mac, Windows and Linux.", "krate.tech"):
             self.assertIn(required, source)
         for retired in ("12 stars", "No installer", "tens of kilobytes", "cannot touch anything"):
