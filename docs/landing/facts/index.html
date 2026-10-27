@@ -11,7 +11,7 @@
 <meta property="og:url" content="https://krate.tech/facts/" />
 <meta property="og:type" content="website" />
 <meta property="og:image" content="https://krate.tech/og-v4.png" />
-<meta property="og:image:alt" content="Krate: one app file that runs natively on every desktop" />
+<meta property="og:image:alt" content="Krate: one app file that opens in any browser and natively on every desktop" />
 <meta name="twitter:card" content="summary_large_image" />
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "AboutPage", "@id": "https://krate.tech/facts/#webpage", "url": "https://krate.tech/facts/", "name": "Krate, the app runtime: the facts", "description": "Facts about Krate, the open-source app runtime: what it is and is not, the current release, platforms, licences, the sandbox, and what people install.", "inLanguage": "en", "dateModified": "2026-10-06", "isPartOf": {"@id": "https://krate.tech/#website"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}}</script>
 <link rel="icon" href="/krate-favicon.png" />
@@ -66,24 +66,24 @@
 <section class="ph wrap n">
   <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Facts</span>
   <h1>Krate, the app runtime: the facts</h1>
-  <p class="lede">Krate is an open-source app runtime, built in Rust on Wasmtime, that runs one sandboxed .krate application file natively on every desktop (macOS, Windows and Linux); Krate Studio builds those apps with AI.</p>
-  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4.</p>
+  <p class="lede">Krate is an open-source app runtime, built in Rust on Wasmtime. Make an app with Krate Studio's AI, send it as one .krate file or a link, and it opens anywhere: in any browser from a link, phones included, and natively on macOS, Windows and Linux.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-27">27 October 2026</time> against Krate 0.5.4.</p>
 </section>
 
 <section class="sec t wrap n fprose">
   <p>Krate (krate.tech) is the Krate app runtime. It is not a Rust crate or crates.io package, and it is not related to krate.com, KrateSoft or the JavaScript project of the same name.</p>
   <dl class="facts">
-    <div class="frow"><dt>What it is</dt><dd>An app runtime, the <code>.krate</code> app file format and the <code>krate</code> command line. Krate Studio, a separate product, builds Krate apps with AI.</dd></div>
+    <div class="frow"><dt>What it is</dt><dd>An app runtime, the <code>.krate</code> app file format and the <code>krate</code> command line, plus Krate Studio, which makes Krate apps with AI from a plain description.</dd></div>
     <div class="frow"><dt>Current release</dt><dd>Krate 0.5.4, published 30 September 2026. <a href="https://github.com/incyashraj/krate/releases/latest">Release notes and downloads</a>.</dd></div>
     <div class="frow"><dt>Runtimes published</dt><dd>macOS (Apple silicon and Intel), Windows (x64 and ARM64) and Linux (x86_64 and arm64).</dd></div>
-    <div class="frow"><dt>Tested in CI</dt><dd>The same <code>.krate</code> files: 10 apps pass on macOS arm64, Ubuntu x86_64 and Windows x86_64 at Krate 0.5.4 (<a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a> records). These are automated checks, not hands-on tests of every feature.</dd></div>
-    <div class="frow"><dt>What people install</dt><dd>The Krate runtime, once for their system. After that every <code>.krate</code> app opens from its file.</dd></div>
-    <div class="frow"><dt>Native</dt><dd>The runtime is a native app on each system, and an app runs inside it with no browser or WebView. On the desktop, Wasmtime compiles the app's WebAssembly to machine code before it runs.</dd></div>
+    <div class="frow"><dt>Tested in CI</dt><dd>The same <code>.krate</code> files: 10 apps pass on macOS arm64, Ubuntu x86_64 and Windows x86_64 at Krate 0.5.4 (<a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a> records), replayed automatically on each system.</dd></div>
+    <div class="frow"><dt>Open from a link</dt><dd>In any modern browser, on a phone or a computer, with nothing to install and no account. A shared app's link looks like <code>hub.krate.tech/run/7f3a…</code>.</dd></div>
+    <div class="frow"><dt>Open natively</dt><dd>Install the Krate runtime once for macOS, Windows or Linux. After that every <code>.krate</code> app opens from its file as a native window.</dd></div>
+    <div class="frow"><dt>Native</dt><dd>On a computer the runtime is a native app, and an app runs inside it with no browser or WebView. On the desktop, Wasmtime compiles the app's WebAssembly to machine code before it runs.</dd></div>
     <div class="frow"><dt>Sandbox</dt><dd>An app starts with no file or network access. It declares what it needs in its manifest, the person sees that list before it opens, and the runtime checks every protected call against what was granted.</dd></div>
-    <div class="frow"><dt>App languages</dt><dd>Rust today. Krate Studio writes the Rust for you with Claude, Codex, Grok or Gemini on your computer, or Krate's own AI in the browser for a first app.</dd></div>
+    <div class="frow"><dt>Making an app</dt><dd>Describe it in plain words and Krate Studio writes it, with Claude, Codex, Grok or Gemini on your computer, or Krate's own AI in the browser. Studio writes the Rust, so you never need to know it, and developers who do get the full SDK.</dd></div>
     <div class="frow"><dt>Licences</dt><dd>The runtime, format and command line: MIT OR Apache-2.0. Krate Studio and the hub: Business Source License 1.1, converting to Apache 2.0 in 2030. <a href="https://github.com/incyashraj/krate#license">Details</a>.</dd></div>
     <div class="frow"><dt>Price</dt><dd>The runtime is free and open source. Studio on your computer is free with the AI you already use. In the browser, the first app is free.</dd></div>
-    <div class="frow"><dt>Not yet</dt><dd>Phones, multiple windows, printing and a few other capabilities. The <a href="/docs/limits.html">limits page</a> has the full list.</dd></div>
     <div class="frow"><dt>Example file</dt><dd><a href="https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate">chart.krate</a>, a bar chart app, is 11,455 bytes (SHA-256 <code>3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3</code>).</dd></div>
     <div class="frow"><dt>Made by</dt><dd>Krate Labs. Founder: Yashraj Pardeshi.</dd></div>
     <div class="frow"><dt>Links</dt><dd>Source: <a href="https://github.com/incyashraj/krate">github.com/incyashraj/krate</a>. Wikidata: <a href="https://www.wikidata.org/wiki/Q141595622">Q141595622</a> (Krate), <a href="https://www.wikidata.org/wiki/Q141595600">Q141595600</a> (Krate Labs).</dd></div>
