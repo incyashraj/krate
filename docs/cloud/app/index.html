@@ -272,9 +272,7 @@
       const ua = navigator.userAgent;
       const linux = /Linux|X11/.test(ua) && !/Android|Mac/.test(ua);
       const phone = /Android|iPhone|iPad|iPod/.test(ua);
-      const openStep = phone
-        ? `<b>Open it on a computer.</b><span>Krate runs on Mac, Windows and Linux, not on phones yet. Send yourself this page and open the file there.</span>`
-        : linux
+      const openStep = linux
           ? `<b>Open the file with Krate.</b><span>It tells you what it wants first, then opens once you agree.</span>`
           : `<b>Double-click the file.</b><span>It tells you what it wants first, then opens once you agree.</span>`;
       const issue = "https://github.com/incyashraj/krate/issues/new?title="
@@ -305,16 +303,17 @@
             <div class="facts">
               <span>${kb(m.size || 0)}</span>
               <span>Published ${esc(when(m.published))}</span>
-              <span>Mac, Windows, Linux</span>
+              <span>Any browser, Mac, Windows, Linux</span>
             </div>
           </div>
         </div>
 
         <h2>Open it</h2>
         <ol class="steps">
-          <li><div><b>Install Krate once.</b><span>Free, a minute, and every app after this one just opens. <a href="/open/">How to install it on your Mac, Windows or Linux computer.</a></span></div></li>
+          <li><div><b>Open it in your browser.</b><span>Right here, ${phone ? "on this phone" : "on this computer"}, with nothing to install. It shows what it asks for first.</span><br /><a class="get" href="${HUB}/run/${esc(id)}?via=gallery">Open ${esc(name)}</a></div></li>
+          ${phone ? "" : `<li><div><b>Or run it natively: install Krate once.</b><span>Free, a minute, and every app after this one just opens. <a href="/open/">How to install it on your Mac, Windows or Linux computer.</a></span></div></li>
           <li><div><b>Download the file.</b><span>${esc(name)} is one file, ${kb(m.size || 0)}.</span><br /><a class="get" href="${esc(app.url)}?dl=1">Download ${esc(name)}</a></div></li>
-          <li><div>${openStep}</div></li>
+          <li><div>${openStep}</div></li>`}
         </ol>
 
         <h2>What it asks for</h2>
