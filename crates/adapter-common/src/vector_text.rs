@@ -50,10 +50,13 @@ thread_local! {
 
 /// How many measured runs to keep.
 ///
-/// A screenful of a dense table is a few hundred distinct strings; a thousand
-/// covers that with room for the headers, chrome and a scroll's worth of
-/// churn. Small enough that the whole thing is a few tens of KB.
-const MEASURE_CACHE_CAP: usize = 1024;
+/// Layout measures every label in a widget tree, not just the ones on
+/// screen, and asks again on every pass. At 1,024 a list of 2,000 rows
+/// cleared the cache every pass and missed on every label, ~80us each, and
+/// its layout cost 18x what 1,000 rows did (K-1135). 16,384 holds a very
+/// long list; an entry is about a hundred bytes, so a full cache is under
+/// 2 MB.
+const MEASURE_CACHE_CAP: usize = 16_384;
 
 /// The part of a measurement request that determines its answer.
 ///
@@ -1935,6 +1938,29 @@ mod glyph_cache_tests {
 
 #[cfg(test)]
 mod tests {
+
+    /// A long list's labels all stay measured between layout passes
+    /// (K-1135).
+    ///
+    /// Layout measures every label in the tree on every pass. With room for
+    /// 1,024, a 2,000-row list cleared the cache partway through each pass
+    /// and re-shaped every label every time, so its layout cost 18x what
+    /// 1,000 rows did. Counted, not timed: after measuring 2,000 labels,
+    /// all 2,000 are still there to be hit.
+    #[test]
+    fn a_long_lists_labels_all_stay_measured() {
+        const LABELS: usize = 2_000;
+        super::clear_measure_cache();
+        for row in 0..LABELS {
+            let _ = super::measure_canvas_text(&format!("Row {}", row + 1), 14.0);
+        }
+        let kept = super::MEASURE_CACHE.with(|cache| cache.borrow().entries.len());
+        assert_eq!(
+            kept, LABELS,
+            "the measure cache dropped labels a single layout pass of {LABELS} rows needs"
+        );
+        super::clear_measure_cache();
+    }
 
     #[test]
     fn canvas_mono_has_equal_advances_at_retina_and_logical_sizes() {

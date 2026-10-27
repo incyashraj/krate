@@ -215,6 +215,13 @@ pub fn placements(
     image: impl Fn(WidgetId) -> Option<Arc<ImagePixels>>,
 ) -> Vec<WidgetPlacement> {
     let mut placements = Vec::new();
+    // One pass for every node's children, used below per node. Asking the
+    // tree per node walked all of it each time, so this function was
+    // quadratic in the widget count (K-1135).
+    let children = krate_layout::child_index(tree);
+    let nth_child = |parent: WidgetId, index: u32| -> Option<WidgetId> {
+        children.get(&parent)?.get(index as usize).copied()
+    };
     for (id, node) in tree.nodes() {
         // A CONTAINER passes too when the app gave it a box. `stack`, `grid`
         // and `scroll` draw nothing of their own and are rightly absent from
@@ -233,7 +240,7 @@ pub fn placements(
         // layout collapses the panel, but a nested control still resolves to
         // a rectangle, so without this every tab's contents would paint on
         // top of each other.
-        if krate_layout::is_hidden_by_tabs(tree, *id) {
+        if krate_layout::is_hidden_by_tabs_in(tree, &children, *id) {
             continue;
         }
         let Some(rect) = absolute_rect(tree, layout, *id) else {
@@ -259,7 +266,7 @@ pub fn placements(
         // only ever see rectangles. Out-of-range indices and children that
         // failed layout simply draw no highlight.
         let selection = node.selected.and_then(|index| {
-            let child = *tree.children(*id).get(index as usize)?;
+            let child = nth_child(*id, index)?;
             let child_rect = absolute_rect(tree, layout, child)?;
             Some((
                 child_rect.x,
@@ -283,7 +290,7 @@ pub fn placements(
         // selection wash instead and leave `checked` alone here.
         let row_selected = list_parent.and_then(|(parent_id, parent)| {
             let index = parent.selected?;
-            let selected_child = *tree.children(parent_id).get(index as usize)?;
+            let selected_child = nth_child(parent_id, index)?;
             Some(selected_child == *id)
         });
         placements.push(WidgetPlacement {
@@ -443,6 +450,37 @@ mod tests {
         assert!(first.clip.is_some());
         let unshifted = absolute_rect(&tree, &layout, id(10)).expect("rect");
         assert_eq!(first.y, unshifted.y - 30.0);
+    }
+
+    /// Placing a long list costs time in proportion to its rows (K-1135).
+    ///
+    /// Measured before: every widget rebuilt the whole tree's child index
+    /// to ask whether a tab hid it, so one frame of N rows cost N^2: 4,000
+    /// rows took 1.7 s here in a debug build, 8,000 four times that. Built
+    /// once per frame it is milliseconds, so the bound is generous for a
+    /// slow machine and still far below what the quadratic version needs.
+    #[test]
+    fn placing_a_long_list_is_linear_in_its_rows() {
+        const ROWS: u64 = 8_000;
+        let mut tree = WidgetTree::new(node(1, None, WidgetKind::Stack)).expect("tree");
+        tree.upsert(node(2, Some(1), WidgetKind::Scroll))
+            .expect("scroll");
+        for row in 0..ROWS {
+            let mut text = node(100 + row, Some(2), WidgetKind::Text);
+            text.style.height = Some(28.0);
+            tree.upsert(text).expect("row");
+        }
+        let viewport = LayoutViewport::new(360.0, 520.0).expect("viewport");
+        let layout = krate_layout::compute_layout(&tree, viewport).expect("layout");
+
+        let started = std::time::Instant::now();
+        let placed = placements(&tree, &layout, |_| 0.0, |_| None);
+        let took = started.elapsed();
+        assert_eq!(placed.len() as u64, ROWS, "every row is placed");
+        assert!(
+            took < std::time::Duration::from_secs(1),
+            "placing {ROWS} rows took {took:?}: something is asking the whole tree per widget"
+        );
     }
 
     /// Enter on a focused button presses its centre; on a text field it
