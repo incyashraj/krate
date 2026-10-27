@@ -1954,6 +1954,13 @@ mod tests {
 
     #[test]
     fn the_contract_example_parses_with_its_defaults() {
+        // The audit path must be a full path, and what is full depends on
+        // the system: the contract's /var/log path is not one on Windows.
+        let audit = if cfg!(windows) {
+            "C:/ProgramData/Krate/opens.jsonl"
+        } else {
+            "/var/log/krate/opens.jsonl"
+        };
         let policy = toml_policy(&format!(
             r#"
 version = 1
@@ -1974,7 +1981,7 @@ providers = ["claude", "codex"]
 [updates]
 mode = "notify"
 [audit]
-path = "/var/log/krate/opens.jsonl"
+path = "{audit}"
 [runtime]
 interpreter = true
 "#

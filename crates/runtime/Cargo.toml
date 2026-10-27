@@ -4,7 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+# Wasmtime 48 needs Rust 1.95. The workspace's 1.94 is the floor the CLI
+# reports for building apps (K-1073); the engine itself needs this one.
+rust-version = "1.95"
 publish = false
 
 # Native dialogs exist on the three desktop systems only. On Android and
@@ -74,7 +76,7 @@ wasmtime.workspace = true
 # is the next real piece of work for running a guest in a tab, and it is
 # tracked as such rather than papered over -- so `load_component` is
 # gated off for wasm32 until those symbols exist.
-wasmtime = { version = "46.0.3", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
+wasmtime = { version = "48.0.7", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
 
 [dependencies]
 # Telling a threaded app (a core module over a shared memory) from a

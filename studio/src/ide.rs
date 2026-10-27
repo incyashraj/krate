@@ -978,7 +978,10 @@ fn source_files_of(bundle: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
     let mut out = Vec::new();
     for i in 0..archive.len().min(4000) {
         let mut entry = archive.by_index(i).map_err(|_| NOT_READABLE.to_string())?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|_| NOT_READABLE.to_string())?
+            .to_string();
         let Some(rel) = name.strip_prefix("source/") else {
             continue;
         };
@@ -2592,10 +2595,11 @@ fi"#,
                 let mut e = archive.by_index(i).unwrap();
                 let mut b = Vec::new();
                 e.read_to_end(&mut b).unwrap();
-                if e.name() == "source/src/lib.rs" {
+                let name = e.name().unwrap().to_string();
+                if name == "source/src/lib.rs" {
                     b.extend_from_slice(b"// changed by the AI\n");
                 }
-                files.push((e.name().to_string(), b));
+                files.push((name, b));
             }
             let cargo = files
                 .iter()

@@ -364,10 +364,8 @@ fn strip_personal_paths(value: &mut serde_json::Value, home: &Path) {
                 strip_personal_paths(v, home);
             }
         }
-        serde_json::Value::String(s) => {
-            if looks_personal(s) {
-                s.clear();
-            }
+        serde_json::Value::String(s) if looks_personal(s) => {
+            s.clear();
         }
         _ => {}
     }
@@ -798,7 +796,7 @@ fn sessions_list() -> Vec<Session> {
                 .collect()
         })
         .unwrap_or_default();
-    sessions.sort_by(|a, b| b.updated.cmp(&a.updated));
+    sessions.sort_by_key(|session| std::cmp::Reverse(session.updated));
     sessions
 }
 
@@ -2642,7 +2640,9 @@ async fn report_collect(session: String) -> Result<serde_json::Value, String> {
             if let Ok(mut zip) = zip::ZipArchive::new(file) {
                 for i in 0..zip.len() {
                     if let Ok(entry) = zip.by_index(i) {
-                        names.push(entry.name().to_string());
+                        if let Ok(name) = entry.name() {
+                            names.push(name.to_string());
+                        }
                     }
                 }
             }
@@ -3714,7 +3714,10 @@ fn contents_of(path: &std::path::Path) -> Result<Vec<serde_json::Value>, String>
     let mut out = Vec::new();
     for i in 0..archive.len().min(4000) {
         let mut entry = archive.by_index(i).map_err(|_| NOT_READABLE.to_string())?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|_| NOT_READABLE.to_string())?
+            .to_string();
         let size = entry.size();
         let mut item = serde_json::json!({ "name": name, "size": size });
         if name.starts_with("source/") && !entry.is_dir() && size <= CONTENTS_TEXT_LIMIT {

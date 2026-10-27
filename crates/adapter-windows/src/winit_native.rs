@@ -429,15 +429,16 @@ mod real {
                             }
                         }
                     }
-                    WindowEvent::KeyboardInput { event, .. } => {
+                    WindowEvent::KeyboardInput { event, .. }
                         if event.state == winit::event::ElementState::Pressed
                             && event.logical_key
-                                == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
-                            && tracker.captured
-                        {
-                            tracker.captured = false;
-                            release = true;
-                        }
+                                == winit::keyboard::Key::Named(
+                                    winit::keyboard::NamedKey::Escape,
+                                )
+                            && tracker.captured =>
+                    {
+                        tracker.captured = false;
+                        release = true;
                     }
                     _ => {}
                 }
