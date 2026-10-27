@@ -17,6 +17,7 @@
 import init, { consent } from './krate_web.js';
 import { makeBridgeMemory, pageBridge } from './bridge.js';
 import { makeRing, pageRing } from './ring.js';
+import { makeAudioMemory, pageAudio } from './audio.js';
 import { TeamData } from './org-data.js';
 // The browser as an organisation's device (window.KrateSigning): the same
 // file the console uses on krate.tech, served here beside the Player.
@@ -90,8 +91,6 @@ const WHAT = {
   'krate:gfx/scene3d': '3D drawing',
   'krate:gfx/video': 'video',
   'krate:gpu/gpu': 'your graphics card',
-  'krate:audio/playback': 'sound',
-  'krate:audio/playback-queue': 'sound',
   'krate:audio/capture': 'your microphone',
   'krate:camera/capture': 'your camera',
   'krate:speech/transcription': 'speech',
@@ -677,6 +676,9 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   const ringBuf = makeRing();
   const ring = pageRing(ringBuf);
   const bridgeMem = makeBridgeMemory();
+  // Sound (K-1134): heard from the person's first tap or key.
+  const audioMem = makeAudioMemory();
+  const audio = pageAudio({ memory: audioMem, probe: params.get('probe') === '1', report });
   const worker = new Worker('/player/app-worker.js', { type: 'module' });
   const canvas = $('screen');
   const ctx2d = canvas.getContext('2d');
@@ -864,6 +866,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
         notice(`${name} wanted to use ${whatOf(data.iface)}, which works in Krate on a computer, not in a tab yet.`);
         break;
       }
+      case 'audio': audio.onMessage(data); break;
       case 'text-entry': if (data.on) $('ime').focus({ preventScroll: true }); else canvas.focus(); break;
       case 'marks': report.workerMarks = data.marks; break;
       case 'closed': windows.delete(data.id); break;
@@ -888,6 +891,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     ended.hidden = false;
     if (crashed) notice(words);
     worker.terminate();
+    audio.close();
   }
 
   // ---- input, in logical pixels, to the app's ring
@@ -1043,6 +1047,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     ring: ringBuf,
     signal: signalBuf,
     bridge: bridgeMem,
+    audio: audioMem,
   });
 }
 

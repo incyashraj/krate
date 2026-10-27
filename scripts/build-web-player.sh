@@ -55,7 +55,8 @@ wasm-bindgen --target web --no-typescript --out-name krate_web --out-dir "$out" 
 #    and mark (a cross-origin-isolated page cannot load krate.tech's).
 web=crates/adapter-web/player/web
 cp "$web"/run.html "$web"/player.js "$web"/player.css "$web"/app-worker.js \
-  "$web"/hosts.js "$web"/bridge.js "$web"/ring.js "$web"/org-data.js "$web"/krate-card.png "$out"/
+  "$web"/hosts.js "$web"/bridge.js "$web"/ring.js "$web"/audio.js "$web"/audio-worklet.js \
+  "$web"/org-data.js "$web"/krate-card.png "$out"/
 # The browser as an organisation's device: the console's own file, so a tab
 # that keeps an app's team data registers and holds the key the same way.
 cp docs/landing/kit/org-device.js "$out"/

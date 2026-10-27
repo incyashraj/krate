@@ -130,6 +130,9 @@ const PLAYER_FILES = new Set([
   "hosts.js",
   "bridge.js",
   "ring.js",
+  // Sound (K-1134): the page's and worker's half, and the audio thread.
+  "audio.js",
+  "audio-worklet.js",
   "org-data.js",
   "org-device.js",
   "krate_web.js",

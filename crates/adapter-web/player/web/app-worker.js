@@ -81,6 +81,10 @@ self.onmessage = async ({ data }) => {
       // store.org: on, not-org or unsupported, as the page found it.
       org: data.org,
       sleepCell: new Int32Array(new SharedArrayBuffer(4)),
+      // Sound: the page's shared stats and command ring (audio.js), and the
+      // streams and sounds this run makes, posted to the page.
+      audio: data.audio,
+      audioPost: (msg, transfer) => post({ t: 'audio', ...msg }, transfer),
       output: (fd, text) => post({ t: 'out', fd, text }),
       notice: (iface, fname) => {
         const key = `${iface}#${fname}`;

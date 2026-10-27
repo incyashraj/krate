@@ -16,6 +16,8 @@
 // where the function has no error channel. The page shows the person a
 // line saying so, once per thing.
 
+import { workerAudio, makeAudioMemory } from './audio.js';
+
 export class HostError extends Error {
   constructor(payload, words) {
     super(words || (typeof payload === 'object' ? JSON.stringify(payload) : String(payload)));
@@ -86,7 +88,7 @@ function refusalStub(iface, fname, shape, notice) {
 /// Build the import object jco's `instantiate` takes.
 ///
 /// ctx: { meta, ui, grants, kv, ring, bridge, args, output, notice,
-///        present, onWindow, onTitle, screen, sleepCell }
+///        present, onWindow, onTitle, screen, sleepCell, audio, audioPost }
 export function buildImports(ctx) {
   const { ui, grants, kv, ring, bridge } = ctx;
   const allows = (cap) => grants.allows(cap);
@@ -512,6 +514,15 @@ export function buildImports(ctx) {
       lastPresent = performance.now();
     },
   };
+  // --------------------------------------------------------------- audio
+  // Sound out (K-1134): audio.js converts and queues, the page's
+  // AudioWorklet plays, from the person's first tap or key.
+  Object.assign(impl, workerAudio({
+    allows,
+    fail: (payload) => new HostError(payload),
+    post: ctx.audioPost || (() => {}),
+    memory: ctx.audio || makeAudioMemory(),
+  }));
   impl['krate:gfx/canvas-images'] = {
     keep: (c, w, h, rgba) => BigInt(unwrap(ui.c_keep(c, w, h, rgba))),
     draw: (c, image, a) => g(ui.c_draw_kept(c, image, geo(a))),
