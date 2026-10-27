@@ -38,6 +38,8 @@ run "faq schema self-test" python3 scripts/build-faq-schema.py --self-test
 run "faq schema" python3 scripts/build-faq-schema.py --check
 run "public facts" python3 scripts/test-public-facts.py
 run "contributor docs" python3 scripts/test-contributor-docs.py
+run "starter kit copies self-test" python3 scripts/check-starter-kit.py --self-test
+run "starter kit copies" python3 scripts/check-starter-kit.py
 run "answer pages self-test" python3 scripts/build-answer-pages.py --self-test
 run "site seo tests" python3 scripts/test-site-seo.py
 run "landing assets" python3 scripts/test-landing-assets.py

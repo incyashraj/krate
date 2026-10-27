@@ -9,6 +9,13 @@
 //! every few seconds while the app is open and once when it closes; offline
 //! is never an error.
 //!
+//! **Never in the window's way (K-1107).** Every exchange runs on the
+//! background thread. In a windowed app `sync` only asks that thread to go
+//! now and answers at once with where this device stands; [`AppOrg::status`]
+//! says the same without asking for anything. A command-line app has no
+//! window to freeze, so its `sync` still waits for the exchange, as a script
+//! that syncs and exits expects.
+//!
 //! Which write wins is [`crate::org_merge`]'s rule, the one the hub applies
 //! too. The part only a device does is keep its stamps on the hub's clock:
 //! after a sync it knows how far its clock is from the hub's
@@ -33,11 +40,12 @@
 //! is refused and counted, never applied. Until this device holds the key
 //! its writes wait, as they do offline.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::org_merge::{self, Stamp, Value};
+use crate::org_merge::{self, Value};
+use krate_orgdata::mirror::Mirror;
+pub use krate_orgdata::mirror::{DataError, Entry, Member, Page, DEFAULT_QUOTA, PAGE_RECORDS};
 
 /// What the caller decided about this run (only the CLI knows the bundle's
 /// mark, the check-in and the sign-in).
@@ -75,6 +83,9 @@ pub struct OrgGrant {
     pub device_secret: DeviceSecret,
     /// What the organisation's device list calls this device.
     pub device_name: String,
+    /// The organisation's name as the check-in gave it, for the words an
+    /// app shows before the first sync names it (the slug when unknown).
+    pub org_name: String,
 }
 
 /// A device's private key, never printed.
@@ -100,23 +111,6 @@ pub enum OrgError {
     Io(String),
 }
 
-/// One record as an app reads it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Entry {
-    pub id: String,
-    pub fields: Vec<(String, Value)>,
-    pub changed_by: String,
-    pub changed_at: u64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Page {
-    pub entries: Vec<Entry>,
-    pub removed: Vec<String>,
-    pub next: String,
-    pub more: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncState {
     pub online: bool,
@@ -125,133 +119,44 @@ pub struct SyncState {
     pub last_synced: Option<u64>,
 }
 
+/// Where this device stands with the organisation's store, as the runtime
+/// last saw it (K-1107, K-1108).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Link {
+    /// The last exchange reached the organisation and nothing waits here.
+    Synced,
+    /// An exchange is under way, or due: something written here is on its
+    /// way, or this run has not reached the organisation yet.
+    Syncing,
+    /// The last try did not reach the organisation.
+    Offline,
+    /// This device does not hold the organisation's key yet. Writes wait
+    /// here until another member's computer passes the key on.
+    WaitingForKey,
+}
+
+/// [`Link`], with what an app shows beside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Member {
-    pub name: String,
-    pub role: String,
+pub struct Status {
+    pub link: Link,
+    pub pending: u32,
+    /// When this device last reached the organisation's store, in
+    /// milliseconds since the Unix epoch; reading counts, not only sending.
+    pub reached_at: Option<u64>,
+    /// The organisation's name, for words like "someone in Acme".
     pub org: String,
 }
 
-/// The most records one `records` page holds.
-pub const PAGE_RECORDS: usize = 200;
-/// The quota before the hub has said what it is.
-pub const DEFAULT_QUOTA: u64 = 50 * 1024 * 1024;
 /// How often the runtime syncs while the app is open.
 pub const BACKGROUND_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
 /// The least time between syncs an app asks for.
 const SYNC_FLOOR: std::time::Duration = std::time::Duration::from_secs(2);
-/// What one push carries at most, under the hub's 1 MiB.
-const PUSH_BYTES: usize = 512 * 1024;
-const PUSH_WRITES: usize = 1000;
 /// Rounds of push and pull in one sync before it stops for now.
 const MAX_ROUNDS: usize = 64;
-
-/// One field as this device holds it.
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
-struct MCell {
-    /// The wire value: null, {t}, {n}, {b} or {x}.
-    v: serde_json::Value,
-    /// The stamp, in its text form.
-    s: String,
-    /// Who wrote it, as the organisation names them.
-    by: String,
-    /// Written here and not yet taken by the hub.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pending: bool,
-    /// The local generation of a pending write, so a sync knows whether
-    /// the field was written again while it was away.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    g: u64,
-}
-
-fn is_zero(n: &u64) -> bool {
-    *n == 0
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
-struct Rec {
-    /// The local change number, for `records` cursors.
-    seq: u64,
-    cells: BTreeMap<String, MCell>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
-struct Me {
-    name: String,
-    role: String,
-    org: String,
-}
-
-/// This device's copy of one app's data in one organisation.
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
-struct Mirror {
-    v: u32,
-    /// This copy's device id: 16 random hex digits.
-    device: String,
-    /// How far this device's clock is behind the hub's, as last measured.
-    offset_ms: i64,
-    /// The greatest stamp made or seen here.
-    last: Option<String>,
-    /// The hub's cursor: what this device has pulled.
-    cursor: Option<String>,
-    /// When the hub last took this device's changes.
-    synced_at: Option<u64>,
-    quota: Option<u64>,
-    me: Option<Me>,
-    local_seq: u64,
-    generation: u64,
-    records: BTreeMap<String, BTreeMap<String, Rec>>,
-    /// The keyring, sealed to this device's key: opens only here.
-    #[serde(default)]
-    envelope: Option<String>,
-    /// Rows from the hub that did not open or did not match their names:
-    /// refused, never applied.
-    #[serde(default)]
-    rejected: u64,
-}
-
-impl Mirror {
-    fn fresh() -> Mirror {
-        Mirror {
-            v: 1,
-            device: random_device(),
-            ..Default::default()
-        }
-    }
-
-    fn last(&self) -> Option<Stamp> {
-        self.last.as_deref().and_then(Stamp::parse)
-    }
-
-    fn observe(&mut self, stamp: &Stamp) {
-        if self.last().is_none_or(|last| *stamp > last) {
-            self.last = Some(stamp.to_string());
-        }
-    }
-
-    /// What this device's copy costs against the app's quota, counted as
-    /// the hub counts it: each field's sealed bytes and bookkeeping.
-    fn used(&self) -> u64 {
-        let mut used = 0;
-        for (c, recs) in &self.records {
-            for (i, rec) in recs {
-                for (f, cell) in &rec.cells {
-                    used += sealed_size(c, i, f, cell);
-                }
-            }
-        }
-        used
-    }
-
-    fn pending(&self) -> u32 {
-        self.records
-            .values()
-            .flat_map(|recs| recs.values())
-            .flat_map(|rec| rec.cells.values())
-            .filter(|cell| cell.pending)
-            .count() as u32
-    }
-}
+/// How long closing a windowed app waits for its last sync before letting
+/// it finish on its own (K-1107): what was written is kept here and goes up
+/// on the next open.
+const CLOSE_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn random_device() -> String {
     let mut bytes = [0u8; 8];
@@ -271,73 +176,6 @@ fn random_device() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// The plaintext sealed for one field: its names, value and writer.
-fn payload(c: &str, i: &str, f: &str, v: &serde_json::Value, by: &str) -> String {
-    serde_json::json!({ "c": c, "i": i, "f": f, "v": v, "w": by }).to_string()
-}
-
-/// A nonce and a tag (40 bytes) on the payload, and the hub's 160 bytes
-/// of bookkeeping per row (cloud/worker/src/org-data.js ROW_OVERHEAD).
-fn sealed_size(c: &str, i: &str, f: &str, cell: &MCell) -> u64 {
-    (payload(c, i, f, &cell.v, &cell.by).len() + 40 + 160) as u64
-}
-
-/// The cells of a record as the merge rule reads them.
-fn cells_of(rec: &Rec) -> Vec<(String, org_merge::Cell)> {
-    rec.cells
-        .iter()
-        .filter_map(|(name, cell)| {
-            Some((
-                name.clone(),
-                org_merge::Cell {
-                    value: Value::from_wire(&cell.v)?,
-                    stamp: Stamp::parse(&cell.s)?,
-                },
-            ))
-        })
-        .collect()
-}
-
-fn entry_of(id: &str, rec: &Rec) -> Option<Entry> {
-    let cells = cells_of(rec);
-    let live = org_merge::live_fields(cells.iter().map(|(n, c)| (n.as_str(), c)));
-    if live.is_empty() {
-        return None;
-    }
-    let newest = live
-        .iter()
-        .max_by(|a, b| a.1.stamp.cmp(&b.1.stamp))
-        .map(|(name, cell)| (name.to_string(), cell.stamp.wall))?;
-    let changed_by = rec
-        .cells
-        .get(&newest.0)
-        .map(|cell| cell.by.clone())
-        .unwrap_or_default();
-    Some(Entry {
-        id: id.to_string(),
-        fields: live
-            .iter()
-            .map(|(name, cell)| (name.to_string(), cell.value.clone()))
-            .collect(),
-        changed_by,
-        changed_at: newest.1,
-    })
-}
-
-/// Drop every field the record's tombstone has outlived.
-fn bury(rec: &mut Rec) {
-    let Some(tomb) = rec
-        .cells
-        .get(org_merge::TOMBSTONE)
-        .and_then(|c| Stamp::parse(&c.s))
-    else {
-        return;
-    };
-    rec.cells.retain(|name, cell| {
-        name == org_merge::TOMBSTONE || Stamp::parse(&cell.s).is_some_and(|s| s > tomb)
-    });
-}
-
 struct Inner {
     grant: OrgGrant,
     mirror: Mirror,
@@ -353,6 +191,30 @@ struct Inner {
     /// The organisation's keyring, while this device holds it.
     #[cfg(not(target_arch = "wasm32"))]
     held: Option<krate_orgkeys::agent::Held>,
+    /// Whether this device holds the organisation's key, as the last try
+    /// found (K-1108).
+    key: KeyHold,
+    /// A try at the organisation has finished this run, reached or not.
+    tried: bool,
+    /// The background thread is in an exchange now.
+    syncing: bool,
+    /// When this device last reached the organisation, in hub milliseconds.
+    reached_at: Option<u64>,
+    /// The live socket's shared flags (org_live.rs), once the background
+    /// thread runs: a sync asks it for a ticket and hands one over.
+    #[cfg(not(target_arch = "wasm32"))]
+    live: Option<Arc<crate::org_live::Live>>,
+}
+
+/// This device's hold of the organisation's key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyHold {
+    /// Not asked yet this run, and no keyring on disk.
+    Unknown,
+    Holds,
+    /// The organisation has no key yet, or another member's device has not
+    /// passed it to this one.
+    Waiting,
 }
 
 impl Inner {
@@ -361,7 +223,7 @@ impl Inner {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
-        (local + self.grant.clock_skew_ms + self.mirror.offset_ms).max(0) as u64
+        self.mirror.clock(local, self.grant.clock_skew_ms)
     }
 
     fn save(&self) -> Result<(), OrgError> {
@@ -369,7 +231,7 @@ impl Inner {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| OrgError::Io(e.to_string()))?;
         }
-        let text = serde_json::to_string(&self.mirror).map_err(|e| OrgError::Io(e.to_string()))?;
+        let text = self.mirror.to_json().map_err(OrgError::Io)?;
         let staged = path.with_extension(format!("json.{}.tmp", std::process::id()));
         std::fs::write(&staged, text).map_err(|e| OrgError::Io(e.to_string()))?;
         #[cfg(unix)]
@@ -394,12 +256,7 @@ impl Inner {
     }
 
     fn me_name(&self) -> String {
-        self.mirror
-            .me
-            .as_ref()
-            .map(|me| me.name.clone())
-            .or_else(|| self.grant.me.clone())
-            .unwrap_or_default()
+        self.mirror.me_name(self.grant.me.as_deref())
     }
 
     /// Write cells into one record, as one change.
@@ -410,97 +267,99 @@ impl Inner {
         fields: Vec<(String, Value)>,
     ) -> Result<(), OrgError> {
         self.check()?;
-        if let Some(problem) = org_merge::name_problem("collection name", collection)
-            .or_else(|| org_merge::name_problem("record id", id))
-        {
-            return Err(OrgError::Invalid(problem));
-        }
-        for (name, value) in &fields {
-            if name != org_merge::TOMBSTONE {
-                if let Some(problem) = org_merge::name_problem("field name", name) {
-                    return Err(OrgError::Invalid(problem));
-                }
-            }
-            if let Value::Number(n) = value {
-                if !n.is_finite() {
-                    return Err(OrgError::Invalid(format!(
-                        "the field {name} is not a finite number"
-                    )));
-                }
-            }
-        }
-        let device = self.mirror.device.clone();
-        let phys = self.now_ms();
-        let by = self.me_name();
-        let generation = self.mirror.generation + 1;
-        let mut last = self.mirror.last();
-        let mut rec = self
-            .mirror
-            .records
-            .get(collection)
-            .and_then(|recs| recs.get(id))
-            .cloned()
-            .unwrap_or_default();
-        for (name, value) in fields {
-            let stamp = Stamp::next(last.as_ref(), phys, &device);
-            rec.cells.insert(
-                name,
-                MCell {
-                    v: value.to_wire(),
-                    s: stamp.to_string(),
-                    by: by.clone(),
-                    pending: true,
-                    g: generation,
-                },
-            );
-            last = Some(stamp);
-        }
-        bury(&mut rec);
-        let cells = cells_of(&rec);
-        if org_merge::record_size(cells.iter().map(|(n, c)| (n.as_str(), c)))
-            > org_merge::MAX_RECORD_BYTES
-        {
-            return Err(OrgError::TooLarge);
-        }
-        let size_of = |rec: &Rec| -> u64 {
-            rec.cells
-                .iter()
-                .map(|(f, cell)| sealed_size(collection, id, f, cell))
-                .sum()
-        };
-        let old = self
-            .mirror
-            .records
-            .get(collection)
-            .and_then(|recs| recs.get(id))
-            .map(size_of)
-            .unwrap_or(0);
-        let new = size_of(&rec);
-        let quota = self.mirror.quota.unwrap_or(DEFAULT_QUOTA);
-        if new > old && self.mirror.used() - old + new > quota {
-            return Err(OrgError::OverQuota);
-        }
-        self.mirror
-            .records
-            .entry(collection.to_string())
-            .or_default()
-            .insert(id.to_string(), rec);
-        self.mirror.generation = generation;
-        if let Some(last) = last {
-            self.mirror.observe(&last);
-        }
-        self.mirror.local_seq += 1;
-        let seq = self.mirror.local_seq;
-        if let Some(rec) = self
-            .mirror
-            .records
-            .get_mut(collection)
-            .and_then(|recs| recs.get_mut(id))
-        {
-            rec.seq = seq;
-        }
+        let (phys, by) = (self.now_ms(), self.me_name());
+        self.mirror.write(collection, id, fields, phys, &by)?;
         self.save()
     }
+}
+
+impl From<DataError> for OrgError {
+    fn from(error: DataError) -> Self {
+        match error {
+            DataError::Invalid(words) => OrgError::Invalid(words),
+            DataError::TooLarge => OrgError::TooLarge,
+            DataError::OverQuota => OrgError::OverQuota,
+        }
+    }
+}
+
+/// What the app asks of the background thread.
+#[derive(Default)]
+struct Asks {
+    /// Sync now, not at the next tick.
+    now: bool,
+    /// The app is closing: one last sync, then stop.
+    stop: bool,
+    /// The live socket says someone else wrote, or it dropped and what it
+    /// might have missed wants catching up: sync now, whatever the floor.
+    pushed: bool,
+}
+
+/// Why the background thread woke.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Turn {
+    /// Its pace ran out.
+    Timer,
+    /// The app asked.
+    Asked,
+    /// The live socket said something changed.
+    Pushed,
+    /// The app is closing.
+    Stop,
+}
+
+/// Wait for the background thread's next turn: its pace, the app asking,
+/// the live socket, or the close. Never called on the app's thread.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn wait_turn(asks: &(Mutex<Asks>, std::sync::Condvar), pace: std::time::Duration) -> Turn {
+    let (asks_lock, wake) = asks;
+    let Ok(mut ask) = asks_lock.lock() else {
+        return Turn::Stop;
+    };
+    let until = std::time::Instant::now() + pace;
+    while !ask.now && !ask.stop && !ask.pushed {
+        let left = until.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        ask = match wake.wait_timeout(ask, left) {
+            Ok((ask, _)) => ask,
+            Err(_) => return Turn::Stop,
+        };
+    }
+    if ask.stop {
+        return Turn::Stop;
+    }
+    let pushed = std::mem::take(&mut ask.pushed);
+    let asked = std::mem::take(&mut ask.now);
+    if pushed {
+        Turn::Pushed
+    } else if asked {
+        Turn::Asked
+    } else {
+        Turn::Timer
+    }
+}
+
+/// Tell the background thread the live socket has news (org_live.rs).
+#[cfg(not(target_arch = "wasm32"))]
+fn push(asks: &(Mutex<Asks>, std::sync::Condvar)) {
+    let (lock, wake) = asks;
+    if let Ok(mut ask) = lock.lock() {
+        ask.pushed = true;
+    }
+    wake.notify_all();
+}
+
+/// An app asking faster than the floor, with nothing of its own to send,
+/// is answered from here, so a timer loop cannot hammer the hub. Neither
+/// the pace nor the live socket is floored.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+fn floored(turn: Turn, inner: &Inner) -> bool {
+    turn == Turn::Asked
+        && inner.last_sync.is_some_and(|at| at.elapsed() < SYNC_FLOOR)
+        && inner.mirror.pending() == 0
 }
 
 /// One app's organisation data for this run.
@@ -508,22 +367,36 @@ pub struct AppOrg {
     access: Option<Arc<Mutex<Inner>>>,
     /// Serialises syncs: the app's own and the background one.
     sync_lock: Arc<Mutex<()>>,
-    stop: Arc<std::sync::atomic::AtomicBool>,
+    /// Wakes the background thread early.
+    asks: Arc<(Mutex<Asks>, std::sync::Condvar)>,
+    /// Whether `sync` waits for the exchange: a command-line app's does,
+    /// a windowed app's never does (K-1107).
+    waits: std::sync::atomic::AtomicBool,
     background: Option<std::thread::JoinHandle<()>>,
+    /// The live socket's flags, to close it with the app.
+    #[cfg(not(target_arch = "wasm32"))]
+    live: Option<Arc<crate::org_live::Live>>,
 }
 
 impl AppOrg {
     /// Open this run's organisation data. `None` means the app was not
     /// granted `store.org`, which every call answers as `denied`.
     pub fn open(access: OrgAccess) -> AppOrg {
+        let mut org = Self::open_quiet(access);
+        org.start_background();
+        org
+    }
+
+    /// [`AppOrg::open`] without the background thread, for tests that set
+    /// the state themselves.
+    fn open_quiet(access: OrgAccess) -> AppOrg {
         let access = match access {
             OrgAccess::NotAnOrgApp => None,
             OrgAccess::Granted(grant) => {
                 let mirror = std::fs::read_to_string(&grant.mirror)
                     .ok()
-                    .and_then(|text| serde_json::from_str::<Mirror>(&text).ok())
-                    .filter(|m| org_merge::valid_device(&m.device))
-                    .unwrap_or_else(Mirror::fresh);
+                    .and_then(|text| Mirror::from_json(&text))
+                    .unwrap_or_else(|| Mirror::fresh(random_device()));
                 // The keyring this device was given, so it works offline.
                 #[cfg(not(target_arch = "wasm32"))]
                 let held = mirror.envelope.as_ref().and_then(|envelope| {
@@ -536,6 +409,14 @@ impl AppOrg {
                         envelope: envelope.clone(),
                     })
                 });
+                #[cfg(not(target_arch = "wasm32"))]
+                let key = if held.is_some() {
+                    KeyHold::Holds
+                } else {
+                    KeyHold::Unknown
+                };
+                #[cfg(target_arch = "wasm32")]
+                let key = KeyHold::Unknown;
                 Some(Arc::new(Mutex::new(Inner {
                     grant: *grant,
                     mirror,
@@ -545,17 +426,24 @@ impl AppOrg {
                     unseen_change: false,
                     #[cfg(not(target_arch = "wasm32"))]
                     held,
+                    key,
+                    tried: false,
+                    syncing: false,
+                    reached_at: None,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    live: None,
                 })))
             }
         };
-        let mut org = AppOrg {
+        AppOrg {
             access,
             sync_lock: Arc::new(Mutex::new(())),
-            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            asks: Arc::new((Mutex::new(Asks::default()), std::sync::Condvar::new())),
+            waits: std::sync::atomic::AtomicBool::new(true),
             background: None,
-        };
-        org.start_background();
-        org
+            #[cfg(not(target_arch = "wasm32"))]
+            live: None,
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -563,28 +451,69 @@ impl AppOrg {
         let Some(inner) = self.access.clone() else {
             return;
         };
-        let (lock, stop) = (self.sync_lock.clone(), self.stop.clone());
+        // The live socket: its own thread, so neither the window nor the
+        // sync thread ever waits on it (K-1107).
+        let live = crate::org_live::Live::new(crate::org_live::Paces::default());
+        if let Ok(mut i) = inner.lock() {
+            i.live = Some(live.clone());
+        }
+        let (on_change, on_gone) = (self.asks.clone(), self.asks.clone());
+        crate::org_live::spawn(
+            live.clone(),
+            move || push(&on_change),
+            // Never opened: the backoff paces the next try, no sync needed.
+            move |opened| {
+                if opened {
+                    push(&on_gone)
+                }
+            },
+        );
+        self.live = Some(live.clone());
+        let (lock, asks) = (self.sync_lock.clone(), self.asks.clone());
         self.background = std::thread::Builder::new()
             .name("krate-org-sync".into())
-            .spawn(move || loop {
-                if stop.load(std::sync::atomic::Ordering::SeqCst) {
-                    return;
-                }
-                let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
-                if refused {
-                    return;
-                }
-                let _ = sync_now(&inner, &lock);
-                // Sleep in small steps, so closing the app is not held up.
-                let until = std::time::Instant::now() + BACKGROUND_EVERY;
-                while std::time::Instant::now() < until {
-                    if stop.load(std::sync::atomic::Ordering::SeqCst) {
+            .spawn(move || {
+                let mut turn = Turn::Timer;
+                loop {
+                    let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
+                    if refused {
+                        live.shutdown();
                         return;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    let floor = inner.lock().is_ok_and(|i| floored(turn, &i));
+                    if !floor {
+                        let _ = sync_now(&inner, &lock);
+                    }
+                    // Every few seconds, or every half minute while the live
+                    // socket is open and healthy.
+                    turn = wait_turn(&asks, live.pace(BACKGROUND_EVERY));
+                    if turn == Turn::Stop {
+                        // Once more on close, so what the person did last
+                        // reaches the team.
+                        live.shutdown();
+                        let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
+                        if !refused {
+                            let _ = sync_now(&inner, &lock);
+                        }
+                        return;
+                    }
                 }
             })
             .ok();
+    }
+
+    /// A windowed app: `sync` never waits for the network from here on.
+    pub fn set_windowed(&self) {
+        self.waits.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Wake the background thread for a sync now.
+    fn ask_now(&self) {
+        let (asks, wake) = &*self.asks;
+        if let Ok(mut ask) = asks.lock() {
+            ask.now = true;
+        }
+        wake.notify_all();
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -616,19 +545,11 @@ impl AppOrg {
 
     pub fn delete(&self, collection: &str, id: &str) -> Result<(), OrgError> {
         let mut inner = self.inner()?;
-        let exists = inner
-            .mirror
-            .records
-            .get(collection)
-            .and_then(|recs| recs.get(id))
-            .is_some_and(|rec| entry_of(id, rec).is_some());
-        if !exists {
+        if !inner.mirror.has(collection, id) {
             inner.check()?;
-            if let Some(problem) = org_merge::name_problem("collection name", collection)
-                .or_else(|| org_merge::name_problem("record id", id))
-            {
-                return Err(OrgError::Invalid(problem));
-            }
+            // Not here: only the names are checked, and nothing is written.
+            let (phys, by) = (inner.now_ms(), inner.me_name());
+            inner.mirror.delete(collection, id, phys, &by)?;
             return Ok(());
         }
         inner.write(
@@ -641,89 +562,77 @@ impl AppOrg {
     pub fn get(&self, collection: &str, id: &str) -> Result<Option<Entry>, OrgError> {
         let inner = self.inner()?;
         inner.check()?;
-        if let Some(problem) = org_merge::name_problem("collection name", collection)
-            .or_else(|| org_merge::name_problem("record id", id))
-        {
-            return Err(OrgError::Invalid(problem));
-        }
-        Ok(inner
-            .mirror
-            .records
-            .get(collection)
-            .and_then(|recs| recs.get(id))
-            .and_then(|rec| entry_of(id, rec)))
+        Ok(inner.mirror.get(collection, id)?)
     }
 
     pub fn records(&self, collection: &str, since: Option<&str>) -> Result<Page, OrgError> {
         let inner = self.inner()?;
         inner.check()?;
-        if let Some(problem) = org_merge::name_problem("collection name", collection) {
-            return Err(OrgError::Invalid(problem));
-        }
-        let after = match since {
-            None => None,
-            Some(text) => Some(text.parse::<u64>().map_err(|_| {
-                OrgError::Invalid("that cursor is not one an earlier page gave".into())
-            })?),
-        };
-        let mut recs: Vec<(&String, &Rec)> = inner
-            .mirror
-            .records
-            .get(collection)
-            .map(|recs| recs.iter().collect())
-            .unwrap_or_default();
-        recs.retain(|(_, rec)| after.is_none_or(|after| rec.seq > after));
-        recs.sort_by_key(|(id, rec)| (rec.seq, (*id).clone()));
-        let mut page = Page {
-            entries: Vec::new(),
-            removed: Vec::new(),
-            next: after.unwrap_or(0).to_string(),
-            more: false,
-        };
-        let mut taken = 0;
-        for (id, rec) in recs {
-            match entry_of(id, rec) {
-                Some(entry) => page.entries.push(entry),
-                // From the start, a removed record is simply absent.
-                None if after.is_none() => continue,
-                None => page.removed.push(id.clone()),
-            }
-            taken += 1;
-            page.next = rec.seq.to_string();
-            if taken == PAGE_RECORDS {
-                page.more = true;
-                break;
-            }
-        }
-        if page.more {
-            // Only when something really is left.
-            let last: u64 = page.next.parse().unwrap_or(0);
-            page.more = inner
-                .mirror
-                .records
-                .get(collection)
-                .is_some_and(|recs| recs.values().any(|rec| rec.seq > last));
-        }
-        Ok(page)
+        Ok(inner.mirror.records(collection, since)?)
     }
 
     pub fn who(&self) -> Result<Option<Member>, OrgError> {
         let inner = self.inner()?;
         inner.check()?;
-        Ok(inner.mirror.me.as_ref().map(|me| Member {
-            name: me.name.clone(),
-            role: me.role.clone(),
-            org: me.org.clone(),
-        }))
+        Ok(inner.mirror.who())
     }
 
-    /// Sync now, for the app. Faster than every two seconds answers from
-    /// here.
-    ///
-    /// A sync already under way (the background one) is waited for, so
-    /// what the app reads next includes it.
+    /// Where this device stands, from here: it never reaches the network and
+    /// never waits behind a sync (K-1107, K-1108).
+    pub fn status(&self) -> Result<Status, OrgError> {
+        let inner = self.inner()?;
+        inner.check()?;
+        let asked = self.asks.0.lock().is_ok_and(|ask| ask.now);
+        let pending = inner.mirror.pending();
+        let link = if inner.tried && !inner.last_online {
+            Link::Offline
+        } else if inner.key == KeyHold::Waiting {
+            Link::WaitingForKey
+        } else if !inner.tried || inner.syncing || asked || pending > 0 {
+            Link::Syncing
+        } else {
+            Link::Synced
+        };
+        let org = inner
+            .mirror
+            .me
+            .as_ref()
+            .map(|me| me.org.clone())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| {
+                if inner.grant.org_name.is_empty() {
+                    inner.grant.slug.clone()
+                } else {
+                    inner.grant.org_name.clone()
+                }
+            });
+        Ok(Status {
+            link,
+            pending,
+            reached_at: inner.reached_at,
+            org,
+        })
+    }
+
+    /// Sync now, for the app. In a windowed app it asks the background
+    /// thread to go now and answers at once with where this device stands;
+    /// `changed` says so on a later call once that sync brings something
+    /// (K-1107). In a command-line app it waits for the exchange. Faster
+    /// than every two seconds answers from here.
     pub fn sync(&self) -> Result<SyncState, OrgError> {
         let inner_arc = self.access.as_ref().ok_or(OrgError::NotAnOrgApp)?.clone();
+        if !self.waits.load(std::sync::atomic::Ordering::SeqCst) {
+            let mut inner = self.inner()?;
+            inner.check()?;
+            self.ask_now();
+            let changed = std::mem::take(&mut inner.unseen_change);
+            return Ok(SyncState {
+                online: inner.last_online,
+                changed,
+                pending: inner.mirror.pending(),
+                last_synced: inner.mirror.synced_at,
+            });
+        }
         let _one = self
             .sync_lock
             .lock()
@@ -752,16 +661,35 @@ impl AppOrg {
 }
 
 impl Drop for AppOrg {
-    /// Once more on close, so what the person did last reaches the team.
+    /// Once more on close, so what the person did last reaches the team: the
+    /// background thread's last sync. A command-line app waits for it; a
+    /// windowed one gives it [`CLOSE_LIMIT`] and lets it finish on its own,
+    /// so a slow network never holds the close up for long. A write that has
+    /// not gone up is kept here and goes on the next open.
     fn drop(&mut self) {
-        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
-        if let Some(inner) = self.access.clone() {
-            let refused = inner.lock().map(|i| i.refused.is_some()).unwrap_or(true);
-            if !refused {
-                let _ = sync_now(&inner, &self.sync_lock);
-            }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(live) = &self.live {
+            live.shutdown();
         }
-        if let Some(handle) = self.background.take() {
+        {
+            let (asks, wake) = &*self.asks;
+            if let Ok(mut ask) = asks.lock() {
+                ask.stop = true;
+            }
+            wake.notify_all();
+        }
+        let Some(handle) = self.background.take() else {
+            return;
+        };
+        if self.waits.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = handle.join();
+            return;
+        }
+        let until = std::time::Instant::now() + CLOSE_LIMIT;
+        while !handle.is_finished() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if handle.is_finished() {
             let _ = handle.join();
         }
     }
@@ -774,18 +702,19 @@ fn sync_now(_inner: &Arc<Mutex<Inner>>, _lock: &Arc<Mutex<()>>) -> Result<SyncSt
     Err(OrgError::Unsupported)
 }
 
-/// What one round sends.
+/// What one round sends: the copy's writes ([`Mirror::prepare`]) and where
+/// they go.
 struct Round {
-    /// This device's writes, in plaintext: sealed just before they leave.
-    writes: Vec<serde_json::Value>,
-    since: Option<String>,
-    device: String,
-    sent_now: u64,
-    /// (collection, id, field, generation) of each write sent.
-    sent: Vec<(String, String, String, u64)>,
+    data: krate_orgdata::mirror::Round,
     url: String,
     authorization: Option<String>,
-    left_behind: bool,
+}
+
+impl std::ops::Deref for Round {
+    type Target = krate_orgdata::mirror::Round;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
 }
 
 /// Every refusal that means the person is no longer in the organisation:
@@ -800,8 +729,12 @@ fn ends_membership(reason: &str) -> bool {
 fn refused(inner: &mut Inner, reason: String, message: String) -> OrgError {
     if ends_membership(&reason) {
         let _ = std::fs::remove_file(&inner.grant.mirror);
-        inner.mirror = Mirror::fresh();
+        inner.mirror = Mirror::fresh(random_device());
         inner.held = None;
+    }
+    // Nothing more comes for this run: the live socket closes too.
+    if let Some(live) = &inner.live {
+        live.shutdown();
     }
     let reason = if reason.is_empty() {
         "not-a-member".to_string()
@@ -813,86 +746,27 @@ fn refused(inner: &mut Inner, reason: String, message: String) -> OrgError {
     OrgError::Refused { reason, message }
 }
 
-/// Seal one round's writes under the current version of the app's data key.
+/// Seal one round's writes under the current version of the app's data key
+/// ([`krate_orgdata::mirror::seal_writes`]).
 #[cfg(not(target_arch = "wasm32"))]
 fn seal_writes(
     writes: &[serde_json::Value],
     held: &krate_orgkeys::agent::Held,
     app_id: &str,
 ) -> Result<Vec<serde_json::Value>, OrgError> {
-    use krate_orgkeys::{AppDataKey, RowKind};
-    let (version, _) = held.keyring.current();
-    let dk = AppDataKey::derive(&held.keyring, version, app_id)
-        .ok_or_else(|| OrgError::Io("this device's keyring has no current key".into()))?;
-    writes
-        .iter()
-        .map(|w| {
-            let (c, i, f) = (
-                w["c"].as_str().unwrap_or(""),
-                w["i"].as_str().unwrap_or(""),
-                w["f"].as_str().unwrap_or(""),
-            );
-            let kind = if f == org_merge::TOMBSTONE {
-                RowKind::Tombstone
-            } else if w["v"].is_null() {
-                RowKind::Null
-            } else {
-                RowKind::Value
-            };
-            let (r, k) = (dk.record_key(c, i), dk.field_key(c, i, f));
-            let plain = payload(c, i, f, &w["v"], w["by"].as_str().unwrap_or(""));
-            let ct = dk
-                .seal(&r, &k, kind, plain.as_bytes())
-                .map_err(|e| OrgError::Io(e.to_string()))?;
-            Ok(serde_json::json!({
-                "r": r, "k": k, "kind": kind.as_str(), "s": w["s"], "ver": version, "ct": ct,
-            }))
-        })
-        .collect()
+    krate_orgdata::mirror::seal_writes(writes, &held.keyring, app_id).map_err(OrgError::Io)
 }
 
-/// Open the hub's sealed rows into the plaintext rows [`apply`] merges.
-/// A row that does not open, or whose names are not the ones it was sealed
-/// under, is refused: left out and counted.
+/// Open the hub's sealed rows ([`krate_orgdata::mirror::open_rows`]): a
+/// row that does not open, or whose names are not the ones it was sealed
+/// under, is refused, left out and counted.
 #[cfg(not(target_arch = "wasm32"))]
 fn open_rows(
     answer: &serde_json::Value,
     held: &krate_orgkeys::agent::Held,
     app_id: &str,
 ) -> (serde_json::Value, u64) {
-    use krate_orgkeys::{AppDataKey, RowKind};
-    let mut keys: BTreeMap<u32, Option<AppDataKey>> = BTreeMap::new();
-    let mut rejected = 0;
-    let mut rows = Vec::new();
-    for row in answer["rows"].as_array().into_iter().flatten() {
-        let opened = (|| {
-            let (r, k) = (row["r"].as_str()?, row["k"].as_str()?);
-            let kind = RowKind::parse(row["kind"].as_str()?)?;
-            let version = u32::try_from(row["ver"].as_u64()?).ok()?;
-            let dk = keys
-                .entry(version)
-                .or_insert_with(|| AppDataKey::derive(&held.keyring, version, app_id))
-                .as_ref()?;
-            let plain = dk.open(r, k, kind, row["ct"].as_str()?).ok()?;
-            let p: serde_json::Value = serde_json::from_slice(&plain).ok()?;
-            let (c, i, f) = (p["c"].as_str()?, p["i"].as_str()?, p["f"].as_str()?);
-            let kind_matches = match kind {
-                RowKind::Tombstone => f == org_merge::TOMBSTONE,
-                RowKind::Null => f != org_merge::TOMBSTONE && p["v"].is_null(),
-                RowKind::Value => f != org_merge::TOMBSTONE && !p["v"].is_null(),
-            };
-            (dk.record_key(c, i) == r && dk.field_key(c, i, f) == k && kind_matches).then(|| {
-                serde_json::json!({ "c": c, "i": i, "f": f, "v": p["v"], "s": row["s"], "by": p["w"] })
-            })
-        })();
-        match opened {
-            Some(plain) => rows.push(plain),
-            None => rejected += 1,
-        }
-    }
-    let mut plain = answer.clone();
-    plain["rows"] = serde_json::Value::Array(rows);
-    (plain, rejected)
+    krate_orgdata::mirror::open_rows(answer, &held.keyring, app_id)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -907,8 +781,13 @@ fn sync_now(inner_arc: &Arc<Mutex<Inner>>, lock: &Arc<Mutex<()>>) -> Result<Sync
 /// whether it changed anything the app has not been told about.
 #[cfg(not(target_arch = "wasm32"))]
 fn sync_locked(inner_arc: &Arc<Mutex<Inner>>) -> Result<SyncState, OrgError> {
+    if let Ok(mut inner) = inner_arc.lock() {
+        inner.syncing = true;
+    }
     let result = sync_rounds(inner_arc);
     if let Ok(mut inner) = inner_arc.lock() {
+        inner.syncing = false;
+        inner.tried = true;
         inner.last_sync = Some(std::time::Instant::now());
         if let Ok(state) = &result {
             inner.unseen_change |= state.changed;
@@ -949,20 +828,30 @@ fn sync_rounds(inner_arc: &Arc<Mutex<Inner>>) -> Result<SyncState, OrgError> {
     let mut rounds = 0;
     while rounds < MAX_ROUNDS {
         rounds += 1;
-        let (round, app_id) = {
+        let (round, app_id, live) = {
             let inner = lock_inner()?;
             inner.check()?;
-            (prepare(&inner), inner.grant.app_id.clone())
+            // A ticket for the live socket, when it has none (org_live.rs).
+            let live = inner
+                .live
+                .clone()
+                .filter(|live| rounds == 1 && live.wants_ticket())
+                .map(|live| {
+                    let url = crate::org_live::live_url(
+                        &inner.grant.hub,
+                        &inner.grant.slug,
+                        &inner.grant.digest,
+                    );
+                    (live, url)
+                });
+            (prepare(&inner), inner.grant.app_id.clone(), live)
         };
         let sealed = seal_writes(&round.writes, &held, &app_id)?;
-        let body = serde_json::json!({
-            "v": 1,
-            "device": round.device,
-            "now": round.sent_now,
-            "since": round.since,
-            "writes": sealed,
-        })
-        .to_string();
+        let mut body = round.body(sealed);
+        if live.is_some() {
+            body["live"] = serde_json::Value::Bool(true);
+        }
+        let body = body.to_string();
         let agent = krate_http::builder(&round.url)
             .timeout_connect(std::time::Duration::from_secs(4))
             .timeout_read(std::time::Duration::from_secs(10))
@@ -1029,9 +918,15 @@ fn sync_rounds(inner_arc: &Arc<Mutex<Inner>>) -> Result<SyncState, OrgError> {
             });
         };
         online = true;
+        if let Some((live, url)) = live {
+            if let Some(ticket) = crate::org_live::ticket_of(&answer, url) {
+                live.offer(ticket);
+            }
+        }
         let (plain, rejected) = open_rows(&answer, &held, &app_id);
         let mut inner = lock_inner()?;
         inner.last_online = true;
+        inner.reached_at = answer["now"].as_u64().or_else(|| Some(inner.now_ms()));
         inner.mirror.rejected += rejected;
         changed |= apply(&mut inner.mirror, &round, &plain);
         inner.save()?;
@@ -1080,11 +975,15 @@ fn refresh_key(
                 inner.save()?;
             }
             inner.held = Some(held.clone());
+            inner.key = KeyHold::Holds;
             inner.last_online = true;
+            inner.reached_at = Some(inner.now_ms());
             Ok(Some(held))
         }
         Ok(Status::NoKey) | Ok(Status::Waiting) => {
+            inner.key = KeyHold::Waiting;
             inner.last_online = true;
+            inner.reached_at = Some(inner.now_ms());
             Ok(None)
         }
         Err(AgentError::Offline) => {
@@ -1100,178 +999,32 @@ fn refresh_key(
     }
 }
 
-/// The next push: this device's pending writes, as many as fit.
+/// The next push: this device's pending writes, as many as fit, and where
+/// they go.
 fn prepare(inner: &Inner) -> Round {
-    let mirror = &inner.mirror;
-    let mut writes = Vec::new();
-    let mut sent = Vec::new();
-    let mut bytes = 0usize;
-    let mut left_behind = false;
-    'all: for (c, recs) in &mirror.records {
-        for (i, rec) in recs {
-            for (f, cell) in &rec.cells {
-                if !cell.pending {
-                    continue;
-                }
-                let size = c.len() + i.len() + f.len() + cell.v.to_string().len() + 96;
-                if writes.len() >= PUSH_WRITES || (bytes + size > PUSH_BYTES && !writes.is_empty())
-                {
-                    left_behind = true;
-                    break 'all;
-                }
-                bytes += size;
-                writes.push(
-                    serde_json::json!({ "c": c, "i": i, "f": f, "v": cell.v, "s": cell.s, "by": cell.by }),
-                );
-                sent.push((c.clone(), i.clone(), f.clone(), cell.g));
-            }
-        }
-    }
-    let sent_now = inner.now_ms();
     let hub = inner.grant.hub.trim_end_matches('/');
     Round {
-        writes,
-        since: mirror.cursor.clone(),
-        device: mirror.device.clone(),
-        sent_now,
-        sent,
+        data: inner.mirror.prepare(inner.now_ms()),
         url: format!(
             "{hub}/orgs/{}/data/{}/sync",
             inner.grant.slug, inner.grant.digest
         ),
         authorization: inner.grant.authorization.clone(),
-        left_behind,
     }
 }
 
-/// Fold the hub's answer into the mirror. True when what an app reads
-/// changed.
+/// Fold the hub's answer into the mirror ([`Mirror::apply`]). True when
+/// what an app reads changed.
 fn apply(mirror: &mut Mirror, round: &Round, answer: &serde_json::Value) -> bool {
-    let hub_now = answer["now"].as_u64().unwrap_or(round.sent_now);
-    // This device's own stamps not yet taken are on its old clock: move them
-    // exactly as the hub moved the ones it took, then measure the clock
-    // again.
-    for recs in mirror.records.values_mut() {
-        for rec in recs.values_mut() {
-            for cell in rec.cells.values_mut() {
-                if cell.pending {
-                    if let Some(stamp) = Stamp::parse(&cell.s) {
-                        cell.s = org_merge::rebase(&stamp, round.sent_now, hub_now).to_string();
-                    }
-                }
-            }
-        }
-    }
-    if let Some(last) = mirror.last() {
-        mirror.last = Some(org_merge::rebase(&last, round.sent_now, hub_now).to_string());
-    }
-    let delta = i128::from(hub_now) - i128::from(round.sent_now);
-    if delta.unsigned_abs() > u128::from(org_merge::DRIFT_MS) {
-        mirror.offset_ms = mirror.offset_ms.saturating_add(delta as i64);
-    }
-    // What was sent and not written again since is the hub's now.
-    for (c, i, f, g) in &round.sent {
-        if let Some(cell) = mirror
-            .records
-            .get_mut(c)
-            .and_then(|recs| recs.get_mut(i))
-            .and_then(|rec| rec.cells.get_mut(f))
-        {
-            if cell.pending && cell.g == *g {
-                cell.pending = false;
-                cell.g = 0;
-            }
-        }
-    }
-    if !round.sent.is_empty() {
-        mirror.synced_at = Some(hub_now);
-    }
-    let mut changed = false;
-    // A device behind the hub's oldest tombstone starts over from the
-    // hub's copy, keeping only its own changes not yet taken.
-    if answer["full"].as_bool() == Some(true) {
-        for recs in mirror.records.values_mut() {
-            for rec in recs.values_mut() {
-                let before = rec.cells.len();
-                rec.cells.retain(|_, cell| cell.pending);
-                changed |= rec.cells.len() != before;
-            }
-            recs.retain(|_, rec| !rec.cells.is_empty());
-        }
-        mirror.records.retain(|_, recs| !recs.is_empty());
-    }
-    for row in answer["rows"].as_array().into_iter().flatten() {
-        let (Some(c), Some(i), Some(f), Some(s)) = (
-            row["c"].as_str(),
-            row["i"].as_str(),
-            row["f"].as_str(),
-            row["s"].as_str().and_then(Stamp::parse),
-        ) else {
-            continue;
-        };
-        if Value::from_wire(&row["v"]).is_none() {
-            continue;
-        }
-        mirror.observe(&s);
-        let rec = mirror
-            .records
-            .entry(c.to_string())
-            .or_default()
-            .entry(i.to_string())
-            .or_default();
-        let before = entry_of(i, rec);
-        let held = rec.cells.get(f).and_then(|cell| Stamp::parse(&cell.s));
-        if !org_merge::wins(&s, held.as_ref()) {
-            continue;
-        }
-        let tomb = rec
-            .cells
-            .get(org_merge::TOMBSTONE)
-            .and_then(|cell| Stamp::parse(&cell.s));
-        if f != org_merge::TOMBSTONE && !org_merge::alive(&s, tomb.as_ref()) {
-            continue;
-        }
-        rec.cells.insert(
-            f.to_string(),
-            MCell {
-                v: row["v"].clone(),
-                s: s.to_string(),
-                by: row["by"].as_str().unwrap_or("").to_string(),
-                pending: false,
-                g: 0,
-            },
-        );
-        bury(rec);
-        if entry_of(i, rec) != before {
-            mirror.local_seq += 1;
-            rec.seq = mirror.local_seq;
-            changed = true;
-        }
-    }
-    if let Some(cursor) = answer["cursor"].as_str() {
-        mirror.cursor = Some(cursor.to_string());
-    }
-    if let Some(limit) = answer["quota"]["limit"].as_u64() {
-        mirror.quota = Some(limit);
-    }
-    if let (Some(name), Some(role)) = (answer["me"]["name"].as_str(), answer["me"]["role"].as_str())
-    {
-        mirror.me = Some(Me {
-            name: name.to_string(),
-            role: role.to_string(),
-            org: answer["org"]["name"]
-                .as_str()
-                .or(answer["org"]["slug"].as_str())
-                .unwrap_or("")
-                .to_string(),
-        });
-    }
-    changed
+    mirror.apply(&round.data, answer)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::org_merge::Stamp;
+    use krate_orgdata::mirror::payload;
+    use std::collections::BTreeMap;
 
     fn grant(dir: &std::path::Path, name: &str, skew: i64) -> Box<OrgGrant> {
         Box::new(OrgGrant {
@@ -1285,6 +1038,7 @@ mod tests {
             app_id: "dev.acme.tasks".into(),
             device_secret: DeviceSecret(*krate_orgkeys::KeyPair::generate().secret()),
             device_name: format!("{name}'s laptop"),
+            org_name: "Acme".into(),
         })
     }
 
@@ -1736,5 +1490,198 @@ mod tests {
             hub.rows[&("tasks".into(), "t1".into(), "title".into())].0,
             serde_json::json!({ "t": "two" })
         );
+    }
+
+    /// A hub that takes the connection and never answers: the slow train.
+    fn hanging_hub() -> (String, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut held = Vec::new();
+            listener.set_nonblocking(true).unwrap();
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(40);
+            while std::time::Instant::now() < until {
+                if let Ok((stream, _)) = listener.accept() {
+                    held.push(stream);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        });
+        (url, handle)
+    }
+
+    /// K-1107: a windowed app's `sync` and `status` answer at once while
+    /// the hub takes the connection and never answers, and closing the app
+    /// is held up for at most CLOSE_LIMIT. Before, `sync` waited behind the
+    /// background sync and then on the network itself: 30 s measured here.
+    #[test]
+    fn a_windowed_sync_never_waits_on_a_hub_that_never_answers() {
+        let dir = tempfile::tempdir().unwrap();
+        let (url, _hub) = hanging_hub();
+        let mut g = grant(dir.path(), "carol", 0);
+        g.hub = url;
+        let org = AppOrg::open(OrgAccess::Granted(g));
+        org.set_windowed();
+        org.put("c", "i", vec![("a".into(), text("x"))]).unwrap();
+        // Let the background sync get stuck on the network first.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let started = std::time::Instant::now();
+        let state = org.sync().expect("answers");
+        let status = org.status().expect("answers");
+        let took = started.elapsed();
+        eprintln!("MEASURE sync()+status() held the caller for {took:?}");
+        assert!(
+            took < std::time::Duration::from_millis(250),
+            "sync and status waited {took:?} on the network"
+        );
+        assert_eq!(state.pending, 1, "the write waits here");
+        assert_eq!(status.link, Link::Syncing, "a sync is under way");
+        assert_eq!(status.org, "Acme");
+        let closing = std::time::Instant::now();
+        drop(org);
+        let closed = closing.elapsed();
+        eprintln!("MEASURE closing waited {closed:?}");
+        assert!(
+            closed < CLOSE_LIMIT + std::time::Duration::from_secs(1),
+            "closing waited {closed:?}"
+        );
+    }
+
+    /// K-1108: a device the organisation knows and has not given the key
+    /// says so, and an unreachable hub says offline; neither is an error.
+    #[test]
+    fn status_says_waiting_for_the_key_and_offline() {
+        let dir = tempfile::tempdir().unwrap();
+        let org = AppOrg::open_quiet(OrgAccess::Granted(grant(dir.path(), "carol", 0)));
+        org.set_windowed();
+        assert_eq!(org.status().unwrap().link, Link::Syncing, "not reached yet");
+        {
+            let mut inner = org.inner().unwrap();
+            inner.tried = true;
+            inner.last_online = true;
+            inner.key = KeyHold::Waiting;
+        }
+        let status = org.status().unwrap();
+        assert_eq!(status.link, Link::WaitingForKey);
+        assert_eq!(status.org, "Acme");
+        org.inner().unwrap().last_online = false;
+        assert_eq!(org.status().unwrap().link, Link::Offline);
+        {
+            let mut inner = org.inner().unwrap();
+            inner.last_online = true;
+            inner.key = KeyHold::Holds;
+        }
+        assert_eq!(org.status().unwrap().link, Link::Synced);
+        org.put("c", "i", vec![("a".into(), text("x"))]).unwrap();
+        assert_eq!(
+            org.status().unwrap().link,
+            Link::Syncing,
+            "a write is on its way"
+        );
+    }
+
+    /// The background thread's wait, as it runs with the live socket open:
+    /// a half-minute pace, woken by a "changed" from a hub at once.
+    #[test]
+    fn a_changed_message_wakes_the_sync_thread_at_once() {
+        use crate::org_live::{spawn, test_hub::hub, Live, Paces, Ticket, LIVE_EVERY};
+        let (url, _) = hub(|ws| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            ws.send(tungstenite::Message::text(r#"{"t":"changed","s":"9"}"#))
+                .unwrap();
+            while ws.read().is_ok() {}
+        });
+        let asks = Arc::new((Mutex::new(Asks::default()), std::sync::Condvar::new()));
+        let live = Live::new(Paces::default());
+        let (a, b) = (asks.clone(), asks.clone());
+        spawn(live.clone(), move || push(&a), move |_| push(&b));
+        live.offer(Ticket {
+            url,
+            ticket: "ab".repeat(32),
+            protocol: "krate-live".into(),
+        });
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !live.healthy() && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(live.healthy());
+        let pace = live.pace(BACKGROUND_EVERY);
+        assert_eq!(
+            pace, LIVE_EVERY,
+            "the poll slows while the socket is healthy"
+        );
+        let started = std::time::Instant::now();
+        let turn = wait_turn(&asks, pace);
+        assert_eq!(turn, Turn::Pushed);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        live.shutdown();
+    }
+
+    /// A push is never floored: two changes a second apart both sync. An
+    /// app asking that fast with nothing to send still is.
+    #[test]
+    fn a_push_is_not_floored_but_an_app_asking_too_fast_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let org = AppOrg::open_quiet(OrgAccess::Granted(grant(dir.path(), "carol", 0)));
+        let mut inner = org.inner().unwrap();
+        inner.last_sync = Some(std::time::Instant::now());
+        assert!(floored(Turn::Asked, &inner));
+        assert!(!floored(Turn::Pushed, &inner));
+        assert!(!floored(Turn::Timer, &inner));
+        drop(inner);
+        // A push and an ask together: the push wins, the ask is spent.
+        push(&org.asks);
+        org.ask_now();
+        assert_eq!(
+            wait_turn(&org.asks, std::time::Duration::from_secs(30)),
+            Turn::Pushed
+        );
+        assert_eq!(
+            wait_turn(&org.asks, std::time::Duration::from_millis(1)),
+            Turn::Timer
+        );
+    }
+
+    /// The socket dies under a waiting sync thread: it is woken to catch up
+    /// and its pace is back to every few seconds.
+    #[test]
+    fn a_dead_socket_wakes_the_sync_thread_and_the_quick_poll_returns() {
+        use crate::org_live::{spawn, test_hub::hub, Live, Paces, Ticket, LIVE_EVERY};
+        let (url, _) = hub(|ws| {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = ws.close(None);
+            let _ = ws.flush();
+        });
+        let asks = Arc::new((Mutex::new(Asks::default()), std::sync::Condvar::new()));
+        let live = Live::new(Paces::default());
+        let (a, b) = (asks.clone(), asks.clone());
+        spawn(live.clone(), move || push(&a), move |_| push(&b));
+        live.offer(Ticket {
+            url,
+            ticket: "ab".repeat(32),
+            protocol: "krate-live".into(),
+        });
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !live.healthy() && std::time::Instant::now() < end {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(live.pace(BACKGROUND_EVERY), LIVE_EVERY);
+        let started = std::time::Instant::now();
+        assert_eq!(
+            wait_turn(&asks, LIVE_EVERY),
+            Turn::Pushed,
+            "woken to catch up"
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(!live.healthy());
+        assert!(
+            live.pace(BACKGROUND_EVERY) <= BACKGROUND_EVERY,
+            "the quick poll again"
+        );
+        live.shutdown();
     }
 }

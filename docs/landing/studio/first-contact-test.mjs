@@ -71,6 +71,10 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
   assert.match(mac.doc.openTitle.textContent, /Weather/, "the open step names the app too");
   assert.equal(mac.doc.taTab.hidden, false, "a desktop browser can also open it in the tab (IC-956)");
   assert.equal(mac.doc.taTab.href, `https://hub.krate.tech/run/${HASH}`, "the tab opens the hub's Player");
+  // K-1129: someone sent an app opens it now; the download is the second step.
+  assert.equal(mac.doc.taTab.className, "btn dark", "opening in the tab is the main button on a computer too");
+  assert.equal(mac.doc.taGet.className, "btn ghost", "and the download sits beside it");
+  assert.equal(mac.doc.taGet.hidden, false, "the download stays on a computer");
   assert.equal(mac.doc.taGet.hidden, false, "the download stays the main way in on a desktop");
 
   const phone = await open("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");

@@ -202,6 +202,37 @@ impl KeyEvent {
     }
 }
 
+static KEPT_FROM_CAPTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Keep the windows this process makes from now on out of screenshots,
+/// recordings and screen sharing, where the system allows it: what an
+/// organisation's `[apps] screen_capture = false` asks (G17). Set by the
+/// runtime before each window it creates.
+pub fn keep_windows_from_capture(kept: bool) {
+    KEPT_FROM_CAPTURE.store(kept, std::sync::atomic::Ordering::SeqCst);
+}
+
+static CLIPBOARD_KEPT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The organisation's clipboard rules for this process (G17), for what a
+/// native text control does on its own: a Mac's Edit menu then offers no
+/// Paste when reading is blocked and no Cut or Copy when writing is.
+pub fn keep_clipboard(read_blocked: bool, write_blocked: bool) {
+    let bits = u8::from(read_blocked) | (u8::from(write_blocked) << 1);
+    CLIPBOARD_KEPT.store(bits, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// (reading blocked, writing blocked).
+pub fn clipboard_kept() -> (bool, bool) {
+    let bits = CLIPBOARD_KEPT.load(std::sync::atomic::Ordering::SeqCst);
+    (bits & 1 != 0, bits & 2 != 0)
+}
+
+/// Whether a window made now is kept out of captures.
+pub fn windows_kept_from_capture() -> bool {
+    KEPT_FROM_CAPTURE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Text input after keyboard layout or IME commit processing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextInputEvent {

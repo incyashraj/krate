@@ -669,6 +669,7 @@ impl<'a> UapiDispatcher<'a> {
                 name,
                 header_name,
                 value,
+                identity,
                 host,
                 port,
             } => {
@@ -686,12 +687,12 @@ impl<'a> UapiDispatcher<'a> {
                          organisation does not allow reaching {host}:{port}"
                     )));
                 }
-                req.headers
-                    .retain(|header| !header.name.eq_ignore_ascii_case(header_name));
-                req.headers.push(Header {
-                    name: header_name.to_string(),
-                    value: value.to_string(),
-                });
+                crate::connections::add_connection_headers(
+                    &mut req.headers,
+                    header_name,
+                    value,
+                    identity.as_deref(),
+                );
                 Ok(req)
             }
         }
@@ -2270,6 +2271,7 @@ mod tests {
     // ---------------------------------------------- company connections (IC-952)
 
     const SECRET: &str = "Bearer sk-dispatch-test-only";
+    const IDENTITY: &str = "eyJhbGciOiJFZERTQSJ9.dispatch-test.sig";
 
     fn finance_guard(grants: &[&str], ceiling: Option<&str>) -> UapiGuard {
         let mut policy = SessionPolicy::from_cli_grants(
@@ -2282,6 +2284,7 @@ mod tests {
                 network: Some(vec![
                     krate_policy::OrgCeiling::parse_network(allowed).expect("pattern")
                 ]),
+                calls: Vec::new(),
             });
         }
         UapiGuard::new(policy).with_connections(crate::connections::Connections::new(vec![
@@ -2294,6 +2297,10 @@ mod tests {
                     header_name: "Authorization".into(),
                     value: crate::connections::Credential::new(SECRET),
                 },
+                identity: Some(crate::connections::Identity::new(
+                    crate::connections::IdentityToken::new(IDENTITY, u64::MAX),
+                    None,
+                )),
             },
         ]))
     }
@@ -2332,6 +2339,42 @@ mod tests {
             .map(|h| h.value.as_str())
             .collect();
         assert_eq!(auth, vec![SECRET]);
+    }
+
+    #[test]
+    fn the_identity_token_goes_over_the_apps_own_and_only_inside_the_base() {
+        let adapter = RecordingAdapter::default();
+        let guard = finance_guard(
+            &[
+                "net.connection:finance-api",
+                "net.connect:other.example:443",
+            ],
+            None,
+        );
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let forged = || {
+            vec![Header {
+                name: "krate-identity".into(),
+                value: "the-apps-own-words".into(),
+            }]
+        };
+        dispatcher
+            .net_fetch(get("https://api.acme.example/finance/invoices", forged()))
+            .expect("inside the base");
+        dispatcher
+            .net_fetch(get("https://other.example/finance/invoices", Vec::new()))
+            .expect("an ordinary granted host");
+        let calls = adapter.calls.borrow();
+        let identity = |i: usize| -> Vec<String> {
+            calls.sent[i]
+                .headers
+                .iter()
+                .filter(|h| h.name.eq_ignore_ascii_case("krate-identity"))
+                .map(|h| h.value.clone())
+                .collect()
+        };
+        assert_eq!(identity(0), vec![IDENTITY.to_string()]);
+        assert!(identity(1).is_empty(), "never outside the base");
     }
 
     #[test]

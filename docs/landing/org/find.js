@@ -114,7 +114,11 @@
         dot(0);
         D.inspect("Notifications", [items.length
           ? el("div", { class: "nlist" }, items.map(function (n) {
-              return el("button", { class: "nrow" + (n.at > since ? " new" : ""), type: "button", onclick: function () { D.show(D.tabs().indexOf(n.tab) >= 0 ? n.tab : "home"); } }, [
+              return el("button", { class: "nrow" + (n.at > since ? " new" : ""), type: "button", onclick: function () {
+                // A version waiting for this person opens on its own, with its code.
+                if (n.kind === "approval-waiting" && n.target && D.tabs().indexOf("waiting") >= 0) { D.show("waiting", { c: n.target }); return; }
+                D.show(D.tabs().indexOf(n.tab) >= 0 ? n.tab : "home");
+              } }, [
                 el("small", { text: (WORD[n.kind] || "") + " · " + K.moment(n.at) }), el("span", { text: n.text }),
               ]);
             }))

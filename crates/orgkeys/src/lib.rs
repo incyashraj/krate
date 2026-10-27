@@ -656,12 +656,28 @@ impl AppDataKey {
         plaintext: &[u8],
     ) -> Result<String, KeyError> {
         let nonce: [u8; 24] = random()?;
+        self.seal_with_nonce(record, field, kind, plaintext, &nonce)
+    }
+
+    /// [`AppDataKey::seal`] with the nonce given, for the cross-language
+    /// test vectors (`crates/orgdata/tests/vectors/org-records.json`): the
+    /// same bytes in, the same bytes out, on a computer and in a browser
+    /// tab. A nonce must never be used twice under one key; everything else
+    /// calls [`AppDataKey::seal`], which draws a fresh one.
+    pub fn seal_with_nonce(
+        &self,
+        record: &str,
+        field: &str,
+        kind: RowKind,
+        plaintext: &[u8],
+        nonce: &[u8; 24],
+    ) -> Result<String, KeyError> {
         let cipher = XChaCha20Poly1305::new_from_slice(&self.enc)
             .map_err(|_| KeyError::Malformed("data key"))?;
         let aad = self.aad(record, field, kind);
         let ct = cipher
             .encrypt(
-                XNonce::from_slice(&nonce),
+                XNonce::from_slice(nonce),
                 Payload {
                     msg: plaintext,
                     aad: &aad,
@@ -809,6 +825,53 @@ pub fn b64_decode(text: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+/// A rotation's share of the company connections (IC-952): each
+/// connection's credential, as the hub listed it (`name`, `base`, `header`,
+/// `v`, `sealed`), opened with the version it was sealed to and sealed again
+/// to the newest version of `keyring`, which the hub refuses a rotation
+/// without. The plaintext lives in this function only. One that does not
+/// open here -- changed, or sealed for another address -- is answered
+/// `{"unopened": true}`: the hub then marks it to be entered again, rather
+/// than leave it on a key a removed member holds.
+pub fn reseal_credentials(
+    keyring: &Keyring,
+    org: &str,
+    credentials: &serde_json::Value,
+) -> serde_json::Map<String, serde_json::Value> {
+    let (version, key) = keyring.current();
+    let mut out = serde_json::Map::new();
+    for c in credentials.as_array().into_iter().flatten() {
+        let Some(name) = c["name"].as_str() else {
+            continue;
+        };
+        let context = connection_context(
+            org,
+            name,
+            c["header"].as_str().unwrap_or(""),
+            c["base"].as_str().unwrap_or(""),
+        );
+        let opened = c["v"]
+            .as_u64()
+            .and_then(|v| u32::try_from(v).ok())
+            .ok_or(KeyError::Open)
+            .and_then(|v| open_for_org(keyring, v, &context, c["sealed"].as_str().unwrap_or("")));
+        let answer = match opened {
+            Ok(mut plain) => {
+                use zeroize::Zeroize;
+                let sealed = seal_for_org(&key.public(), &context, &plain);
+                plain.zeroize();
+                match sealed {
+                    Ok(sealed) => serde_json::json!({ "v": version, "sealed": sealed }),
+                    Err(_) => serde_json::json!({ "unopened": true }),
+                }
+            }
+            Err(_) => serde_json::json!({ "unopened": true }),
+        };
+        out.insert(name.to_string(), answer);
+    }
+    out
 }
 
 #[cfg(test)]

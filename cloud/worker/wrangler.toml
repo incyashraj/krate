@@ -85,6 +85,10 @@ zone_name = "krate.tech"
 
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"
+# The gallery's "Start here" shelf, in order (id prefixes): Aurora, Krate
+# Nova, Weather, Track Dash, Diff. Each looks good and works fully in a
+# browser tab, so a stranger's first tap shows the whole app.
+GALLERY_PICKS = "cab0ce2d8c,5042343660,7edf315d97,8801996a2c,f631ea50f4"
 # The account whose Analytics Engine dataset /stats reads. Not a secret --
 # it is already in `account_id` above -- but the worker cannot see that field
 # at runtime, so without this the SQL URL becomes /accounts/undefined/... and

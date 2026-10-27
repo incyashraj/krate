@@ -190,6 +190,15 @@
     "request.create": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
     "request.view": { owner: "yes", admin: "yes", developer: "yes", reviewer: "own", recipient: "own" },
     "request.manage": { owner: "yes", admin: "yes", developer: "yes" },
+    // Approval rules and the code behind an approval (org-approvals.js):
+    // the people who approve, and a version's own sender, read its code;
+    // an owner sets the rules.
+    "candidate.changes": { owner: "yes", reviewer: "yes", developer: "own" },
+    "approval.policy": { owner: "yes" },
+    // Staged rollout (org-rollout.js): a pilot group first, pinned groups.
+    "release.rollout": { owner: "yes", admin: "yes" },
+    // Slack and Teams channels (org-chat.js).
+    "chat.manage": { owner: "yes", admin: "yes" },
   };
 
   function can(role, action) {
@@ -366,6 +375,28 @@
           body: "You are in " + org + ", but this app was sent only to certain groups, and you are not in them. Ask an admin of " + org + " to add you.",
           action: null,
         };
+      // Staged rollout (org-rollout.js).
+      case "in-pilot":
+        return {
+          title: "This version goes to a pilot group first",
+          body: (ctx.message ? String(ctx.message).split(" -- ")[0].replace(/\.?$/, ". ") : "") + "You get it when it is released to everyone in " + org + "." + (ctx.for_you && ctx.for_you.version ? " Your version now is " + ctx.for_you.version + "." : ""),
+          action: null,
+        };
+      case "pilot-out":
+        return { title: "A version is still with the pilot group", body: "Release it to everyone, or withdraw it, first. Nothing changed.", action: null };
+      case "no-pilot":
+        return { title: "No version is with the pilot group now", body: "It was released to everyone or withdrawn already. The page below is fresh.", action: null };
+      // Slack and Teams channels (org-chat.js).
+      case "no-such-channel":
+        return { title: "That channel is not connected any more", body: "Someone removed it. The list below is fresh.", action: null };
+      case "too-many-channels":
+        return { title: org + " already posts to 5 channels", body: "Remove one first, then add this one.", action: null };
+      case "chat-off":
+        return { title: "Slack and Teams posts are not switched on on this hub yet", body: "Nothing changed.", action: null };
+      case "chat-failed":
+        return { title: "The test did not arrive", body: (ctx.message ? String(ctx.message).replace(/^the test did not arrive: /, "").replace(/^./, function (c) { return c.toUpperCase(); }).replace(/\.?$/, ".") : "") + " Check the channel's webhook in Slack or Teams, then try again.", action: null };
+      case "chat-full":
+        return { title: org + " has posted 50 times today", body: "That is the most in one day. Posts start again tomorrow.", action: null };
       case "reason-required":
         return { title: "Say why it is withdrawn", body: "The people who had it are shown the reason. Write a few words, up to 300 characters.", action: null };
       case "no-such-group":
@@ -409,6 +440,14 @@
       case "app-not-allowed":
       case "connection-not-requested":
         return { title: "This app cannot use that connection", body: (ctx.message ? String(ctx.message).split(" -- ")[0] + ". " : "") + "Ask an admin of " + org + ".", action: null };
+      // Approval rules (org-approvals.js): the hub's sentence says whose
+      // approval is needed; this says it as the next step.
+      case "approval-policy":
+        return { title: "Someone else's approval is needed", body: (ctx.message ? String(ctx.message).split(" -- ")[0].replace(/\.?$/, ". ") : "") + "Nothing was approved.", action: null };
+      case "already-approved":
+        return { title: "You approved this already", body: (ctx.message ? "It " + String(ctx.message).split(" -- it ")[1].replace(/\.?$/, ". ") : "") + "It is released once the rest are in.", action: null };
+      case "policy-invalid":
+        return { title: "Those rules will not work", body: (ctx.message ? String(ctx.message).replace(/ -- /g, ". ").replace(/\.?$/, ". ") : "") + "Nothing changed.", action: null };
       default:
         return { title: "That did not work", body: (ctx.message ? String(ctx.message) + ". " : "") + "Nothing changed. Try again in a moment.", action: null };
     }
@@ -464,6 +503,11 @@
     "release-withdrawn": "it was withdrawn",
     "not-in-audience": "it is not for their groups",
     "reason-required": "no reason was given",
+    "in-pilot": "it is with a pilot group first",
+    "pilot-out": "a version was still with the pilot group",
+    "no-pilot": "no version was with the pilot group",
+    "no-such-channel": "no such channel",
+    "too-many-channels": "too many channels",
     "no-such-group": "no such group",
     "group-taken": "the group exists already",
     "group-invalid": "not a group name",
@@ -482,6 +526,10 @@
     "note-closed": "a declined or withdrawn version keeps its note",
     "no-such-request": "no such request",
     "requests-full": "too many open requests",
+    // Approval rules.
+    "approval-policy": "the approval rules need someone else",
+    "already-approved": "they approved it already",
+    "policy-invalid": "the rules were not complete",
   };
 
   /// One audit event as a sentence. `names` maps a digest to "Ledger 1.2".
@@ -560,6 +608,9 @@
         "request.manage": "answer an app request",
         "request-update": "answer an app request",
         "notify-prefs-set": "change their notifications",
+        "candidate.changes": "read the code of " + app(),
+        "approval.policy": "change the approval rules",
+        "approval-policy-set": "change the approval rules",
       }[ev.action] || "do " + ev.action;
       // Shown beside a Refused badge, so the sentence says why, not "refused" again.
       return a + " tried to " + tried + ": " + (SHORT_WHY[ev.reason] || ev.reason || "not allowed") + ".";
@@ -631,6 +682,12 @@
       case "release-key.revoke": return a + " withdrew the release key " + fingerprint(t.value) + ".";
       case "candidate.publish": return a + " sent " + app() + " for approval.";
       case "candidate.decline": return a + " declined " + app() + (ev.reason ? ": " + ev.reason : "") + ".";
+      // Approval rules: an approval that does not release yet, and the rules changing.
+      case "candidate.approve.partial": {
+        var still = String(ev.reason || "").split(" -- ")[1];
+        return a + " approved " + app() + ". It " + (still || "waits for more approvals") + ".";
+      }
+      case "settings.approvals": return a + " changed the approval rules: " + (ev.reason || "see Settings") + ".";
       case "candidate.note": return a + (ev.reason === "cleared" ? " cleared the release note on " : " wrote the release note on ") + app() + ".";
       case "request.create": return a + " asked for an app.";
       case "request.update": {
@@ -692,6 +749,38 @@
         var aud = String(ev.reason || "");
         return aud === "everyone" ? a + " opened " + app() + " to everyone." : a + " limited " + app() + " to " + groupsSaid(aud.replace(/^groups:/, "").split(",")) + ".";
       }
+      // Staged rollout (org-rollout.js): a pilot group, pinned groups.
+      case "release.pilot": {
+        var pr = String(ev.reason || "");
+        var pg = (pr.match(/group:([a-z0-9-]+)/) || [])[1];
+        var pd = (pr.match(/([0-9a-f]{64})/) || [])[1];
+        var pv = pd ? names[pd] || "version " + pd.slice(0, 12) : null;
+        var pApp = t.value || "the app";
+        if (/^ended: /.test(pr)) return "The pilot of " + (pv || "a version") + " ended: it was withdrawn.";
+        if (/approved$/.test(pr)) return (pv || "A new version") + " went to the " + pg + " group first; everyone else stays where they are.";
+        if (pd) return a + " gave " + pv + " to the " + pg + " group first.";
+        return a + " set new versions of " + pApp + " to go to the " + pg + " group first.";
+      }
+      case "release.pilot.release": {
+        var rd = String(ev.reason || "");
+        return a + " released " + (names[rd] || "the pilot's version") + " to everyone.";
+      }
+      case "release.pilot.off": return a + " set new versions of " + (t.value || "the app") + " to go to everyone at once.";
+      case "release.pin":
+      case "release.unpin": {
+        var ps = t.value.lastIndexOf("/"), pinApp = ps > 0 ? t.value.slice(0, ps) : t.value, pinG = ps > 0 ? t.value.slice(ps + 1) : "a group";
+        var pinD = (String(ev.reason || "").match(/([0-9a-f]{64})/) || [])[1];
+        var pinV = pinD ? names[pinD] || "version " + pinD.slice(0, 12) : "a version";
+        if (ev.action === "release.pin") return a + " kept the " + pinG + " group on " + pinV + ".";
+        return /withdrawn$/.test(ev.reason || "")
+          ? "The " + pinG + " group is no longer kept on " + pinV + ": it was withdrawn."
+          : a + " let the " + pinG + " group get what everyone gets of " + pinApp + " again.";
+      }
+      // Slack and Teams channels (org-chat.js): the URL is never in an event.
+      case "chat.add": return a + " connected a channel at " + t.value + " for notices.";
+      case "chat.change": return a + " changed what is posted to the channel at " + t.value + ".";
+      case "chat.remove": return a + " disconnected the channel at " + t.value + ".";
+      case "chat.test": return a + " sent a test message to the channel at " + t.value + ".";
       case "group.create": return a + " made the group " + t.value + ".";
       case "group.add":
       case "group.remove": {

@@ -593,11 +593,23 @@ export class Org {
     // Only an authenticated principal's denials are audited: the door
     // answers requests with no session itself, and if one reaches here
     // anyway it must not be able to grow the audit.
-    if (ctx.actor && this.org()) this.audit(ctx.actor, action, target, "denied", reason);
+    // A quiet check (a live socket's standing, org-data-live.js) asks the
+    // same question without being an attempt by anyone: not audited.
+    if (ctx.actor && !ctx.quiet && this.org()) this.audit(ctx.actor, action, target, "denied", reason);
     return {
       status: STATUS[reason] || 403,
       body: { error: reason, message: messageFor(reason, ctx.slug, detail) },
     };
+  }
+
+  /// What the modules' gates answer for `ctx`, as a command would meet
+  /// them: the first refusal, or null.
+  gateRefusal(ctx) {
+    for (const gate of EXTENSIONS.gates) {
+      const refusal = gate.call(this, ctx);
+      if (refusal) return refusal;
+    }
+    return null;
   }
 
   ok(body, status = 200) {

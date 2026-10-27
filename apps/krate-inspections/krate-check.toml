@@ -1,0 +1,39 @@
+name = "run a fire safety inspection"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Fire safety"
+# Select and replace (K-1109): a draft, all of it selected and pasted
+# over, then the last word selected with Shift and typed over.
+[[step]]
+type = "a first draft"
+[[step]]
+key = "Primary+a"
+[[step]]
+paste = "Main hall"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+type = "office"
+[[step]]
+expect_text = "Main office"
+[[step]]
+expect_no_text = "a first draft"
+[[step]]
+expect_no_text = "Main hall"
+[[step]]
+click = "Start inspection"
+[[step]]
+expect_text = "0 of 6 checked"
+[[step]]
+click = "Pass: Fire exits are clear"
+[[step]]
+click = "Fail: Exit signs are lit"
+[[step]]
+expect_text = "2 of 6 checked, 1 failed"

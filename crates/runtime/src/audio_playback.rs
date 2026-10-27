@@ -11,10 +11,13 @@
 //!
 //! There is no CPAL. A tab has WebAudio, but it is a different contract:
 //! asynchronous, and silent until the person has clicked something, because a
-//! browser will not let a page make noise on its own. Bridging it is later
-//! work. This module keeps its shapes on wasm32 so the rest of the runtime
-//! compiles unchanged, and every call answers `PlaybackError::Unsupported` --
-//! which the permission wall turns into words a person can act on.
+//! browser will not let a page make noise on its own. The browser Player does
+//! not run this module: its sound is crates/adapter-web/player/web/audio.js
+//! and audio-worklet.js (K-1134), the same conversion and mixing rules over an
+//! AudioWorklet. This module keeps its shapes on wasm32 so the rest of the
+//! runtime compiles unchanged, and every call answers
+//! `PlaybackError::Unsupported` -- which the permission wall turns into words
+//! a person can act on.
 //!
 //! Nothing here reports success. An app that believes it is playing a sound
 //! and is not will look broken in a way nobody can trace, which is worse than

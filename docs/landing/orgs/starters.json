@@ -1,5 +1,5 @@
 {
-  "about": "The ready apps a new organisation can release in its first minute (IC-958 addendum): real apps built on store.org, the bundles in /orgs/starters/. The page reads this list as it is; each entry needs id, name, says (one line), can (what it can do, in plain words), why (the one line that says what only Krate does), bundle, shot (a picture of the app in use, from its real-hub test) and top (its three best things, a few words each).",
+  "about": "The ready apps a new organisation can release in its first minute (IC-958 addendum): real apps built on store.org, the bundles in /orgs/starters/. The page reads this list as it is; each entry needs id, name, says (one line), can (what it can do, in plain words), why (the one line that says what only Krate does), bundle, shot (a picture of the app in use, from its real-hub test) top (its three best things, a few words each) and category (Everyday, Operations, People or Finance: the chips the picker shows once there are more than six).",
   "starters": [
     {
       "id": "team-notes",
@@ -21,27 +21,73 @@
         "Shared as you type",
         "Search and pin",
         "Works offline"
+      ],
+      "category": "Everyday"
+    },
+    {
+      "id": "requests",
+      "name": "Requests",
+      "category": "Everyday",
+      "says": "Ask for something and get a clear yes or no, with a note.",
+      "can": [
+        "Ask for a purchase, access, time or a change, and name who approves it",
+        "See what is waiting for you to decide",
+        "Approve or decline with a note the asker reads",
+        "Withdraw a request, or ask again after a no",
+        "See who asked, who decided and what they said"
+      ],
+      "why": "Encrypted end to end: not even Krate can read your team's requests.",
+      "bundle": "/orgs/starters/requests.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/requests.webp",
+      "top": [
+        "Approve with a note",
+        "Waiting for you",
+        "Every answer kept"
       ]
     },
     {
-      "id": "expenses",
-      "name": "Expenses",
-      "says": "Log what the team spends and see who is owed what.",
+      "id": "help-desk",
+      "name": "Help Desk",
+      "category": "Everyday",
+      "says": "Tickets for what breaks, who has each one, and the comments.",
       "can": [
-        "Log an amount, currency, what it was for, the day and a receipt note",
-        "See what each person is owed, per currency",
-        "See what each month cost",
-        "Mark an expense paid back, or undo it",
-        "Fix a mistake or delete an expense, with Undo"
+        "File a ticket with how urgent it is",
+        "Take a ticket, or name who should look at it",
+        "Comment on a ticket; everyone sees the thread",
+        "Mark it waiting on a reply, solved, or reopen it",
+        "See what is open by urgency and who has what"
       ],
-      "why": "Encrypted end to end: not even Krate can see your team's spending.",
-      "bundle": "/orgs/starters/expenses.krate",
+      "why": "Encrypted end to end: not even Krate can read your team's tickets.",
+      "bundle": "/orgs/starters/help-desk.krate",
       "placeholder": false,
-      "shot": "/orgs/starters/expenses.webp",
+      "shot": "/orgs/starters/help-desk.webp",
       "top": [
-        "Who is owed what",
-        "What each month cost",
-        "Paid back, with Undo"
+        "Urgent first",
+        "Who has what",
+        "Comments on each"
+      ]
+    },
+    {
+      "id": "team-contacts",
+      "name": "Contacts",
+      "category": "Everyday",
+      "says": "The companies you work with, the people there, and the next step.",
+      "can": [
+        "Add a company and the people there",
+        "Log each call or meeting with the next step",
+        "See which next steps are due or overdue",
+        "Mark a next step done",
+        "Keep where you are with each: lead, talking, customer"
+      ],
+      "why": "Encrypted end to end: not even Krate can read your team's contacts.",
+      "bundle": "/orgs/starters/team-contacts.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/team-contacts.webp",
+      "top": [
+        "Next steps due",
+        "Every call logged",
+        "People at each company"
       ]
     },
     {
@@ -64,6 +110,227 @@
         "Count in and out",
         "See what is running low",
         "Two people count at once"
+      ],
+      "category": "Operations"
+    },
+    {
+      "id": "assets",
+      "name": "Assets",
+      "category": "Operations",
+      "says": "Know who has which laptop, phone or tool, and its history.",
+      "can": [
+        "List equipment with its serial number",
+        "Hand a thing to someone, or back into store",
+        "Send it for repair and mark it back",
+        "Retire what is gone",
+        "See every hand-over with who did it and when"
+      ],
+      "why": "Encrypted end to end: not even Krate can see what your team owns.",
+      "bundle": "/orgs/starters/assets.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/assets.webp",
+      "top": [
+        "Who has what",
+        "Serial numbers",
+        "Full history"
+      ]
+    },
+    {
+      "id": "inspections",
+      "name": "Inspections",
+      "category": "Operations",
+      "says": "Run the same checklist the same way, and see what failed.",
+      "can": [
+        "Start from fire safety, vehicle or opening-up checklists",
+        "Make your own checklist, one item per line",
+        "Pass or fail each item, with a note",
+        "Finish an inspection once every item is checked",
+        "See what failed and still needs fixing"
+      ],
+      "why": "Encrypted end to end: not even Krate can read your team's inspections.",
+      "bundle": "/orgs/starters/inspections.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/inspections.webp",
+      "top": [
+        "Ready checklists",
+        "Pass or fail each item",
+        "What failed, in one list"
+      ]
+    },
+    {
+      "id": "visitors",
+      "name": "Visitors",
+      "category": "Operations",
+      "says": "Sign visitors in and out, and see who is on site now.",
+      "can": [
+        "Sign a visitor in with who they came to see",
+        "Note the badge they hold and why they came",
+        "Sign them out with one press",
+        "See who is on site right now",
+        "Look back at every visit, day by day"
+      ],
+      "why": "Encrypted end to end: not even Krate can see who visits your team.",
+      "bundle": "/orgs/starters/visitors.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/visitors.webp",
+      "top": [
+        "Who is on site now",
+        "Sign out in one press",
+        "Badges out"
+      ]
+    },
+    {
+      "id": "incidents",
+      "name": "Incidents",
+      "category": "Operations",
+      "says": "Log what went wrong, act on it, and close it.",
+      "can": [
+        "Report an incident with how bad it was",
+        "Add actions with an owner and a day",
+        "Tick actions off as they are done",
+        "Close it, or reopen it",
+        "See what is open, worst first"
+      ],
+      "why": "Encrypted end to end: not even Krate can read your team's incidents.",
+      "bundle": "/orgs/starters/incidents.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/incidents.webp",
+      "top": [
+        "Worst first",
+        "Actions with owners",
+        "Report to close"
+      ]
+    },
+    {
+      "id": "leave",
+      "name": "Leave",
+      "category": "People",
+      "says": "Book days off, see who is away, and the days left.",
+      "can": [
+        "Book holiday, sick days or training",
+        "See the week: who is away each day",
+        "See how many days of holiday each person has left",
+        "Set the team's yearly allowance",
+        "Two bookings that overlap are caught"
+      ],
+      "why": "Encrypted end to end: not even Krate can see when your team is away.",
+      "bundle": "/orgs/starters/leave.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/leave.webp",
+      "top": [
+        "Who is away this week",
+        "Days left this year",
+        "Overlaps caught"
+      ]
+    },
+    {
+      "id": "onboarding",
+      "name": "Onboarding",
+      "category": "People",
+      "says": "A checklist for every new joiner, with owners and days.",
+      "can": [
+        "Add a new joiner and get the usual eight tasks",
+        "Each task has an owner and a day it is due",
+        "Tick tasks off; see how far along each person is",
+        "Add, change or remove tasks",
+        "See what is yours to do and what is late"
+      ],
+      "why": "Encrypted end to end: not even Krate can read your team's onboarding.",
+      "bundle": "/orgs/starters/onboarding.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/onboarding.webp",
+      "top": [
+        "The usual tasks, ready",
+        "Owners and due days",
+        "What is late"
+      ]
+    },
+    {
+      "id": "shift-rota",
+      "name": "Shift Rota",
+      "category": "People",
+      "says": "The week's shifts per person, and swaps.",
+      "can": [
+        "See the week: a row per person, a column per day",
+        "Add early, day, late or night shifts",
+        "Ask for a swap with a reason",
+        "Take a shift someone wants to swap",
+        "See each person's hours for the week"
+      ],
+      "why": "Encrypted end to end: not even Krate can see your team's rota.",
+      "bundle": "/orgs/starters/shift-rota.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/shift-rota.webp",
+      "top": [
+        "The whole week",
+        "Swaps in two presses",
+        "Hours per person"
+      ]
+    },
+    {
+      "id": "timesheets",
+      "name": "Timesheets",
+      "category": "People",
+      "says": "Log hours per project per day, with the week's totals.",
+      "can": [
+        "Log hours against a project on a day",
+        "See the week as a table: projects by days, with totals",
+        "See one person's week or the whole team's",
+        "Totals by person and by project",
+        "A day over 24 hours is caught"
+      ],
+      "why": "Encrypted end to end: not even Krate can see your team's hours.",
+      "bundle": "/orgs/starters/timesheets.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/timesheets.webp",
+      "top": [
+        "The week as a table",
+        "Totals by project",
+        "One person or all"
+      ]
+    },
+    {
+      "id": "expenses",
+      "name": "Expenses",
+      "says": "Log what the team spends and see who is owed what.",
+      "can": [
+        "Log an amount, currency, what it was for, the day and a receipt note",
+        "See what each person is owed, per currency",
+        "See what each month cost",
+        "Mark an expense paid back, or undo it",
+        "Fix a mistake or delete an expense, with Undo"
+      ],
+      "why": "Encrypted end to end: not even Krate can see your team's spending.",
+      "bundle": "/orgs/starters/expenses.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/expenses.webp",
+      "top": [
+        "Who is owed what",
+        "What each month cost",
+        "Paid back, with Undo"
+      ],
+      "category": "Finance"
+    },
+    {
+      "id": "purchase-orders",
+      "name": "Purchase Orders",
+      "category": "Finance",
+      "says": "Ask to buy, get it approved, and mark it received.",
+      "can": [
+        "Ask to buy something, from a supplier, for an amount",
+        "The person you name approves or declines with a note",
+        "Mark an order ordered, then received",
+        "See what waits for approval and what was approved this month",
+        "Totals per currency and per supplier"
+      ],
+      "why": "Encrypted end to end: not even Krate can see what your team buys.",
+      "bundle": "/orgs/starters/purchase-orders.krate",
+      "placeholder": false,
+      "shot": "/orgs/starters/purchase-orders.webp",
+      "top": [
+        "Approve before buying",
+        "Ordered and received",
+        "Spend this month"
       ]
     }
   ]

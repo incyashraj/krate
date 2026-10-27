@@ -20,6 +20,7 @@ members = [
     "crates/bundle",
     "crates/lease",
     "crates/orgkeys",
+    "crates/orgdata",
     "crates/http",
     "crates/validator-wasm",
     "crates/manifest",

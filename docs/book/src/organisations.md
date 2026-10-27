@@ -111,6 +111,48 @@ Once approved, the app is released to the organisation, and the hub checks
 the person's sign-in against the organisation every time the app is
 fetched.
 
+### Approving with the code in view
+
+Every app sent to an organisation carries its source. On the organisation's
+page, each waiting version shows what changed in its code since the version
+that opens now: every file added, removed or changed, and a line-by-line
+diff of each one. Above the files are the things worth a second look,
+worked out from the files themselves with no AI: a new network host or
+permission, a new or changed dependency in `Cargo.toml` or `Cargo.lock`,
+new `unsafe` Rust, a new binary file, how much the compiled app grew, and
+whether it was made with AI and which model. Only the people who approve,
+and whoever sent the version, can read its code. A very large change is cut
+at 400 KB, and the page says where.
+
+The email that says a version is waiting links straight to that version,
+with its code and what it can do, and Approve and Decline beside them. It
+works on a phone. If someone else has already decided, the page says who
+and when.
+
+### Approval rules
+
+An owner sets the organisation's approval rules under Settings, Approval
+rules:
+
+- how many people approve each version: one or two, never its sender;
+- a stricter count, one or two, for a version that asks for the network,
+  files or the camera, or that adds any permission;
+- a group one approver must be in, for every app or for one app;
+- a group one approver must be in when a version connects to a network
+  host the version before it did not.
+
+The hub checks the rules when someone approves. An approval that does not
+meet them yet is recorded and the version keeps waiting; the page says what
+is still needed, for example "Needs one more approval from security". The
+approval that meets them releases the version. An approval that could not
+count, from someone outside the group the rules still need, is refused and
+says whose approval is needed. Each approval is in the audit.
+
+With the rules left as they are (one approval, no groups), an owner who is
+the only person who can approve still releases their own apps, marked as
+released by their sender. Any other rules need someone besides the sender,
+so they cannot be met by one person alone.
+
 ## Opening it offline
 
 The first time a member opens a private app, Krate shows the terms with the
@@ -254,6 +296,62 @@ anywhere else carries it. Each use is counted per day in the activity.
 The request goes from the person's computer, so an API on the company
 network works. The limit to know: a server that echoes request headers back
 would show the credential to the app.
+
+### Telling the API who is calling
+
+One credential serves the whole organisation, so on its own your API sees
+only "the app". With **Tell the API who is calling** on (the default, in
+the connection's form in Settings, or `--no-identity` on
+`krate org connection create` to turn it off), every request an app sends
+through the connection also carries a `Krate-Identity` header: a short
+token, signed by Krate, that names the person. Your API can log who did
+what, with no sign-in work of its own. The credential still decides who
+gets in; the token tells you who it was.
+
+The token is a JWT (RFC 7519) signed with EdDSA over Ed25519 (RFC 8037).
+Its claims:
+
+| Claim | What it is |
+|-------|------------|
+| `sub` | The person: `github:<login>` or `email:<address>` |
+| `org` | The organisation's short name |
+| `app` | The app's id from its manifest, such as `com.acme.ledger` |
+| `release` | The SHA-256 of the exact release the person opened |
+| `connection` | The connection's name, such as `finance-api` |
+| `aud` | The connection's address, exactly as shown in Settings |
+| `iss` | `https://hub.krate.tech` |
+| `iat`, `nbf`, `exp` | Issued, valid from, valid until: five minutes |
+| `jti` | A random id for this token |
+
+To check one: take the key whose `kid` matches the token's header from
+`https://hub.krate.tech/.well-known/jwks.json`, and accept the token only if
+the signature holds with `alg` `EdDSA`, `aud` is your connection's address,
+`iss` is `https://hub.krate.tech`, and `exp` has not passed (allow a minute
+for clocks). Krate refreshes the token about a minute before it runs out,
+and only for people who still pass every check the credential does: someone
+removed from the organisation stops being named within five minutes. If a
+fresh token cannot be had, the request still goes, without the header, so
+treat a missing header as "unknown person", not as a refusal. Krate drops
+any `Krate-Identity` an app sets itself, and never sends one outside the
+connection's address.
+
+In Node 18 or later, with the `jose` package:
+
+```js
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
+const keys = createRemoteJWKSet(new URL("https://hub.krate.tech/.well-known/jwks.json"));
+
+export async function whoIsCalling(request) {
+  const token = request.headers["krate-identity"];
+  if (!token) return null; // sent without one: an unknown person
+  const { payload } = await jwtVerify(token, keys, {
+    algorithms: ["EdDSA"], issuer: "https://hub.krate.tech",
+    audience: "https://api.acme.com/finance", clockTolerance: 60,
+  });
+  return payload; // payload.sub, payload.app, payload.release ...
+}
+```
 
 ## Company sign-in
 

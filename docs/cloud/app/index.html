@@ -65,6 +65,8 @@
 #app .steps br { display: none; }
 #app .steps .get { display: inline-flex; align-items: center; height: 40px; margin-top: 12px; padding: 0 18px; border-radius: 99px; font-size: 14px; font-weight: 500; color: var(--btn-ink); background: var(--btn); transition: background .2s; }
 #app .steps .get:hover { background: var(--btn-h); }
+#app .steps .get.ghost { color: var(--ink); background: transparent; box-shadow: inset 0 0 0 1px var(--hair); }
+#app .steps .get.ghost:hover { background: var(--s2); }
 
 /* the permission list, written by the app itself */
 #app #perms .perm { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-top: 1px solid var(--line); }
@@ -153,7 +155,7 @@
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
   <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 <script>
@@ -273,7 +275,7 @@
       const linux = /Linux|X11/.test(ua) && !/Android|Mac/.test(ua);
       const phone = /Android|iPhone|iPad|iPod/.test(ua);
       const openStep = phone
-        ? `<b>Open it on a computer.</b><span>Krate runs on Mac, Windows and Linux, not on phones yet. Send yourself this page and open the file there.</span>`
+        ? `<b>Keep it as an app on a computer.</b><span>Open this page on your Mac, Windows or Linux computer and the same file opens there as a native app.</span>`
         : linux
           ? `<b>Open the file with Krate.</b><span>It tells you what it wants first, then opens once you agree.</span>`
           : `<b>Double-click the file.</b><span>It tells you what it wants first, then opens once you agree.</span>`;
@@ -312,8 +314,8 @@
 
         <h2>Open it</h2>
         <ol class="steps">
-          <li><div><b>Install Krate once.</b><span>Free, a minute, and every app after this one just opens. <a href="/open/">How to install it on your Mac, Windows or Linux computer.</a></span></div></li>
-          <li><div><b>Download the file.</b><span>${esc(name)} is one file, ${kb(m.size || 0)}.</span><br /><a class="get" href="${esc(app.url)}?dl=1">Download ${esc(name)}</a></div></li>
+          <li><div><b>Open it here.</b><span>It runs in this tab, on a phone too, with nothing to install. It shows you first what it may touch.</span><br /><a class="get" id="runHere" href="${HUB}/run/${esc(app.id)}?via=gallery">Open ${esc(name)} here</a></div></li>
+          <li><div><b>Keep it on your computer.</b><span>Install Krate once (free, a minute), then download the file: ${esc(name)} is ${kb(m.size || 0)}. <a href="/open/">How to install it.</a></span><br /><a class="get ghost" href="${esc(app.url)}?dl=1">Download ${esc(name)}</a></div></li>
           <li><div>${openStep}</div></li>
         </ol>
 

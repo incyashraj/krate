@@ -1691,10 +1691,12 @@
       <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Anyone with it can open the app</small></button>
       <button type="button" class="kr-way" data-w="file" role="tab" style="--c:#7c5ce8"><i>${ico("file")}</i><b>Send the file</b><small>Email, a chat, a USB stick</small></button>
       <button type="button" class="kr-way" data-w="pub" role="tab" style="--c:#22a35a"><i>${ico("globe")}</i><b>Publish</b><small>List it in the public gallery</small></button>
+      <button type="button" class="kr-way" data-w="org" role="tab" style="--c:#d97706" hidden><i>${ico("shield")}</i><b>Send for approval</b><small data-orgsub>To your organisation</small></button>
     </div>
     <div class="kr-wp" data-w="link"></div>
     <div class="kr-wp" data-w="file"></div>
     <div class="kr-wp" data-w="pub"></div>
+    <div class="kr-wp" data-w="org"></div>
     <p class="kr-shnote">${ico("info")}<span>New to Krate? They install it once, like a video player.</span></p>
   </div>`;
   document.body.appendChild(shareWrap);
@@ -1795,6 +1797,48 @@
     qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
   }
   const invokeReveal = () => press($("filesSave"));
+  // Send for approval: the fourth way, there when this person may send apps
+  // to an organisation (an owner or a developer). app.js's sendToOrg does
+  // the work, on a computer through the engine and in a tab through the
+  // bridge (G5); the one Studio was opened for (/app/?org=<slug>) is first.
+  // In a tab the version can carry a release note.
+  function orgList() { try { return (orgTargets && orgTargets.list) || []; } catch (e) { return []; } }
+  function paintOrg() {
+    const way = q('.kr-way[data-w="org"]', shareWrap), pane = q('.kr-wp[data-w="org"]', shareWrap);
+    const orgs = orgList();
+    way.hidden = !orgs.length;
+    q(".kr-ways", shareWrap).classList.toggle("four", orgs.length > 0);
+    if (!orgs.length) { pane.innerHTML = ""; return; }
+    const pick = typeof window.krOrgPick === "function" ? window.krOrgPick() : null;
+    const list = orgs.slice().sort((a, b) => Number(b.slug === pick) - Number(a.slug === pick));
+    const nm = (o) => o.name || o.slug;
+    q("[data-orgsub]", way).textContent = list.length === 1 ? `To ${nm(list[0])}: a second person approves it` : "To one of your organisations";
+    pane.innerHTML = `<div class="kr-frm">
+        ${list.length > 1 ? '<label>Send to<select class="kr-field" data-o></select></label>' : ""}
+        ${desktopApp() ? "" : '<label>What changed<input class="kr-field" data-note maxlength="1000" placeholder="Optional: a line for whoever approves it"></label>'}
+        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-send><span class="kr-lb"></span><span class="pop-val" hidden></span></button></div>
+        <p class="kr-shst" data-st>It goes up signed by the organisation, and nobody can open it until someone else approves it.</p></div>`;
+    const sel = q("[data-o]", pane), note = q("[data-note]", pane), go = q("[data-send]", pane), st = q("[data-st]", pane);
+    const chosen = () => list.find((o) => o.slug === (sel ? sel.value : list[0].slug)) || list[0];
+    const ready = () => { delete go.dataset.waiting; q(".kr-lb", go).textContent = `Send to ${nm(chosen())} for approval`; };
+    if (sel) {
+      list.forEach((o) => { const opt = document.createElement("option"); opt.value = o.slug; opt.textContent = nm(o); sel.appendChild(opt); });
+      sel.addEventListener("change", () => { ready(); st.textContent = ""; });
+    }
+    ready();
+    go.addEventListener("click", async () => {
+      if (go.dataset.busy || !shareApp) return;
+      const org = chosen();
+      const opening = Boolean(go.dataset.waiting);
+      go.dataset.busy = "1"; go.classList.add("busy");
+      try { await sendToOrg(shareApp, org, go, st, note ? note.value.trim() : ""); } catch (e) {}
+      delete go.dataset.busy; go.classList.remove("busy");
+      if (!opening && go.dataset.waiting) {
+        q(".kr-lb", go).textContent = /^Released/.test(st.textContent) ? "Open it" : `Open the ${nm(org)} console`;
+        if (note) note.disabled = true;
+      }
+    });
+  }
   // Publish, in the sheet: the name, one line, and whether it is listed.
   // The fields are app.js's own publish sheet's (it prefills them, and it
   // does the publishing and any sign-in); this only shows them here.
@@ -1909,8 +1953,11 @@
     if (version && builds && version < builds) { v.hidden = false; v.textContent = `v${version} · newest is v${builds}`; } else v.hidden = true;
     const url = isCurrent() ? linkOf() : null;
     if (url) paintLink(url, false); else paintMakeLink();
-    paintFile(); paintPub();
-    pickWay("link");
+    paintFile(); paintPub(); paintOrg();
+    try { if (!orgTargets.list) refreshOrgTargets().then(() => { if (!shareWrap.classList.contains("hidden")) paintOrg(); }); } catch (e) {}
+    // Opened for an organisation, Share starts on sending it there.
+    const forOrg = typeof window.krOrgPick === "function" && window.krOrgPick() && orgList().some((o) => o.slug === window.krOrgPick());
+    pickWay(forOrg ? "org" : "link");
     shareWrap.classList.remove("hidden");
     setTimeout(() => { const b = q(".kr-way.on", shareWrap); if (b) b.focus(); }, 60);
   }

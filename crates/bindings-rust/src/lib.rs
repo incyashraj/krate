@@ -718,7 +718,7 @@ pub mod io {
 /// end encrypted: the hub holds ciphertext, the members' devices the key.
 pub mod org {
     pub use crate::bindings::krate::store::org::{
-        Entry, Member, OrgError, Page, Refusal, SyncState, Value,
+        Entry, Link, Member, OrgError, Page, Refusal, Standing, SyncState, Value,
     };
     use alloc::string::{String, ToString};
     use alloc::vec::Vec;
@@ -768,16 +768,39 @@ pub mod org {
         }
     }
 
-    /// Sync with the organisation now. Offline is not an error: `online`
-    /// is false and the changes wait.
+    /// Ask for a sync with the organisation now. In a windowed app it never
+    /// waits: it answers at once, and a later call says `changed` once the
+    /// sync brought something. Offline is not an error: `online` is false
+    /// and the changes wait.
     pub fn sync() -> Result<SyncState, OrgError> {
         crate::bindings::krate::store::org::sync()
     }
 
     /// The signed-in person and their role, once a sync has reached the
-    /// organisation.
+    /// organisation with its key.
     pub fn who() -> Result<Option<Member>, OrgError> {
         crate::bindings::krate::store::org::who()
+    }
+
+    /// Where this computer stands: synced, syncing, offline, or waiting for
+    /// the team's key, with what is pending and the organisation's name. It
+    /// never waits, so a status line can ask every frame.
+    pub fn status() -> Result<Standing, OrgError> {
+        crate::bindings::krate::store::org::status()
+    }
+
+    /// The calm words for a status line, in the person's terms.
+    pub fn status_words(standing: &Standing) -> String {
+        match standing.link {
+            Link::Synced => String::from("Up to date"),
+            Link::Syncing if standing.pending > 0 => String::from("Sending changes"),
+            Link::Syncing => String::from("Syncing"),
+            Link::Offline => String::from("Offline, saved here"),
+            Link::WaitingForKey => alloc::format!(
+                "Waiting for your team's key: someone in {} opens Krate and it arrives",
+                standing.org
+            ),
+        }
     }
 
     /// One field of a record, by name.

@@ -5665,10 +5665,11 @@ const pubState = { shotPath: null, iconPath: null };
  * row and pressing it copies. `which` is the version a chip asked about. */
 /* The organisations this person can send to for approval (IC-948 I): the
  * engine's `krate org list`, kept between opens so the menu opens at once;
- * the first open waits for it. */
+ * the first open waits for it. In a tab the bridge answers from the hub
+ * (G5): the same list, owners and developers only. */
 const orgTargets = { list: null, asked: null };
 function refreshOrgTargets() {
-  if (!tauri) return Promise.resolve([]);
+  if (!tauri && !window.__KRATE_BRIDGE__) return Promise.resolve([]);
   orgTargets.asked = invoke("org_targets")
     .then((list) => { orgTargets.list = Array.isArray(list) ? list : []; return orgTargets.list; })
     .catch(() => { orgTargets.list = orgTargets.list || []; return orgTargets.list; });
@@ -5840,10 +5841,19 @@ async function openSendSheet(which, version, anchor) {
   }
   items.push({ label: "Send the file", value: "a picture with the app inside", run: (row, label) => { sendCard(app, label); return true; } });
   // One row per organisation that lets this person publish: the app goes
-  // up signed, as a candidate, and someone else approves it.
-  for (const org of orgs) {
+  // up signed, as a candidate, and someone else approves it. The one Studio
+  // was opened for (the console's New app page, /app/?org=<slug>) is first.
+  const picked = typeof window.krOrgPick === "function" ? window.krOrgPick() : null;
+  const ordered = orgs.slice().sort((a, b) => Number(b.slug === picked) - Number(a.slug === picked));
+  for (const org of ordered) {
     const name = org.name || org.slug;
-    items.push({ label: `Publish to ${name}`, value: org.role === "owner" ? "signed by " + name : "signed by " + name + ", approved by a reviewer", run: (row, label) => { sendToOrg(app, org, row, label); return true; } });
+    items.push({ label: `Send to ${name} for approval`, value: org.role === "owner" ? "signed by " + name : "signed by " + name + ", approved by a reviewer", run: (row, label) => {
+      // In a tab a version can carry a release note (G5): the row opens a
+      // line to write one under it, and Send goes from there.
+      if (!tauri && !row.dataset.waiting) { if (!row.dataset.open) openOrgNote(app, org, row, label); return true; }
+      sendToOrg(app, org, row, label);
+      return true;
+    } });
   }
   // The third way: a gift file that installs Krate once and then opens the
   // app. Only the krate binary on this computer can make one, so in a tab
@@ -5878,7 +5888,7 @@ async function openSendSheet(which, version, anchor) {
  * approve. Nothing here says "key". While the organisation has not approved
  * this person yet, the row says who can, and Studio asks again by itself
  * every 20 seconds for ten minutes. */
-async function sendToOrg(app, org, row, label) {
+async function sendToOrg(app, org, row, label, note) {
   const name = org.name || org.slug;
   if (row.dataset.waiting) {
     invoke("open_external", { url: row.dataset.waiting }).catch(() => {});
@@ -5888,18 +5898,21 @@ async function sendToOrg(app, org, row, label) {
   label.textContent = `Getting ${app.name || "it"} ready for ${name}…`;
   const value = row.querySelector(".pop-val");
   const said = (sent) => {
-    label.textContent = sent.words;
+    label.textContent = sent.state === "waiting-for-approval" ? `Sent. ${String(sent.words || "").replace(/\.$/, "")}.` : sent.words;
     if (value && value !== label) value.textContent = sent.state === "released" ? "open it" : "see it in the dashboard";
   };
+  // The desktop's command takes the file and the organisation; a tab's
+  // also takes the app's name and the release note.
+  const args = tauri ? { path: app.path, slug: org.slug } : { path: app.path, slug: org.slug, name: app.name || "", note: note || "" };
   try {
-    let sent = await invoke("send_to_org", { path: app.path, slug: org.slug });
+    let sent = await invoke("send_to_org", args);
     said(sent);
     if (sent.state === "waiting-for-publisher") {
       toastish(sent.words);
       const until = Date.now() + 10 * 60 * 1000;
       while (sent.state === "waiting-for-publisher" && Date.now() < until) {
         await new Promise((r) => setTimeout(r, 20000));
-        sent = await invoke("send_to_org", { path: app.path, slug: org.slug });
+        sent = await invoke("send_to_org", args);
       }
       said(sent);
     }
@@ -5912,6 +5925,222 @@ async function sendToOrg(app, org, row, label) {
     toastish(String(err && err.message ? err.message : err || "").replace(/^error:\s*/i, ""));
   }
 }
+
+/* The release note, in a tab (G5): a line under the organisation's row of
+ * the Send menu, 0-1,000 characters, shown to whoever approves the version
+ * and to everyone who opens the release. Enter or Send sends it. */
+function openOrgNote(app, org, row, label) {
+  row.dataset.open = "1";
+  const name = org.name || org.slug;
+  const box = document.createElement("div");
+  box.className = "pop-note";
+  box.addEventListener("click", (e) => e.stopPropagation());
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 1000;
+  input.placeholder = "What changed (optional)";
+  input.setAttribute("aria-label", `A note for whoever approves it in ${name}`);
+  const go = document.createElement("button");
+  go.type = "button";
+  go.className = "btn btn-primary btn-sm";
+  go.textContent = "Send";
+  go.setAttribute("aria-label", `Send to ${name} for approval`);
+  const send = async () => {
+    if (go.disabled) return;
+    go.disabled = true;
+    input.disabled = true;
+    await sendToOrg(app, org, row, label, input.value.trim());
+    if (row.dataset.waiting) { box.remove(); return; }
+    go.disabled = false;
+    input.disabled = false;
+  };
+  go.addEventListener("click", send);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+  box.appendChild(input);
+  box.appendChild(go);
+  row.insertAdjacentElement("afterend", box);
+  input.focus();
+}
+
+/* ---- start from a spreadsheet (G6) ---------------------------------------
+ * A .csv or .xlsx, read in the tab (the bridge's sheet_pick): its columns
+ * with their kinds and the first rows on screen, a name and one sentence
+ * of what it is for, and who keeps the records -- the person, or one of
+ * their organisations as team data. Make starts a normal build from Home
+ * whose request holds the columns and a sample of rows; the whole sheet
+ * goes with it as the app's asset (an attachment), imported on first run. */
+const sheetStart = { summary: null, busy: false };
+
+function sheetSay(text) {
+  const note = $("sheetNote");
+  if (note) note.textContent = text || "";
+}
+
+async function openSheetStart() {
+  if (tauri || !$("sheetSheet")) return;
+  if (webSignInFirst("")) return;
+  sheetStart.summary = null;
+  drawSheetStart();
+  $("sheetSheet").classList.remove("hidden");
+  // Who can keep the records: the person, or an organisation they make
+  // apps for. The one Studio was opened for is chosen.
+  const orgs = orgTargets.list || await refreshOrgTargets();
+  const pick = $("sheetFor");
+  if (pick) {
+    pick.innerHTML = "";
+    const me = document.createElement("option");
+    me.value = "";
+    me.textContent = "Just me, on my computer";
+    pick.appendChild(me);
+    const wanted = typeof window.krOrgPick === "function" ? window.krOrgPick() : null;
+    for (const org of orgs) {
+      const o = document.createElement("option");
+      o.value = org.slug;
+      o.textContent = `${org.name || org.slug}, as team data`;
+      if (org.slug === wanted) o.selected = true;
+      pick.appendChild(o);
+    }
+    $("sheetForRow")?.classList.toggle("hidden", orgs.length === 0);
+  }
+}
+
+async function chooseSheetFile() {
+  if (sheetStart.busy) return;
+  sheetStart.busy = true;
+  sheetSay("");
+  try {
+    const got = await invoke("sheet_pick");
+    if (got) {
+      sheetStart.summary = got;
+      if ($("sheetName") && !$("sheetName").value.trim()) $("sheetName").value = got.name || "";
+    }
+  } catch (err) {
+    sheetSay(String(err && err.message ? err.message : err || "").replace(/^error:\s*/i, ""));
+  } finally {
+    sheetStart.busy = false;
+    drawSheetStart();
+  }
+}
+
+/// The chosen sheet on screen: its columns and kinds over the first rows,
+/// in a table that scrolls sideways inside the sheet, never the page.
+function drawSheetStart() {
+  const s = sheetStart.summary;
+  const has = Boolean(s);
+  $("sheetFile").textContent = has ? `${s.file} · ${s.rows.toLocaleString()} ${s.rows === 1 ? "row" : "rows"} · ${s.columns.length} ${s.columns.length === 1 ? "column" : "columns"}` : "";
+  $("sheetChoose").textContent = has ? "Choose another file" : "Choose a file";
+  const tabs = $("sheetTab");
+  $("sheetTabRow").classList.toggle("hidden", !has || s.sheets.length < 2);
+  if (has && s.sheets.length > 1) {
+    tabs.innerHTML = "";
+    s.sheets.forEach((n, i) => {
+      const o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = n;
+      if (i === s.sheet) o.selected = true;
+      tabs.appendChild(o);
+    });
+  }
+  const problem = $("sheetProblem");
+  problem.textContent = has && s.problem ? s.problem : "";
+  problem.classList.toggle("hidden", !(has && s.problem));
+  const grid = $("sheetCols");
+  grid.innerHTML = "";
+  const usable = has && !s.problem;
+  grid.classList.toggle("hidden", !usable);
+  $("sheetForm").classList.toggle("hidden", !usable);
+  $("sheetMake").disabled = !usable;
+  if (!usable) return;
+  const table = document.createElement("table");
+  table.className = "sheet-table";
+  const head = document.createElement("tr");
+  for (const c of s.columns) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    const b = document.createElement("b");
+    b.textContent = c.name;
+    const kind = document.createElement("span");
+    kind.className = "sheet-kind";
+    kind.textContent = c.type;
+    th.appendChild(b);
+    th.appendChild(kind);
+    head.appendChild(th);
+  }
+  const thead = document.createElement("thead");
+  thead.appendChild(head);
+  table.appendChild(thead);
+  const body = document.createElement("tbody");
+  for (const r of s.sample) {
+    const tr = document.createElement("tr");
+    for (const v of r) {
+      const td = document.createElement("td");
+      td.textContent = clip(String(v), 60);
+      tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
+  table.appendChild(body);
+  grid.appendChild(table);
+  if (s.rows > s.sample.length) {
+    const more = document.createElement("p");
+    more.className = "sheet-more";
+    more.textContent = `and ${(s.rows - s.sample.length).toLocaleString()} more. Every row goes into the app; only these first ones go to the AI.`;
+    grid.appendChild(more);
+  }
+}
+
+async function useSheetTab() {
+  try {
+    sheetStart.summary = await invoke("sheet_use", { sheet: Number($("sheetTab").value) });
+  } catch (err) {
+    sheetSay(String(err && err.message ? err.message : err || ""));
+  }
+  drawSheetStart();
+}
+
+async function makeFromSheet() {
+  const s = sheetStart.summary;
+  if (!s || s.problem || sheetStart.busy) return;
+  const name = $("sheetName").value.trim();
+  if (!name) { sheetSay("Give the app a name."); $("sheetName").focus(); return; }
+  sheetStart.busy = true;
+  try {
+    const made = await invoke("sheet_request", { name, purpose: $("sheetPurpose").value.trim(), org: $("sheetFor") ? $("sheetFor").value : "" });
+    $("sheetSheet").classList.add("hidden");
+    // A normal build from Home, with the sheet attached as a file is.
+    if (!state.attachments.includes(made.attachment)) state.attachments.push(made.attachment);
+    renderAttachments();
+    $("homePrompt").value = made.request;
+    if (typeof syncSendReady === "function") syncSendReady();
+    await startFromHome();
+  } catch (err) {
+    sheetSay(String(err && err.message ? err.message : err || "").replace(/^error:\s*/i, ""));
+  } finally {
+    sheetStart.busy = false;
+  }
+}
+
+(function wireSheetStart() {
+  if (tauri || !window.__KRATE_BRIDGE__ || !$("sheetSheet")) return;
+  $("homeSheetLine")?.removeAttribute("hidden");
+  $("homeSheet")?.addEventListener("click", (e) => { e.preventDefault(); openSheetStart(); });
+  $("sheetChoose").addEventListener("click", chooseSheetFile);
+  $("sheetTab").addEventListener("change", useSheetTab);
+  $("sheetMake").addEventListener("click", makeFromSheet);
+  // /app/?start=sheet, from the console's New app page: the sheet opens
+  // once, with nothing chosen and nothing sent.
+  if (typeof window.krStartSheet === "function" && window.krStartSheet()) setTimeout(openSheetStart, 400);
+})();
+
+/* Opened for one organisation (/app/?org=<slug>, from its console's New app
+ * page): Home says so, and where the app goes once it is built. */
+(async function sayOrgPick() {
+  const slug = !tauri && typeof window.krOrgPick === "function" ? window.krOrgPick() : null;
+  if (!slug || !$("homeSub")) return;
+  const orgs = await refreshOrgTargets();
+  const org = orgs.find((o) => o.slug === slug);
+  if (org) $("homeSub").textContent = `Describe an app for ${org.name || org.slug}. Once it is built, send it to ${org.name || org.slug} for approval from Share.`;
+})();
 
 /* This computer's share for its organisations (IC-958), while Studio is
  * open: on start and every minute. Quiet unless it did something. */

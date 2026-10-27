@@ -276,7 +276,16 @@ jobs:
           # reason, Make current sends the exact digest, and each role is
           # shown only the controls the matrix gives it (IC-949 R).
           node docs/landing/studio/org-releases-test.mjs
+          # Staged rollout (pilot group, kept groups), Slack and Teams channels,
+          # the SIEM presets of the activity export, and Insights' computer
+          # words (K-1114, K-1115): each asks before it changes anything.
+          node docs/landing/studio/org-rollout-chat-test.mjs
           node docs/landing/studio/org-review-test.mjs
+          # And approving with the code in view (G15, G16, G22): the code
+          # changes and their risk rows on the card, the approval rules'
+          # word on each version, an approval that would not count not
+          # offered, the email's one-version link, and the rules in Settings.
+          node docs/landing/studio/org-approvals-test.mjs
           # Company connections in Settings: only owners and admins manage
           # them, the credential is sent once and never shown again (IC-952).
           node docs/landing/studio/org-connections-test.mjs
@@ -309,6 +318,19 @@ jobs:
           # itself, joining from the email, and the signing ring's places
           # hidden where the hub has not got them.
           node docs/landing/studio/org-setup-test.mjs
+          # Describe it, approve it, ship it in the browser (G5): only owners
+          # and developers are offered Send to <org>, the app goes with its
+          # note and the answer is said in words; a spreadsheet's build
+          # carries its columns and a sample, the whole sheet only as the
+          # app's asset (G6).
+          node docs/landing/studio/org-send-test.mjs
+          # The spreadsheet reader itself: CSV and XLSX, kinds of value, the
+          # 5 MB and 20,000-row caps.
+          node docs/landing/studio/sheet-test.mjs
+          # An API's OpenAPI description made a company connection: the
+          # address, exact path prefixes, the credential kind, the 24 KB
+          # summary Studio's AI reads, and the presets (SMART-FIXES 4).
+          node docs/landing/studio/connect-test.mjs
           # And the IT pack the dashboard makes in the browser is
           # scripts/build-policy-templates.py's, byte for byte.
           node docs/landing/studio/org-policy-test.mjs

@@ -48,8 +48,35 @@
         D.S.pubWaiting = high() ? waiting.length : 0;
         D.drawTabs();
         notice(document.getElementById("pubNote"), D.S.tab);
+        signWaiting();
         return state;
       }));
+    }
+
+    /// An owner's or admin's browser that holds the signing key does what
+    /// their computer running Krate does: approve the people waiting to
+    /// publish (G5, so a team that only uses the website is not stuck).
+    /// Quiet; said only when it approved someone. Never for a browser that
+    /// is not already one of the organisation's devices.
+    var signing = false;
+    var tried = {};
+    function signWaiting() {
+      if (signing || !state || !high() || !D.device) return;
+      // Each waiting person once per page: one this browser cannot sign
+      // for is left to a computer that can, not asked about in a loop.
+      var due = (state.waiting || []).filter(function (w) { return (!state.by_hand || w.approved_by) && !tried[w.principal]; });
+      if (!due.length) return;
+      due.forEach(function (w) { tried[w.principal] = true; });
+      signing = true;
+      Promise.resolve(D.device()).then(function (dev) {
+        return dev && typeof dev.duties === "function" ? dev.duties(slug) : null;
+      }).then(function (did) {
+        signing = false;
+        var names = (did && did.approved) || [];
+        if (!names.length) return;
+        D.toast(names.length === 1 ? K.who(names[0]).label + " can publish to " + nameOf() + " now." : names.length + " people can publish to " + nameOf() + " now.");
+        load();
+      }, function () { signing = false; });
     }
 
     /// Above the pane: the developer's own wait, or the owners' count.
@@ -67,7 +94,7 @@
           el("b", { text: "Waiting for an owner's computer to approve you as a publisher" }),
           el("p", { text: state.by_hand
             ? whoCan(state.approvers) + " can approve you here in the dashboard; their computer signs it the next time it runs Krate. Your app goes out right after."
-            : whoCan(state.approvers) + " can approve you. It happens by itself the next time one of their computers runs Krate, and your app goes out right after." }),
+            : whoCan(state.approvers) + " can approve you. It happens by itself the next time one of them opens Krate or this console, and your app goes out right after." }),
           el("div", { class: "bacts" }, [cp]),
         ])]));
         box.hidden = false;

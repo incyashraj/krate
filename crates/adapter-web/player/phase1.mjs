@@ -275,10 +275,11 @@ async function runEngine(name, type) {
     const { context, page } = await open(browser, `/run/${id('orgprobe')}?arg=put&arg=notes&arg=n1&arg=text%3Dhello`);
     await page.waitForFunction(() => window.__krate.exit !== undefined || window.__krate.trap, null, { timeout: 10000 });
     const r = await k(page);
-    const shown = await page.textContent('#notice').catch(() => '');
-    check(name, 'store.org in a tab answers the app unsupported("...open it in Krate") and tells the person on the page',
-      /error=unsupported/.test(r.out) && r.notices.some((n) => n.iface.startsWith('krate:store/org')) && shown.includes("your team's shared data"), { out: r.out.trim(), notice: shown.trim() });
-    await page.screenshot({ path: join(shots, `${name}-orgstore-refused.png`) });
+    // Team data works in a tab (G1, team-data-proof.mjs); an app that is
+    // not an organisation's release has none there, as on a computer.
+    check(name, 'store.org in a tab, for an app that is not an organisation release: not-an-org-app, as on a computer',
+      /error=not-an-org-app/.test(r.out) && !r.notices.some((n) => n.iface.startsWith('krate:store/org')), { out: r.out.trim(), notices: r.notices });
+    await page.screenshot({ path: join(shots, `${name}-orgstore-not-org.png`) });
     await context.close();
   }
   {

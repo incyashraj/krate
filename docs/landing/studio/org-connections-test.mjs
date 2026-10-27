@@ -77,6 +77,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
   check(details && /Details/.test(details.shown) && /version 3/.test(details.shown) && /HPKE \(RFC 9180/.test(details.shown), "the exact terms are behind Details");
   check(!/HPKE|version 3|sealed blob|key version/i.test(plain), "and no machinery words outside it");
   check(!shown.includes("sk-"), "no credential anywhere on the page");
+  check(/Tells the API who is calling: each request carries a signed Krate-Identity header naming the person/.test(shown), "a connection from before the setting says it tells the API who is calling");
   check(/cap = "net\.connection:finance-api"/.test(shown), "how an app asks for it, with the real name");
   check(button(c, "New connection") && button(c, "Replace credential") && button(c, "Change") && button(c, "Remove"), "an owner can add, replace, change and remove");
 }
@@ -135,10 +136,151 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
   check(!clearIn(leftThePage(p), [SECRET, "sk-page-test-only"]), "nothing but the sealed blob left the browser: no request carries the credential or its base64");
   check(created && JSON.stringify(created.allow) === JSON.stringify({ methods: ["GET", "POST"], paths: ["/runs", "/people"] }), "and what it allows");
   check(created && JSON.stringify(created.audience) === JSON.stringify({ groups: ["finance"] }) && JSON.stringify(created.apps) === JSON.stringify({ ids: ["com.acme.payroll"] }), "and who and which apps");
+  check(created && created.identity === true && inputs(form, "identity")[0].checked === true && /Tell the API who is calling/.test(form.shown), "Tell the API who is calling starts on, and is sent");
   const post = p.sent.find((s) => s.key === "POST /orgs/acme/connections");
   check(post && post.headers["idempotency-key"], "with an Idempotency-Key");
   check(/The payroll-api connection is ready/.test(p.el("toast").shown), "and says it is ready");
   check(!t(p.el("pane").shown).includes("sk-page"), "the typed credential is gone from the page");
+}
+
+/* ---- starting from a preset or the API's description (SMART-FIXES 4) ---- */
+{
+  const PET2 = JSON.parse(readFileSync("docs/landing/studio/connect-petstore2-fixture.json", "utf8"));
+  const PET3 = readFileSync("docs/landing/studio/connect-petstore3-fixture.yaml", "utf8");
+  let created = null;
+  const p = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, {
+    token: "t",
+    routes: as("github:erin", {
+      "POST /orgs/acme/connections": (_h, body) => { created = body; return [201, { connection: { ...CONN, name: body.name } }]; },
+      "GET /v2/swagger.json": () => [200, PET2],
+      "GET /blocked/openapi.json": () => { throw new TypeError("Failed to fetch"); },
+    }),
+  });
+  const c = card(p);
+  button(c, "New connection").click();
+  await settle();
+  const form = c.querySelector(".connbox");
+  const chips = form.querySelector(".connpresets");
+  const labels = chips.children.map((b) => b.textContent);
+  check(labels.join(",") === "Microsoft Graph,Google Workspace,Salesforce,ServiceNow,Jira,Slack,HubSpot,Stripe,Snowflake,GitHub,Zendesk,n8n webhook,Make webhook,Other REST API", "the form starts from a preset: " + labels.join(", "));
+  check(/Import its OpenAPI description/.test(form.shown), "or from the API's own description");
+
+  // A preset fills the form, and the admin can still change all of it.
+  button(form, "Jira").click();
+  await settle();
+  check(inputs(form, "connName")[0].value === "jira" && inputs(form, "connBase")[0].value === "https://<site>.atlassian.net/rest/api/3", "Jira fills the name and the address, with <site> to fill");
+  check(/User and password/.test(form.shown) && /Your Atlassian email/.test(form.shown) && /An API token/.test(form.shown), "and asks for the email and an API token");
+  check(inputs(form, "method").filter((i) => i.checked).map((i) => i.value).join() === "GET" && inputs(form, "paths")[0].value === "/search/jql, /project, /myself", "GET alone, on the paths apps read");
+  const docs = form.all((n) => n.tagName === "A" && /How to make the credential in Jira/.test(n.textContent))[0];
+  check(docs && docs.attrs.href === "https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/" && docs.attrs.target === "_blank", "with Atlassian's own page on making the token");
+  set(form, "credUser", "erin@acme.example");
+  set(form, "credPassword", "jira-token-test-only");
+  button(form, "Add connection").click();
+  await settle();
+  check(/Put your own site in the address/.test(form.shown) && !created, "an address still holding <site> is said, nothing sent");
+
+  // A preset whose token is sent as Bearer: pasted alone, sent after Bearer.
+  button(form, "Stripe").click();
+  await settle();
+  check(inputs(form, "connName")[0].value === "stripe" && inputs(form, "connBase")[0].value === "https://api.stripe.com/v1" && inputs(form, "headerName")[0].value === "Authorization", "choosing another preset replaces the suggestion");
+  check(/Paste it alone: Krate sends it after Bearer/.test(form.shown) && /restricted key/.test(form.shown), "Stripe asks for a restricted key, pasted alone");
+  set(form, "credValue", "rk_test_page_only_1234");
+  button(form, "Add connection").click();
+  await settle();
+  const sealedStripe = created && created.credential;
+  const ctxStripe = p.win.KrateOrgSeal.connectionContext("acme", "stripe", "Authorization", "https://api.stripe.com/v1");
+  check(created && created.name === "stripe" && (await openWith(p, ctxStripe, sealedStripe.sealed)) === "Bearer rk_test_page_only_1234", "the token is sealed as Bearer rk_test_..., the way Stripe takes it");
+  check(created && created.api === undefined, "a preset with nothing for the AI sends no API summary");
+}
+{
+  const PET2 = JSON.parse(readFileSync("docs/landing/studio/connect-petstore2-fixture.json", "utf8"));
+  const PET3 = readFileSync("docs/landing/studio/connect-petstore3-fixture.yaml", "utf8");
+  let created = null;
+  const p = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, {
+    token: "t",
+    routes: as("github:erin", {
+      "POST /orgs/acme/connections": (_h, body) => { created = body; return [201, { connection: { ...CONN, name: body.name } }]; },
+      "GET /v2/swagger.json": () => [200, PET2],
+      "GET /blocked/openapi.json": () => { throw new TypeError("Failed to fetch"); },
+    }),
+  });
+  const c = card(p);
+  button(c, "New connection").click();
+  await settle();
+  const form = c.querySelector(".connbox");
+  // The description's address, when its site lets this page read it.
+  set(form, "specUrl", "https://petstore.swagger.io/v2/swagger.json");
+  button(form, "Read it").click();
+  await settle();
+  check(p.sent.some((x) => x.url === "https://petstore.swagger.io/v2/swagger.json"), "Read it fetches the description from this browser, not through Krate");
+  check(inputs(form, "connBase")[0].value === "https://petstore.swagger.io/v2" && inputs(form, "connName")[0].value === "swagger-petstore", "the address and a name come from it");
+  check(inputs(form, "headerName")[0].value === "api_key" && /A header/.test(form.shown), "the credential is its api_key header");
+  check(inputs(form, "paths")[0].value === "/pet, /store/inventory, /store/order, /user" && inputs(form, "method").filter((i) => i.checked).map((i) => i.value).join() === "GET", "GET on the shortest prefixes its GET operations need");
+  const review = form.querySelector(".connreview");
+  check(review && /Read Swagger Petstore 1\.0\.7: 20 operations/.test(review.shown) && /Nothing is saved until you do/.test(review.shown) && /also has POST, PUT, DELETE/.test(review.shown), "it says what it read and that nothing is saved yet");
+  check(!p.sent.some((x) => x.key === "POST /orgs/acme/connections"), "nothing was saved");
+  // Ticking a method allows that method's paths too.
+  const del = inputs(form, "method").find((i) => i.value === "DELETE");
+  del.checked = true;
+  del.dispatch("change");
+  check(inputs(form, "paths")[0].value === "/pet, /store/inventory, /store/order, /user", "ticking DELETE keeps the paths exact for GET and DELETE");
+  del.checked = false;
+  del.dispatch("change");
+  set(form, "credValue", "special-key-page-test");
+  button(form, "Add connection").click();
+  await settle();
+  check(created && created.base === "https://petstore.swagger.io/v2" && created.credential.header === "api_key", "Add sends the address and the api_key credential, sealed");
+  check(created && JSON.stringify(created.allow) === JSON.stringify({ methods: ["GET"], paths: ["/pet", "/store/inventory", "/store/order", "/user"] }), "with exactly what it allows");
+  const api = created && created.api;
+  check(api && api.title === "Swagger Petstore" && api.operations.length === 20 && api.source === "https://petstore.swagger.io/v2/swagger.json", "and the API's summary, for Studio's AI");
+  check(api && api.operations.slice(0, 7).every((o) => o.method === "GET"), "the operations it allows first");
+  check(api && new TextEncoder().encode(JSON.stringify(api)).length <= 24 * 1024, "under 24 KB");
+
+  // A site that does not let the page read it: the paste path, one click.
+  button(c, "New connection").click();
+  button(c, "New connection").click();
+  await settle();
+  const again = c.querySelector(".connbox");
+  set(again, "specUrl", "https://api.acme.example/blocked/openapi.json");
+  button(again, "Read it").click();
+  await settle();
+  check(/That site does not let this page read it/.test(again.shown) && /copy all of it, and paste it below/.test(again.shown), "a site that blocks the read says so, and how to go on");
+  const open = again.all((n) => n.tagName === "A" && n.textContent === "Open it in a new tab")[0];
+  check(open && open.attrs.href === "https://api.acme.example/blocked/openapi.json" && open.attrs.target === "_blank" && button(again, "Paste it instead"), "with the click that opens it and the one that goes to the paste box");
+  set(again, "specUrl", "http://api.acme.example/openapi.json");
+  button(again, "Read it").click();
+  await settle();
+  check(/The address starts with https:\/\//.test(again.shown), "an http description address is refused before it is fetched");
+  // Pasted YAML.
+  again.all((n) => n.tagName === "TEXTAREA")[0].value = PET3;
+  button(again, "Use what I pasted").click();
+  await settle();
+  check(inputs(again, "connBase")[0].value === "https://petstore3.swagger.io/api/v3" && /Read Swagger Petstore - OpenAPI 3\.0 1\.0\.29-SNAPSHOT: 19 operations/.test(again.shown), "pasted YAML reads the same way");
+  // A dropped file.
+  const ta = again.all((n) => n.tagName === "TEXTAREA")[0];
+  ta.dispatch("drop", { dataTransfer: { files: [{ size: 30, text: async () => '{"openapi":"3.0.0","servers":[{"url":"http://plain.example"}],"paths":{"/a":{"get":{}}}}' }] } });
+  await settle();
+  check(/This API is not on https/.test(again.shown) && /http:\/\/plain\.example/.test(again.shown), "a dropped description on plain http is refused, saying the address");
+}
+{
+  // The list says a connection has its API's summary; Save for Studio
+  // hands over what Studio's AI reads.
+  const withApi = { ...CONN, api: { title: "Acme Finance", version: "2.1", source: "pasted", operations: 2, more: 0 } };
+  const p = await page("https://krate.tech/org/?o=acme&tab=connections", DASH, {
+    token: "t",
+    routes: as("github:carol", {
+      "GET /orgs/acme/connections": () => [200, { connections: [withApi] }],
+      "GET /orgs/acme/connections/finance-api/api": () => [200, { name: "finance-api", base: CONN.base, allow: CONN.allow, api: { title: "Acme Finance", version: "2.1", operations: [{ method: "GET", path: "/invoices", id: "listInvoices" }, { method: "DELETE", path: "/invoices/{id}", id: "dropInvoice" }], more: 0 } }],
+    }),
+  });
+  const c = card(p);
+  check(/API: Acme Finance 2\.1, 2 operations, which Studio's AI reads when an app uses it\./.test(t(c.shown)), "a developer sees the connection has its API's summary");
+  button(c, "Save for Studio").click();
+  await settle();
+  const saved = p.win.saved[0];
+  const text = saved ? saved.parts.join("") : "";
+  check(saved && saved.type === "text/markdown" && /# Company connection: finance-api \(Acme\)/.test(text) && text.includes("listInvoices") && !text.includes("dropInvoice"), "Save for Studio gives the file the AI reads, with only what the connection allows");
+  check(/Saved connection-finance-api\.md\. Attach it in Studio/.test(c.shown), "and says what to do with it");
 }
 
 /* ---- replacing the credential, changing, removing ------------------------ */
@@ -176,6 +318,11 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
   button(ch, "Save changes").click();
   await settle();
   check(seen.change && JSON.stringify(seen.change.allow) === JSON.stringify({ methods: ["GET"], paths: ["/invoices"] }) && !seen.change.header, "Change sends what it allows and who, never a credential");
+  check(seen.change && seen.change.identity === true, "and whether it tells the API who is calling");
+  inputs(ch, "identity")[0].checked = false;
+  button(ch, "Save changes").click();
+  await settle();
+  check(seen.change && seen.change.identity === false, "turning it off sends identity false");
   check(/A new address needs its credential again/.test(ch.shown), "a refusal is said in words");
 
   button(card(p), "Remove").click();

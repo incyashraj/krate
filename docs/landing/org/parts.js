@@ -566,6 +566,8 @@
       if (doors && K.can(D.roleOf(), "saml.set")) pane.appendChild(doors.samlCard());
       if (doors && K.can(D.roleOf(), "scim.manage")) pane.appendChild(doors.scimCard());
       if (doors && K.can(D.roleOf(), "audit-export.view")) pane.appendChild(doors.exportCard());
+      // G12: notices in the company's Slack and Teams channels.
+      if (doors && K.can(D.roleOf(), "chat.manage") === "yes") pane.appendChild(doors.chatCard());
       if (K.can(D.roleOf(), "org.export")) pane.appendChild(exportCard());
       if (K.can(D.roleOf(), "org.close")) pane.appendChild(closeCard());
     }

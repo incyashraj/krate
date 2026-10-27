@@ -32,6 +32,8 @@
 // Nothing about mail is audited.
 import { Org, extendOrg, allows, displayOf } from "./org.js";
 import { gmail, addressFor } from "./org-mail.js";
+// The same moments post to the organisation's Slack and Teams channels.
+import { postChat } from "./org-chat.js";
 import "./org-insights.js";
 import "./org-keys.js";
 
@@ -57,6 +59,13 @@ export function personWords(principal) {
   const p = String(principal || "");
   return p.startsWith("github:") ? `@${displayOf(p)}` : displayOf(p) || "someone";
 }
+
+/// The pilot group a just-approved version went to (org-rollout.js), or null.
+const pilotOf = (store, c) => {
+  if (typeof store.pilotDigestOf !== "function") return null;
+  const app = String(c.app_id || c.name || "").trim().toLowerCase();
+  return store.pilotDigestOf(app) === c.digest ? store.rolloutRow(app).grp : null;
+};
 
 const appWords = (c) => `${c.name || "An app"}${c.version ? ` ${c.version}` : ""}`;
 const clip = (t, n) => {
@@ -176,7 +185,7 @@ const ops = {
     const { event } = ctx.args;
     const site = String(ctx.args.site || "https://krate.tech").replace(/\/$/, "");
     const orgName = this.org().name;
-    const link = (tab) => `${site}/org/?o=${encodeURIComponent(ctx.slug)}&tab=${tab}`;
+    const link = (tab, digest) => `${site}/org/?o=${encodeURIComponent(ctx.slug)}&tab=${tab}${digest ? `&c=${digest}` : ""}`;
     const footer = (why) => `\n\nYou get this because ${why} in ${orgName} on Krate. Turn it off under Notifications on that page.`;
     const wants = (principal, kind) => {
       const m = this.member(principal);
@@ -191,16 +200,18 @@ const ops = {
       if (event === "waiting" && c.state === "waiting-for-approval") {
         mails = this.rows("SELECT principal, role FROM members WHERE state = 'active' ORDER BY added_at, rowid")
           .filter((m) => allows(m.role, "candidate.approve") === "yes" && m.principal !== c.uploaded_by && wants(m.principal, "approval-waiting"))
+          // Under approval rules, only those whose approval would count (org-approvals.js).
+          .filter((m) => typeof this.approvalView !== "function" || this.policyIsDefault() || (this.approvalView(c, [m.principal]).you || { can: true }).can)
           .map((m) => ({
             principal: m.principal,
             subject: `${appWords(c)} waits for your approval`,
-            text: `${personWords(c.uploaded_by)} sent ${appWords(c)} to ${orgName}. It waits for someone who approves to look at it.${c.note ? `\n\nTheir note: ${clip(c.note, 1000)}` : ""}\n\nLook at it: ${link("waiting")}${footer("you approve apps")}`,
+            text: `${personWords(c.uploaded_by)} sent ${appWords(c)} to ${orgName}. It waits for someone who approves to look at it.${c.note ? `\n\nTheir note: ${clip(c.note, 1000)}` : ""}\n\nSee its code and what it can do, then approve or decline it: ${link("waiting", c.digest)}${footer("you approve apps")}`,
           }));
       } else if (event === "approved" && c.state === "released" && c.approved_by && c.approved_by !== c.uploaded_by && wants(c.uploaded_by, "version-decided")) {
         mails = [{
           principal: c.uploaded_by,
           subject: `${appWords(c)} is approved`,
-          text: `${personWords(c.approved_by)} approved ${appWords(c)}. It is released: everyone it is for in ${orgName} can open it now.\n\nSee it: ${link("apps")}${footer("you sent it")}`,
+          text: `${personWords(c.approved_by)} approved ${appWords(c)}. ${pilotOf(this, c) ? `It goes to the ${pilotOf(this, c)} group in ${orgName} first; everyone else gets it when it is released to everyone.` : `It is released: everyone it is for in ${orgName} can open it now.`}\n\nSee it: ${link("apps")}${footer("you sent it")}`,
         }];
       } else if (event === "declined" && c.state === "declined" && wants(c.uploaded_by, "version-decided")) {
         mails = [{
@@ -239,10 +250,12 @@ const ops = {
 extendOrg({ schema: SCHEMA, columns: [["members", "notify", "TEXT"]], ops, mutations: ["notify-prefs-set"] });
 void Org;
 
-/// Mail the people one committed event concerns. Answers how many mails
-/// went. Never throws: a mail is not worth failing anything for.
+/// Mail the people one committed event concerns, and post it to the
+/// organisation's channels (org-chat.js). Answers how many mails went.
+/// Never throws: a notice is not worth failing anything for.
 /// `n`: {env, smtpSend, askRaw, site}; `event`: {event, digest?, id?}.
 export async function sendNotices(n, event) {
+  await postChat(n, event);
   try {
     if (!n || !n.env || !n.env.GMAIL_APP_PASSWORD) return 0;
     const plan = await n.askRaw("notify-plan", { ...event, site: n.site });

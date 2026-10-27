@@ -160,6 +160,12 @@ if [ "$1" = "create" ]; then
       prev="$a"
     done
   fi
+  # And the request itself, the argument after "--", for the spreadsheet
+  # test: what the AI is asked is that text, never the attached sheet.
+  if [ -n "$KRATE_REQUEST_LOG" ]; then
+    for a in "$@"; do last="$a"; done
+    printf '%s\n<<end>>\n' "$last" >> "$KRATE_REQUEST_LOG"
+  fi
   out=""
   transcript=""
   prev=""
@@ -308,7 +314,8 @@ hub.listen(HUB_PORT);
 // Where the fake engine records the --attach files it was handed, so the
 // attachment test can prove the bytes reached it.
 const attachLog = join(stateDir, "attachments.log");
-let builder = startBuilder(stateDir, krateBin, { KRATE_ATTACH_LOG: attachLog });
+const requestLog = join(stateDir, "requests.log");
+let builder = startBuilder(stateDir, krateBin, { KRATE_ATTACH_LOG: attachLog, KRATE_REQUEST_LOG: requestLog });
 await until(async () => (await get("/health")).status === 200);
 
 // Alice starts a build.
@@ -555,6 +562,29 @@ assert.strictEqual(revisedAttempt.id, editCaseId,
   assert.ok(!byName.has("../../etc/passwd"), "a path is never used as given");
   assert.ok(byName.has("passwd"), `the basename is what survives: ${[...byName.keys()]}`);
   assert.strictEqual(byName.get("passwd"), "HOSTILE", "and its bytes still arrive");
+}
+
+/* ---- a spreadsheet's build (G6) ------------------------------------------ */
+// The web Studio's "Start from a spreadsheet" sends the columns and a
+// sample of rows as the request and the whole sheet, up to 5 MB, as one
+// attachment the app carries as its asset. The sheet reaches the engine
+// whole, as a file; the request the engine (and so the AI) gets is the
+// text alone.
+{
+  const before = attemptCount();
+  let csv = "Item,Qty\n";
+  for (let i = 0; csv.length < 4.9 * 1024 * 1024; i++) csv += `Part number ${i} with a long description,${i}\n`;
+  const request = "Stock: what the warehouse holds\n\nIt starts from the spreadsheet stock.xlsx: 2 columns: Item (text), Qty (number).\n\nThe first rows:\nItem | Qty\nPart number 0 with a long description | 0";
+  const started = await post("/build", { request, attachments: [{ name: "stock.csv", type: "text/csv", bytes: Buffer.from(csv).toString("base64") }] }, asAlice);
+  assert.strictEqual(started.status, 200, `a build with a 5 MB sheet starts: ${started.body}`);
+  const id = JSON.parse(started.body).id;
+  await until(async () => JSON.parse((await get(`/build/${id}`, asAlice)).body).state === "done");
+  await until(async () => attemptCount() > before);
+  const log = await readFile(attachLog, "utf8");
+  assert.ok(log.includes(`stock.csv|${csv.trimEnd()}`), "the whole sheet reached the engine as attached/stock.csv, byte for byte");
+  const asked = (await readFile(requestLog, "utf8")).split("\n<<end>>\n").filter(Boolean).pop();
+  assert.strictEqual(asked, request, "and the engine was asked the request text, nothing more");
+  assert.ok(!asked.includes("Part number 1 "), "the rest of the sheet is not in it");
 }
 
 /* ---- what it cost, and whose money ------------------------------------- */

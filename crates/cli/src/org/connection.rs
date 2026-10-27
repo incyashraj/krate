@@ -64,6 +64,12 @@ pub enum ConnectionCommand {
         /// comma-separated. Any of the organisation's apps unless given.
         #[arg(long, value_delimiter = ',')]
         apps: Vec<String>,
+        /// Do not tell the API who is calling. By default each request also
+        /// carries a short-lived Krate-Identity token, signed by Krate,
+        /// naming the person, the app and its version, which the API can log
+        /// and check against the hub's /.well-known/jwks.json.
+        #[arg(long)]
+        no_identity: bool,
     },
     /// Give a connection a new credential. Every app that uses it gets the
     /// new one the next time it opens.
@@ -374,6 +380,15 @@ fn describe(c: &serde_json::Value) -> Vec<String> {
             c["uses"]["today"].as_u64().unwrap_or(0),
             c["uses"]["last_30_days"].as_u64().unwrap_or(0),
         ),
+        // A hub from before the setting says nothing: such a connection
+        // tells no API anything, so nothing is claimed.
+        match c["identity"].as_bool() {
+            Some(true) => "    tells the API who is calling: each request carries a signed \
+                           Krate-Identity header naming the person"
+                .to_string(),
+            Some(false) => "    does not tell the API who is calling".to_string(),
+            None => String::new(),
+        },
         if c["credential"]["state"] == "needs-entry" {
             format!(
                 "    enter this credential again: it was saved before Krate encrypted \
@@ -387,6 +402,9 @@ fn describe(c: &serde_json::Value) -> Vec<String> {
             "    encrypted: Krate cannot read this credential".to_string()
         },
     ]
+    .into_iter()
+    .filter(|line| !line.is_empty())
+    .collect()
 }
 
 pub(super) fn run(client: &Client, me: &str, command: ConnectionCommand) -> Result<u8> {
@@ -432,6 +450,7 @@ pub(super) fn run(client: &Client, me: &str, command: ConnectionCommand) -> Resu
             paths,
             groups,
             apps,
+            no_identity,
         } => {
             let name = name.trim().to_ascii_lowercase();
             let base = normal_base(&base);
@@ -448,6 +467,9 @@ pub(super) fn run(client: &Client, me: &str, command: ConnectionCommand) -> Resu
             }
             if !apps.is_empty() {
                 body["apps"] = serde_json::json!({ "ids": apps });
+            }
+            if no_identity {
+                body["identity"] = serde_json::json!(false);
             }
             let answer = worded(
                 client.send(

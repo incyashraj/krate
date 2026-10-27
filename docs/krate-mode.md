@@ -424,6 +424,8 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `org::put(collection: &str, id: &str, fields: &[(&str, Value)]) -> Result<(), OrgError>`
 - `org::put_text(collection: &str, id: &str, field: &str, text: &str) -> Result<(), OrgError>`
 - `org::records(collection: &str, since: Option<&str>) -> Result<Page, OrgError>`
+- `org::status() -> Result<Standing, OrgError>`
+- `org::status_words(standing: &Standing) -> String`
 - `org::sync() -> Result<SyncState, OrgError>`
 - `org::text(entry: &'a Entry, name: &str) -> Option<&'a str>`
 - `org::who() -> Result<Option<Member>, OrgError>`
@@ -884,6 +886,7 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 - `org::records: func(collection: string, since: option<cursor>) -> result<page, org-error>`
 - `org::sync: func() -> result<sync-state, org-error>`
 - `org::who: func() -> result<option<member>, org-error>`
+- `org::status: func() -> result<standing, org-error>`
 
 ## `time`
 

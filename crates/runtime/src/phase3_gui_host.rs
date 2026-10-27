@@ -240,6 +240,21 @@ pub struct Phase3GuiHost {
     /// waiting for its first input with a frame drawn (IC-915).
     born: std::time::Instant,
     first_wait_ms: std::cell::Cell<Option<f32>>,
+    /// Windows whose widget tree changed since they were last laid out and
+    /// lowered, and when the oldest of those changes was made (K-1135).
+    ///
+    /// A tree change used to lay out and lower the whole window on the spot,
+    /// so an app adding its rows one `upsert-node` at a time paid a full
+    /// layout and a full set of native controls per row: 1,000 rows took
+    /// 56 s to their first frame. Changes now collect here and the window
+    /// is lowered once, when the app next looks for input or its frame is
+    /// otherwise due -- see `sync_changed_trees`.
+    trees_changed: std::cell::RefCell<Vec<WindowId>>,
+    trees_changed_since: std::cell::Cell<Option<std::time::Instant>>,
+    /// How many times a window's widgets were laid out and lowered. Read by
+    /// the K-1135 test, which counts this work rather than timing it.
+    #[cfg(test)]
+    widget_syncs: std::cell::Cell<u64>,
     /// The keys the app has asked about with `key-held`, in the order it
     /// first asked: what an on-screen pad is built from (IC-914).
     keys_asked: std::cell::RefCell<Vec<String>>,
@@ -626,6 +641,10 @@ impl Phase3GuiHost {
             frame_costs: std::cell::RefCell::new(Vec::new()),
             born: std::time::Instant::now(),
             first_wait_ms: std::cell::Cell::new(None),
+            trees_changed: std::cell::RefCell::new(Vec::new()),
+            trees_changed_since: std::cell::Cell::new(None),
+            #[cfg(test)]
+            widget_syncs: std::cell::Cell::new(0),
             // `KRATE_PAD_KEYS` (headless, with `KRATE_SCREEN`): the keys a
             // game would ask about, so the pad can be drawn and checked
             // without playing to the point where it asks.
@@ -784,6 +803,7 @@ impl Phase3GuiHost {
     // Threaded apps only, which iOS and the web do not run.
     #[cfg_attr(any(target_os = "ios", target_arch = "wasm32"), allow(dead_code))]
     pub(crate) fn main_turn(&self) {
+        self.sync_changed_trees();
         if !self.screen.used.get() || !self.screen.on_main() {
             return;
         }
@@ -1640,6 +1660,17 @@ impl Phase3GuiHost {
     fn pump_native_windows(&self) {
         if self.headless {
             return;
+        }
+        // An app busy between two looks for input still shows the tree it
+        // built -- a "Loading..." line before a long job -- once a change
+        // has waited a couple of frames, as it did when every change was
+        // lowered on the spot (K-1135).
+        if self
+            .trees_changed_since
+            .get()
+            .is_some_and(|since| since.elapsed() >= BUSY_TREE_SYNC)
+        {
+            self.sync_changed_trees();
         }
         // Coalesce: an app that polls in a loop asked the OS for events four
         // times a frame, and each ask costs a round trip through the window
@@ -2691,17 +2722,39 @@ impl Phase3GuiHost {
                     modifiers: Default::default(),
                 })
                 .is_ok()
-        } else if let Some(key) = &step.key {
+        } else if let Some((key, shift, primary)) = step.key_chord() {
+            let modifiers = chord_modifiers(shift, primary);
             [true, false].iter().all(|&pressed| {
-                dispatcher
+                let routed = dispatcher
                     .route_key_event(crate::phase3_ui::KeyRouteRequest {
                         window,
                         key: key.clone(),
                         pressed,
-                        modifiers: Default::default(),
+                        modifiers,
+                    })
+                    .is_ok();
+                if pressed {
+                    let focused = dispatcher.focused_widget(window).ok().flatten();
+                    dispatcher.paste_for_person(window, focused, &key, modifiers);
+                }
+                routed
+            })
+        } else if let Some(text) = &step.paste {
+            // The run's own clipboard: a check run is headless, so this is
+            // Krate's in-process one, never the person's.
+            dispatcher.put_on_run_clipboard(text);
+            let modifiers = chord_modifiers(false, true);
+            let focused = dispatcher.focused_widget(window).ok().flatten();
+            [true, false].iter().all(|&pressed| {
+                dispatcher
+                    .route_key_event(crate::phase3_ui::KeyRouteRequest {
+                        window,
+                        key: "v".to_string(),
+                        pressed,
+                        modifiers,
                     })
                     .is_ok()
-            })
+            }) && dispatcher.paste_for_person(window, focused, "v", modifiers)
         } else if let Some(text) = &step.type_text {
             // Typed text is a text-input event, the way a host delivers it,
             // not one key event per character: an app reads its text field
@@ -2954,12 +3007,69 @@ impl Phase3GuiHost {
     /// This is the naive vertical-slice strategy: every tree change replaces
     /// the whole native widget set. Reconciler diffing comes later.
     fn sync_native_widgets(&self, window: WindowId) -> Result<(), UiDispatchError> {
+        // A full sync covers any tree change waiting for this window.
+        {
+            let mut changed = self.trees_changed.borrow_mut();
+            changed.retain(|pending| *pending != window);
+            if changed.is_empty() {
+                self.trees_changed_since.set(None);
+            }
+        }
+        #[cfg(test)]
+        self.widget_syncs.set(self.widget_syncs.get() + 1);
         let Some((_size, placements)) = self.window_placements(window)? else {
             return Ok(());
         };
         self.dispatcher()
             .lower_widget_placements(window, &placements)?;
         Ok(())
+    }
+
+    /// Note that `window`'s widget tree changed; it is laid out and lowered
+    /// once, at the next frame boundary, however many changes come first
+    /// (K-1135).
+    fn tree_changed(&self, window: WindowId) {
+        let mut changed = self.trees_changed.borrow_mut();
+        if !changed.contains(&window) {
+            changed.push(window);
+        }
+        if self.trees_changed_since.get().is_none() {
+            self.trees_changed_since
+                .set(Some(std::time::Instant::now()));
+        }
+    }
+
+    /// Lay out and lower every window whose tree changed since it was last
+    /// lowered (K-1135).
+    ///
+    /// Called where a frame is due: the app looking for input (`wait`,
+    /// `poll`, `key-held`), the main thread's turn in a threaded app, before
+    /// a widget is focused, and from the busy-app pump once a change has
+    /// waited `BUSY_TREE_SYNC`. Building a tree of N rows is then N cheap
+    /// inserts and one layout, not N layouts of a growing tree.
+    ///
+    /// Only the window's own thread lowers, as for a worker's presented
+    /// frame (IC-929): a worker's tree change waits for the main thread.
+    fn sync_changed_trees(&self) {
+        if self.trees_changed.borrow().is_empty() || !self.screen.on_main() {
+            return;
+        }
+        let changed = std::mem::take(&mut *self.trees_changed.borrow_mut());
+        self.trees_changed_since.set(None);
+        for window in changed {
+            if !self.windows.contains(&window) {
+                continue;
+            }
+            if let Err(error) = self.sync_native_widgets(window) {
+                // The change itself was accepted when the app made it; a
+                // window that then cannot be lowered is the host's to say.
+                tracing::warn!(
+                    ?error,
+                    window = window.get(),
+                    "a changed widget tree could not be lowered"
+                );
+            }
+        }
     }
 
     /// Build the drawn-widget placement list for a window, exactly as
@@ -3012,6 +3122,13 @@ impl Phase3GuiHost {
         scale: f32,
         path: &std::path::Path,
     ) -> Result<(), UiDispatchError> {
+        // No picture of an app its organisation keeps out of pictures (G17).
+        if self
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL)
+        {
+            return Err(UiDispatchError::PermissionDenied);
+        }
         let Some((size, placements)) = self.window_placements(window)? else {
             return Err(UiDispatchError::Layout(format!(
                 "window {} has nothing to render yet",
@@ -3234,6 +3351,8 @@ impl Phase3GuiHost {
     }
 
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
+        // Input is hit-tested against the lowered tree, so lower first.
+        self.sync_changed_trees();
         // Anything `key-held` pumped comes out first, in arrival order. It is
         // a real event that simply has not been delivered yet.
         if let Some(event) = self.pending_events.borrow_mut().pop_front() {
@@ -3330,6 +3449,10 @@ impl Phase3GuiHost {
                         let _ = dispatcher.queue_text_input(event);
                     }
                 }
+                // The person's own paste: what they pasted arrives as typed
+                // text, so every text field an app draws itself takes a
+                // paste (K-1109).
+                dispatcher.paste_for_person(sample.window, focused, &sample.key, sample.modifiers);
             }
         }
 
@@ -3915,6 +4038,13 @@ impl Phase3GuiHost {
         &self,
         raw: u64,
     ) -> Result<crate::print_host::Page, ui::types::UiError> {
+        // No printing where the organisation says so for this app (G17).
+        if self
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::PRINT_CALL)
+        {
+            return Err(ui::types::UiError::PermissionDenied);
+        }
         let window = self.window_id(raw)?;
         let Some((size, placements)) = self
             .window_placements(window)
@@ -5162,6 +5292,9 @@ impl ui::window::Host for Phase3GuiHost {
         // capture points. Shoot its final frame here, while the tree is still
         // alive, before the window is torn down.
         self.maybe_take_screenshot_for(id);
+        self.trees_changed
+            .borrow_mut()
+            .retain(|pending| *pending != id);
         let result = self
             .dispatcher()
             .close_window(id)
@@ -5259,8 +5392,8 @@ impl Phase3GuiHost {
         if let Err(err) = self.dispatcher().set_root(id, root) {
             return Err(dispatch_error_to_ui_error(err));
         }
-        self.sync_native_widgets(id)
-            .map_err(dispatch_error_to_ui_error)
+        self.tree_changed(id);
+        Ok(())
     }
 
     /// Ask the person where to save, and mint a token for it.
@@ -5351,10 +5484,16 @@ impl Phase3GuiHost {
             }
             return Err(dispatch_error_to_ui_error(err));
         }
-        self.sync_native_widgets(id)
-            .map_err(dispatch_error_to_ui_error)
+        self.tree_changed(id);
+        Ok(())
     }
 }
+
+/// How long a tree change waits for the app to look for input before the
+/// busy-app pump lowers it anyway (K-1135). Two frames: soon enough that a
+/// busy app's window is never seen stale for long, and long enough that
+/// building a tree is not interrupted to lay out half of it.
+const BUSY_TREE_SYNC: std::time::Duration = std::time::Duration::from_millis(32);
 
 /// What went wrong building a widget tree, in words (K-392).
 ///
@@ -5428,9 +5567,8 @@ impl ui::tree::Host for Phase3GuiHost {
         if let Err(err) = self.dispatcher().remove_node(id, widget) {
             return Ok(Err(dispatch_error_to_ui_error(err)));
         }
-        Ok(self
-            .sync_native_widgets(id)
-            .map_err(dispatch_error_to_ui_error))
+        self.tree_changed(id);
+        Ok(Ok(()))
     }
 
     fn focus_node(
@@ -5445,6 +5583,9 @@ impl ui::tree::Host for Phase3GuiHost {
         let Ok(widget) = widget_id(widget) else {
             return Ok(Err(ui::types::UiError::InvalidWidget));
         };
+        // Focus lands on the lowered control, so lower a pending change
+        // first: an app that adds a field and focuses it straight away.
+        self.sync_changed_trees();
         Ok(self
             .dispatcher()
             .focus_node(id, widget)
@@ -5468,6 +5609,7 @@ impl ui::events::Host for Phase3GuiHost {
         // No screenshot here for the same reason as key_held: poll is called at
         // the top of a frame loop, before this frame is drawn. wait (widget
         // apps) and present (canvas and scene apps) are the capture points.
+        self.sync_changed_trees();
         self.follow_widget_look();
         self.pump_native_windows();
         // A game never calls `wait` -- it polls at the top of every frame and
@@ -5559,6 +5701,9 @@ impl ui::events::Host for Phase3GuiHost {
     }
 
     fn wait(&mut self, timeout_millis: Option<u32>) -> wasmtime::Result<Option<ui::types::Event>> {
+        // The tree the app built since it last looked for input becomes this
+        // frame, laid out and lowered once (K-1135).
+        self.sync_changed_trees();
         self.follow_widget_look();
         // The app has built its window and is now waiting for input: the first
         // stable, fully-drawn frame. Capture here, before any budget check
@@ -5567,6 +5712,10 @@ impl ui::events::Host for Phase3GuiHost {
         if self.first_wait_ms.get().is_none() {
             self.first_wait_ms
                 .set(Some(self.born.elapsed().as_secs_f32() * 1000.0));
+            // KRATE_STAGE_TIMES: the app's window is built and lowered and it
+            // now waits for input -- the first frame (K-1135 was measured
+            // against this mark).
+            crate::stage_mark("runtime: first frame ready");
         }
 
         if let Some(event) = self.drive_scroll_step() {
@@ -6033,9 +6182,10 @@ impl ui::image::Host for Phase3GuiHost {
         self.images
             .borrow_mut()
             .insert((window_id, widget_id), Arc::new(image));
-        Ok(self
-            .sync_native_widgets(window_id)
-            .map_err(dispatch_error_to_ui_error))
+        // A gallery sets one picture per thumbnail: lowered once, like any
+        // other change to the window's widgets (K-1135).
+        self.tree_changed(window_id);
+        Ok(Ok(()))
     }
 
     fn clear(
@@ -6055,9 +6205,19 @@ impl ui::image::Host for Phase3GuiHost {
         // resetting its view should not have to remember whether it ever set
         // one.
         self.images.borrow_mut().remove(&(window_id, widget_id));
-        Ok(self
-            .sync_native_widgets(window_id)
-            .map_err(dispatch_error_to_ui_error))
+        self.tree_changed(window_id);
+        Ok(Ok(()))
+    }
+}
+
+/// A check step's chord: Shift, and Cmd on a Mac or Ctrl elsewhere.
+fn chord_modifiers(shift: bool, primary: bool) -> krate_adapter_common::ui::Modifiers {
+    let mac = cfg!(target_os = "macos");
+    krate_adapter_common::ui::Modifiers {
+        shift,
+        control: primary && !mac,
+        alt: false,
+        meta: primary && mac,
     }
 }
 
@@ -8915,6 +9075,138 @@ mod tests {
             "an app without ui.dialog:file-save must be refused, not shown a \
              dialog: {refused:?}"
         );
+    }
+
+    /// G17: where the organisation's rules for this app say no printing
+    /// and no pictures, a print and a picture of the window are refused;
+    /// without them neither is.
+    #[test]
+    fn an_organisations_app_rules_stop_printing_and_pictures() {
+        let ceiling = krate_policy::OrgCeiling {
+            deny: Vec::new(),
+            network: None,
+            calls: vec![
+                krate_policy::PRINT_CALL.to_string(),
+                krate_policy::SCREEN_CAPTURE_CALL.to_string(),
+            ],
+        };
+        let policy = krate_policy::SessionPolicy::from_cli_grants(&["ui.window:create".into()])
+            .expect("policy")
+            .with_organisation(ceiling);
+        let kept = Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host");
+        assert!(matches!(
+            kept.capture_print_page(1),
+            Err(ui::types::UiError::PermissionDenied)
+        ));
+        let dir = tempfile::tempdir().expect("dir");
+        let shot = dir.path().join("shot.png");
+        let window = kept
+            .dispatcher()
+            .create_window(
+                krate_adapter_common::ui::WindowOptions::new(
+                    "Payroll",
+                    krate_adapter_common::ui::WindowSize::new(320, 240).expect("size"),
+                )
+                .expect("options"),
+            )
+            .expect("window");
+        assert!(matches!(
+            kept.render_window_png(window, 1.0, &shot),
+            Err(UiDispatchError::PermissionDenied)
+        ));
+        assert!(kept
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL));
+        let plain = headless_host();
+        assert!(!matches!(
+            plain.capture_print_page(1),
+            Err(ui::types::UiError::PermissionDenied)
+        ));
+        assert!(!matches!(
+            plain.render_window_png(window, 1.0, &shot),
+            Err(UiDispatchError::PermissionDenied)
+        ));
+        assert!(!plain
+            .dispatcher()
+            .organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL));
+    }
+
+    /// A list built one row at a time is laid out and lowered once, when the
+    /// app looks for input, not once per row (K-1135).
+    ///
+    /// Measured before: every `upsert-node` laid out and lowered the whole
+    /// window, so N rows cost N layouts of a growing tree -- 1,000 rows took
+    /// 56 s to the first frame in a real window. This counts the layouts
+    /// rather than timing them, so it holds on any machine.
+    #[test]
+    fn a_list_built_row_by_row_is_laid_out_once_not_once_per_row() {
+        const ROWS: u64 = 1_000;
+        let mut host = headless_host();
+        ui::window::Host::create(
+            &mut host,
+            "rows".to_string(),
+            ui::types::WindowSize {
+                width: 360,
+                height: 520,
+            },
+        )
+        .expect("create call")
+        .expect("a window");
+        let window = host.windows.first().expect("window id").get();
+        let id = |raw: u64| WidgetId::new(raw).expect("widget id");
+        host.set_root_widget(window, WidgetNode::new(id(1), WidgetKind::Stack))
+            .expect("root");
+        let mut scroll = WidgetNode::new(id(2), WidgetKind::Scroll);
+        scroll.parent = Some(id(1));
+        scroll.style.grow = 1.0;
+        host.upsert_widget(window, scroll).expect("scroll");
+        for row in 0..ROWS {
+            let mut text = WidgetNode::new(id(100 + row), WidgetKind::Text);
+            text.parent = Some(id(2));
+            text.label = Some(format!("Row {}", row + 1));
+            text.style.height = Some(28.0);
+            host.upsert_widget(window, text).expect("row");
+        }
+        assert_eq!(
+            host.widget_syncs.get(),
+            0,
+            "building the tree laid it out before the app asked for a frame"
+        );
+
+        let _ = ui::events::Host::poll(&mut host).expect("poll");
+        assert_eq!(
+            host.widget_syncs.get(),
+            1,
+            "{ROWS} rows must be laid out once when the app looks for input"
+        );
+        // Once is enough: nothing changed, so a second look lowers nothing.
+        let _ = ui::events::Host::poll(&mut host).expect("poll");
+        assert_eq!(
+            host.widget_syncs.get(),
+            1,
+            "an unchanged tree was lowered again"
+        );
+
+        // And the one layout is the whole tree: every row is placed.
+        let window_id = *host.windows.first().expect("window id");
+        let (_, placements) = host
+            .window_placements(window_id)
+            .expect("placements")
+            .expect("a laid-out window");
+        let rows = placements
+            .iter()
+            .filter(|placement| placement.widget.get() >= 100)
+            .count();
+        assert_eq!(rows as u64, ROWS);
+
+        // A later change waits for the next look too, then lowers once.
+        ui::tree::Host::remove_node(&mut host, window, 100)
+            .expect("remove call")
+            .expect("removed");
+        assert_eq!(host.widget_syncs.get(), 1);
+        let _ = ui::events::Host::poll(&mut host).expect("poll");
+        assert_eq!(host.widget_syncs.get(), 2);
     }
 
     fn headless_host() -> Phase3GuiHost {

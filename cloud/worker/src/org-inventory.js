@@ -102,6 +102,13 @@ const PROVIDER_NAMES = {
   openai: "OpenAI's API",
   "author-cmd": "a command of the builder's own",
 };
+/// The app's rings, when it has any: a pilot group or a pinned group.
+function rolloutOf(store, app) {
+  if (typeof store.rolloutView !== "function") return null;
+  const r = store.rolloutView(app);
+  return r.pilot || r.pins.length ? r : null;
+}
+
 export function builtWords(p) {
   if (!p) return "by hand";
   const who = p.provider ? PROVIDER_NAMES[p.provider] || p.provider : null;
@@ -225,6 +232,9 @@ const ops = {
         capabilities: (Array.isArray(caps) ? caps : []).map((x) => ({ cap: x.cap, words: x.words || x.cap })),
         connections: parsed(shown.connections, []),
         audience: parsed(shown.audience, null),
+        // Who gets which version, when a pilot group or a pin is set
+        // (org-rollout.js); null when everyone gets the current one.
+        rollout: rolloutOf(this, app),
         people_30_days: people.length,
         ...(names ? { people: people.map((p) => ({ principal: p, display: displayOf(p) })) } : {}),
       });

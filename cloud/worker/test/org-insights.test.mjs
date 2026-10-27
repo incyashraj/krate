@@ -200,8 +200,10 @@ test("every number matches a hand count of a known history", async () => {
   // ivy's removal left the key to be replaced.
   assert.deepStrictEqual([s.key.version, s.key.state], [1, "stale"]);
   assert.deepStrictEqual(
-    s.devices.map((d) => [d.name, d.principal, d.holds_current, d.last_seen, d.silent]),
-    [["Alice's MacBook", "github:alice", true, T0 - 3600, false], ["Erin's laptop", "github:erin", true, null, true]],
+    s.devices.map((d) => [d.name, d.principal, d.holds_current, d.last_seen, d.identified, d.silent]),
+    // Erin's laptop never said which computer it is (a Krate from before
+    // ?device=, K-1115): not identified, and so never called silent.
+    [["Alice's MacBook", "github:alice", true, T0 - 3600, true, false], ["Erin's laptop", "github:erin", true, null, false, false]],
   );
   assert.strictEqual(s.devices[0].device_id, alicesMac.id);
   assert.deepStrictEqual(s.publishers.map((x) => [x.principal, x.last_sent_at]), [["github:alice", null], ["github:carol", ago(10)], ["github:frank", ago(3)]]);
@@ -485,12 +487,19 @@ test("500 people, 50 apps and 90 days of opens answer in well under a second", a
   await insights(env, "alice", T0 - 60);
   // The one-pass current release is the one org-releases.js decides.
   for (const a of store.insightsApps()) assert.strictEqual(a.current ? a.current.digest : null, store.currentOf(a.app_id), a.app_id);
+  // Each read is timed three times and the fastest is judged (K-1123): a
+  // busy machine adds a spike to one read, while the regression this
+  // guards against, a read that scans every open, is slow every time.
   const timings = {};
   for (const who of ["alice", "carol", "email:p001@acme.test"]) {
     const login = who.startsWith("email:") ? who.slice(6) : who;
-    const started = performance.now();
-    const body = await insights(env, login);
-    timings[login] = Math.round(performance.now() - started);
+    let body;
+    for (let round = 0; round < 3; round++) {
+      const started = performance.now();
+      body = await insights(env, login);
+      const ms = Math.round(performance.now() - started);
+      timings[login] = Math.min(timings[login] ?? Infinity, ms);
+    }
     if (who === "alice") {
       assert.strictEqual(body.org.adoption.members, PEOPLE + 2);
       assert.strictEqual(body.org.adoption.apps, APPS);
@@ -500,4 +509,24 @@ test("500 people, 50 apps and 90 days of opens answer in well under a second", a
   }
   console.log(`insights for 500 people, 50 apps, ${rows} opens over 90 days: ${JSON.stringify(timings)} ms`);
   for (const [who, ms] of Object.entries(timings)) assert.ok(ms < 400, `${who}: ${ms} ms`);
+});
+
+test("K-1115: a computer that never said which it is reads 'not identified', never silent; one that stopped checking in is silent", async () => {
+  const env = orgEnv({ ORG_LEASE_KEY: LEASE_SEED });
+  await at(ago(100), async () => {
+    must(await call(env, "alice", "POST", "/orgs", { json: { slug: "acme", name: "Acme" } }), "create");
+  });
+  // Alice's Mac runs IC-959's Krate: it checks in with ?device=.
+  const mac = await at(ago(100), () => initKey(env));
+  await at(ago(90), () => call(env, "alice", "GET", `/orgs/acme/keys?device=${mac.id}`));
+  // Her old PC runs an older Krate: it reads the keyring without saying which it is.
+  const pc = device();
+  await at(ago(100), () => register(env, "alice", pc, "Old PC"));
+  for (const k of [80, 40, 2]) await at(ago(k), () => call(env, "alice", "GET", "/orgs/acme/keys"));
+  const devices = (await insights(env, "alice")).org.security.devices;
+  const by = Object.fromEntries(devices.map((d) => [d.name, [d.identified, d.silent]]));
+  assert.deepStrictEqual(by, { "Alice's MacBook": [true, true], "Old PC": [false, false] });
+  // Its own page says the same.
+  const yours = (await insights(env, "alice")).yours.devices;
+  assert.deepStrictEqual(yours.map((d) => [d.name, d.identified]), [["Alice's MacBook", true], ["Old PC", false]]);
 });

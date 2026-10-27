@@ -107,8 +107,9 @@ a small rainfall chart ([source](https://github.com/incyashraj/krate/tree/c46d29
 [checksum](https://krate.tech/docs/quickstart.html#try-the-chart-sample)):
 
 ```sh
-krate run chart.krate --dump-caps
-krate run chart.krate --prompt
+CHART=https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate
+krate run "$CHART" --dump-caps
+krate run "$CHART" --prompt
 ```
 
 `--dump-caps` lists what the app asks for without running it. Chart asks

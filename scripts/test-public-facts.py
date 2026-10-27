@@ -32,7 +32,11 @@ class PublicFactsTests(unittest.TestCase):
         for text in (readme, quickstart):
             self.assertIn(url, text)
             self.assertIn(revision + "/apps/krate-chart", text)
-            self.assertIn("krate run chart.krate --dump-caps", text)
+        # The quickstart downloads the file first; the README runs the pinned
+        # URL directly so its first sample works when pasted as written.
+        self.assertIn("krate run chart.krate --dump-caps", quickstart)
+        self.assertIn("CHART=" + url, readme)
+        self.assertIn('krate run "$CHART" --dump-caps', readme)
         expected = "3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3"
         self.assertIn(expected, quickstart)
         self.assertIn("### Try the Chart sample", quickstart)

@@ -384,6 +384,25 @@ pub struct WebUi {
     /// The size each window asked for, before the tab fitted it.
     requested: BTreeMap<WindowId, (f32, f32)>,
     pub(crate) canvas: crate::web_canvas::Canvases,
+    /// The finger being followed on a touch screen, if any.
+    touch: Option<TouchGesture>,
+}
+
+/// Movement past this many logical pixels turns a touch from a tap into a
+/// scroll: the slop every phone toolkit uses, and the Android adapter's.
+pub const TOUCH_SLOP: f32 = 8.0;
+
+/// One finger on the screen, as the phone adapters follow it.
+#[derive(Debug, Clone, Copy)]
+struct TouchGesture {
+    window: u64,
+    finger: u64,
+    start: (f32, f32),
+    last: (f32, f32),
+    scrolling: bool,
+    /// It landed on something that follows the finger (a canvas, a
+    /// slider): pressed at once and held until it lifts.
+    drags: bool,
 }
 
 impl WebUi {
@@ -412,6 +431,7 @@ impl WebUi {
             pressed: None,
             requested: BTreeMap::new(),
             canvas: crate::web_canvas::Canvases::new(),
+            touch: None,
         }
     }
 
@@ -709,6 +729,122 @@ impl WebUi {
             self.offsets.insert((id, scroll), offset);
             self.mark(id);
         }
+    }
+
+    /// A finger on a touch screen, in logical pixels, mapped the way the
+    /// phone adapters map one (crates/adapter-android): a tap is one press
+    /// and release where it lifted, exactly what a click delivers; a finger
+    /// that moves past [`TOUCH_SLOP`] scrolls what is under it, content
+    /// following the finger; one that lands on a canvas or a slider presses
+    /// it at once and the press follows the finger until it lifts. Only the
+    /// first finger is followed. `phase` is start, move, end or cancel.
+    pub fn touch(&mut self, window: u64, phase: &str, finger: u64, x: f32, y: f32) {
+        let Ok(id) = self.window_id(window) else {
+            return;
+        };
+        match phase {
+            "start" => {
+                if self.touch.is_some() {
+                    return;
+                }
+                let drags = self.widget_at(id, x, y).is_some_and(|w| {
+                    self.adapter
+                        .widget_tree(id)
+                        .ok()
+                        .flatten()
+                        .and_then(|tree| tree.node(w).map(|n| n.kind))
+                        .is_some_and(|kind| matches!(kind, WidgetKind::Canvas | WidgetKind::Slider))
+                });
+                self.touch = Some(TouchGesture {
+                    window,
+                    finger,
+                    start: (x, y),
+                    last: (x, y),
+                    scrolling: false,
+                    drags,
+                });
+                // The finger is the pointer: hit tests and hover read from here.
+                self.pointer_moved(window, x, y);
+                if drags {
+                    self.pointer(window, x, y, 0, true, 0);
+                }
+            }
+            "move" => {
+                let Some(mut g) = self
+                    .touch
+                    .filter(|g| g.finger == finger && g.window == window)
+                else {
+                    return;
+                };
+                if g.drags {
+                    g.last = (x, y);
+                    self.touch = Some(g);
+                    self.pointer_moved(window, x, y);
+                    return;
+                }
+                if !g.scrolling {
+                    let (sx, sy) = (x - g.start.0, y - g.start.1);
+                    g.scrolling = sx * sx + sy * sy > TOUCH_SLOP * TOUCH_SLOP;
+                }
+                let (dx, dy) = (x - g.last.0, y - g.last.1);
+                g.last = (x, y);
+                self.touch = Some(g);
+                if g.scrolling && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON) {
+                    // Content follows the finger: moving up scrolls deeper.
+                    self.wheel(window, g.start.0, g.start.1, -dx, -dy, 0);
+                }
+            }
+            "end" | "cancel" => {
+                let Some(g) = self
+                    .touch
+                    .filter(|g| g.finger == finger && g.window == window)
+                else {
+                    return;
+                };
+                self.touch = None;
+                if g.drags {
+                    self.pointer(window, x, y, 0, false, 0);
+                } else if phase == "end" && !g.scrolling {
+                    self.pointer(window, x, y, 0, true, 0);
+                    self.pointer(window, x, y, 0, false, 0);
+                }
+                // No hover is left behind a finger.
+                self.pointer_left(window);
+                self.mark(id);
+            }
+            _ => {}
+        }
+    }
+
+    /// Where the text fields and text areas are on screen in `window`, as
+    /// x, y, width, height in logical pixels, four numbers each: a tap on
+    /// one raises the phone's keyboard, which a browser only does inside
+    /// the tap itself.
+    pub fn text_rects(&self, window: u64) -> Vec<f32> {
+        let Ok(id) = self.window_id(window) else {
+            return Vec::new();
+        };
+        let Some((tree, layout)) = self.layout(id) else {
+            return Vec::new();
+        };
+        let offsets = &self.offsets;
+        krate_lowering::placements(
+            &tree,
+            &layout,
+            |s| offsets.get(&(id, s)).copied().unwrap_or(0.0),
+            |_| None,
+        )
+        .iter()
+        .filter(|p| matches!(p.kind, WidgetKind::TextField | WidgetKind::TextArea))
+        .flat_map(|p| match p.clip {
+            Some((cx, cy, cw, ch)) => {
+                let (x0, y0) = (p.x.max(cx), p.y.max(cy));
+                let (x1, y1) = ((p.x + p.width).min(cx + cw), (p.y + p.height).min(cy + ch));
+                [x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0)]
+            }
+            None => [p.x, p.y, p.width, p.height],
+        })
+        .collect()
     }
 
     /// A key, with the DOM's name for it. `text` is what it typed, when it
@@ -1096,6 +1232,51 @@ mod tests {
         assert!(ui.render(win));
         assert_eq!(ui.frame_size(win), Some((640, 480)));
         assert!(!ui.render(win), "a clean frame does not repaint");
+    }
+
+    /// A tap is a press and a release where the finger lifted; a finger
+    /// that moves past the slop scrolls and presses nothing; the text
+    /// field's rectangle is there for the page to raise the keyboard.
+    #[test]
+    fn a_tap_presses_and_a_drag_scrolls() {
+        let mut ui = WebUi::new(1.0, false);
+        let win = form(&mut ui);
+        let (x, y, w, h) = ui.widget_rect(win, 3).expect("button");
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        ui.touch(win, "start", 7, cx, cy);
+        assert!(drain(&mut ui).is_empty(), "nothing until it lifts");
+        ui.touch(win, "move", 7, cx + 3.0, cy);
+        ui.touch(win, "end", 7, cx + 3.0, cy);
+        let events = drain(&mut ui);
+        let pressed: Vec<_> = events
+            .iter()
+            .filter(|e| e["tag"] == "pointer")
+            .map(|e| (e["val"]["widget"].clone(), e["val"]["pressed"].clone()))
+            .collect();
+        assert_eq!(
+            pressed,
+            [(json!("3"), json!(true)), (json!("3"), json!(false))],
+            "{events:?}"
+        );
+
+        ui.touch(win, "start", 8, cx, cy);
+        ui.touch(win, "move", 8, cx, cy - 20.0);
+        ui.touch(win, "end", 8, cx, cy - 20.0);
+        let events = drain(&mut ui);
+        assert!(events.iter().all(|e| e["tag"] != "pointer"), "{events:?}");
+        let wheel = events
+            .iter()
+            .find(|e| e["tag"] == "wheel")
+            .expect("a scroll");
+        assert_eq!(
+            wheel["val"]["dy"],
+            json!(20.0),
+            "content follows the finger"
+        );
+
+        let rects = ui.text_rects(win);
+        let (fx, fy, fw, fh) = ui.widget_rect(win, 2).unwrap();
+        assert_eq!(rects, vec![fx, fy, fw, fh]);
     }
 
     /// Enter on a focused button presses it, after the key.

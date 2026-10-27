@@ -156,9 +156,15 @@ pub struct TaskStep {
     /// not act.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shoot: Option<String>,
-    /// Press and release one key, by the runtime's key name ("Enter", "a").
+    /// Press and release one key, by the runtime's key name ("Enter", "a"),
+    /// with `Shift+` and `Primary+` in front for a chord: "Shift+ArrowLeft"
+    /// selects, "Primary+a" is Cmd+A on a Mac and Ctrl+A elsewhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+    /// Paste this text the way a person does: it is put on the run's own
+    /// clipboard and Cmd+V (Ctrl+V elsewhere) is pressed (K-1109).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paste: Option<String>,
     /// Type this text, one key per character, into whatever has focus.
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_text: Option<String>,
@@ -185,6 +191,7 @@ impl TaskStep {
             self.look.is_some(),
             self.shoot.is_some(),
             self.key.is_some(),
+            self.paste.is_some(),
             self.type_text.is_some(),
             self.wait_ms.is_some(),
             self.expect_text.is_some(),
@@ -215,7 +222,7 @@ impl TaskStep {
         }
         match set {
             1 => Ok(()),
-            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, type, wait_ms, shoot, expect_text or expect_no_text".to_string()),
+            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, type, wait_ms, shoot, expect_text or expect_no_text".to_string()),
             _ => Err(format!("a step does one thing, this one does {set}: {}", self.describe())),
         }
     }
@@ -245,6 +252,9 @@ impl TaskStep {
         if let Some(k) = &self.key {
             return format!("key {k:?}");
         }
+        if let Some(t) = &self.paste {
+            return format!("paste {t:?}");
+        }
         if let Some(t) = &self.type_text {
             return format!("type {t:?}");
         }
@@ -258,6 +268,25 @@ impl TaskStep {
             return format!("expect {t:?} not on screen");
         }
         "an empty step".to_string()
+    }
+
+    /// A `key` step as (key, shift, primary): "Shift+Primary+a" is
+    /// ("a", true, true).
+    pub fn key_chord(&self) -> Option<(String, bool, bool)> {
+        let mut rest = self.key.as_deref()?;
+        let (mut shift, mut primary) = (false, false);
+        loop {
+            if let Some(after) = rest.strip_prefix("Shift+") {
+                shift = true;
+                rest = after;
+            } else if let Some(after) = rest.strip_prefix("Primary+") {
+                primary = true;
+                rest = after;
+            } else {
+                break;
+            }
+        }
+        Some((rest.to_string(), shift, primary))
     }
 
     /// Where `click_at` presses, as fractions of the window, or why it cannot.

@@ -34,7 +34,7 @@ import "./org-lease.js";
 import "./org-time.js";
 
 /// Who passes every audience: they must be able to review (section R).
-const SEES_ALL = new Set(["owner", "admin", "reviewer"]);
+export const SEES_ALL = new Set(["owner", "admin", "reviewer"]);
 export const GROUP = /^[a-z][a-z0-9-]{0,38}$/;
 const REASON_MAX = 300;
 const APP_MAX = 120;
@@ -129,6 +129,19 @@ const ops = {
 
   groupsOf(principal) {
     return new Set(this.rows("SELECT grp FROM group_members WHERE principal = ?", principal).map((r) => r.grp));
+  },
+
+  /// Which release of `app` this member gets, and why: `{digest, ring,
+  /// group}`. Here, everyone gets the current one; staged rollout
+  /// (org-rollout.js) adds a pilot group and pinned groups.
+  versionFor(app, _me) {
+    return { digest: this.currentOf(app), ring: "everyone", group: null };
+  },
+
+  /// Whether a released version is kept from this member by a staged
+  /// rollout (org-rollout.js): never, here.
+  rolloutHidden(_me, _c) {
+    return false;
   },
 
   /// The refusal for a member outside a release's audience, or null.
@@ -323,7 +336,10 @@ const ops = {
     const target = `app:${app}`;
     const { me, refusal } = this.mayDo(ctx, "release.download", target, (r) => `a ${r} cannot open ${ctx.slug}'s releases`);
     if (refusal) return refusal;
-    const digest = this.currentOf(app);
+    // What this person gets: a pin for one of their groups, the pilot if
+    // they are in it, else the current release (org-rollout.js).
+    const mine = this.versionFor(app, me);
+    const digest = mine.digest;
     if (!digest) {
       // The last one withdrawn, in the audit's order (two in one second
       // have the same time).
@@ -337,7 +353,7 @@ const ops = {
     const c = this.row("SELECT * FROM candidates WHERE digest = ?", digest);
     const outside = this.audienceRefusal(ctx, me, c, "release.download", target);
     if (outside) return outside;
-    return this.ok({ app_id: app, digest, name: c.name, version: c.version, url: `${ctx.args.base || ""}/a/${digest}` });
+    return this.ok({ app_id: app, digest, name: c.name, version: c.version, url: `${ctx.args.base || ""}/a/${digest}`, ring: mine.ring, group: mine.group });
   },
 
   /// GET /orgs/<slug>/apps: each app, its current release and its history.
@@ -355,7 +371,7 @@ const ops = {
     const everything = SEES_ALL.has(me.role);
     const visible = (c) => {
       const a = audienceOf(c);
-      return !a || everything || a.some((g) => mine.has(g));
+      return (!a || everything || a.some((g) => mine.has(g))) && !this.rolloutHidden(me, c);
     };
     const leases = allows(me.role, "release.withdraw") === "yes";
     const byApp = new Map();
@@ -373,9 +389,15 @@ const ops = {
     }
     const apps = [];
     for (const entry of byApp.values()) {
-      const current = this.currentOf(entry.app_id);
+      // People who manage releases see what everyone gets, and what they
+      // get themselves beside it; anyone else sees what they get.
+      const theirs = this.versionFor(entry.app_id, me);
+      const current = everything ? this.currentOf(entry.app_id) : theirs.digest;
       // The current release, only when this person may open it.
       entry.current = entry.releases.some((r) => r.digest === current) ? current : null;
+      const forYou = entry.releases.some((r) => r.digest === theirs.digest) ? theirs.digest : null;
+      entry.for_you = forYou ? { digest: forYou, ring: theirs.ring, group: theirs.group } : null;
+      if (everything && typeof this.rolloutView === "function") entry.rollout = this.rolloutView(entry.app_id);
       // An app whose current release is not theirs to open is not on their
       // list at all, even when an older version was once for them.
       if (!everything && !entry.current) continue;
@@ -589,7 +611,7 @@ function install(OrgClass) {
       .map((r) => ({ r, c: this.row("SELECT * FROM candidates WHERE digest = ?", r.digest) }))
       .filter(({ c }) => {
         const a = audienceOf(c);
-        return !a || (me && SEES_ALL.has(me.role)) || a.some((g) => mine.has(g));
+        return (!a || (me && SEES_ALL.has(me.role)) || a.some((g) => mine.has(g))) && !(me && this.rolloutHidden(me, c));
       })
       .map(({ r, c }) => {
         const app = appOf(c);
@@ -648,7 +670,10 @@ export async function orgReleaseRoute(h) {
     const digest = String(rest[1]).toLowerCase();
     if (rest[2] === "withdraw" && method === "POST") {
       if (!DIGEST.test(digest)) return notDigest();
-      return orgAnswer(await mutateRaw("withdraw", (b) => ({ digest, reason: b.reason, base })));
+      const answer = await mutateRaw("withdraw", (b) => ({ digest, reason: b.reason, base }));
+      // The channels hear it (org-chat.js); never holds up the answer.
+      if (answer.status === 200 && !answer.replayed && h.notify) await h.notify({ event: "withdrawn", digest });
+      return orgAnswer(answer);
     }
     if (rest[2] === "audience" && method === "PUT") {
       if (!DIGEST.test(digest)) return notDigest();

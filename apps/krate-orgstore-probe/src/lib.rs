@@ -94,7 +94,22 @@ fn run_step(step: &[&str]) -> String {
             Ok(None) => String::from("who none"),
             Err(err) => format!("who {}", describe(err)),
         },
-        _ => String::from("usage: put|fill|get|delete|list|sync|who, steps joined by `then`"),
+        ["status"] => match org::status() {
+            Ok(s) => format!(
+                "status {} pending={} reached={} org={}",
+                match s.link {
+                    org::Link::Synced => "synced",
+                    org::Link::Syncing => "syncing",
+                    org::Link::Offline => "offline",
+                    org::Link::WaitingForKey => "waiting-for-key",
+                },
+                s.pending,
+                s.reached_at.is_some(),
+                s.org
+            ),
+            Err(err) => format!("status {}", describe(err)),
+        },
+        _ => String::from("usage: put|fill|get|delete|list|sync|who|status, steps joined by `then`"),
     }
 }
 

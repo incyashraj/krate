@@ -1,0 +1,16 @@
+[app]
+id = "dev.krate.sound-check"
+name = "Sound Check"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_sound_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true
+
+[[capabilities]]
+cap = "audio.playback"
+rationale = "Play a tone and a click"
+required = false

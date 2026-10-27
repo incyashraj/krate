@@ -63,7 +63,10 @@
     function header(a) {
       var cur = a.cur;
       var bits = [];
-      if (cur) bits.push((cur.version || "") + " opens now");
+      var ro = a.rel && a.rel.rollout;
+      if (cur) bits.push((cur.version || "") + (ro ? " is current" : " opens now"));
+      // Staged rollout: the pilot's version beside it.
+      if (ro && ro.pilot && ro.pilot.version) bits.push("the " + ro.pilot.group + " group has " + (ro.pilot.version.version || "a new version") + " first");
       if (a.rel && a.rel.releases && a.rel.releases[0]) bits.push(D.R ? D.R.audienceWords(cur || a.rel.releases[0]).replace(/^For /, "for ") : "");
       if (a.inv && a.inv.owner) bits.push("owned by " + K.who(a.inv.owner.principal).label);
       if (a.inv && a.inv.built) bits.push("made with " + a.inv.built_words);
@@ -122,7 +125,20 @@
     /// one waiting, and those declined or withdrawn.
     function allVersions(a) {
       var list = [];
-      ((a.rel && a.rel.releases) || []).forEach(function (r) { list.push({ v: r.version, at: r.at, note: r.note, who: r.solo ? "Released by its sender alone" : "Approved by " + K.who(r.approved_by).label, state: r.state === "withdrawn" ? "Withdrawn" : r.digest === (a.rel && a.rel.current) ? "Opens now" : "Released", tone: r.state === "withdrawn" ? "bad" : r.digest === (a.rel && a.rel.current) ? "ok" : "" }); });
+      var ro = a.rel && a.rel.rollout;
+      var ringWord = function (r) {
+        if (!ro) return null;
+        if (ro.pilot && ro.pilot.version && ro.pilot.version.digest === r.digest) return "Pilot";
+        var kept = (ro.pins || []).filter(function (x) { return x.version && x.version.digest === r.digest; }).map(function (x) { return x.group; });
+        return kept.length ? "Kept for " + kept.join(", ") : null;
+      };
+      ((a.rel && a.rel.releases) || []).forEach(function (r) {
+        var isCur = r.digest === (a.rel && a.rel.current);
+        var ring = r.state === "withdrawn" || isCur ? null : ringWord(r);
+        list.push({ v: r.version, at: r.at, note: r.note, who: r.solo ? "Released by its sender alone" : "Approved by " + K.who(r.approved_by).label,
+          state: r.state === "withdrawn" ? "Withdrawn" : isCur ? (ro ? "Everyone" : "Opens now") : ring || "Released",
+          tone: r.state === "withdrawn" ? "bad" : isCur ? "ok" : ring ? "warn" : "" });
+      });
       a.cands.forEach(function (c) {
         if (c.state === "waiting-for-approval") list.push({ v: c.version, at: c.uploaded_at, note: c.note, who: "Sent by " + K.who(c.uploaded_by).label, state: "Waiting", tone: "warn" });
         else if (c.state === "declined") list.push({ v: c.version, at: c.declined_at || c.uploaded_at, note: c.decline_reason ? "Declined: " + c.decline_reason : c.note, who: "Declined by " + K.who(c.declined_by).label, state: "Declined", tone: "bad" });
@@ -142,6 +158,13 @@
     }
 
     function versions(b, a) {
+      // A version waiting: what it can do, what changed in its code, and,
+      // for whoever may, Approve and Decline -- the Waiting tab's own card.
+      if (D.waitCard) {
+        var approver = K.can(D.roleOf(), "candidate.approve") === "yes" && K.tabsFor(D.roleOf()).indexOf("waiting") >= 0;
+        var closing = D.S.org && D.S.org.state === "closing";
+        a.waiting.forEach(function (c) { b.appendChild(D.waitCard(c, approver, closing, Date.now() / 1000)); });
+      }
       b.appendChild(versionList(a));
       // Who opens each one, which opens now, and taking one back: the
       // release controls, where the person may use them.

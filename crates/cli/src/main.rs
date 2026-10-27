@@ -4793,6 +4793,7 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
         if text.contains(krate_bundle::SDK_PLACEHOLDER) {
             // The SDK inside the bundle wins: it is the one this source was
             // written against, so it compiles where the current one may not.
+            let mut current_sdk = false;
             let sdk = match opened.sdk_path() {
                 Some(bundled) => {
                     // A sibling of the app inside this call's own transaction
@@ -4808,16 +4809,90 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
                     copy_tree(bundled, &kept)?;
                     kept
                 }
-                None => sdk::ensure_materialized()?,
+                None => {
+                    current_sdk = true;
+                    sdk::ensure_materialized()?
+                }
             };
-            let resolved = text.replace(
+            let mut resolved = text.replace(
                 krate_bundle::SDK_PLACEHOLDER,
                 &sdk.to_string_lossy().replace('\\', "/"),
             );
+            // An app that carries no SDK of its own builds against this
+            // machine's, whose world may import interfaces that did not exist
+            // when the app was made (krate:gpu joined phase4 later). Its own
+            // dependency list then lacks them and the build fails before the
+            // app's code is reached (K-1132).
+            if current_sdk {
+                resolved = add_missing_wit_deps(&resolved);
+            }
             fs::write(&manifest, resolved)?;
         }
     }
     Ok(Some(target))
+}
+
+/// Add a `"krate:<name>"` entry for every interface in the SDK's world
+/// deps directory that an app's `[package.metadata.component.target
+/// .dependencies]` does not list yet, in the same shape as the entries it
+/// has. The deps directory is read from the first existing entry's path, so
+/// a Cargo.toml with none is returned unchanged.
+fn add_missing_wit_deps(cargo_toml: &str) -> String {
+    let entry = |line: &str| -> Option<(String, String)> {
+        let name = line
+            .strip_prefix("\"krate:")?
+            .split('"')
+            .next()?
+            .to_string();
+        let path = line
+            .split("path = \"")
+            .nth(1)?
+            .split('"')
+            .next()?
+            .to_string();
+        Some((name, path))
+    };
+    let lines: Vec<&str> = cargo_toml.lines().collect();
+    let found: Vec<(usize, String, String)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| entry(line.trim()).map(|(n, p)| (i, n, p)))
+        .collect();
+    let (Some((last, _, _)), Some((_, first_name, first_path))) = (found.last(), found.first())
+    else {
+        return cargo_toml.to_string();
+    };
+    let last = *last;
+    let Some(deps_dir) = first_path.strip_suffix(&format!("/{first_name}")) else {
+        return cargo_toml.to_string();
+    };
+    let have: std::collections::BTreeSet<&str> = found.iter().map(|(_, n, _)| n.as_str()).collect();
+    let mut missing: Vec<String> = fs::read_dir(deps_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| e.file_name().to_str().map(str::to_string))
+                .filter(|n| !have.contains(n.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+    if missing.is_empty() {
+        return cargo_toml.to_string();
+    }
+    missing.sort();
+    let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    for (k, name) in missing.into_iter().enumerate() {
+        out.insert(
+            last + 1 + k,
+            format!("\"krate:{name}\" = {{ path = \"{deps_dir}/{name}\" }}"),
+        );
+    }
+    let mut joined = out.join("\n");
+    if cargo_toml.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
@@ -6042,7 +6117,7 @@ fn sign_bundle_command(
         // an unrecoverable loss from a mistyped path.
         if key_path.exists() {
             anyhow::bail!(
-                "{} already exists. Signing keys are not overwritten: a lost                  key is a lost publisher identity, and every app signed with                  it becomes uncheckable.",
+                "{} already exists. Signing keys are not overwritten: a lost key is a lost publisher identity, and every app signed with it becomes uncheckable.",
                 key_path.display()
             );
         }
@@ -8608,7 +8683,7 @@ fn publish_big(
     while status["status"] == "judging" || status["status"] == "uploading" {
         if std::time::Instant::now() > deadline {
             anyhow::bail!(
-                "Krate Cloud is still checking it; it will be listed when the check passes                  (run the same publish again to ask)"
+                "Krate Cloud is still checking it; it will be listed when the check passes (run the same publish again to ask)"
             );
         }
         std::thread::sleep(std::time::Duration::from_secs(3));
@@ -14260,6 +14335,10 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         // A fresh leaf starts with the dependencies a finished leaf already
         // compiled, so only this app's own crate is left to build (K-774).
         seed_leaf_from_a_finished_one(&shared, &per_app, app_dir);
+        // The cache would otherwise grow without end: a leaf per app
+        // directory ever built and a whole tree per SDK version (K-1125).
+        mark_leaf_used(&per_app, app_dir);
+        prune_build_cache(&shared, &per_app);
         command.env("CARGO_TARGET_DIR", &per_app);
     }
 
@@ -14458,6 +14537,195 @@ fn seed_leaf_from_a_finished_one(shared: &Path, leaf: &Path, app_dir: &Path) {
     }
 }
 
+/// A cache tree an older Krate (another SDK fingerprint) built goes once it
+/// has gone unused this long. Long enough that a Studio carrying an older
+/// Krate, used this week, keeps its warm cache.
+const CACHE_OLD_SDK_UNUSED: std::time::Duration = std::time::Duration::from_secs(3 * 24 * 3600);
+/// A leaf nobody built in this long goes; the next build of that app is
+/// seeded warm again (K-774), so this costs seconds, not minutes.
+const CACHE_LEAF_UNUSED: std::time::Duration = std::time::Duration::from_secs(14 * 24 * 3600);
+/// A leaf whose app directory is gone (a test's or a made-and-moved app's
+/// temporary directory) goes after this.
+const CACHE_ORPHAN_AFTER: std::time::Duration = std::time::Duration::from_secs(3600);
+/// The least time between two prunes of the cache.
+const CACHE_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Note that this leaf was just used, and for which app directory, so a
+/// later prune can tell a live leaf from one whose app is gone.
+fn mark_leaf_used(leaf: &Path, app_dir: &Path) {
+    let _ = fs::create_dir_all(leaf);
+    // Absolute: a prune run from another directory must not read a
+    // relative `apps/x` as gone.
+    let absolute = app_dir
+        .canonicalize()
+        .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(app_dir)))
+        .unwrap_or_else(|_| app_dir.to_path_buf());
+    let _ = fs::write(
+        leaf.join(".krate-app-dir"),
+        absolute.to_string_lossy().as_bytes(),
+    );
+    if let Some(root) = leaf.parent() {
+        let _ = fs::write(root.join(".krate-used"), b"");
+    }
+}
+
+/// Prune the shared build cache, at most once an hour across every Krate
+/// on this machine. Never fails a build: every error is skipped.
+fn prune_build_cache(shared: &Path, building: &Path) {
+    let Some(root) = shared.parent() else {
+        return;
+    };
+    let stamp = root.join(".krate-pruned");
+    let recent = fs::metadata(&stamp)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|at| at.elapsed().ok())
+        .is_some_and(|age| age < CACHE_PRUNE_EVERY);
+    if recent {
+        return;
+    }
+    // Stamped first, so two builds starting together do not both prune.
+    let _ = fs::write(&stamp, b"");
+    let trash = prune_build_cache_at(shared, building, std::time::SystemTime::now());
+    // Moved aside already, so nothing can build in or seed from them; the
+    // deleting itself happens off the build's path.
+    if !trash.is_empty() {
+        let _ = std::thread::Builder::new()
+            .name("krate-cache-prune".into())
+            .spawn(move || {
+                for dir in trash {
+                    let _ = fs::remove_dir_all(dir);
+                }
+            });
+    }
+}
+
+/// When a leaf (or a whole cache tree) was last used: its own mark, its
+/// artifact directory (cargo rewrites it on every build, an older Krate's
+/// too), or the directory itself.
+fn cache_last_used(dir: &Path) -> Option<std::time::SystemTime> {
+    [
+        dir.join(".krate-app-dir"),
+        dir.join(".krate-used"),
+        dir.join("wasm32-wasip1/release"),
+        dir.to_path_buf(),
+    ]
+    .iter()
+    .filter_map(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok())
+    .max()
+}
+
+/// Whether some build holds this leaf now.
+fn leaf_in_use(leaf: &Path) -> bool {
+    let Ok(file) = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(leaf.join(".krate-build.lock"))
+    else {
+        return false;
+    };
+    file.try_lock().is_err()
+}
+
+/// Decide what goes and move it aside as `trash-*` (a rename, so it is
+/// instant and a half-deleted leaf can never be picked as a seed). Returns
+/// what to delete. Never touches the leaf being built, a leaf some build
+/// holds, or the newest finished leaf (the seed every new app starts from).
+fn prune_build_cache_at(
+    shared: &Path,
+    building: &Path,
+    now: std::time::SystemTime,
+) -> Vec<PathBuf> {
+    let age = |dir: &Path| {
+        cache_last_used(dir)
+            .and_then(|at| now.duration_since(at).ok())
+            .unwrap_or_default()
+    };
+    let mut trash = Vec::new();
+    let Some(root) = shared.parent() else {
+        return trash;
+    };
+    // Everything set aside lands in the cache root, where the next prune
+    // finds it again if this process ends before deleting it.
+    let mut counter = 0u32;
+    let mut set_aside = |dir: &Path, trash: &mut Vec<PathBuf>| {
+        counter += 1;
+        let stamp = now
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let aside = root.join(format!("trash-{stamp:x}-{}-{counter}", std::process::id()));
+        if fs::rename(dir, &aside).is_ok() {
+            trash.push(aside);
+        }
+    };
+    let leaves = |tree: &Path| -> Vec<PathBuf> {
+        fs::read_dir(tree)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| {
+                        path.is_dir()
+                            && path
+                                .file_name()
+                                .is_some_and(|name| name.to_string_lossy().starts_with("app-"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // Trees another SDK version built, and what an earlier prune left.
+    for entry in fs::read_dir(root).into_iter().flatten().flatten() {
+        let tree = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !tree.is_dir() || tree == shared {
+            continue;
+        }
+        if name.starts_with("trash-") {
+            trash.push(tree);
+            continue;
+        }
+        let tree_leaves = leaves(&tree);
+        if tree_leaves.iter().any(|leaf| leaf_in_use(leaf)) {
+            continue;
+        }
+        let newest = tree_leaves
+            .iter()
+            .map(|leaf| age(leaf))
+            .chain(std::iter::once(age(&tree)))
+            .min()
+            .unwrap_or_default();
+        if newest > CACHE_OLD_SDK_UNUSED {
+            set_aside(&tree, &mut trash);
+        }
+    }
+    // This SDK's leaves.
+    let all = leaves(shared);
+    let seed = all
+        .iter()
+        .filter_map(|leaf| {
+            let at = fs::metadata(leaf.join("wasm32-wasip1/release/.fingerprint"))
+                .and_then(|meta| meta.modified())
+                .ok()?;
+            Some((at, leaf.clone()))
+        })
+        .max_by_key(|(at, _)| *at)
+        .map(|(_, leaf)| leaf);
+    for leaf in all {
+        if leaf == building || Some(&leaf) == seed.as_ref() || leaf_in_use(&leaf) {
+            continue;
+        }
+        let unused = age(&leaf);
+        let orphan = fs::read_to_string(leaf.join(".krate-app-dir"))
+            .is_ok_and(|dir| !Path::new(dir.trim()).exists());
+        if unused > CACHE_LEAF_UNUSED || (orphan && unused > CACHE_ORPHAN_AFTER) {
+            set_aside(&leaf, &mut trash);
+        }
+    }
+    trash
+}
+
 /// Whether a target-dir entry belongs to the crate named `krate_name`
 /// (given with underscores, as `app_crate_name` spells it).
 ///
@@ -14539,12 +14807,33 @@ fn build_leaf_lock(app_dir: &Path) -> Option<fs::File> {
     Some(file)
 }
 
+/// The target directory the person chose with CARGO_TARGET_DIR, as cargo
+/// reads it for a build run in `app_dir`: a relative one is relative to
+/// there.
+fn person_target_dir(app_dir: &Path) -> Option<PathBuf> {
+    let dir = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR")?);
+    Some(if dir.is_absolute() {
+        dir
+    } else {
+        app_dir.join(dir)
+    })
+}
+
 fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
+    // Look where cargo wrote it. A person's own CARGO_TARGET_DIR wins over
+    // the shared cache (the sandbox advice says to set one), and cargo
+    // honours it for this build, so the artifact is there and not under
+    // the app's target/ (K-967, K-1036).
     let target_root = match shared_build_dir() {
         Some(shared) => per_app_target_dir(&shared, app_dir),
-        None => app_dir.join("target"),
+        None => person_target_dir(app_dir).unwrap_or_else(|| app_dir.join("target")),
     };
     let release = target_root.join("wasm32-wasip1/release");
+    let local = app_dir.join("target/wasm32-wasip1/release");
+    let at_home = |dir: &Path| match (dir.canonicalize(), local.canonicalize()) {
+        (Ok(dir), Ok(local)) => dir == local,
+        _ => dir == local,
+    };
     // The shared cache holds every app's artifact side by side, so the match
     // must be by THIS crate's name, not "any wasm in the directory".
     let wanted = app_crate_name(app_dir).map(|name| format!("{name}.wasm"));
@@ -14554,9 +14843,9 @@ fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
             // The manifest's entry names target/wasm32-wasip1/release/<name>
             // relative to the app, and the permission wall verifies the file
             // RUN is the file DECLARED. The deps stay in the shared cache;
-            // the artifact itself always comes home to the declared path.
-            if shared_build_dir().is_some() {
-                let local = app_dir.join("target/wasm32-wasip1/release");
+            // the artifact itself always comes home to the declared path,
+            // from the shared cache and from a target dir of the person's.
+            if !at_home(&release) {
                 fs::create_dir_all(&local)?;
                 let home = local.join(name);
                 fs::copy(&exact, &home).with_context(|| format!("copying {}", exact.display()))?;
@@ -15719,6 +16008,8 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     if !request.dump_caps {
         fleet::admit(&subject, door)?;
     }
+    // Who this app is for the policy's `[apps]` rules (G17).
+    let rules_app = subject.app_ref();
 
     // An organisation's private app opens only for a current member, and
     // offline only on a lease that holds (IC-948 G). A preview picture is
@@ -15935,7 +16226,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     };
     // Every policy this run builds carries the organisation's ceiling, so
     // what it blocks is refused however it was granted (IC-949 P4).
-    policy = fleet::narrow(policy);
+    policy = fleet::narrow(policy, &rules_app);
 
     // Before the wall, not after it: --dump-caps answers "what would this app
     // ask for?" without running a single instruction, and it is the safe way to
@@ -16057,9 +16348,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         if let Some(principal) = remembering {
             let remembered = load_remembered_grants(&store_home, principal);
             if !remembered.is_empty() {
-                policy = fleet::narrow(SessionPolicy::from_grants(
-                    policy.grants().iter().cloned().chain(remembered),
-                ));
+                policy = fleet::narrow(
+                    SessionPolicy::from_grants(policy.grants().iter().cloned().chain(remembered)),
+                    &rules_app,
+                );
             }
         }
         let missing = policy.missing_required_for_manifest(manifest)?;
@@ -16068,11 +16360,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             // asks in the terminal. The two paths fold the same grant set into
             // the same SessionPolicy, so enforcement downstream is identical.
             let before = policy.grants().clone();
-            policy = fleet::narrow(if request.consent {
-                consent_for_session_grants(manifest, &policy)?
-            } else {
-                prompt_for_session_grants(manifest, &policy)?
-            });
+            policy = fleet::narrow(
+                if request.consent {
+                    consent_for_session_grants(manifest, &policy)?
+                } else {
+                    prompt_for_session_grants(manifest, &policy)?
+                },
+                &rules_app,
+            );
             // Only what the person just said yes to, and only for an app
             // whose lineage can be checked again next time.
             if let Some(principal) = remembering {
@@ -16276,36 +16571,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // The organisation's team data (store.org, IC-951): only for the
     // private app the gate above just let through, as that release, for
     // the person signed in. Anything else is not an org app.
-    let app_org = Some(match (org_opened.as_ref(), manifest) {
-        (Some(opened), Some(manifest)) => krate_runtime::org_store::OrgAccess::Granted(Box::new(
-            krate_runtime::org_store::OrgGrant {
-                slug: opened.slug.clone(),
-                hub: opened.hub.clone(),
-                digest: opened.digest.clone(),
-                authorization: opened.authorization.clone(),
-                me: opened
-                    .principal
-                    .as_deref()
-                    .map(|p| p.split_once(':').map_or(p, |(_, v)| v).to_string()),
-                mirror: access::org_data_path(
-                    &opened.slug,
-                    &manifest.app.id.to_ascii_lowercase(),
-                    opened.principal.as_deref(),
-                ),
-                clock_skew_ms: org_clock_skew_ms(),
-                app_id: manifest.app.id.to_ascii_lowercase(),
-                device_secret: krate_runtime::org_store::DeviceSecret(
-                    *access::org_device_key()?.secret(),
-                ),
-                device_name: access::device_name(opened.principal.as_deref()),
-            },
-        )),
-        _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
-    });
+    let app_org = Some(org_run_access(org_opened.as_ref(), manifest)?);
     // The run starts now: the open record says so, with what the app was
     // given and what it was not (IC-949 A). A picture is Krate looking, not
     // a person opening.
-    let policy = fleet::narrow(policy);
+    let policy = fleet::narrow(policy, &rules_app);
     if !request.for_screenshot {
         fleet::opened(&subject, door, &policy);
     }
@@ -16337,15 +16607,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     let connections = if request.for_screenshot {
         krate_runtime::connections::Connections::default()
     } else {
-        connections::resolve(manifest, &policy, || {
-            let access::Mark::Signed(slug) = access::mark_of(bundle.as_ref()?) else {
-                return None;
-            };
-            let digest = match fetched_sha256.as_deref() {
+        run_connections(manifest, &policy, bundle.as_ref(), || {
+            Some(match fetched_sha256.as_deref() {
                 Some(sha256) => sha256.to_string(),
                 None => krate_bundle::sha256_hex(&std::fs::read(&request.target).ok()?),
-            };
-            Some((slug, digest))
+            })
         })
     };
     let config = Config {
@@ -20481,7 +20747,7 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
     if let Some(secs) = pace_note {
         if !json {
             println!(
-                "  pace: this is your second full check in {secs}s. Iterate with                  `check-app . --no-run` (about 2s) and save the full check for when                  you believe the app is done -- full checks this frequent are the                  single biggest time cost in authoring."
+                "  pace: this is your second full check in {secs}s. Iterate with `check-app . --no-run` (about 2s) and save the full check for when you believe the app is done -- full checks this frequent are the single biggest time cost in authoring."
             );
         }
     }
@@ -20676,7 +20942,13 @@ fn run_check_app(
             return Err(CheckFailure {
                 stage: CheckStage::Layout,
                 detail,
-                fix: "Bound the `quick` path, never the interactive one:\n\n                          if quick {\n        // draw one frame, print key:value, exit 0\n                          }\n    // interactive: no round limit at all\n    loop {\n                              match events::wait(None) {\n                                  Some(Event::CloseRequested(_)) => break,\n            _ => {}\n                              }\n    }\n\nA real session ends when the person closes the window,                       and only then."
+                fix: "Bound the `quick` path, never the interactive one:\n\n    \
+                      if quick {\n        // draw one frame, print key:value, exit 0\n    }\n    \
+                      // interactive: no round limit at all\n    loop {\n        \
+                      match events::wait(None) {\n            \
+                      Some(Event::CloseRequested(_)) => break,\n            _ => {}\n        \
+                      }\n    }\n\nA real session ends when the person closes the window, \
+                      and only then."
                     .to_string(),
             });
         }
@@ -21429,9 +21701,14 @@ fn run_usability_stage(
                   expect_text = \"what should then be on screen\")."
                 .to_string(),
         })?;
+        // Absolute: the run below starts inside `dir`, so a relative
+        // `apps/x/krate-check.toml` would be looked for at
+        // apps/x/apps/x/krate-check.toml and the task never ran (K-1126).
+        let task_file = task_file.canonicalize().unwrap_or(task_file.clone());
         args.push("--task".into());
         args.push(task_file.to_string_lossy().into_owned());
     }
+    let has_task = args.iter().any(|arg| arg == "--task");
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let exit = run_self(dir, &arg_refs).map_err(|error| CheckFailure {
         stage: CheckStage::Usability,
@@ -21441,6 +21718,21 @@ fn run_usability_stage(
 
     let report = match krate_runtime::usability::UsabilityReport::read(&report_path) {
         Ok(report) => report,
+        Err(error) if has_task => {
+            // The author wrote the app's task down and it never ran: that is
+            // not a gap to note, it is the one check that proves the app does
+            // its job, and passing without it says the app was proved when it
+            // was not (K-1126).
+            return Err(CheckFailure {
+                stage: CheckStage::Usability,
+                detail: format!(
+                    "the app's task (krate-check.toml) did not run: exit {exit}, no report: {error}"
+                ),
+                fix: "Run `krate run --task krate-check.toml` with the app's wasm and manifest \
+                      from the app's folder to see why the task could not start."
+                    .to_string(),
+            });
+        }
         Err(error) => {
             // No report at all means the driver never got far enough to write
             // one. That is a gap in the measurement, not proof of a defect, so
@@ -23972,6 +24264,63 @@ fn shared_hub_url() -> String {
 /// data is stamped with, so a test can be a device whose clock is wrong.
 const ORG_CLOCK_SKEW_ENV: &str = "KRATE_TEST_ORG_CLOCK_SKEW_MS";
 
+/// The organisation's team data (store.org, IC-951) for a run the
+/// organisation gate let through: only the private app it opened, as that
+/// release, for the person signed in; anything else is not an org app.
+/// Every door that runs an app builds it here, `krate run` and the MCP
+/// tools alike (K-1102).
+pub(crate) fn org_run_access(
+    opened: Option<&access::Opened>,
+    manifest: Option<&krate_manifest::Manifest>,
+) -> Result<krate_runtime::org_store::OrgAccess> {
+    Ok(match (opened, manifest) {
+        (Some(opened), Some(manifest)) => krate_runtime::org_store::OrgAccess::Granted(Box::new(
+            krate_runtime::org_store::OrgGrant {
+                slug: opened.slug.clone(),
+                hub: opened.hub.clone(),
+                digest: opened.digest.clone(),
+                authorization: opened.authorization.clone(),
+                me: opened
+                    .principal
+                    .as_deref()
+                    .map(|p| p.split_once(':').map_or(p, |(_, v)| v).to_string()),
+                mirror: access::org_data_path(
+                    &opened.slug,
+                    &manifest.app.id.to_ascii_lowercase(),
+                    opened.principal.as_deref(),
+                ),
+                clock_skew_ms: org_clock_skew_ms(),
+                app_id: manifest.app.id.to_ascii_lowercase(),
+                device_secret: krate_runtime::org_store::DeviceSecret(
+                    *access::org_device_key()?.secret(),
+                ),
+                device_name: access::device_name(opened.principal.as_deref()),
+                org_name: opened.org_name.clone(),
+            },
+        )),
+        _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
+    })
+}
+
+/// Company connections (IC-952) for a run: an organisation's private app
+/// granted `net.connection:<name>` gets that connection's credential, from
+/// the hub, into memory only. `digest` is the opened bytes' sha256, worked
+/// out only when the app asks for a connection. One place for every door
+/// (K-1102).
+pub(crate) fn run_connections(
+    manifest: Option<&krate_manifest::Manifest>,
+    policy: &krate_policy::SessionPolicy,
+    bundle: Option<&krate_bundle::OpenBundle>,
+    digest: impl FnOnce() -> Option<String>,
+) -> krate_runtime::connections::Connections {
+    connections::resolve(manifest, policy, || {
+        let access::Mark::Signed(slug) = access::mark_of(bundle?) else {
+            return None;
+        };
+        Some((slug, digest()?))
+    })
+}
+
 /// How far a test moves this device's clock for `store.org`. Zero in a
 /// release build, whatever the environment says.
 fn org_clock_skew_ms() -> i64 {
@@ -24056,6 +24405,185 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod wit_deps_tests {
+    use super::*;
+
+    /// K-1132: an app made before an interface joined the world lists fewer
+    /// deps than the SDK's world imports; the missing ones are added in the
+    /// same shape, and a complete list is left alone.
+    #[test]
+    fn an_older_apps_dependency_list_gains_the_interfaces_it_lacks() {
+        let sdk = tempfile::tempdir().unwrap();
+        let deps = sdk.path().join("wit/krate/phase4/deps");
+        for name in ["gfx", "gpu", "io", "ui"] {
+            fs::create_dir_all(deps.join(name)).unwrap();
+        }
+        let d = deps.to_string_lossy().replace('\\', "/");
+        let old = format!(
+            "[package.metadata.component.target.dependencies]\n\"krate:io\" = {{ path = \"{d}/io\" }}\n\"krate:gfx\" = {{ path = \"{d}/gfx\" }}\n\n[profile.release]\n"
+        );
+        let new = add_missing_wit_deps(&old);
+        assert!(
+            new.contains(&format!("\"krate:gpu\" = {{ path = \"{d}/gpu\" }}")),
+            "{new}"
+        );
+        assert!(
+            new.contains(&format!("\"krate:ui\" = {{ path = \"{d}/ui\" }}")),
+            "{new}"
+        );
+        assert!(
+            new.find("krate:gpu").unwrap() < new.find("[profile.release]").unwrap(),
+            "added inside the dependency table"
+        );
+        assert_eq!(
+            add_missing_wit_deps(&new),
+            new,
+            "a complete list is unchanged"
+        );
+        assert_eq!(
+            add_missing_wit_deps("[package]\nname = \"x\"\n"),
+            "[package]\nname = \"x\"\n"
+        );
+    }
+}
+
+#[cfg(test)]
+mod build_cache_prune_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    /// A finished leaf for `app` (whose directory may or may not exist).
+    fn leaf(shared: &Path, name: &str, app: &Path) -> PathBuf {
+        let leaf = shared.join(name);
+        fs::create_dir_all(leaf.join("wasm32-wasip1/release/.fingerprint")).unwrap();
+        mark_leaf_used(&leaf, app);
+        leaf
+    }
+
+    fn kept(dir: &Path) -> bool {
+        dir.is_dir()
+    }
+
+    /// K-1125: a leaf whose app directory is gone goes after an hour, one
+    /// still in use or still with its app stays, and the leaf being built,
+    /// a locked leaf and the newest finished leaf (the seed) always stay.
+    #[test]
+    fn orphaned_leaves_go_and_live_ones_stay() {
+        let home = tempfile::tempdir().unwrap();
+        let shared = home.path().join("build/0123456789abcdef");
+        let app = home.path().join("live-app");
+        fs::create_dir_all(&app).unwrap();
+        let gone = home.path().join("gone-app");
+        let live = leaf(&shared, "app-live", &app);
+        let orphan = leaf(&shared, "app-orphan", &gone);
+        let locked = leaf(&shared, "app-locked", &gone);
+        let building = leaf(&shared, "app-building", &gone);
+        std::thread::sleep(Duration::from_millis(20));
+        // The newest finished leaf, orphaned too: it stays as the seed.
+        let seed = leaf(&shared, "app-seed", &gone);
+        let hold = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(locked.join(".krate-build.lock"))
+            .unwrap();
+        hold.lock().unwrap();
+
+        let soon = SystemTime::now() + Duration::from_secs(60);
+        assert!(prune_build_cache_at(&shared, &building, soon).is_empty());
+        assert!(kept(&orphan), "an orphan stays for its first hour");
+
+        let later = SystemTime::now() + Duration::from_secs(2 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, later);
+        assert!(!kept(&orphan), "the orphan went");
+        assert_eq!(trash.len(), 1, "{trash:?}");
+        assert!(
+            trash[0].starts_with(home.path().join("build")),
+            "set aside in the root"
+        );
+        for (dir, why) in [
+            (&live, "its app is still there"),
+            (&locked, "a build holds it"),
+            (&building, "it is being built"),
+            (&seed, "it is the seed"),
+        ] {
+            assert!(kept(dir), "kept because {why}");
+        }
+        drop(hold);
+    }
+
+    /// A leaf nobody built for two weeks goes even when its app is still
+    /// there; another SDK version's whole tree goes after three idle days,
+    /// and what an earlier prune set aside is collected again.
+    #[test]
+    fn idle_leaves_and_old_sdk_trees_go() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("build");
+        let shared = root.join("aaaaaaaaaaaaaaaa");
+        let old = root.join("bbbbbbbbbbbbbbbb");
+        let app = home.path().join("app");
+        fs::create_dir_all(&app).unwrap();
+        let idle = leaf(&shared, "app-idle", &app);
+        let building = leaf(&shared, "app-building", &app);
+        std::thread::sleep(Duration::from_millis(20));
+        let seed = leaf(&shared, "app-seed", &app);
+        leaf(&old, "app-old", &app);
+        let left = root.join("trash-1-2-3");
+        fs::create_dir_all(&left).unwrap();
+
+        let in_two_days = SystemTime::now() + Duration::from_secs(2 * 24 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, in_two_days);
+        assert_eq!(trash, vec![left.clone()], "only the earlier leftovers");
+        assert!(kept(&old) && kept(&idle));
+
+        let in_three_weeks = SystemTime::now() + Duration::from_secs(21 * 24 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, in_three_weeks);
+        assert!(!kept(&old), "the old SDK's tree went");
+        assert!(!kept(&idle), "the idle leaf went");
+        assert!(kept(&seed) && kept(&building));
+        assert!(trash.contains(&left));
+        assert_eq!(trash.len(), 3, "{trash:?}");
+    }
+
+    /// The mark names the app by its absolute path, so a relative app
+    /// directory is not read as gone from wherever the next prune runs.
+    #[test]
+    fn a_relative_app_directory_is_marked_absolute() {
+        let home = tempfile::tempdir().unwrap();
+        let leaf = home.path().join("build/aaaaaaaaaaaaaaaa/app-x");
+        mark_leaf_used(&leaf, Path::new("."));
+        let marked = fs::read_to_string(leaf.join(".krate-app-dir")).unwrap();
+        assert!(Path::new(&marked).is_absolute(), "{marked}");
+        assert!(Path::new(&marked).exists());
+    }
+
+    /// A tree another SDK version is building in right now stays.
+    #[test]
+    fn an_old_sdk_tree_in_use_stays() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("build");
+        let shared = root.join("aaaaaaaaaaaaaaaa");
+        let app = home.path().join("app");
+        fs::create_dir_all(&app).unwrap();
+        let building = leaf(&shared, "app-building", &app);
+        let old = leaf(&root.join("bbbbbbbbbbbbbbbb"), "app-old", &app);
+        let hold = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(old.join(".krate-build.lock"))
+            .unwrap();
+        hold.lock().unwrap();
+        let later = SystemTime::now() + Duration::from_secs(30 * 24 * 3600);
+        prune_build_cache_at(&shared, &building, later);
+        assert!(kept(&old));
+        drop(hold);
+    }
 }
 
 #[cfg(test)]

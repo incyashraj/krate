@@ -234,16 +234,19 @@ const ops = {
     // the chosen release while it is released, else the newest approved --
     // in one pass rather than one scan per app. The tests compare the two.
     const chosen = new Map(this.rows("SELECT app_id, digest FROM current_releases").map((r) => [r.app_id, r.digest]));
+    // A version with a pilot group is not what everyone gets (org-rollout.js).
+    const pilots = typeof this.pilotDigests === "function" ? this.pilotDigests() : new Set();
     const newest = (list) =>
       list
-        .filter((c) => c.state === "released")
+        .filter((c) => c.state === "released" && !pilots.has(c.digest))
         .sort((a, b) => (b.approved_at || 0) - (a.approved_at || 0) || b.rowid - a.rowid)[0] || null;
     const out = [];
     for (const [app, list] of byApp) {
-      const pick = chosen.has(app) ? list.find((c) => c.digest === chosen.get(app) && c.state === "released") : null;
+      const pick = chosen.has(app) ? list.find((c) => c.digest === chosen.get(app) && c.state === "released" && !pilots.has(c.digest)) : null;
       const current = pick || newest(list);
       const named = current || list.find((c) => c.state === "released") || list[0];
-      out.push({ app_id: app, name: named.name || app, current, list });
+      const pilot = list.find((c) => pilots.has(c.digest)) || null;
+      out.push({ app_id: app, name: named.name || app, current, pilot, list });
     }
     out.sort((a, b) => String(a.name).localeCompare(String(b.name)) || a.app_id.localeCompare(b.app_id));
     return out;
@@ -376,7 +379,11 @@ const ops = {
         added_at: d.added_at,
         last_seen: d.last_seen || null,
         holds_current: Boolean(key && d.holds === key.version),
-        silent: now - last > SILENT_DAYS * DAY,
+        // K-1115: a computer says which one it is when it checks in
+        // (?device=) only from IC-959's Krate on. One that never has is
+        // "not identified" -- it may check in every day -- never silent.
+        identified: Boolean(d.last_seen),
+        silent: Boolean(d.last_seen) && now - last > SILENT_DAYS * DAY,
       };
     });
     const lastSent = new Map(this.rows("SELECT uploaded_by, MAX(uploaded_at) AS at FROM candidates GROUP BY uploaded_by").map((r) => [r.uploaded_by, r.at]));
@@ -511,7 +518,7 @@ const ops = {
            WHERE app_id = ? AND day >= ? GROUP BY digest, version ORDER BY n DESC, version DESC`,
           app,
           ago(6),
-        ).map((r) => ({ version: r.version, digest: r.digest, current: Boolean(a.current && a.current.digest === r.digest), people: count(r.n) }));
+        ).map((r) => ({ version: r.version, digest: r.digest, current: Boolean(a.current && a.current.digest === r.digest), pilot: Boolean(a.pilot && a.pilot.digest === r.digest), people: count(r.n) }));
         const weeks = new Map(
           this.rows(
             `SELECT CAST((julianday(?) - julianday(day)) / 7 AS INTEGER) AS w, COUNT(DISTINCT principal) AS n
@@ -554,6 +561,8 @@ const ops = {
           name: a.name,
           version: a.current ? a.current.version : null,
           released: Boolean(a.current),
+          // A version with a pilot group first: who has it, before everyone.
+          pilot: a.pilot ? { version: a.pilot.version, group: (this.rolloutRow(app) || {}).grp || null } : null,
           people_week: count(week),
           daily: this.insightsDays(now, 30).map((day) => ({ day, people: count(daily.get(day) || 0) })),
           trend,
@@ -611,7 +620,7 @@ const ops = {
        LEFT JOIN key_envelopes e ON e.device_id = d.device_id
        WHERE d.principal = ? AND d.state = 'active' ORDER BY d.added_at`,
       me.principal,
-    ).map((d) => ({ device_id: d.device_id, name: d.name || null, added_at: d.added_at, last_seen: d.last_seen || null, holds_current: Boolean(key && d.holds === key.version) }));
+    ).map((d) => ({ device_id: d.device_id, name: d.name || null, added_at: d.added_at, last_seen: d.last_seen || null, identified: Boolean(d.last_seen), holds_current: Boolean(key && d.holds === key.version) }));
     const names = new Map(this.insightsApps().map((a) => [a.app_id, a.name]));
     const marks = ctx.principals.map(() => "?").join(", ") || "''";
     const apps = this.rows(
