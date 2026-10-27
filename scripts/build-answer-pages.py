@@ -220,12 +220,12 @@ def page_head(page):
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{description}">
 <meta property="og:url" content="{url}">
-<meta property="og:image" content="https://krate.tech/og-v4.png">
+<meta property="og:image" content="https://krate.tech/og-v5.png">
 <meta property="og:image:alt" content="Krate: make and send apps like pictures">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{title}">
 <meta name="twitter:description" content="{description}">
-<meta name="twitter:image" content="https://krate.tech/og-v4.png">
+<meta name="twitter:image" content="https://krate.tech/og-v5.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
@@ -589,6 +589,7 @@ PAGES += [
             ("How do I move an Electron app to Krate?", "<p>Run <code>krate port</code> (beta) on the project, or open it in Krate Studio: the AI rewrites it against Krate's interfaces and shows its plan first. The result is one small <code>.krate</code> file in place of a package per OS.</p>"),
             ("Do Krate users need Chromium?", "<p>No. A Krate app runs natively, with no browser engine inside, and every Krate app shares one runtime. From a link, it opens in whatever browser the person already has.</p>"),
             ("Do I need to know Rust?", "<p>No. Describe the app in Krate Studio and the AI writes the Rust for you. Developers who like Rust can write it by hand with the Krate SDK.</p>"),
+            ("Which one should I pick?", "<p>Pick Krate when you want one small file that opens anywhere, uses a fraction of the memory and asks before it touches anything. Electron suits a team with a large web codebase built on Node.js packages that wants to keep that code exactly as it is.</p>"),
         ],
     },
     {
@@ -1203,7 +1204,7 @@ def render_index():
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{html.escape(description, quote=True)}">
 <meta property="og:url" content="{url}">
-<meta property="og:image" content="https://krate.tech/og-v4.png">
+<meta property="og:image" content="https://krate.tech/og-v5.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
