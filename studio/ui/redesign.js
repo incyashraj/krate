@@ -1688,14 +1688,14 @@
       <button type="button" class="kr-x" data-close title="Close" aria-label="Close">${ico("x")}</button></div>
     <div class="kr-shfile"><span class="kr-shic"><img src="krate-logo.png" alt=""></span><span class="kr-sht"><b data-f></b><small data-s></small></span><em data-v hidden></em></div>
     <div class="kr-ways" role="tablist">
-      <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Anyone with it can open the app</small></button>
+      <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Opens in any browser, phone or computer</small></button>
       <button type="button" class="kr-way" data-w="file" role="tab" style="--c:#7c5ce8"><i>${ico("file")}</i><b>Send the file</b><small>Email, a chat, a USB stick</small></button>
       <button type="button" class="kr-way" data-w="pub" role="tab" style="--c:#22a35a"><i>${ico("globe")}</i><b>Publish</b><small>List it in the public gallery</small></button>
     </div>
     <div class="kr-wp" data-w="link"></div>
     <div class="kr-wp" data-w="file"></div>
     <div class="kr-wp" data-w="pub"></div>
-    <p class="kr-shnote">${ico("info")}<span>New to Krate? They install it once, like a video player.</span></p>
+    <p class="kr-shnote">${ico("info")}<span>New to Krate? Send the link: it opens in their browser, with nothing to install.</span></p>
   </div>`;
   document.body.appendChild(shareWrap);
   let shareApp = null, shareVer = null;
@@ -1774,7 +1774,7 @@
         <div class="kr-shacts"><button type="button" class="btn kr-dark" data-dl>${ico("down")}Download the file</button></div>
         <div class="kr-new" data-gift hidden><b>For someone new to Krate</b><small>One file with Krate inside: it installs once, then opens the app.</small>
         <div class="kr-os"><button type="button" class="btn kr-ghost" data-os="mac">Mac</button><button type="button" class="btn kr-ghost" data-os="linux">Linux</button></div>
-        <p class="kr-shst" data-wst>Windows: send the link. They get Krate once, then it opens.</p></div>`;
+        <p class="kr-shst" data-wst>Windows: send the link. It opens in their browser.</p></div>`;
       q("[data-dl]", pane).addEventListener("click", () => press($("filesSave")));
       const giftBox = q("[data-gift]", pane), wst = q("[data-wst]", pane);
       qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
