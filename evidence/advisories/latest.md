@@ -1,7 +1,7 @@
 # Advisory scan
 
-Scanned: 2026-09-28T07:11:24Z
-Commit:  44d07d83b40f26e2170aa6e3afc0907d2ee60351
+Scanned: 2026-10-20T03:24:41Z
+Commit:  6553367e0e3744014db81c54fdae25ffb900b6a1
 Scanner: cargo-deny 0.19.4
 Verdict: ok
 
@@ -32,12 +32,11 @@ Dependency path (`cargo tree -i <crate> --target all`):
 ```
     paste v1.0.15 (proc-macro)
     └── nokhwa v0.10.11
-        └── krate-runtime v0.5.2 (/crates/runtime)
-            ├── krate-adapter-web v0.5.2 (/crates/adapter-web)
-            ├── krate-cli v0.5.2 (/crates/cli)
-            ├── krate-player-android v0.5.2 (/crates/player-android)
-            ├── krate-player-ios v0.5.2 (/crates/player-ios)
-            └── krate-tools v0.5.2 (/crates/tools)
+        └── krate-runtime v0.5.5 (/crates/runtime)
+            ├── krate-cli v0.5.5 (/crates/cli)
+            ├── krate-player-android v0.5.5 (/crates/player-android)
+            ├── krate-player-ios v0.5.5 (/crates/player-ios)
+            └── krate-tools v0.5.5 (/crates/tools)
 ```
 
 ## What this does not tell you

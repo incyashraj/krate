@@ -548,6 +548,14 @@ impl Runtime {
         // with "exceptions proposal not enabled" (IC-908). Control flow
         // inside the module only: it reaches nothing the sandbox did not.
         wt_config.wasm_exceptions(true);
+        // Wasmtime 47 turned the GC and typed function-references proposals
+        // on by default. Krate's guests never had them (46 left them off),
+        // and a security upgrade is not where what a .krate may contain gets
+        // wider: every instruction the engine accepts is engine code a
+        // crafted file can reach, and RUSTSEC-2026-0359 was in exactly that
+        // code. Turning them on is its own decision, made on its own.
+        wt_config.wasm_gc(false);
+        wt_config.wasm_function_references(false);
 
         // iOS forbids executable pages, so the JIT cannot exist there.
         // Pulley is wasmtime's portable interpreter backend: guests are
@@ -3907,6 +3915,35 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// What a guest may contain did not widen with the engine. Wasmtime 47
+    /// turned GC and typed function references on by default; Krate keeps
+    /// them off (K-1127), and keeps exception handling on (IC-908). Each
+    /// module below is valid WebAssembly that needs exactly one of them.
+    #[test]
+    fn the_engine_accepts_the_proposals_krate_chose_and_no_more() {
+        let runtime = super::Runtime::new(&super::Config::default()).expect("runtime");
+        let compiles = |text: &str| {
+            let bytes = wat::parse_str(text).expect("the test's own module must parse");
+            wasmtime::Module::from_binary(&runtime.engine, &bytes).is_ok()
+        };
+        assert!(
+            !compiles("(module (type (struct (field i32))))"),
+            "a GC struct type must be refused"
+        );
+        assert!(
+            !compiles("(module (type $f (func)) (func (param (ref $f))))"),
+            "a typed function reference must be refused"
+        );
+        assert!(
+            compiles("(module (tag $e) (func (throw $e)))"),
+            "exception handling stays on for C++ and setjmp (IC-908)"
+        );
+        assert!(
+            compiles("(module (func (export \"f\") (result i32) i32.const 1))"),
+            "an ordinary module still compiles"
+        );
+    }
+
     /// Every engine is ticked, not only the first (IC-934). A player makes a
     /// new runtime for each app it opens; the ticker was tied to the first
     /// engine, which is dropped when Krate's own library closes, so on the

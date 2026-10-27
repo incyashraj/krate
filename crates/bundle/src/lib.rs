@@ -357,7 +357,7 @@ fn put_krate_extension_bytes(
     let mut declared: Option<ExtensionsRecord> = None;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         let mut body = Vec::new();
         entry
             .read_to_end(&mut body)
@@ -488,7 +488,7 @@ pub fn sign_bytes(
         let mut writer = DeterministicZip::new(Vec::new());
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if name == SIGNATURE_ENTRY {
                 continue;
             }
@@ -634,7 +634,7 @@ fn records_of<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<Rec
     let mut records = Vec::with_capacity(archive.len());
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name.ends_with('/') {
             continue;
         }
@@ -2765,7 +2765,7 @@ pub fn sign_bundle(
         let mut writer = DeterministicZip::new(io::BufWriter::new(file));
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if name == SIGNATURE_ENTRY {
                 continue; // replaced below
             }
@@ -2867,7 +2867,7 @@ fn replace_entry(bundle_path: &Path, entry_name: &str, bytes: &[u8]) -> Result<(
         let mut writer = DeterministicZip::new(io::BufWriter::new(file));
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if name == entry_name {
                 continue;
             }
@@ -3404,7 +3404,7 @@ fn judge_all(
         .map(|index| {
             archive
                 .by_index(index)
-                .map(|entry| entry.name().to_string())
+                .and_then(|entry| Ok(entry.name()?.to_string()))
         })
         .collect::<std::result::Result<_, _>>()?;
     for name in names {
@@ -3784,7 +3784,7 @@ fn unpack_into<R: Read + io::Seek>(mut archive: ZipArchive<R>, dir: TempDir) -> 
     let source_names: Vec<String> = {
         let mut names = Vec::new();
         for index in 0..archive.len() {
-            let name = archive.by_index(index)?.name().to_string();
+            let name = archive.by_index(index)?.name()?.to_string();
             if name.starts_with(SOURCE_PREFIX) && !name.ends_with('/') {
                 names.push(name);
             }
@@ -3823,7 +3823,7 @@ fn unpack_into<R: Read + io::Seek>(mut archive: ZipArchive<R>, dir: TempDir) -> 
     let sdk_names: Vec<String> = {
         let mut names = Vec::new();
         for index in 0..archive.len() {
-            let name = archive.by_index(index)?.name().to_string();
+            let name = archive.by_index(index)?.name()?.to_string();
             if name.starts_with(SDK_PREFIX) && !name.ends_with('/') {
                 names.push(name);
             }
@@ -3944,7 +3944,7 @@ fn unpack_into<R: Read + io::Seek>(mut archive: ZipArchive<R>, dir: TempDir) -> 
         let asset_names: Vec<String> = {
             let mut names = Vec::new();
             for index in 0..archive.len() {
-                let name = archive.by_index(index)?.name().to_string();
+                let name = archive.by_index(index)?.name()?.to_string();
                 if name.starts_with(ASSETS_PREFIX) && !name.ends_with('/') {
                     names.push(name);
                 }
@@ -4584,7 +4584,7 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
 
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name.ends_with('/') {
             continue; // a directory record carries no content
         }
@@ -4776,7 +4776,7 @@ fn asset_entry_names<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
     let mut names = BTreeSet::new();
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if !name.starts_with(ASSETS_PREFIX) || name.ends_with('/') {
             continue;
         }
@@ -4809,7 +4809,7 @@ fn extract_asset_entry<R: Read + io::Seek>(
     }
     let mut out = File::create(destination).map_err(|err| io_err(destination, err))?;
     let mut limited = entry.by_ref().take(lim().asset_bytes + 1);
-    let written = io::copy(&mut limited, &mut out).map_err(|err| io_err(destination, err))?;
+    let written = copy_out(&mut limited, &mut out, destination)?;
     if written > lim().asset_bytes {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
@@ -4817,6 +4817,31 @@ fn extract_asset_entry<R: Read + io::Seek>(
         });
     }
     Ok(written)
+}
+
+/// Copy one entry out of the archive, keeping the two ways it can fail apart.
+///
+/// A READ that fails is the archive: an entry whose bytes do not match its
+/// own checksum, or that holds more than its header declares (the zip crate
+/// refuses that itself since 9.0). That is a damaged or forged file, and a
+/// person is told so. A WRITE that fails is this machine -- a full disk, a
+/// folder that cannot be written -- and names the place it was writing.
+/// Before, both read "could not open <a temp path>", which pointed at the
+/// disk for a file that was simply damaged.
+fn copy_out(reader: &mut impl Read, out: &mut File, destination: &Path) -> Result<u64> {
+    let mut buffer = [0u8; 64 * 1024];
+    let mut written = 0_u64;
+    loop {
+        let read = match reader.read(&mut buffer) {
+            Ok(0) => return Ok(written),
+            Ok(read) => read,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(BundleError::Archive(zip::result::ZipError::Io(err))),
+        };
+        out.write_all(&buffer[..read])
+            .map_err(|err| io_err(destination, err))?;
+        written += read as u64;
+    }
 }
 
 fn extract_entry<R: Read + io::Seek>(
@@ -4843,7 +4868,7 @@ fn extract_entry<R: Read + io::Seek>(
     // Copy through a limited reader as well as checking the declared size: a
     // zip header can lie about how large an entry is.
     let mut limited = entry.by_ref().take(lim().entry_bytes + 1);
-    let written = io::copy(&mut limited, &mut out).map_err(|err| io_err(destination, err))?;
+    let written = copy_out(&mut limited, &mut out, destination)?;
     if written > lim().entry_bytes {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
@@ -5347,7 +5372,14 @@ mod tests {
             let file = File::open(&bundle).expect("open zip");
             let mut archive = ZipArchive::new(file).expect("zip");
             (0..archive.len())
-                .map(|i| archive.by_index(i).expect("entry").name().to_string())
+                .map(|i| {
+                    archive
+                        .by_index(i)
+                        .expect("entry")
+                        .name()
+                        .expect("entry name")
+                        .to_string()
+                })
                 .collect()
         };
         assert!(
@@ -5650,7 +5682,7 @@ required = true
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for index in 0..archive.len() {
             let mut existing = archive.by_index(index).expect("entry");
-            let name = existing.name().to_string();
+            let name = existing.name().expect("entry name").to_string();
             let mut existing_bytes = Vec::new();
             existing.read_to_end(&mut existing_bytes).expect("read");
             writer.start_file(name.clone(), options).expect("start");
@@ -5822,7 +5854,7 @@ required = true
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             for index in 0..archive.len() {
                 let mut entry = archive.by_index(index).expect("entry");
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 let mut bytes = Vec::new();
                 entry.read_to_end(&mut bytes).expect("read entry");
                 writer.start_file(name, options).expect("start");
@@ -5868,7 +5900,7 @@ required = true
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             for index in 0..archive.len() {
                 let mut entry = archive.by_index(index).expect("entry");
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 let mut bytes = Vec::new();
                 entry.read_to_end(&mut bytes).expect("read entry");
                 writer.start_file(name, options).expect("start");
@@ -5990,7 +6022,10 @@ required = true
         let bytes = fs::read(&bundle).expect("read");
         let mut archive = ZipArchive::new(io::Cursor::new(&bytes)).expect("open");
         assert_eq!(
-            archive.name_for_index(0),
+            archive
+                .name_for_index(0)
+                .map(|name| name.expect("entry name").into_owned())
+                .as_deref(),
             Some(PROFILE_ENTRY),
             "the profile must be the FIRST entry, so a reader meets it before \
              it parses anything under this version's rules",
@@ -6077,7 +6112,7 @@ required = true
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             for index in 0..archive.len() {
                 let mut entry = archive.by_index(index).expect("entry");
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 if name == PROFILE_ENTRY {
                     continue;
                 }
@@ -6885,7 +6920,7 @@ required = true
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for index in 0..archive.len() {
             let mut existing = archive.by_index(index).expect("entry");
-            let name = existing.name().to_string();
+            let name = existing.name().expect("entry name").to_string();
             let mut bytes = Vec::new();
             existing.read_to_end(&mut bytes).expect("read");
             if let Some(payload) = edit(&name, &bytes) {
@@ -7795,7 +7830,7 @@ required = true
             let local = &bytes[at..at + 30];
             parts.push(format!(
                 "{}[method={:?} flags={:02x}{:02x} time={:02x}{:02x} date={:02x}{:02x} crc={:08x} csize={} size={} extra={} mode={:o} content={}]",
-                entry.name(),
+                entry.name().expect("entry name"),
                 entry.compression(),
                 local[7],
                 local[6],
@@ -7963,7 +7998,11 @@ required = true
         assert_eq!(archive.len(), entries.len());
         for (index, (name, bytes)) in entries.iter().enumerate() {
             let mut entry = archive.by_index(index).unwrap();
-            assert_eq!(entry.name(), *name, "entries keep their order");
+            assert_eq!(
+                entry.name().expect("entry name"),
+                *name,
+                "entries keep their order"
+            );
             let mut body = Vec::new();
             entry.read_to_end(&mut body).unwrap();
             assert_eq!(&body, bytes, "{name}: content round-trips");
@@ -8474,8 +8513,9 @@ required = true
         EXTRACT_ROOT.with(|r| *r.borrow_mut() = None);
 
         assert!(
-            matches!(opened, Err(BundleError::SourceTooLarge { .. })),
-            "the fixture must be refused during extraction"
+            refused_for_forged_size(&opened),
+            "the fixture must be refused during extraction: {:?}",
+            opened.as_ref().err()
         );
 
         let left: Vec<PathBuf> = fs::read_dir(&root)
@@ -8965,15 +9005,41 @@ required = true
         assert_ne!(forged, buf, "the fixture must really declare forged sizes");
         let bundle = dir.path().join("forged.krate");
         fs::write(&bundle, &forged).expect("write");
+        // Refused either way: by Krate counting the bytes it actually wrote,
+        // or -- since zip 9.0 -- by the zip reader itself, which stops an
+        // entry that holds more than its header declares. Krate's count stays
+        // for any reader that does not; the refusal must say "damaged", not
+        // name a temporary folder as if the disk had failed.
+        let opened = open(&bundle);
         assert!(
-            matches!(open(&bundle), Err(BundleError::SourceTooLarge { .. })),
-            "a FORGED size must not get past the source limit"
+            refused_for_forged_size(&opened),
+            "a FORGED size must not get past the source limit: {:?}",
+            opened.as_ref().err()
         );
+        if let Err(err @ BundleError::Archive(_)) = &opened {
+            let words = err.user_message().expect("words for a person");
+            assert!(
+                words.contains("damaged"),
+                "a forged file reads as damaged, not as a disk problem: {words}"
+            );
+        }
     }
 
     /// Rewrite the uncompressed-size field of every `source/` record to 1,
     /// in both the central directory and the local headers, leaving the
     /// compressed bytes alone. No writer produces this; an attacker does.
+    /// A forged-size archive is refused by Krate's own byte count, or by the
+    /// zip reader noticing an entry holds more than it declares.
+    fn refused_for_forged_size(opened: &Result<OpenBundle>) -> bool {
+        match opened {
+            Err(BundleError::SourceTooLarge { .. }) => true,
+            Err(BundleError::Archive(zip::result::ZipError::Io(err))) => {
+                err.kind() == io::ErrorKind::InvalidData
+            }
+            _ => false,
+        }
+    }
+
     fn forge_source_sizes_to_one_byte(input: &[u8]) -> Vec<u8> {
         let mut data = input.to_vec();
         let one = 1u32.to_le_bytes();
@@ -9148,8 +9214,9 @@ required = true
         );
 
         // A file that really is not an archive keeps the old, correct words.
-        let invalid =
-            BundleError::Archive(zip::result::ZipError::InvalidArchive("Invalid zip header"));
+        let invalid = BundleError::Archive(zip::result::ZipError::InvalidArchive(
+            "Invalid zip header".into(),
+        ));
         let message = invalid.user_message().expect("words for a person");
         assert!(
             message.contains("not a Krate app"),
@@ -9993,7 +10060,13 @@ required = true
             let file = File::open(&bundle).expect("open");
             let mut zip = ZipArchive::new(file).expect("zip");
             (0..zip.len())
-                .map(|i| zip.by_index(i).expect("entry").name().to_string())
+                .map(|i| {
+                    zip.by_index(i)
+                        .expect("entry")
+                        .name()
+                        .expect("entry name")
+                        .to_string()
+                })
                 .collect()
         };
         for junk in ["DS_Store", "Thumbs.db", "desktop.ini"] {
@@ -11212,7 +11285,7 @@ required = true
                 DeterministicZip::new(io::BufWriter::new(File::create(&forged).unwrap()));
             for i in 0..archive.len() {
                 let mut entry = archive.by_index(i).unwrap();
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 let mut body = Vec::new();
                 entry.read_to_end(&mut body).unwrap();
                 if name == PROVENANCE_ENTRY {

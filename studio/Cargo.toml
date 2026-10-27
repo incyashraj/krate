@@ -41,7 +41,7 @@ krate-http = { path = "../crates/http" }
 # Verifying the update we downloaded before running it.
 sha2 = "0.10"
 tauri-plugin-notification = "2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 # Detached from the repository workspace on purpose; see the header comment.
 [workspace]
