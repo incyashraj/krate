@@ -149,6 +149,75 @@ function opened() {
   if (report.counted !== undefined) return;
   report.counted = null;
   beacon('open').then((b) => { report.counted = b; });
+  keepLater();
+}
+
+// ------------------------------------------------------------ keep it
+// A phone that used the app for a while is offered a way to keep it: one
+// card, once per app, with the home screen steps for that phone. A home
+// screen app also keeps its own data, which Safari otherwise deletes after
+// seven days without a visit. `?keep_after=<ms>` shortens the wait for proofs.
+let installPrompt = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+const KEEP_AFTER = (() => {
+  const n = Number(new URLSearchParams(location.search).get('keep_after'));
+  return Number.isFinite(n) && n >= 0 && n <= 120000 && new URLSearchParams(location.search).has('keep_after') ? n : 30000;
+})();
+const SHARE_GLYPH = '<svg viewBox="0 0 24 24" aria-label="Share"><path d="M12 15V3.5M8 7.5l4-4 4 4M6.5 11H5.5v9.5h13V11h-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function keepKey() { return `krate-kept:${(report.install && report.install.base) || HASH}`; }
+function keepLater() {
+  report.keep = { offered: false };
+  if (!PHONE || standalone() || !report.install) return;
+  try { if (localStorage.getItem(keepKey())) { report.keep.already = true; return; } } catch { /* private mode: offer it */ }
+  setTimeout(showKeep, KEEP_AFTER);
+}
+function keepDone(how) {
+  $('keep').hidden = true;
+  report.keep.answer = how;
+  try { localStorage.setItem(keepKey(), how); } catch { /* nothing to remember it in */ }
+}
+function showKeep() {
+  if (document.visibilityState !== 'visible' || !$('reportSheet').hidden || !$('notice').hidden) {
+    // Not now: the person is looking elsewhere or reading something else.
+    setTimeout(showKeep, 15000);
+    return;
+  }
+  const name = report.install.name || 'this app';
+  $('keepTitle').textContent = `Keep ${name}`;
+  const icon = document.querySelector('link[rel="apple-touch-icon"]');
+  if (icon) $('keepIcon').src = icon.href; else $('keepIcon').hidden = true;
+  const how = $('keepHow');
+  if (installPrompt) {
+    how.textContent = 'It opens like an app, without the browser around it.';
+    $('keepAdd').hidden = false;
+    report.keep.kind = 'prompt';
+  } else if (isIos()) {
+    how.innerHTML = `Tap ${SHARE_GLYPH} Share, then <b>Add to Home Screen</b>.`;
+    report.keep.kind = 'ios';
+  } else {
+    how.innerHTML = 'Open your browser\'s menu, then <b>Add to Home screen</b>.';
+    report.keep.kind = 'menu';
+  }
+  $('keep').hidden = false;
+  report.keep.offered = true;
+}
+$('keepAdd').onclick = async () => {
+  if (!installPrompt) return keepDone('added');
+  installPrompt.prompt();
+  const choice = await installPrompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
+  installPrompt = null;
+  keepDone(choice.outcome === 'accepted' ? 'added' : 'not-now');
+};
+$('keepClose').onclick = () => keepDone('not-now');
+addEventListener('appinstalled', () => { if (report.keep) keepDone('added'); });
+
+/// Ask the browser to keep what the app stores. Granted quietly by Chrome
+/// for a site the person uses, and by Safari for a home screen app.
+function keepData() {
+  if (!navigator.storage || !navigator.storage.persist) return;
+  navigator.storage.persist().then((ok) => { report.persisted = ok; }).catch(() => { report.persisted = false; });
 }
 function madeWith(teamApp) {
   if (teamApp || !HASH) return;
@@ -587,6 +656,7 @@ async function loadKv(d, store) {
 async function start({ meta, modules, glue, granted, storeKey, playerModule, world, name, org }) {
   const gui = /\/gui@/.test(world || '');
   const d = gui || granted.includes('store.kv') ? await db().catch(() => null) : null;
+  if (d && granted.includes('store.kv')) keepData();
   const team = granted.includes('store.org') ? await openTeam(org, gui).catch((e) => {
     report.teamError = String((e && e.message) || e);
     return { mode: 'unsupported' };

@@ -11,7 +11,9 @@
 //   - "Made with Krate / Make your own" is under the app, linking to Studio
 //     with the app's hash, and pressing it is counted;
 //   - Report sends with no account and lands in the hub's record;
-//   - a phone is never told "your computer".
+//   - a phone is never told "your computer";
+//   - a phone that used the app is offered a way to keep it, once, with
+//     the steps for that phone, and the app's data is asked to stay.
 // PLAYWRIGHT_MODULE and CHROMIUM may point at a playwright-core and a
 // browser already on the machine.
 import http from 'node:http';
@@ -109,6 +111,37 @@ for (const [label, viewport, ua] of [['desktop', { width: 1280, height: 800 }, u
     check(/It runs in this tab and stops when you close it\./.test(consent), '[phone] the card says it runs in this tab and stops when it is closed', consent.slice(0, 300));
   }
   env._kv.delete(`app-report:${hash}`);
+  await context.close();
+}
+// Keep it: a phone, after use (shortened by ?keep_after), sees one card with
+// its own steps; saying not now is remembered; a computer never sees it.
+for (const [label, viewport, ua] of [['phone', { width: 375, height: 812 }, IPHONE], ['desktop', { width: 1280, height: 800 }, undefined]]) {
+  const context = await browser.newContext({ viewport, userAgent: ua, isMobile: Boolean(ua), hasTouch: Boolean(ua) });
+  const page = await context.newPage();
+  const open = async () => {
+    await page.goto(`${base}/run/${hash}?keep_after=400`);
+    await page.waitForFunction(() => window.__krate && window.__krate.state === 'consent', null, { timeout: 30000 }).catch(() => {});
+    await page.click('#consentAllow');
+    await page.waitForFunction(() => window.__krate.frames > 0 && window.__krate.keep, null, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    return page.evaluate(() => {
+      const k = document.getElementById('keep'), r = k.getBoundingClientRect(), m = document.getElementById('made').getBoundingClientRect();
+      return { shown: !k.hidden, text: k.innerText, keep: window.__krate.keep, persisted: window.__krate.persisted, bottom: r.bottom, madeTop: m.top, left: r.left, right: r.right, width: innerWidth };
+    });
+  };
+  const first = await open();
+  if (label === 'phone') {
+    check(first.shown && first.keep.kind === 'ios' && /Keep Budget Splitter/.test(first.text) && /Share, then Add to Home Screen/.test(first.text),
+      '[phone] after use, one card says how to keep the app on this phone', first);
+    check(first.bottom <= first.madeTop + 0.5 && first.left >= 0 && first.right <= first.width, '[phone] the card sits above the Made with line and inside the screen', first);
+    check(typeof first.persisted === 'boolean', "[phone] the app's data is asked to stay", first.persisted);
+    if (shots) await page.screenshot({ path: join(shots, 'receive-proof-keep.png') });
+    await page.click('#keepClose');
+    const second = await open();
+    check(!second.shown && second.keep.already, '[phone] Not now is remembered: the card does not come back', second);
+  } else {
+    check(!first.shown && !first.keep.offered, '[desktop] a computer is not offered a home screen', first);
+  }
   await context.close();
 }
 await browser.close();

@@ -121,6 +121,16 @@ img { display: block; }
 .notice .x:hover { background: var(--s2); }
 
 /* Made with Krate, under the app: one quiet line that never covers it. */
+/* Keep it: one quiet card above the Made with line, on a phone, after use. */
+.keep { position: fixed; z-index: 6; left: 50%; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(440px, calc(100% - 24px)); display: flex; align-items: center; gap: 12px; padding: 10px 8px 10px 10px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-2), 0 0 0 1px var(--line); font-size: 13.5px; color: var(--ink-2); animation: keep-in .45s cubic-bezier(.22, .8, .24, 1) both; }
+.keep .kicon { flex: none; width: 40px; height: 40px; border-radius: 10px; }
+.keep .kwords { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.keep .kwords b { font-weight: 600; color: var(--ink); }
+.keep .kwords svg { display: inline-block; width: 15px; height: 15px; vertical-align: -2px; margin: 0 1px; color: var(--ink); }
+.keep .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; color: var(--ink-3); }
+.keep .x:hover { background: var(--s2); }
+@keyframes keep-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .keep { animation: none; } }
 .made { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; height: calc(40px + env(safe-area-inset-bottom, 0px)); padding: 0 max(16px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(16px, env(safe-area-inset-left, 0px)); font-size: 13px; color: var(--ink-3); }
 body.has-made #stage { padding-bottom: 4px; }
 .made .mk { min-width: 0; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px 0 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow .2s, color .2s; }
