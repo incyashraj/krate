@@ -1,0 +1,11 @@
+name = "open a contact's record"
+# The app's primary task, as a person does it: pick a contact and read the
+# row it is stored in. check-app runs these steps after the usability checks.
+[[step]]
+expect_text = "Row 1"
+[[step]]
+click = "Grace Hopper"
+[[step]]
+expect_text = "Row 3"
+[[step]]
+expect_no_text = "Row 1"

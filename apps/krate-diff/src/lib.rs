@@ -12,6 +12,10 @@
 //! when line numbers change width, two independently clipped columns, and
 //! several hundred short strings a frame without the layout drifting.
 //!
+//! It lays itself out from the canvas it really has: a desktop window gets
+//! the rail and two columns, a phone one column, the way a phone shows a
+//! diff.
+//!
 //! The change shown is a fixed sample so the first frame is the same on
 //! every machine. A real one reads the two sides through `fs.read`, which is
 //! why the capability is declared: the point is that a reviewer's app needs
@@ -31,6 +35,7 @@ extern crate alloc;
 use alloc::string::String;
 use krate::gfx::{canvas2d, types as gfx};
 use krate::bindings::krate::io::{args, stdio};
+use krate::layout::{Look, Rect, Said};
 use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
@@ -221,138 +226,326 @@ const CODE: f32 = 12.5;
 /// The line-number gutter. Wide enough for four digits so the code does not
 /// shift sideways when a file passes line 999.
 const GUTTER: f32 = 42.0;
+/// Below this width the file rail and a second column cannot both be read,
+/// so the change is shown as one column, the way a phone shows a diff.
+const SPLIT_MIN: f32 = 900.0;
 
-fn draw(canvas: u64) -> Result<(), gfx::GfxError> {
+/// One frame being drawn: the canvas, the person's text size (every font
+/// size and every row height goes through `t`), and what the screen reader
+/// will be told it shows.
+struct Frame {
+    canvas: u64,
+    t: f32,
+    said: Said,
+}
+
+impl Frame {
+    fn pt(&self, points: f32) -> f32 {
+        points * self.t
+    }
+
+    /// Draw `s` at most `room` wide: the longest leading part that fits,
+    /// then an ellipsis. A line cut short reads as "there is more"; a line
+    /// running over the next column reads as a broken app. Every string
+    /// here is ASCII.
+    fn fit(&self, s: &str, x: f32, y: f32, size: f32, c: gfx::Color, room: f32) {
+        if room <= 0.0 {
+            return;
+        }
+        if width_of(self.canvas, s, size) <= room {
+            text(self.canvas, s, x, y, size, c);
+            return;
+        }
+        let ell = width_of(self.canvas, "…", size);
+        let (mut lo, mut hi) = (0usize, s.len());
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2;
+            if width_of(self.canvas, s.get(..mid).unwrap_or(""), size) + ell <= room {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        let part = s.get(..lo).unwrap_or("").trim_end();
+        text(self.canvas, part, x, y, size, c);
+        text(self.canvas, "…", x + width_of(self.canvas, part, size), y, size, c);
+    }
+
+    fn card(&self, x: f32, y: f32, w: f32, h: f32, fill_c: gfx::Color) -> Result<(), gfx::GfxError> {
+        rounded(self.canvas, x, y, w, h, 14.0, fill_c)?;
+        canvas2d::stroke_round_rect(
+            self.canvas,
+            gfx::Rect { x, y, width: w, height: h },
+            gfx::CornerRadii { top_left: 14.0, top_right: 14.0, bottom_right: 14.0, bottom_left: 14.0 },
+            1.0,
+            CARD_EDGE,
+        )
+    }
+
+    /// Tell the screen reader one row: what kind of line it is, then the
+    /// line itself, as one phrase.
+    fn say_row(&mut self, at: Rect, kind: Kind, line: &str) {
+        let lead = match kind {
+            Add => "added: ",
+            Del => "removed: ",
+            Hunk => "section: ",
+            Same => "",
+        };
+        let mut buf = [0u8; 160];
+        let mut n = 0usize;
+        for part in [lead, line] {
+            for byte in part.bytes() {
+                if n < buf.len() {
+                    buf[n] = byte;
+                    n += 1;
+                }
+            }
+        }
+        let phrase = core::str::from_utf8(buf.get(..n).unwrap_or(&[])).unwrap_or(line);
+        self.said.text(at, phrase);
+    }
+}
+
+/// Laid out from the canvas the app really has, every frame: a desktop
+/// window gets the file rail and two columns, a phone one column. Text
+/// follows the person's text size.
+fn draw(canvas: u64, win: u64) -> Result<(), gfx::GfxError> {
+    let size = canvas2d::canvas_size(canvas).unwrap_or(gfx::Size { width: WIDTH, height: HEIGHT });
+    let w = size.width.max(1.0);
+    let h = size.height.max(1.0);
+    let mut f = Frame { canvas, t: Look::now().text_scale.clamp(0.8, 2.4), said: Said::new() };
+    let narrow = w < SPLIT_MIN;
+    let margin = if narrow { 14.0 } else { MARGIN };
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect { x: 0.0, y: 0.0, width: w, height: h },
         BG_TOP,
         BG_BOT,
     )?;
 
     // ---- the head -----------------------------------------------------------
-    text(canvas, "Narrow a wildcard grant to its scope", MARGIN, 44.0, 18.0, INK);
+    let title_size = f.pt(if narrow { 16.0 } else { 18.0 });
+    let title_y = 20.0 + title_size * 1.3;
+    let title = "Narrow a wildcard grant to its scope";
+    f.fit(title, margin, title_y, title_size, INK, w - 2.0 * margin);
+    f.said.heading(Rect::new(margin, title_y - title_size, w - 2.0 * margin, title_size * 1.3), title);
+    let small = f.pt(12.0);
+    let meta_y = title_y + small * 2.0;
     let mut b = [0u8; 12];
-    text(canvas, "6 files", MARGIN, 68.0, 12.0, INK_QUIET);
-    let mut x = MARGIN + width_of(canvas, "6 files", 12.0) + 14.0;
-    text(canvas, signed(&mut b, b'+', 79), x, 68.0, 12.0, ADD_INK);
-    x += width_of(canvas, "+79", 12.0) + 10.0;
+    text(canvas, "6 files", margin, meta_y, small, INK_QUIET);
+    let mut x = margin + width_of(canvas, "6 files", small) + 14.0;
+    text(canvas, signed(&mut b, b'+', 79), x, meta_y, small, ADD_INK);
+    x += width_of(canvas, "+79", small) + 10.0;
     let mut b2 = [0u8; 12];
-    text(canvas, signed(&mut b2, b'-', 9), x, 68.0, 12.0, DEL_INK);
-    text_right(canvas, "reviewing locally -- nothing left this machine", WIDTH - MARGIN, 68.0, 12.0, INK_QUIET);
+    text(canvas, signed(&mut b2, b'-', 9), x, meta_y, small, DEL_INK);
+    x += width_of(canvas, "-9", small) + 18.0;
+    f.said.text(Rect::new(margin, meta_y - small, x - margin, small * 1.4), "6 files, 79 lines added, 9 removed");
+    let note = "reviewing locally -- nothing left this machine";
+    if w - margin - x >= width_of(canvas, note, small) {
+        text_right(canvas, note, w - margin, meta_y, small, INK_QUIET);
+        f.said.text(Rect::new(w - margin - width_of(canvas, note, small), meta_y - small, width_of(canvas, note, small), small * 1.4), note);
+    }
 
-    let body_y = 88.0;
-    let body_h = HEIGHT - body_y - MARGIN;
+    let body_y = meta_y + small + 8.0;
+    let body_h = h - body_y - margin;
+    if body_h > 60.0 {
+        if narrow {
+            draw_unified(&mut f, margin, body_y, w - 2.0 * margin, body_h)?;
+        } else {
+            draw_split(&mut f, w, body_y, body_h)?;
+        }
+    }
+    canvas2d::present(canvas)?;
+    f.said.send(win);
+    Ok(())
+}
 
+/// The desktop layout: the file rail, then the change as two columns.
+fn draw_split(f: &mut Frame, w: f32, body_y: f32, body_h: f32) -> Result<(), gfx::GfxError> {
+    let canvas = f.canvas;
     // ---- the file rail ------------------------------------------------------
-    rounded(canvas, MARGIN, body_y, RAIL_W, body_h, 14.0, RAIL_BG)?;
-    canvas2d::stroke_round_rect(
-        canvas,
-        gfx::Rect { x: MARGIN, y: body_y, width: RAIL_W, height: body_h },
-        gfx::CornerRadii { top_left: 14.0, top_right: 14.0, bottom_right: 14.0, bottom_left: 14.0 },
-        1.0,
-        CARD_EDGE,
-    )?;
-    text(canvas, "FILES", MARGIN + 16.0, body_y + 26.0, 10.5, INK_QUIET);
+    let rail_w = RAIL_W * f.t.max(1.0);
+    f.card(MARGIN, body_y, rail_w, body_h, RAIL_BG)?;
+    let label = f.pt(10.5);
+    text(canvas, "FILES", MARGIN + 16.0, body_y + 26.0, label, INK_QUIET);
+    let name_size = f.pt(13.0);
+    let row_h = 46.0 * f.t;
 
-    for (i, f) in FILES.iter().enumerate() {
-        let ry = body_y + 42.0 + i as f32 * 46.0;
-        if f.3 {
-            rounded(canvas, MARGIN + 8.0, ry - 2.0, RAIL_W - 16.0, 40.0, 8.0, SEL)?;
+    for (i, file) in FILES.iter().enumerate() {
+        let ry = body_y + 42.0 + i as f32 * row_h;
+        if ry + row_h > body_y + body_h {
+            break;
+        }
+        if file.3 {
+            rounded(canvas, MARGIN + 8.0, ry - 2.0, rail_w - 16.0, row_h - 6.0, 8.0, SEL)?;
         }
         // The path, tail-first: a reviewer scans file names, not directories,
         // and the directory is only there to disambiguate.
-        let name = match f.0.rfind('/') {
-            Some(i) => &f.0[i + 1..],
-            None => f.0,
-        };
-        let dir = match f.0.rfind('/') {
-            Some(i) => &f.0[..i],
-            None => "",
-        };
-        text(canvas, name, MARGIN + 18.0, ry + 14.0, 13.0, if f.3 { INK } else { INK_DIM });
-        text(canvas, dir, MARGIN + 18.0, ry + 30.0, 10.5, INK_QUIET);
-
+        let (dir, name) = split_path(file.0);
         let mut ab = [0u8; 12];
         let mut db = [0u8; 12];
-        let a = signed(&mut ab, b'+', f.1);
-        let aw = width_of(canvas, a, 10.5);
-        let d = signed(&mut db, b'-', f.2);
-        let dw = width_of(canvas, d, 10.5);
-        let right = MARGIN + RAIL_W - 16.0;
-        text(canvas, d, right - dw, ry + 14.0, 10.5, DEL_INK);
-        text(canvas, a, right - dw - 8.0 - aw, ry + 14.0, 10.5, ADD_INK);
+        let a = signed(&mut ab, b'+', file.1);
+        let aw = width_of(canvas, a, label);
+        let d = signed(&mut db, b'-', file.2);
+        let dw = width_of(canvas, d, label);
+        let right = MARGIN + rail_w - 16.0;
+        let name_y = ry + name_size * 1.1;
+        f.fit(name, MARGIN + 18.0, name_y, name_size, if file.3 { INK } else { INK_DIM }, rail_w - 52.0 - aw - dw);
+        f.fit(dir, MARGIN + 18.0, name_y + label * 1.5, label, INK_QUIET, rail_w - 36.0);
+        text(canvas, d, right - dw, name_y, label, DEL_INK);
+        text(canvas, a, right - dw - 8.0 - aw, name_y, label, ADD_INK);
+        f.said.button(Rect::new(MARGIN + 8.0, ry - 2.0, rail_w - 16.0, row_h - 6.0), file.0);
     }
 
     // ---- the diff -----------------------------------------------------------
-    let dx = MARGIN + RAIL_W + 14.0;
-    let dw = WIDTH - MARGIN - dx;
-    rounded(canvas, dx, body_y, dw, body_h, 14.0, CARD)?;
-    canvas2d::stroke_round_rect(
-        canvas,
-        gfx::Rect { x: dx, y: body_y, width: dw, height: body_h },
-        gfx::CornerRadii { top_left: 14.0, top_right: 14.0, bottom_right: 14.0, bottom_left: 14.0 },
-        1.0,
-        CARD_EDGE,
-    )?;
+    let dx = MARGIN + rail_w + 14.0;
+    let dw = w - MARGIN - dx;
+    f.card(dx, body_y, dw, body_h, CARD)?;
 
     // Two columns, split down the middle, each with its own gutter. The split
     // is a real line: without it the eye cannot tell which side it is on.
     let col_w = (dw - 2.0) / 2.0;
     let right_x = dx + col_w + 2.0;
+    let gutter = GUTTER * f.t.max(1.0);
+    let code_room = col_w - gutter - 24.0;
     fill(canvas, dx + col_w, body_y + 40.0, 1.0, body_h - 40.0, HAIRLINE)?;
 
-    text(canvas, "BEFORE", dx + GUTTER + 14.0, body_y + 26.0, 10.5, INK_QUIET);
-    text(canvas, "AFTER", right_x + GUTTER + 14.0, body_y + 26.0, 10.5, INK_QUIET);
+    text(canvas, "BEFORE", dx + gutter + 14.0, body_y + 26.0, label, INK_QUIET);
+    text(canvas, "AFTER", right_x + gutter + 14.0, body_y + 26.0, label, INK_QUIET);
     fill(canvas, dx + 1.0, body_y + 39.0, dw - 2.0, 1.0, HAIRLINE)?;
 
-    let first = body_y + 60.0;
+    let lead = LEAD * f.t;
+    let code = f.pt(CODE);
+    let num = f.pt(11.0);
+    let first = body_y + 40.0 + lead;
     // Only whole rows: a clipped half-line at the bottom is the clearest tell
     // that this is a picture rather than a viewport.
     let room = body_h - (first - body_y) - 14.0;
-    let max_rows = if room > 0.0 { (room / LEAD) as usize } else { 0 };
+    let max_rows = if room > 0.0 { (room / lead) as usize + 1 } else { 0 };
 
     for (i, r) in ROWS.iter().enumerate() {
         if i >= max_rows {
             break;
         }
-        let y = first + i as f32 * LEAD;
+        let y = first + i as f32 * lead;
+        let top = y - lead * 0.68;
+        f.say_row(Rect::new(dx, top, dw, lead), r.2, r.3);
 
         if r.2 == Hunk {
             // The hunk header spans both columns: it belongs to neither side.
-            fill(canvas, dx + 1.0, y - 14.0, dw - 2.0, LEAD, HUNK_BED)?;
-            text(canvas, r.3, dx + GUTTER + 14.0, y, CODE, HUNK_INK);
+            fill(canvas, dx + 1.0, top, dw - 2.0, lead, HUNK_BED)?;
+            f.fit(r.3, dx + gutter + 14.0, y, code, HUNK_INK, dw - gutter - 28.0);
             continue;
         }
 
         // Left side: everything except an addition.
         if r.2 != Add {
-            let bed = if r.2 == Del { Some(DEL_BED) } else { None };
-            if let Some(c) = bed {
-                fill(canvas, dx + 1.0, y - 14.0, col_w - 1.0, LEAD, c)?;
-                fill(canvas, dx + 1.0, y - 14.0, 2.5, LEAD, DEL_INK)?;
+            if r.2 == Del {
+                fill(canvas, dx + 1.0, top, col_w - 1.0, lead, DEL_BED)?;
+                fill(canvas, dx + 1.0, top, 2.5, lead, DEL_INK)?;
             }
             let mut nb = [0u8; 12];
-            text_right(canvas, uint(&mut nb, r.0), dx + GUTTER, y, 11.0, INK_QUIET);
+            text_right(canvas, uint(&mut nb, r.0), dx + gutter, y, num, INK_QUIET);
             let ink = if r.2 == Del { DEL_INK } else { INK_DIM };
-            text(canvas, r.3, dx + GUTTER + 14.0, y, CODE, ink);
+            f.fit(r.3, dx + gutter + 14.0, y, code, ink, code_room);
         }
 
         // Right side: everything except a deletion.
         if r.2 != Del {
-            let bed = if r.2 == Add { Some(ADD_BED) } else { None };
-            if let Some(c) = bed {
-                fill(canvas, right_x, y - 14.0, col_w - 1.0, LEAD, c)?;
-                fill(canvas, right_x, y - 14.0, 2.5, LEAD, ADD_INK)?;
+            if r.2 == Add {
+                fill(canvas, right_x, top, col_w - 1.0, lead, ADD_BED)?;
+                fill(canvas, right_x, top, 2.5, lead, ADD_INK)?;
             }
             let mut nb = [0u8; 12];
-            text_right(canvas, uint(&mut nb, r.1), right_x + GUTTER, y, 11.0, INK_QUIET);
+            text_right(canvas, uint(&mut nb, r.1), right_x + gutter, y, num, INK_QUIET);
             let ink = if r.2 == Add { ADD_INK } else { INK_DIM };
-            text(canvas, r.3, right_x + GUTTER + 14.0, y, CODE, ink);
+            f.fit(r.3, right_x + gutter + 14.0, y, code, ink, code_room);
         }
     }
+    Ok(())
+}
 
-    canvas2d::present(canvas)
+/// The phone layout: the file being read named at the top of one card, and
+/// the change as one column, old and new line numbers side by side, the way
+/// `git diff` prints it.
+fn draw_unified(f: &mut Frame, x: f32, y: f32, w: f32, h: f32) -> Result<(), gfx::GfxError> {
+    let canvas = f.canvas;
+    f.card(x, y, w, h, CARD)?;
+    let Some(selected) = FILES.iter().find(|file| file.3).or(FILES.first()) else {
+        return Ok(());
+    };
+    let small = f.pt(11.0);
+    let head_y = y + 14.0 + small * 1.2;
+    let mut ab = [0u8; 12];
+    let mut db = [0u8; 12];
+    let a = signed(&mut ab, b'+', selected.1);
+    let d = signed(&mut db, b'-', selected.2);
+    let dw = width_of(canvas, d, small);
+    let aw = width_of(canvas, a, small);
+    let right = x + w - 14.0;
+    text(canvas, d, right - dw, head_y, small, DEL_INK);
+    text(canvas, a, right - dw - 8.0 - aw, head_y, small, ADD_INK);
+    let (_, name) = split_path(selected.0);
+    let name_size = f.pt(12.5);
+    f.fit(name, x + 14.0, head_y, name_size, INK, w - 28.0 - dw - aw - 16.0);
+    f.said.heading(Rect::new(x, y, w, head_y - y + 8.0), selected.0);
+    let line_y = head_y + 12.0;
+    fill(canvas, x + 1.0, line_y, w - 2.0, 1.0, HAIRLINE)?;
+
+    let lead = 20.0 * f.t;
+    let code = f.pt(11.5);
+    let num = f.pt(10.0);
+    let num_w = width_of(canvas, "99", num) + 8.0;
+    let old_x = x + 8.0 + num_w;
+    let new_x = old_x + 6.0 + num_w;
+    let code_x = new_x + 12.0;
+    let code_room = x + w - 10.0 - code_x;
+    let first = line_y + lead;
+    let room = y + h - 10.0 - first;
+    let max_rows = if room > 0.0 { (room / lead) as usize + 1 } else { 0 };
+
+    for (i, r) in ROWS.iter().enumerate() {
+        if i >= max_rows {
+            break;
+        }
+        let ry = first + i as f32 * lead;
+        let top = ry - lead * 0.68;
+        f.say_row(Rect::new(x, top, w, lead), r.2, r.3);
+        let (bed, stripe, ink) = match r.2 {
+            Hunk => (Some(HUNK_BED), None, HUNK_INK),
+            Add => (Some(ADD_BED), Some(ADD_INK), ADD_INK),
+            Del => (Some(DEL_BED), Some(DEL_INK), DEL_INK),
+            Same => (None, None, INK_DIM),
+        };
+        if let Some(c) = bed {
+            fill(canvas, x + 1.0, top, w - 2.0, lead, c)?;
+        }
+        if let Some(c) = stripe {
+            fill(canvas, x + 1.0, top, 2.5, lead, c)?;
+        }
+        if r.2 == Hunk {
+            f.fit(r.3, x + 12.0, ry, code, ink, w - 24.0);
+            continue;
+        }
+        let mut ob = [0u8; 12];
+        let mut nb = [0u8; 12];
+        if r.0 > 0 {
+            text_right(canvas, uint(&mut ob, r.0), old_x, ry, num, INK_QUIET);
+        }
+        if r.1 > 0 {
+            text_right(canvas, uint(&mut nb, r.1), new_x, ry, num, INK_QUIET);
+        }
+        f.fit(r.3, code_x, ry, code, ink, code_room);
+    }
+    Ok(())
+}
+
+/// `crates/policy/src/lib.rs` as (`crates/policy/src`, `lib.rs`).
+fn split_path(path: &str) -> (&str, &str) {
+    match path.rfind('/') {
+        Some(i) => (path.get(..i).unwrap_or(""), path.get(i + 1..).unwrap_or(path)),
+        None => ("", path),
+    }
 }
 
 // ---- widget scaffolding -----------------------------------------------------
@@ -411,7 +604,6 @@ impl krate::Guest for Component {
                 return 33;
             }
         };
-        let _ = canvas2d::set_design_size(canvas, gfx::Size { width: WIDTH, height: HEIGHT });
 
         let raw = args::raw();
         let quick = raw
@@ -420,7 +612,7 @@ impl krate::Guest for Component {
             .next()
             .is_some_and(|first| first == b"quick");
 
-        let _ = draw(canvas);
+        let _ = draw(canvas, win);
 
         if quick {
             let out = stdio::stdout();
@@ -433,8 +625,8 @@ impl krate::Guest for Component {
         for _ in 0..MAX_WAIT_ROUNDS {
             match events::wait(Some(WAIT_ROUND_MILLIS)) {
                 Some(types::Event::CloseRequested(id)) if id == win => break,
-                Some(types::Event::Resized(_)) => {
-                    let _ = draw(canvas);
+                Some(types::Event::Resized(_)) | Some(types::Event::ThemeChanged(_)) => {
+                    let _ = draw(canvas, win);
                 }
                 _ => {}
             }
