@@ -247,7 +247,7 @@
     if (sub && changed) {
       sub.textContent = mode === "port" ? "Krate reads it first and tells you what the port would take."
         : mode === "ide" ? "Edit a Krate project yourself, with your AI one keystroke away."
-        : "Describe it. Krate turns it into one small file that opens on every desktop.";
+        : "Describe it. Send the link, and it opens on any phone or computer.";
       sub.classList.remove("kr-swap"); void sub.offsetWidth; sub.classList.add("kr-swap");
     }
     document.dispatchEvent(new CustomEvent("kr-home-mode", { detail: mode }));
@@ -1688,7 +1688,7 @@
       <button type="button" class="kr-x" data-close title="Close" aria-label="Close">${ico("x")}</button></div>
     <div class="kr-shfile"><span class="kr-shic"><img src="krate-logo.png" alt=""></span><span class="kr-sht"><b data-f></b><small data-s></small></span><em data-v hidden></em></div>
     <div class="kr-ways" role="tablist">
-      <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Anyone with it can open the app</small></button>
+      <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Opens in any browser, phone or computer</small></button>
       <button type="button" class="kr-way" data-w="file" role="tab" style="--c:#7c5ce8"><i>${ico("file")}</i><b>Send the file</b><small>Email, a chat, a USB stick</small></button>
       <button type="button" class="kr-way" data-w="pub" role="tab" style="--c:#22a35a"><i>${ico("globe")}</i><b>Publish</b><small>List it in the public gallery</small></button>
       <button type="button" class="kr-way" data-w="org" role="tab" style="--c:#d97706" hidden><i>${ico("shield")}</i><b>Send for approval</b><small data-orgsub>To your organisation</small></button>
@@ -1697,7 +1697,7 @@
     <div class="kr-wp" data-w="file"></div>
     <div class="kr-wp" data-w="pub"></div>
     <div class="kr-wp" data-w="org"></div>
-    <p class="kr-shnote">${ico("info")}<span>New to Krate? They install it once, like a video player.</span></p>
+    <p class="kr-shnote">${ico("info")}<span>New to Krate? Send the link: it opens in their browser, with nothing to install.</span></p>
   </div>`;
   document.body.appendChild(shareWrap);
   let shareApp = null, shareVer = null;
@@ -1776,7 +1776,7 @@
         <div class="kr-shacts"><button type="button" class="btn kr-dark" data-dl>${ico("down")}Download the file</button></div>
         <div class="kr-new" data-gift hidden><b>For someone new to Krate</b><small>One file with Krate inside: it installs once, then opens the app.</small>
         <div class="kr-os"><button type="button" class="btn kr-ghost" data-os="mac">Mac</button><button type="button" class="btn kr-ghost" data-os="linux">Linux</button></div>
-        <p class="kr-shst" data-wst>Windows: send the link. They get Krate once, then it opens.</p></div>`;
+        <p class="kr-shst" data-wst>Windows: send the link. It opens in their browser.</p></div>`;
       q("[data-dl]", pane).addEventListener("click", () => press($("filesSave")));
       const giftBox = q("[data-gift]", pane), wst = q("[data-wst]", pane);
       qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
@@ -1987,7 +1987,7 @@
         <div class="kr-pv-a"><p class="kr-pv-q">What are we <em>building</em>?</p><div class="kr-pv-cmp"><span class="kr-pv-tx"></span><span class="kr-pv-car"></span><span class="kr-pv-go">${ico("up")}</span></div></div>
         <div class="kr-pv-b"><div class="kr-pv-card"><div class="kr-pv-th"><svg viewBox="14 30 132 126">${[1, 2, 3].map((n) => { const y = [0, 104, 84, 64][n]; return `<g class="kr-sl kr-s${n}"><path class="l" d="M28 ${y} L80 ${y + 26} L80 ${y + 41} L28 ${y + 15}Z"/><path class="r" d="M80 ${y + 26} L132 ${y} L132 ${y + 15} L80 ${y + 41}Z"/><path class="t" d="M28 ${y} L80 ${y - 26} L132 ${y} L80 ${y + 26}Z"/></g>`; }).join("")}</svg></div>
           <div class="kr-pv-nm"><b>Weather</b><small>Writing the app</small></div></div></div>
-        <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens on every desktop</small></div></div>
+        <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens from a link</small></div></div>
       </div></div></div>
     <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots"><i class="on"></i><i></i><i></i></span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
   </div>`;
@@ -2764,7 +2764,7 @@
     if (galRoot || !galView) return galRoot;
     const main = q("main.cloud", galView);
     galRoot = document.createElement("div"); galRoot.className = "kr-gal";
-    galRoot.innerHTML = `<div class="kr-galh"><div><h1>Gallery</h1><p>Apps people made with Krate and shared. Each one is a single file that opens on every desktop.</p></div>
+    galRoot.innerHTML = `<div class="kr-galh"><div><h1>Gallery</h1><p>Apps people made with Krate and shared. Each one opens from a link, in a browser or on a computer.</p></div>
         <label class="kr-find kr-galq">${ico("search")}<input type="search" placeholder="Search apps" aria-label="Search the gallery" autocomplete="off" spellcheck="false"></label></div>
       <div class="kr-galbar"><div class="kr-cats" role="tablist"></div><div class="kr-sorts" role="tablist"><button type="button" data-s="pop" class="on">Popular</button><button type="button" data-s="new">New</button><button type="button" data-s="small">Smallest</button></div></div>
       <div class="kr-galbody"></div>`;

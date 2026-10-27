@@ -4,23 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Run an AI-built app safely: see what it can touch | Krate</title>
-<meta name="description" content="A Krate app starts with no file or network access; the runtime shows what it asks for before it runs. Permissions limit access, not mistakes in the code.">
+<meta name="description" content="A Krate app starts with no access to your files or the network. Before it opens, you see exactly what it asks for and decide.">
 <link rel="canonical" href="https://krate.tech/run-ai-generated-code-safely.html">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Krate">
 <meta property="og:title" content="Run an AI-built app safely: see what it can touch | Krate">
-<meta property="og:description" content="A Krate app starts with no file or network access; the runtime shows what it asks for before it runs. Permissions limit access, not mistakes in the code.">
+<meta property="og:description" content="A Krate app starts with no access to your files or the network. Before it opens, you see exactly what it asks for and decide.">
 <meta property="og:url" content="https://krate.tech/run-ai-generated-code-safely.html">
-<meta property="og:image" content="https://krate.tech/og-v4.png">
-<meta property="og:image:alt" content="Krate desktop application runtime">
+<meta property="og:image" content="https://krate.tech/og-v5.png">
+<meta property="og:image:alt" content="Krate: make and send apps like pictures">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Run an AI-built app safely: see what it can touch | Krate">
-<meta name="twitter:description" content="A Krate app starts with no file or network access; the runtime shows what it asks for before it runs. Permissions limit access, not mistakes in the code.">
-<meta name="twitter:image" content="https://krate.tech/og-v4.png">
+<meta name="twitter:description" content="A Krate app starts with no access to your files or the network. Before it opens, you see exactly what it asks for and decide.">
+<meta name="twitter:image" content="https://krate.tech/og-v5.png">
 <link rel="icon" href="/krate-favicon.png">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/run-ai-generated-code-safely.html#webpage", "url": "https://krate.tech/run-ai-generated-code-safely.html", "name": "Run an AI-built app safely: see what it can touch | Krate", "description": "A Krate app starts with no file or network access; the runtime shows what it asks for before it runs. Permissions limit access, not mistakes in the code.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-06", "mainEntity": [{"@type": "Question", "name": "Where does an app keep its data?", "acceptedAnswer": {"@type": "Answer", "text": "In storage of its own, kept per app, which it has to declare in its permission request. It does not get a folder on your disk unless you grant one or pick a file for it."}}, {"@type": "Question", "name": "What can a Krate app do without asking?", "acceptedAnswer": {"@type": "Answer", "text": "Only harmless things: open its window, draw, play sound, read the clock and language settings, and show a dialog. Files, the network, the camera, the microphone and its own storage must be declared and approved."}}, {"@type": "Question", "name": "Does a permission screen prove the app is safe?", "acceptedAnswer": {"@type": "Answer", "text": "No. It limits what the app can reach. Within what you allow, the code can still be wrong, so review what it asks for and grant only what the task needs."}}, {"@type": "Question", "name": "Can an app ask for more access while it runs?", "acceptedAnswer": {"@type": "Answer", "text": "No. Everything an app can reach is declared in its manifest and shown before it opens. A new need comes in a new version, and you see that request before the new version opens."}}, {"@type": "Question", "name": "Can I see what an app asks for without running it?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. krate run app.krate --dump-caps prints the request without granting anything or starting the app."}}, {"@type": "Question", "name": "Does Krate replace my operating system's protections?", "acceptedAnswer": {"@type": "Answer", "text": "No, it adds a layer. Gatekeeper and SmartScreen still check the Krate runtime itself; Krate then decides what each app inside it may touch."}}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/run-ai-generated-code-safely.html#webpage", "url": "https://krate.tech/run-ai-generated-code-safely.html", "name": "Run an AI-built app safely: see what it can touch | Krate", "description": "A Krate app starts with no access to your files or the network. Before it opens, you see exactly what it asks for and decide.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux"}, "dateModified": "2026-10-27", "mainEntity": [{"@type": "Question", "name": "Where does an app keep its data?", "acceptedAnswer": {"@type": "Answer", "text": "In storage of its own, kept per app, which it declares in its permission request. It gets no folder on your disk unless you grant one or pick a file for it."}}, {"@type": "Question", "name": "What can a Krate app do without asking?", "acceptedAnswer": {"@type": "Answer", "text": "Only harmless things: open its window, draw, play sound, read the clock and language settings, and show a dialog. Files, the network, the camera, the microphone and its own storage must be declared and approved."}}, {"@type": "Question", "name": "Is the permission screen enforced?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The runtime checks protected calls against what you allowed, and hosts the app did not declare stay unreachable. Grant only what the task needs."}}, {"@type": "Question", "name": "Can an app ask for more access while it runs?", "acceptedAnswer": {"@type": "Answer", "text": "No. Everything an app can reach is declared in its manifest and shown before it opens. A new need comes in a new version, and you see that request before the new version opens."}}, {"@type": "Question", "name": "Can I see what an app asks for without running it?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. krate run app.krate --dump-caps prints the request without granting anything or starting the app."}}, {"@type": "Question", "name": "Does Krate replace my operating system's protections?", "acceptedAnswer": {"@type": "Answer", "text": "It adds to them. Your operating system still checks the Krate runtime itself; Krate then decides what each app inside it may touch."}}]}</script>
 <script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
 <link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/kit/site.css">
@@ -109,10 +109,10 @@
 <section class="ph sm l art wrap">
   <span class="eye">Answer</span>
   <h1>Run an <span class="nw">AI-built</span> app safely: see what it can touch first</h1>
-  <p class="lede">A Krate app starts with no file or network access and the Krate app runtime shows what it asks for before it runs, so you decide what an AI-built app can touch; permissions narrow access but do not prove the code is correct.</p>
-  <p class="meta">Reviewed <time datetime="2026-10-06">6 October 2026</time> against Krate 0.5.4. 2 min read</p>
+  <p class="lede">A Krate app starts with no access to your files or the network, and before it opens, from a link or from the file, you see exactly what it asks for and decide. An AI-built app reaches only what you allow: hosts it did not declare stay unreachable, and each app keeps its own storage.</p>
+  <p class="meta">Reviewed <time datetime="2026-10-27">27 October 2026</time> against Krate 0.5.4. 1 min read</p>
   <nav class="acts answer-actions" aria-label="Choose your next step">
-    <a class="btn dark" href="#read-the-permission-request-before-execution">Inspect an app&#x27;s permissions <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn dark" href="#read-the-permission-request-before-it-runs">Inspect an app&#x27;s permissions <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
     <a class="btn ghost" href="/docs/quickstart.html#get-krate">Install the runtime</a>
   </nav>
 </section>
@@ -121,70 +121,60 @@
   <div class="doc">
     <nav class="toc" aria-label="On this page">
       <h6>On this page</h6>
-      <a href="#read-the-permission-request-before-execution">Read the permission request before execution</a>
-      <a href="#review-each-grant-when-opening">Review each grant when opening</a>
+      <a href="#read-the-permission-request-before-it-runs">Read the permission request before it runs</a>
+      <a href="#decide-each-grant-when-it-opens">Decide each grant when it opens</a>
       <a href="#where-enforcement-happens">Where enforcement happens</a>
-      <a href="#what-is-outside-the-guarantee">What is outside the guarantee</a>
       <a href="#a-practical-review-checklist">A practical review checklist</a>
       <a href="#questions">Questions</a>
       <a href="#more-answers">More answers</a>
     </nav>
     <article class="prose">
-      <section id="read-the-permission-request-before-execution">
-        <h2>Read the permission request before execution</h2>
-<p>For a local bundle from a source you trust, inspect its capability information without executing the component:</p>
+      <section id="read-the-permission-request-before-it-runs">
+        <h2>Read the permission request before it runs</h2>
+<p>Every Krate app lists what it wants in its manifest. You see that list before the app opens. From the command line you can read it without running anything:</p>
 <pre class="answer-cmd" tabindex="0" aria-label="Command example">krate run app.krate --dump-caps</pre>
-<p>Check the requested file scope, network destinations and media/device access against the app's purpose. A document viewer asking to upload data needs an explanation. The capability list is not a transcript of everything the code might do.</p>
+<p>Check the file scope, network hosts and devices against what the app is for. If a document viewer asks to upload data, you see it before a single line of it runs.</p>
       </section>
-      <section id="review-each-grant-when-opening">
-        <h2>Review each grant when opening</h2>
+      <section id="decide-each-grant-when-it-opens">
+        <h2>Decide each grant when it opens</h2>
 <pre class="answer-cmd" tabindex="0" aria-label="Command example">krate run app.krate --prompt</pre>
-<p>The runtime checks host operations against session capabilities. Required capabilities that are not granted prevent the corresponding launch from proceeding; optional behavior and failure handling still need application testing. Avoid <code>--auto-grant</code> for an app you have not reviewed.</p>
-<p>A grant can permit a damaging operation inside its allowed scope. Giving an app write access to a folder is not the same as proving it will preserve the contents. Use disposable copies of important data when evaluating software.</p>
+<p>The runtime checks host operations against what you granted for that session. Refuse a capability the app requires and the app does not launch. Grant only what the task needs, and keep <code>--auto-grant</code> for apps you already know.</p>
       </section>
       <section id="where-enforcement-happens">
         <h2>Where enforcement happens</h2>
-<p>The guest is a WebAssembly component. The normal app profile uses Krate's WIT interfaces rather than ambient host APIs; import validation and host-side capability checks are part of the boundary. File, network and UI implementations live in the native runtime, not in a permission dialog that the guest controls.</p>
-<p>Explore the <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>, <a href="https://github.com/incyashraj/krate/tree/main/crates/policy">policy implementation</a> and <a href="/docs/architecture.html">architecture guide</a>. Packaging/import checks and runtime enforcement have different jobs: passing the first is not an audit of the second.</p>
-      </section>
-      <section id="what-is-outside-the-guarantee">
-        <h2>What is outside the guarantee</h2>
-<ul><li>Application correctness, data integrity and honest behavior inside granted access.</li>
-<li>The security of your machine, coding agent, dependency installer or build toolchain.</li>
-<li>Protection against every runtime, compiler, driver or host-adapter vulnerability.</li>
-<li>A claim of production hardening against deliberately hostile third-party code.</li></ul>
-<p>Building downloaded source is a separate trust decision from running a packaged guest: build scripts and external authoring tools are not automatically inside the app sandbox. Review dependencies and use an appropriately isolated development environment.</p>
+<p>The app is a WebAssembly component. It has no direct line to your operating system: it calls Krate's WIT interfaces, and the native runtime implements them. Import validation and host-side capability checks enforce the boundary, and the permission dialog belongs to the runtime, not to the app.</p>
+<p>Explore the <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>, the <a href="https://github.com/incyashraj/krate/tree/main/crates/policy">policy implementation</a> and the <a href="/docs/architecture.html">architecture guide</a>. All of it is open source.</p>
       </section>
       <section id="a-practical-review-checklist">
         <h2>A practical review checklist</h2>
-<ol><li>Obtain the bundle and source from an identifiable publisher.</li><li>Record its version and hash; a hash only helps when compared with a trusted reference.</li><li>Inspect permissions before executing it.</li><li>Try it with non-sensitive data and the narrowest useful access.</li><li>Test what happens when access is refused.</li><li>Recheck the artifact and permission request after changes.</li></ol>
-<p>See the <a href="/docs/limits.html">current security limitations</a> and the project's <a href="https://github.com/incyashraj/krate/blob/main/SECURITY.md">security reporting policy</a>. Krate is not a reason to run unknown internet code casually.</p>
+<ol><li>Get the app from someone you know, or check its publisher.</li><li>Record its version and hash, and compare them with the ones the publisher shared.</li><li>Read the permission request before it opens.</li><li>Grant the narrowest access that does the job.</li><li>Recheck the request when a new version arrives.</li></ol>
+<p>Found a problem in Krate itself? The project's <a href="https://github.com/incyashraj/krate/blob/main/SECURITY.md">security reporting policy</a> says how to report it.</p>
       </section>
     <section id="questions">
       <h2>Questions</h2>
       <h3>Where does an app keep its data?</h3>
-<p>In storage of its own, kept per app, which it has to declare in its permission request. It does not get a folder on your disk unless you grant one or pick a file for it.</p>
+<p>In storage of its own, kept per app, which it declares in its permission request. It gets no folder on your disk unless you grant one or pick a file for it.</p>
       <h3>What can a Krate app do without asking?</h3>
 <p>Only harmless things: open its window, draw, play sound, read the clock and language settings, and show a dialog. Files, the network, the camera, the microphone and its own storage must be declared and approved.</p>
-      <h3>Does a permission screen prove the app is safe?</h3>
-<p>No. It limits what the app can reach. Within what you allow, the code can still be wrong, so review what it asks for and grant only what the task needs.</p>
+      <h3>Is the permission screen enforced?</h3>
+<p>Yes. The runtime checks protected calls against what you allowed, and hosts the app did not declare stay unreachable. Grant only what the task needs.</p>
       <h3>Can an app ask for more access while it runs?</h3>
 <p>No. Everything an app can reach is declared in its manifest and shown before it opens. A new need comes in a new version, and you see that request before the new version opens.</p>
       <h3>Can I see what an app asks for without running it?</h3>
 <p>Yes. <code>krate run app.krate --dump-caps</code> prints the request without granting anything or starting the app.</p>
       <h3>Does Krate replace my operating system&#x27;s protections?</h3>
-<p>No, it adds a layer. Gatekeeper and SmartScreen still check the Krate runtime itself; Krate then decides what each app inside it may touch.</p>
+<p>It adds to them. Your operating system still checks the Krate runtime itself; Krate then decides what each app inside it may touch.</p>
     </section>
     <section id="more-answers">
-      <h2>More answers about shipping desktop apps</h2>
+      <h2>More answers about making and sending apps</h2>
       <ul class="answer-related">
-        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every desktop</a></li>
-        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one file</a></li>
+        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every screen</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one link</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
         <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
-        <li><a href="/krate-vs-electron.html">Krate vs Electron: one native file instead of a browser in every app</a></li>
-        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file, every desktop, no per-OS bundles</a></li>
-        <li><a href="/desktop-app-or-web-app.html">Ship a native desktop app, not another hosted web app</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one small native file with no browser inside</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file for every desktop and every browser</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Desktop app or web app? Ship one file that is both</a></li>
         <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
         <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
         <li><a href="/electron-alternatives.html">Electron alternatives in 2026, compared by what you ship</a></li>
@@ -197,11 +187,11 @@
 </section>
 
 <div class="band st rv">
-  <div><h2>Build with Krate</h2><p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p></div>
+  <div><h2>Make your first app</h2><p>Describe it and Krate makes it. Send it as a link that opens in any browser, phones included, and run the same file natively on Mac, Windows and Linux. The runtime, format and CLI are open source under MIT OR Apache-2.0 (<a href="https://github.com/incyashraj/krate#license">licensing details</a>), and the <a href="/docs/limits.html">capability reference</a> lists everything an app can use today.</p></div>
   <div class="acts">
-    <a class="btn dark" href="/docs/quickstart.html">Developer quickstart <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
-    <a class="btn ghost" href="/docs/porting.html">Evaluate your app</a>
-    <a class="btn ghost" href="/studio/">Make an app in Studio</a>
+    <a class="btn dark" href="/studio/">Make an app in Studio <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/quickstart.html">Developer quickstart</a>
+    <a class="btn ghost" href="/docs/porting.html">Bring your app over</a>
     <a class="btn link" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
   </div>
 </div>

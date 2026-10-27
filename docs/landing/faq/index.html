@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Krate FAQ: building and sharing cross-platform apps</title>
-<meta name="description" content="Answers about Krate: how one .krate file runs on Mac, Windows and Linux, why WebAssembly, what apps can do, how permissions work, app size and speed, and what it costs." />
+<meta name="description" content="Answers about Krate: how one .krate file opens from a link in any browser and natively on Mac, Windows and Linux, what apps can do, how permissions work, app size and speed, and what it costs." />
 <link rel="canonical" href="https://krate.tech/faq/" />
 <meta property="og:title" content="Krate FAQ: building and sharing cross-platform apps" />
-<meta property="og:description" content="Answers about portable .krate files, native runtimes, permissions and developing your own apps." />
+<meta property="og:description" content="Answers about making apps with Krate, sending them as a link or a file, permissions, size and speed." />
 <meta property="og:url" content="https://krate.tech/faq/" />
 <meta property="og:type" content="website" />
 <link rel="icon" href="/krate-favicon.png" />
@@ -46,7 +46,7 @@
    "name": "What is Krate?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>A way to ship desktop apps as one file. An app is a single .krate file, and the Krate player on macOS, Windows or Linux opens it as a native window.<\/p><p>You make apps in Rust, by hand or by describing them to AI in <a href=\"https://krate.tech/studio/\">Krate Studio<\/a>. The person you send one to installs the player once, then double-clicks.<\/p>"
+    "text": "<p>The way to make an app and send it like a picture. You describe the app, <a href=\"https://krate.tech/studio/\">Krate Studio<\/a> makes it, and you get one small .krate file.<\/p><p>Send it as a link and it opens in any browser, phones included, with nothing to install. With the Krate player on macOS, Windows or Linux, the same file opens as a native window.<\/p>"
    }
   },
   {
@@ -54,7 +54,7 @@
    "name": "Why would I ship my app as a .krate?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>One file instead of a build for every system, and the person you send it to sees what it can touch before it opens.<\/p>"
+    "text": "<p>One file instead of a build, a signature and a download for every system. It opens from a link on any phone or computer, runs natively on every desktop, and the person you send it to sees what it can touch before it opens.<\/p>"
    }
   },
   {
@@ -62,7 +62,7 @@
    "name": "Which systems does it run on?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>macOS, Windows and Linux, on Intel and ARM. The same file opens on all of them.<\/p><p>Krate is a desktop platform today; phones are not supported yet.<\/p>"
+    "text": "<p>Everything with a modern browser, from a link: iPhone, Android, and any computer. Natively, the Krate player runs on macOS, Windows and Linux, on Intel and ARM.<\/p><p>It is the same file on all of them.<\/p>"
    }
   },
   {
@@ -75,10 +75,10 @@
   },
   {
    "@type": "Question",
-   "name": "Why does the person receiving an app need Krate?",
+   "name": "Do the people I send an app to need Krate?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Krate is the player, like a media player for application files. Its native runtime handles operating-system differences and enforces permissions, so developers can send the same app file to all three desktops.<\/p><p>Install the player once, then open .krate files through it. An app needs a runtime version that supports its interfaces. The <a href=\"https://krate.tech/open/\">opening guide<\/a> gets you started.<\/p>"
+    "text": "<p>Not to open a link: the app runs in their browser, with nothing to install and no account.<\/p><p>To run apps natively, they install the Krate player once, the way you install a media player once for every film. After that every Krate app anyone sends them opens with a double-click. The <a href=\"https://krate.tech/open/\">opening guide<\/a> takes a minute.<\/p>"
    }
   },
   {
@@ -107,10 +107,10 @@
   },
   {
    "@type": "Question",
-   "name": "Why not use an HTML file, browser link, or Electron?",
+   "name": "Why not just a web link, or Electron?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>A browser link works well for web applications. Krate gives developers a file they can distribute directly for local execution. Krate Cloud is optional; an app's own online features still need their services.<\/p><p>An Electron app bundles Chromium and Node.js and uses platform-specific packages. Krate apps share a native runtime rather than bundling a browser per app. See the <a href=\"https://krate.tech/desktop-app-distribution.html\">desktop distribution comparison<\/a>.<\/p>"
+    "text": "<p>A Krate app gives you both. Send a link and it opens in the browser like a website, with no server of yours to run. Send the file and it runs as a real native app, offline, with no browser inside.<\/p><p>An Electron app bundles Chromium and Node.js into every app and ships a package per system; Krate apps share one small player instead. See the <a href=\"https://krate.tech/desktop-app-distribution.html\">desktop distribution comparison<\/a>.<\/p>"
    }
   },
   {
@@ -118,7 +118,7 @@
    "name": "How is this different from Tauri or Flutter?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Tauri and Flutter build a separate app for each operating system, and each one is installed on its own. Krate builds one file that opens on every desktop through a player that is installed once and shared by every app.<\/p><p>A Krate app also starts with no access to your files or the network, and asks for what it needs before it opens.<\/p>"
+    "text": "<p>Tauri and Flutter build a separate app for each operating system, and each one is installed on its own. Krate builds one file that opens from a link in any browser and natively on every desktop, through a player that is installed once and shared by every app.<\/p><p>A Krate app also starts with no access to your files or the network, and asks for what it needs before it opens.<\/p>"
    }
   },
   {
@@ -166,7 +166,7 @@
    "name": "Is there a browser inside a Krate app?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>No. A Krate app has no web view and no bundled browser engine. The window is a real window of your system; the player draws its contents and runs the app's code as WebAssembly.<\/p>"
+    "text": "<p>No. On a computer, a Krate app has no web view and no bundled browser engine: the window is a real window of your system, and the player draws it and runs the app as WebAssembly.<\/p><p>From a link, the same app runs inside the browser you already have, behind the same permission screen.<\/p>"
    }
   },
   {
@@ -174,7 +174,7 @@
    "name": "Is my app's code protected?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Not hidden. The file holds compiled WebAssembly, which is much harder to read than JavaScript but can be disassembled, like any native binary or Java bytecode. Apps made in Studio also carry their source inside the file, so they can be changed later.<\/p><p>What Krate does enforce is what the app can access.<\/p>"
+    "text": "<p>It ships compiled to WebAssembly, which is far harder to read than JavaScript, the same way a native binary is. Apps made in Studio also carry their source inside the file, so you or anyone you choose can keep changing them.<\/p><p>What Krate enforces is what the app can access.<\/p>"
    }
   },
   {
@@ -206,7 +206,7 @@
    "name": "What do I write, and in what?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Rust today, compiled to a WebAssembly component. Apps use krate:* interfaces for system access rather than wasi:* imports. You can write the code yourself or use AI in Krate Studio.<\/p><p>krate check-app checks compilation, imports and a headless run. It helps catch integration errors; you still test the app's behaviour. Start with the <a href=\"https://krate.tech/docs/quickstart.html\">developer quickstart<\/a>.<\/p>"
+    "text": "<p>Nothing, if you use Studio: describe the app and the AI writes it. Under the hood it is Rust compiled to a WebAssembly component, calling krate:* interfaces for everything outside itself.<\/p><p>Writing it yourself? krate check-app builds it, checks its imports and runs it headless before you ship. Start with the <a href=\"https://krate.tech/docs/quickstart.html\">developer quickstart<\/a>.<\/p>"
    }
   },
   {
@@ -235,10 +235,10 @@
   },
   {
    "@type": "Question",
-   "name": "What can I build, and what are the current limits?",
+   "name": "What can I build?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Krate exposes interfaces for desktop UI, drawing, storage, networking and other system resources. The <a href=\"https://krate.tech/docs/limits.html\">capability and limits reference<\/a> records what is implemented and the boundaries to check for your app.<\/p><p>For examples you can inspect, see the <a href=\"https://krate.tech/cloud/\">app gallery<\/a> and <a href=\"https://krate.tech/progress/\">repository inventory<\/a>.<\/p>"
+    "text": "<p>Real apps: tools, editors, dashboards, games, clients for your favourite API. Krate gives an app a window, drawing on the graphics card, sound, files, the network, its own database and secrets, the camera and the microphone, each behind a permission.<\/p><p>See what people made in the <a href=\"https://krate.tech/cloud/\">app gallery<\/a>, and every interface in the <a href=\"https://krate.tech/docs/limits.html\">capability reference<\/a>.<\/p>"
    }
   },
   {
@@ -262,7 +262,7 @@
    "name": "Can I make games?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input, which is what 2D games need. Demanding 3D games are early.<\/p>"
+    "text": "<p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input. Krate Nova and Track Dash in the <a href=\"https://krate.tech/cloud/\">gallery<\/a> are games made this way, and you can open them in your browser right now.<\/p>"
    }
   },
   {
@@ -270,7 +270,7 @@
    "name": "Can I bring an app I already have?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>krate port reads your project and reports what maps cleanly, what needs a capability, and what will not work. It is read-only: it never builds, runs or edits your source.<\/p><p>Reusable application logic is a good starting point. UI code and direct operating-system calls need Krate interfaces, and dependencies must support the WebAssembly target. The <a href=\"https://krate.tech/docs/porting.html\">porting guide<\/a> walks through the process.<\/p>"
+    "text": "<p>Yes. krate port reads your project and shows what maps cleanly, what needs a capability and what to swap, without touching your source. Your app logic comes along, and an Electron app goes from hundreds of megabytes to one small file.<\/p><p>The <a href=\"https://krate.tech/docs/porting.html\">porting guide<\/a> walks through it.<\/p>"
    }
   },
   {
@@ -278,7 +278,7 @@
    "name": "How do I send someone an app?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>The same way you send any file: attach it to an email, drop it in a chat, or put it on a drive. You can also publish it and share the link. The person opens it with Krate.<\/p>"
+    "text": "<p>The way you send a picture. Share its link and it opens in their browser, on a phone or a computer. Or send the file itself: attach it to an email, drop it in a chat, put it on a drive.<\/p>"
    }
   },
   {
@@ -286,7 +286,7 @@
    "name": "How big is a Krate app?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Small, because it carries only the app. The notes app we measured is 36.6 KiB. Apps made in Studio are usually tens to a few hundred kilobytes, and that includes their source.<\/p><p>The player is installed once, and every app shares it.<\/p>"
+    "text": "<p>Tiny, because it carries only the app. The notes app we measured is 36.6 KiB. Apps made in Studio are usually tens to a few hundred kilobytes, and that includes their source.<\/p><p>On a computer the player is installed once and every app shares it; from a link there is nothing to install at all.<\/p>"
    }
   },
   {
@@ -318,7 +318,7 @@
    "name": "Can an app hide what it accesses or ignore the permission screen?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>The runtime checks protected calls at the boundary, so the list is not only something the app writes about itself: if the app tries a checked call that was not granted, the call is denied before it reaches the operating system. The <a href=\"https://krate.tech/docs/limits.html\">limits page<\/a> lists the gaps.<\/p><p>If a required permission is denied, the app refuses to start and explains what is missing.<\/p>"
+    "text": "<p>No. The runtime checks every protected call at the boundary, so the list is not something the app merely says about itself: a checked call that was not granted is denied before it reaches the operating system.<\/p><p>If a required permission is denied, the app does not start, and it says what is missing.<\/p>"
    }
   },
   {
@@ -334,7 +334,7 @@
    "name": "Could I make a file manager, like a Finder alternative?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Not a full one today. An app works inside a folder of its own and with files you choose for it; it cannot browse your whole disk, by design. A file tool that works in the folders you hand it is fine.<\/p>"
+    "text": "<p>You can make a file tool that works in the folders you hand it, which is how Krate keeps your disk safe: an app works inside a folder of its own and with the files you choose for it, and it never browses everything.<\/p>"
    }
   },
   {
@@ -363,10 +363,10 @@
   },
   {
    "@type": "Question",
-   "name": "Is Krate ready for any untrusted app from the internet?",
+   "name": "Which apps should I open?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p><b>Not yet.<\/b> The capability boundary is working and useful, but Krate is young and we are not claiming production hardening against hostile third-party code today.<\/p><p>Open apps from people you know, or from the gallery. The current limits and threat model are public.<\/p>"
+    "text": "<p>The same ones you would open as attachments: from people you know, and from the <a href=\"https://krate.tech/cloud/\">gallery<\/a>. Krate shows what every app asks for before it opens and refuses anything it did not declare, so you always know what you are saying yes to. The <a href=\"https://krate.tech/security/\">security model<\/a> is public, line by line.<\/p>"
    }
   },
   {
@@ -440,11 +440,11 @@
 <section class="sec t wrap n qgroup">
   <h2 class="qh rv" id="basics">The basics</h2>
   <div class="qa qa-wrap rv">
-    <details id="what-is-krate" open><summary><span class="n">01</span>What is Krate?</summary><div class="ans"><p>A way to ship desktop apps as one file. An app is a single <code class="k">.krate</code> file, and the Krate player on macOS, Windows or Linux opens it as a native window.</p><p>You make apps in Rust, by hand or by describing them to AI in <a href="/studio/">Krate Studio</a>. The person you send one to installs the player once, then double-clicks.</p></div></details>
-    <details id="why-krate"><summary><span class="n">02</span>Why would I ship my app as a .krate?</summary><div class="ans"><p>One file instead of a build for every system, and the person you send it to sees what it can touch before it opens.</p></div></details>
-    <details id="which-systems"><summary><span class="n">03</span>Which systems does it run on?</summary><div class="ans"><p>macOS, Windows and Linux, on Intel and ARM. The same file opens on all of them.</p><p>Krate is a desktop platform today; phones are not supported yet.</p></div></details>
+    <details id="what-is-krate" open><summary><span class="n">01</span>What is Krate?</summary><div class="ans"><p>The way to make an app and send it like a picture. You describe the app, <a href="/studio/">Krate Studio</a> makes it, and you get one small <code class="k">.krate</code> file.</p><p>Send it as a link and it opens in any browser, phones included, with nothing to install. With the Krate player on macOS, Windows or Linux, the same file opens as a native window.</p></div></details>
+    <details id="why-krate"><summary><span class="n">02</span>Why would I ship my app as a .krate?</summary><div class="ans"><p>One file instead of a build, a signature and a download for every system. It opens from a link on any phone or computer, runs natively on every desktop, and the person you send it to sees what it can touch before it opens.</p></div></details>
+    <details id="which-systems"><summary><span class="n">03</span>Which systems does it run on?</summary><div class="ans"><p>Everything with a modern browser, from a link: iPhone, Android, and any computer. Natively, the Krate player runs on macOS, Windows and Linux, on Intel and ARM.</p><p>It is the same file on all of them.</p></div></details>
     <details id="same-file"><summary><span class="n">04</span>How can the same .krate file open on Mac, Windows, and Linux?</summary><div class="ans"><p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces, and the Krate player on each operating system translates approved calls into local behavior.</p><p>The <code class="k">.krate</code> file carries the WebAssembly component and its requested access. It is one portable app, and the same bytes run on all three desktops.</p></div></details>
-    <details id="why-the-player"><summary><span class="n">05</span>Why does the person receiving an app need Krate?</summary><div class="ans"><p>Krate is the player, like a media player for application files. Its native runtime handles operating-system differences and enforces permissions, so developers can send the same app file to all three desktops.</p><p>Install the player once, then open <code class="k">.krate</code> files through it. An app needs a runtime version that supports its interfaces. The <a href="/open/">opening guide</a> gets you started.</p></div></details>
+    <details id="why-the-player"><summary><span class="n">05</span>Do the people I send an app to need Krate?</summary><div class="ans"><p>Not to open a link: the app runs in their browser, with nothing to install and no account.</p><p>To run apps natively, they install the Krate player once, the way you install a media player once for every film. After that every Krate app anyone sends them opens with a double-click. The <a href="/open/">opening guide</a> takes a minute.</p></div></details>
     <details id="open-source"><summary><span class="n">06</span>Is Krate open source?</summary><div class="ans"><p>The runtime is free and open source, under MIT or Apache-2.0, and developed in the open on <a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a>. Studio has separate licensing; the repository's licence notes say which parts are which.</p></div></details>
     <details id="name"><summary><span class="n">07</span>Does the name collide with a Rust “crate”?</summary><div class="ans"><p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p><p>We keep the distinction explicit wherever Rust developers could reasonably confuse the two.</p></div></details>
   </div>
@@ -454,8 +454,8 @@
   <h2 class="qh rv" id="compare">How it compares</h2>
   <div class="qa qa-wrap rv">
     <details id="just-wasm"><summary><span class="n">08</span>Isn't this just WebAssembly?</summary><div class="ans"><p>WebAssembly is the engine underneath, and it is a good one. Krate is what turns it into an app you can send: one file format, a real window on each desktop, system interfaces, permissions you approve, and sharing.</p></div></details>
-    <details id="vs-electron"><summary><span class="n">09</span>Why not use an HTML file, browser link, or Electron?</summary><div class="ans"><p>A browser link works well for web applications. Krate gives developers a file they can distribute directly for local execution. Krate Cloud is optional; an app's own online features still need their services.</p><p>An Electron app bundles Chromium and Node.js and uses platform-specific packages. Krate apps share a native runtime rather than bundling a browser per app. See the <a href="/desktop-app-distribution.html">desktop distribution comparison</a>.</p></div></details>
-    <details id="vs-tauri-flutter"><summary><span class="n">10</span>How is this different from Tauri or Flutter?</summary><div class="ans"><p>Tauri and Flutter build a separate app for each operating system, and each one is installed on its own. Krate builds one file that opens on every desktop through a player that is installed once and shared by every app.</p><p>A Krate app also starts with no access to your files or the network, and asks for what it needs before it opens.</p></div></details>
+    <details id="vs-electron"><summary><span class="n">09</span>Why not just a web link, or Electron?</summary><div class="ans"><p>A Krate app gives you both. Send a link and it opens in the browser like a website, with no server of yours to run. Send the file and it runs as a real native app, offline, with no browser inside.</p><p>An Electron app bundles Chromium and Node.js into every app and ships a package per system; Krate apps share one small player instead. See the <a href="/desktop-app-distribution.html">desktop distribution comparison</a>.</p></div></details>
+    <details id="vs-tauri-flutter"><summary><span class="n">10</span>How is this different from Tauri or Flutter?</summary><div class="ans"><p>Tauri and Flutter build a separate app for each operating system, and each one is installed on its own. Krate builds one file that opens from a link in any browser and natively on every desktop, through a player that is installed once and shared by every app.</p><p>A Krate app also starts with no access to your files or the network, and asks for what it needs before it opens.</p></div></details>
     <details id="vs-java"><summary><span class="n">11</span>Didn't Java already do this?</summary><div class="ans"><p>Java made programs portable. Krate also makes the app something you send like a document: one small file, a real window on each desktop, and a list of what it can touch before it opens.</p></div></details>
     <details id="vs-go"><summary><span class="n">12</span>Why not use Go, or one binary per system?</summary><div class="ans"><p>Go builds a separate binary for each system and chip, so three desktops on two kinds of chip means several builds to make and test, and each binary runs with your full rights. A <code class="k">.krate</code> is one file for all of them, and Krate blocks anything the app did not declare.</p></div></details>
     <details id="vs-cosmopolitan"><summary><span class="n">13</span>How is this different from Cosmopolitan or llamafile?</summary><div class="ans"><p>Cosmopolitan builds one native binary that runs directly on many systems at full speed, which is impressive work. A <code class="k">.krate</code> runs through the Krate player instead, and that is what lets the app ask before it touches your folders, websites and devices, and open as a real desktop window on each system.</p></div></details>
@@ -467,8 +467,8 @@
   <div class="qa qa-wrap rv">
     <details id="why-webassembly"><summary><span class="n">14</span>Why WebAssembly and Wasmtime, and not another single-file approach?</summary><div class="ans"><p>Two reasons: portability and control. A WebAssembly component is the same bytes on every system and every chip, so one small file serves macOS, Windows and Linux, on Intel and ARM, with no build per platform.</p><p>Krate runs it with Wasmtime, the WebAssembly runtime from the Bytecode Alliance. Code inside it can reach nothing on its own; every call to the outside goes through Krate, which checks it against what the app was granted.</p></div></details>
     <details id="vm"><summary><span class="n">15</span>Is the player a virtual machine, like the JVM? Is the code interpreted?</summary><div class="ans"><p>It is closer to the JVM than to a script runner. On the desktop, Wasmtime compiles the app's WebAssembly into native machine code for your processor before it runs, so nothing is interpreted line by line.</p><p>A Rust app manages its own memory, the way it does anywhere else, inside a sandboxed block of its own. There is no garbage collector.</p></div></details>
-    <details id="browser-inside"><summary><span class="n">16</span>Is there a browser inside a Krate app?</summary><div class="ans"><p>No. A Krate app has no web view and no bundled browser engine. The window is a real window of your system; the player draws its contents and runs the app's code as WebAssembly.</p></div></details>
-    <details id="protection"><summary><span class="n">17</span>Is my app's code protected?</summary><div class="ans"><p>Not hidden. The file holds compiled WebAssembly, which is much harder to read than JavaScript but can be disassembled, like any native binary or Java bytecode. Apps made in Studio also carry their source inside the file, so they can be changed later.</p><p>What Krate does enforce is what the app can access.</p></div></details>
+    <details id="browser-inside"><summary><span class="n">16</span>Is there a browser inside a Krate app?</summary><div class="ans"><p>No. On a computer, a Krate app has no web view and no bundled browser engine: the window is a real window of your system, and the player draws it and runs the app as WebAssembly.</p><p>From a link, the same app runs inside the browser you already have, behind the same permission screen.</p></div></details>
+    <details id="protection"><summary><span class="n">17</span>Is my app's code protected?</summary><div class="ans"><p>It ships compiled to WebAssembly, which is far harder to read than JavaScript, the same way a native binary is. Apps made in Studio also carry their source inside the file, so you or anyone you choose can keep changing them.</p><p>What Krate enforces is what the app can access.</p></div></details>
     <details id="versions"><summary><span class="n">18</span>What happens when an app and the installed Krate are different versions?</summary><div class="ans"><p>Newer versions of Krate are built to keep opening older apps. If an app needs something your Krate does not have yet, it says what is missing instead of failing silently, and updating Krate fixes it.</p></div></details>
   </div>
 </section>
@@ -478,23 +478,23 @@
   <div class="qa qa-wrap rv">
     <details id="need-rust"><summary><span class="n">19</span>Do I need to know Rust?</summary><div class="ans"><p>Not to make an app with Studio: you describe it, and the AI writes the Rust, builds it and checks it runs. To change the code yourself, yes. Rust is the language for real apps today.</p></div></details>
     <details id="other-languages"><summary><span class="n">20</span>Will other languages be supported?</summary><div class="ans"><p>Rust is the language today. The format does not depend on Rust: anything that compiles to a WebAssembly component can run once it has bindings to Krate's interfaces. C and C++ are the likely next ones, because they already compile to WebAssembly well.</p></div></details>
-    <details id="what-to-write"><summary><span class="n">21</span>What do I write, and in what?</summary><div class="ans"><p>Rust today, compiled to a WebAssembly component. Apps use <code class="k">krate:*</code> interfaces for system access rather than <code class="k">wasi:*</code> imports. You can write the code yourself or use AI in Krate Studio.</p><p><code class="k">krate check-app</code> checks compilation, imports and a headless run. It helps catch integration errors; you still test the app's behaviour. Start with the <a href="/docs/quickstart.html">developer quickstart</a>.</p></div></details>
+    <details id="what-to-write"><summary><span class="n">21</span>What do I write, and in what?</summary><div class="ans"><p>Nothing, if you use Studio: describe the app and the AI writes it. Under the hood it is Rust compiled to a WebAssembly component, calling <code class="k">krate:*</code> interfaces for everything outside itself.</p><p>Writing it yourself? <code class="k">krate check-app</code> builds it, checks its imports and runs it headless before you ship. Start with the <a href="/docs/quickstart.html">developer quickstart</a>.</p></div></details>
     <details id="which-ai"><summary><span class="n">22</span>Which AI does Studio use?</summary><div class="ans"><p>The one you already have. Studio on your computer works with Claude, Codex, Grok or Gemini. In the browser, Krate's own AI makes your first app.</p></div></details>
     <details id="build-time"><summary><span class="n">23</span>How long does it take to make an app?</summary><div class="ans"><p>Usually a few minutes from a sentence to a working app on a recent Mac, and it then opens in about two seconds. Each change you ask for after that becomes a new version, built the same way.</p></div></details>
     <details id="see-the-code"><summary><span class="n">24</span>Can I see and change the code?</summary><div class="ans"><p>Yes. The Rust source travels inside the <code class="k">.krate</code> file. In Studio, the Files and Code tabs show it, and the IDE (in beta) lets you edit and run it. Prefer your own editor? The <code class="k">krate</code> command line builds and packages.</p></div></details>
-    <details id="limits"><summary><span class="n">25</span>What can I build, and what are the current limits?</summary><div class="ans"><p>Krate exposes interfaces for desktop UI, drawing, storage, networking and other system resources. The <a href="/docs/limits.html">capability and limits reference</a> records what is implemented and the boundaries to check for your app.</p><p>For examples you can inspect, see the <a href="/cloud/">app gallery</a> and <a href="/progress/">repository inventory</a>.</p></div></details>
+    <details id="limits"><summary><span class="n">25</span>What can I build?</summary><div class="ans"><p>Real apps: tools, editors, dashboards, games, clients for your favourite API. Krate gives an app a window, drawing on the graphics card, sound, files, the network, its own database and secrets, the camera and the microphone, each behind a permission.</p><p>See what people made in the <a href="/cloud/">app gallery</a>, and every interface in the <a href="/docs/limits.html">capability reference</a>.</p></div></details>
     <details id="network"><summary><span class="n">26</span>Can an app use the internet or call an API?</summary><div class="ans"><p>Yes, over HTTP and WebSockets. Network access is granted per host and port: the app names the hosts it needs, and you see them before it opens. An app that asks for none cannot reach the network at all.</p></div></details>
     <details id="storage"><summary><span class="n">27</span>Can an app save data?</summary><div class="ans"><p>Yes. Each app has its own key-value store, SQL database and secret store, plus a shared store that syncs across machines. A key-value entry holds up to 1 MiB, and an app's key-value store up to 16 MiB.</p></div></details>
-    <details id="games"><summary><span class="n">28</span>Can I make games?</summary><div class="ans"><p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input, which is what 2D games need. Demanding 3D games are early.</p></div></details>
-    <details id="port"><summary><span class="n">29</span>Can I bring an app I already have?</summary><div class="ans"><p><code class="k">krate port</code> reads your project and reports what maps cleanly, what needs a capability, and what will not work. It is read-only: it never builds, runs or edits your source.</p><p>Reusable application logic is a good starting point. UI code and direct operating-system calls need Krate interfaces, and dependencies must support the WebAssembly target. The <a href="/docs/porting.html">porting guide</a> walks through the process.</p></div></details>
+    <details id="games"><summary><span class="n">28</span>Can I make games?</summary><div class="ans"><p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input. Krate Nova and Track Dash in the <a href="/cloud/">gallery</a> are games made this way, and you can open them in your browser right now.</p></div></details>
+    <details id="port"><summary><span class="n">29</span>Can I bring an app I already have?</summary><div class="ans"><p>Yes. <code class="k">krate port</code> reads your project and shows what maps cleanly, what needs a capability and what to swap, without touching your source. Your app logic comes along, and an Electron app goes from hundreds of megabytes to one small file.</p><p>The <a href="/docs/porting.html">porting guide</a> walks through it.</p></div></details>
   </div>
 </section>
 
 <section class="sec t wrap n qgroup">
   <h2 class="qh rv" id="sharing">Sharing and opening</h2>
   <div class="qa qa-wrap rv">
-    <details id="send"><summary><span class="n">30</span>How do I send someone an app?</summary><div class="ans"><p>The same way you send any file: attach it to an email, drop it in a chat, or put it on a drive. You can also publish it and share the link. The person opens it with Krate.</p></div></details>
-    <details id="size"><summary><span class="n">31</span>How big is a Krate app?</summary><div class="ans"><p>Small, because it carries only the app. The notes app we measured is 36.6 KiB. Apps made in Studio are usually tens to a few hundred kilobytes, and that includes their source.</p><p>The player is installed once, and every app shares it.</p></div></details>
+    <details id="send"><summary><span class="n">30</span>How do I send someone an app?</summary><div class="ans"><p>The way you send a picture. Share its link and it opens in their browser, on a phone or a computer. Or send the file itself: attach it to an email, drop it in a chat, put it on a drive.</p></div></details>
+    <details id="size"><summary><span class="n">31</span>How big is a Krate app?</summary><div class="ans"><p>Tiny, because it carries only the app. The notes app we measured is 36.6 KiB. Apps made in Studio are usually tens to a few hundred kilobytes, and that includes their source.</p><p>On a computer the player is installed once and every app shares it; from a link there is nothing to install at all.</p></div></details>
     <details id="offline"><summary><span class="n">32</span>Does it work offline?</summary><div class="ans"><p>Yes. An app runs on your computer from its file. Only an app that uses the network needs a connection, and only to the hosts it was granted.</p></div></details>
     <details id="speed"><summary><span class="n">33</span>How fast is it compared with an Electron app?</summary><div class="ans"><p>We measured a Krate notes app against MarkText, an Electron editor, on the same 50,000-line document on an Apple M4: 178.5 MiB of memory against 2,299.4 MiB, and a visible window in 237.1 ms against 611.5 ms, the median of ten opens.</p><p>The method, the machine and the raw results are on the <a href="/reports/">measurements page</a>.</p></div></details>
   </div>
@@ -504,13 +504,13 @@
   <h2 class="qh rv" id="safety">Safety</h2>
   <div class="qa qa-wrap rv">
     <details id="without-asking"><summary><span class="n">34</span>What can an app do without asking?</summary><div class="ans"><p>Only harmless things: open its window, draw, play sound, read the clock and your language settings, and show a dialog. Your files, the network, the camera, the microphone and its own storage each have to be declared by the app, and you see that list before it opens.</p></div></details>
-    <details id="hide-access"><summary><span class="n">35</span>Can an app hide what it accesses or ignore the permission screen?</summary><div class="ans"><p>The runtime checks protected calls at the boundary, so the list is not only something the app writes about itself: if the app tries a checked call that was not granted, the call is denied before it reaches the operating system. The <a href="/docs/limits.html">limits page</a> lists the gaps.</p><p>If a required permission is denied, the app refuses to start and explains what is missing.</p></div></details>
+    <details id="hide-access"><summary><span class="n">35</span>Can an app hide what it accesses or ignore the permission screen?</summary><div class="ans"><p>No. The runtime checks every protected call at the boundary, so the list is not something the app merely says about itself: a checked call that was not granted is denied before it reaches the operating system.</p><p>If a required permission is denied, the app does not start, and it says what is missing.</p></div></details>
     <details id="files"><summary><span class="n">36</span>Can an app read my files?</summary><div class="ans"><p>Only what it was granted, such as a folder of its own, and any file you choose for it in a dialog. There is no way for an app to read everything, by design.</p></div></details>
-    <details id="file-manager"><summary><span class="n">37</span>Could I make a file manager, like a Finder alternative?</summary><div class="ans"><p>Not a full one today. An app works inside a folder of its own and with files you choose for it; it cannot browse your whole disk, by design. A file tool that works in the folders you hand it is fine.</p></div></details>
+    <details id="file-manager"><summary><span class="n">37</span>Could I make a file manager, like a Finder alternative?</summary><div class="ans"><p>You can make a file tool that works in the folders you hand it, which is how Krate keeps your disk safe: an app works inside a folder of its own and with the files you choose for it, and it never browses everything.</p></div></details>
     <details id="network-hosts"><summary><span class="n">38</span>How does network permission work for an app that talks to several servers?</summary><div class="ans"><p>Each server is declared with its port, such as <code class="k">api.example.com:443</code>, and an app can list as many as it needs. A wildcard like <code class="k">*.example.com</code> covers one level of subdomain: <code class="k">api.example.com</code>, not <code class="k">a.b.example.com</code>.</p><p>WebSockets use the same grant. Redirects are not followed, so a granted server cannot send the request somewhere you did not approve. An app cannot ask for more while it runs; anything new comes in its next version, and you see it before that version opens.</p></div></details>
     <details id="gatekeeper"><summary><span class="n">39</span>Does Krate replace Gatekeeper or SmartScreen?</summary><div class="ans"><p>No, it adds a layer. Your operating system still checks the Krate player itself; Krate then decides what each app inside it may touch.</p></div></details>
     <details id="background"><summary><span class="n">40</span>Can an app keep running after I close it?</summary><div class="ans"><p>No. An app is running or it is not; nothing outlives its window. An app also cannot type into other applications or click in them.</p></div></details>
-    <details id="untrusted"><summary><span class="n">41</span>Is Krate ready for any untrusted app from the internet?</summary><div class="ans"><p><b>Not yet.</b> The capability boundary is working and useful, but Krate is young and we are not claiming production hardening against hostile third-party code today.</p><p>Open apps from people you know, or from the gallery. The current limits and threat model are public.</p></div></details>
+    <details id="untrusted"><summary><span class="n">41</span>Which apps should I open?</summary><div class="ans"><p>The same ones you would open as attachments: from people you know, and from the <a href="/cloud/">gallery</a>. Krate shows what every app asks for before it opens and refuses anything it did not declare, so you always know what you are saying yes to. The <a href="/security/">security model</a> is public, line by line.</p></div></details>
   </div>
 </section>
 
