@@ -804,14 +804,19 @@ function askFirstRun(app) {
     downloadApp(app.url, app.name).catch(() => {});
     return;
   }
-  const system = thisSystem();
-  const sub = document.getElementById("frNeedSub");
+  // A phone opens the app here and nowhere else: the native player is for
+  // Mac, Windows and Linux, so the other two answers would only send it
+  // round in a circle.
+  const phone = thisSystem() === "phone";
+  for (const id of ["frHaveBtn", "frNeedBtn"]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.hidden = phone;
+  }
+  const sub = document.getElementById("frSub");
   if (sub) {
-    sub.textContent = system === "phone"
-      ? "Krate runs on computers, not phones. Open this page on your Mac, "
-        + "Windows or Linux and your app will open there."
-      : "Get it once, the way you got a video player. After that every "
-        + "Krate app just opens.";
+    sub.textContent = phone
+      ? "Open it right here, on this phone."
+      : "Open it right here, or run it natively on your computer.";
   }
   const note = document.getElementById("frNote");
   if (note) note.textContent = "";
@@ -3393,6 +3398,33 @@ console.info("krate: studio bridge ready (hub + builder)");
   const app = () => ({
     url: sheet.dataset.appUrl || "",
     name: sheet.dataset.appName || "app.krate",
+  });
+
+  // Open it here: the app goes up unlisted -- the same bytes always get
+  // the same id, and an app already in the gallery keeps its listing --
+  // and the tab Player runs it. The new tab is opened inside the press,
+  // before anything is awaited, or a browser treats it as a pop-up.
+  document.getElementById("frHereBtn")?.addEventListener("click", async () => {
+    const { url, name } = app();
+    const tab = window.open("about:blank", "_blank");
+    if (note) note.textContent = "Getting it ready…";
+    try {
+      const link = await publishWebApp({ path: url, name: name.replace(/\.krate$/, ""), unlisted: true }, bridge.token);
+      const hash = String(link || "").split("/").pop().split("?")[0];
+      if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error("The app could not be put online to open here.");
+      const run = `${HUB}/run/${hash}?via=studio`;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = run;
+      } else {
+        location.assign(run);
+      }
+      if (note) note.textContent = "";
+      sheet.classList.add("hidden");
+    } catch (err) {
+      if (tab) tab.close();
+      if (note) note.textContent = String((err && err.message) || err);
+    }
   });
 
   document.getElementById("frHaveBtn")?.addEventListener("click", async () => {

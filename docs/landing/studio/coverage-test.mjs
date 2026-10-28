@@ -467,6 +467,7 @@ console.log("ok  browser back goes up one screen");
 assert.match(html, /id="firstRunSheet"/, "the question has somewhere to appear");
 assert.match(html, /id="frHaveBtn"/, "I already have Krate");
 assert.match(html, /id="frNeedBtn"/, "I do not have Krate yet");
+assert.match(html, /id="frHereBtn"/, "Open it here: the app runs in a tab, on a phone too");
 const open = bridge.slice(bridge.indexOf("async open_app("));
 assert.match(open.slice(0, 900), /if \(!hasKrateAlready\(\)\) \{\s*askFirstRun\(app\);/,
   "Run it asks before handing over a file that may not open");
@@ -505,12 +506,22 @@ assert.match(
 // The person who does not have it gets their app AND the player, in that
 // order, so the file is already waiting when the install finishes.
 const wire = bridge.slice(bridge.indexOf("function wireFirstRun()"));
-assert.match(wire.slice(0, 2000), /krate\.tech\/open\//,
+// Read from the "need it" answer itself, not a fixed window of the function:
+// a new answer added above it pushed this out of a 2000-character slice.
+const need = wire.slice(wire.indexOf('getElementById("frNeedBtn")'));
+assert.ok(wire.indexOf('getElementById("frNeedBtn")') > 0, "the need-it answer is wired");
+assert.match(need.slice(0, 1500), /krate\.tech\/open\//,
   "and is sent to the page that already picks the right build for their OS");
-// A phone gets no download at all: nothing there can open it, and a file
-// that cannot open is worse than a sentence saying so.
-assert.match(wire.slice(0, 2000), /thisSystem\(\) !== "phone"/,
-  "a phone is told, not handed a file it can never open");
+// Open it here publishes unlisted and runs the app in the tab Player.
+const here = wire.slice(wire.indexOf('getElementById("frHereBtn")'));
+assert.ok(wire.indexOf('getElementById("frHereBtn")') > 0, "the open-it-here answer is wired");
+assert.match(here.slice(0, 1600), /unlisted: true/, "open it here publishes unlisted, so nothing is listed by opening");
+assert.match(here.slice(0, 1600), /\/run\/\$\{hash\}/, "and runs the app in the tab Player");
+// A phone gets no download at all: it opens the app here instead, so the
+// native answers are hidden there, and the need-it answer never downloads.
+assert.match(need.slice(0, 1500), /thisSystem\(\) !== "phone"/,
+  "a phone is not handed a file it cannot open natively");
+assert.match(bridge, /btn\.hidden = phone/, "a phone sees only Open it here");
 assert.match(bridge, /function thisSystem\(\)/, "which computer this is");
 
 console.log("ok  a first-time person is asked, not dead-ended");
