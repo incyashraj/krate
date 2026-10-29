@@ -162,6 +162,9 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Render Mermaid flowcharts as diagrams on the published mdBook site.
 - Reworked the public mdBook docs into clearer human language, added system flow diagrams, and changed the roadmap from fixed fixed-month language to estimates.
 
+### Fixed
+- Krate Studio now creates an ignored placeholder resource for debug and test builds when `studio/bin/` is absent, allowing tests to compile on a fresh checkout while keeping the release engine requirement intact.
+
 ---
 
 <!-- Releases appear here as they are cut. Example format:
