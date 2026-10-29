@@ -2462,6 +2462,7 @@ dependencies = [
  "krate-presenter-gpu",
  "pollster",
  "softbuffer",
+ "windows-sys 0.61.2",
  "winit",
 ]
 
