@@ -35,6 +35,9 @@ pub mod winit_native;
 
 mod clipboard;
 
+#[cfg(any(target_os = "windows", test))]
+mod appearance;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
@@ -326,6 +329,11 @@ impl WindowAdapter for WindowsUiAdapter {
 }
 
 impl UiAdapter for WindowsUiAdapter {
+    #[cfg(target_os = "windows")]
+    fn appearance(&self) -> krate_adapter_common::ui::Appearance {
+        appearance::current()
+    }
+
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.draft.set_root(window, root)
     }
@@ -507,6 +515,11 @@ impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for WindowsWinitPrototypeUiAdapter {
+    #[cfg(target_os = "windows")]
+    fn appearance(&self) -> krate_adapter_common::ui::Appearance {
+        self.headless.appearance()
+    }
+
     /// Physical pixels per logical pixel, from the live winit window. The
     /// trait default of 1.0 stood in here for months, so every canvas
     /// rasterized at logical resolution and was stretched across a HiDPI
