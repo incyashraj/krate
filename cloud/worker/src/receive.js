@@ -1,3 +1,4 @@
+import { tellFirstOpen } from "./mail.js";
 // The receive loop's side of the hub (F-320: make an app, send it like a
 // photo). Three things a person who was sent a link meets:
 //
@@ -227,6 +228,11 @@ export async function tabEvent(request, env, d) {
       doubles: [1],
       indexes: [await d.visitorHash(request, env)],
     });
+  }
+  // The first time someone other than its maker opens an app from a link,
+  // its publisher hears it -- the moment a share became a person.
+  if (kind === "open" && maker === "other" && app.record && !d.isBot(request)) {
+    await tellFirstOpen(env, hash, app.record, String(env.PUBLIC_BASE || "").replace(/\/$/, ""));
   }
   return new Response(JSON.stringify({ ok: true, maker: maker === "maker" }), {
     headers: { "content-type": "application/json", "cache-control": "no-store" },

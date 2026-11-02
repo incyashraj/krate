@@ -26,12 +26,12 @@
 // its sender) whose preferences allow; when it is approved or declined, its
 // sender; when someone asks for an app, the people who answer requests who
 // turned that on. Defaults: on, except requests. Through the hub's Gmail
-// path (org-mail.js), at most 100 a day per organisation, counted in its
+// path (org-mail.js, or Resend without it), at most 100 a day per organisation, counted in its
 // store -- never in KV -- and each event mailed once. Nothing is mailed
 // when the hub has no mail set up, and a mail that fails changes nothing.
 // Nothing about mail is audited.
 import { Org, extendOrg, allows, displayOf } from "./org.js";
-import { gmail, addressFor } from "./org-mail.js";
+import { gmail, addressFor, mailReady } from "./org-mail.js";
 // The same moments post to the organisation's Slack and Teams channels.
 import { postChat } from "./org-chat.js";
 import "./org-insights.js";
@@ -257,7 +257,7 @@ void Org;
 export async function sendNotices(n, event) {
   await postChat(n, event);
   try {
-    if (!n || !n.env || !n.env.GMAIL_APP_PASSWORD) return 0;
+    if (!n || !n.env || !mailReady(n.env)) return 0;
     const plan = await n.askRaw("notify-plan", { ...event, site: n.site });
     let sent = 0;
     for (const m of (plan && plan.body && plan.body.mails) || []) {

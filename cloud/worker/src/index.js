@@ -39,6 +39,7 @@ import "./org-lifecycle-store.js";
 import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
 import { orgBillingRoute, orgBillingEvent, orgBillingAlerts } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
+import { tellPublished, tellMade } from "./mail.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
@@ -1032,6 +1033,10 @@ async function publish(request, env) {
 function listingFields(request) {
   return {
     unlisted: header(request, "x-krate-unlisted") === "1",
+    // A publish that only opens an app in a tab mails nobody.
+    // `?quiet=1` rather than a header only, so a browser can send it without
+    // a preflight the hub would have to allow first.
+    quiet: header(request, "x-krate-quiet") === "1" || new URL(request.url).searchParams.get("quiet") === "1",
     name: textHeader(request, "x-krate-name") || "",
     description: textHeader(request, "x-krate-description") || "",
     category: shelfOf(header(request, "x-krate-category")),
@@ -1186,6 +1191,9 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     ...(extra || {}),
   };
 
+  // Whether these bytes were already listed: only a new app is announced.
+  const fresh = !(await env.APPS.get(`app:${hash}`).catch(() => null));
+
   // Keyed so KV's own lexicographic listing comes back newest-first when
   // reversed, which saves sorting the whole set on every page load.
   let listed = true;
@@ -1268,6 +1276,11 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     result.note =
       "published and runnable at the URL, but the gallery listing is " +
       "delayed -- republishing tomorrow will list it";
+  }
+  // The publisher hears it is live, with the link, once per new app. A
+  // publish that is only there to open an app in a tab says it is quiet.
+  if (fresh && !fields.quiet) {
+    await tellPublished(env, owner, { name: meta.name, url: result.url, listed: listed && !meta.unlisted });
   }
   return json(result);
 }
@@ -2951,7 +2964,7 @@ async function ensureUser(env, provider, stableId, profile) {
       console.error(`could not tell the founder about a new account: ${error}`),
     );
     // The automatic welcome, only when switched on (WELCOME_AUTO = "1"):
-    // ten to twenty minutes from now, from the next ten-minute run.
+    // 21 to 31 minutes from now, from the ten-minute run.
     if (env.WELCOME_AUTO === "1" && record.email && (env.RESEND_API_KEY || env.GMAIL_APP_PASSWORD)) {
       await env.APPS.put(`welcome-due:${userId}`, String(record.created), {
         expirationTtl: 7 * 24 * 3600,
@@ -3001,7 +3014,9 @@ async function ensureUser(env, provider, stableId, profile) {
 // that Gmail did not send is refused or binned.
 
 const WELCOME_CRON = "*/10 * * * *";
-const WELCOME_AFTER_MS = 10 * 60 * 1000;
+// Twenty-one minutes after sign-up; the ten-minute run sends it, so it
+// lands 21 to 31 minutes in.
+const WELCOME_AFTER_MS = 21 * 60 * 1000;
 const WELCOME_FROM = "Yashraj Pardeshi <yashraj@krate.tech>";
 const WELCOME_REPLY_TO = "incyashraj@gmail.com";
 const WELCOME_SUBJECT = "You\u2019re in. One question from me";
@@ -3014,7 +3029,7 @@ function welcomeText(name) {
 
 I\u2019m Yashraj, the person who builds Krate. Thanks for signing up.
 
-I\u2019ll keep this short. Krate exists for one reason: making an app and sharing it should be as easy as sending a document. If it doesn\u2019t feel that way to you yet, I want to know.
+I\u2019ll keep this short. Krate exists for one reason: making an app and sharing it should be as easy as sending a picture. If it doesn\u2019t feel that way to you yet, I want to know.
 
 So I have one question:
 
@@ -5372,7 +5387,7 @@ function cors(response) {
   headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
   headers.set(
     "access-control-allow-headers",
-    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted, x-krate-encoding, idempotency-key",
+    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted, x-krate-quiet, x-krate-encoding, idempotency-key",
   );
   // A page script cannot read a response header it was not shown. The 429
   // from the anonymous wall (K-767) carries `retry-after`, and without this
@@ -6030,7 +6045,7 @@ async function loadOwnCase(env, prefixes, id) {
 
 async function caseAttempt(request, env) {
   const body = await request.json().catch(() => ({}));
-  const { prefixes } = await caseIdentity(request, env, body);
+  const { user: asker, prefixes } = await caseIdentity(request, env, body);
   if (!prefixes.length) return text("Sign in first, or send a device id.", 400);
 
   const outcome = String(body.outcome || "");
@@ -6050,8 +6065,12 @@ async function caseAttempt(request, env) {
     outcome,
     note: String(body.note || "").slice(0, 200) || undefined,
   });
+  const firstMade = outcome === "made" && !record.made;
   if (outcome === "made") record.made = true;
   await writeCase(env, prefixes, record);
+  // A build takes minutes and people leave the tab: the first file a case
+  // makes is mailed to the person who asked for it.
+  if (firstMade && asker) await tellMade(env, asker, record);
 
   // The legacy counters mirror every consumption, whichever route consumed
   // it. planCount mirrors its own writes; without this, a made-attempt

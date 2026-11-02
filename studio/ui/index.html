@@ -1308,15 +1308,20 @@
   <div class="sheet-wrap hidden" id="firstRunSheet">
     <div class="sheet sheet-send">
       <h2>Your app is ready to run</h2>
-      <p class="sheet-sub">It runs on your computer, not in this tab. Which
-      is true for you?</p>
+      <p class="sheet-sub" id="frSub">Open it right here, or run it natively on
+      your computer.</p>
       <div class="send-opts">
+        <button class="send-opt" id="frHereBtn" type="button">
+          <b>Open it here</b>
+          <span>It runs in a new tab, on a phone too, with nothing to install,
+          and shows you first what it may touch.</span>
+        </button>
         <button class="send-opt" id="frHaveBtn" type="button">
           <b>I already have Krate</b>
-          <span>Download the app and it opens when you double-click it.</span>
+          <span>Download the app and it opens natively when you double-click it.</span>
         </button>
         <button class="send-opt" id="frNeedBtn" type="button">
-          <b>I do not have Krate yet</b>
+          <b>Run it natively: get Krate</b>
           <span id="frNeedSub">Get it once, the way you got a video player.
           After that every Krate app just opens.</span>
         </button>
