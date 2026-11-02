@@ -95,7 +95,10 @@ test("a look-alike email account cannot re-list, retire, or move bob's moving na
 
   // Bob's own next version still retires his old row and moves his name.
   const next = await publish(e, BOB, V3);
-  assert.strictEqual(listing(e, mine.body.id), null, "retired by its owner");
+  // A version an update replaced keeps its row and link, off the shelf (IC-976).
+  assert.strictEqual(listing(e, mine.body.id).superseded, true, "superseded by its owner's next version");
+  assert.strictEqual(next.body.line, mine.body.line, "bob's next version is on bob's line");
+  assert.notStrictEqual(theirs.body.line, mine.body.line, "the look-alike's app is a line of its own");
   assert.ok(listing(e, theirs.body.id), "the look-alike's row is not bob's to retire either");
   assert.strictEqual(channel(e, "bob/notes").current, next.body.id);
 });

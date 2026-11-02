@@ -47,6 +47,7 @@ import { leaseRoute, leaseKeyRoute } from "./org-lease.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
+import { LINE_ID, advanceLine, currentHash, dropVersion, linesRoute, settleRows, versionOf } from "./lines.js";
 // Staged rollout: a pilot group first, pinned groups (G10).
 import { orgRolloutRoute } from "./org-rollout.js";
 // What an approver sees and must confirm (IC-950); after release control.
@@ -816,6 +817,14 @@ export default {
           ? new Response(null, { status: res.status, headers: res.headers })
           : res);
       }
+      // An app's versions (IC-976): its current one, and for its owner every
+      // one and the choice of which is current.
+      if (pathname === "/lines" || pathname.startsWith("/lines/")) {
+        const identity = request.headers.get("authorization") ? await verifyGitHub(request, env).catch(() => null) : null;
+        const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+        const answer = await linesRoute(request, url, env, { ownerOf, identity, base });
+        return cors(json(answer.body, answer.status));
+      }
       if (request.method === "GET" && pathname.startsWith("/c/")) {
         return cors(await resolveChannel(request, url, pathname.slice(3), env));
       }
@@ -1194,6 +1203,31 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
   // Whether these bytes were already listed: only a new app is announced.
   const fresh = !(await env.APPS.get(`app:${hash}`).catch(() => null));
 
+  // The app's line (IC-976): the same owner publishing the same app id is
+  // its next version, not another app. An "open it here" publish only
+  // opens a tab and is no version. A quota day leaves the publish working
+  // at its own address, unversioned.
+  let line = null;
+  const manifestApp = (judgement.manifest && judgement.manifest.app) || {};
+  if (!fields.quiet && manifestApp.id) {
+    try {
+      line = await advanceLine(env, {
+        owner,
+        appId: manifestApp.id,
+        name: meta.name,
+        hash,
+        version: manifestApp.version,
+        size,
+      });
+    } catch (_) {
+      line = null;
+    }
+    if (line) {
+      meta.line = line.id;
+      meta.version_n = line.n;
+    }
+  }
+
   // Keyed so KV's own lexicographic listing comes back newest-first when
   // reversed, which saves sorting the whole set on every page load.
   let listed = true;
@@ -1206,10 +1240,21 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     listed = false;
   }
 
+  // The line's other versions keep their rows, with their links and names,
+  // marked superseded so the gallery shows one row per app (IC-976).
+  if (line && line.added) {
+    try {
+      await settleRows(env, line.line);
+    } catch (_) {
+      // A quota day: the gallery may show an older row until the next publish.
+    }
+  }
+
   // The same person republishing the same app is a new version, not a new
   // app: retire every older listing that shares this author and name, so
   // the gallery shows one row per app. The old bundles and aliases stay --
   // every link already sent keeps working -- only the gallery rows go.
+  // Rows that belong to a line are its versions and are left to it.
   try {
     const listing = await env.APPS.list({ prefix: "app:", limit: 200 });
     for (const key of listing.keys) {
@@ -1218,6 +1263,7 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
       const raw = await env.APPS.get(key.name);
       if (!raw) continue;
       const other = JSON.parse(raw);
+      if (other.line) continue;
       if (ownerOfRecord(other) === owner && other.name === meta.name) {
         await env.APPS.delete(key.name);
         // A retired release's bytes are anyone's to re-publish (see
@@ -1254,9 +1300,14 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     // Alias minting is a nicety; quota trouble must not fail a publish.
   }
   const result = {
-    url: `${base}/a/${short}`,
+    // The link to share is the app's own (IC-976): it opens whatever
+    // version is current, so a link sent today opens the update tomorrow.
+    // This build's own link is version_url.
+    url: line ? `${base}/a/${line.id}` : `${base}/a/${short}`,
+    version_url: `${base}/a/${short}`,
     full_url: `${base}/a/${hash}`,
     id: hash,
+    ...(line ? { line: line.id, version: line.n, updated: line.n > 1 } : {}),
     // The receipt: what the store holds, read back, not what was sent.
     stored: { size: stored.size, sha256: stored.sha256 },
   };
@@ -1279,7 +1330,7 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
   }
   // The publisher hears it is live, with the link, once per new app. A
   // publish that is only there to open an app in a tab says it is quiet.
-  if (fresh && !fields.quiet) {
+  if (fresh && !fields.quiet && (!line || line.n === 1)) {
     await tellPublished(env, owner, { name: meta.name, url: result.url, listed: listed && !meta.unlisted });
   }
   return json(result);
@@ -1492,6 +1543,8 @@ async function unpublish(request, hash, env) {
   // Only a listed publish ever moved a channel, so an app that never got
   // its listing has none to retreat.
   if (meta && ownerOf(identity).startsWith("github:")) await retreatChannel(env, identity.login, meta.name, hash);
+  // And its app's link falls back the same way (IC-976).
+  await dropVersion(env, hash, meta).catch(() => {});
   return json({ ok: true });
 }
 
@@ -1939,6 +1992,12 @@ async function fetchBundle(request, url, hash, env) {
   // A short link is the hash's own prefix; resolve it to the full content
   // address first. The strict hex checks stay -- they are the guard that
   // closes off every path-traversal shape at once.
+  // The app's own link: whichever version is current now (IC-976).
+  if (LINE_ID.test(hash)) {
+    const now = await currentHash(env, hash);
+    if (!now) return text("not found", 404);
+    hash = now;
+  }
   if (/^[0-9a-f]{8,32}$/.test(hash)) {
     const full = await env.APPS.get(`alias:${hash}`);
     if (!full) {
@@ -2209,6 +2268,12 @@ async function makeit(request, env) {
 }
 
 async function meta(hash, env) {
+  // The app's own link: whichever version is current now (IC-976).
+  if (LINE_ID.test(hash)) {
+    const now = await currentHash(env, hash);
+    if (!now) return text("not found", 404);
+    hash = now;
+  }
   if (/^[0-9a-f]{8,32}$/.test(hash)) {
     const full = await env.APPS.get(`alias:${hash}`);
     if (!full) return text("not found", 404);
@@ -2244,7 +2309,17 @@ async function meta(hash, env) {
       // an absent list and an empty one mean very different things.
       capabilities: Array.isArray(m.capabilities) ? m.capabilities : null,
     },
+    // Which version of its app this build is, and the app's own link
+    // (IC-976): a page holding an older build can say a newer one exists.
+    version: await versionInfo(env, hash, base),
   });
+}
+
+/// { n, current, newer, app_url } for a build on a line, else null.
+async function versionInfo(env, hash, base) {
+  const v = await versionOf(env, hash).catch(() => null);
+  if (!v) return null;
+  return { n: v.n, current: v.current, newer: v.current > v.n, versions: v.versions, app_url: `${base}/a/${v.line}` };
 }
 
 /// The gallery.
@@ -2280,8 +2355,9 @@ async function list(env, url) {
       } catch (_) {
         return null;
       }
-      // Unlisted apps have working links and no gallery row.
-      if (meta.unlisted) return null;
+      // Unlisted apps have working links and no gallery row; nor does a
+      // version an update replaced (IC-976).
+      if (meta.unlisted || meta.superseded) return null;
       return { id: key.name.slice("app:".length), meta };
     }),
   );
@@ -2380,7 +2456,8 @@ async function list(env, url) {
     const a = chosen.get(id);
     return {
       id,
-      url: `${base}/a/${id}`,
+      // A versioned app's own link, which follows its updates (IC-976).
+      url: a.meta.line ? `${base}/a/${a.meta.line}` : `${base}/a/${id}`,
       ...images.get(id),
       opens: opens.get(id) || 0,
       // The owner principal is for the hub's checks, not the gallery: an
@@ -4410,6 +4487,7 @@ function bigStatus(record, env) {
   }
   if (record.problem) out.problem = record.problem;
   if (record.url) out.url = record.url;
+  for (const k of ["version_url", "line", "version", "updated"]) if (record[k] !== undefined) out[k] = record[k];
   if (record.status === "uploading") out.parts = record.parts;
   return out;
 }
@@ -4548,6 +4626,8 @@ async function bigVerdict(request, env, id) {
     }
     record.status = "listed";
     record.url = answer.url;
+    // An app's version (IC-976), carried to the uploader as the small door does.
+    for (const k of ["version_url", "line", "version", "updated"]) if (answer[k] !== undefined) record[k] = answer[k];
     await writeBigRecord(env, record);
     return json(bigStatus(record, env));
   }
@@ -5123,7 +5203,7 @@ async function developerDirectApps(env, login, seen) {
       }
       // <login>.krate.tech shows only what github:<login> owns (K-1085).
       if (!meta || !ownedByGitHubLogin(meta, login)) return null;
-      if (meta.unlisted) return null;
+      if (meta.unlisted || meta.superseded) return null;
       if (await env.APPS.get(`takedown:${hash}`)) return null;
       return {
         // No channel, so the app answers at its content address. The
