@@ -139,6 +139,9 @@ const PLAYER_FILES = new Set([
   // rules, fetched only by an app that imports store.sql.
   "sqldb.js",
   "sql.wasm",
+  // An app's shared store and its secrets (IC-974): the page keeps both.
+  "shared-store.js",
+  "secret-store.js",
   "krate_web.js",
   "krate_web_bg.wasm",
   "validator.wasm",

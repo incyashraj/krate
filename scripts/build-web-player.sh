@@ -74,7 +74,8 @@ CC_wasm32_wasip1="$wasi_sdk/bin/clang" AR_wasm32_wasip1="$wasi_sdk/bin/llvm-ar" 
 web=crates/adapter-web/player/web
 cp "$web"/run.html "$web"/player.js "$web"/player.css "$web"/app-worker.js \
   "$web"/hosts.js "$web"/bridge.js "$web"/ring.js "$web"/audio.js "$web"/audio-worklet.js \
-  "$web"/org-data.js "$web"/sqldb.js "$web"/krate-card.png "$out"/
+  "$web"/org-data.js "$web"/sqldb.js "$web"/shared-store.js "$web"/secret-store.js \
+  "$web"/krate-card.png "$out"/
 cp target/wasm32-wasip1/release/krate_sql_web.wasm "$out"/sql.wasm
 # The browser as an organisation's device: the console's own file, so a tab
 # that keeps an app's team data registers and holds the key the same way.

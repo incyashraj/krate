@@ -19,6 +19,8 @@ import { makeBridgeMemory, pageBridge } from './bridge.js';
 import { makeRing, pageRing } from './ring.js';
 import { makeAudioMemory, pageAudio } from './audio.js';
 import { TeamData } from './org-data.js';
+import { SharedStore, SharedFail } from './shared-store.js';
+import { SecretStore, SecretFail } from './secret-store.js';
 // The browser as an organisation's device (window.KrateSigning): the same
 // file the console uses on krate.tech, served here beside the Player.
 import './org-device.js';
@@ -655,13 +657,28 @@ async function loadKv(d, store) {
 // ------------------------------------------------------------- running
 async function start({ meta, modules, glue, granted, storeKey, playerModule, world, name, org }) {
   const gui = /\/gui@/.test(world || '');
-  const d = gui || granted.includes('store.kv') || granted.includes('store.sql') ? await db().catch(() => null) : null;
-  if (d && (granted.includes('store.kv') || granted.includes('store.sql'))) keepData();
+  const keeps = ['store.kv', 'store.sql', 'store.shared', 'store.secret'].some((c) => granted.includes(c));
+  const d = gui || keeps ? await db().catch(() => null) : null;
+  if (d && keeps) keepData();
   // The app's database, as the browser kept it: one value per app under a
   // number, which no key-value key (always a string) can be or reach, so
   // store.kv's clear never touches it.
   const sqlKey = [storeKey, 0];
   const sqlImage = d && granted.includes('store.sql') ? await tx(d, 'readonly', (s) => s.get(sqlKey)).catch(() => null) : null;
+  // The app's shared store (store.shared) and secrets (store.secret), under
+  // numbers of their own beside the database's, for the same reason.
+  const NO_STORAGE = 'this browser keeps no storage for this tab';
+  const slot = (n) => ({
+    get: () => (d ? tx(d, 'readonly', (s) => s.get([storeKey, n])) : Promise.reject(new Error(NO_STORAGE))),
+    put: (v) => (d ? tx(d, 'readwrite', (s) => s.put(v, [storeKey, n])) : Promise.reject(new Error(NO_STORAGE))),
+    add: (v) => (d ? tx(d, 'readwrite', (s) => s.add(v, [storeKey, n])) : Promise.reject(new Error(NO_STORAGE))),
+  });
+  const shared = granted.includes('store.shared')
+    ? await new SharedStore({ hub: location.origin, windowed: gui, load: slot(1).get, save: slot(1).put }).open()
+    : null;
+  const secrets = granted.includes('store.secret')
+    ? await new SecretStore({ storeKey, getKey: slot(3).get, addKey: slot(3).add, getSealed: slot(2).get, putSealed: slot(2).put }).open()
+    : null;
   const team = granted.includes('store.org') ? await openTeam(org, gui).catch((e) => {
     report.teamError = String((e && e.message) || e);
     return { mode: 'unsupported' };
@@ -745,6 +762,22 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     }
   };
   const kvKey = (key) => [storeKey, key];
+  // One store.shared or store.secret call: the store's own answer, its
+  // WIT error, or -- for anything it did not expect -- io in words, so the
+  // app always hears one of its own error cases. Without the grant there
+  // is no store, and the answer is denied, as on desktop.
+  const storeOp = (which, Fail, fn) => async (args) => {
+    const store = which();
+    if (!store) return { json: { err: { tag: 'denied' } } };
+    try {
+      const out = await fn(store, args || {});
+      if (out && typeof out === 'object' && 'bytes' in out) return out.bytes ? { json: { ok: true }, body: out.bytes } : { json: { ok: false } };
+      return { json: { ok: out === undefined ? null : out } };
+    } catch (e) {
+      if (e instanceof Fail) return { json: { err: e.payload } };
+      return { json: { err: { tag: 'io', val: String((e && e.message) || e) } } };
+    }
+  };
   const kvWrite = async (fn) => {
     try { await tx(d, 'readwrite', fn); return { json: { ok: null } }; }
     catch (e) { return { json: { err: { tag: 'io', val: `the browser did not save it (${(e && e.message) || e})` } } }; }
@@ -999,6 +1032,19 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     'kv.set': ({ key, value }) => (d ? kvWrite((s) => s.put(value, kvKey(key))) : { json: { err: { tag: 'io', val: 'this browser keeps no storage for this tab' } } }),
     'kv.delete': ({ key }) => (d ? kvWrite((s) => s.delete(kvKey(key))) : { json: { ok: null } }),
     'kv.clear': () => (d ? kvWrite((s) => s.delete(range(storeKey))) : { json: { ok: null } }),
+    'shared.code': storeOp(() => shared, SharedFail, (s) => s.code()),
+    'shared.create': storeOp(() => shared, SharedFail, (s) => s.create()),
+    'shared.join': storeOp(() => shared, SharedFail, (s, { code }) => s.join(code)),
+    'shared.leave': storeOp(() => shared, SharedFail, (s) => s.leave()),
+    'shared.get': storeOp(() => shared, SharedFail, (s, { key }) => ({ bytes: s.get(key) })),
+    'shared.set': storeOp(() => shared, SharedFail, (s, { key, value }) => s.set(key, value)),
+    'shared.delete': storeOp(() => shared, SharedFail, (s, { key }) => s.delete(key)),
+    'shared.keys': storeOp(() => shared, SharedFail, (s) => s.keys()),
+    'shared.sync': storeOp(() => shared, SharedFail, (s) => s.sync()),
+    'secret.get': storeOp(() => secrets, SecretFail, (s, { name: n }) => ({ bytes: s.get(n) })),
+    'secret.set': storeOp(() => secrets, SecretFail, (s, { name: n, value }) => s.set(n, value)),
+    'secret.delete': storeOp(() => secrets, SecretFail, (s, { name: n }) => s.delete(n)),
+    'secret.names': storeOp(() => secrets, SecretFail, (s) => s.names()),
     'clipboard.read': async () => {
       try { return { json: { ok: await navigator.clipboard.readText() } }; }
       catch { return { json: { err: { tag: 'platform', val: 'the browser did not let this tab read the clipboard' } } }; }

@@ -564,6 +564,11 @@ pub fn works_in_a_tab(module: &str, action: &str) -> bool {
             // sealing are crates/orgdata in the validator module, the
             // page keeps the copy and syncs it (player/web/org-data.js).
             | ("store", "org")
+            // The shared store and secrets (IC-974): the desktop's
+            // local-first copy, merge and limits, synced with the hub the
+            // Player came from (player/web/shared-store.js); secrets sealed
+            // with a non-extractable WebCrypto key (secret-store.js).
+            | ("store", "shared" | "secret")
             // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
             // app's own buffers (player/web/audio-worklet.js), heard from
             // the person's first tap or key, as browsers require. The

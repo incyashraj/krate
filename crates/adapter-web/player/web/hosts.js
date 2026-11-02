@@ -217,6 +217,20 @@ export function buildImports(ctx) {
     if (json.err) throw new HostError(json.err);
   };
 
+  // ------------------------------------------- store.shared, store.secret
+  // The shared store and the secrets live on the page (shared-store.js,
+  // secret-store.js): the shared copy syncs with the hub in the background,
+  // which a blocked worker cannot, and the secrets' key is the page's. A
+  // call without the grant is denied here, as on desktop, before anything
+  // reaches the page.
+  const storeCall = (cap, op, args, transfer) => {
+    if (!allows(cap)) throw new HostError({ tag: 'denied' });
+    const answer = bridge.call(op, args || {}, transfer);
+    if (answer.json.err) throw new HostError(answer.json.err);
+    return answer;
+  };
+  const bytesOf = ({ json, body }) => (json.ok ? new Uint8Array(body) : undefined);
+
   // ---------------------------------------------------------- store.sql
   // The app's database (sqldb.js, crates/sql-web): SQLite and the desktop's
   // rules, in this worker. Every write is kept before the call returns, so
@@ -516,6 +530,29 @@ export function buildImports(ctx) {
         kvCall('kv.clear', {});
         kv.commit_clear();
       },
+    },
+    'krate:store/shared': {
+      code: () => storeCall('store.shared', 'shared.code').json.ok ?? undefined,
+      create: () => storeCall('store.shared', 'shared.create').json.ok,
+      join(code) { storeCall('store.shared', 'shared.join', { code: String(code) }); },
+      leave() { storeCall('store.shared', 'shared.leave'); },
+      get: (key) => bytesOf(storeCall('store.shared', 'shared.get', { key })),
+      set(key, value) {
+        const copy = value.slice();
+        storeCall('store.shared', 'shared.set', { key, value: copy }, [copy.buffer]);
+      },
+      delete(key) { storeCall('store.shared', 'shared.delete', { key }); },
+      keys: () => storeCall('store.shared', 'shared.keys').json.ok,
+      sync: () => storeCall('store.shared', 'shared.sync').json.ok === true,
+    },
+    'krate:store/secret': {
+      get: (name) => bytesOf(storeCall('store.secret', 'secret.get', { name })),
+      set(name, secret) {
+        const copy = secret.slice();
+        storeCall('store.secret', 'secret.set', { name, value: copy }, [copy.buffer]);
+      },
+      delete(name) { storeCall('store.secret', 'secret.delete', { name }); },
+      names: () => storeCall('store.secret', 'secret.names').json.ok,
     },
     'krate:store/org': {
       put(collection, id, fields) {

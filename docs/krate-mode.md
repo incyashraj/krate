@@ -548,8 +548,8 @@ people can send. check-app ends with a note naming any it found.
 | `fs.list:<path-glob>` | no | computer only | list a folder |
 | `store.kv` | no | yes | the app's own key-value store: keys up to 256 bytes, values up to 1 MiB, 16 MiB per app; set returns an error past these, so check it. Settings and lists go here; a document goes in a file |
 | `store.sql` | no | yes | the app's own SQL database |
-| `store.secret` | no | computer only | secrets encrypted at rest (passwords, tokens); not the OS keychain |
-| `store.shared` | no | computer only | share a key-value bucket with everyone holding its invite code |
+| `store.secret` | no | yes | secrets encrypted at rest (passwords, tokens); not the OS keychain |
+| `store.shared` | no | yes | share a key-value bucket with everyone holding its invite code |
 | `store.org` | no | yes | keep records for the whole team in its organisation's store, with no backend |
 | `store.group:<group-name>` | no | computer only | share a key-value store with the same publisher's other apps, in a named group its signed list admits |
 | `memory.budget:<MiB>` | no | computer only | more memory than the default, in MiB (up to 3584); the person sees it at consent |

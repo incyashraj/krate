@@ -187,6 +187,10 @@ mod tests {
         assert!(works_in_a_tab(&sound));
         let mic: Capability = "audio.capture".parse().unwrap();
         assert!(!works_in_a_tab(&mic));
+        // The shared store and secrets do too (IC-974, share-proof.mjs).
+        for cap in ["store.shared", "store.secret"] {
+            assert!(works_in_a_tab(&cap.parse().unwrap()), "{cap}");
+        }
         let cam = rows.iter().find(|r| r["cap"] == "camera.capture").unwrap();
         assert_eq!(cam["in_tab"], false);
         assert_eq!(cam["plain"], "use your camera");

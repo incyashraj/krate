@@ -29085,11 +29085,11 @@ mod link_note_tests {
             "net.connect:api.example.com:443",
         ]);
         assert_eq!(link_notes(dir.path()), Vec::<String>::new());
-        manifest(&["ui.window:create", "store.secret", "store.sql"]);
+        manifest(&["ui.window:create", "camera.capture", "store.sql"]);
         let notes = link_notes(dir.path());
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(
-            notes[0].contains("save sign-in details for itself (store.secret)"),
+            notes[0].contains("use your camera (camera.capture)"),
             "{notes:?}"
         );
         assert!(!notes[0].contains("store.sql"), "{notes:?}");
