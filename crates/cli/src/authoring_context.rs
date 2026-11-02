@@ -456,7 +456,12 @@ A window wider than tall plays in landscape on a phone. A text field \
 the app draws itself (a name box in a game, a canvas editor) calls \
 `krate::ui::text_entry::start(win)` when it takes focus and `stop(win)` \
 when it loses it: a phone shows its keyboard, and the typing arrives as \
-the usual `TextInput` and key events. Keep such a field in a \
+the usual `TextInput` and key events. Every Krate host (Mac, Windows, \
+Linux, a phone, a browser tab) sends a typed letter as BOTH a key event \
+and a `TextInput`: take characters only from `TextInput`, and use key \
+events for Backspace, Enter, Tab and the arrows. Taking letters from both \
+types every letter twice (a generated co-op game's room code did). Keep \
+such a field in a \
 `krate::layout::Field`: `insert` the `TextInput` text, pass keys to \
 `key_with(&k.key, k.modifiers.shift, k.modifiers.meta || \
 k.modifiers.control)`, draw `selection()` behind the text. It selects with \
