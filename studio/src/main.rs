@@ -1612,6 +1612,7 @@ fn off_request_detail(lines: &[String]) -> Option<String> {
     for line in lines {
         let t = line.trim();
         if t.contains("but it is not what you asked for")
+            || t.contains("but part of what you asked for may be missing")
             || t.starts_with("The change did not do what you asked")
         {
             out.clear();
@@ -2422,6 +2423,8 @@ fn run_author(
             Some("off-request".to_string())
         } else if port_unverified {
             Some("ported".to_string())
+        } else if worth_checking(&tail).is_some() {
+            Some("check".to_string())
         } else {
             None
         },
@@ -2434,9 +2437,19 @@ fn run_author(
                     .to_string(),
             )
         } else {
-            None
+            worth_checking(&tail)
         },
     })
+}
+
+/// The engine's note on an app it accepted that may still miss a word of
+/// the request ("Worth checking: it may be missing input."), for the card.
+fn worth_checking(lines: &[String]) -> Option<String> {
+    lines
+        .iter()
+        .map(|l| l.trim())
+        .find(|l| l.starts_with("Worth checking:"))
+        .map(str::to_string)
 }
 
 /// Tell the person their app is ready, through the OS itself.
@@ -6685,6 +6698,36 @@ mod tests {
     /// (exit 6, file present) is a result with a verdict; a stop, a real
     /// failure, or a missing file is not. The detail is the engine's own
     /// verdict line and its asked-for/but pairs, nothing else it printed.
+    /// An accepted app that may still miss a word of the request carries
+    /// the engine's note to the card, and the softer miss is recognised as
+    /// a verdict like the old one (2026-11-02).
+    #[test]
+    fn a_note_and_a_soft_miss_reach_the_card() {
+        let accepted: Vec<String> = [
+            "==> packing",
+            "Created /x/time.krate",
+            "  Worth checking: it may be missing input.",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            super::worth_checking(&accepted).as_deref(),
+            Some("Worth checking: it may be missing input.")
+        );
+        let soft: Vec<String> = [
+            "Built /x/time.krate, but part of what you asked for may be missing.",
+            "",
+            "  but       it may be missing: input",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let detail = super::off_request_detail(&soft).expect("a verdict");
+        assert!(detail.contains("may be missing: input"), "{detail}");
+        assert!(super::worth_checking(&soft).is_none());
+    }
+
     #[test]
     fn an_app_that_built_but_is_not_what_was_asked_is_a_result_with_a_verdict() {
         assert!(super::is_off_request(Some(6), false, true));

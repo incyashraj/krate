@@ -114,6 +114,12 @@ const NOISE: &[&str] = &[
     "more", "less", "many", "much", "same", "other", "another", "both", "such", "own", "show",
     "shows", "showing", "display", "displays", "displaying", "see", "view", "look", "print",
     "prints", "output", "outputs", "give", "gives",
+    // How people talk about an app, not what it contains: "simply tells me",
+    // "write 'made for Hemja'" (the quoted words carry it). A correct time
+    // converter was told it had "nothing about simply, tells" (2026-11-02).
+    "simply", "tell", "tells", "telling", "told", "write", "writes", "writing", "written",
+    "say", "says", "saying", "put", "puts", "really", "basically", "actually", "way",
+    "kind", "able", "allow", "allows", "something", "know",
 ];
 
 /// Words that point at a file the person attached rather than at anything the
@@ -290,7 +296,20 @@ pub fn judge(request: &str, _name: &str, source: &str) -> Acceptance {
             .map(String::as_str)
             .collect();
         let detail = match outcome {
+            // Served, and a word or two not seen: worth a look, not a fault.
+            Outcome::Pass if !missing.is_empty() => format!(
+                "the app has {} of {}; worth checking: {}",
+                found.len(),
+                req.terms.len(),
+                missing.join(", ")
+            ),
             Outcome::Pass => format!("the app has {} of {}", found.len(), req.terms.len()),
+            // Most of it found: name what seems missing, not an accusation
+            // over the whole request. Almost nothing found: the app is about
+            // something else, and that is said plainly.
+            Outcome::Fail if !found.is_empty() && found.len() * 3 >= req.terms.len() => {
+                format!("it may be missing: {}", missing.join(", "))
+            }
             Outcome::Fail => format!("the app has nothing about {}", missing.join(", ")),
             Outcome::Skip => "not applicable".to_string(),
         };
@@ -391,12 +410,25 @@ pub fn judge(request: &str, _name: &str, source: &str) -> Acceptance {
     } else if judged.is_empty() {
         "the request named nothing specific enough to check".to_string()
     } else {
-        let missing: Vec<&str> = verdicts
+        let fails: Vec<&Verdict> = verdicts
             .iter()
             .filter(|v| v.outcome == Outcome::Fail)
-            .map(|v| v.text.as_str())
             .collect();
-        format!("the app does not do this: {}", missing.join("; "))
+        let partial: Vec<&str> = fails
+            .iter()
+            .filter_map(|v| v.detail.strip_prefix("it may be missing: "))
+            .collect();
+        if !fails.is_empty() && partial.len() == fails.len() {
+            // Most of it is there: name only what seems missing, never the
+            // person's own sentence read back to them.
+            format!(
+                "part of what you asked for may be missing: {}",
+                partial.join(", ")
+            )
+        } else {
+            let missing: Vec<&str> = fails.iter().map(|v| v.text.as_str()).collect();
+            format!("the app does not do this: {}", missing.join("; "))
+        }
     };
 
     Acceptance {
@@ -652,6 +684,57 @@ fn mentions(haystack: &str, term: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A time converter that does almost everything asked but has no way to
+    /// type a time is told exactly that -- "input" -- not accused over the
+    /// whole sentence, and never over how the person talked ("simply",
+    /// "tells", "write"). The words of a real Studio request (2026-11-02).
+    #[test]
+    fn a_near_miss_names_only_what_seems_missing() {
+        let request = "make a nice app which simply tells me time convertion from SF local time \
+                       to Mumbai local time with date write \"made for Asha\" like I can input \
+                       local SF time";
+        let steppers = "fn converter(local_time: Time) -> Time { mumbai(local_time) } \
+                        fn draw_date(date: Date) {} const FOOTER: &str = \"made for Asha\";";
+        // The app it built: converts, dates, the credit -- but no typed
+        // input. Accepted, with the one thing worth checking named.
+        let verdict = judge(request, "time", steppers);
+        assert!(verdict.accepted, "{verdict:?}");
+        let detail = &verdict.requirements[0].detail;
+        assert!(detail.ends_with("worth checking: input"), "{verdict:?}");
+        for word in ["simply", "tells", "write", "convertion"] {
+            assert!(
+                !detail.contains(word),
+                "{word} is how it was asked, not what is missing: {verdict:?}"
+            );
+        }
+        // With a typed input there is nothing to check.
+        let typed = format!("{steppers} fn on_input(text: &str) {{}}");
+        let served = judge(request, "time", &typed);
+        assert!(
+            served.accepted && !served.requirements[0].detail.contains("worth checking"),
+            "{served:?}"
+        );
+        // Half of it: built, and said softly with only the missing words.
+        let half = judge(
+            request,
+            "time",
+            "fn mumbai_clock(local: Time) {} fn draw_time() {}",
+        );
+        assert!(!half.accepted, "{half:?}");
+        assert!(
+            half.summary
+                .starts_with("part of what you asked for may be missing: "),
+            "{half:?}"
+        );
+        assert!(!half.summary.contains("make a nice app"), "{half:?}");
+        // And an app about something else is still called that.
+        let other = judge(request, "time", "fn add_item(list: &mut Vec<String>) {}");
+        assert!(
+            other.summary.starts_with("the app does not do this"),
+            "{other:?}"
+        );
+    }
 
     /// The E4 case, exactly: a chess request answered with a checklist. This
     /// is the false positive the whole module exists to stop, and it is the

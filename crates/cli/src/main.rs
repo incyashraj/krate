@@ -10945,17 +10945,46 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     println!();
     if acceptance.accepted {
         println!("Created {}", req.output.display());
+        // Served, with a word of the request not seen in the code: a note
+        // the person can act on ("not like this, make it like an input"),
+        // never a failure over an app that does what was asked.
+        let worth: Vec<&str> = acceptance
+            .requirements
+            .iter()
+            .filter_map(|v| v.detail.split_once("; worth checking: ").map(|(_, w)| w))
+            .collect();
+        if !worth.is_empty() {
+            println!("  Worth checking: it may be missing {}.", worth.join(", "));
+        }
     } else if committed {
         // The app exists and works. What it does not do is the thing that was
         // asked for, and that is the first thing to say -- not a footnote
         // under a "Created" line that reads as success.
-        println!(
-            "Built {}, but it is not what you asked for.",
-            req.output.display()
-        );
+        // Most of what was asked is there and something seems missing:
+        // say that, softly, and name it. Only an app about something else
+        // entirely is "not what you asked for".
+        let failures = acceptance.failures();
+        let partial = failures
+            .iter()
+            .all(|f| f.detail.starts_with("it may be missing"));
+        if partial {
+            println!(
+                "Built {}, but part of what you asked for may be missing.",
+                req.output.display()
+            );
+        } else {
+            println!(
+                "Built {}, but it is not what you asked for.",
+                req.output.display()
+            );
+        }
         println!();
-        for failure in acceptance.failures() {
-            println!("  asked for: {}", failure.text.trim());
+        for failure in &failures {
+            // One clause that is the whole request: echoing it back tells
+            // the person nothing they did not just type.
+            if failures.len() > 1 || failure.text.trim() != judged_request.trim() {
+                println!("  asked for: {}", failure.text.trim());
+            }
             println!("  but       {}", failure.detail);
         }
         println!();

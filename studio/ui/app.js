@@ -2473,11 +2473,21 @@ function fillDone(result, opts) {
     // names the file path); the web's is the one-line reason. Keep every
     // line that is a reason, and say the verdict once in our own words.
     const lines = String(result.verdict_detail || "").split("\n").filter(Boolean);
-    const kept = lines.filter((l) => !/but it is not what you asked for/.test(l) && !l.startsWith("The change did not"));
+    const partial = lines.some((l) => /may be missing/.test(l));
+    const kept = lines
+      .filter((l) => !/but it is not what you asked for|but part of what you asked for may be missing/.test(l) && !l.startsWith("The change did not"))
+      // "but it may be missing: input" reads as a sentence on its own.
+      .map((l) => l.replace(/^but it may be missing: /, "It may be missing: "));
     const head = lines[0] && lines[0].startsWith("The change did not")
       ? lines[0]
+      : partial
+      ? "Built."
       : "Built, but it is not what you asked for.";
     verdictEl.textContent = [head, ...kept, "Say what to change and it becomes the next version."].join(" ");
+    verdictEl.classList.remove("hidden");
+  } else if (result.verdict === "check") {
+    // Accepted, with one thing worth a look: said as a note, not a fault.
+    verdictEl.textContent = [String(result.verdict_detail || ""), "Say what to change and it becomes the next version."].join(" ");
     verdictEl.classList.remove("hidden");
   } else if (result.verdict === "ported") {
     // A port's honest ending: it builds, runs and refuses without its
@@ -2576,10 +2586,10 @@ function finishBuild(result) {
   built.messages.push({
     who: "KRATE",
     body: offRequest
-      ? `v${version} built, but it is not what you asked for.${result.verdict_detail ? `\n${result.verdict_detail}` : ""}\nThe file is there and it runs. Tell me what to change and it becomes v${version + 1}.`
+      ? `v${version} built${/may be missing/.test(result.verdict_detail || "") ? ", but part of what you asked for may be missing" : ", but it is not what you asked for"}.${result.verdict_detail ? `\n${String(result.verdict_detail).split("\n").filter((l) => !/^Built /.test(l)).join("\n")}` : ""}\nThe file is there and it runs. Tell me what to change and it becomes v${version + 1}.`
       : ported
       ? `v${version} ported · ${result.size}${mins ? ` · ${mins} min` : ""}. It builds, runs and asks only for what it declared. Open it and check it does what your original did; tell me what to change and it becomes v${version + 1}.`
-      : `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}. Tell me what to change and it becomes v${version + 1}.`,
+      : `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}.${result && result.verdict === "check" && result.verdict_detail ? ` ${result.verdict_detail}` : ""} Tell me what to change and it becomes v${version + 1}.`,
     files: [],
     when: Math.floor(Date.now() / 1000),
   });
