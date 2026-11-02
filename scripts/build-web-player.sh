@@ -51,12 +51,32 @@ mkdir -p "$out"
 wasm-bindgen --target web --no-typescript --out-name krate_web --out-dir "$out" \
   target/wasm32-unknown-unknown/release/krate_adapter_web.wasm
 
+# 2b. store.sql in the tab (K-1149): crates/sql-web, the desktop's SQLite
+#     and rules, for wasm32-wasip1. SQLite is C, so this needs wasi-sdk's
+#     clang and sysroot: WASI_SDK_PATH, or ~/opt/wasi-sdk, or /opt/wasi-sdk
+#     (https://github.com/WebAssembly/wasi-sdk/releases, unpacked).
+wasi_sdk=${WASI_SDK_PATH:-}
+for candidate in "$HOME/opt/wasi-sdk" /opt/wasi-sdk; do
+  if [ -z "$wasi_sdk" ] && [ -x "$candidate/bin/clang" ]; then wasi_sdk=$candidate; fi
+done
+if [ -z "$wasi_sdk" ] || [ ! -x "$wasi_sdk/bin/clang" ]; then
+  echo "build-web-player: wasi-sdk is missing; unpack a release from" >&2
+  echo "  https://github.com/WebAssembly/wasi-sdk/releases to ~/opt/wasi-sdk (or set WASI_SDK_PATH)" >&2
+  exit 1
+fi
+CC_wasm32_wasip1="$wasi_sdk/bin/clang" AR_wasm32_wasip1="$wasi_sdk/bin/llvm-ar" \
+  CFLAGS_wasm32_wasip1="--sysroot=$wasi_sdk/share/wasi-sysroot" \
+  LIBSQLITE3_FLAGS="-USQLITE_THREADSAFE -DSQLITE_THREADSAFE=0 -DSQLITE_TEMP_STORE=3 -DLONGDOUBLE_TYPE=double -DSQLITE_OMIT_LOAD_EXTENSION" \
+  cargo build --release --locked --target wasm32-wasip1 -p krate-sql-web
+
 # 3. The page, the validator the hub itself runs, and the site's own font
 #    and mark (a cross-origin-isolated page cannot load krate.tech's).
 web=crates/adapter-web/player/web
 cp "$web"/run.html "$web"/player.js "$web"/player.css "$web"/app-worker.js \
   "$web"/hosts.js "$web"/bridge.js "$web"/ring.js "$web"/audio.js "$web"/audio-worklet.js \
-  "$web"/org-data.js "$web"/krate-card.png "$out"/
+  "$web"/org-data.js "$web"/sqldb.js "$web"/shared-store.js "$web"/secret-store.js \
+  "$web"/krate-card.png "$out"/
+cp target/wasm32-wasip1/release/krate_sql_web.wasm "$out"/sql.wasm
 # The browser as an organisation's device: the console's own file, so a tab
 # that keeps an app's team data registers and holds the key the same way.
 cp docs/landing/kit/org-device.js "$out"/

@@ -2712,11 +2712,13 @@ export async function openCounts(env, days = 30) {
   if (!env.CF_ACCOUNT_ID || !env.CF_ANALYTICS_TOKEN) return new Map();
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
   // blob1 is the action, blob8 the app id and blob9 the network; see
-  // writeDataPoint above. CI and build farms (cloud) are not people.
+  // writeDataPoint above. CI and build farms (cloud) are not people, nor
+  // crawlers or the Player's own proof runs (blob13, receive.js tabEvent;
+  // a desktop open leaves it empty and counts).
   const sql = `
     SELECT blob8 AS app, SUM(_sample_interval) AS opens
     FROM krate_usage
-    WHERE blob1 = 'open' AND blob8 != '-' AND blob9 != 'cloud' AND timestamp >= toDateTime('${since} 00:00:00')
+    WHERE blob1 = 'open' AND blob8 != '-' AND blob9 != 'cloud' AND blob13 != 'bot' AND blob13 != 'probe' AND timestamp >= toDateTime('${since} 00:00:00')
     GROUP BY app ORDER BY opens DESC LIMIT 200`;
   try {
     const r = await fetch(

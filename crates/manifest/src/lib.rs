@@ -543,6 +543,50 @@ pub struct Capability {
     resource: Option<String>,
 }
 
+/// [`Capability::works_in_a_tab`] by module and action, for a spec in the
+/// catalog (the authoring pack's "opens from a link" column).
+pub fn works_in_a_tab(module: &str, action: &str) -> bool {
+    matches!(
+        (module, action),
+        ("io", "stdout" | "stderr" | "args" | "log")
+            | ("random", "bytes")
+            | ("time", _)
+            | ("locale", _)
+            | ("ui", "window" | "clipboard" | "open-url")
+            // net.ws rides the same grant (IC-974).
+            | ("net", "connect")
+            | ("store", "kv")
+            // The app's own database (K-1149): the desktop's SQLite and
+            // rules (crates/appsql) compiled for the tab (crates/sql-web),
+            // kept per app in the browser's storage.
+            | ("store", "sql")
+            // An organisation's team data (G1): the copy, merge and
+            // sealing are crates/orgdata in the validator module, the
+            // page keeps the copy and syncs it (player/web/org-data.js).
+            | ("store", "org")
+            // The shared store and secrets (IC-974): the desktop's
+            // local-first copy, merge and limits, synced with the hub the
+            // Player came from (player/web/shared-store.js); secrets sealed
+            // with a non-extractable WebCrypto key (secret-store.js).
+            | ("store", "shared" | "secret")
+            // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
+            // app's own buffers (player/web/audio-worklet.js), heard from
+            // the person's first tap or key, as browsers require. The
+            // microphone stays out.
+            | ("audio", "playback")
+            // The dialogs (IC-974): message and confirm as a sheet in the
+            // page, open-file through the browser's file picker, save-file
+            // as a download once the app lets go of what it wrote
+            // (player/web/hosts.js, player.js). The folder dialog is the one
+            // a tab still answers with "works in Krate on a computer"
+            // (Capability::works_in_a_tab, which knows the resource).
+            | ("ui", "dialog")
+            // A file dropped on the app, judged by the desktop's own media
+            // type table (krate_adapter_common::mime).
+            | ("ui", "dropzone")
+    )
+}
+
 impl Capability {
     pub fn new(module: &str, action: &str, resource: Option<&str>) -> Result<Self> {
         validate_ident("capability module", module)?;
@@ -676,6 +720,22 @@ impl Capability {
 
     pub fn is_default_granted(&self) -> bool {
         default_granted_capabilities().contains(self)
+    }
+
+    /// Whether a browser tab can give this capability (IC-956, IC-974): the
+    /// one list the Player's consent card (crates/adapter-web web_policy.rs)
+    /// and check-app's note for an app shared as a link both read.
+    ///
+    /// The rest work in Krate on a computer; the Player says so in those
+    /// words rather than pretending, and a call to one is refused the same way.
+    pub fn works_in_a_tab(&self) -> bool {
+        // The folder dialog is the one dialog a tab cannot give: a browser
+        // hands a page files, not a folder it can write into.
+        if (self.module(), self.action(), self.resource()) == ("ui", "dialog", Some("open-folder"))
+        {
+            return false;
+        }
+        works_in_a_tab(self.module(), self.action())
     }
 
     /// Render a capability as a short plain phrase for a person, e.g.

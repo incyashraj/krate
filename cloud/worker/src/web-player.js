@@ -135,6 +135,13 @@ const PLAYER_FILES = new Set([
   "audio-worklet.js",
   "org-data.js",
   "org-device.js",
+  // An app's database (K-1149): the loader, and SQLite with the desktop's
+  // rules, fetched only by an app that imports store.sql.
+  "sqldb.js",
+  "sql.wasm",
+  // An app's shared store and its secrets (IC-974): the page keeps both.
+  "shared-store.js",
+  "secret-store.js",
   "krate_web.js",
   "krate_web_bg.wasm",
   "validator.wasm",

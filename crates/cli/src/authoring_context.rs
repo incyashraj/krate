@@ -456,7 +456,12 @@ A window wider than tall plays in landscape on a phone. A text field \
 the app draws itself (a name box in a game, a canvas editor) calls \
 `krate::ui::text_entry::start(win)` when it takes focus and `stop(win)` \
 when it loses it: a phone shows its keyboard, and the typing arrives as \
-the usual `TextInput` and key events. Keep such a field in a \
+the usual `TextInput` and key events. Every Krate host (Mac, Windows, \
+Linux, a phone, a browser tab) sends a typed letter as BOTH a key event \
+and a `TextInput`: take characters only from `TextInput`, and use key \
+events for Backspace, Enter, Tab and the arrows. Taking letters from both \
+types every letter twice (a generated co-op game's room code did). Keep \
+such a field in a \
 `krate::layout::Field`: `insert` the `TextInput` text, pass keys to \
 `key_with(&k.key, k.modifiers.shift, k.modifiers.meta || \
 k.modifiers.control)`, draw `selection()` behind the text. It selects with \
@@ -500,7 +505,7 @@ and answers `Ok(true)` when sent, `Ok(false)` when cancelled; no \
 capability. A computer answers `Err(Unavailable)` for now: offer \
 save-file or Copy there instead. Photos: `krate::ui::photos::pick(win, \
 3)` opens the system's photo picker and returns the picks as chosen \
-files (read them with `fs::files::open_chosen(&f.token, Read)`); empty \
+files (read them with `krate::fs::read_chosen(&f.token)`); empty \
 means cancelled, no capability. To add a picture: declare `photos.add` \
 and call `photos::save(win, &png_or_jpeg_bytes)`. On a computer pick \
 opens the file dialog for pictures. A reminder that comes with the app \
@@ -772,14 +777,20 @@ pub(crate) fn capability_catalog_section() -> String {
          name outside this list is refused when the app is packed. The ones marked\n\
          *default* are granted to every app and must NOT be declared -- declaring one\n\
          is an error. Scoped names (`<path-glob>`, `<host>:<port>`) must be narrowed\n\
-         to exactly what the app needs, e.g. `fs.read:notes/**`.\n\n",
+         to exactly what the app needs, e.g. `fs.read:notes/**`.\n\n\
+         People open a shared app from a link in any browser, phones included.\n\
+         *Opens from a link?* says which capabilities work there; the rest work in\n\
+         Krate on Mac, Windows and Linux, and from a link the app opens and says so\n\
+         when it reaches one. When a request does not need a computer-only\n\
+         capability, do not use one: an app that fully opens from a link is the one\n\
+         people can send. check-app ends with a note naming any it found.\n\n",
     );
 
     // Group by phase so a CLI author sees the phase-2 set first and a GUI author
     // sees the windowing set clearly separated.
     out.push_str("## Available to every app (CLI and GUI)\n\n");
-    out.push_str("| capability | default-granted? | notes |\n");
-    out.push_str("|---|---|---|\n");
+    out.push_str("| capability | default-granted? | opens from a link? | notes |\n");
+    out.push_str("|---|---|---|---|\n");
     for spec in krate_manifest::supported_capability_specs() {
         if !matches!(spec.phase(), krate_manifest::CapabilityPhase::Phase2) {
             continue;
@@ -788,8 +799,8 @@ pub(crate) fn capability_catalog_section() -> String {
     }
 
     out.push_str("\n## GUI apps only (a window, drawing, sound)\n\n");
-    out.push_str("| capability | default-granted? | notes |\n");
-    out.push_str("|---|---|---|\n");
+    out.push_str("| capability | default-granted? | opens from a link? | notes |\n");
+    out.push_str("|---|---|---|---|\n");
     for spec in krate_manifest::supported_capability_specs() {
         if !matches!(spec.phase(), krate_manifest::CapabilityPhase::Phase3) {
             continue;
@@ -826,13 +837,23 @@ pub(crate) fn capability_catalog_section() -> String {
 
 fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
     let default = if spec.default_granted() { "yes" } else { "no" };
-    let note = capability_note(&spec.display_pattern());
-    format!(
-        "| `{}` | {} | {} |\n",
-        spec.display_pattern(),
-        default,
-        note
-    )
+    // From the Player's own list, so the pack cannot promise a phone what
+    // the tab refuses (IC-974).
+    // A concrete pattern (`ui.dialog:open-folder`) is judged with its
+    // resource, as the consent card judges it; a placeholder pattern by its
+    // module and action.
+    let pattern = spec.display_pattern();
+    let tab = match pattern.parse::<krate_manifest::Capability>() {
+        Ok(cap) if !pattern.contains('<') => cap.works_in_a_tab(),
+        _ => krate_manifest::works_in_a_tab(spec.module(), spec.action()),
+    };
+    let link = match (tab, pattern.as_str()) {
+        (true, "ui.dialog:*") => "yes, except `open-folder`",
+        (true, _) => "yes",
+        (false, _) => "computer only",
+    };
+    let note = capability_note(&pattern);
+    format!("| `{}` | {} | {} | {} |\n", pattern, default, link, note)
 }
 
 /// A one-line human note for a capability, keyed by its `module.action` name.
@@ -1531,7 +1552,8 @@ never a path, and the token is good for this run only.\n\n\
 **Drag and drop** (`ui.dropzone:<mime-type>`, an explicit ask). Declare it \
 and the window receives `Event::FileDropped(chosen)` when a file lands on \
 it -- `chosen.name` to show, `chosen.token` to open with \
-`fs::files::open_chosen(&token, OpenMode::Read)`. While something is being \
+`krate::fs::read_chosen(&token)` (or `krate::fs::open_chosen(&token, \
+OpenMode::Read)` to read in pieces). While something is being \
 dragged over the window, `Event::FileHovering(true)` arrives, then \
 `FileHovering(false)` when it leaves or drops: use it to highlight the \
 target, and nothing more -- a hover is not consent, and the app learns \
@@ -1542,7 +1564,8 @@ files and will not.\n\n\
 `ui::dialog::save_file(window, \"Save as\", \"notes.txt\", \"txt\")` shows the \
 system's save dialog and returns `Ok(None)` when they cancel -- a normal \
 outcome, not an error -- or `Ok(Some(chosen))`, whose token you pass to \
-`fs::files::open_chosen` with a writing mode. The token names a file the \
+`krate::fs::write_chosen(&token, &bytes)` (in a browser tab the person \
+gets it as a download of that name). The token names a file the \
 person nominated; it creates nothing by itself, so asking and then not \
 writing leaves nothing behind. An editor that can open a document and not \
 save one is not an editor: any app that reads a file the person chose \

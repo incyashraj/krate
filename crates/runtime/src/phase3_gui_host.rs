@@ -5042,33 +5042,13 @@ impl Phase3GuiHost {
 /// "bytes we will not characterise". An app scoped to `image/*` does not get
 /// it; an app scoped to `*` does.
 fn mime_for_dropped_path(path: &std::path::Path) -> String {
-    let ext = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let mime = match ext.as_str() {
-        "txt" | "log" | "md" | "csv" => "text/plain",
-        "html" | "htm" => "text/html",
-        "json" => "application/json",
-        "xml" => "application/xml",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "bmp" => "image/bmp",
-        "wav" => "audio/wav",
-        "mp3" => "audio/mpeg",
-        "ogg" => "audio/ogg",
-        "flac" => "audio/flac",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "pdf" => "application/pdf",
-        "zip" => "application/zip",
-        _ => "application/octet-stream",
-    };
-    mime.to_string()
+    // The one table, shared with a browser tab's drop (crates/adapter-web),
+    // so the same file is judged the same wherever it is dropped.
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    krate_adapter_common::mime::mime_for_file_name(&name).to_string()
 }
 
 /// A drop or a hover, in the form a guest may see it.

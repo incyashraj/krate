@@ -20754,6 +20754,7 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
     }
     match &outcome {
         Ok(summary) => {
+            let link = link_notes(dir);
             if json {
                 println!(
                     "{}",
@@ -20764,6 +20765,7 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "imports": summary.imports,
                         "shoot": summary.shoot.as_ref().map(|p| p.display().to_string()),
                         "usability_notes": summary.usability_notes,
+                        "link_notes": link,
                         "source_changes": summary.source_changes,
                     })
                 );
@@ -20779,6 +20781,9 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                 // is: these are the usability checks that could not be made on
                 // this app, not ones it passed.
                 for note in &summary.usability_notes {
+                    println!("  note: {note}");
+                }
+                for note in &link {
                     println!("  note: {note}");
                 }
             }
@@ -20812,6 +20817,38 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
 }
 
 /// What a passing `check-app` recorded, for the OK summary.
+/// What an app asks for that a browser tab cannot give yet (IC-974), from
+/// the same list the Player's consent card reads
+/// (`Capability::works_in_a_tab`). A note, not a failure: the app still
+/// opens from a link and says plainly when it reaches that part. Said so an
+/// author knows before a person on a phone finds out.
+fn link_notes(dir: &Path) -> Vec<String> {
+    let Ok(manifest) = krate_manifest::Manifest::parse_file(dir.join("manifest.toml")) else {
+        return Vec::new();
+    };
+    let mut missing: Vec<String> = Vec::new();
+    for request in &manifest.capabilities {
+        let Ok(cap) = request.cap.parse::<krate_manifest::Capability>() else {
+            continue;
+        };
+        if cap.is_default_granted() || cap.works_in_a_tab() {
+            continue;
+        }
+        let words = format!("{} ({cap})", cap.plain());
+        if !missing.contains(&words) {
+            missing.push(words);
+        }
+    }
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    vec![format!(
+        "opens from a link, except: {}. Those need Krate on Mac, Windows or Linux; from a link \
+         the app still opens, and says so when it reaches one",
+        missing.join(", ")
+    )]
+}
+
 struct CheckSummary {
     passed: Vec<&'static str>,
     imports: Vec<String>,
@@ -21386,6 +21423,21 @@ fn run_phone_stage(
         ));
     }
     if faults.is_empty() {
+        return Ok(());
+    }
+    // A debug build of krate draws several times slower than the release a
+    // person installs, and the interpreter it times the app on is debug too,
+    // so its numbers are not the phone's. Measured: krate-checklist failed
+    // at 20.2 ms a step under a debug krate and passed twice under release;
+    // agents shaved shadows off apps to pass a debug run. So a debug build
+    // says what it saw and does not judge.
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "note: phone timing not judged -- this krate is a debug build, which runs the app \
+             several times slower than a phone's release Krate would ({}). Build krate with \
+             --release to measure it.",
+            faults.join("; ")
+        );
         return Ok(());
     }
     Err(CheckFailure {
@@ -29005,5 +29057,41 @@ mod storage_identity_tests {
                 root.display()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod link_note_tests {
+    use super::*;
+
+    #[test]
+    fn check_app_says_what_a_link_cannot_run_and_nothing_when_all_can() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let manifest = |caps: &[&str]| {
+            let mut text = String::from(
+                "[app]\nid = \"dev.krate.t\"\nname = \"T\"\nversion = \"0.1.0\"\n\
+                 entry = \"x.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n",
+            );
+            for cap in caps {
+                text.push_str(&format!(
+                    "\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"r\"\nrequired = true\n"
+                ));
+            }
+            std::fs::write(dir.path().join("manifest.toml"), text).expect("write");
+        };
+        manifest(&[
+            "ui.window:create",
+            "store.sql",
+            "net.connect:api.example.com:443",
+        ]);
+        assert_eq!(link_notes(dir.path()), Vec::<String>::new());
+        manifest(&["ui.window:create", "camera.capture", "store.sql"]);
+        let notes = link_notes(dir.path());
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].contains("use your camera (camera.capture)"),
+            "{notes:?}"
+        );
+        assert!(!notes[0].contains("store.sql"), "{notes:?}");
     }
 }

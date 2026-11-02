@@ -1,0 +1,13 @@
+name = "open an error's context"
+# The app's primary task, as a person does it: the timeout's context is open
+# when Trace starts; open the declined charge instead and read why it failed.
+# Opening one record closes the other. check-app runs these steps after the
+# usability checks.
+[[step]]
+expect_text = "retry 3/3 exhausted"
+[[step]]
+click = "error, payments, 14:32:13.905: charge declined: card_expired (tok_1P9x)"
+[[step]]
+expect_text = "decline_code: expired_card"
+[[step]]
+expect_no_text = "retry 3/3 exhausted"

@@ -83,7 +83,7 @@ test("the first time someone else opens an app in a tab, its publisher hears onc
     assert.equal(up.status, 200, JSON.stringify(up.body));
     const hash = await sha256Hex(ported("bounce.krate"));
     mail.sent.length = 0;
-    const open = (who) =>
+    const open = (who, extra = {}) =>
       worker.fetch(
         new Request("https://hub.example/tab", {
           method: "POST",
@@ -92,12 +92,14 @@ test("the first time someone else opens an app in a tab, its publisher hears onc
             "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
             ...(who ? { authorization: `Bearer ${tokenFor(env, who)}` } : {}),
           },
-          body: JSON.stringify({ event: "open", app: hash }),
+          body: JSON.stringify({ event: "open", app: hash, ...extra }),
         }),
         env,
       );
     await open("ada@example.com");
     assert.equal(mail.sent.length, 0, "the maker opening their own app is not news");
+    await open(null, { probe: true });
+    assert.equal(mail.sent.length, 0, "a proof run (?probe=1) is not a person");
     await open(null);
     assert.equal(mail.sent.length, 1);
     assert.equal(mail.sent[0].subject, "Someone just opened Bounce");

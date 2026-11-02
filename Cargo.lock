@@ -2466,6 +2466,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-appsql"
+version = "0.5.5"
+dependencies = [
+ "rusqlite",
+]
+
+[[package]]
 name = "krate-author"
 version = "0.5.5"
 dependencies = [
@@ -2718,6 +2725,7 @@ dependencies = [
  "krate-adapter-linux",
  "krate-adapter-macos",
  "krate-adapter-windows",
+ "krate-appsql",
  "krate-gpu-names",
  "krate-http",
  "krate-layout",
@@ -2741,7 +2749,6 @@ dependencies = [
  "pollster",
  "rfd",
  "ring",
- "rusqlite",
  "serde",
  "serde_json",
  "sha2",
@@ -2768,6 +2775,14 @@ dependencies = [
  "krate-runtime",
  "pollster",
  "vello",
+]
+
+[[package]]
+name = "krate-sql-web"
+version = "0.5.5"
+dependencies = [
+ "krate-appsql",
+ "serde_json",
 ]
 
 [[package]]

@@ -183,7 +183,8 @@ const TAB_EVENTS = { open: "open", make: "badge" };
 ///   client), blob4 ok, blob5 "-", blob6 day, blob7 "-", blob8 the app hash,
 ///   blob9 home|cloud, blob10 maker|other ("-" when the hub keeps no listing
 ///   to say whose it is), blob11 the post's tag, blob12 public|unlisted|org,
-///   blob13 human|bot; index1 the daily visitor hash.
+///   blob13 human|bot|probe (probe: the Player's proofs, `?probe=1`, which
+///   a person never opens); index1 the daily visitor hash.
 ///
 /// "maker" needs the Player's own sign-in on this origin; a maker who is not
 /// signed in here reads as "other". Answers {maker} so the page knows too.
@@ -208,6 +209,9 @@ export async function tabEvent(request, env, d) {
     const me = d.ownerOf(identity);
     if (me && me === d.ownerOfRecord(app.record)) maker = "maker";
   }
+  // A proof run (the Player's `?probe=1`) is not a person: labelled so no
+  // count reads it as one, and nobody is mailed about it.
+  const who = body.probe === true ? "probe" : d.isBot(request) ? "bot" : "human";
   if (env.USAGE) {
     env.USAGE.writeDataPoint({
       blobs: [
@@ -223,7 +227,7 @@ export async function tabEvent(request, env, d) {
         maker,
         viaOf(body.via),
         app.scope,
-        d.isBot(request) ? "bot" : "human",
+        who,
       ],
       doubles: [1],
       indexes: [await d.visitorHash(request, env)],
@@ -231,7 +235,7 @@ export async function tabEvent(request, env, d) {
   }
   // The first time someone other than its maker opens an app from a link,
   // its publisher hears it -- the moment a share became a person.
-  if (kind === "open" && maker === "other" && app.record && !d.isBot(request)) {
+  if (kind === "open" && maker === "other" && app.record && who === "human") {
     await tellFirstOpen(env, hash, app.record, String(env.PUBLIC_BASE || "").replace(/\/$/, ""));
   }
   return new Response(JSON.stringify({ ok: true, maker: maker === "maker" }), {

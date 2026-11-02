@@ -365,10 +365,16 @@ impl CanvasSurface {
         };
         let (w, h) = (self.width as usize, self.height as usize);
         let s = self.width as f32 / self.logical_width.max(1) as f32;
-        let x0 = ((ox * s).round() as usize).min(w);
-        let y0 = ((oy * s).round() as usize).min(h);
-        let x1 = (((ox + dw * k) * s).round() as usize).clamp(x0, w);
-        let y1 = (((oy + dh * k) * s).round() as usize).clamp(y0, h);
+        // The design's edges by fill_rect's own rule (an edge covers the
+        // pixel it falls in, so the far edge rounds down): the columns and
+        // rows sampled below are ones the app's fills actually painted.
+        // Rounded to nearest, the far edge at 2073.6 sampled column 2073,
+        // which no fill reached -- still white, and copied across the whole
+        // right side of a design-size game on a wide window (K-1155).
+        let x0 = ((ox * s).floor().max(0.0) as usize).min(w);
+        let y0 = ((oy * s).floor().max(0.0) as usize).min(h);
+        let x1 = (((ox + dw * k) * s).floor().max(0.0) as usize).clamp(x0, w);
+        let y1 = (((oy + dh * k) * s).floor().max(0.0) as usize).clamp(y0, h);
         if x1 <= x0 || y1 <= y0 || (x0 == 0 && y0 == 0 && x1 == w && y1 == h) {
             return;
         }
@@ -977,15 +983,36 @@ impl CanvasSurface {
         // transform K-425 found in strokes -- so in a design-size app or on
         // a dense screen the gradient landed at the wrong place and size,
         // and the screen around a letterboxed design stayed blank.
-        let rows = (self.map_len(h) * self.scale).ceil() as i32;
-        if rows <= 0 || w <= 0.0 {
+        //
+        // The bands are cut in DEVICE rows, one fill per row. They used to be
+        // cut in app units (h / rows each) and mapped one by one, and after a
+        // fractional design scale the end of one band and the start of the
+        // next could round to different rows: a row with no band at all, the
+        // cleared colour showing through, every few rows -- horizontal
+        // stripes across Ice Climber's sky at 1280x800 (K-1152).
+        if w <= 0.0 || h <= 0.0 {
             return;
         }
-        let step = h / rows as f32;
-        for i in 0..rows {
-            let t = (i as f32 + 0.5) / rows as f32;
-            let c = lerp_color(top, bottom, t.clamp(0.0, 1.0));
-            self.fill_rect(x, y + i as f32 * step, w, step, c);
+        let k = self.scale;
+        let (x0, y0) = self.map_point(x, y);
+        let (x1, y1) = self.map_point(x + w, y + h);
+        let (x0, y0, x1, y1) = (x0 * k, y0 * k, x1 * k, y1 * k);
+        // fill_rect's own rule, which the letterbox shares: an edge covers
+        // the row it falls in, so a far edge at 1051.5 leaves row 1051 to
+        // the spare space, which is painted with the design's edge colour.
+        let (first, last) = (y0.floor(), y1.floor());
+        if last <= first {
+            return;
+        }
+        let span = (y1 - y0).max(f32::EPSILON);
+        let mut row = first;
+        while row < last {
+            let t = ((row + 0.5 - y0) / span).clamp(0.0, 1.0);
+            let c = lerp_color(top, bottom, t);
+            if let Some(band) = self.clipped(x0, row, x1 - x0, 1.0) {
+                fill_rect(&mut self.buffer, self.width, self.height, band, c);
+            }
+            row += 1.0;
         }
     }
 
@@ -1503,6 +1530,63 @@ mod tests {
     /// canvas does not sit between bars. The spare space above takes the
     /// colour along the design's top edge and the space below its bottom
     /// edge, on the CPU raster and in the list the iPhone's GPU draws from.
+    /// K-1152: a sky drawn with linear_gradient_v under a fractional design
+    /// scale has no row left unpainted. Cut in app units and mapped band by
+    /// band, the cleared colour showed through every few rows: white stripes
+    /// across Ice Climber at 1280x800.
+    #[test]
+    fn a_scaled_gradient_paints_every_row() {
+        // (logical size, backing scale, design): Ice Climber's own 256x240
+        // on a 1280x744 window at 2x is the case that striped.
+        for (w, h, scale, dw, dh) in [
+            (1280, 744, 2.0, 256.0, 240.0),
+            (1280, 744, 1.0, 256.0, 240.0),
+            (1280, 800, 1.0, 420.0, 760.0),
+            (1003, 701, 1.5, 333.0, 517.0),
+        ] {
+            let mut surface = CanvasSurface::new_scaled(w, h, scale).expect("surface");
+            surface.clear(0xFFFF_FFFF);
+            surface.set_design_size(dw, dh);
+            surface.linear_gradient_v(0.0, 0.0, dw, dh, 0xFF10_2040, 0xFF20_4080);
+            let image = surface.to_image().expect("image");
+            let x = image.width / 2;
+            let white: Vec<u32> = (0..image.height)
+                .filter(|&y| {
+                    let i = ((y * image.width + x) * 4) as usize;
+                    image.rgba[i] == 255 && image.rgba[i + 1] == 255 && image.rgba[i + 2] == 255
+                })
+                .collect();
+            assert!(
+                white.is_empty(),
+                "{w}x{h} design {dw}x{dh}: unpainted rows {white:?}"
+            );
+        }
+    }
+
+    /// K-1155: a 256x240 design on a 1280x744 window at 2x fills its spare
+    /// space with the colour of its own edges on both sides, never with a
+    /// column no fill reached.
+    #[test]
+    fn both_sides_of_a_wide_letterbox_take_the_design_edge() {
+        let mut surface = CanvasSurface::new_scaled(1280, 744, 2.0).expect("surface");
+        surface.clear(0xFFFF_FFFF);
+        surface.set_design_size(256.0, 240.0);
+        surface.fill_rect(0.0, 0.0, 256.0, 240.0, 0xFF10_2040);
+        let image = surface.to_image().expect("image");
+        let px = |x: u32, y: u32| {
+            let i = ((y * image.width + x) * 4) as usize;
+            [image.rgba[i], image.rgba[i + 1], image.rgba[i + 2]]
+        };
+        for y in [10, image.height / 2, image.height - 10] {
+            assert_eq!(px(5, y), [0x10, 0x20, 0x40], "left of the design, row {y}");
+            assert_eq!(
+                px(image.width - 5, y),
+                [0x10, 0x20, 0x40],
+                "right of the design, row {y}"
+            );
+        }
+    }
+
     #[test]
     fn the_spare_space_around_a_design_takes_its_edge_colours() {
         let (top, bottom) = (0xFF13_1620u32, 0xFF0B_0D14u32);

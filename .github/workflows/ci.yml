@@ -1882,6 +1882,16 @@ jobs:
       # The publish door makes each release's web pack with the transpiler
       # compiled to wasm, and the hub serves the Player (IC-956); the worker
       # imports both. The transpiler brings its own Rust (its toolchain file).
+      # store.sql in the tab (K-1149) is SQLite, which is C: the Player
+      # build compiles it with wasi-sdk's clang (crates/sql-web). Pinned and
+      # checked by its published digest.
+      - name: Install wasi-sdk
+        run: |
+          curl -sSfL -o /tmp/wasi-sdk.tar.gz \
+            https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz
+          echo "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4  /tmp/wasi-sdk.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/opt" && tar xzf /tmp/wasi-sdk.tar.gz -C "$HOME/opt"
+          ln -sfn "$HOME/opt/wasi-sdk-34.0-x86_64-linux" "$HOME/opt/wasi-sdk"
       - name: Build the hub transpiler and the Player
         run: |
           cargo install wasm-bindgen-cli --locked --version 0.2.120

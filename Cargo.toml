@@ -25,6 +25,8 @@ members = [
     "crates/validator-wasm",
     "crates/manifest",
     "crates/policy",
+    "crates/appsql",
+    "crates/sql-web",
     "crates/runtime",
     "crates/cli",
     "crates/mcp",

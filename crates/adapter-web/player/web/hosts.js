@@ -116,6 +116,8 @@ export function buildImports(ctx) {
   }
 
   // --------------------------------------------------------------- input
+  // Events the page makes rather than the ui host: a dropped file, a hover.
+  const fileEvents = [];
   // Apply one record from the page's ring to the ui host.
   const apply = (r) => {
     const w = r.window;
@@ -132,6 +134,10 @@ export function buildImports(ctx) {
       case 'resize': ctx.resize(w, r.width, r.height); break;
       case 'theme': ui.theme(r.dark); break;
       case 'blur': ui.blurred(); break;
+      // A file dropped on the app, or a drag over it: the page already
+      // judged the drop by the app's ui.dropzone grant and made the token.
+      case 'drop': fileEvents.push({ tag: 'file-dropped', val: { name: r.name, token: r.token } }); ctx.inputAt(r.at); break;
+      case 'hover': fileEvents.push({ tag: 'file-hovering', val: Boolean(r.over) }); break;
       default: break;
     }
   };
@@ -139,6 +145,7 @@ export function buildImports(ctx) {
     for (let r = ring.take(0); r; r = ring.take(0)) apply(r);
   };
   const nextEvent = () => {
+    if (fileEvents.length) return fileEvents.shift();
     const e = ui.next_event();
     return e === undefined ? undefined : liftEvent(JSON.parse(e));
   };
@@ -208,6 +215,159 @@ export function buildImports(ctx) {
   const kvCall = (op, args, value) => {
     const { json } = bridge.call(op, { store: ctx.storeKey, ...args }, value ? [] : undefined);
     if (json.err) throw new HostError(json.err);
+  };
+
+  // ------------------------------------------- store.shared, store.secret
+  // The shared store and the secrets live on the page (shared-store.js,
+  // secret-store.js): the shared copy syncs with the hub in the background,
+  // which a blocked worker cannot, and the secrets' key is the page's. A
+  // call without the grant is denied here, as on desktop, before anything
+  // reaches the page.
+  const storeCall = (cap, op, args, transfer) => {
+    if (!allows(cap)) throw new HostError({ tag: 'denied' });
+    const answer = bridge.call(op, args || {}, transfer);
+    if (answer.json.err) throw new HostError(answer.json.err);
+    return answer;
+  };
+  const bytesOf = ({ json, body }) => (json.ok ? new Uint8Array(body) : undefined);
+
+  // ---------------------------------------------------------- store.sql
+  // The app's database (sqldb.js, crates/sql-web): SQLite and the desktop's
+  // rules, in this worker. Every write is kept before the call returns, so
+  // an app that was told its change went through can rely on it.
+  const sql = ctx.sql;
+  const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  const unhex = (t) => { const o = new Uint8Array(t.length / 2); for (let i = 0; i < o.length; i++) o[i] = parseInt(t.substr(i * 2, 2), 16); return o; };
+  const toSql = (v) => {
+    switch (v.tag) {
+      case 'integer': return { t: 'integer', v: v.val.toString() };
+      case 'real': return { t: 'real', v: Number.isFinite(v.val) ? v.val : String(v.val) };
+      case 'text': return { t: 'text', v: v.val };
+      case 'blob': return { t: 'blob', v: hex(v.val) };
+      default: return { t: 'null' };
+    }
+  };
+  const fromSql = (v) => {
+    switch (v.t) {
+      case 'integer': return { tag: 'integer', val: BigInt(v.v) };
+      case 'real': return { tag: 'real', val: Number(v.v) };
+      case 'text': return { tag: 'text', val: v.v };
+      case 'blob': return { tag: 'blob', val: unhex(v.v) };
+      default: return { tag: 'null' };
+    }
+  };
+  const sqlCall = (request) => {
+    // The database module itself could not start in this tab.
+    if (sql.startFailed) throw new HostError({ tag: 'io', val: sql.startFailed });
+    const answer = sql.call(request);
+    if (sql.dirty()) {
+      const image = sql.image();
+      const { json } = bridge.call('sql.save', { image }, [image.buffer]);
+      if (json.err) throw new HostError({ tag: 'io', val: json.err.val || 'the browser did not keep the change' });
+    }
+    if (answer.err) throw new HostError(answer.err);
+    return answer.ok;
+  };
+
+  // ------------------------------------------------------- picked files
+  // A file the person chose in the browser's picker, named in a save, or
+  // dropped on the app (IC-974). As on desktop the app holds a name and a
+  // token, never a path (crates/runtime/src/chosen_files.rs). The page keeps
+  // the file itself -- the browser's File, which is not read until asked --
+  // and its list of tokens dies with the tab, so a token is good for this
+  // run only. Reads come from the page a window at a time; what the app
+  // writes is kept here until it lets go of the file, and then goes to the
+  // page, which hands it to the person as a download: the phone's save
+  // (K-1032), since a tab cannot write into a folder of theirs.
+  const DISPOSE = Symbol.dispose || Symbol.for('dispose');
+  // The desktop's limit for one read or one write (MAX_PHASE2_READ_BYTES).
+  const MAX_IO = 8 * 1024 * 1024;
+  const READ_WINDOW = 1 << 20;
+  const writers = new Set();
+  const fsFail = (payload) => new HostError(payload);
+  class File {
+    constructor(token, mode, info, bytes) {
+      this.token = token;
+      this.mode = mode;
+      this.kind = info.kind;
+      this.pos = 0;
+      this.size = info.size;
+      this.modified = info.modified;
+      this.cache = null;
+      this.closed = false;
+      this.writes = mode !== 'read';
+      if (this.writes) {
+        // write truncates; read-write and append start from what is there.
+        this.buf = bytes && bytes.length ? new Uint8Array(bytes) : new Uint8Array(0);
+        this.len = this.buf.length;
+        this.dirty = mode === 'write';
+        writers.add(this);
+      }
+    }
+    read(n) {
+      if (this.mode !== 'read' && this.mode !== 'read-write') throw fsFail({ tag: 'permission-denied' });
+      if (n > MAX_IO) throw fsFail({ tag: 'io', val: `read request exceeds limit (${MAX_IO} bytes)` });
+      if (this.writes) {
+        const out = this.buf.slice(this.pos, Math.min(this.len, this.pos + n));
+        this.pos += out.length;
+        return out;
+      }
+      const want = Math.min(n, Math.max(0, this.size - this.pos));
+      if (want === 0) return new Uint8Array(0);
+      const c = this.cache;
+      if (!c || this.pos < c.at || this.pos + want > c.at + c.bytes.length) {
+        const { json, body } = bridge.call('file.read', { token: this.token, at: this.pos, len: Math.max(want, READ_WINDOW) });
+        if (json.err) throw fsFail(json.err);
+        this.cache = { at: this.pos, bytes: body };
+      }
+      const from = this.pos - this.cache.at;
+      const out = this.cache.bytes.slice(from, from + want);
+      this.pos += out.length;
+      return out;
+    }
+    write(bytes) {
+      if (!this.writes) throw fsFail({ tag: 'permission-denied' });
+      if (bytes.length > MAX_IO) throw fsFail({ tag: 'io', val: `write request exceeds limit (${MAX_IO} bytes)` });
+      const at = this.mode === 'append' ? this.len : this.pos;
+      const end = at + bytes.length;
+      if (end > this.buf.length) {
+        const grown = new Uint8Array(Math.max(end, this.buf.length * 2, 4096));
+        grown.set(this.buf.subarray(0, this.len));
+        this.buf = grown;
+      }
+      this.buf.set(bytes, at);
+      this.len = Math.max(this.len, end);
+      this.pos = end;
+      this.dirty = true;
+      this.modified = Date.now();
+      return bytes.length;
+    }
+    seekSet(pos) { this.pos = Number(pos); return pos; }
+    seekEnd() { this.pos = this.writes ? this.len : this.size; return BigInt(this.pos); }
+    stat() {
+      return { size: BigInt(this.writes ? this.len : this.size), modifiedMillis: BigInt(Math.floor(this.modified || 0)), isDir: false };
+    }
+    // The app let go of the file: what it wrote is the save.
+    [DISPOSE]() {
+      if (this.closed) return;
+      this.closed = true;
+      if (!this.writes) return;
+      writers.delete(this);
+      const data = this.buf.slice(0, this.len);
+      this.buf = null;
+      // A save always reaches the person; a picked file only when written.
+      bridge.call('file.close', { token: this.token, data, offer: this.dirty || this.kind === 'save' }, [data.buffer]);
+    }
+  }
+  // An app that ends while still holding a file it wrote has let go of it.
+  ctx.closeFiles = () => { for (const f of [...writers]) f[DISPOSE](); };
+  const dialogCall = (cap, op, args) => {
+    if (!allows(cap)) throw new HostError({ tag: 'permission-denied' });
+    // What the app drew last is on screen while the person answers.
+    ctx.present();
+    const { json } = bridge.call(op, args);
+    if (json.err) throw new HostError(json.err);
+    return json.ok;
   };
 
   const impl = {
@@ -337,6 +497,16 @@ export function buildImports(ctx) {
       },
       close(handle) { bridge.call('ws.close', { handle: handle.toString() }); },
     },
+    ...(sql ? {
+      'krate:store/sql': {
+        query(statement, params) {
+          const ok = sqlCall({ op: 'query', statement, params: params.map(toSql) });
+          return { columns: ok.columns, rows: ok.rows.map((values) => ({ values: values.map(fromSql) })) };
+        },
+        execute: (statement, params) => BigInt(sqlCall({ op: 'execute', statement, params: params.map(toSql) })),
+        transaction(statements) { sqlCall({ op: 'transaction', statements }); },
+      },
+    } : {}),
     'krate:store/kv': {
       get(key) {
         if (unwrap(kv.get(key))) return kv.value(key);
@@ -360,6 +530,29 @@ export function buildImports(ctx) {
         kvCall('kv.clear', {});
         kv.commit_clear();
       },
+    },
+    'krate:store/shared': {
+      code: () => storeCall('store.shared', 'shared.code').json.ok ?? undefined,
+      create: () => storeCall('store.shared', 'shared.create').json.ok,
+      join(code) { storeCall('store.shared', 'shared.join', { code: String(code) }); },
+      leave() { storeCall('store.shared', 'shared.leave'); },
+      get: (key) => bytesOf(storeCall('store.shared', 'shared.get', { key })),
+      set(key, value) {
+        const copy = value.slice();
+        storeCall('store.shared', 'shared.set', { key, value: copy }, [copy.buffer]);
+      },
+      delete(key) { storeCall('store.shared', 'shared.delete', { key }); },
+      keys: () => storeCall('store.shared', 'shared.keys').json.ok,
+      sync: () => storeCall('store.shared', 'shared.sync').json.ok === true,
+    },
+    'krate:store/secret': {
+      get: (name) => bytesOf(storeCall('store.secret', 'secret.get', { name })),
+      set(name, secret) {
+        const copy = secret.slice();
+        storeCall('store.secret', 'secret.set', { name, value: copy }, [copy.buffer]);
+      },
+      delete(name) { storeCall('store.secret', 'secret.delete', { name }); },
+      names: () => storeCall('store.secret', 'secret.names').json.ok,
     },
     'krate:store/org': {
       put(collection, id, fields) {
@@ -386,6 +579,31 @@ export function buildImports(ctx) {
       status() {
         const s = orgCall('org.status', {});
         return { link: s.link, pending: s.pending, reachedAt: big(s.reached_at), org: s.org };
+      },
+    },
+    'krate:fs/files': {
+      File,
+      // Only a token opens a file here; a path is answered by the hub's
+      // refusal, as before, because a tab has no folder of the app's.
+      openChosen(token, mode) {
+        const { json, body } = bridge.call('file.open', { token: String(token), mode: mode.tag });
+        if (json.err) throw fsFail(json.err);
+        return new File(String(token), mode.tag, json.ok, mode.tag === 'read-write' || mode.tag === 'append' ? body : null);
+      },
+    },
+    // The folder dialog is not here: a tab answers it with the hub's
+    // refusal ("works in Krate on a computer").
+    'krate:ui/dialog': {
+      message(w, title, body) { dialogCall('ui.dialog:message', 'dialog.ask', { kind: 'message', title, body }); },
+      // Dismissed counts as no, as on desktop.
+      confirm: (w, title, body) => dialogCall('ui.dialog:confirm', 'dialog.ask', { kind: 'confirm', title, body }) === true,
+      openFile(w, title, filter) {
+        const chosen = dialogCall('ui.dialog:file-open', 'dialog.open', { title, filter });
+        return chosen ? { name: chosen.name, token: chosen.token } : undefined;
+      },
+      saveFile(w, title, suggested, filter) {
+        const chosen = dialogCall('ui.dialog:file-save', 'dialog.save', { title, suggested, filter });
+        return chosen ? { name: chosen.name, token: chosen.token } : undefined;
       },
     },
     'krate:ui/types': {},

@@ -116,6 +116,17 @@
     </div>
   </form>
 </div>
+<!-- The app's own dialogs: a message, a yes/no, "choose a file", "save it". -->
+<div class="sheet" id="askSheet" hidden>
+  <div class="perm" role="dialog" aria-modal="true" aria-labelledby="askTitle" aria-describedby="askBody">
+    <h1 id="askTitle"></h1>
+    <p class="lede ask" id="askBody"></p>
+    <div class="row-acts">
+      <button class="btn ghost" id="askNo" type="button">No</button>
+      <button class="btn dark" id="askYes" type="button">OK</button>
+    </div>
+  </div>
+</div>
 <script type="module" src="/player/player.js"></script>
 </body>
 </html>

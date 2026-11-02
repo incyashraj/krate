@@ -1143,6 +1143,25 @@ pub mod fs {
         open(path, OpenMode::Read)?.read_to_end()
     }
 
+    /// Open a file the person chose: the `token` of a `ChosenFile` from
+    /// `ui::dialog::open_file`, `save_file` or a dropped file. Their pick is
+    /// the grant, so no `fs.*` capability is needed, and the app never
+    /// learns the path. Works the same on a computer and in a browser tab.
+    pub fn open_chosen(token: &str, mode: OpenMode) -> Result<File, FsError> {
+        crate::bindings::krate::fs::files::open_chosen(token, mode)
+    }
+
+    /// Read the whole of a file the person chose.
+    pub fn read_chosen(token: &str) -> Result<Vec<u8>, FsError> {
+        open_chosen(token, OpenMode::Read)?.read_to_end()
+    }
+
+    /// Replace the contents of a file the person chose to save to. In a
+    /// browser tab the bytes reach the person as a download of that name.
+    pub fn write_chosen(token: &str, bytes: &[u8]) -> Result<(), FsError> {
+        open_chosen(token, OpenMode::Write)?.write_all(bytes)
+    }
+
     /// Read a whole file as UTF-8 text.
     pub fn read_to_string(path: &str) -> Result<String, FsError> {
         open(path, OpenMode::Read)?.read_text()

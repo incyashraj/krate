@@ -333,13 +333,16 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `fs::list(path: &str) -> Result<Vec<String>, FsError>`
 - `fs::mkdir(path: &str) -> Result<(), FsError>`
 - `fs::open(path: &str, mode: OpenMode) -> Result<File, FsError>`
+- `fs::open_chosen(token: &str, mode: OpenMode) -> Result<File, FsError>`
 - `fs::read(path: &str) -> Result<Vec<u8>, FsError>`
+- `fs::read_chosen(token: &str) -> Result<Vec<u8>, FsError>`
 - `fs::read_to_string(path: &str) -> Result<String, FsError>`
 - `fs::remove_dir(path: &str) -> Result<(), FsError>`
 - `fs::remove_file(path: &str) -> Result<(), FsError>`
 - `fs::rename(from: &str, to: &str) -> Result<(), FsError>`
 - `fs::stat(path: &str) -> Result<FileStat, FsError>`
 - `fs::write(path: &str, bytes: &[u8]) -> Result<(), FsError>`
+- `fs::write_chosen(token: &str, bytes: &[u8]) -> Result<(), FsError>`
 
 ### `fs::watch`
 
@@ -524,61 +527,68 @@ name outside this list is refused when the app is packed. The ones marked
 is an error. Scoped names (`<path-glob>`, `<host>:<port>`) must be narrowed
 to exactly what the app needs, e.g. `fs.read:notes/**`.
 
+People open a shared app from a link in any browser, phones included.
+*Opens from a link?* says which capabilities work there; the rest work in
+Krate on Mac, Windows and Linux, and from a link the app opens and says so
+when it reaches one. When a request does not need a computer-only
+capability, do not use one: an app that fully opens from a link is the one
+people can send. check-app ends with a note naming any it found.
+
 ## Available to every app (CLI and GUI)
 
-| capability | default-granted? | notes |
-|---|---|---|
-| `io.stdin` | yes | read stdin |
-| `io.stdout` | yes | print to stdout |
-| `io.stderr` | yes | print to stderr |
-| `io.args` | yes | read command-line args |
-| `io.log` | yes | structured logging |
-| `fs.read:<path-glob>` | no | read files under a folder |
-| `fs.write:<path-glob>` | no | write files under a folder |
-| `fs.list:<path-glob>` | no | list a folder |
-| `store.kv` | no | the app's own key-value store: keys up to 256 bytes, values up to 1 MiB, 16 MiB per app; set returns an error past these, so check it. Settings and lists go here; a document goes in a file |
-| `store.sql` | no | the app's own SQL database |
-| `store.secret` | no | secrets encrypted at rest (passwords, tokens); not the OS keychain |
-| `store.shared` | no | share a key-value bucket with everyone holding its invite code |
-| `store.org` | no | keep records for the whole team in its organisation's store, with no backend |
-| `store.group:<group-name>` | no | share a key-value store with the same publisher's other apps, in a named group its signed list admits |
-| `memory.budget:<MiB>` | no | more memory than the default, in MiB (up to 3584); the person sees it at consent |
-| `random.bytes` | no | entropy (also what getrandom/rand need) |
-| `fs.remove:<path-glob>` | no | delete under a folder |
-| `fs.mkdir:<path-glob>` | no | make folders |
-| `net.connect:<host>:<port>` | no | reach a host and port |
-| `net.connection:<connection-name>` | no | an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8) |
-| `time.clock` | yes | wall-clock time |
-| `time.monotonic` | yes | a monotonic timer |
-| `time.sleep` | yes | sleep |
-| `locale.info` | yes | the user's locale |
-| `locale.format` | yes | locale-aware number/date formatting |
+| capability | default-granted? | opens from a link? | notes |
+|---|---|---|---|
+| `io.stdin` | yes | computer only | read stdin |
+| `io.stdout` | yes | yes | print to stdout |
+| `io.stderr` | yes | yes | print to stderr |
+| `io.args` | yes | yes | read command-line args |
+| `io.log` | yes | yes | structured logging |
+| `fs.read:<path-glob>` | no | computer only | read files under a folder |
+| `fs.write:<path-glob>` | no | computer only | write files under a folder |
+| `fs.list:<path-glob>` | no | computer only | list a folder |
+| `store.kv` | no | yes | the app's own key-value store: keys up to 256 bytes, values up to 1 MiB, 16 MiB per app; set returns an error past these, so check it. Settings and lists go here; a document goes in a file |
+| `store.sql` | no | yes | the app's own SQL database |
+| `store.secret` | no | yes | secrets encrypted at rest (passwords, tokens); not the OS keychain |
+| `store.shared` | no | yes | share a key-value bucket with everyone holding its invite code |
+| `store.org` | no | yes | keep records for the whole team in its organisation's store, with no backend |
+| `store.group:<group-name>` | no | computer only | share a key-value store with the same publisher's other apps, in a named group its signed list admits |
+| `memory.budget:<MiB>` | no | computer only | more memory than the default, in MiB (up to 3584); the person sees it at consent |
+| `random.bytes` | no | yes | entropy (also what getrandom/rand need) |
+| `fs.remove:<path-glob>` | no | computer only | delete under a folder |
+| `fs.mkdir:<path-glob>` | no | computer only | make folders |
+| `net.connect:<host>:<port>` | no | yes | reach a host and port |
+| `net.connection:<connection-name>` | no | computer only | an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8) |
+| `time.clock` | yes | yes | wall-clock time |
+| `time.monotonic` | yes | yes | a monotonic timer |
+| `time.sleep` | yes | yes | sleep |
+| `locale.info` | yes | yes | the user's locale |
+| `locale.format` | yes | yes | locale-aware number/date formatting |
 
 ## GUI apps only (a window, drawing, sound)
 
-| capability | default-granted? | notes |
-|---|---|---|
-| `ui.window:create` | yes | open a window (every GUI app declares this) |
-| `ui.clipboard:read` | no | read/write the clipboard |
-| `ui.clipboard:write` | no | read/write the clipboard |
-| `ui.menu:system` | no | a system menu |
-| `ui.open-url` | no | hand a link to the browser |
-| `ui.notify` | no | a desktop notification |
-| `ui.dropzone:<mime-type>` | no | accept dragged files |
-| `ui.dialog:message` | yes | a message box (no file access; default-granted) |
-| `ui.dialog:confirm` | yes | a yes/no question box (no file access; default-granted) |
-| `ui.dialog:*` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
-| `ui.dialog:file-open` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
-| `ui.dialog:file-save` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
-| `ui.dialog:open-folder` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
-| `gfx.gpu:basic` | yes | GPU drawing (canvas2d present today) |
-| `gfx.gpu:compute` | no | GPU compute -- NOT implemented yet; do not declare it |
-| `audio.playback` | yes | play sound |
-| `audio.capture` | no | record from the microphone |
-| `camera.capture` | no | see through the camera |
-| `location.read` | no | where the phone is; the person is asked on Krate's sheet and by the phone itself |
-| `bluetooth.connect` | no | Bluetooth devices the person picks in Krate's own list; only the picked one is reachable |
-| `photos.add` | no | add pictures to the person's photo library (add-only: the app never sees the library) |
+| capability | default-granted? | opens from a link? | notes |
+|---|---|---|---|
+| `ui.window:create` | yes | yes | open a window (every GUI app declares this) |
+| `ui.clipboard:read` | no | yes | read/write the clipboard |
+| `ui.clipboard:write` | no | yes | read/write the clipboard |
+| `ui.menu:system` | no | computer only | a system menu |
+| `ui.open-url` | no | yes | hand a link to the browser |
+| `ui.notify` | no | computer only | a desktop notification |
+| `ui.dropzone:<mime-type>` | no | yes | accept dragged files |
+| `ui.dialog:message` | yes | yes | a message box (no file access; default-granted) |
+| `ui.dialog:confirm` | yes | yes | a yes/no question box (no file access; default-granted) |
+| `ui.dialog:*` | no | yes, except `open-folder` | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:file-open` | no | yes | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:file-save` | no | yes | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:open-folder` | no | computer only | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `gfx.gpu:basic` | yes | computer only | GPU drawing (canvas2d present today) |
+| `gfx.gpu:compute` | no | computer only | GPU compute -- NOT implemented yet; do not declare it |
+| `audio.playback` | yes | yes | play sound |
+| `audio.capture` | no | computer only | record from the microphone |
+| `camera.capture` | no | computer only | see through the camera |
+| `location.read` | no | computer only | where the phone is; the person is asked on Krate's sheet and by the phone itself |
+| `bluetooth.connect` | no | computer only | Bluetooth devices the person picks in Krate's own list; only the picked one is reachable |
+| `photos.add` | no | computer only | add pictures to the person's photo library (add-only: the app never sees the library) |
 
 Mark `required = true` on a capability the app cannot begin without -- the verification run withholds it and the app must refuse to start (exit 5). A saving app marks `fs.write` required. `ui.window:create` is declared `required = true` by convention, but withholding a window just closes the app, so it is not the withheld gate; a GUI app whose only non-default capability is its window has nothing to withhold, which is fine. Do not mark required a capability the `quick` verification path never reaches, or the app fails its own wall test after building cleanly.
 

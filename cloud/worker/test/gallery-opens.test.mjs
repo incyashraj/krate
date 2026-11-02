@@ -19,6 +19,7 @@ test("open counts use the hub's analytics credentials and count people, not CI",
     assert.match(seen[0].url, /accounts\/acct\/analytics_engine\/sql$/);
     assert.equal(seen[0].auth, "Bearer t");
     assert.match(seen[0].sql, /blob9 != 'cloud'/, "CI and build farms are left out");
+    assert.match(seen[0].sql, /blob13 != 'bot' AND blob13 != 'probe'/, "crawlers and proof runs are not opens");
     // Without credentials it answers empty and asks nothing.
     seen.length = 0;
     assert.equal((await openCounts({})).size, 0);
