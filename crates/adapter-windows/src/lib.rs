@@ -604,11 +604,21 @@ impl UiAdapter for WindowsWinitPrototypeUiAdapter {
     // The drawn path paints its own text, so Cut/Copy/Paste can only work if
     // the guest reaches the real OS clipboard. Capability gating
     // (`ui.clipboard:read`/`write`) happens in the runtime before dispatch.
+    // A headless run (check-app, `--headless`, a machine with no display)
+    // keeps its clipboard in process, as macOS's does: there may be no
+    // system clipboard at all, and a check task's paste must never reach the
+    // person's. With native windows it is the real one.
     fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
+        if !self.native_windows_enabled() {
+            return self.headless.read_clipboard_text();
+        }
         clipboard::read_text()
     }
 
     fn write_clipboard_text(&self, text: &str) -> Result<(), UiAdapterError> {
+        if !self.native_windows_enabled() {
+            return self.headless.write_clipboard_text(text);
+        }
         clipboard::write_text(text)
     }
 
