@@ -1,0 +1,26 @@
+[app]
+id = "dev.krate.file-check"
+name = "File Check"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_file_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true
+
+[[capabilities]]
+cap = "ui.dialog:file-open"
+rationale = "Open the file you choose"
+required = true
+
+[[capabilities]]
+cap = "ui.dialog:file-save"
+rationale = "Save a file where you choose"
+required = true
+
+[[capabilities]]
+cap = "ui.dropzone:text/plain"
+rationale = "Read a text file you drop on it"
+required = true

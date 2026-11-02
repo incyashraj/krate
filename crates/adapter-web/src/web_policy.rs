@@ -108,6 +108,17 @@ impl WebGrants {
             .unwrap_or(false)
     }
 
+    /// Whether a file named `name` the person dropped on the app may reach
+    /// it, as the desktop decides (`allows_dropzone` in the runtime): the
+    /// `ui.dropzone:<mime>` capability, the media type from the file's name
+    /// by the one table both use. An empty name is a hover's question.
+    pub fn allows_drop(&self, name: &str) -> bool {
+        let mime = krate_adapter_common::mime::mime_for_file_name(name);
+        Capability::new("ui", "dropzone", Some(mime))
+            .map(|cap| self.policy.allows(&cap))
+            .unwrap_or(false)
+    }
+
     /// Judge one HTTP request before the page fetches it: `Ok` with the
     /// host and port it reaches, or the `net-error` the app gets, exactly
     /// as `UapiDispatcher::check_net_request` and the plain adapter's header
@@ -225,5 +236,27 @@ mod tests {
         );
         assert!(!grants.allows("store.kv"));
         assert!(WebGrants::new(&["store.kv".to_string()]).allows("store.kv"));
+    }
+
+    /// A dropped file reaches the app only under its `ui.dropzone` grant,
+    /// judged by the file's name as the desktop judges it; a hover (no
+    /// name) only when the app takes anything. The file dialogs work in a
+    /// tab; the folder dialog does not.
+    #[test]
+    fn a_drop_reaches_only_an_app_that_takes_that_kind_of_file() {
+        let text = WebGrants::new(&["ui.dropzone:text/plain".to_string()]);
+        assert!(text.allows_drop("notes.TXT"));
+        assert!(!text.allows_drop("photo.png"));
+        assert!(!text.allows_drop(""));
+        let images = WebGrants::new(&["ui.dropzone:image/*".to_string()]);
+        assert!(images.allows_drop("photo.png"));
+        assert!(!images.allows_drop("notes.txt"));
+        assert!(!WebGrants::new(&[]).allows_drop("notes.txt"));
+        let open: Capability = "ui.dialog:file-open".parse().unwrap();
+        let save: Capability = "ui.dialog:file-save".parse().unwrap();
+        assert!(works_in_a_tab(&open) && works_in_a_tab(&save));
+        // The folder dialog is not promised in a tab.
+        let folder: Capability = "ui.dialog:open-folder".parse().unwrap();
+        assert!(!works_in_a_tab(&folder));
     }
 }

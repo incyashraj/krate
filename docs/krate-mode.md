@@ -333,13 +333,16 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `fs::list(path: &str) -> Result<Vec<String>, FsError>`
 - `fs::mkdir(path: &str) -> Result<(), FsError>`
 - `fs::open(path: &str, mode: OpenMode) -> Result<File, FsError>`
+- `fs::open_chosen(token: &str, mode: OpenMode) -> Result<File, FsError>`
 - `fs::read(path: &str) -> Result<Vec<u8>, FsError>`
+- `fs::read_chosen(token: &str) -> Result<Vec<u8>, FsError>`
 - `fs::read_to_string(path: &str) -> Result<String, FsError>`
 - `fs::remove_dir(path: &str) -> Result<(), FsError>`
 - `fs::remove_file(path: &str) -> Result<(), FsError>`
 - `fs::rename(from: &str, to: &str) -> Result<(), FsError>`
 - `fs::stat(path: &str) -> Result<FileStat, FsError>`
 - `fs::write(path: &str, bytes: &[u8]) -> Result<(), FsError>`
+- `fs::write_chosen(token: &str, bytes: &[u8]) -> Result<(), FsError>`
 
 ### `fs::watch`
 
@@ -571,12 +574,12 @@ people can send. check-app ends with a note naming any it found.
 | `ui.menu:system` | no | computer only | a system menu |
 | `ui.open-url` | no | yes | hand a link to the browser |
 | `ui.notify` | no | computer only | a desktop notification |
-| `ui.dropzone:<mime-type>` | no | computer only | accept dragged files |
-| `ui.dialog:message` | yes | computer only | a message box (no file access; default-granted) |
-| `ui.dialog:confirm` | yes | computer only | a yes/no question box (no file access; default-granted) |
-| `ui.dialog:*` | no | computer only | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
-| `ui.dialog:file-open` | no | computer only | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
-| `ui.dialog:file-save` | no | computer only | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dropzone:<mime-type>` | no | yes | accept dragged files |
+| `ui.dialog:message` | yes | yes | a message box (no file access; default-granted) |
+| `ui.dialog:confirm` | yes | yes | a yes/no question box (no file access; default-granted) |
+| `ui.dialog:*` | no | yes, except `open-folder` | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:file-open` | no | yes | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:file-save` | no | yes | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
 | `ui.dialog:open-folder` | no | computer only | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
 | `gfx.gpu:basic` | yes | computer only | GPU drawing (canvas2d present today) |
 | `gfx.gpu:compute` | no | computer only | GPU compute -- NOT implemented yet; do not declare it |

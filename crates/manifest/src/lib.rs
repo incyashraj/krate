@@ -569,6 +569,16 @@ pub fn works_in_a_tab(module: &str, action: &str) -> bool {
             // the person's first tap or key, as browsers require. The
             // microphone stays out.
             | ("audio", "playback")
+            // The dialogs (IC-974): message and confirm as a sheet in the
+            // page, open-file through the browser's file picker, save-file
+            // as a download once the app lets go of what it wrote
+            // (player/web/hosts.js, player.js). The folder dialog is the one
+            // a tab still answers with "works in Krate on a computer"
+            // (Capability::works_in_a_tab, which knows the resource).
+            | ("ui", "dialog")
+            // A file dropped on the app, judged by the desktop's own media
+            // type table (krate_adapter_common::mime).
+            | ("ui", "dropzone")
     )
 }
 
@@ -714,6 +724,12 @@ impl Capability {
     /// The rest work in Krate on a computer; the Player says so in those
     /// words rather than pretending, and a call to one is refused the same way.
     pub fn works_in_a_tab(&self) -> bool {
+        // The folder dialog is the one dialog a tab cannot give: a browser
+        // hands a page files, not a folder it can write into.
+        if (self.module(), self.action(), self.resource()) == ("ui", "dialog", Some("open-folder"))
+        {
+            return false;
+        }
         works_in_a_tab(self.module(), self.action())
     }
 

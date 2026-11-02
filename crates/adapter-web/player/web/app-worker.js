@@ -83,7 +83,7 @@ self.onmessage = async ({ data }) => {
       }
     };
 
-    const imports = buildImports({
+    const host = {
       meta: data.meta,
       ui, grants, kv, ring, bridge, sql,
       args: data.args,
@@ -134,7 +134,8 @@ self.onmessage = async ({ data }) => {
         return { width: size[2] || data.avail.width, height: size[3] || data.avail.height, touch: data.touch };
       },
       textEntry: (on) => post({ t: 'text-entry', on }),
-    });
+    };
+    const imports = buildImports(host);
 
     // The glue the hub made at publish, and the core modules the page
     // checked against the judgement; nothing else is compiled.
@@ -153,6 +154,8 @@ self.onmessage = async ({ data }) => {
     post({ t: 'marks', marks });
     const run = app.run || (app['krate:app/run'] && app['krate:app/run'].run);
     const code = run();
+    // A file the app wrote and still held is let go of with the app.
+    host.closeFiles();
     present();
     post({ t: 'exit', code });
   } catch (e) {

@@ -281,6 +281,14 @@ impl Grants {
         self.inner.allows(cap)
     }
 
+    /// Whether a file named `name` dropped on the app may reach it: the
+    /// desktop's `ui.dropzone:<mime>` check, the media type taken from the
+    /// name by the desktop's own table. An empty name asks what a hover
+    /// asks: whether the app takes anything at all.
+    pub fn allows_drop(&self, name: &str) -> bool {
+        self.inner.allows_drop(name)
+    }
+
     /// `headers` is a JSON list of `{name, value}`. Answers
     /// `{"ok":{"host","port"}}` or `{"err": <net-error>}`.
     pub fn check_http(&self, url: &str, headers: &str, body_len: usize) -> String {

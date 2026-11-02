@@ -505,7 +505,7 @@ and answers `Ok(true)` when sent, `Ok(false)` when cancelled; no \
 capability. A computer answers `Err(Unavailable)` for now: offer \
 save-file or Copy there instead. Photos: `krate::ui::photos::pick(win, \
 3)` opens the system's photo picker and returns the picks as chosen \
-files (read them with `fs::files::open_chosen(&f.token, Read)`); empty \
+files (read them with `krate::fs::read_chosen(&f.token)`); empty \
 means cancelled, no capability. To add a picture: declare `photos.add` \
 and call `photos::save(win, &png_or_jpeg_bytes)`. On a computer pick \
 opens the file dialog for pictures. A reminder that comes with the app \
@@ -839,19 +839,21 @@ fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
     let default = if spec.default_granted() { "yes" } else { "no" };
     // From the Player's own list, so the pack cannot promise a phone what
     // the tab refuses (IC-974).
-    let link = if krate_manifest::works_in_a_tab(spec.module(), spec.action()) {
-        "yes"
-    } else {
-        "computer only"
+    // A concrete pattern (`ui.dialog:open-folder`) is judged with its
+    // resource, as the consent card judges it; a placeholder pattern by its
+    // module and action.
+    let pattern = spec.display_pattern();
+    let tab = match pattern.parse::<krate_manifest::Capability>() {
+        Ok(cap) if !pattern.contains('<') => cap.works_in_a_tab(),
+        _ => krate_manifest::works_in_a_tab(spec.module(), spec.action()),
     };
-    let note = capability_note(&spec.display_pattern());
-    format!(
-        "| `{}` | {} | {} | {} |\n",
-        spec.display_pattern(),
-        default,
-        link,
-        note
-    )
+    let link = match (tab, pattern.as_str()) {
+        (true, "ui.dialog:*") => "yes, except `open-folder`",
+        (true, _) => "yes",
+        (false, _) => "computer only",
+    };
+    let note = capability_note(&pattern);
+    format!("| `{}` | {} | {} | {} |\n", pattern, default, link, note)
 }
 
 /// A one-line human note for a capability, keyed by its `module.action` name.
@@ -1550,7 +1552,8 @@ never a path, and the token is good for this run only.\n\n\
 **Drag and drop** (`ui.dropzone:<mime-type>`, an explicit ask). Declare it \
 and the window receives `Event::FileDropped(chosen)` when a file lands on \
 it -- `chosen.name` to show, `chosen.token` to open with \
-`fs::files::open_chosen(&token, OpenMode::Read)`. While something is being \
+`krate::fs::read_chosen(&token)` (or `krate::fs::open_chosen(&token, \
+OpenMode::Read)` to read in pieces). While something is being \
 dragged over the window, `Event::FileHovering(true)` arrives, then \
 `FileHovering(false)` when it leaves or drops: use it to highlight the \
 target, and nothing more -- a hover is not consent, and the app learns \
@@ -1561,7 +1564,8 @@ files and will not.\n\n\
 `ui::dialog::save_file(window, \"Save as\", \"notes.txt\", \"txt\")` shows the \
 system's save dialog and returns `Ok(None)` when they cancel -- a normal \
 outcome, not an error -- or `Ok(Some(chosen))`, whose token you pass to \
-`fs::files::open_chosen` with a writing mode. The token names a file the \
+`krate::fs::write_chosen(&token, &bytes)` (in a browser tab the person \
+gets it as a download of that name). The token names a file the \
 person nominated; it creates nothing by itself, so asking and then not \
 writing leaves nothing behind. An editor that can open a document and not \
 save one is not an editor: any app that reads a file the person chose \

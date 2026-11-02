@@ -14,7 +14,7 @@
 // Nothing here decides a rule; the Player module (crates/adapter-web) and the
 // validator do. window.__krate carries the timings the proofs read.
 
-import init, { consent } from './krate_web.js';
+import init, { consent, Grants } from './krate_web.js';
 import { makeBridgeMemory, pageBridge } from './bridge.js';
 import { makeRing, pageRing } from './ring.js';
 import { makeAudioMemory, pageAudio } from './audio.js';
@@ -24,7 +24,7 @@ import { TeamData } from './org-data.js';
 import './org-device.js';
 
 const $ = (id) => document.getElementById(id);
-const report = (window.__krate = { marks: {}, frames: 0, latencies: [], paintLatencies: [], notices: [], out: '', state: 'loading' });
+const report = (window.__krate = { marks: {}, frames: 0, latencies: [], paintLatencies: [], notices: [], out: '', state: 'loading', dialogs: [], saved: [] });
 const mark = (name) => { report.marks[name] = performance.now(); };
 const SITE = 'https://krate.tech';
 const params = new URLSearchParams(location.search);
@@ -105,7 +105,7 @@ const WHAT = {
   'krate:net/ws': 'live connections',
   'krate:net/sockets': 'network connections',
   'krate:resources/assets': 'its own pictures and files',
-  'krate:ui/dialog': 'dialogs and file pickers',
+  'krate:ui/dialog': 'choosing a folder',
   'krate:ui/notify': 'notifications',
   'krate:ui/reminders': 'reminders',
   'krate:ui/print': 'printing',
@@ -750,6 +750,138 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   };
   const sockets = new Map();
   let nextSocket = 1;
+
+  // ---- the app's dialogs, and the files the person hands it (IC-974)
+  // A file is held here by token, never by path: the browser's own File
+  // for one picked or dropped (read only when the app reads it), a Blob for
+  // what the app wrote. The list dies with the tab, so a token is good for
+  // this run only, and a run holds at most 64, as on desktop
+  // (crates/runtime/src/chosen_files.rs).
+  const chosen = new Map();
+  let issued = 0;
+  const remember = (fileName, blob, kind) => {
+    if (chosen.size >= 64) return null;
+    issued += 1;
+    const token = `chosen-${issued}`;
+    chosen.set(token, { name: fileName, blob, kind, modified: (blob && blob.lastModified) || Date.now() });
+    return token;
+  };
+  const TOO_MANY = { err: { tag: 'unsupported', val: 'too many files chosen in one run' } };
+  // Whether this moment is inside the person's own tap or key: a browser
+  // opens a file picker or starts a download only then. Without a way to
+  // tell, the answer is no, and the person is asked to tap.
+  const inGesture = () => Boolean(navigator.userActivation && navigator.userActivation.isActive);
+  // A press still held: the picker opens inside its release, which is a
+  // gesture on every browser (the app hears the press first).
+  let held = 0;
+  let onRelease = null;
+  const released = () => {
+    held = Math.max(0, held - 1);
+    if (held === 0 && onRelease) { const go = onRelease; onRelease = null; go(); }
+  };
+  // One sheet for every question: a message, a yes/no, "choose a file",
+  // "save this file". Escape or a tap outside answers no.
+  let answerSheet = null;
+  const sheet = (title, body, yes, no) => new Promise((resolve) => {
+    $('askTitle').textContent = title || name;
+    $('askBody').textContent = body || '';
+    $('askBody').hidden = !body;
+    $('askYes').textContent = yes;
+    $('askNo').textContent = no || '';
+    $('askNo').hidden = !no;
+    const done = (answer) => {
+      if (answerSheet !== done) return;
+      answerSheet = null;
+      $('askSheet').hidden = true;
+      canvas.focus({ preventScroll: true });
+      resolve(answer);
+    };
+    answerSheet = done;
+    $('askYes').onclick = () => done(true);
+    $('askNo').onclick = () => done(false);
+    $('askSheet').hidden = false;
+    $('askYes').focus();
+  });
+  $('askSheet').addEventListener('click', (e) => { if (e.target === $('askSheet') && answerSheet) answerSheet(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && answerSheet) { e.preventDefault(); answerSheet(false); } });
+  // A filter is "png,jpg": the picker is told .png,.jpg, as a hint.
+  const accepts = (filter) => String(filter || '').split(',').map((e) => e.trim().replace(/^\./, ''))
+    .filter((e) => /^[A-Za-z0-9]+$/.test(e)).map((e) => `.${e}`).join(',');
+  const pickFile = ({ title, filter }) => new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.className = 'pick';
+    input.tabIndex = -1;
+    const accept = accepts(filter);
+    if (accept) input.accept = accept;
+    document.body.appendChild(input);
+    let settled = false;
+    const finish = (file) => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      if (answerSheet) answerSheet(false);
+      // Cancelling is a normal answer, not a failure.
+      if (!file) { resolve({ json: { ok: null } }); return; }
+      const token = remember(file.name, file, 'open');
+      resolve({ json: token ? { ok: { name: file.name, token } } : TOO_MANY });
+    };
+    input.addEventListener('change', () => finish(input.files && input.files[0]));
+    input.addEventListener('cancel', () => finish(null));
+    const open = (how) => { report.dialogs.push({ kind: 'open', how }); input.click(); };
+    const ask = () => sheet(title || `${name} wants a file`, `${name} gets only the file you choose.`, 'Choose a file', 'Cancel')
+      .then((yes) => (yes ? open('sheet') : finish(null)));
+    if (held) onRelease = () => (inGesture() || !navigator.userActivation ? open('release') : ask());
+    else if (inGesture()) open('direct');
+    else ask();
+  });
+  // Where a save goes in a tab: the name the app suggested, cleaned as the
+  // phone's save cleans it (export_path in crates/runtime), with the
+  // filter's first extension when it has none.
+  const saveName = (suggested, filter) => {
+    let n = String(suggested || '').replace(/[\/\\\u0000-\u001f\u007f-\u009f]/g, '-').trim().replace(/^\.+/, '');
+    if (!n) n = 'Untitled';
+    const ext = String(filter || '').split(',').map((e) => e.trim().replace(/^\./, '')).find((e) => e && /^[A-Za-z0-9]+$/.test(e));
+    if (ext && !/.\./.test(n)) n = `${n}.${ext}`;
+    return n;
+  };
+  const download = (fileName, blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.className = 'pick';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    report.saved.push({ name: fileName, size: blob.size });
+  };
+  // The app let go of a file it wrote: hand it to the person. Inside their
+  // tap it downloads at once; otherwise one tap on the sheet saves it.
+  const deliver = (fileName, blob) => {
+    if (inGesture()) { report.dialogs.push({ kind: 'save', how: 'direct' }); download(fileName, blob); return Promise.resolve(); }
+    return sheet(`${name} saved ${fileName}`, 'Save it to this device.', 'Save', 'Not now').then((yes) => {
+      report.dialogs.push({ kind: 'save', how: yes ? 'sheet' : 'declined' });
+      if (yes) download(fileName, blob);
+    });
+  };
+  // A file dropped on the app reaches it only under its ui.dropzone grant,
+  // judged as the desktop judges it (by the file's name); a drag over it
+  // is said only to an app that takes anything, as on desktop.
+  const dropGrants = new Grants(JSON.stringify(granted));
+  const dragging = (e) => Boolean(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+  let over = false;
+  const hover = (now) => {
+    if (now === over) return;
+    over = now;
+    if (dropGrants.allows_drop('')) ring.push({ type: 'hover', window: win(), over: now });
+  };
+  // A file let go of anywhere else on the page is not opened by the browser
+  // in place of the app.
+  document.addEventListener('dragover', (e) => { if (dragging(e)) e.preventDefault(); });
+  document.addEventListener('drop', (e) => { if (dragging(e)) e.preventDefault(); });
+
   const bridge = pageBridge(bridgeMem, {
     'http.fetch': doFetch,
     'http.begin': (args) => {
@@ -820,6 +952,46 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
         entry.closing = true;
         try { entry.sock.close(1000); } catch (e) {}
       }
+      return { json: { ok: null } };
+    },
+    'dialog.ask': async ({ kind, title, body }) => {
+      report.dialogs.push({ kind, title });
+      const yes = await sheet(title, body, kind === 'confirm' ? 'Yes' : 'OK', kind === 'confirm' ? 'No' : '');
+      return { json: { ok: kind === 'confirm' ? yes : null } };
+    },
+    'dialog.open': pickFile,
+    // Nothing to ask yet: a tab cannot choose a folder of theirs, so the
+    // file goes to the person once the app has written it and let go.
+    'dialog.save': ({ suggested, filter }) => {
+      const fileName = saveName(suggested, filter);
+      const token = remember(fileName, null, 'save');
+      return { json: token ? { ok: { name: fileName, token } } : TOO_MANY };
+    },
+    'file.open': async ({ token, mode }) => {
+      const entry = chosen.get(token);
+      // A token nobody was handed, or a save not yet written, is not found.
+      if (!entry || (mode === 'read' && !entry.blob)) return { json: { err: { tag: 'not-found' } } };
+      const whole = (mode === 'read-write' || mode === 'append') && entry.blob;
+      const body = whole ? new Uint8Array(await entry.blob.arrayBuffer()) : undefined;
+      return { json: { ok: { size: entry.blob ? entry.blob.size : 0, modified: entry.modified, kind: entry.kind } }, body };
+    },
+    'file.read': async ({ token, at, len }) => {
+      const entry = chosen.get(token);
+      if (!entry || !entry.blob) return { json: { err: { tag: 'not-found' } } };
+      try {
+        return { json: { ok: null }, body: new Uint8Array(await entry.blob.slice(at, at + len).arrayBuffer()) };
+      } catch (e) {
+        // A picked file changed or moved since it was chosen.
+        return { json: { err: { tag: 'io', val: `the browser could not read ${entry.name} again; choose it once more` } } };
+      }
+    },
+    'file.close': ({ token, data, offer }) => {
+      const entry = chosen.get(token);
+      if (!entry) return { json: { ok: null } };
+      entry.blob = new Blob([data], { type: 'application/octet-stream' });
+      entry.modified = Date.now();
+      // The app goes on while the person decides.
+      if (offer) deliver(entry.name, entry.blob);
       return { json: { ok: null } };
     },
     'sql.save': ({ image }) => (d ? kvWrite((s) => s.put(image, sqlKey)) : { json: { err: { tag: 'io', val: 'this browser keeps no storage for this tab' } } }),
@@ -980,6 +1152,10 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     }
     e.preventDefault();
   };
+  // A press held, for a file picker the app asks for while it is down.
+  canvas.addEventListener('pointerdown', () => { held += 1; }, true);
+  canvas.addEventListener('pointerup', released);
+  canvas.addEventListener('pointercancel', () => { onRelease = null; released(); });
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') {
       canvas.setPointerCapture(e.pointerId);
@@ -1001,6 +1177,20 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     ring.push({ type: 'move', window: win(), x: e.offsetX, y: e.offsetY });
   });
   canvas.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') ring.push({ type: 'leave', window: win() }); });
+  canvas.addEventListener('dragenter', (e) => { if (dragging(e)) { e.preventDefault(); hover(true); } });
+  canvas.addEventListener('dragover', (e) => { if (dragging(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  canvas.addEventListener('dragleave', () => hover(false));
+  canvas.addEventListener('drop', (e) => {
+    if (!dragging(e)) return;
+    e.preventDefault();
+    over = false;
+    // One event per file, in the order the browser gave them.
+    for (const file of Array.from(e.dataTransfer.files || [])) {
+      if (!dropGrants.allows_drop(file.name)) continue;
+      const token = remember(file.name, file, 'drop');
+      if (token) ring.push({ type: 'drop', window: win(), name: file.name, token });
+    }
+  });
   canvas.addEventListener('contextmenu', (e) => { if (matchMedia('(pointer: coarse)').matches) e.preventDefault(); });
   canvas.addEventListener('wheel', (e) => {
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
