@@ -8479,8 +8479,25 @@ fn publish_bundle(
     if let Some(note) = extract_json_string(&body, "note") {
         println!("note: {note}");
     }
-    println!("Published. Anyone can run it with:");
+    // An app published before is updated, not added again (IC-976): its link
+    // stays the same and now opens this version.
+    let versioned: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    match (
+        versioned["version"].as_u64(),
+        versioned["updated"].as_bool(),
+    ) {
+        (Some(n), Some(true)) => {
+            println!("Updated to v{n}. Everyone with the link gets this version:");
+        }
+        (Some(_), _) => println!("Published (v1). Anyone can run it with:"),
+        _ => println!("Published. Anyone can run it with:"),
+    }
     println!("  krate run {url}");
+    if let Some(pinned) = versioned["version_url"].as_str() {
+        if versioned["version"].is_u64() {
+            println!("  this version alone, unchanged by later updates: {pinned}");
+        }
+    }
     // The moving name for this app: republishing under the same name
     // moves it, and it moves for nobody else (IC-389, test 470).
     if let Some(channel) = extract_json_string(&body, "channel") {
