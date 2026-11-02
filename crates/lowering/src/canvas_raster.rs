@@ -365,10 +365,16 @@ impl CanvasSurface {
         };
         let (w, h) = (self.width as usize, self.height as usize);
         let s = self.width as f32 / self.logical_width.max(1) as f32;
-        let x0 = ((ox * s).round() as usize).min(w);
-        let y0 = ((oy * s).round() as usize).min(h);
-        let x1 = (((ox + dw * k) * s).round() as usize).clamp(x0, w);
-        let y1 = (((oy + dh * k) * s).round() as usize).clamp(y0, h);
+        // The design's edges by fill_rect's own rule (an edge covers the
+        // pixel it falls in, so the far edge rounds down): the columns and
+        // rows sampled below are ones the app's fills actually painted.
+        // Rounded to nearest, the far edge at 2073.6 sampled column 2073,
+        // which no fill reached -- still white, and copied across the whole
+        // right side of a design-size game on a wide window (K-1155).
+        let x0 = ((ox * s).floor().max(0.0) as usize).min(w);
+        let y0 = ((oy * s).floor().max(0.0) as usize).min(h);
+        let x1 = (((ox + dw * k) * s).floor().max(0.0) as usize).clamp(x0, w);
+        let y1 = (((oy + dh * k) * s).floor().max(0.0) as usize).clamp(y0, h);
         if x1 <= x0 || y1 <= y0 || (x0 == 0 && y0 == 0 && x1 == w && y1 == h) {
             return;
         }
@@ -991,9 +997,10 @@ impl CanvasSurface {
         let (x0, y0) = self.map_point(x, y);
         let (x1, y1) = self.map_point(x + w, y + h);
         let (x0, y0, x1, y1) = (x0 * k, y0 * k, x1 * k, y1 * k);
-        // A row belongs to the gradient when at least half of it is inside,
-        // so a bottom edge at 1051.5 still paints its last half-covered row.
-        let (first, last) = (y0.round(), y1.round());
+        // fill_rect's own rule, which the letterbox shares: an edge covers
+        // the row it falls in, so a far edge at 1051.5 leaves row 1051 to
+        // the spare space, which is painted with the design's edge colour.
+        let (first, last) = (y0.floor(), y1.floor());
         if last <= first {
             return;
         }
@@ -1552,6 +1559,30 @@ mod tests {
             assert!(
                 white.is_empty(),
                 "{w}x{h} design {dw}x{dh}: unpainted rows {white:?}"
+            );
+        }
+    }
+
+    /// K-1155: a 256x240 design on a 1280x744 window at 2x fills its spare
+    /// space with the colour of its own edges on both sides, never with a
+    /// column no fill reached.
+    #[test]
+    fn both_sides_of_a_wide_letterbox_take_the_design_edge() {
+        let mut surface = CanvasSurface::new_scaled(1280, 744, 2.0).expect("surface");
+        surface.clear(0xFFFF_FFFF);
+        surface.set_design_size(256.0, 240.0);
+        surface.fill_rect(0.0, 0.0, 256.0, 240.0, 0xFF10_2040);
+        let image = surface.to_image().expect("image");
+        let px = |x: u32, y: u32| {
+            let i = ((y * image.width + x) * 4) as usize;
+            [image.rgba[i], image.rgba[i + 1], image.rgba[i + 2]]
+        };
+        for y in [10, image.height / 2, image.height - 10] {
+            assert_eq!(px(5, y), [0x10, 0x20, 0x40], "left of the design, row {y}");
+            assert_eq!(
+                px(image.width - 5, y),
+                [0x10, 0x20, 0x40],
+                "right of the design, row {y}"
             );
         }
     }
