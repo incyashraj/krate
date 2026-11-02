@@ -19,34 +19,11 @@ use krate_policy::SessionPolicy;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-/// Whether a browser tab has an equivalent for this capability (Phase 1).
-///
-/// The rest work in Krate on a computer; the Player says so in those words
-/// rather than pretending, and a call to one is refused the same way.
+/// Whether a browser tab has an equivalent for this capability: the list
+/// lives with the capability itself (`Capability::works_in_a_tab`), so
+/// check-app warns from the same one.
 pub fn works_in_a_tab(cap: &Capability) -> bool {
-    matches!(
-        (cap.module(), cap.action()),
-        ("io", "stdout" | "stderr" | "args" | "log")
-            | ("random", "bytes")
-            | ("time", _)
-            | ("locale", _)
-            | ("ui", "window" | "clipboard" | "open-url")
-            | ("net", "connect")
-            | ("store", "kv")
-            // The app's own database (K-1149): the desktop's SQLite and
-            // rules (crates/appsql) compiled for the tab (crates/sql-web),
-            // kept per app in the browser's storage.
-            | ("store", "sql")
-            // An organisation's team data (G1): the copy, merge and sealing
-            // are crates/orgdata in the validator module, the page keeps the
-            // copy and syncs it (player/web/org-data.js).
-            | ("store", "org")
-            // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
-            // app's own buffers (player/web/audio-worklet.js), heard from
-            // the person's first tap or key, as browsers require. The
-            // microphone stays out.
-            | ("audio", "playback")
-    )
+    cap.works_in_a_tab()
 }
 
 #[derive(Debug, Deserialize)]

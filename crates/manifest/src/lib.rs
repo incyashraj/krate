@@ -678,6 +678,39 @@ impl Capability {
         default_granted_capabilities().contains(self)
     }
 
+    /// Whether a browser tab can give this capability (IC-956, IC-974): the
+    /// one list the Player's consent card (crates/adapter-web web_policy.rs)
+    /// and check-app's note for an app shared as a link both read.
+    ///
+    /// The rest work in Krate on a computer; the Player says so in those
+    /// words rather than pretending, and a call to one is refused the same way.
+    pub fn works_in_a_tab(&self) -> bool {
+        matches!(
+            (self.module(), self.action()),
+            ("io", "stdout" | "stderr" | "args" | "log")
+                | ("random", "bytes")
+                | ("time", _)
+                | ("locale", _)
+                | ("ui", "window" | "clipboard" | "open-url")
+                // net.ws rides the same grant (IC-974).
+                | ("net", "connect")
+                | ("store", "kv")
+                // The app's own database (K-1149): the desktop's SQLite and
+                // rules (crates/appsql) compiled for the tab (crates/sql-web),
+                // kept per app in the browser's storage.
+                | ("store", "sql")
+                // An organisation's team data (G1): the copy, merge and
+                // sealing are crates/orgdata in the validator module, the
+                // page keeps the copy and syncs it (player/web/org-data.js).
+                | ("store", "org")
+                // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
+                // app's own buffers (player/web/audio-worklet.js), heard from
+                // the person's first tap or key, as browsers require. The
+                // microphone stays out.
+                | ("audio", "playback")
+        )
+    }
+
     /// Render a capability as a short plain phrase for a person, e.g.
     /// `fs.write:./checklist/**` -> "save files in ./checklist". Falls back to the
     /// technical form for anything without a friendly phrasing, so the label is
