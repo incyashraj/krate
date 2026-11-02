@@ -5668,7 +5668,32 @@ function showActionError(err) {
    before it goes -- name, one line, screenshot, optional logo. Publishing
    again later replaces the listing server-side, so this is also the edit
    path. */
-const pubState = { shotPath: null, iconPath: null };
+const pubState = { shotPath: null, iconPath: null, plan: null };
+/* The publish button's words: "Publish", or "Publish update (v3)" once the
+ * hub says this app is already out (IC-976). */
+function pubGoLabel() {
+  return (pubState.plan && pubState.plan.update) ? pubState.plan.label : "Publish";
+}
+/* The sheet says what a publish will do: a first publish, or the next
+ * version behind the same link. Asked when the sheet opens. */
+function paintPublishPlan(app) {
+  pubState.plan = null;
+  const head = document.querySelector("#publishSheet h2");
+  const sub = document.querySelector("#pubForm .pub-sub");
+  if (head) head.textContent = "Publish";
+  if (sub) sub.textContent = "Anyone with the link can open it. Publishing again later updates it.";
+  return versionsOf(app).then((line) => {
+    if (!currentApp() || currentApp().path !== app.path) return null;
+    const plan = publishPlan(line);
+    pubState.plan = plan;
+    if (plan.update) {
+      if (head) head.textContent = "Publish update";
+      if (sub) sub.textContent = plan.sub;
+    }
+    if (!$("pubGo").disabled) $("pubGo").textContent = pubGoLabel();
+    return plan;
+  });
+}
 
 /* Share: a small menu on the Share button, not a sheet. Three things you can
  * do with the app, each one row; the link, once there is one, is the first
@@ -6255,6 +6280,168 @@ async function makeWrap(app, os, label) {
   }
 }
 
+/* ---- an app's versions (IC-976) ---------------------------------------
+ * Publishing the same app again is its next version, behind one link: the
+ * link people already have opens the update. Studio asks the hub, before
+ * anything goes up, whether this person has published this app (by the id
+ * in its manifest), so the publish control can say "Publish update (v3)"
+ * and Details can list the versions with a way to make an older one
+ * current again. Only the publisher is ever answered with the list.
+ *
+ * `app_versions` answers the hub's view with `this_version` (which version
+ * this very file is, null when it is not published yet) and `next` (the
+ * number a publish would make it), or null: not published, or signed out. */
+const appVersions = { byPath: new Map() };
+
+/* Kept per file for a minute, so Share and Details open at once. */
+function versionsOf(app, force) {
+  if (!app || !app.path) return Promise.resolve(null);
+  if (!tauri && !window.__KRATE_BRIDGE__) return Promise.resolve(null);
+  const kept = appVersions.byPath.get(app.path);
+  if (!force && kept && Date.now() - kept.at < 60 * 1000) return kept.ask;
+  const ask = invoke("app_versions", { path: app.path })
+    .then((v) => (v && v.id && v.url ? v : null))
+    .catch(() => null);
+  appVersions.byPath.set(app.path, { at: Date.now(), ask });
+  return ask;
+}
+function forgetVersions(app) {
+  if (app && app.path) appVersions.byPath.delete(app.path);
+}
+
+/* What the publish control says for this file: a first publish, an update
+ * to the next version, or this exact build already published. */
+function publishPlan(line) {
+  if (!line) return { update: false, label: "Publish", sub: "" };
+  if (line.this_version) {
+    return {
+      update: false, same: true, n: line.this_version, url: line.url,
+      label: "Publish",
+      sub: `This build is v${line.this_version}, already at your link.`,
+    };
+  }
+  const n = Number(line.next) || (Number(line.versions) || 0) + 1;
+  return {
+    update: true, n, url: line.url, current: line.current,
+    label: `Publish update (v${n})`,
+    sub: `Your link stays the same. Everyone who has it gets v${n}.`,
+  };
+}
+
+/* The hub's answer to a publish, whichever engine gave it: an older one
+ * answered with the link alone. */
+function publishAnswer(out) {
+  if (typeof out === "string") return { url: out, version: null, updated: false };
+  return {
+    url: (out && out.url) || "",
+    version: out && Number.isFinite(out.version) ? out.version : null,
+    updated: Boolean(out && out.updated),
+    version_url: (out && out.version_url) || null,
+  };
+}
+
+/* Said once a publish lands. */
+function publishedWords(out) {
+  if (out && out.updated && out.version) {
+    return `Updated to v${out.version}. Everyone with the link now gets it. The link is copied.`;
+  }
+  return "Link copied. It's under Share whenever you need it.";
+}
+
+function versionWhen(at) {
+  const d = new Date((Number(at) || 0) * 1000);
+  if (!at || Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const opts = { day: "numeric", month: "short" };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString(undefined, opts) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+function versionSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (!n) return "";
+  return n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/* The versions list: newest first, each with its number, when, its size,
+ * the current one marked, a link that opens that version alone, and Make
+ * current with one line saying what it does before it does it. `onChange`
+ * hears the hub's new view after a version is made current. */
+function renderVersions(host, line, onChange) {
+  host.replaceChildren();
+  if (!line || !Array.isArray(line.history) || !line.history.length) { host.hidden = true; return; }
+  host.hidden = false;
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  const head = el("div", "vers-head");
+  head.appendChild(el("p", "vers-title", "Versions"));
+  head.appendChild(el("p", "vers-sub", `Your link opens v${line.current}. Only you see this list.`));
+  host.appendChild(head);
+  const list = el("ol", "vers-list");
+  const rows = line.history.slice().sort((a, b) => b.n - a.n);
+  for (const v of rows) {
+    const li = el("li", "vers-row" + (v.current ? " on" : ""));
+    li.dataset.n = String(v.n);
+    const top = el("div", "vers-top");
+    top.appendChild(el("b", "vers-n", `v${v.n}`));
+    // When and how big first, so the dates line up down the list; the
+    // marks follow them.
+    top.appendChild(el("span", "vers-meta", [versionWhen(v.at), versionSize(v.size)].filter(Boolean).join(" · ")));
+    if (v.current) top.appendChild(el("span", "vers-pill", "Current"));
+    if (line.this_version === v.n) top.appendChild(el("span", "vers-pill ghost", "This build"));
+    const acts = el("span", "vers-acts");
+    const open = el("button", "dt2-link", "Open");
+    open.type = "button";
+    open.title = v.url;
+    open.setAttribute("aria-label", `Open v${v.n} on its own`);
+    open.addEventListener("click", () => invoke("open_external", { url: v.url }).catch(() => {}));
+    acts.appendChild(open);
+    if (!v.current) {
+      const make = el("button", "dt2-link", "Make current");
+      make.type = "button";
+      make.addEventListener("click", () => askMakeCurrent(li, line, v, onChange));
+      acts.appendChild(make);
+    }
+    top.appendChild(acts);
+    li.appendChild(top);
+    list.appendChild(li);
+  }
+  host.appendChild(list);
+}
+
+/* One line saying what Make current does, and the press that does it. */
+function askMakeCurrent(li, line, v, onChange) {
+  const old = li.querySelector(".vers-ask");
+  if (old) { old.remove(); return; }
+  const ask = document.createElement("div");
+  ask.className = "vers-ask";
+  const say = document.createElement("p");
+  say.textContent = `Everyone with the link gets v${v.n} again.`;
+  const go = document.createElement("button");
+  go.type = "button"; go.className = "btn btn-sm vers-go"; go.textContent = `Make v${v.n} current`;
+  const no = document.createElement("button");
+  no.type = "button"; no.className = "btn btn-sm ghost vers-no"; no.textContent = "Cancel";
+  no.addEventListener("click", () => ask.remove());
+  go.addEventListener("click", async () => {
+    if (go.disabled) return;
+    go.disabled = true; no.disabled = true; go.textContent = "Switching…";
+    try {
+      const view = await invoke("app_make_current", { line: line.id, version: v.n });
+      const next = { ...line, ...(view || {}), this_version: line.this_version, next: line.next };
+      toastish(`v${v.n} is current. Everyone with the link gets it.`);
+      if (onChange) onChange(next);
+    } catch (err) {
+      say.textContent = clip(String(err && err.message ? err.message : err || "That did not work just now."), 200);
+      say.className = "vers-err";
+      go.disabled = false; no.disabled = false; go.textContent = `Make v${v.n} current`;
+    }
+  });
+  const btns = document.createElement("span");
+  btns.className = "vers-btns";
+  btns.append(go, no);
+  ask.append(say, btns);
+  li.appendChild(ask);
+}
+/* ---- end of an app's versions ---- */
+
 function openPublishSheet() {
   const app = currentApp();
   if (!app) return;
@@ -6318,6 +6505,7 @@ function openPublishSheet() {
   $("pubNote").textContent = "";
   $("pubGo").disabled = false;
   $("pubGo").textContent = "Publish";
+  paintPublishPlan(app);
   $("publishSheet").classList.remove("hidden");
 }
 
@@ -6361,7 +6549,7 @@ function showPubSignin(why) {
   $("pubSigninErr").classList.add("hidden");
   if (why) $("pubSigninWhy").textContent = why;
   $("pubGo").disabled = false;
-  $("pubGo").textContent = "Publish";
+  $("pubGo").textContent = pubGoLabel();
 }
 function pubSigninDone() {
   state.loginSurface = "gate";
@@ -6428,22 +6616,29 @@ async function publishFromSheet() {
     if (!ok) { showPubSignin(); return; }
   }
   $("pubGo").disabled = true;
-  $("pubGo").textContent = "Publishing…";
+  $("pubGo").textContent = pubState.plan && pubState.plan.update ? "Updating…" : "Publishing…";
   $("pubNote").textContent = "";
   try {
-    const url = await invoke("publish", {
+    const out = publishAnswer(await invoke("publish", {
       path: app.path,
       description: $("pubDesc").value.trim(),
       name: $("pubName").value.trim(),
       shot: pubState.shotPath,
       icon: pubState.iconPath,
       unlisted: !$("pubListed").checked,
-    });
+    }));
+    const url = out.url;
+    if (!url) throw new Error("published, but no link came back");
+    // The link to share is the app's own (IC-976): it opens whichever
+    // version is current, so the link sent today opens tomorrow's update.
     state.session.result.share_url = url;
+    if (out.version) state.session.result.published_version = out.version;
+    state.lastPublish = out;
+    forgetVersions(app);
     $("publishSheet").classList.add("hidden");
     // Copied at once; it stays one press away under Share.
     try { await navigator.clipboard.writeText(url); } catch (e) {}
-    toastish("Link copied. It's under Share whenever you need it.");
+    toastish(publishedWords(out));
     persist();
   } catch (err) {
     // The raw engine words go to the log even when the sheet shows plainer
@@ -6457,7 +6652,7 @@ async function publishFromSheet() {
     }
     $("pubNote").textContent = publishWords(err);
     $("pubGo").disabled = false;
-    $("pubGo").textContent = "Publish";
+    $("pubGo").textContent = pubGoLabel();
   }
 }
 
@@ -7177,7 +7372,9 @@ async function fillDetails(app) {
   const display = (app.name || "").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   row("Name", display || "Your app");
   row("File", app.name || baseName(info.path || app.path), "mono");
-  row("Version", [version, builds ? `v${builds} in this session` : ""].filter(Boolean).join(" · ") || "v1");
+  // The builds made in this session, not published versions: those are
+  // the Versions list below (IC-976), so this row never says "v2" beside it.
+  row("Built", [builds ? `${builds} time${builds === 1 ? "" : "s"} in this session` : "", version ? `manifest ${version}` : ""].filter(Boolean).join(" · ") || "once");
   row("Size", `${kb} KB · needs the Krate runtime, installed once`);
   // Which AI wrote it: the session's own record when it has one.
   const agentId = (state.session && state.session.agent) || state.agent || "";
@@ -7233,6 +7430,23 @@ async function fillDetails(app) {
     f.appendChild(copyBtn("Copy", info.identity, "dt2-link"));
     row("Fingerprint", f);
   }
+  // Its link and its versions, when this person published it (IC-976).
+  // Asked after the facts are on screen: the hub is a network away.
+  const vers = el("section", "vers");
+  vers.hidden = true;
+  wrap.appendChild(vers);
+  versionsOf(app).then((line) => {
+    if (!line || !vers.isConnected) return;
+    const l = el("span", "dt2-act");
+    l.appendChild(el("span", "mono dt2-path", String(line.url).replace(/^https?:\/\//, "")));
+    l.appendChild(copyBtn("Copy", line.url, "dt2-link"));
+    row("Link", l);
+    const paint = (next) => {
+      appVersions.byPath.set(app.path, { at: Date.now(), ask: Promise.resolve(next) });
+      renderVersions(vers, next, paint);
+    };
+    renderVersions(vers, line, paint);
+  });
   // The header's one action: run it from a terminal. Building it again is
   // a second, smaller one beside it.
   const run = `krate launch ${shellWord(tauri && info.path ? info.path : app.name || "app.krate")}`;
@@ -9112,7 +9326,9 @@ async function mockInvoke(cmd, args) {
     }
     case "publish":
       await sleep(700);
-      return "https://hub.krate.tech/a/f2deb8a76496";
+      return { url: "https://hub.krate.tech/a/v0f2deb8a764", version: 1, updated: false };
+    case "app_versions":
+      return null;
     default:
       return;
   }

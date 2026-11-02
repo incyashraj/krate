@@ -2831,7 +2831,8 @@ fn plan_request_blocking(
     }
 }
 
-/// Publish to the hub and hand back the short run-by-URL link.
+/// Publish to the hub and hand back the app's link and which version this
+/// publish became (see `publish_result`).
 #[tauri::command]
 async fn publish(
     path: String,
@@ -2840,7 +2841,7 @@ async fn publish(
     shot: Option<String>,
     icon: Option<String>,
     unlisted: Option<bool>,
-) -> Result<String, String> {
+) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = existing(&path)?;
         let engine = engine()?;
@@ -2869,10 +2870,201 @@ async fn publish(
         if !out.status.success() {
             return Err(text.trim().to_string());
         }
-        text.split_whitespace()
-            .find(|w| w.starts_with("https://"))
+        publish_result(&text)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+/// What the engine said after a publish, as the UI wants it (IC-976):
+/// `url` is the app's own link, the one to share, which always opens the
+/// current version; `version` is the number this publish became, and
+/// `updated` says whether it replaced an earlier one; `version_url` opens
+/// this build alone. An engine from before versions prints only the link,
+/// and that still works: `url` is then the first link it printed.
+fn publish_result(text: &str) -> Result<serde_json::Value, String> {
+    let link = |w: &str| w.starts_with("https://") || w.starts_with("http://");
+    // The link to share is the one after `krate run`, never a link inside a
+    // note above it.
+    let url = text
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("krate run ").map(str::trim))
+        .filter(|w| link(w))
+        .or_else(|| text.split_whitespace().find(|w| w.starts_with("https://")))
+        .map(str::to_string)
+        .ok_or_else(|| "published, but no link came back".to_string())?;
+    let number = |rest: &str| -> Option<u64> {
+        rest.chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .ok()
+    };
+    let mut version = None;
+    let mut updated = false;
+    for line in text.lines().map(str::trim) {
+        if let Some(rest) = line.strip_prefix("Updated to v") {
+            version = number(rest);
+            updated = version.is_some();
+        } else if let Some(rest) = line.strip_prefix("Published (v") {
+            version = number(rest);
+        }
+    }
+    let version_url = text.lines().find_map(|l| {
+        let (_, after) = l.split_once("this version alone")?;
+        after
+            .split_whitespace()
+            .find(|w| link(w))
             .map(str::to_string)
-            .ok_or_else(|| "published, but no link came back".to_string())
+    });
+    Ok(serde_json::json!({
+        "url": url,
+        "version": version,
+        "updated": updated,
+        "version_url": version_url,
+    }))
+}
+
+/// The `[app]` table's `id` in a manifest: the id a published app's
+/// versions are kept under. Only the `[app]` table's own line counts; an
+/// id-looking line in another table is somebody else's.
+fn manifest_app_id(manifest: &str) -> Option<String> {
+    let mut in_app = false;
+    for line in manifest.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_app = t == "[app]";
+            continue;
+        }
+        if !in_app {
+            continue;
+        }
+        let Some((key, value)) = t.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "id" {
+            continue;
+        }
+        let value = value
+            .split('#')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_matches('"')
+            .trim();
+        if !value.is_empty() {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// The app's id and the file's own sha256 -- the number the hub files a
+/// version under -- read from a .krate on disk.
+fn krate_id_and_hash(path: &Path) -> Result<(String, String), String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    const NOT_READABLE: &str = "that file could not be read as a Krate app";
+    let bytes = std::fs::read(path).map_err(|_| NOT_READABLE.to_string())?;
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(&bytes)).map_err(|_| NOT_READABLE.to_string())?;
+    let mut manifest = String::new();
+    archive
+        .by_name("manifest.toml")
+        .map_err(|_| NOT_READABLE.to_string())?
+        .read_to_string(&mut manifest)
+        .map_err(|_| NOT_READABLE.to_string())?;
+    let id = manifest_app_id(&manifest)
+        .ok_or_else(|| "this app has no id in its manifest".to_string())?;
+    let hash = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    Ok((id, hash))
+}
+
+/// The hub's view of one of this person's apps, with which of its versions
+/// this very file is (`this_version`, null when it is not published yet)
+/// and the number it would become (`next`).
+fn with_this_version(mut view: serde_json::Value, hash: &str) -> serde_json::Value {
+    let history = view["history"].as_array().cloned().unwrap_or_default();
+    let this = history
+        .iter()
+        .find(|v| v["hash"].as_str() == Some(hash))
+        .and_then(|v| v["n"].as_u64());
+    let last = history
+        .iter()
+        .filter_map(|v| v["n"].as_u64())
+        .max()
+        .unwrap_or(0);
+    view["this_version"] = this.map_or(serde_json::Value::Null, Into::into);
+    view["next"] = (last + 1).into();
+    view
+}
+
+/// The words in a hub refusal: its `error` field, or the body itself.
+fn hub_words(body: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v["error"].as_str().map(str::to_string))
+        .unwrap_or_else(|| body.trim().to_string())
+}
+
+/// An app's published versions, when this person has published it (IC-976):
+/// the hub's view of it, or null when it is not published yet or nobody is
+/// signed in -- so Studio can say "Publish update (v3)" before it publishes,
+/// and list the versions in Details.
+#[tauri::command]
+async fn app_versions(path: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = existing(&path)?;
+        let (id, hash) = krate_id_and_hash(&path)?;
+        let Some(token) = hub_token() else {
+            return Ok(serde_json::Value::Null);
+        };
+        let q: String = url::form_urlencoded::byte_serialize(id.as_bytes()).collect();
+        match krate_http::get(&format!("{}/lines?app={q}", hub_url()))
+            .set("authorization", &format!("Bearer {token}"))
+            .timeout(std::time::Duration::from_secs(10))
+            .call()
+        {
+            Ok(resp) => {
+                let view: serde_json::Value = resp.into_json().map_err(|e| e.to_string())?;
+                Ok(with_this_version(view, &hash))
+            }
+            // Not published yet, or the sign-in is not one the hub knows:
+            // either way there is no update to offer.
+            Err(ureq::Error::Status(401 | 404, _)) => Ok(serde_json::Value::Null),
+            Err(ureq::Error::Status(_, resp)) => {
+                Err(hub_words(&resp.into_string().unwrap_or_default()))
+            }
+            Err(_) => Err("could not reach krate.tech - check your connection".into()),
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+/// Make one of an app's versions the one its link opens (IC-976). Only the
+/// app's publisher may; the hub says so in words when someone else asks.
+#[tauri::command]
+async fn app_make_current(line: String, version: u64) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ok = line.len() == 12
+            && line.starts_with('v')
+            && line[1..]
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !ok {
+            return Err("that is not one of your apps".to_string());
+        }
+        let token = hub_token().ok_or("Sign in first.")?;
+        hub_post(
+            &format!("/lines/{line}/current"),
+            Some(&token),
+            serde_json::json!({ "version": version }),
+        )
+        .map_err(|body| hub_words(&body))
     })
     .await
     .map_err(|err| err.to_string())?
@@ -6004,6 +6196,8 @@ fn main() {
             report_collect,
             report_send,
             publish,
+            app_versions,
+            app_make_current,
             org_targets,
             org_apps,
             org_app_open,

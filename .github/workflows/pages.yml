@@ -349,6 +349,12 @@ jobs:
           # And that app.js and the bridge, one global scope in a tab, never
           # declare the same top-level name (a clash blanks the whole page).
           node docs/landing/studio/scope-test.mjs
+          # One app, many versions (IC-976): "Publish update (v3)" before an
+          # app already out goes up, the app's own link kept and copied, the
+          # versions in Details with Make current said before it is done,
+          # the tab finding the app by its manifest id, and an older
+          # version's receive page naming the newer one.
+          node docs/landing/studio/versions-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

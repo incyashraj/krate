@@ -77,7 +77,7 @@ import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH } from "./web-player.js";
 // The receive loop (F-320): the link card, the open counted per person, a
 // stranger's report (receive.js).
-import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState } from "./receive.js";
+import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState, newerVersionLine } from "./receive.js";
 // Insights (IC-959), after everything whose counts it reads.
 import { insightsRoute } from "./org-insights.js";
 // The organisation's own day (F-319): its time zone, set by an owner or admin.
@@ -1225,6 +1225,14 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     if (line) {
       meta.line = line.id;
       meta.version_n = line.n;
+      // An update of an app in the gallery stays in the gallery, however it
+      // was published: Studio's Link pane publishes unlisted, and sharing v3
+      // by link must not take a public app off the shelf (IC-976).
+      if (meta.unlisted && line.added && line.previous) {
+        const was = line.line.versions.find((v) => v.n === line.previous);
+        const prior = was ? await env.APPS.get(`app:${was.hash}`).catch(() => null) : null;
+        if (prior && JSON.parse(prior).unlisted === false) meta.unlisted = false;
+      }
     }
   }
 
@@ -2217,6 +2225,7 @@ async function mobileLanding(hash, env, via = "-") {
   ${shot ? `<div class="card"><img src="${shot}" alt=""></div>` : ""}
   <h1>${esc(name)}</h1>
   ${author ? `<p class="by">by ${esc(author)}</p>` : ""}
+  ${await newerVersionLine(env, hash, base)}
   <p>Someone made this and sent it to you. It opens right here, with nothing to install, and shows you first what it may touch.</p>
   <a class="go" href="${base}/run/${hash}${viaQuery(via)}">Open it</a>
   <button class="second" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link for a computer</button>

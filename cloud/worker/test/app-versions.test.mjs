@@ -142,3 +142,17 @@ test("an app published before versions existed becomes the earlier version, and 
   assert.ok(picks, JSON.stringify(shelves.map((s) => s.id)));
   assert.deepEqual(picks.apps.map((a) => a.id), [next.body.id], "the pick follows the app to its current version");
 });
+
+test("an update of a gallery app shared by link stays in the gallery; a private app stays private", async () => {
+  const env = hubEnv();
+  const v1 = await publish(env, "alice", "0.1.0");
+  // Studio's Link pane publishes unlisted.
+  const v2 = await publish(env, "alice", "0.2.0", { "x-krate-unlisted": "1" });
+  const rows = (await call(env, null, "GET", "/apps")).body.apps.filter((a) => a.meta.name === "Notes");
+  assert.deepEqual(rows.map((a) => a.id), [v2.body.id], "v2 takes v1's place on the shelf");
+  const quiet = hubEnv();
+  await publish(quiet, "bob", "0.1.0", { "x-krate-unlisted": "1" });
+  await publish(quiet, "bob", "0.2.0", { "x-krate-unlisted": "1" });
+  assert.equal((await call(quiet, null, "GET", "/apps")).body.apps.filter((a) => a.meta.name === "Notes").length, 0, "an unlisted app stays unlisted");
+  assert.ok(v1.body.url === v2.body.url);
+});

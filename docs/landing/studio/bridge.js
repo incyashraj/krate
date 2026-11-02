@@ -870,7 +870,8 @@ function currentWebApp(path, version) {
  * of file paths, which the hub read as a bundle and refused. The bytes are
  * fetched from the build service with the sign-in, then posted. A picture
  * of the app (the build's own shot, a data URL) goes up beside it the way
- * the CLI's --shot does. Resolves with the app's public URL. */
+ * the CLI's --shot does. Resolves with the hub's whole answer: `url` is
+ * the app's own link (IC-976), `full_url` this build's 64-hex address. */
 async function publishWebApp({ path, name, description, shot, unlisted, quiet } = {}, token) {
   const app = currentWebApp(path);
   if (!app) throw new Error("This app is not on the build service; publish it from Studio on your computer.");
@@ -901,7 +902,58 @@ async function publishWebApp({ path, name, description, shot, unlisted, quiet } 
       await fetch(`${HUB}/shot/${out.id}`, { method: "POST", headers: { ...headers, "content-type": "image/png" }, body: png });
     } catch (e) {}
   }
-  return out.full_url || out.url;
+  return out;
+}
+
+/* ---- an app's versions (IC-976) ---------------------------------------
+ *
+ * Publishing the same app again is its next version, behind one link. To
+ * say "Publish update (v3)" before anything goes up, Studio asks the hub
+ * for this person's app with the same manifest id, and which of its
+ * versions this very file is. The id is the [app] table's own `id` line;
+ * the file's sha256 is the number the hub files a version under. */
+function manifestAppId(text) {
+  let inApp = false;
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const t = raw.trim();
+    if (t.startsWith("[")) { inApp = t === "[app]"; continue; }
+    if (!inApp) continue;
+    const m = t.match(/^id\s*=\s*"([^"]+)"/);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+/* What the hub said about the app, with which version this file is
+ * (`this_version`, null when it is not published yet) and the number a
+ * publish would make it (`next`). The same shape the desktop answers. */
+function withThisVersion(view, hash) {
+  const history = Array.isArray(view && view.history) ? view.history : [];
+  const mine = history.find((v) => v && v.hash === hash);
+  const last = history.reduce((m, v) => Math.max(m, Number(v && v.n) || 0), 0);
+  return { ...view, this_version: mine ? mine.n : null, next: last + 1 };
+}
+
+async function webAppVersions(path) {
+  if (!bridge.token) return null;
+  const app = currentWebApp(path);
+  if (!app) return null;
+  const got = await fetch(app.url, { headers: { authorization: `Bearer ${bridge.token}` } });
+  if (!got.ok) return null;
+  const bytes = new Uint8Array(await got.arrayBuffer());
+  const entry = zipEntries(bytes).find((e) => e.name === "manifest.toml");
+  const body = entry ? await zipRead(bytes, entry) : null;
+  const id = body ? manifestAppId(new TextDecoder().decode(body)) : null;
+  if (!id) return null;
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const hash = [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    return withThisVersion(await hub(`/lines?app=${encodeURIComponent(id)}`), hash);
+  } catch (err) {
+    // Not published yet, or a sign-in the hub no longer knows: no update.
+    if (err && (err.status === 404 || err.status === 401)) return null;
+    throw err;
+  }
 }
 
 /* ---- the source, handed over ------------------------------------------
@@ -2055,7 +2107,33 @@ const COMMANDS = {
     // Studio hands over the picture it chose as a path; on the web that
     // path is the build's own shot (a data URL) or nothing.
     const shot = args.shot || (bridge.jobResult && bridge.jobResult.shot) || "";
-    return publishWebApp({ ...args, shot }, bridge.token);
+    const out = await publishWebApp({ ...args, shot }, bridge.token);
+    // The desktop's shape (IC-976): the app's link to share, which version
+    // this publish became, and whether it replaced an earlier one.
+    return {
+      url: out.url || out.full_url,
+      version: Number.isFinite(out.version) ? out.version : null,
+      updated: out.updated === true,
+      version_url: out.version_url || null,
+    };
+  },
+
+  /* An app's published versions, when this person has published it. */
+  async app_versions({ path } = {}) {
+    return webAppVersions(path);
+  },
+
+  /* Make one of an app's versions the one its link opens. */
+  async app_make_current({ line, version } = {}) {
+    if (!bridge.token) return refuse("Sign in first.");
+    if (!/^v[0-9a-f]{11}$/.test(String(line || ""))) return refuse("That is not one of your apps.");
+    try {
+      return await hub(`/lines/${line}/current`, { method: "POST", body: JSON.stringify({ version: Number(version) }) });
+    } catch (err) {
+      let words = String((err && err.message) || err || "");
+      try { words = JSON.parse(words).error || words; } catch (e) {}
+      return refuse(words || "That did not work just now. Try again in a moment.");
+    }
   },
 
   async open_external({ url } = {}) {
@@ -3411,8 +3489,8 @@ console.info("krate: studio bridge ready (hub + builder)");
     const tab = window.open("about:blank", "_blank");
     if (note) note.textContent = "Getting it ready…";
     try {
-      const link = await publishWebApp({ path: url, name: name.replace(/\.krate$/, ""), unlisted: true, quiet: true }, bridge.token);
-      const hash = String(link || "").split("/").pop().split("?")[0];
+      const out = await publishWebApp({ path: url, name: name.replace(/\.krate$/, ""), unlisted: true, quiet: true }, bridge.token);
+      const hash = String((out && (out.full_url || out.url)) || "").split("/").pop().split("?")[0];
       if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error("The app could not be put online to open here.");
       const run = `${HUB}/run/${hash}?via=studio`;
       if (tab) {

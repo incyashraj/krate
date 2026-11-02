@@ -21,6 +21,20 @@ import { tellFirstOpen } from "./mail.js";
 // and the bytes checks stay in index.js, and run before any of this.
 
 import { WEB_PACK_TAG } from "./web-player.js";
+import { versionOf } from "./lines.js";
+
+/// One quiet line for a page that holds an older version of an app
+/// (IC-976): which version this is, that a newer one is current, and the
+/// app's own link, which opens it. "" for a build that is current, or that
+/// is no version of anything. Styled inline, so a page drops it in as it is.
+export async function newerVersionLine(env, hash, base) {
+  const v = await versionOf(env, hash).catch(() => null);
+  if (!v || !(Number(v.current) > Number(v.n))) return "";
+  const to = `${String(base || "").replace(/\/$/, "")}/a/${v.line}`;
+  return `<p class="newer" style="font-size:13px;margin:-12px 0 22px;color:rgba(255,255,255,0.5)">` +
+    `This is ${Number(v.n) > 0 ? `v${esc(v.n)}` : "an earlier version"}. There is a newer version, v${esc(v.current)}. ` +
+    `<a href="${esc(to)}" style="color:rgba(255,255,255,0.75);font-size:13px">Open v${esc(v.current)}</a></p>`;
+}
 
 /// The link previewers, by their own user agents. iMessage's previewer
 /// says facebookexternalhit and Twitterbot. Only previewers: an in-app
