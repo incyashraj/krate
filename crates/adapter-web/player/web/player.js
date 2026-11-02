@@ -140,7 +140,8 @@ function beacon(event) {
     method: 'POST',
     keepalive: true,
     headers: { 'content-type': 'application/json', ...(me && me.token ? { authorization: `Bearer ${me.token}` } : {}) },
-    body: JSON.stringify({ event, app: HASH, via: VIA }),
+    // A proof run says so: the hub counts it as nobody and mails nobody.
+    body: JSON.stringify({ event, app: HASH, via: VIA, ...(params.get('probe') === '1' ? { probe: true } : {}) }),
   }).then((r) => (r.status === 200 ? r.json() : { ok: r.ok })).catch(() => ({ ok: false }));
 }
 /// The app is on the screen: count one open (K-1132), once.
