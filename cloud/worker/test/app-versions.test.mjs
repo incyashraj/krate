@@ -117,3 +117,28 @@ test("another owner's same app id is a separate app, and an open-it-here publish
   const mine = await call(env, "alice", "GET", "/lines?app=dev.krate.sql-check");
   assert.equal(mine.body.versions, 1);
 });
+
+test("an app published before versions existed becomes the earlier version, and a shelf pick follows the app", async () => {
+  const env = hubEnv();
+  const old = await publish(env, "alice", "0.1.0");
+  // As it stood before IC-976: a listing row with no line, and no line record.
+  const row0 = row(env, old.body.id);
+  delete row0.line;
+  delete row0.version_n;
+  env._kv.set(`app:${old.body.id}`, JSON.stringify(row0));
+  env._kv.delete(`line:${old.body.line}`);
+  env.GALLERY_PICKS = old.body.id.slice(0, 10);
+
+  const next = await publish(env, "alice", "0.2.0");
+  assert.equal(next.body.version, 1, "the first version on its line");
+  const adopted = row(env, old.body.id);
+  assert.deepEqual([adopted.line, adopted.version_n, adopted.superseded], [next.body.line, 0, true], "kept as the earlier version, not deleted");
+  const meta = await call(env, null, "GET", `/meta/${old.body.id}`);
+  assert.equal(meta.body.version.newer, true, "its link says a newer version exists");
+  assert.equal(meta.body.version.app_url, next.body.url);
+
+  const shelves = (await call(env, null, "GET", "/apps")).body.shelves;
+  const picks = shelves.find((s) => s.id === "picks");
+  assert.ok(picks, JSON.stringify(shelves.map((s) => s.id)));
+  assert.deepEqual(picks.apps.map((a) => a.id), [next.body.id], "the pick follows the app to its current version");
+});

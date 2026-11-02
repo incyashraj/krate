@@ -1264,6 +1264,16 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
       if (!raw) continue;
       const other = JSON.parse(raw);
       if (other.line) continue;
+      if (line && ownerOfRecord(other) === owner && other.name === meta.name) {
+        // Published before apps had versions: it becomes this app's earlier
+        // version (v0) rather than vanishing, so its link says a newer one
+        // exists and a pick naming it follows the app (IC-976).
+        other.line = line.id;
+        other.version_n = 0;
+        other.superseded = true;
+        await env.APPS.put(key.name, JSON.stringify(other));
+        continue;
+      }
       if (ownerOfRecord(other) === owner && other.name === meta.name) {
         await env.APPS.delete(key.name);
         // A retired release's bytes are anyone's to re-publish (see
@@ -2355,14 +2365,16 @@ async function list(env, url) {
       } catch (_) {
         return null;
       }
-      // Unlisted apps have working links and no gallery row; nor does a
-      // version an update replaced (IC-976).
-      if (meta.unlisted || meta.superseded) return null;
+      // Unlisted apps have working links and no gallery row.
+      if (meta.unlisted) return null;
       return { id: key.name.slice("app:".length), meta };
     }),
   );
 
-  let apps = records.filter(Boolean);
+  // A version an update replaced has no row of its own (IC-976); it is
+  // kept aside only so a pick naming it can follow its app.
+  const everyRow = records.filter(Boolean);
+  let apps = everyRow.filter((a) => !a.meta.superseded);
 
   // Search and category filtering happen HERE, before any R2 work, so a
   // search for one app does not cost a thousand head requests.
@@ -2406,7 +2418,13 @@ async function list(env, url) {
       .split(",")
       .map((p) => p.trim().toLowerCase())
       .filter((p) => /^[0-9a-f]{6,64}$/.test(p))
-      .map((p) => apps.find((a) => a.id.startsWith(p)))
+      .map((p) => {
+        const named = everyRow.find((a) => a.id.startsWith(p));
+        if (!named || !named.meta.superseded) return named;
+        // A pick names a build; after an update the shelf shows the app's
+        // current version, not a gap (IC-976).
+        return apps.find((a) => a.meta.line && a.meta.line === named.meta.line);
+      })
       .filter(Boolean);
     // "New this week" only when it is: an older newest app is just newest.
     const weekAgo = Date.now() - 7 * 86400_000;
