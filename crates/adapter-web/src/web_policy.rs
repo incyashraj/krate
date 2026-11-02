@@ -173,6 +173,7 @@ mod tests {
                 {"cap":"store.kv","rationale":"Save your list","required":true},
                 {"cap":"store.org","rationale":"The team's inspections","required":true},
                 {"cap":"camera.capture","rationale":"Scan","required":false},
+                {"cap":"bluetooth.connect","rationale":"The strap","required":false},
                 {"cap":"net.connect:api.example.com:443","rationale":"Weather","required":true}]"#,
         );
         let rows = rows["rows"].as_array().unwrap().clone();
@@ -182,18 +183,32 @@ mod tests {
         // An organisation's team data works in a tab too (G1).
         let org = rows.iter().find(|r| r["cap"] == "store.org").unwrap();
         assert_eq!(org["in_tab"], true);
-        // Sound plays in a tab (K-1134); listening does not.
+        // Sound plays in a tab (K-1134), and the device's senses work there
+        // too (IC-974, senses-proof.mjs): listening, the camera, where the
+        // device is, notifications.
         let sound: Capability = "audio.playback".parse().unwrap();
         assert!(works_in_a_tab(&sound));
-        let mic: Capability = "audio.capture".parse().unwrap();
-        assert!(!works_in_a_tab(&mic));
+        for cap in [
+            "audio.capture",
+            "camera.capture",
+            "location.read",
+            "ui.notify",
+        ] {
+            assert!(works_in_a_tab(&cap.parse().unwrap()), "{cap}");
+        }
         // The shared store and secrets do too (IC-974, share-proof.mjs).
         for cap in ["store.shared", "store.secret"] {
             assert!(works_in_a_tab(&cap.parse().unwrap()), "{cap}");
         }
         let cam = rows.iter().find(|r| r["cap"] == "camera.capture").unwrap();
-        assert_eq!(cam["in_tab"], false);
+        assert_eq!(cam["in_tab"], true);
         assert_eq!(cam["plain"], "use your camera");
+        // What a browser cannot give is still said to need a computer.
+        let bt = rows
+            .iter()
+            .find(|r| r["cap"] == "bluetooth.connect")
+            .unwrap();
+        assert_eq!(bt["in_tab"], false);
         let net = rows
             .iter()
             .find(|r| r["cap"] == "net.connect:api.example.com:443")

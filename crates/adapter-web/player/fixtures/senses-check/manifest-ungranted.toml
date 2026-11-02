@@ -1,0 +1,14 @@
+# The same app with none of the senses declared: what a tab must refuse
+# exactly as the desktop does, without the browser asking anything
+# (senses-proof.mjs).
+[app]
+id = "dev.krate.senses-check-ungranted"
+name = "Senses Check Ungranted"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_senses_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true

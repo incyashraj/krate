@@ -142,6 +142,11 @@ const PLAYER_FILES = new Set([
   // An app's shared store and its secrets (IC-974): the page keeps both.
   "shared-store.js",
   "secret-store.js",
+  // The device's senses (IC-974): the page's half, and the service worker
+  // a notification is shown through (its scope, /player/notify/, holds no
+  // page, and it has no fetch handler).
+  "senses.js",
+  "notify-sw.js",
   "krate_web.js",
   "krate_web_bg.wasm",
   "validator.wasm",

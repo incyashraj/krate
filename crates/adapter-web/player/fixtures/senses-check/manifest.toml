@@ -1,0 +1,31 @@
+[app]
+id = "dev.krate.senses-check"
+name = "Senses Check"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_senses_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true
+
+[[capabilities]]
+cap = "ui.notify"
+rationale = "Say when the timer is done"
+required = true
+
+[[capabilities]]
+cap = "location.read"
+rationale = "Show where you are"
+required = true
+
+[[capabilities]]
+cap = "camera.capture"
+rationale = "Show the camera"
+required = true
+
+[[capabilities]]
+cap = "audio.capture"
+rationale = "Hear the room"
+required = true

@@ -782,6 +782,7 @@ export function buildImports(ctx) {
     drawRound: (c, image, a, r) => g(ui.c_draw_kept(c, image, geo(a, r))),
     forget: (c, image) => ui.c_forget(c, image),
   };
+  Object.assign(impl, senses({ allows, bridge, present: () => ctx.present(), facts: ctx.senses || {} }));
 
   // Every interface the component imports: what this file implements,
   // and the hub's refusal for anything else -- including whole interfaces.
@@ -804,4 +805,301 @@ export function buildImports(ctx) {
     imports[name] = iface;
   }
   return imports;
+}
+
+// ------------------------------------------------------------- senses
+// The device's senses in a tab (IC-974): notifications, where the device
+// is, the share sheet, speaking aloud, the camera and the microphone. Each
+// is the desktop's interface with the desktop's grant, checked here before
+// anything reaches the page, so an app without the capability is refused
+// without the browser ever asking the person. With the grant, the page
+// asks the browser (player.js), and the browser's own "no" comes back as
+// the refusal the desktop gives when the system says no. The checks on
+// what an app hands over -- a notification's length, a file's name, a
+// line's length, a camera's size -- are the desktop's, word for word, from
+// the files named beside each.
+
+/// What crates/runtime/src/desktop_host.rs check_notification refuses.
+const MAX_TITLE_BYTES = 256;
+const MAX_BODY_BYTES = 2048;
+// char::is_control: the C0 and C1 control characters.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+const utf8 = (s) => new TextEncoder().encode(s).length;
+/// crates/runtime/src/speech_synthesis.rs.
+const MAX_TEXT_CHARS = 4000;
+const MIN_RATE = 0.5;
+const MAX_RATE = 2.0;
+/// crates/runtime/src/camera_capture.rs.
+const MAX_FRAME_PIXELS = 3840 * 2160;
+/// crates/runtime/src/audio_capture.rs.
+const MIN_SAMPLE_RATE = 8000;
+const MAX_SAMPLE_RATE = 192000;
+const MAX_CHANNELS = 8;
+const MAX_READ_BYTES = 1024 * 1024;
+const MAX_CAPTURE_BUFFER_BYTES = 8 * 1024 * 1024;
+/// The microphone's ring between the page's audio thread and this worker:
+/// samples as the browser hears them, newest kept, 8 MB as on desktop.
+export const MIC_SAMPLES = 1 << 21;
+// Its control words.
+export const MIC_WRITTEN = 0;
+export const MIC_CHANNELS = 1;
+export const MIC_RATE = 2;
+export const MIC_FAILED = 3;
+export const MIC_WORDS = 8;
+/// What the page puts in MIC_FAILED, and what each says to the app.
+export const MIC_FAILURES = {
+  1: { tag: 'platform', val: 'the microphone was not allowed: the browser said no. Allow it in the browser\'s settings for this site, then open the app again' },
+  2: { tag: 'device-unavailable' },
+  3: { tag: 'platform', val: 'the microphone could not start: another app may be using it' },
+  4: { tag: 'unsupported', val: 'this browser cannot use a microphone' },
+};
+/// An f32 as Rust's Display writes it ("2.5", "3", "0.1").
+const f32 = (v) => String(Number.isFinite(v) ? Number(Math.fround(v).toPrecision(7)) : v);
+
+function senses({ allows, bridge, present, facts }) {
+  const fail = (payload) => new HostError(payload);
+  const ask = (op, args, transfer) => {
+    const answer = bridge.call(op, args || {}, transfer);
+    if (answer.json.err) throw fail(answer.json.err);
+    return answer;
+  };
+
+  // ------------------------------------------------------- notifications
+  // As desktop_host::notify: the grant, then the text, then the service.
+  const notify = {
+    show(title, body) {
+      if (!allows('ui.notify')) throw fail({ tag: 'denied' });
+      if (!String(title).trim()) throw fail({ tag: 'invalid-content', val: 'a notification needs a title' });
+      if (utf8(title) > MAX_TITLE_BYTES || utf8(body) > MAX_BODY_BYTES) throw fail({ tag: 'invalid-content', val: 'the notification text was too long' });
+      if (CONTROL.test(title) || CONTROL.test(body)) throw fail({ tag: 'invalid-content', val: 'the notification text contained control characters' });
+      // What the app drew last stays on screen if the person is asked.
+      present();
+      ask('notify.show', { title, body });
+    },
+  };
+
+  // ------------------------------------------------------------ location
+  // As Phase3GuiHost::location: without location.read the answer is
+  // not-allowed and the browser is never asked. The first ask starts the
+  // browser looking and answers finding.
+  const location = {
+    available: () => Boolean(facts.geolocation),
+    current() {
+      if (!allows('location.read')) throw fail({ tag: 'not-allowed' });
+      const p = ask('location.current').json.ok;
+      const opt = (v) => (v === null || v === undefined || !Number.isFinite(v) ? undefined : v);
+      return {
+        latitude: p.latitude,
+        longitude: p.longitude,
+        accuracy: p.accuracy,
+        altitude: opt(p.altitude),
+        speed: opt(p.speed),
+        course: opt(p.course),
+        ageMs: BigInt(Math.max(0, Math.round(p.age_ms))),
+      };
+    },
+  };
+
+  // --------------------------------------------------------------- share
+  // As Phase3GuiHost::share: no capability (the person's pick in the sheet
+  // is the grant), and the same checks on what is offered.
+  const share = {
+    share(w, text, url, files) {
+      const empty = (s) => s === undefined || s === null || !String(s).trim();
+      if (empty(text) && empty(url) && !files.length) throw fail({ tag: 'invalid', val: 'nothing to share' });
+      for (const f of files) {
+        const n = String(f.name);
+        // A plain name: no folder in it, not hidden, not empty. A tab
+        // refuses \ as Windows does, wherever it runs.
+        if (!n.trim() || /[\/\\]/.test(n) || n === '.' || n === '..' || n.startsWith('.')) {
+          throw fail({ tag: 'invalid', val: `a file name must be a plain name, not ${JSON.stringify(n)}` });
+        }
+      }
+      const total = files.reduce((t, f) => t + f.data.length, 0) + (text ? utf8(text) : 0) + (url ? utf8(url) : 0);
+      if (total > 64 * 1024 * 1024) throw fail({ tag: 'invalid', val: 'more than 64 MB to share' });
+      present();
+      const copies = files.map((f) => ({ name: String(f.name), data: f.data.slice() }));
+      return ask('share', { text: text ?? null, url: url ?? null, files: copies }, copies.map((c) => c.data.buffer)).json.ok === true;
+    },
+  };
+
+  // ------------------------------------------------------ speaking aloud
+  // As the desktop's speech::synthesis host: speech is sound, so it is
+  // audio.playback's to allow, and stop is always allowed.
+  const sound = () => { if (!allows('audio.playback')) throw fail({ tag: 'permission-denied' }); };
+  const synthesis = {
+    voices() {
+      sound();
+      return ask('speech.voices').json.ok.map((v) => ({ id: v.id, name: v.name, language: v.language }));
+    },
+    say(text, voice, rate) {
+      sound();
+      if (!String(text).trim()) throw fail({ tag: 'invalid-request', val: 'there is no text to say' });
+      const chars = [...String(text)].length;
+      if (chars > MAX_TEXT_CHARS) throw fail({ tag: 'invalid-request', val: `${chars} characters is more than one say takes (${MAX_TEXT_CHARS}); split it` });
+      const r = rate === undefined ? 1 : rate;
+      if (!(r >= MIN_RATE && r <= MAX_RATE)) throw fail({ tag: 'invalid-request', val: `rate ${f32(r)} is outside ${f32(MIN_RATE)} to ${f32(MAX_RATE)}` });
+      ask('speech.say', { text: String(text), voice: voice ?? null, rate: r });
+    },
+    stop() { bridge.call('speech.stop', {}); },
+    speaking() {
+      sound();
+      return ask('speech.speaking').json.ok === true;
+    },
+  };
+
+  // -------------------------------------------------------------- camera
+  // As camera_capture.rs: the grant on every call but stop and close, the
+  // config checked before any device is touched, at most four streams,
+  // nothing captured (and the browser's camera light off) until start, the
+  // newest frame only. The stream lives on the page, which has the camera.
+  const camDenied = () => !allows('camera.capture');
+  const camera = {
+    devices() {
+      if (camDenied()) throw fail({ tag: 'permission-denied' });
+      return ask('camera.devices').json.ok;
+    },
+    open(device, config) {
+      if (camDenied()) throw fail({ tag: 'permission-denied' });
+      const { width, height, fps } = config;
+      if (width === 0 || height === 0) throw fail({ tag: 'unsupported', val: 'width and height must both be greater than zero' });
+      if (width * height > MAX_FRAME_PIXELS) throw fail({ tag: 'unsupported', val: `${width}x${height} is larger than the ${MAX_FRAME_PIXELS}-pixel limit` });
+      if (fps === 0 || fps > 240) throw fail({ tag: 'unsupported', val: 'fps must be between 1 and 240' });
+      return BigInt(ask('camera.open', { device: String(device), width, height, fps }).json.ok);
+    },
+    info(id) {
+      if (camDenied()) throw fail({ tag: 'permission-denied' });
+      const i = ask('camera.info', { id: id.toString() }).json.ok;
+      return { width: i.width, height: i.height, fps: i.fps, format: 'rgba8' };
+    },
+    start(id) {
+      if (camDenied()) throw fail({ tag: 'permission-denied' });
+      ask('camera.start', { id: id.toString() });
+    },
+    // Not behind the grant: stopping and closing are how an app turns the
+    // camera off.
+    stop(id) { ask('camera.stop', { id: id.toString() }); },
+    read(id) {
+      if (camDenied()) throw fail({ tag: 'permission-denied' });
+      const { json, body } = ask('camera.read', { id: id.toString() });
+      if (!json.ok) return undefined;
+      return { bytes: new Uint8Array(body), width: json.ok.width, height: json.ok.height, elapsedMillis: BigInt(json.ok.elapsed) };
+    },
+    close(id) { ask('camera.close', { id: id.toString() }); },
+  };
+
+  // ---------------------------------------------------------- microphone
+  // As audio_capture.rs: the grant on every call, the config checked first,
+  // nothing heard until start, the default microphone converted to exactly
+  // the rate, channels and format the app asked for -- the desktop's own
+  // converter (CaptureConverter), here -- and at most 8 MB kept unread,
+  // the oldest dropped first. The page's audio thread writes what the
+  // browser hears into shared memory; read takes it from there, with no
+  // call to the page.
+  const mics = new Map();
+  const micDenied = () => { if (!allows('audio.capture')) throw fail({ tag: 'permission-denied' }); };
+  const mic = (id) => {
+    const m = mics.get(id.toString());
+    if (!m) throw fail({ tag: 'invalid-stream' });
+    return m;
+  };
+  const pushSample = (m, v) => {
+    const s = Math.max(-1, Math.min(1, v));
+    if (m.float) { m.dv.setFloat32(m.len, s, true); m.len += 4; } else { m.dv.setInt16(m.len, Math.trunc(s * 32767), true); m.len += 2; }
+  };
+  // Everything the browser heard since the last read, converted.
+  const drain = (m) => {
+    const written = Atomics.load(m.ctrl, MIC_WRITTEN);
+    let avail = (written - m.at) | 0;
+    if (avail > MIC_SAMPLES) { m.at = (written - MIC_SAMPLES) | 0; avail = MIC_SAMPLES; }
+    const ch = Atomics.load(m.ctrl, MIC_CHANNELS) || 1;
+    const inRate = Atomics.load(m.ctrl, MIC_RATE);
+    const frames = Math.floor(avail / ch);
+    if (!frames || !inRate) return;
+    const most = Math.ceil((frames * m.rate) / inRate + 1) * m.channels * m.width;
+    if (m.len + most > m.out.length) {
+      const grown = new Uint8Array(Math.max(m.out.length * 2, m.len + most));
+      grown.set(m.out.subarray(0, m.len));
+      m.out = grown;
+      m.dv = new DataView(grown.buffer);
+    }
+    const mask = MIC_SAMPLES - 1;
+    const frame = new Float32Array(ch);
+    let at = m.at;
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < ch; c++) { frame[c] = m.ring[at & mask]; at = (at + 1) | 0; }
+      m.acc += m.rate;
+      while (m.acc >= inRate) {
+        m.acc -= inRate;
+        if (m.channels === 1) {
+          let sum = 0;
+          for (let c = 0; c < ch; c++) sum += frame[c];
+          pushSample(m, sum / ch);
+        } else {
+          for (let c = 0; c < m.channels; c++) pushSample(m, frame[ch === 1 ? 0 : Math.min(c, ch - 1)]);
+        }
+      }
+    }
+    m.at = at;
+    // Bounded as on desktop: the newest 8 MB, whole samples.
+    if (m.len > MAX_CAPTURE_BUFFER_BYTES) {
+      const drop = m.len - MAX_CAPTURE_BUFFER_BYTES;
+      m.out.copyWithin(0, drop, m.len);
+      m.len -= drop;
+    }
+  };
+  const capture = {
+    open(config) {
+      micDenied();
+      const { sampleRate, channels, format, bufferFrames } = config;
+      if (!(sampleRate >= MIN_SAMPLE_RATE && sampleRate <= MAX_SAMPLE_RATE)) throw fail({ tag: 'unsupported', val: `sample rate must be between ${MIN_SAMPLE_RATE} and ${MAX_SAMPLE_RATE} Hz` });
+      if (!(channels >= 1 && channels <= MAX_CHANNELS)) throw fail({ tag: 'unsupported', val: `channels must be between 1 and ${MAX_CHANNELS}` });
+      if (!(bufferFrames > 0)) throw fail({ tag: 'unsupported', val: 'buffer-frames must be greater than zero' });
+      const ring = new SharedArrayBuffer(MIC_SAMPLES * 4);
+      const ctrl = new SharedArrayBuffer(MIC_WORDS * 4);
+      const id = ask('mic.open', { ring, ctrl }).json.ok;
+      const float = format === 'float32';
+      const out = new Uint8Array(1 << 16);
+      mics.set(String(id), {
+        ring: new Float32Array(ring), ctrl: new Int32Array(ctrl), at: 0, acc: 0, started: false,
+        rate: sampleRate, channels, float, width: float ? 4 : 2, out, dv: new DataView(out.buffer), len: 0,
+      });
+      return BigInt(id);
+    },
+    start(id) {
+      micDenied();
+      const m = mic(id);
+      ask('mic.start', { id: id.toString() });
+      m.started = true;
+    },
+    stop(id) {
+      micDenied();
+      const m = mic(id);
+      ask('mic.stop', { id: id.toString() });
+      m.started = false;
+    },
+    read(id, maxBytes) {
+      micDenied();
+      const m = mic(id);
+      const failed = MIC_FAILURES[Atomics.load(m.ctrl, MIC_FAILED)];
+      if (failed) throw fail(failed);
+      if (!m.started) return new Uint8Array(0);
+      drain(m);
+      const n = Math.min(maxBytes, MAX_READ_BYTES, m.len);
+      const out = m.out.slice(0, n);
+      m.out.copyWithin(0, n, m.len);
+      m.len -= n;
+      return out;
+    },
+  };
+
+  return {
+    'krate:ui/notify': notify,
+    'krate:ui/location': location,
+    'krate:ui/share': share,
+    'krate:speech/synthesis': synthesis,
+    'krate:camera/types': {},
+    'krate:camera/capture': camera,
+    'krate:audio/capture': capture,
+  };
 }

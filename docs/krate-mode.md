@@ -573,7 +573,7 @@ people can send. check-app ends with a note naming any it found.
 | `ui.clipboard:write` | no | yes | read/write the clipboard |
 | `ui.menu:system` | no | computer only | a system menu |
 | `ui.open-url` | no | yes | hand a link to the browser |
-| `ui.notify` | no | computer only | a desktop notification |
+| `ui.notify` | no | yes | a desktop notification |
 | `ui.dropzone:<mime-type>` | no | yes | accept dragged files |
 | `ui.dialog:message` | yes | yes | a message box (no file access; default-granted) |
 | `ui.dialog:confirm` | yes | yes | a yes/no question box (no file access; default-granted) |
@@ -584,9 +584,9 @@ people can send. check-app ends with a note naming any it found.
 | `gfx.gpu:basic` | yes | computer only | GPU drawing (canvas2d present today) |
 | `gfx.gpu:compute` | no | computer only | GPU compute -- NOT implemented yet; do not declare it |
 | `audio.playback` | yes | yes | play sound |
-| `audio.capture` | no | computer only | record from the microphone |
-| `camera.capture` | no | computer only | see through the camera |
-| `location.read` | no | computer only | where the phone is; the person is asked on Krate's sheet and by the phone itself |
+| `audio.capture` | no | yes | record from the microphone |
+| `camera.capture` | no | yes | see through the camera |
+| `location.read` | no | yes | where the phone is; the person is asked on Krate's sheet and by the phone itself |
 | `bluetooth.connect` | no | computer only | Bluetooth devices the person picks in Krate's own list; only the picked one is reachable |
 | `photos.add` | no | computer only | add pictures to the person's photo library (add-only: the app never sees the library) |
 

@@ -2,7 +2,7 @@
 //
 //   curl, hello-gui, bigscroll, convert, checklist   the apps, packed from their
 //                                                   built components (build.sh)
-//   camera       hello-gui declaring camera.capture as required: a capability a
+//   camera       hello-gui declaring photos.add as required: a capability a
 //                tab cannot give
 //   orgprobe     apps/krate-orgstore-probe with store.org made optional, published
 //                as an ordinary app: it runs, and has no team data (not-an-org-app)
@@ -30,7 +30,7 @@ const manifest = (app) => join(repo, 'apps', `krate-${app}`, 'manifest.toml');
 for (const app of ['curl', 'hello-gui', 'bigscroll', 'convert', 'checklist']) {
   pack(manifest(app), component(app), join(out, `${app}.krate`));
 }
-pack(manifest('hello-gui'), component('hello-gui'), join(out, 'camera.krate'), 'camera.capture');
+pack(manifest('hello-gui'), component('hello-gui'), join(out, 'camera.krate'), 'photos.add');
 // orgstore-probe with store.org optional and no organisation's mark: it runs in
 // a tab and has no team data, as on a computer (team-data-proof.mjs opens it
 // as an organisation's release).
