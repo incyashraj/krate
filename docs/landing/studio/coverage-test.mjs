@@ -516,6 +516,8 @@ assert.match(need.slice(0, 1500), /krate\.tech\/open\//,
 const here = wire.slice(wire.indexOf('getElementById("frHereBtn")'));
 assert.ok(wire.indexOf('getElementById("frHereBtn")') > 0, "the open-it-here answer is wired");
 assert.match(here.slice(0, 1600), /unlisted: true/, "open it here publishes unlisted, so nothing is listed by opening");
+assert.match(here.slice(0, 1600), /quiet: true/, "and quietly, so opening a tab mails nobody that it is live");
+assert.match(bridge, /\/publish\$\{quiet \? "\?quiet=1" : ""\}/, "quiet rides on the URL, needing no preflight");
 assert.match(here.slice(0, 1600), /\/run\/\$\{hash\}/, "and runs the app in the tab Player");
 // A phone gets no download at all: it opens the app here instead, so the
 // native answers are hidden there, and the need-it answer never downloads.

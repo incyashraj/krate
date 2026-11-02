@@ -62,6 +62,10 @@ test("a publish mails its publisher once, with the link; a quiet publish or the 
     const quiet = await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("chart.krate"), headers: { "x-krate-unlisted": "1", "x-krate-quiet": "1" } });
     assert.equal(quiet.status, 200, JSON.stringify(quiet.body));
     assert.equal(mail.sent.length, 1, "a quiet publish mails nobody");
+    // The same, said on the URL the way Studio in a tab says it.
+    const viaQuery = await call(env, "cy@example.com", "POST", "/publish?quiet=1", { bytes: ported("cubes.krate"), headers: { "x-krate-unlisted": "1" } });
+    assert.ok(viaQuery.status === 200, JSON.stringify(viaQuery.body));
+    assert.equal(mail.sent.length, 1, "?quiet=1 mails nobody either");
     // Resend refusing is not a failed publish.
     mail.refuse = true;
     const refused = await call(env, "bob@example.com", "POST", "/publish", { bytes: ported("chart.krate"), headers: { "x-krate-name": "Chart" } });

@@ -871,7 +871,7 @@ function currentWebApp(path, version) {
  * fetched from the build service with the sign-in, then posted. A picture
  * of the app (the build's own shot, a data URL) goes up beside it the way
  * the CLI's --shot does. Resolves with the app's public URL. */
-async function publishWebApp({ path, name, description, shot, unlisted } = {}, token) {
+async function publishWebApp({ path, name, description, shot, unlisted, quiet } = {}, token) {
   const app = currentWebApp(path);
   if (!app) throw new Error("This app is not on the build service; publish it from Studio on your computer.");
   const headers = {};
@@ -889,7 +889,9 @@ async function publishWebApp({ path, name, description, shot, unlisted } = {}, t
     publishHeaders["x-krate-description"] = encodeURIComponent(Array.from(String(description)).slice(0, 500).join(""));
   }
   if (unlisted) publishHeaders["x-krate-unlisted"] = "1";
-  const res = await fetch(`${HUB}/publish`, { method: "POST", headers: publishHeaders, body: bytes });
+  // Quiet: a publish that only opens the app in a tab, so nobody is mailed
+  // that it is live. A query, not a header, so no preflight is needed.
+  const res = await fetch(`${HUB}/publish${quiet ? "?quiet=1" : ""}`, { method: "POST", headers: publishHeaders, body: bytes });
   if (!res.ok) throw new Error((await res.text().catch(() => "")) || res.statusText);
   const out = await res.json();
   // The picture is a courtesy: a listing without one is still published.
@@ -3409,7 +3411,7 @@ console.info("krate: studio bridge ready (hub + builder)");
     const tab = window.open("about:blank", "_blank");
     if (note) note.textContent = "Getting it ready…";
     try {
-      const link = await publishWebApp({ path: url, name: name.replace(/\.krate$/, ""), unlisted: true }, bridge.token);
+      const link = await publishWebApp({ path: url, name: name.replace(/\.krate$/, ""), unlisted: true, quiet: true }, bridge.token);
       const hash = String(link || "").split("/").pop().split("?")[0];
       if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error("The app could not be put online to open here.");
       const run = `${HUB}/run/${hash}?via=studio`;
