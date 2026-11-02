@@ -302,6 +302,41 @@ export function buildImports(ctx) {
       },
       cancel(handle) { bridge.call('http.cancel', { handle: handle.toString() }); },
     },
+    // Live connections (IC-974): the socket lives on the page, which has an
+    // event loop while this worker runs the app, and its events wait there
+    // until the app polls, as on desktop. The grant is net.connect's,
+    // judged here before anything leaves the tab: ws:// is judged as
+    // http://, wss:// as https://, for the same host and port.
+    'krate:net/ws': {
+      open(url) {
+        const asked = String(url);
+        const m = /^(wss?):\/\/(.*)$/i.exec(asked);
+        if (!m) throw new HostError({ tag: 'invalid-url' });
+        judged(`${m[1].toLowerCase() === 'wss' ? 'https' : 'http'}://${m[2]}`, [], null);
+        const { json } = bridge.call('ws.open', { url: asked });
+        if (json.err) throw new HostError(json.err);
+        return BigInt(json.ok);
+      },
+      send(handle, message) {
+        const text = message.tag === 'text';
+        const data = text ? undefined : message.val.slice();
+        const { json } = bridge.call('ws.send', { handle: handle.toString(), text: text ? message.val : undefined, data }, data ? [data.buffer] : []);
+        if (json.err) throw new HostError(json.err);
+      },
+      poll(handle) {
+        const { json, body } = bridge.call('ws.poll', { handle: handle.toString() });
+        switch (json.state) {
+          case 'pending': return { tag: 'pending' };
+          case 'opened': return { tag: 'opened' };
+          case 'text': return { tag: 'message', val: { tag: 'text', val: json.text } };
+          case 'binary': return { tag: 'message', val: { tag: 'binary', val: new Uint8Array(body) } };
+          case 'closed': return { tag: 'closed' };
+          case 'failed': return { tag: 'failed', val: json.why || 'the connection failed' };
+          default: return { tag: 'unknown-handle' };
+        }
+      },
+      close(handle) { bridge.call('ws.close', { handle: handle.toString() }); },
+    },
     'krate:store/kv': {
       get(key) {
         if (unwrap(kv.get(key))) return kv.value(key);

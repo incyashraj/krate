@@ -743,6 +743,8 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     try { await tx(d, 'readwrite', fn); return { json: { ok: null } }; }
     catch (e) { return { json: { err: { tag: 'io', val: `the browser did not save it (${(e && e.message) || e})` } } }; }
   };
+  const sockets = new Map();
+  let nextSocket = 1;
   const bridge = pageBridge(bridgeMem, {
     'http.fetch': doFetch,
     'http.begin': (args) => {
@@ -760,6 +762,61 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
       return entry.answer;
     },
     'http.cancel': ({ handle }) => { fetches.delete(handle); return { json: { ok: null } }; },
+    // A live connection (krate:net/ws, IC-974): events queue here until the
+    // app polls; a terminal one retires the handle once it is read.
+    'ws.open': ({ url }) => {
+      // The desktop's limits (crates/runtime/src/async_ws.rs).
+      if (sockets.size >= 16) return { json: { err: { tag: 'other', val: 'too many live connections: this app already holds 16' } } };
+      let sock;
+      try { sock = new WebSocket(url); } catch (e) { return { json: { err: { tag: 'invalid-url' } } }; }
+      sock.binaryType = 'arraybuffer';
+      const entry = { sock, queue: [], out: [], closing: false, failed: false };
+      sock.onopen = () => {
+        entry.queue.push({ state: 'opened' });
+        for (const m of entry.out) sock.send(m);
+        entry.out = [];
+      };
+      sock.onmessage = (ev) => {
+        entry.queue.push(typeof ev.data === 'string' ? { state: 'text', text: ev.data } : { state: 'binary', bytes: new Uint8Array(ev.data) });
+      };
+      sock.onerror = () => { entry.failed = true; };
+      sock.onclose = (ev) => {
+        entry.queue.push(entry.failed || (!ev.wasClean && !entry.closing)
+          ? { state: 'failed', why: `could not keep a connection to ${(() => { try { return new URL(url).host; } catch { return url; } })()}${ev.code && ev.code !== 1006 ? ` (code ${ev.code})` : ''}` }
+          : { state: 'closed' });
+      };
+      const id = String(nextSocket++);
+      sockets.set(id, entry);
+      report.sockets = (report.sockets || 0) + 1;
+      return { json: { ok: id } };
+    },
+    'ws.send': ({ handle, text, data }) => {
+      const entry = sockets.get(handle);
+      if (!entry || entry.closing || entry.sock.readyState > 1) return { json: { err: { tag: 'other', val: 'the connection is not open' } } };
+      const message = text !== undefined ? text : data;
+      const size = text !== undefined ? new TextEncoder().encode(text).length : data.byteLength;
+      if (size > 1048576) return { json: { err: { tag: 'other', val: `message is ${size} bytes; the limit is 1048576` } } };
+      if (entry.sock.readyState === 0) entry.out.push(message);
+      else entry.sock.send(message);
+      return { json: { ok: null } };
+    },
+    'ws.poll': ({ handle }) => {
+      const entry = sockets.get(handle);
+      if (!entry) return { json: { state: 'unknown' } };
+      const next = entry.queue.shift();
+      if (!next) return { json: { state: 'pending' } };
+      if (next.state === 'closed' || next.state === 'failed') sockets.delete(handle);
+      if (next.state === 'binary') return { json: { state: 'binary' }, body: next.bytes };
+      return { json: next };
+    },
+    'ws.close': ({ handle }) => {
+      const entry = sockets.get(handle);
+      if (entry && !entry.closing) {
+        entry.closing = true;
+        try { entry.sock.close(1000); } catch (e) {}
+      }
+      return { json: { ok: null } };
+    },
     'kv.set': ({ key, value }) => (d ? kvWrite((s) => s.put(value, kvKey(key))) : { json: { err: { tag: 'io', val: 'this browser keeps no storage for this tab' } } }),
     'kv.delete': ({ key }) => (d ? kvWrite((s) => s.delete(kvKey(key))) : { json: { ok: null } }),
     'kv.clear': () => (d ? kvWrite((s) => s.delete(range(storeKey))) : { json: { ok: null } }),
