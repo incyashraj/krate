@@ -21425,6 +21425,21 @@ fn run_phone_stage(
     if faults.is_empty() {
         return Ok(());
     }
+    // A debug build of krate draws several times slower than the release a
+    // person installs, and the interpreter it times the app on is debug too,
+    // so its numbers are not the phone's. Measured: krate-checklist failed
+    // at 20.2 ms a step under a debug krate and passed twice under release;
+    // agents shaved shadows off apps to pass a debug run. So a debug build
+    // says what it saw and does not judge.
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "note: phone timing not judged -- this krate is a debug build, which runs the app \
+             several times slower than a phone's release Krate would ({}). Build krate with \
+             --release to measure it.",
+            faults.join("; ")
+        );
+        return Ok(());
+    }
     Err(CheckFailure {
         stage: CheckStage::Phone,
         detail: format!("on a phone {}", faults.join(", and ")),
