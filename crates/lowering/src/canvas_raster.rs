@@ -977,15 +977,35 @@ impl CanvasSurface {
         // transform K-425 found in strokes -- so in a design-size app or on
         // a dense screen the gradient landed at the wrong place and size,
         // and the screen around a letterboxed design stayed blank.
-        let rows = (self.map_len(h) * self.scale).ceil() as i32;
-        if rows <= 0 || w <= 0.0 {
+        //
+        // The bands are cut in DEVICE rows, one fill per row. They used to be
+        // cut in app units (h / rows each) and mapped one by one, and after a
+        // fractional design scale the end of one band and the start of the
+        // next could round to different rows: a row with no band at all, the
+        // cleared colour showing through, every few rows -- horizontal
+        // stripes across Ice Climber's sky at 1280x800 (K-1152).
+        if w <= 0.0 || h <= 0.0 {
             return;
         }
-        let step = h / rows as f32;
-        for i in 0..rows {
-            let t = (i as f32 + 0.5) / rows as f32;
-            let c = lerp_color(top, bottom, t.clamp(0.0, 1.0));
-            self.fill_rect(x, y + i as f32 * step, w, step, c);
+        let k = self.scale;
+        let (x0, y0) = self.map_point(x, y);
+        let (x1, y1) = self.map_point(x + w, y + h);
+        let (x0, y0, x1, y1) = (x0 * k, y0 * k, x1 * k, y1 * k);
+        // A row belongs to the gradient when at least half of it is inside,
+        // so a bottom edge at 1051.5 still paints its last half-covered row.
+        let (first, last) = (y0.round(), y1.round());
+        if last <= first {
+            return;
+        }
+        let span = (y1 - y0).max(f32::EPSILON);
+        let mut row = first;
+        while row < last {
+            let t = ((row + 0.5 - y0) / span).clamp(0.0, 1.0);
+            let c = lerp_color(top, bottom, t);
+            if let Some(band) = self.clipped(x0, row, x1 - x0, 1.0) {
+                fill_rect(&mut self.buffer, self.width, self.height, band, c);
+            }
+            row += 1.0;
         }
     }
 
@@ -1503,6 +1523,39 @@ mod tests {
     /// canvas does not sit between bars. The spare space above takes the
     /// colour along the design's top edge and the space below its bottom
     /// edge, on the CPU raster and in the list the iPhone's GPU draws from.
+    /// K-1152: a sky drawn with linear_gradient_v under a fractional design
+    /// scale has no row left unpainted. Cut in app units and mapped band by
+    /// band, the cleared colour showed through every few rows: white stripes
+    /// across Ice Climber at 1280x800.
+    #[test]
+    fn a_scaled_gradient_paints_every_row() {
+        // (logical size, backing scale, design): Ice Climber's own 256x240
+        // on a 1280x744 window at 2x is the case that striped.
+        for (w, h, scale, dw, dh) in [
+            (1280, 744, 2.0, 256.0, 240.0),
+            (1280, 744, 1.0, 256.0, 240.0),
+            (1280, 800, 1.0, 420.0, 760.0),
+            (1003, 701, 1.5, 333.0, 517.0),
+        ] {
+            let mut surface = CanvasSurface::new_scaled(w, h, scale).expect("surface");
+            surface.clear(0xFFFF_FFFF);
+            surface.set_design_size(dw, dh);
+            surface.linear_gradient_v(0.0, 0.0, dw, dh, 0xFF10_2040, 0xFF20_4080);
+            let image = surface.to_image().expect("image");
+            let x = image.width / 2;
+            let white: Vec<u32> = (0..image.height)
+                .filter(|&y| {
+                    let i = ((y * image.width + x) * 4) as usize;
+                    image.rgba[i] == 255 && image.rgba[i + 1] == 255 && image.rgba[i + 2] == 255
+                })
+                .collect();
+            assert!(
+                white.is_empty(),
+                "{w}x{h} design {dw}x{dh}: unpainted rows {white:?}"
+            );
+        }
+    }
+
     #[test]
     fn the_spare_space_around_a_design_takes_its_edge_colours() {
         let (top, bottom) = (0xFF13_1620u32, 0xFF0B_0D14u32);
