@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { join, normalize } from 'node:path';
 import { orgEnv, call, worker } from '../../../cloud/worker/test/org-tools.mjs';
 
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const engines = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const here = fileURLToPath(new URL('.', import.meta.url));
 const repo = join(here, '..', '..', '..');
 const { WebSocketServer } = createRequire(join(repo, 'cloud', 'worker', 'package.json'))('ws');
@@ -90,7 +90,6 @@ echoHttp.on('upgrade', (req, socket, head) => {
   });
 });
 
-const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) });
 let failed = 0;
 const check = (ok, what, detail) => {
   if (!ok) failed += 1;
@@ -105,13 +104,32 @@ const EXPECTED = [
   'echo: closed',
 ];
 
-for (const [label, viewport, ua] of [['desktop', { width: 1280, height: 800 }, undefined], ['phone', { width: 375, height: 812 }, IPHONE]]) {
-  const tag = `[${label}]`;
+// Each engine a person opens a link in: Chromium on a computer and as a
+// phone, WebKit as an iPhone (Safari's engine), Firefox on a computer.
+const RUNS = [
+  ['chromium', 'desktop', { width: 1280, height: 800 }, undefined],
+  ['chromium', 'phone', { width: 375, height: 812 }, IPHONE],
+  ['webkit', 'iphone', { width: 390, height: 844 }, IPHONE],
+  ['firefox', 'desktop', { width: 1280, height: 800 }, undefined],
+];
+const launched = {};
+const skipped = [];
+for (const [engine, label, viewport, ua] of RUNS) {
+  const tag = `[${engine} ${label}]`;
+  // An engine that will not start on this machine is said plainly and is
+  // not counted as passed: the run ends "not run" rather than "all passed".
+  if (!(engine in launched)) {
+    launched[engine] = await engines[engine].launch({ headless: true, ...(engine === 'chromium' && process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) })
+      .catch((e) => { console.log(`SKIP ${tag} ${engine} did not start here: ${String(e.message).split('\n').find((l) => /err\]/.test(l)) || 'see playwright'}`); return null; });
+  }
+  const browser = launched[engine];
+  if (!browser) { skipped.push(engine); continue; }
   seen.length = 0;
-  const context = await browser.newContext({ viewport, userAgent: ua, isMobile: Boolean(ua), hasTouch: Boolean(ua) });
+  // Firefox has no mobile emulation; it is opened as a computer only.
+  const context = await browser.newContext({ viewport, userAgent: ua, ...(engine === 'firefox' ? {} : { isMobile: Boolean(ua) }), hasTouch: Boolean(ua) });
   // Anything the app reaches besides this machine is recorded: (a) says none.
   const outside = [];
-  await context.route(/^(?!http:\/\/127\.0\.0\.1).*/, (route) => { outside.push(route.request().url()); route.abort(); });
+  await context.route(/^(https?|wss?):\/\/(?!127\.0\.0\.1[:/]).*/, (route) => { outside.push(route.request().url()); route.abort(); });
   const page = await context.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -154,13 +172,13 @@ for (const [label, viewport, ua] of [['desktop', { width: 1280, height: 800 }, u
   // The browser logs the connection (c) fails on purpose; nothing else.
   const others = errors.filter((e) => !/ws:\/\/127\.0\.0\.1:8935\/refuse/.test(e));
   check(others.length === 0, `${tag} no console errors besides the browser's line for (c)`, others);
-  if (shots) await page.screenshot({ path: join(shots, `ws-proof-${label}.png`) });
+  if (shots) await page.screenshot({ path: join(shots, `ws-proof-${engine}-${label}.png`) });
   await context.close();
 }
 
-await browser.close();
+for (const b of Object.values(launched)) if (b) await b.close();
 server.close();
 wss.close();
 echoHttp.close();
-console.log(failed ? `${failed} failed` : 'all passed');
-process.exit(failed ? 1 : 0);
+console.log(failed ? `${failed} failed` : skipped.length ? `passed, but not run in ${[...new Set(skipped)].join(', ')}` : 'all passed');
+process.exit(failed ? 1 : skipped.length ? 2 : 0);
