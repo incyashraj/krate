@@ -1,0 +1,12 @@
+name = "run the statement and read the answer"
+# The answer is on screen before anything is pressed: the rows the database
+# returned for the statement in the editor.
+[[step]]
+expect_text = "dana.whitfield@northlane.io"
+# Run sends the statement again; the same rows must come back, all eight.
+[[step]]
+click = "Run query"
+[[step]]
+expect_text = "chris@fieldnotes.dev"
+[[step]]
+expect_text = "8 rows"
