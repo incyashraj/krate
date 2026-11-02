@@ -11,6 +11,7 @@ import init, { Ui, Grants, Kv } from './krate_web.js';
 import { buildImports, AppStopped } from './hosts.js';
 import { workerBridge } from './bridge.js';
 import { workerRing } from './ring.js';
+import { openSqlDatabase } from './sqldb.js';
 
 const post = (msg, transfer) => self.postMessage(msg, transfer || []);
 const now = () => performance.timeOrigin + performance.now();
@@ -25,6 +26,15 @@ self.onmessage = async ({ data }) => {
     const grants = new Grants(JSON.stringify(data.granted));
     const kv = new Kv(grants.allows('store.kv'));
     for (const [key, value] of data.kv || []) kv.load(key, value);
+
+    // store.sql: only for an app that imports it, so no other app fetches
+    // SQLite. Opened before the app runs; a database that cannot start is
+    // said on each call rather than leaving the app without the interface.
+    const sql = (data.meta.imports || []).some((n) => /^krate:store\/sql(@|$)/.test(n))
+      ? await openSqlDatabase({ url: new URL('./sql.wasm', import.meta.url), granted: grants.allows('store.sql'), image: data.sqlImage })
+        .catch((e) => ({ startFailed: `the database could not start in this tab (${(e && e.message) || e})` }))
+      : null;
+    marks.sqlReady = now();
 
     const ring = workerRing(data.ring);
     const bridge = workerBridge(data.bridge, post);
@@ -75,7 +85,7 @@ self.onmessage = async ({ data }) => {
 
     const imports = buildImports({
       meta: data.meta,
-      ui, grants, kv, ring, bridge,
+      ui, grants, kv, ring, bridge, sql,
       args: data.args,
       storeKey: data.storeKey,
       // store.org: on, not-org or unsupported, as the page found it.

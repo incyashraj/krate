@@ -1,0 +1,19 @@
+[package]
+name = "krate-sql-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "krate:store/sql in a browser tab: the desktop's rules and SQLite, compiled to WebAssembly"
+
+# Built for wasm32-wasip1 with wasi-sdk's clang compiling SQLite, by
+# scripts/build-web-player.sh, into the Player as sql.wasm. The Player runs
+# it in the app's worker beside the app (crates/adapter-web/player/web/sql.js).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+krate-appsql = { path = "../appsql" }
+serde_json.workspace = true

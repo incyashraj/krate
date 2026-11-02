@@ -654,8 +654,13 @@ async function loadKv(d, store) {
 // ------------------------------------------------------------- running
 async function start({ meta, modules, glue, granted, storeKey, playerModule, world, name, org }) {
   const gui = /\/gui@/.test(world || '');
-  const d = gui || granted.includes('store.kv') ? await db().catch(() => null) : null;
-  if (d && granted.includes('store.kv')) keepData();
+  const d = gui || granted.includes('store.kv') || granted.includes('store.sql') ? await db().catch(() => null) : null;
+  if (d && (granted.includes('store.kv') || granted.includes('store.sql'))) keepData();
+  // The app's database, as the browser kept it: one value per app under a
+  // number, which no key-value key (always a string) can be or reach, so
+  // store.kv's clear never touches it.
+  const sqlKey = [storeKey, 0];
+  const sqlImage = d && granted.includes('store.sql') ? await tx(d, 'readonly', (s) => s.get(sqlKey)).catch(() => null) : null;
   const team = granted.includes('store.org') ? await openTeam(org, gui).catch((e) => {
     report.teamError = String((e && e.message) || e);
     return { mode: 'unsupported' };
@@ -817,6 +822,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
       }
       return { json: { ok: null } };
     },
+    'sql.save': ({ image }) => (d ? kvWrite((s) => s.put(image, sqlKey)) : { json: { err: { tag: 'io', val: 'this browser keeps no storage for this tab' } } }),
     'kv.set': ({ key, value }) => (d ? kvWrite((s) => s.put(value, kvKey(key))) : { json: { err: { tag: 'io', val: 'this browser keeps no storage for this tab' } } }),
     'kv.delete': ({ key }) => (d ? kvWrite((s) => s.delete(kvKey(key))) : { json: { ok: null } }),
     'kv.clear': () => (d ? kvWrite((s) => s.delete(range(storeKey))) : { json: { ok: null } }),
@@ -1093,6 +1099,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     glue,
     granted,
     kv,
+    sqlImage,
     storeKey,
     org: team.mode,
     args: params.getAll('arg').join('\n'),

@@ -210,6 +210,44 @@ export function buildImports(ctx) {
     if (json.err) throw new HostError(json.err);
   };
 
+  // ---------------------------------------------------------- store.sql
+  // The app's database (sqldb.js, crates/sql-web): SQLite and the desktop's
+  // rules, in this worker. Every write is kept before the call returns, so
+  // an app that was told its change went through can rely on it.
+  const sql = ctx.sql;
+  const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  const unhex = (t) => { const o = new Uint8Array(t.length / 2); for (let i = 0; i < o.length; i++) o[i] = parseInt(t.substr(i * 2, 2), 16); return o; };
+  const toSql = (v) => {
+    switch (v.tag) {
+      case 'integer': return { t: 'integer', v: v.val.toString() };
+      case 'real': return { t: 'real', v: Number.isFinite(v.val) ? v.val : String(v.val) };
+      case 'text': return { t: 'text', v: v.val };
+      case 'blob': return { t: 'blob', v: hex(v.val) };
+      default: return { t: 'null' };
+    }
+  };
+  const fromSql = (v) => {
+    switch (v.t) {
+      case 'integer': return { tag: 'integer', val: BigInt(v.v) };
+      case 'real': return { tag: 'real', val: Number(v.v) };
+      case 'text': return { tag: 'text', val: v.v };
+      case 'blob': return { tag: 'blob', val: unhex(v.v) };
+      default: return { tag: 'null' };
+    }
+  };
+  const sqlCall = (request) => {
+    // The database module itself could not start in this tab.
+    if (sql.startFailed) throw new HostError({ tag: 'io', val: sql.startFailed });
+    const answer = sql.call(request);
+    if (sql.dirty()) {
+      const image = sql.image();
+      const { json } = bridge.call('sql.save', { image }, [image.buffer]);
+      if (json.err) throw new HostError({ tag: 'io', val: json.err.val || 'the browser did not keep the change' });
+    }
+    if (answer.err) throw new HostError(answer.err);
+    return answer.ok;
+  };
+
   const impl = {
     'krate:io/types': {},
     'krate:io/streams': { OutputStream, InputStream },
@@ -337,6 +375,16 @@ export function buildImports(ctx) {
       },
       close(handle) { bridge.call('ws.close', { handle: handle.toString() }); },
     },
+    ...(sql ? {
+      'krate:store/sql': {
+        query(statement, params) {
+          const ok = sqlCall({ op: 'query', statement, params: params.map(toSql) });
+          return { columns: ok.columns, rows: ok.rows.map((values) => ({ values: values.map(fromSql) })) };
+        },
+        execute: (statement, params) => BigInt(sqlCall({ op: 'execute', statement, params: params.map(toSql) })),
+        transaction(statements) { sqlCall({ op: 'transaction', statements }); },
+      },
+    } : {}),
     'krate:store/kv': {
       get(key) {
         if (unwrap(kv.get(key))) return kv.value(key);

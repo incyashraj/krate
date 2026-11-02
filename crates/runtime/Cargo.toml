@@ -33,7 +33,7 @@ speech = ["dep:whisper-rs"]
 # host answers these capabilities a different way or refuses them honestly:
 #
 #   ureq / tungstenite  the tab already has fetch and WebSocket
-#   rusqlite            bundled C SQLite; store.sql is refused in a tab
+#   krate-appsql        bundled C SQLite; the tab runs crates/sql-web instead
 #   cpal                WebAudio is a different contract
 #   gilrs               the Gamepad API is a different contract
 #
@@ -52,7 +52,8 @@ krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
 # The device's copy of the team data, with sealing (the wasm32 build below
 # takes it without: a tab's runtime never syncs).
 krate-orgdata = { path = "../orgdata" }
-rusqlite.workspace = true
+# SQLite itself, for store.sql (crates/appsql's `engine`).
+krate-appsql = { path = "../appsql" }
 cpal = "0.18.1"
 # Gamepads. Pulls libudev-sys on Linux, which is why every Linux build got the
 # udev headers in the change before this one.
@@ -82,6 +83,9 @@ wasmtime.workspace = true
 wasmtime = { version = "48.0.7", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
 
 [dependencies]
+# store.sql's rules without SQLite, for the wasm32 build (the target table
+# above adds the engine everywhere else).
+krate-appsql = { path = "../appsql", default-features = false }
 # store.org's merge rule and the device's copy: the same code the browser
 # tab runs (crates/validator-wasm).
 krate-orgdata = { path = "../orgdata", default-features = false }

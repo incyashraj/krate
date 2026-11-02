@@ -33,6 +33,10 @@ pub fn works_in_a_tab(cap: &Capability) -> bool {
             | ("ui", "window" | "clipboard" | "open-url")
             | ("net", "connect")
             | ("store", "kv")
+            // The app's own database (K-1149): the desktop's SQLite and
+            // rules (crates/appsql) compiled for the tab (crates/sql-web),
+            // kept per app in the browser's storage.
+            | ("store", "sql")
             // An organisation's team data (G1): the copy, merge and sealing
             // are crates/orgdata in the validator module, the page keeps the
             // copy and syncs it (player/web/org-data.js).
