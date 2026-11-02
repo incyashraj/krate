@@ -772,14 +772,20 @@ pub(crate) fn capability_catalog_section() -> String {
          name outside this list is refused when the app is packed. The ones marked\n\
          *default* are granted to every app and must NOT be declared -- declaring one\n\
          is an error. Scoped names (`<path-glob>`, `<host>:<port>`) must be narrowed\n\
-         to exactly what the app needs, e.g. `fs.read:notes/**`.\n\n",
+         to exactly what the app needs, e.g. `fs.read:notes/**`.\n\n\
+         People open a shared app from a link in any browser, phones included.\n\
+         *Opens from a link?* says which capabilities work there; the rest work in\n\
+         Krate on Mac, Windows and Linux, and from a link the app opens and says so\n\
+         when it reaches one. When a request does not need a computer-only\n\
+         capability, do not use one: an app that fully opens from a link is the one\n\
+         people can send. check-app ends with a note naming any it found.\n\n",
     );
 
     // Group by phase so a CLI author sees the phase-2 set first and a GUI author
     // sees the windowing set clearly separated.
     out.push_str("## Available to every app (CLI and GUI)\n\n");
-    out.push_str("| capability | default-granted? | notes |\n");
-    out.push_str("|---|---|---|\n");
+    out.push_str("| capability | default-granted? | opens from a link? | notes |\n");
+    out.push_str("|---|---|---|---|\n");
     for spec in krate_manifest::supported_capability_specs() {
         if !matches!(spec.phase(), krate_manifest::CapabilityPhase::Phase2) {
             continue;
@@ -788,8 +794,8 @@ pub(crate) fn capability_catalog_section() -> String {
     }
 
     out.push_str("\n## GUI apps only (a window, drawing, sound)\n\n");
-    out.push_str("| capability | default-granted? | notes |\n");
-    out.push_str("|---|---|---|\n");
+    out.push_str("| capability | default-granted? | opens from a link? | notes |\n");
+    out.push_str("|---|---|---|---|\n");
     for spec in krate_manifest::supported_capability_specs() {
         if !matches!(spec.phase(), krate_manifest::CapabilityPhase::Phase3) {
             continue;
@@ -826,11 +832,19 @@ pub(crate) fn capability_catalog_section() -> String {
 
 fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
     let default = if spec.default_granted() { "yes" } else { "no" };
+    // From the Player's own list, so the pack cannot promise a phone what
+    // the tab refuses (IC-974).
+    let link = if krate_manifest::works_in_a_tab(spec.module(), spec.action()) {
+        "yes"
+    } else {
+        "computer only"
+    };
     let note = capability_note(&spec.display_pattern());
     format!(
-        "| `{}` | {} | {} |\n",
+        "| `{}` | {} | {} | {} |\n",
         spec.display_pattern(),
         default,
+        link,
         note
     )
 }

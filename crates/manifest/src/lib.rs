@@ -543,6 +543,35 @@ pub struct Capability {
     resource: Option<String>,
 }
 
+/// [`Capability::works_in_a_tab`] by module and action, for a spec in the
+/// catalog (the authoring pack's "opens from a link" column).
+pub fn works_in_a_tab(module: &str, action: &str) -> bool {
+    matches!(
+        (module, action),
+        ("io", "stdout" | "stderr" | "args" | "log")
+            | ("random", "bytes")
+            | ("time", _)
+            | ("locale", _)
+            | ("ui", "window" | "clipboard" | "open-url")
+            // net.ws rides the same grant (IC-974).
+            | ("net", "connect")
+            | ("store", "kv")
+            // The app's own database (K-1149): the desktop's SQLite and
+            // rules (crates/appsql) compiled for the tab (crates/sql-web),
+            // kept per app in the browser's storage.
+            | ("store", "sql")
+            // An organisation's team data (G1): the copy, merge and
+            // sealing are crates/orgdata in the validator module, the
+            // page keeps the copy and syncs it (player/web/org-data.js).
+            | ("store", "org")
+            // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
+            // app's own buffers (player/web/audio-worklet.js), heard from
+            // the person's first tap or key, as browsers require. The
+            // microphone stays out.
+            | ("audio", "playback")
+    )
+}
+
 impl Capability {
     pub fn new(module: &str, action: &str, resource: Option<&str>) -> Result<Self> {
         validate_ident("capability module", module)?;
@@ -685,30 +714,7 @@ impl Capability {
     /// The rest work in Krate on a computer; the Player says so in those
     /// words rather than pretending, and a call to one is refused the same way.
     pub fn works_in_a_tab(&self) -> bool {
-        matches!(
-            (self.module(), self.action()),
-            ("io", "stdout" | "stderr" | "args" | "log")
-                | ("random", "bytes")
-                | ("time", _)
-                | ("locale", _)
-                | ("ui", "window" | "clipboard" | "open-url")
-                // net.ws rides the same grant (IC-974).
-                | ("net", "connect")
-                | ("store", "kv")
-                // The app's own database (K-1149): the desktop's SQLite and
-                // rules (crates/appsql) compiled for the tab (crates/sql-web),
-                // kept per app in the browser's storage.
-                | ("store", "sql")
-                // An organisation's team data (G1): the copy, merge and
-                // sealing are crates/orgdata in the validator module, the
-                // page keeps the copy and syncs it (player/web/org-data.js).
-                | ("store", "org")
-                // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
-                // app's own buffers (player/web/audio-worklet.js), heard from
-                // the person's first tap or key, as browsers require. The
-                // microphone stays out.
-                | ("audio", "playback")
-        )
+        works_in_a_tab(self.module(), self.action())
     }
 
     /// Render a capability as a short plain phrase for a person, e.g.
