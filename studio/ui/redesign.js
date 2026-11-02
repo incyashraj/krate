@@ -181,9 +181,12 @@
       "a focus timer that lives in the corner", "flashcards for twenty Spanish words a day"];
     const lead = "Describe an app, like ";
     const sync = () => wrap.classList.toggle("has", ta.value.length > 0);
-    ta.addEventListener("input", sync); sync();
+    ta.addEventListener("input", sync); ta.addEventListener("focus", sync); sync();
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const paint = (s) => { ph.innerHTML = esc(s) + '<span class="kr-car"></span>'; };
+    // Checked on every step too, not only on typing: Studio empties the box
+    // in code after a build starts (app.js), no input event fires, and the
+    // ideas stayed hidden over an empty box on the way back home.
+    const paint = (s) => { sync(); ph.innerHTML = esc(s) + '<span class="kr-car"></span>'; };
     (async () => {
       for (let k = 0; ; k++) {
         const s = lead + IDEAS[k % IDEAS.length];
