@@ -131,6 +131,37 @@ test("a GitHub invitation is not mailed, and a failed or unconfigured send never
   assert.match(none.body.email_problem, /not set up/);
 });
 
+test("without Gmail an invitation goes through Resend from krate.tech, replies to the Gmail", async () => {
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input.url || input) === "https://api.resend.com/emails") {
+      sent.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ id: "sent" }), { headers: { "content-type": "application/json" } });
+    }
+    return realFetch(input, init);
+  };
+  try {
+    const env = orgEnv({ RESEND_API_KEY: "re_test" });
+    await acme(env);
+    const inv = await call(env, "alice", "POST", "/orgs/acme/invites", { json: { email: "erin@corp.example", role: "developer" } });
+    assert.deepStrictEqual([inv.status, inv.body.emailed, inv.body.email_problem], [201, true, undefined]);
+    assert.strictEqual(sent.length, 1);
+    const [mail] = sent;
+    assert.strictEqual(mail.from, "Yashraj Pardeshi <yashraj@krate.tech>");
+    assert.deepStrictEqual(mail.to, ["erin@corp.example"]);
+    assert.strictEqual(mail.reply_to, "incyashraj@gmail.com");
+    assert.ok(mail.text.includes(`Join Acme: ${inv.body.join_url}`), mail.text);
+    // A refusal from Resend is the same plain answer, and the invitation stands.
+    globalThis.fetch = async () => new Response("domain not verified", { status: 403 });
+    const refused = await call(env, "alice", "POST", "/orgs/acme/invites", { json: { email: "frank@corp.example", role: "recipient" } });
+    assert.deepStrictEqual([refused.status, refused.body.emailed], [201, false]);
+    assert.match(refused.body.email_problem, /could not be sent/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("at most 20 invitation mails a day per organisation and 100 per hub; past that the invite is still made", async () => {
   const { env, seen } = mailEnv();
   await acme(env);

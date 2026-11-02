@@ -3,8 +3,12 @@
 // restore an owner.
 //
 // Sent through the hub's existing Gmail path -- From incyashraj@gmail.com,
-// Cc yashraj@krate.tech -- because krate.tech mail lands in spam. Needs
-// GMAIL_APP_PASSWORD; without it nothing is mailed and the answer says so.
+// Cc yashraj@krate.tech -- because krate.tech mail lands in spam. Without
+// GMAIL_APP_PASSWORD it goes through Resend instead, from yashraj@krate.tech
+// with replies to the Gmail (krate.tech signs Resend mail with DKIM, and
+// send.krate.tech passes SPF): a team invitation that arrives is worth more
+// than one that is never sent. Only with neither is nothing mailed, and
+// the answer says so.
 // A failed send never fails what it is about: the invitation stands, with
 // `emailed: false` and the reason in plain words.
 //
@@ -13,6 +17,13 @@
 
 export const MAIL_FROM_ADDRESS = "incyashraj@gmail.com";
 export const MAIL_CC = "yashraj@krate.tech";
+/// Who Resend sends as: an address on krate.tech, the domain it signs for.
+export const RESEND_FROM = "Yashraj Pardeshi <yashraj@krate.tech>";
+
+/// Whether this hub can send organisation mail at all.
+export function mailReady(env) {
+  return Boolean(env.GMAIL_APP_PASSWORD || env.RESEND_API_KEY);
+}
 export const ORG_DAILY_LIMIT = 20;
 export const HUB_DAILY_LIMIT = 100;
 
@@ -20,7 +31,7 @@ export const HUB_DAILY_LIMIT = 100;
 /// Copied to krate.tech unless `cc` is null (a notification is the
 /// person's own, not the founder's to read).
 export async function gmail(env, smtpSend, { to, subject, text, cc = MAIL_CC }) {
-  if (!env.GMAIL_APP_PASSWORD) return "invitation mail is not set up on this hub";
+  if (!env.GMAIL_APP_PASSWORD) return resendMail(env, { to, subject, text });
   const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
   const problem = await smtpSend(connect, {
     user: MAIL_FROM_ADDRESS,
@@ -32,6 +43,24 @@ export async function gmail(env, smtpSend, { to, subject, text, cc = MAIL_CC }) 
     text,
   });
   return problem ? "the mail could not be sent -- copy the link and send it yourself" : null;
+}
+
+/// The same mail through Resend; null when it went, else why. No copy to
+/// krate.tech: it is the address the mail comes from.
+async function resendMail(env, { to, subject, text }) {
+  if (!env.RESEND_API_KEY) return "invitation mail is not set up on this hub";
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: RESEND_FROM, to: [to], reply_to: MAIL_FROM_ADDRESS, subject, text }),
+    });
+    if (res.ok) return null;
+    console.error(`resend refused an organisation mail: ${res.status} ${await res.text().catch(() => "")}`);
+  } catch (e) {
+    console.error(`could not reach resend for an organisation mail: ${e}`);
+  }
+  return "the mail could not be sent -- copy the link and send it yourself";
 }
 
 const when = (seconds) =>
@@ -88,7 +117,7 @@ async function hubSlot(env) {
 /// `orgSlot()` asks the organisation's store for one of its 20 a day.
 export async function mailInvite(env, smtpSend, invite, { orgName, slug, inviter, orgSlot }) {
   if (invite.kind !== "email") return { emailed: false, email_problem: "GitHub invitations are not mailed -- copy the link and send it" };
-  if (!env.GMAIL_APP_PASSWORD) return { emailed: false, email_problem: "Invitation mail is not set up on this hub -- copy the link and send it" };
+  if (!mailReady(env)) return { emailed: false, email_problem: "Invitation mail is not set up on this hub -- copy the link and send it" };
   if (!(await orgSlot())) {
     return { emailed: false, email_problem: `This organisation has sent its ${ORG_DAILY_LIMIT} invitation mails for today -- copy the link and send it` };
   }
@@ -139,7 +168,7 @@ export async function mailRecovery(env, smtpSend, { slug, orgName, recovery, not
   const mailed = [];
   const notMailed = [];
   for (const principal of notify) {
-    const to = env.GMAIL_APP_PASSWORD ? await addressFor(env, principal) : null;
+    const to = mailReady(env) ? await addressFor(env, principal) : null;
     if (!to) {
       notMailed.push(principal);
       continue;
