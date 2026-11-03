@@ -117,6 +117,19 @@ function capabilityWords(c) {
   }
 }
 
+/// The address to send people for an organisation's app (the Player's
+/// `/run/org/<slug>/<app-id>`): it opens the version that is theirs now --
+/// after an update, a rollback or a withdrawal too -- in a browser tab on a
+/// phone or a computer, after they sign in, with "Open in Krate" beside it.
+/// A version's own link (`/a/<digest>`) keeps opening exactly that build and
+/// stops when it is withdrawn, so it is not the one to share. Null for an app
+/// id the Player's address cannot carry (a candidate kept from before app
+/// ids, named by its name).
+export const SHARE_APP = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+export function shareUrlOf(base, slug, app) {
+  return SHARE_APP.test(String(app || "")) ? `${base || ""}/run/org/${slug}/${app}` : null;
+}
+
 /// "finance", "finance and ops", "finance, ops and legal".
 function spoken(list) {
   if (list.length <= 1) return list.join("");
@@ -325,7 +338,7 @@ const ops = {
       this.setCurrent(app, digest, me.principal, ctx.now);
       this.audit(me.principal, "release.current", target, "allowed", digest);
     }
-    return this.ok({ app_id: app, current: this.releaseView(c, ctx.args.base) });
+    return this.ok({ app_id: app, current: this.releaseView(c, ctx.args.base), share_url: shareUrlOf(ctx.args.base, ctx.slug, app) });
   },
 
   /// GET /orgs/<slug>/apps/<app-id>/current: which digest the app's link
@@ -353,7 +366,7 @@ const ops = {
     const c = this.row("SELECT * FROM candidates WHERE digest = ?", digest);
     const outside = this.audienceRefusal(ctx, me, c, "release.download", target);
     if (outside) return outside;
-    return this.ok({ app_id: app, digest, name: c.name, version: c.version, url: `${ctx.args.base || ""}/a/${digest}`, ring: mine.ring, group: mine.group });
+    return this.ok({ app_id: app, digest, name: c.name, version: c.version, url: `${ctx.args.base || ""}/a/${digest}`, share_url: shareUrlOf(ctx.args.base, ctx.slug, app), ring: mine.ring, group: mine.group });
   },
 
   /// GET /orgs/<slug>/apps: each app, its current release and its history.
@@ -411,6 +424,8 @@ const ops = {
         capabilities: now ? now.capabilities : [],
         offline: now ? now.offline || null : null,
         link: `${ctx.args.base || ""}/orgs/${ctx.slug}/apps/${encodeURIComponent(entry.app_id)}/current`,
+        // What to send people: survives updates, opens on a phone too.
+        share_url: shareUrlOf(ctx.args.base, ctx.slug, entry.app_id),
       });
       apps.push(entry);
     }

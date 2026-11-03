@@ -691,6 +691,59 @@ impl CanvasSurface {
         }
     }
 
+    /// The pixel rows and columns a draw may touch, trimmed to the clip so
+    /// a card mostly hidden by it costs only what shows. Same pixels as
+    /// testing `allowed` on each: a pixel is in when `cx <= px < cx + cw`.
+    fn bounds_in_clip(&self, x0: u32, x1: u32, y0: u32, y1: u32) -> (u32, u32, u32, u32) {
+        let Some((cx, cy, cw, ch)) = self.clip else {
+            return (x0, x1, y0, y1);
+        };
+        let lo = |v: f32| v.ceil().max(0.0) as u32;
+        let (cx0, cx1, cy0, cy1) = (lo(cx), lo(cx + cw), lo(cy), lo(cy + ch));
+        (
+            x0.max(cx0),
+            x1.min(cx1).max(x0.max(cx0)),
+            y0.max(cy0),
+            y1.min(cy1).max(y0.max(cy0)),
+        )
+    }
+
+    /// For one pixel row of a rounded rectangle, the columns whose coverage
+    /// is surely full: centres at least `inset` inside every edge and clear
+    /// of the corner bands, by a small margin so the answer is exactly the
+    /// one the distance would give. `None` when no column is.
+    #[allow(clippy::too_many_arguments)]
+    fn full_span(
+        py: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        rmax: f32,
+        inset: f32,
+    ) -> Option<(u32, u32)> {
+        const EPS: f32 = 1e-3;
+        let (cx, cy, hw, hh) = (x + w * 0.5, y + h * 0.5, w * 0.5, h * 0.5);
+        let qy = (py as f32 + 0.5 - cy).abs();
+        let band = rmax.max(inset);
+        let half = if qy <= hh - band - EPS {
+            hw - inset - EPS
+        } else if qy <= hh - inset - EPS {
+            hw - band - EPS
+        } else {
+            return None;
+        };
+        if half <= 0.0 {
+            return None;
+        }
+        let first = (cx - half - 0.5).ceil();
+        let last = (cx + half - 0.5).floor();
+        if last < first || last < 0.0 {
+            return None;
+        }
+        Some((first.max(0.0) as u32, last as u32))
+    }
+
     /// A filled rounded rectangle with anti-aliased corners: the card
     /// primitive. Panels, buttons, chips and list rows are all this shape in
     /// any current design, and faking it from rects and circles never
@@ -718,12 +771,55 @@ impl CanvasSurface {
         let x1 = ((x + w).ceil().max(0.0) as u32).min(bw);
         let y0 = (y.floor().max(0.0) as u32).min(bh);
         let y1 = ((y + h).ceil().max(0.0) as u32).min(bh);
+        // Only what the clip shows, and inside the shape no distance at all:
+        // a phone card is mostly middle, and every pixel of its box used to
+        // pay for a square root (Query and Trace drew theirs in pieces to
+        // stay inside a phone's frame time, 2026-11-03). The pixels are the
+        // ones the distance gives, to the bit.
+        let (x0, x1, y0, y1) = self.bounds_in_clip(x0, x1, y0, y1);
+        let rmax = Self::max_radius(w, h, radii);
         for py in y0..y1 {
-            for px in x0..x1 {
+            let span = Self::full_span(py, x, y, w, h, rmax, 0.5);
+            let mut px = x0;
+            while px < x1 {
+                if let Some((a, b)) = span.filter(|&(a, b)| px >= a && px <= b) {
+                    // The row's full middle in one fill: the clip is already
+                    // in the bounds, so every pixel here may be written.
+                    let end = (b + 1).min(x1);
+                    self.fill_span(px, end, py, color);
+                    px = end.max(a + 1);
+                    continue;
+                }
                 let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
                 self.blend_coverage(px, py, color, (0.5 - d).clamp(0.0, 1.0));
+                px += 1;
             }
         }
+    }
+
+    /// Columns `x0..x1` of row `y` at full coverage: what `blend_coverage`
+    /// with coverage 1 does to each, a row at a time.
+    fn fill_span(&mut self, x0: u32, x1: u32, y: u32, color: u32) {
+        if x1 <= x0 {
+            return;
+        }
+        fill_rect(
+            &mut self.buffer,
+            self.width,
+            self.height,
+            (x0 as f32, y as f32, (x1 - x0) as f32, 1.0),
+            color,
+        );
+    }
+
+    /// The largest corner radius as the distance uses it (clamped to half
+    /// the shorter side).
+    fn max_radius(w: f32, h: f32, radii: (f32, f32, f32, f32)) -> f32 {
+        let cap = (w * 0.5).min(h * 0.5);
+        [radii.0, radii.1, radii.2, radii.3]
+            .into_iter()
+            .map(|r| r.clamp(0.0, cap))
+            .fold(0.0, f32::max)
     }
 
     /// Stroke a rounded rectangle's edge, `width` pixels thick, anti-aliased
@@ -758,6 +854,7 @@ impl CanvasSurface {
         let x1 = ((x + w + half).ceil().max(0.0) as u32).min(bw);
         let y0 = ((y - half).floor().max(0.0) as u32).min(bh);
         let y1 = ((y + h + half).ceil().max(0.0) as u32).min(bh);
+        let (x0, x1, y0, y1) = self.bounds_in_clip(x0, x1, y0, y1);
         for py in y0..y1 {
             for px in x0..x1 {
                 let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
@@ -800,11 +897,24 @@ impl CanvasSurface {
         let x1 = ((x + w + blur).ceil().max(0.0) as u32).min(bw);
         let y0 = ((y - blur).floor().max(0.0) as u32).min(bh);
         let y1 = ((y + h + blur).ceil().max(0.0) as u32).min(bh);
+        // As fill_round_rect: only what the clip shows, and where the shadow
+        // is surely full strength (a blur's width inside) no distance.
+        let (x0, x1, y0, y1) = self.bounds_in_clip(x0, x1, y0, y1);
+        let rmax = Self::max_radius(w, h, radii);
         for py in y0..y1 {
-            for px in x0..x1 {
+            let span = Self::full_span(py, x, y, w, h, rmax, blur);
+            let mut px = x0;
+            while px < x1 {
+                if let Some((a, b)) = span.filter(|&(a, b)| px >= a && px <= b) {
+                    let end = (b + 1).min(x1);
+                    self.fill_span(px, end, py, color);
+                    px = end.max(a + 1);
+                    continue;
+                }
                 let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
                 let t = ((blur - d) / (2.0 * blur)).clamp(0.0, 1.0);
                 self.blend_coverage(px, py, color, t * t * (3.0 - 2.0 * t));
+                px += 1;
             }
         }
     }
@@ -1530,6 +1640,133 @@ mod tests {
     /// canvas does not sit between bars. The spare space above takes the
     /// colour along the design's top edge and the space below its bottom
     /// edge, on the CPU raster and in the list the iPhone's GPU draws from.
+    /// The rounded fill's and the shadow's fast inside path and clip bounds
+    /// paint exactly the pixels the per-pixel distance painted, for every
+    /// shape, radius, colour, clip and scale tried.
+    #[test]
+    fn rounded_cards_and_shadows_paint_the_same_pixels_faster() {
+        // A card: x, y, w, h, corner radii, blur, colour.
+        type Card = (f32, f32, f32, f32, (f32, f32, f32, f32), f32, u32);
+        // The old loops, kept here as the oracle.
+        fn reference(s: &mut CanvasSurface, shadow: bool, r: Card) {
+            let (x, y, w, h, radii, blur, color) = r;
+            s.materialize();
+            let (x, y) = s.map_point(x, y);
+            let k = s.scale;
+            let (x, y, w, h) = (x * k, y * k, s.map_len(w) * k, s.map_len(h) * k);
+            let blur = (s.map_len(blur) * k).max(0.5);
+            let radii = if shadow {
+                radii
+            } else {
+                (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k)
+            };
+            let pad = if shadow { blur } else { 0.0 };
+            let (bw, bh) = (s.width, s.height);
+            let x0 = ((x - pad).floor().max(0.0) as u32).min(bw);
+            let x1 = ((x + w + pad).ceil().max(0.0) as u32).min(bw);
+            let y0 = ((y - pad).floor().max(0.0) as u32).min(bh);
+            let y1 = ((y + h + pad).ceil().max(0.0) as u32).min(bh);
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    let d = CanvasSurface::round_rect_sdf(
+                        px as f32 + 0.5,
+                        py as f32 + 0.5,
+                        x,
+                        y,
+                        w,
+                        h,
+                        radii,
+                    );
+                    let c = if shadow {
+                        let t = ((blur - d) / (2.0 * blur)).clamp(0.0, 1.0);
+                        t * t * (3.0 - 2.0 * t)
+                    } else {
+                        (0.5 - d).clamp(0.0, 1.0)
+                    };
+                    s.blend_coverage(px, py, color, c);
+                }
+            }
+        }
+        let shapes = [
+            (
+                10.3,
+                7.7,
+                200.0,
+                120.0,
+                (12.0, 12.0, 12.0, 12.0),
+                8.0,
+                0xFF22_3344u32,
+            ),
+            (
+                0.0,
+                0.0,
+                320.0,
+                64.0,
+                (20.0, 4.0, 0.0, 30.0),
+                3.0,
+                0x8811_AA55,
+            ),
+            (
+                -30.0,
+                50.5,
+                120.0,
+                400.0,
+                (60.0, 60.0, 60.0, 60.0),
+                0.3,
+                0xFFFF_FFFF,
+            ),
+            (
+                40.25,
+                40.75,
+                3.0,
+                2.0,
+                (1.0, 1.0, 1.0, 1.0),
+                12.0,
+                0x40FF_0000,
+            ),
+            (
+                5.0,
+                5.0,
+                300.0,
+                300.0,
+                (0.0, 0.0, 0.0, 0.0),
+                1.0,
+                0xFF00_00FF,
+            ),
+        ];
+        for scale in [1.0f32, 1.5, 2.0] {
+            for clip in [None, Some((33.3, 21.0, 150.7, 90.2))] {
+                for shadow in [false, true] {
+                    for shape in shapes {
+                        let mut fast = CanvasSurface::new_scaled(360, 480, scale).expect("surface");
+                        let mut slow = CanvasSurface::new_scaled(360, 480, scale).expect("surface");
+                        for s in [&mut fast, &mut slow] {
+                            s.clear(0xFF10_1010);
+                            s.set_clip(clip);
+                        }
+                        let (x, y, w, h, radii, blur, color) = shape;
+                        if shadow {
+                            fast.drop_shadow_round_rect(x, y, w, h, radii, blur, color);
+                        } else {
+                            fast.fill_round_rect(x, y, w, h, radii, color);
+                        }
+                        reference(&mut slow, shadow, shape);
+                        let diff = fast
+                            .buffer
+                            .iter()
+                            .zip(&slow.buffer)
+                            .filter(|(a, b)| a != b)
+                            .count();
+                        assert_eq!(
+                            diff, 0,
+                            "scale {scale} clip {clip:?} shadow {shadow} shape {shape:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// K-1152: a sky drawn with linear_gradient_v under a fractional design
     /// scale has no row left unpainted. Cut in app units and mapped band by
     /// band, the cleared colour showed through every few rows: white stripes

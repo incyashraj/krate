@@ -32,15 +32,28 @@ const mark = (name) => { report.marks[name] = performance.now(); };
 const SITE = 'https://krate.tech';
 const params = new URLSearchParams(location.search);
 // /run/<hash> opens one release; /run/org/<slug>/<app-id> opens an
-// organisation's app as it is now (the address a home screen keeps).
-const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127}))\/?$/) || [];
+// organisation's app as it is now, and /run/v<line> a public app as it is
+// now (IC-976): the addresses a home screen keeps, so an update reaches it.
+const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|(v[0-9a-f]{11}))\/?$/) || [];
 let HASH = RUN[1];
 const ORG_APP = RUN[2] ? { slug: RUN[2], app: RUN[3] } : null;
-const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH}`;
+const LINE = RUN[4] || null;
+const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH || LINE}`;
 // The post a link came from (`?via=reddit`), carried to the open's count.
 const VIA = ((params.get('via') || '').toLowerCase().match(/^[a-z0-9][a-z0-9_-]{0,31}$/) || [''])[0];
 // A phone or a tablet: nothing here may tell it to use "your computer".
 const PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+// A chat or social app's own browser (Instagram, Facebook, LinkedIn,
+// TikTok, Snapchat, LINE, X): it may not give a tab what an app needs, and
+// the way out is the phone's own browser, never a computer.
+const IN_APP = (() => {
+  const ua = navigator.userAgent;
+  for (const [name, re] of [['Instagram', /Instagram/], ['Facebook', /FBAN|FBAV|FB_IAB|FBIOS/], ['LinkedIn', /LinkedInApp/],
+    ['TikTok', /TikTok|musical_ly|BytedanceWebview/], ['Snapchat', /Snapchat/], ['LINE', /\bLine\//], ['X', /Twitter for/]]) {
+    if (re.test(ua)) return name;
+  }
+  return /; wv\)/.test(ua) ? 'this app' : null;
+})();
 const SESSION_KEY = 'krate-player-session';
 const NONCE_KEY = 'krate-player-nonce';
 
@@ -62,7 +75,12 @@ function refuse(title, words, { act = 'krate', detail } = {}) {
   $('refusedDetail').textContent = detail || '';
   const a = $('refusedAct');
   a.onclick = null;
-  if (act === 'krate' && PHONE) { a.textContent = 'Send it to a computer'; a.href = '#'; a.onclick = sendToComputer; }
+  if (act === 'browser' && /Android/.test(navigator.userAgent)) {
+    // Android hands an intent: link to Chrome, out of the app's browser.
+    a.textContent = 'Open in Chrome';
+    a.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=${location.protocol.replace(':', '')};package=com.android.chrome;end`;
+  } else if (act === 'browser') { a.textContent = 'Copy the link'; a.href = '#'; a.onclick = copyLink; }
+  else if (act === 'krate' && PHONE) { a.textContent = 'Send it to a computer'; a.href = '#'; a.onclick = sendToComputer; }
   else if (act === 'krate') { a.textContent = 'Open in Krate'; a.href = openInKrate(); }
   else if (act === 'home') { a.textContent = 'Go to krate.tech'; a.href = SITE + '/'; }
   report.refused = { title, words, detail };
@@ -80,6 +98,17 @@ async function sendToComputer(e) {
   }
   try {
     await navigator.clipboard.writeText(url);
+    if (button) { const was = button.textContent; button.textContent = 'Link copied'; setTimeout(() => { button.textContent = was; }, 1500); }
+  } catch { prompt('Copy this link:', url); }
+}
+/// This page's address on the clipboard, to paste into the phone's browser.
+async function copyLink(e) {
+  if (e) e.preventDefault();
+  const button = e && e.currentTarget;
+  const url = location.origin + location.pathname + location.search;
+  try {
+    await navigator.clipboard.writeText(url);
+    report.copied = url;
     if (button) { const was = button.textContent; button.textContent = 'Link copied'; setTimeout(() => { button.textContent = was; }, 1500); }
   } catch { prompt('Copy this link:', url); }
 }
@@ -275,28 +304,90 @@ $('reportForm').onsubmit = async (e) => {
 function session() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
 }
+// The proof that this browser started a sign-in (K-909), as the site keeps
+// it (docs/landing/login/signin.js): a few nonces in this origin's
+// localStorage, each used once and dropped after an hour. localStorage, not
+// sessionStorage, because an emailed link opens in a new tab.
+const NONCE_MAX_MS = 60 * 60 * 1000;
+function nonces() {
+  try {
+    const list = JSON.parse(localStorage.getItem(NONCE_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((e) => e && typeof e.n === 'string' && Date.now() - e.at < NONCE_MAX_MS) : [];
+  } catch { return []; }
+}
+function keepNonces(list) {
+  try { localStorage.setItem(NONCE_KEY, JSON.stringify(list.slice(-5))); } catch {}
+}
+function beginSignIn() {
+  const n = Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, '0')).join('');
+  keepNonces([...nonces(), { n, at: Date.now() }]);
+  return n;
+}
+function acceptSignIn(n) {
+  if (!n) return false;
+  const list = nonces();
+  const at = list.findIndex((e) => e.n === n);
+  if (at >= 0) { list.splice(at, 1); keepNonces(list); return true; }
+  // A sign-in started before this Player kept its nonces here.
+  let legacy = null;
+  try { legacy = sessionStorage.getItem(NONCE_KEY); sessionStorage.removeItem(NONCE_KEY); } catch {}
+  return legacy === n;
+}
 // A finished sign-in comes back in the fragment (it never leaves the
-// browser), with the nonce this tab made: taken only when it matches.
+// browser), with a nonce this browser made: taken only when it matches.
 function takeSignIn() {
   if (!location.hash.includes('token=')) return;
   const got = new URLSearchParams(location.hash.slice(1));
-  let expected = null;
-  try { expected = sessionStorage.getItem(NONCE_KEY); sessionStorage.removeItem(NONCE_KEY); } catch {}
   history.replaceState(null, '', location.pathname + location.search);
-  if (!expected || got.get('nonce') !== expected) return;
+  if (!acceptSignIn(got.get('nonce'))) return;
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify({ token: got.get('token'), login: got.get('login') || '', name: got.get('name') || '' }));
   } catch {}
 }
 function signIn(words) {
-  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, '0')).join('');
-  try { sessionStorage.setItem(NONCE_KEY, nonce); } catch {}
-  const q = (path) => `${path}?${new URLSearchParams({ from: FROM, nonce })}`;
+  const nonce = beginSignIn();
+  const q = (path, extra = {}) => `${path}?${new URLSearchParams({ ...extra, from: FROM, nonce })}`;
   $('signinGithub').href = q('/login/start');
   $('signinGoogle').href = q('/login/google/start');
+  // An organisation's app: its own sign-in first (Okta, Entra, Google
+  // Workspace, SAML -- the hub sends it on to whichever the company set
+  // up), with GitHub stepping back beside Google, as on krate.tech/login.
+  if (ORG_APP) {
+    $('signinCompany').href = q('/login/oidc/start', { org: ORG_APP.slug });
+    $('signinCompany').hidden = false;
+    $('signinGithub').className = 'btn ghost';
+  }
   if (words) $('signinWords').textContent = words;
   show('signin');
 }
+// Sign in by a link in an email: the hub mails it, and opening it on this
+// device comes back here signed in.
+$('signinMail').onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $('signinEmail').value.trim();
+  const said = $('signinSaid');
+  said.hidden = false;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    said.textContent = 'Type the email address your team invited.';
+    $('signinEmail').focus();
+    return;
+  }
+  $('signinSend').disabled = true;
+  said.textContent = 'Sending…';
+  const res = await fetch('/login/email', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, from: FROM, nonce: beginSignIn() }),
+  }).catch(() => null);
+  $('signinSend').disabled = false;
+  if (res && res.ok) {
+    said.textContent = `We sent a link to ${email}. Open it on this device to sign in; it works for 15 minutes.`;
+  } else if (res && res.status === 429) {
+    said.textContent = 'Too many links asked for just now. Wait a minute and try again.';
+  } else {
+    said.textContent = res ? ((await res.text().catch(() => '')) || 'The link did not send. Try again.') : 'Krate could not be reached. Check the connection and try again.';
+  }
+};
 
 // ------------------------------------------------------------------ the app
 const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -361,12 +452,29 @@ async function resolveOrgApp() {
   return false;
 }
 
+/// A public app's own address (/run/v<line>): the release it opens now.
+/// True when HASH is set; otherwise the page already says what to do.
+let lineOf = Promise.resolve(null);
+async function resolveLine() {
+  const res = await fetch(`/meta/${LINE}`, { cache: 'no-store' }).catch(() => null);
+  if (!res) {
+    refuse('This app did not open', 'Krate could not be reached. Check the connection and try again.', { act: 'home' });
+    return false;
+  }
+  const body = await res.json().catch(() => ({}));
+  if (res.ok && /^[0-9a-f]{64}$/.test(body.id || '')) { HASH = body.id; return true; }
+  if (res.status === 451) refuse('This app was taken down', body.reason ? `Krate took it down: ${body.reason}` : 'Krate took it down, and it does not open.', { act: 'home' });
+  else refuse('This app is not on Krate', 'The link may be mistyped, or the app was removed.', { act: 'home' });
+  return false;
+}
+
 /// Make the page addable to a home screen as the app: its name, its icon,
 /// and for an organisation's app the address that always opens the version
 /// the team released last.
 async function installable(name, slug, appId) {
   const id = String(appId || '').toLowerCase();
-  const base = slug && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(id) ? `/run/org/${slug}/${id}` : `/run/${HASH}`;
+  const line = LINE || (await lineOf);
+  const base = slug && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(id) ? `/run/org/${slug}/${id}` : line ? `/run/${line}` : `/run/${HASH}`;
   const link = (rel, href) => {
     let el = document.querySelector(`link[rel="${rel}"]`);
     if (!el) { el = document.createElement('link'); el.rel = rel; document.head.appendChild(el); }
@@ -406,18 +514,38 @@ async function main() {
   mark('start');
   takeSignIn();
   if (ORG_APP && self.crossOriginIsolated && !(await resolveOrgApp())) return;
+  if (LINE && !(await resolveLine())) return;
   if (!HASH) {
     refuse('This is not an app link', 'A Krate app link ends in the app’s 64-character address.', { act: 'home' });
     return;
   }
   report.private = params.get('private') === '1';
   $('inKrate').href = openInKrate();
+  // A phone or a tablet in any orientation: Krate's own app is for a
+  // computer, so the bar does not offer it.
+  if (PHONE) $('inKrate').hidden = true;
+  // The app's own link, for the home screen (IC-976). Asked now, beside the
+  // fetches below; nothing waits on it but the home screen.
+  if (!LINE && !ORG_APP) lineOf = fetch(`/meta/${HASH}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((m) => {
+    const v = m && m.version;
+    const line = v && !v.newer && /\/a\/(v[0-9a-f]{11})$/.exec(String(v.app_url || ''));
+    return line ? line[1] : null;
+  }).catch(() => null);
   if (!self.crossOriginIsolated || typeof SharedArrayBuffer !== 'function') {
-    refuse(PHONE ? 'Open this in your browser' : 'This browser cannot open Krate apps in a tab',
-      PHONE
-        ? 'This in-app browser cannot run Krate apps. Open the link in Safari or Chrome.'
-        : 'It does not allow the shared memory a Krate app needs here. The app opens in Krate on this computer.',
-      { detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+    const android = /Android/.test(navigator.userAgent);
+    const browser = android ? 'Chrome' : 'Safari';
+    const whose = IN_APP && IN_APP !== 'this app' ? `${IN_APP}'s browser` : 'This in-app browser';
+    if (PHONE) {
+      refuse(`Open this in ${browser}`,
+        `${whose} cannot run Krate apps. ` + (android
+          ? 'Tap Open in Chrome, or tap \u22ee and choose Open in Chrome.'
+          : 'Tap \u22ef or the share button and choose Open in Safari, or copy the link and paste it there.'),
+        { act: 'browser', detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+    } else {
+      refuse('This browser cannot open Krate apps in a tab',
+        'It does not allow the shared memory a Krate app needs here. The app opens in Krate on this computer.',
+        { detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+    }
     return;
   }
 
@@ -517,7 +645,14 @@ async function main() {
   const rows = JSON.parse(consent(JSON.stringify(j.manifest.capabilities || []))).rows || [];
   const blocked = rows.filter((r) => r.required && !r.in_tab);
   const granted = rows.filter((r) => r.in_tab).map((r) => r.cap);
-  const storeKey = release ? `${app.id}@${release.authority.slice(0, 16)}` : app.id;
+  // Storage belongs to the publisher the hub vouched for (x-krate-store, a
+  // digest of the signed-in owner), never to the manifest's id alone: the
+  // author picks that id, every app shares this origin, and another
+  // publisher's app declaring the same id read this one's data, secrets
+  // included. With no tag, the build itself -- never the bare id.
+  const told = res.headers.get('x-krate-store') || '';
+  const owner = /^k[0-9a-f]{16}$/.test(told) ? told : `h${HASH.slice(0, 16)}`;
+  const storeKey = release ? `${app.id}@${release.authority.slice(0, 16)}` : `${app.id}~${owner}`;
   if (rows.length) {
     $('consentTitle').textContent = `“${name}” wants to:`;
     const list = $('consentRows');

@@ -20,13 +20,15 @@
 
 #[cfg(target_os = "android")]
 mod intent;
+pub mod run_config;
 
 #[cfg(target_os = "android")]
 mod player {
+    use crate::run_config::{sanitize, use_in_words};
     use krate_adapter_android::winit_native::AndroidApp;
     use std::io::Cursor;
 
-    const MAX_BUNDLE_BYTES: usize = 6 * 1024 * 1024;
+    const MAX_BUNDLE_BYTES: usize = crate::run_config::MAX_BUNDLE_BYTES as usize;
 
     // The demo app, for a plain launch with no intent: krate-gram, the
     // modern-UI acceptance test. It goes through the same wall as any
@@ -137,8 +139,8 @@ mod player {
                         }
                     }
                 };
-                kept_bytes = Some(bytes.clone());
-                let open = match krate_bundle::open_reader(Cursor::new(bytes)) {
+                // Read in place, then kept: a big app is not held twice.
+                let open = match krate_bundle::open_reader(Cursor::new(bytes.as_slice())) {
                     Ok(open) => open,
                     Err(err) => {
                         log::error!("that is not a Krate app: {err:#}");
@@ -161,6 +163,7 @@ mod player {
                 };
                 assets_root = open.assets_path().map(|p| p.to_path_buf());
                 _opened_bundle = Some(open);
+                kept_bytes = Some(bytes);
             }
             None => {
                 manifest_text = GRAM_MANIFEST.to_string();
@@ -204,6 +207,9 @@ mod player {
             .map(|(_, capability)| capability)
             .collect();
         let policy = krate_policy::SessionPolicy::from_grants(kept);
+        // More memory than the default, when the app asked and the person
+        // left it on (K-416).
+        let memory_bytes = crate::run_config::memory_budget_bytes(&manifest, &policy);
 
         let sandbox = data_root.join("apps").join(sanitize(&manifest.app.id));
         let _ = std::fs::create_dir_all(&sandbox);
@@ -212,20 +218,26 @@ mod player {
         // store.kv and store.sql call was refused and a recipe book made in
         // Studio quit at start. Kept beside the sandbox, not in it, as on a
         // desktop: the app names keys, never files.
-        let stores = data_root.join("stores");
-        let _ = std::fs::create_dir_all(&stores);
-        let store = stores.join(format!("{}.kv", sanitize(&manifest.app.id)));
-        let config = krate_runtime::Config {
+        let stores = crate::run_config::stores(data_root, &manifest.app.id);
+        let _ = std::fs::create_dir_all(data_root.join("stores"));
+        let mut config = krate_runtime::Config {
             session_policy: policy,
             sandbox_root: sandbox,
-            app_store_path: Some(store.clone()),
-            app_database_path: Some(store.with_extension("sqlite")),
+            app_store_path: Some(stores.kv.clone()),
+            app_database_path: Some(stores.sql.clone()),
             // Its secrets (store.secret), encrypted with a key of this
             // phone's: a Vault's entries had nowhere to live on Android.
             app_secrets: Some((
-                store.with_extension("secrets"),
+                stores.secrets.clone(),
                 manifest.app.id.clone(),
                 machine_key(data_root),
+            )),
+            // Its shared store (store.shared): a phone never said where, so
+            // every shared call was refused and a list shared from a
+            // computer could not be joined on a phone.
+            app_shared: Some((
+                stores.shared.clone(),
+                crate::run_config::SHARED_HUB.to_string(),
             )),
             bundle_assets_root: assets_root,
             // The name the person agreed to on the wall: a notification's
@@ -234,6 +246,9 @@ mod player {
             phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
             ..Default::default()
         };
+        if let Some(bytes) = memory_bytes {
+            config.memory_bytes = bytes;
+        }
         // Which app runs, for its reminders: their ids carry its id, and a
         // tapped one opens the copy kept here.
         let opens = kept_bytes
@@ -292,48 +307,6 @@ mod player {
             krate_adapter_android::behind::write(&data_root.join("wall").join("behind.rgba"));
             krate_adapter_android::menu::relaunch();
         }
-    }
-
-    /// A granted capability as the permission sheet words it (apps/krate-wall
-    /// `describe`), or None for what every app has: its window, its output,
-    /// the clock and randomness. The iPhone player's list, for Krate's menu.
-    fn use_in_words(cap: &str) -> Option<String> {
-        let mut parts = cap.splitn(2, ':');
-        let kind = parts.next().unwrap_or("");
-        let target = parts.next().unwrap_or("");
-        let host = target.split(':').next().unwrap_or("");
-        let own = target.is_empty() || target.starts_with('.');
-        Some(match kind {
-            "ui.window" | "io.stdout" | "io.stderr" | "io.stdin" | "io.args" | "io.env"
-            | "time.clock" | "time.monotonic" | "random.bytes" | "memory.budget" => return None,
-            "net.fetch" | "net.connect" if !host.is_empty() && host != "*" => {
-                format!("The internet, at {host}")
-            }
-            "net.fetch" | "net.connect" => "The internet".to_string(),
-            "net.listen" => "The local network".to_string(),
-            "net.ws" => "A live connection".to_string(),
-            "hub" | "hub.rooms" => "Krate online".to_string(),
-            "fs.read" | "fs.list" if own => "Read its own files".to_string(),
-            "fs.write" | "fs.remove" if own => "Save its own files".to_string(),
-            "fs.read" | "fs.list" => "Read files".to_string(),
-            "fs.write" | "fs.remove" => "Change files".to_string(),
-            "ui.dialog" => "Files you pick".to_string(),
-            "audio.playback" => "Sound".to_string(),
-            "audio.capture" => "The microphone".to_string(),
-            "speech" | "speech.say" | "speech.listen" => "Speech".to_string(),
-            "camera.capture" | "camera" => "The camera".to_string(),
-            "location.read" => "Where you are".to_string(),
-            "bluetooth.connect" => "Bluetooth devices you pick".to_string(),
-            "photos.add" => "Adding to your Photos".to_string(),
-            "store.kv" | "store.sql" => "Keeping its data".to_string(),
-            "store.shared" => "Sharing data with people you invite".to_string(),
-            "store.secret" => "Keeping secrets safe".to_string(),
-            "ui.clipboard" => "The clipboard".to_string(),
-            "ui.notify" => "Notifications".to_string(),
-            "ui.open-url" => "Opening links".to_string(),
-            "gfx.gpu" => "The graphics chip".to_string(),
-            _ => cap.to_string(),
-        })
     }
 
     /// Run the wall sheet and return the granted capability names, or None
@@ -473,19 +446,5 @@ mod player {
             let _ = std::fs::write(&path, &key);
         }
         key
-    }
-
-    /// App ids become directory names; nothing an id says may escape the
-    /// apps folder.
-    fn sanitize(id: &str) -> String {
-        id.chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect()
     }
 }

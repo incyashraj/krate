@@ -78,7 +78,7 @@
    "name": "Do the people I send an app to need Krate?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Not to open a link: the app runs in their browser, with nothing to install and no account.<\/p><p>To run apps natively, they install the Krate player once, the way you install a media player once for every film. After that every Krate app anyone sends them opens with a double-click. The <a href=\"https://krate.tech/open/\">opening guide<\/a> takes a minute.<\/p>"
+    "text": "<p>Not to open a link: the app runs in their browser, with nothing to install and no account.<\/p><p>From a link the app can use its own database, files they open, drop in or save, live connections for multiplayer, data shared by invite code or with a team, saved sign-ins and sound. Once they allow it in their browser, it also gets the camera, the microphone, their location and notifications (on a phone, from the app's Home Screen icon). It can also open the share sheet and read text aloud.<\/p><p>To run apps natively, they install the Krate player once, the way you install a media player once for every film. After that every Krate app anyone sends them opens with a double-click. The <a href=\"https://krate.tech/open/\">opening guide<\/a> takes a minute.<\/p>"
    }
   },
   {
@@ -254,7 +254,7 @@
    "name": "Can an app save data?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Yes. Each app has its own key-value store, SQL database and secret store, plus a shared store that syncs across machines. A key-value entry holds up to 1 MiB, and an app's key-value store up to 16 MiB.<\/p>"
+    "text": "<p>Yes. Each app has its own key-value store, SQL database and secret store, plus a shared store that syncs across machines. All four work from a link in the browser too. A key-value entry holds up to 1 MiB, and an app's key-value store up to 16 MiB.<\/p>"
    }
   },
   {
@@ -262,7 +262,7 @@
    "name": "Can I make games?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input. Krate Nova and Track Dash in the <a href=\"https://krate.tech/cloud/\">gallery<\/a> are games made this way, and you can open them in your browser right now.<\/p>"
+    "text": "<p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input. Krate Nova and Track Dash in the <a href=\"https://krate.tech/cloud/\">gallery<\/a> are games made this way, and you can open them in your browser right now. Live connections work from a link as well, so friends can play together.<\/p>"
    }
   },
   {
@@ -278,7 +278,7 @@
    "name": "How do I send someone an app?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>The way you send a picture. Share its link and it opens in their browser, on a phone or a computer. Or send the file itself: attach it to an email, drop it in a chat, put it on a drive.<\/p>"
+    "text": "<p>The way you send a picture. Share its link and it opens in their browser, on a phone or a computer. Or send the file itself: attach it to an email, drop it in a chat, put it on a drive.<\/p><p>Publish an update and the link you already sent opens the new version, with everything people saved in it still there. Each version keeps its own link, and you can make an earlier one current again.<\/p>"
    }
   },
   {
@@ -326,7 +326,7 @@
    "name": "Can an app read my files?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "<p>Only what it was granted, such as a folder of its own, and any file you choose for it in a dialog. There is no way for an app to read everything, by design.<\/p>"
+    "text": "<p>Only what it was granted, such as a folder of its own, and any file you choose for it in a dialog or drop on it. There is no way for an app to read everything, by design.<\/p>"
    }
   },
   {
@@ -444,7 +444,7 @@
     <details id="why-krate"><summary><span class="n">02</span>Why would I ship my app as a .krate?</summary><div class="ans"><p>One file instead of a build, a signature and a download for every system. It opens from a link on any phone or computer, runs natively on every desktop, and the person you send it to sees what it can touch before it opens.</p></div></details>
     <details id="which-systems"><summary><span class="n">03</span>Which systems does it run on?</summary><div class="ans"><p>Everything with a modern browser, from a link: iPhone, Android, and any computer. Natively, the Krate player runs on macOS, Windows and Linux, on Intel and ARM.</p><p>It is the same file on all of them.</p></div></details>
     <details id="same-file"><summary><span class="n">04</span>How can the same .krate file open on Mac, Windows, and Linux?</summary><div class="ans"><p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces, and the Krate player on each operating system translates approved calls into local behavior.</p><p>The <code class="k">.krate</code> file carries the WebAssembly component and its requested access. It is one portable app, and the same bytes run on all three desktops.</p></div></details>
-    <details id="why-the-player"><summary><span class="n">05</span>Do the people I send an app to need Krate?</summary><div class="ans"><p>Not to open a link: the app runs in their browser, with nothing to install and no account.</p><p>To run apps natively, they install the Krate player once, the way you install a media player once for every film. After that every Krate app anyone sends them opens with a double-click. The <a href="/open/">opening guide</a> takes a minute.</p></div></details>
+    <details id="why-the-player"><summary><span class="n">05</span>Do the people I send an app to need Krate?</summary><div class="ans"><p>Not to open a link: the app runs in their browser, with nothing to install and no account.</p><p>From a link the app can use its own database, files they open, drop in or save, live connections for multiplayer, data shared by invite code or with a team, saved sign-ins and sound. Once they allow it in their browser, it also gets the camera, the microphone, their location and notifications (on a phone, from the app's Home Screen icon). It can also open the share sheet and read text aloud.</p><p>To run apps natively, they install the Krate player once, the way you install a media player once for every film. After that every Krate app anyone sends them opens with a double-click. The <a href="/open/">opening guide</a> takes a minute.</p></div></details>
     <details id="open-source"><summary><span class="n">06</span>Is Krate open source?</summary><div class="ans"><p>The runtime is free and open source, under MIT or Apache-2.0, and developed in the open on <a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a>. Studio has separate licensing; the repository's licence notes say which parts are which.</p></div></details>
     <details id="name"><summary><span class="n">07</span>Does the name collide with a Rust “crate”?</summary><div class="ans"><p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p><p>We keep the distinction explicit wherever Rust developers could reasonably confuse the two.</p></div></details>
   </div>
@@ -484,8 +484,8 @@
     <details id="see-the-code"><summary><span class="n">24</span>Can I see and change the code?</summary><div class="ans"><p>Yes. The Rust source travels inside the <code class="k">.krate</code> file. In Studio, the Files and Code tabs show it, and the IDE (in beta) lets you edit and run it. Prefer your own editor? The <code class="k">krate</code> command line builds and packages.</p></div></details>
     <details id="limits"><summary><span class="n">25</span>What can I build?</summary><div class="ans"><p>Real apps: tools, editors, dashboards, games, clients for your favourite API. Krate gives an app a window, drawing on the graphics card, sound, files, the network, its own database and secrets, the camera and the microphone, each behind a permission.</p><p>See what people made in the <a href="/cloud/">app gallery</a>, and every interface in the <a href="/docs/limits.html">capability reference</a>.</p></div></details>
     <details id="network"><summary><span class="n">26</span>Can an app use the internet or call an API?</summary><div class="ans"><p>Yes, over HTTP and WebSockets. Network access is granted per host and port: the app names the hosts it needs, and you see them before it opens. An app that asks for none cannot reach the network at all.</p></div></details>
-    <details id="storage"><summary><span class="n">27</span>Can an app save data?</summary><div class="ans"><p>Yes. Each app has its own key-value store, SQL database and secret store, plus a shared store that syncs across machines. A key-value entry holds up to 1 MiB, and an app's key-value store up to 16 MiB.</p></div></details>
-    <details id="games"><summary><span class="n">28</span>Can I make games?</summary><div class="ans"><p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input. Krate Nova and Track Dash in the <a href="/cloud/">gallery</a> are games made this way, and you can open them in your browser right now.</p></div></details>
+    <details id="storage"><summary><span class="n">27</span>Can an app save data?</summary><div class="ans"><p>Yes. Each app has its own key-value store, SQL database and secret store, plus a shared store that syncs across machines. All four work from a link in the browser too. A key-value entry holds up to 1 MiB, and an app's key-value store up to 16 MiB.</p></div></details>
+    <details id="games"><summary><span class="n">28</span>Can I make games?</summary><div class="ans"><p>Yes. Apps get a canvas, GPU drawing, audio, and keyboard and pointer input. Krate Nova and Track Dash in the <a href="/cloud/">gallery</a> are games made this way, and you can open them in your browser right now. Live connections work from a link as well, so friends can play together.</p></div></details>
     <details id="port"><summary><span class="n">29</span>Can I bring an app I already have?</summary><div class="ans"><p>Yes. <code class="k">krate port</code> reads your project and shows what maps cleanly, what needs a capability and what to swap, without touching your source. Your app logic comes along, and an Electron app goes from hundreds of megabytes to one small file.</p><p>The <a href="/docs/porting.html">porting guide</a> walks through it.</p></div></details>
   </div>
 </section>
@@ -493,7 +493,7 @@
 <section class="sec t wrap n qgroup">
   <h2 class="qh rv" id="sharing">Sharing and opening</h2>
   <div class="qa qa-wrap rv">
-    <details id="send"><summary><span class="n">30</span>How do I send someone an app?</summary><div class="ans"><p>The way you send a picture. Share its link and it opens in their browser, on a phone or a computer. Or send the file itself: attach it to an email, drop it in a chat, put it on a drive.</p></div></details>
+    <details id="send"><summary><span class="n">30</span>How do I send someone an app?</summary><div class="ans"><p>The way you send a picture. Share its link and it opens in their browser, on a phone or a computer. Or send the file itself: attach it to an email, drop it in a chat, put it on a drive.</p><p>Publish an update and the link you already sent opens the new version, with everything people saved in it still there. Each version keeps its own link, and you can make an earlier one current again.</p></div></details>
     <details id="size"><summary><span class="n">31</span>How big is a Krate app?</summary><div class="ans"><p>Tiny, because it carries only the app. The notes app we measured is 36.6 KiB. Apps made in Studio are usually tens to a few hundred kilobytes, and that includes their source.</p><p>On a computer the player is installed once and every app shares it; from a link there is nothing to install at all.</p></div></details>
     <details id="offline"><summary><span class="n">32</span>Does it work offline?</summary><div class="ans"><p>Yes. An app runs on your computer from its file. Only an app that uses the network needs a connection, and only to the hosts it was granted.</p></div></details>
     <details id="speed"><summary><span class="n">33</span>How fast is it compared with an Electron app?</summary><div class="ans"><p>We measured a Krate notes app against MarkText, an Electron editor, on the same 50,000-line document on an Apple M4: 178.5 MiB of memory against 2,299.4 MiB, and a visible window in 237.1 ms against 611.5 ms, the median of ten opens.</p><p>The method, the machine and the raw results are on the <a href="/reports/">measurements page</a>.</p></div></details>
@@ -505,7 +505,7 @@
   <div class="qa qa-wrap rv">
     <details id="without-asking"><summary><span class="n">34</span>What can an app do without asking?</summary><div class="ans"><p>Only harmless things: open its window, draw, play sound, read the clock and your language settings, and show a dialog. Your files, the network, the camera, the microphone and its own storage each have to be declared by the app, and you see that list before it opens.</p></div></details>
     <details id="hide-access"><summary><span class="n">35</span>Can an app hide what it accesses or ignore the permission screen?</summary><div class="ans"><p>No. The runtime checks every protected call at the boundary, so the list is not something the app merely says about itself: a checked call that was not granted is denied before it reaches the operating system.</p><p>If a required permission is denied, the app does not start, and it says what is missing.</p></div></details>
-    <details id="files"><summary><span class="n">36</span>Can an app read my files?</summary><div class="ans"><p>Only what it was granted, such as a folder of its own, and any file you choose for it in a dialog. There is no way for an app to read everything, by design.</p></div></details>
+    <details id="files"><summary><span class="n">36</span>Can an app read my files?</summary><div class="ans"><p>Only what it was granted, such as a folder of its own, and any file you choose for it in a dialog or drop on it. There is no way for an app to read everything, by design.</p></div></details>
     <details id="file-manager"><summary><span class="n">37</span>Could I make a file manager, like a Finder alternative?</summary><div class="ans"><p>You can make a file tool that works in the folders you hand it, which is how Krate keeps your disk safe: an app works inside a folder of its own and with the files you choose for it, and it never browses everything.</p></div></details>
     <details id="network-hosts"><summary><span class="n">38</span>How does network permission work for an app that talks to several servers?</summary><div class="ans"><p>Each server is declared with its port, such as <code class="k">api.example.com:443</code>, and an app can list as many as it needs. A wildcard like <code class="k">*.example.com</code> covers one level of subdomain: <code class="k">api.example.com</code>, not <code class="k">a.b.example.com</code>.</p><p>WebSockets use the same grant. Redirects are not followed, so a granted server cannot send the request somewhere you did not approve. An app cannot ask for more while it runs; anything new comes in its next version, and you see it before that version opens.</p></div></details>
     <details id="gatekeeper"><summary><span class="n">39</span>Does Krate replace Gatekeeper or SmartScreen?</summary><div class="ans"><p>No, it adds a layer. Your operating system still checks the Krate player itself; Krate then decides what each app inside it may touch.</p></div></details>

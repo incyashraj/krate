@@ -3308,6 +3308,27 @@ impl Phase3GuiHost {
         }
     }
 
+    /// A point in the window, in the app's own coordinate system when it
+    /// fixed one (`set-design-size`): where `pointer::position` and
+    /// `touch::touches` answer, so a game that asks where the finger is
+    /// hears the same numbers its pointer events carry (K-1176).
+    pub(crate) fn point_to_design(&self, x: f32, y: f32) -> (f32, f32) {
+        let canvases = self.canvases.borrow();
+        let Some((_, _, surface)) = canvases.values().next() else {
+            return (x, y);
+        };
+        let Some((dw, dh)) = surface.design_size() else {
+            return (x, y);
+        };
+        let (cw, ch) = surface.dimensions();
+        let k = (cw as f32 / dw).min(ch as f32 / dh);
+        if k <= 0.0 {
+            return (x, y);
+        }
+        let (ox, oy) = ((cw as f32 - dw * k) / 2.0, (ch as f32 - dh * k) / 2.0);
+        ((x - ox) / k, (y - oy) / k)
+    }
+
     fn to_design_space(&self, event: ui::types::Event) -> ui::types::Event {
         let canvases = self.canvases.borrow();
         let Some((_, _, surface)) = canvases.values().next() else {

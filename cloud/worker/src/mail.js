@@ -50,6 +50,44 @@ export async function addressOfOwner(env, owner) {
   return null;
 }
 
+/// How many moment mails go in one day (UTC), hub-wide and to one inbox.
+/// Every moment is caused by something a signed-in person can repeat --
+/// publish another app, open another version -- and the moments share one
+/// Resend account with the sign-in links. Without a ceiling, one account
+/// publishing a hundred small apps spent the day's sending and nobody could
+/// sign in by email until midnight. Sign-in mail never passes through here,
+/// so these ceilings leave it the rest of the day's allowance.
+export const MOMENTS_PER_DAY = 50;
+export const MOMENTS_PER_INBOX = 5;
+
+async function digest16(text) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text).toLowerCase()));
+  return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/// Whether one more moment mail may go to `to` today; counts it when so.
+/// Two KV reads and two writes per mail that goes, nothing for one that
+/// does not. A KV failure says no: a moment is a nicety, and the cost of
+/// a mail that does not go is far smaller than an unbounded one.
+export async function momentAllowed(env, to) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const perDay = Number(env.MAIL_MOMENTS_PER_DAY) || MOMENTS_PER_DAY;
+    const perInbox = Number(env.MAIL_MOMENTS_PER_INBOX) || MOMENTS_PER_INBOX;
+    const allKey = `mail-day:${day}:all`;
+    const inboxKey = `mail-day:${day}:${await digest16(to)}`;
+    const all = Number(await env.APPS.get(allKey)) || 0;
+    const inbox = Number(await env.APPS.get(inboxKey)) || 0;
+    if (all >= perDay || inbox >= perInbox) return false;
+    const ttl = { expirationTtl: 2 * 24 * 3600 };
+    await env.APPS.put(allKey, String(all + 1), ttl);
+    await env.APPS.put(inboxKey, String(inbox + 1), ttl);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// "Your app is live": the link, what it does when opened, and where it is.
 export function publishedMail({ name, url, listed }) {
   return {
@@ -97,6 +135,7 @@ export async function tellPublished(env, owner, { name, url, listed }) {
   try {
     const to = await addressOfOwner(env, owner);
     if (!to) return "no address";
+    if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
     const why = await sendMail(env, { to, ...publishedMail({ name, url, listed }) });
     if (why) console.error(`the published mail did not go: ${why}`);
     return why;
@@ -110,6 +149,8 @@ export async function tellMade(env, user, record) {
   try {
     const to = (Array.isArray(user && user.verified_emails) && user.verified_emails[0]) || (user && user.email);
     if (!to) return "no address";
+    if (!env.RESEND_API_KEY) return "mail is not set up on this hub";
+    if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
     const why = await sendMail(env, { to, ...madeMail({ request: record && record.request }) });
     if (why) console.error(`the made mail did not go: ${why}`);
     return why;
@@ -124,12 +165,15 @@ export async function tellFirstOpen(env, hash, record, base) {
   try {
     // No mail set up: no KV read or write spent on a mail that cannot go.
     if (!env.RESEND_API_KEY) return "mail is not set up on this hub";
-    const flag = `told-opened:${hash}`;
+    // Once per app, not per version: every update of an app is a new hash,
+    // and "someone opened it" for v2, v3 ... is the same news again.
+    const flag = `told-opened:${record.line || hash}`;
     if (await env.APPS.get(flag)) return "already told";
     const to = await addressOfOwner(env, record.owner || (record.author_login ? `github:${String(record.author_login).toLowerCase()}` : ""));
     if (!to) return "no address";
     // Marked first: a second open while this mail is in flight is told nothing.
     await env.APPS.put(flag, String(Math.floor(Date.now() / 1000)));
+    if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
     const why = await sendMail(env, { to, ...firstOpenMail({ name: record.name || "your app", url: `${base}/a/${hash}` }) });
     if (why) console.error(`the first-open mail did not go: ${why}`);
     return why;

@@ -73,11 +73,22 @@ img { display: block; }
 .btn.ghost { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
 .btn.ghost:hover { box-shadow: inset 0 0 0 1px var(--ink-4); }
 
-#stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); overflow: auto; }
+#stage { flex: 1; min-height: 0; position: relative; display: flex; padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); overflow: auto; }
+/* Centred by its margins, not by the stage: a card taller than a phone held
+   sideways starts at the top and scrolls, instead of losing its top edge. */
+#stage > section { margin: auto; flex: none; }
 .card { width: min(440px, 100%); border-radius: 22px; padding: 26px 24px; background: var(--s1); box-shadow: var(--sh-2); }
 .card h1 { font-size: 21px; line-height: 1.25; letter-spacing: -.025em; font-weight: 600; }
 .card .say { margin-top: 8px; font-size: 15px; color: var(--mute); }
 .card .stack { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+/* a team's own sign-in leads, the width of the card; the others share a line */
+#signinCompany { flex-basis: 100%; }
+#signin .stack .btn { flex: 1; }
+/* sign in by an emailed link: the field and its button on one line */
+.card .mail { display: flex; gap: 10px; margin-top: 10px; }
+.card .mail input { flex: 1; min-width: 0; height: 40px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--s2); color: var(--ink); font: inherit; font-size: 14.5px; box-shadow: inset 0 0 0 1px var(--line); }
+.card .mail input:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.card .mail input::placeholder { color: var(--ink-3); }
 .card details { margin-top: 12px; font-size: 13px; color: var(--ink-3); }
 .card details pre { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; }
 #loading { display: flex; align-items: center; gap: 14px; width: auto; padding: 18px 22px; box-shadow: var(--sh-1); }
@@ -160,6 +171,11 @@ body.has-made #stage { padding-bottom: 4px; }
 .sheet .lede.ask { white-space: pre-line; overflow-wrap: anywhere; color: var(--ink-2); }
 /* The file picker and the download link a dialog uses: never seen. */
 .pick { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; opacity: 0; }
+/* The camera's video, which the app reads frames from: on the screen and
+   all but transparent, behind everything. WebKit on Linux never decodes a
+   video that is off the screen, a pixel wide and fully transparent (the
+   .pick style above), so an app there was handed no frame at all. */
+.feed { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: .01; pointer-events: none; z-index: -1; }
 
 @media (max-width: 560px) {
   .made { height: calc(36px + env(safe-area-inset-bottom, 0px)); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
@@ -167,7 +183,7 @@ body.has-made #stage { padding-bottom: 4px; }
   .made .rep { height: 28px; font-size: 12.5px; }
   .sheet { align-items: flex-end; padding: 8px 8px max(8px, env(safe-area-inset-bottom, 0px)); }
   .sheet .row-acts .btn { flex: 1; height: 44px; }
-  .bar { padding: 0 12px; gap: 10px; }
+  .bar { padding: env(safe-area-inset-top, 0px) max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px)); gap: 10px; }
   .who .sig { display: none; }
   .brand span { display: none; }
   /* A phone: the app gets the width, with a thin edge. */

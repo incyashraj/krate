@@ -926,7 +926,10 @@ impl WebUi {
 
     pub fn position(&self, window: u64) -> Option<(f32, f32)> {
         let id = self.window_id(window).ok()?;
-        self.position.get(&id).copied()
+        let (x, y) = self.position.get(&id).copied()?;
+        // In the app's own coordinates when it fixed them, as its pointer
+        // events are (K-1176): a game asking where the finger is.
+        Some(self.to_design(x, y).map_or((x, y), |(x, y, _)| (x, y)))
     }
 
     pub fn focused(&self, window: u64) -> Option<u64> {
@@ -1277,6 +1280,49 @@ mod tests {
         let rects = ui.text_rects(win);
         let (fx, fy, fw, fh) = ui.widget_rect(win, 2).unwrap();
         assert_eq!(rects, vec![fx, fy, fw, fh]);
+    }
+
+    /// A game that fixed its coordinates asks where the pointer is in those
+    /// coordinates, the same numbers its pointer events carry (K-1176): a
+    /// 480x640 game on a 390x844 phone is scaled by 0.8125 and centred.
+    #[test]
+    fn the_pointer_position_is_in_the_game_s_own_coordinates() {
+        let mut ui = WebUi::new(1.0, false);
+        let win = ui.create_window("Game", 390, 844, (390, 844)).unwrap();
+        ui.show_window(win).unwrap();
+        ui.set_root(
+            win,
+            &node(
+                1,
+                None,
+                "canvas",
+                json!({ "style": { "grow": 1.0, "padding": 0.0 } }),
+            ),
+        )
+        .unwrap();
+        drain(&mut ui);
+        let canvas = ui.canvas_bind(win, 1).unwrap();
+        let (cw, ch) = ui.canvas_size(canvas).unwrap();
+        assert_eq!((cw, ch), (390.0, 844.0), "the canvas fills the phone");
+        ui.canvas_set_design(canvas, 480.0, 640.0).unwrap();
+        let k = 390.0 / 480.0;
+        let oy = (844.0 - 640.0 * k) / 2.0;
+        ui.pointer_moved(win, 195.0, oy + 320.0 * k);
+        let (x, y) = ui.position(win).expect("over the window");
+        assert!(
+            (x - 240.0).abs() < 0.01 && (y - 320.0).abs() < 0.01,
+            "({x}, {y})"
+        );
+        // The pointer event at the same place says the same.
+        ui.pointer(win, 195.0, oy + 320.0 * k, 0, true, 0);
+        let pressed = drain(&mut ui)
+            .into_iter()
+            .find(|e| e["tag"] == "pointer")
+            .expect("a press");
+        assert_eq!(
+            (pressed["val"]["x"].as_f64(), pressed["val"]["y"].as_f64()),
+            (Some(x as f64), Some(y as f64))
+        );
     }
 
     /// Enter on a focused button presses it, after the key.

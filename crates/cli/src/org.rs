@@ -2181,6 +2181,59 @@ pub(crate) fn is_hub_link(url: &str) -> bool {
         || link == "https://krate.tech"
 }
 
+/// The address that hands over an app's bytes, for a link someone copied
+/// from a browser (K-1166). The hub's tab Player lives at `/run/...` and
+/// answers with a web page; the same app's bytes are at `/a/<hash>`,
+/// `/a/v<line>` (an app's current version) and, for an organisation's app,
+/// `/orgs/<slug>/apps/<app-id>/current`. Only on a Krate hub, and only for
+/// those exact shapes; anything else is returned as it was given.
+pub fn bundle_address(url: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    if !is_hub_link(url) {
+        return Cow::Borrowed(url);
+    }
+    let Some(origin) = origin(url) else {
+        return Cow::Borrowed(url);
+    };
+    let path = url[url.find("://").map_or(0, |i| i + 3)..]
+        .split_once('/')
+        .map_or("", |(_, rest)| rest)
+        .split(['?', '#'])
+        .next()
+        .unwrap_or("");
+    let path = path.strip_suffix('/').unwrap_or(path);
+    let Some(rest) = path.strip_prefix("run/") else {
+        return Cow::Borrowed(url);
+    };
+    let hex = |s: &str, n: usize| {
+        s.len() == n
+            && s.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    let parts: Vec<&str> = rest.split('/').collect();
+    match parts.as_slice() {
+        [hash] if hex(hash, 64) => Cow::Owned(format!("{origin}/a/{hash}")),
+        [line] if line.len() == 12 && line.starts_with('v') && hex(&line[1..], 11) => {
+            Cow::Owned(format!("{origin}/a/{line}"))
+        }
+        ["org", slug, app]
+            if crate::fleet::org_slug(slug)
+                && !app.is_empty()
+                && app.len() <= 128
+                && app
+                    .bytes()
+                    .next()
+                    .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                && app.bytes().all(|b| {
+                    b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b)
+                }) =>
+        {
+            Cow::Owned(format!("{origin}/orgs/{slug}/apps/{app}/current"))
+        }
+        _ => Cow::Borrowed(url),
+    }
+}
+
 /// The words for a refused download of a private release.
 pub fn download_refusal(url: &str, reason: &str, message: &str, org: Option<&str>) -> String {
     let org_name = org.unwrap_or("the organisation that sent it");
@@ -2667,6 +2720,44 @@ fn write_private_key(path: &Path, bytes: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_player_address_from_a_browser_names_the_same_app_s_bytes() {
+        let hash = "ab".repeat(32);
+        for (given, want) in [
+            (
+                format!("https://hub.krate.tech/run/{hash}"),
+                format!("https://hub.krate.tech/a/{hash}"),
+            ),
+            (
+                format!("https://hub.krate.tech/run/{hash}/?via=link#x"),
+                format!("https://hub.krate.tech/a/{hash}"),
+            ),
+            (
+                "https://hub.krate.tech/run/v0123456789a".to_string(),
+                "https://hub.krate.tech/a/v0123456789a".to_string(),
+            ),
+            (
+                "https://hub.krate.tech/run/org/acme/com.acme.expenses".to_string(),
+                "https://hub.krate.tech/orgs/acme/apps/com.acme.expenses/current".to_string(),
+            ),
+        ] {
+            assert_eq!(bundle_address(&given), want, "{given}");
+        }
+        // Everything else is left as it was given: other hubs, other paths,
+        // the manifest beside a Player page, malformed shapes.
+        for same in [
+            format!("https://evil.example/run/{hash}"),
+            format!("https://hub.krate.tech/a/{hash}"),
+            format!("https://hub.krate.tech/run/{hash}/app.webmanifest"),
+            "https://hub.krate.tech/run/org/Acme/x".to_string(),
+            "https://hub.krate.tech/run/org/acme/../../x".to_string(),
+            "https://hub.krate.tech/run/v0123".to_string(),
+            "https://hub.krate.tech/run/".to_string(),
+        ] {
+            assert_eq!(bundle_address(&same), same.as_str(), "{same}");
+        }
+    }
 
     #[test]
     fn an_approval_the_rules_need_more_of_is_not_called_a_release() {

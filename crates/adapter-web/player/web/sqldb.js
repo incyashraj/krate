@@ -40,11 +40,25 @@ function wasi(memory) {
   };
 }
 
+// Compiled while it downloads when the response says it is WebAssembly (the
+// hub serves it as application/wasm); from the whole file otherwise, since a
+// streaming compile refuses any other type and has used the body by then.
+// `fetched` is the download already under way, when the caller started it
+// early; otherwise it starts here.
+async function instantiate(url, imports, fetched) {
+  const response = await (fetched || fetch(url));
+  if (!response.ok) throw new Error(`sql.wasm answered ${response.status}`);
+  const type = response.headers.get('content-type') || '';
+  if (WebAssembly.instantiateStreaming && /^application\/wasm\b/i.test(type)) {
+    return WebAssembly.instantiateStreaming(response, imports);
+  }
+  return WebAssembly.instantiate(await response.arrayBuffer(), imports);
+}
+
 // `image` is what the browser kept for this app (null for none yet).
-export async function openSqlDatabase({ url, granted, image }) {
-  const bytes = await (await fetch(url)).arrayBuffer();
+export async function openSqlDatabase({ url, granted, image, fetched }) {
   let exports;
-  const { instance } = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi(() => exports.memory) });
+  const { instance } = await instantiate(url, { wasi_snapshot_preview1: wasi(() => exports.memory) }, fetched);
   exports = instance.exports;
   const enc = new TextEncoder();
   const dec = new TextDecoder();

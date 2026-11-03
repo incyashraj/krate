@@ -1121,7 +1121,11 @@
       title: mine ? "Leave " + name + "?" : "Remove " + w.label + " from " + name + "?",
       body: mine
         ? "Its apps stop opening for you at once. Your own apps and your account stay as they are. To come back you need a new invitation."
-        : "Their access ends at once, the next time they open an app. Their own apps and account are untouched, and what they sent or approved stays on record.",
+        : (m.offline_until && m.offline_until > Date.now() / 1000
+          // Offline access already handed out cannot be called back from a
+          // computer that stays offline (R9): said before, not discovered after.
+          ? "Their access ends the next time they open an app online. A computer of theirs that stays offline keeps opening the apps it already has until " + K.day(m.offline_until) + ", when its offline access runs out. Their own apps and account are untouched, and what they sent or approved stays on record."
+          : "Their access ends at once, the next time they open an app. Their own apps and account are untouched, and what they sent or approved stays on record."),
       yes: mine ? "Leave" : "Remove",
       busy: mine ? "Leaving" : "Removing",
       ctx: { what: "remove " + w.label, whoCan: "an owner, or an admin for people who are not owners" },

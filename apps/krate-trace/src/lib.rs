@@ -188,32 +188,59 @@ fn width_of(canvas: u64, s: &str, size: f32) -> f32 {
     canvas2d::measure_text(canvas, s, size).map(|m| m.width).unwrap_or(0.0)
 }
 
-/// A filled rounded rectangle. A card-sized one is three rects and four
-/// corner discs: the same look at a fraction of a phone's time, since only
-/// the corners need antialiasing. Every color here is opaque, so the
-/// overlaps never show.
+/// A filled rounded rectangle. The host's rounded fill works out every
+/// pixel of its box, so a card-sized one is drawn as its two rounded ends
+/// and a plain middle: the same pixels, since only the ends curve, at a
+/// fraction of a phone's time. Each end is a band twice the radius tall
+/// (the host fits a corner to half a shape's height), overlapping the
+/// middle, and every colour here is opaque, so the overlap never shows.
 fn rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Drawn {
-    let r = r.min(w * 0.5).min(h * 0.5).max(0.0);
     if w <= 0.0 || h <= 0.0 {
         return Ok(());
     }
-    if r < 0.5 || w * h < 6000.0 {
-        let radii = gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r };
-        return canvas2d::fill_round_rect(canvas, gfx::Rect { x, y, width: w, height: h }, radii, c);
+    let r = r.min(w * 0.5).min(h * 0.5).max(0.0);
+    let round = |y: f32, h: f32, top: f32, bottom: f32| {
+        let radii = gfx::CornerRadii { top_left: top, top_right: top, bottom_right: bottom, bottom_left: bottom };
+        canvas2d::fill_round_rect(canvas, gfx::Rect { x, y, width: w, height: h }, radii, c)
+    };
+    if h <= 4.0 * r || w * h < 6000.0 {
+        return round(y, h, r, r);
     }
-    fill(canvas, x + r, y, w - 2.0 * r, h, c)?;
-    fill(canvas, x, y + r, r, h - 2.0 * r, c)?;
-    fill(canvas, x + w - r, y + r, r, h - 2.0 * r, c)?;
-    for (cx, cy) in [(x + r, y + r), (x + w - r, y + r), (x + r, y + h - r), (x + w - r, y + h - r)] {
-        disc(canvas, cx, cy, r, c)?;
-    }
-    Ok(())
+    round(y, 2.0 * r, r, 0.0)?;
+    fill(canvas, x, y + r, w, h - 2.0 * r, c)?;
+    round(y + h - 2.0 * r, 2.0 * r, 0.0, r)
 }
 
-/// A card: the panel fill with a hairline highlight along its top edge. (A
-/// blurred shadow under it cost a phone more than the rest of the frame
-/// together, and on this ground it was barely visible.)
+/// A soft shadow under a rounded box `b`, `blur` wide either side of its
+/// edge. The host works out every pixel of a shadow's box, though a card
+/// covers all but its rim; so it is drawn as four pieces, each clipped to
+/// its part of the rim, whose pixels there are the whole shadow's: the
+/// top and bottom from the box's own rounded ends, the sides from a
+/// square-cornered sliver along each straight edge.
+fn shadow(canvas: u64, b: Rect, r: f32, blur: f32, c: gfx::Color) -> Drawn {
+    let r = r.min(b.w * 0.5).min(b.h * 0.5).max(0.0);
+    let piece = |src: Rect, radius: f32, clip: Rect| -> Drawn {
+        canvas2d::set_clip(canvas, clip.x, clip.y, clip.w, clip.h)?;
+        let radii = gfx::CornerRadii { top_left: radius, top_right: radius, bottom_right: radius, bottom_left: radius };
+        canvas2d::drop_shadow_round_rect(canvas, gfx::Rect { x: src.x, y: src.y, width: src.w, height: src.h }, radii, blur, c)
+    };
+    let mid = b.h - 2.0 * r;
+    let drawn = if mid < 1.0 {
+        piece(b, r, Rect::new(b.x - blur, b.y - blur, b.w + 2.0 * blur, b.h + 2.0 * blur))
+    } else {
+        piece(Rect::new(b.x, b.y, b.w, 2.0 * r), r, Rect::new(b.x - blur, b.y - blur, b.w + 2.0 * blur, r + blur))
+            .and_then(|_| piece(Rect::new(b.x, b.bottom() - 2.0 * r, b.w, 2.0 * r), r, Rect::new(b.x - blur, b.bottom() - r, b.w + 2.0 * blur, r + blur)))
+            .and_then(|_| piece(Rect::new(b.x, b.y + r, 1.0, mid), 0.0, Rect::new(b.x - blur, b.y + r, blur, mid)))
+            .and_then(|_| piece(Rect::new(b.right() - 1.0, b.y + r, 1.0, mid), 0.0, Rect::new(b.right(), b.y + r, blur, mid)))
+    };
+    canvas2d::clear_clip(canvas)?;
+    drawn
+}
+
+/// A card: a soft shadow lifting it off the ground, the panel fill, and a
+/// hairline highlight along its top edge.
 fn card(canvas: u64, r: Rect) -> Drawn {
+    shadow(canvas, Rect::new(r.x, r.y + 4.0, r.w, r.h), 14.0, 12.0, gfx::Color { r: 0.0, g: 0.0, b: 0.0, a: 0.28 })?;
     rounded(canvas, r.x, r.y, r.w, r.h, 14.0, CARD)?;
     fill(canvas, r.x + 14.0, r.y, r.w - 28.0, 1.0, CARD_EDGE)
 }
@@ -505,10 +532,12 @@ fn layout(canvas: u64, win: u64, w: f32, h: f32, t: f32) -> Layout {
     l.table = Rect::new(area.right() - table_w, table_y, table_w, (area.bottom() - table_y).max(top + foot + l.row_h));
     l.list = Rect::new(l.table.x, table_y + top, table_w, (l.table.h - top - foot).max(l.row_h));
 
-    // Where a bar would be under six pixels (a phone), three buckets share
-    // one -- the busiest, red if any had errors -- so it reads as bars.
+    // One bar a minute everywhere, so a phone sees the same fifteen minutes
+    // a desktop does; only where a bar would be under two points (a narrow
+    // screen at a large text size) do three minutes share one -- the
+    // busiest, red if any had errors.
     let (inner_x, inner_w) = (l.chart.x + 20.0 * t, l.chart.w - 40.0 * t);
-    l.group = if inner_w < 6.0 * BUCKETS as f32 { 3 } else { 1 };
+    l.group = if inner_w < 3.0 * BUCKETS as f32 { 3 } else { 1 };
     l.slot = inner_w / (BUCKETS / l.group) as f32;
     l.bar_w = l.slot - (l.slot * 0.3).min(2.2);
     // The peak readout sits in the caption line, right-aligned, so the
@@ -729,10 +758,16 @@ fn draw_row(canvas: u64, l: &Layout, row: &Line, fit: &RowFit, top: f32, bh: f32
     let (t, left, right) = (l.t, l.table.x, l.table.right());
     let (c, name, _) = level(row.level);
 
-    // An error block gets a faint wash so its expansion reads as one unit.
-    // Square: at this tint a rounded corner is invisible and costs a phone.
+    // An error block gets a faint wash so its expansion reads as one unit:
+    // square on the left, where the stripe is its edge, rounded on the right.
+    // Only that right end is drawn as a rounded shape, for the reason a
+    // card's middle is not.
     if row.level == LV_E {
-        fill(canvas, left + 12.0, top, l.table.w - 24.0, bh - 2.0 * t, blend(CARD, LV_ERROR, if open { 0.09 } else { 0.05 }))?;
+        let (x, w, h, tint) = (left + 12.0, l.table.w - 24.0, bh - 2.0 * t, blend(CARD, LV_ERROR, if open { 0.09 } else { 0.05 }));
+        let r = (6.0 * t).min(h * 0.5).min(w * 0.5);
+        fill(canvas, x, top, w - r, h, tint)?;
+        let radii = gfx::CornerRadii { top_left: 0.0, top_right: r, bottom_right: r, bottom_left: 0.0 };
+        canvas2d::fill_round_rect(canvas, gfx::Rect { x: x + w - 2.0 * r, y: top, width: 2.0 * r, height: h }, radii, tint)?;
     }
     // The stripe: the whole point of the left edge. It spans the expansion
     // too, so a line and its context are visibly one record.
@@ -767,10 +802,12 @@ fn draw_row(canvas: u64, l: &Layout, row: &Line, fit: &RowFit, top: f32, bh: f32
             draw_cut(canvas, line, *c, l.ctx_x + 12.0 * t, top + l.row_h + 11.0 * t + k as f32 * l.ctx_h, l.pt(11.5), INK_QUIET);
         }
     }
-    // A hairline under each table record; on a phone the stripes already
-    // part the records, and each line drawn there is scroll time.
-    if l.wide {
-        fill(canvas, left + COL_STAMP * t, top + bh - 1.0 * t, l.table.w - COL_STAMP * t - 20.0, 1.0, HAIRLINE)?;
+    // A hairline under each record, from the text's left edge, so the eye
+    // parts one record from the next before it reads either. An error
+    // block's wash already parts it.
+    if row.level != LV_E {
+        let rule_x = if l.wide { left + COL_STAMP * t } else { l.msg_x };
+        fill(canvas, rule_x, top + bh - 1.0 * t, right - 20.0 * t - rule_x, 1.0, HAIRLINE)?;
     }
     Ok(())
 }

@@ -40,6 +40,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, normalize } from 'node:path';
 import { orgEnv, call, worker } from '../../../cloud/worker/test/org-tools.mjs';
+import { consoleError } from './engine-abilities.mjs';
 
 const engines = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -121,7 +122,7 @@ for (const [engine, label, viewport, ua] of RUNS) {
   const context = await browser.newContext({ viewport, userAgent: ua, isMobile: touch, hasTouch: touch, acceptDownloads: true });
   const page = await context.newPage();
   const errors = [];
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
+  page.on('console', (m) => { if (consoleError(m)) errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
   page.on('pageerror', (e) => errors.push(String(e)));
   const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
   const lines = () => page.evaluate(() => window.__krate.out.split('\n').filter(Boolean));
@@ -252,7 +253,7 @@ for (const [engine, label, viewport, ua] of RUNS) {
   // (i) the same app, no file dialog granted
   const bare = await context.newPage();
   const bareErrors = [];
-  bare.on('console', (m) => { if (m.type() === 'error') bareErrors.push(m.text()); });
+  bare.on('console', (m) => { if (consoleError(m)) bareErrors.push(m.text()); });
   bare.on('pageerror', (e) => bareErrors.push(String(e)));
   let chooserShown = false;
   bare.on('filechooser', () => { chooserShown = true; });

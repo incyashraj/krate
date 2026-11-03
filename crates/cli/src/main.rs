@@ -11391,8 +11391,9 @@ How to work:\n\
 4. Check your edit with `{krate_bin} check-app . --no-run` from {app_dir}.\n\
    That builds it and confirms the imports in about two seconds.\n\
 5. Once that passes, run the full `{krate_bin} check-app .` once to prove it\n\
-   still opens and works. That takes around twenty seconds, so run it when\n\
-   you are done rather than after every edit. Do not stop until it prints OK.\n\
+   still opens and works. That takes about fifteen seconds (again on code you\n\
+   have not changed, it answers at once), so run it when you are done rather\n\
+   than after every edit. Do not stop until it prints OK.\n\
 \n\
 Keep the same crate name, the same package name, and the same manifest unless\n\
 the change genuinely needs a new capability. Changing them breaks the app's\n\
@@ -11495,7 +11496,8 @@ How to work:\n\
        {krate_bin} check-app .\n\
 \n\
    This also runs the app, resizes its window and clicks it, which takes\n\
-   around twenty seconds. It is the real verdict, so it has to pass -- but\n\
+   about fifteen seconds (again on code you have not changed, it answers at\n\
+   once). It is the real verdict, so it has to pass -- but\n\
    running it after every small edit is the single biggest waste of time in\n\
    authoring an app. Iterate with --no-run, prove with the full check.\n\
 \n\
@@ -13773,7 +13775,17 @@ fn loop_bound_seconds(lib: &str, bound_name: &str) -> Option<u64> {
 }
 
 fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
-    match run_check_app(Path::new(app_dir), None, false) {
+    let outcome = run_check_app(Path::new(app_dir), None, false);
+    // Where the check's time went, beside its verdict, so a build's trace
+    // shows what the closing check cost and whether it was reused.
+    trace::check_stages(
+        &check_stage_times(),
+        outcome
+            .as_ref()
+            .ok()
+            .and_then(|summary| summary.reused_secs),
+    );
+    match outcome {
         Ok(_) => {
             trace::check_app(true, None, None);
             Ok(())
@@ -15597,6 +15609,20 @@ fn verify_permission_wall(
 }
 
 fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
+    run_self_env(dir, args, &[])
+}
+
+/// `run_self` with environment set (Some) or removed (None) for this one
+/// child only. check-app's stages used to say how a run should look --
+/// which screen, dark or light, the interpreter -- by setting variables on
+/// the whole process, which forced every stage to run one after another.
+/// Given to the child alone, two stages can run at once and neither sees
+/// the other's settings.
+fn run_self_env(
+    dir: &Path,
+    args: &[&str],
+    env: &[(&str, Option<std::ffi::OsString>)],
+) -> Result<i32> {
     let exe = std::env::current_exe().context("locate self")?;
     // Capture the child's output rather than inherit it: the verified app's own
     // stdout (e.g. its "saved" line) is noise to the create caller, and would
@@ -15627,7 +15653,14 @@ fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
         }
         None => (std::process::Stdio::null(), std::process::Stdio::null()),
     };
-    let mut child = std::process::Command::new(exe)
+    let mut command = std::process::Command::new(exe);
+    for (name, value) in env {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
+    let mut child = command
         .args(args)
         // Null stdin so the verification run is non-interactive. Otherwise it
         // inherits the caller's terminal, and the deny half — which withholds a
@@ -15659,7 +15692,10 @@ fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
                         VERIFY_TIMEOUT.as_secs()
                     );
                 }
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                // 10 ms, not 100: a full check-app makes eight or more of
+                // these runs, most finishing in 150-200 ms, and a 100 ms poll
+                // added half a poll to each one on average.
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
     }
@@ -15703,7 +15739,8 @@ type RunTarget = (
 /// make it trusted.
 fn resolve_run_target(target: &str, insecure_http: bool) -> Result<RunTarget> {
     if krate_bundle::is_url(target) {
-        return run_target_from_link(target, target, insecure_http);
+        // A Player address copied from a browser opens the same app here.
+        return run_target_from_link(&org::bundle_address(target), target, insecure_http);
     }
 
     let path = PathBuf::from(target);
@@ -17246,6 +17283,8 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
     if !krate_bundle::is_url(&raw) {
         return Ok(bundle.to_path_buf());
     }
+    // A Player address copied from a browser opens the same app (K-1166).
+    let raw = org::bundle_address(&raw).into_owned();
     let dir = home_dir()
         .map(|home| home.join(".krate/cloud"))
         .context("no home directory")?;
@@ -20871,7 +20910,18 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
         None
     };
     let outcome = run_check_app(dir, shoot, no_run);
-    if let Some(secs) = pace_note {
+    if std::env::var_os("KRATE_CHECK_TIMING").is_some() {
+        let times = check_stage_times()
+            .iter()
+            .map(|(stage, ms)| format!("{stage} {ms}ms"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("timing: {times}");
+    }
+    // A reused pass cost well under a second; the pace arithmetic is about
+    // checks that ran the app again.
+    let reused = matches!(&outcome, Ok(summary) if summary.reused_secs.is_some());
+    if let Some(secs) = pace_note.filter(|_| !reused) {
         if !json {
             println!(
                 "  pace: this is your second full check in {secs}s. Iterate with `check-app . --no-run` (about 2s) and save the full check for when you believe the app is done -- full checks this frequent are the single biggest time cost in authoring."
@@ -20893,12 +20943,18 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "usability_notes": summary.usability_notes,
                         "link_notes": link,
                         "source_changes": summary.source_changes,
+                        "reused_pass_secs": summary.reused_secs,
                     })
                 );
             } else {
                 println!("OK");
                 for stage in &summary.passed {
                     println!("  {stage} passed");
+                }
+                if let Some(age) = summary.reused_secs {
+                    println!(
+                        "  note: these exact bytes passed a full check {age}s ago, so the app was not run again to re-prove run, usability and phone. Any change to the code, manifest, assets or krate-check.toml runs everything again."
+                    );
                 }
                 if let Some(shot) = &summary.shoot {
                     println!("  wrote {}", shot.display());
@@ -20986,6 +21042,176 @@ struct CheckSummary {
     /// Files the build stage rewrote, said out loud (IC-295): a build must
     /// not change source without the change being shown and recorded.
     source_changes: Vec<String>,
+    /// Seconds since a full check passed for these exact bytes, when that
+    /// pass was reused instead of running the app again.
+    reused_secs: Option<u64>,
+}
+
+/// How long a full check's pass is reused for the same bytes.
+///
+/// Measured on 34 real Studio builds (2026-11-03): in 27 of 29 the engine's
+/// closing check judged bytes the agent's own last full check had passed
+/// moments before, and 30 of the agents' 81 full checks re-ran an app nothing
+/// had changed in. Each re-run costs about 19 seconds, 15 of them the
+/// stay-open watch. Half an hour covers a build and its repair rounds; past
+/// that the machine may have changed under the app, so it is judged again.
+const CHECK_PASS_TTL_SECS: u64 = 30 * 60;
+
+/// The stages a reused pass can name, so a record read back from disk maps
+/// onto the same `&'static str` labels a fresh check pushes.
+const CHECK_STAGE_NAMES: [&str; 8] = [
+    "layout",
+    "manifest",
+    "build",
+    "imports",
+    "run",
+    "usability",
+    "screens",
+    "phone",
+];
+
+/// Everything a full check's verdict depends on, hashed: this krate binary,
+/// the built component, the manifest, the task file, the assets, and the few
+/// environment settings that change how a run looks. Same key, same
+/// judgment -- so a pass for this key can be reused rather than re-proved.
+/// None when any part cannot be read, which means "judge it again".
+fn check_pass_key(dir: &Path, wasm: &[u8], manifest: &Path) -> Option<String> {
+    fn part(hasher: &mut Sha256, bytes: &[u8]) {
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    }
+    fn walk(root: &Path, here: &Path, out: &mut Vec<(String, PathBuf)>) {
+        let Ok(entries) = fs::read_dir(here) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else if let Ok(rel) = path.strip_prefix(root) {
+                out.push((rel.to_string_lossy().replace('\\', "/"), path));
+            }
+        }
+    }
+    let mut hasher = Sha256::new();
+    part(&mut hasher, b"krate-check-pass-v1");
+    let exe = std::env::current_exe().ok()?;
+    let exe = exe.canonicalize().unwrap_or(exe);
+    let meta = fs::metadata(&exe).ok()?;
+    let built = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    part(&mut hasher, exe.to_string_lossy().as_bytes());
+    part(&mut hasher, &meta.len().to_le_bytes());
+    part(&mut hasher, &built.to_le_bytes());
+    part(&mut hasher, wasm);
+    part(&mut hasher, &fs::read(manifest).ok()?);
+    // An empty task file and no task file are judged differently, so they
+    // must not share a key.
+    match fs::read(dir.join("krate-check.toml")) {
+        Ok(task) => part(&mut hasher, &task),
+        Err(_) => part(&mut hasher, b"\0no krate-check.toml"),
+    }
+    let assets = dir.join("assets");
+    let mut files = Vec::new();
+    walk(&assets, &assets, &mut files);
+    files.sort();
+    for (rel, path) in files {
+        part(&mut hasher, rel.as_bytes());
+        part(&mut hasher, &fs::read(path).ok()?);
+    }
+    for name in [
+        "KRATE_PULLEY",
+        "KRATE_SCREEN",
+        "KRATE_APPEARANCE",
+        "KRATE_SHOOT_AFTER_MS",
+    ] {
+        let value = std::env::var_os(name).unwrap_or_default();
+        part(&mut hasher, name.as_bytes());
+        part(&mut hasher, value.to_string_lossy().as_bytes());
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+/// Where a pass is remembered: inside the app's own target/, which is never
+/// packed or shipped.
+fn check_pass_file(dir: &Path) -> PathBuf {
+    dir.join("target").join(".krate-check-pass.json")
+}
+
+/// A pass recorded for exactly this key, younger than the TTL: its stage
+/// list, the usability stage's notes, and its age in seconds.
+fn read_check_pass(dir: &Path, key: &str) -> Option<(Vec<&'static str>, Vec<String>, u64)> {
+    let text = fs::read_to_string(check_pass_file(dir)).ok()?;
+    let record: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if record["key"].as_str()? != key {
+        return None;
+    }
+    let age = unix_now().checked_sub(record["at"].as_u64()?)?;
+    if age > CHECK_PASS_TTL_SECS {
+        return None;
+    }
+    let passed = record["passed"]
+        .as_array()?
+        .iter()
+        .filter_map(|s| {
+            CHECK_STAGE_NAMES
+                .iter()
+                .copied()
+                .find(|n| Some(*n) == s.as_str())
+        })
+        .collect::<Vec<_>>();
+    let notes = record["notes"]
+        .as_array()?
+        .iter()
+        .filter_map(|s| s.as_str().map(str::to_string))
+        .collect();
+    Some((passed, notes, age))
+}
+
+/// Remember a full pass. Best effort: a record that cannot be written only
+/// means the next check runs in full.
+fn write_check_pass(dir: &Path, key: &str, passed: &[&'static str], notes: &[String]) {
+    let file = check_pass_file(dir);
+    let Some(parent) = file.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let record = serde_json::json!({
+        "key": key,
+        "at": unix_now(),
+        "passed": passed,
+        "notes": notes,
+    });
+    let staging = parent.join(format!(".krate-check-pass.{}.tmp", std::process::id()));
+    if fs::write(&staging, record.to_string()).is_ok() && fs::rename(&staging, &file).is_err() {
+        let _ = fs::remove_file(&staging);
+    }
+}
+
+/// How long each stage of the last check-app in this process took, in
+/// milliseconds, in the order they finished. Read by `check_app_verdict`
+/// for the build's trace and printed by `check-app` under
+/// KRATE_CHECK_TIMING=1.
+static CHECK_STAGE_MS: std::sync::Mutex<Vec<(&'static str, u64)>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn stage_took(name: &'static str, since: std::time::Instant) {
+    if let Ok(mut times) = CHECK_STAGE_MS.lock() {
+        times.push((name, since.elapsed().as_millis() as u64));
+    }
+}
+
+fn check_stage_times() -> Vec<(&'static str, u64)> {
+    CHECK_STAGE_MS
+        .lock()
+        .map(|times| times.clone())
+        .unwrap_or_default()
 }
 
 /// The files a build is allowed to rewrite, watched across the build stage
@@ -21035,6 +21261,9 @@ fn run_check_app(
 ) -> std::result::Result<CheckSummary, CheckFailure> {
     let mut passed: Vec<&'static str> = Vec::new();
     let mut usability_notes: Vec<String> = Vec::new();
+    if let Ok(mut times) = CHECK_STAGE_MS.lock() {
+        times.clear();
+    }
 
     // Stage: layout. The three files every Krate app has.
     let manifest_path = dir.join("manifest.toml");
@@ -21144,11 +21373,13 @@ fn run_check_app(
     // the line back instead of complaining about it.
     let watched = source_snapshot(dir);
     let restored_sdk_dep = restore_krate_dependency(dir);
+    let build_started = std::time::Instant::now();
     let wasm = build_component_captured(dir).map_err(|detail| CheckFailure {
         stage: CheckStage::Build,
         fix: build_fix(&detail),
         detail,
     })?;
+    stage_took("build", build_started);
     let source_changes = source_changes_since(dir, &watched);
     if restored_sdk_dep {
         // Not a failure -- the build passed -- but say it happened, so an author
@@ -21228,7 +21459,31 @@ fn run_check_app(
             shoot: None,
             usability_notes,
             source_changes,
+            reused_secs: None,
         });
+    }
+
+    // A full check already passed for these exact bytes: the same krate,
+    // component, manifest, task file and assets. Its verdict is this one's
+    // verdict, so the stages that run the app -- run, usability, screens,
+    // phone, about 19 seconds -- are not run again to re-prove it. Asked
+    // for a picture, the picture and the screens still run, because the
+    // person or agent wants to look at them.
+    let pass_key = check_pass_key(dir, &wasm_bytes, &manifest_path);
+    let reused = pass_key
+        .as_deref()
+        .and_then(|key| read_check_pass(dir, key));
+    if let Some((reused_passed, reused_notes, age)) = &reused {
+        if shoot.is_none() {
+            return Ok(CheckSummary {
+                passed: reused_passed.clone(),
+                imports,
+                shoot: None,
+                usability_notes: reused_notes.clone(),
+                source_changes,
+                reused_secs: Some(*age),
+            });
+        }
     }
 
     // Stage: run. Run the built component with its manifest, headless, all
@@ -21294,11 +21549,18 @@ fn run_check_app(
     run_args.push("--".into());
     run_args.push(verify_arg);
     let run_arg_refs: Vec<&str> = run_args.iter().map(String::as_str).collect();
-    let exit = run_self(verify_dir.path(), &run_arg_refs).map_err(|error| CheckFailure {
-        stage: CheckStage::Run,
-        detail: format!("could not run the app: {error:#}"),
-        fix: String::new(),
-    })?;
+    let run_started = std::time::Instant::now();
+    let exit = if reused.is_some() {
+        // These bytes ran and exited 0 in the pass being reused.
+        0
+    } else {
+        run_self(verify_dir.path(), &run_arg_refs).map_err(|error| CheckFailure {
+            stage: CheckStage::Run,
+            detail: format!("could not run the app: {error:#}"),
+            fix: String::new(),
+        })?
+    };
+    stage_took("run", run_started);
     if exit != 0 {
         let hint = match exit {
             4 => " (exit 4 means it exhausted its fuel budget -- either a runaway loop, or honest work that is too expensive per frame: hoist per-pixel math out of inner loops, and draw fewer `quick` frames)",
@@ -21319,6 +21581,7 @@ fn run_check_app(
 
     // Stage: shoot (optional). Paint the first frame to a PNG so a GUI app's
     // output can be seen.
+    let shoot_started = std::time::Instant::now();
     let shot = if let Some(png) = shoot {
         // Absolute so the PNG lands next to where the user ran check-app, not
         // inside the app dir the child cd's into.
@@ -21352,10 +21615,16 @@ fn run_check_app(
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         ));
-        // SAFETY: single-threaded at this point in check-app.
-        unsafe { std::env::set_var("KRATE_LAYOUT_REPORT", &layout_report) };
         let shoot_refs: Vec<&str> = shoot_args.iter().map(String::as_str).collect();
-        let shoot_exit = run_self(dir, &shoot_refs).map_err(|error| CheckFailure {
+        let shoot_exit = run_self_env(
+            dir,
+            &shoot_refs,
+            &[(
+                "KRATE_LAYOUT_REPORT",
+                Some(layout_report.clone().into_os_string()),
+            )],
+        )
+        .map_err(|error| CheckFailure {
             stage: CheckStage::Shoot,
             detail: format!("could not paint the app's frame: {error:#}"),
             fix: String::new(),
@@ -21369,7 +21638,6 @@ fn run_check_app(
                     .to_string(),
             });
         }
-        unsafe { std::env::remove_var("KRATE_LAYOUT_REPORT") };
 
         // The stage exists to prove the app PAINTED, and it used to prove
         // only that the run exited 0 (IC-743, tests 1504/1505). `krate run
@@ -21431,6 +21699,9 @@ fn run_check_app(
     } else {
         None
     };
+    if shoot.is_some() {
+        stage_took("shoot", shoot_started);
+    }
 
     // Stage: usability. Every stage above asks whether the app is *valid*.
     // This one asks whether it is *usable*: does it stay open, does it follow
@@ -21438,34 +21709,87 @@ fn run_check_app(
     // the properties a person actually experiences, and an app that fails all
     // three passed every other stage green.
     //
-    // Only a GUI app has a window, so a CLI app skips this outright rather than
-    // failing it.
+    // Stage: screens. An app is made once and opened on a phone, a tablet and
+    // a desktop; run it on each and read how the frame lands there (IC-911).
+    //
+    // Stage: phone. On an iPhone every app runs on the interpreter, so a
+    // frame the desktop draws in time can miss a phone's (IC-915).
+    //
+    // Only a GUI app has a window, so a CLI app skips these outright rather
+    // than failing them.
+    //
+    // The usability run is mostly waiting: it watches the app for 15 seconds
+    // to see that it stays open (`usability::STAY_OPEN_WATCH`). Screens and
+    // phone (about 2.5 seconds of runs) used to wait for it to finish; they
+    // now run beside it, each run given its own settings (`run_self_env`).
+    // The verdict is unchanged: every stage still runs and is judged on the
+    // same terms, and failures are told in the same order -- usability
+    // first, so an app that does not stay open or answer a press hears that
+    // before anything about screens. Measured on a Studio-made app: the
+    // phone stage's frame times beside a usability run sat inside the
+    // spread of its times alone (p95 2.3-4.8 ms against 2.1-4.4 ms).
+    let mut fresh_usability_notes: Vec<String> = Vec::new();
     if is_gui {
-        let notes = run_usability_stage(dir, &wasm_str, &manifest_str)?;
+        if let Some((_, reused_notes, _)) = &reused {
+            // Reached only with a picture asked for (see above): the frames
+            // are painted again for whoever looks at them, and the stages
+            // the reused pass already judged on these bytes are not re-run.
+            let started = std::time::Instant::now();
+            run_screens_stage(dir, &wasm_str, &manifest_str, shoot)?;
+            stage_took("screens", started);
+            usability_notes.extend(reused_notes.iter().cloned());
+        } else {
+            let (usability, screens_and_phone) = std::thread::scope(|scope| {
+                let usability = scope.spawn(|| {
+                    let started = std::time::Instant::now();
+                    let verdict = run_usability_stage(dir, &wasm_str, &manifest_str);
+                    stage_took("usability", started);
+                    verdict
+                });
+                let started = std::time::Instant::now();
+                let screens = run_screens_stage(dir, &wasm_str, &manifest_str, shoot);
+                stage_took("screens", started);
+                // Phone after screens, as before: a screens failure is told
+                // first, so the phone run would only be thrown away.
+                let screens_and_phone = screens.and_then(|()| {
+                    let started = std::time::Instant::now();
+                    let phone = run_phone_stage(dir, &wasm_str, &manifest_str);
+                    stage_took("phone", started);
+                    phone
+                });
+                let usability = usability.join().unwrap_or_else(|_| {
+                    Err(CheckFailure {
+                        stage: CheckStage::Usability,
+                        detail: "the usability run stopped unexpectedly".to_string(),
+                        fix: String::new(),
+                    })
+                });
+                (usability, screens_and_phone)
+            });
+            let notes = usability?;
+            // Extend, never assign: the shoot stage above may already have
+            // added layout findings.
+            usability_notes.extend(notes.iter().cloned());
+            fresh_usability_notes = notes;
+            screens_and_phone?;
+        }
         passed.push("usability");
-        // Extend, never assign: the shoot stage above may already have added
-        // layout findings, and this stage runs after it.
-        usability_notes.extend(notes);
-
-        // Stage: screens. An app is made once and opened on a phone, a
-        // tablet and a desktop; run it on each and read how the frame lands
-        // there (IC-911). After usability, so an app that does not stay open
-        // or answer a press is told that first.
-        run_screens_stage(dir, &wasm_str, &manifest_str, shoot)?;
         passed.push("screens");
-
-        // Stage: phone. On an iPhone every app runs on the interpreter, so
-        // a frame the desktop draws in time can miss a phone's (IC-915).
-        run_phone_stage(dir, &wasm_str, &manifest_str)?;
         passed.push("phone");
     }
 
+    if reused.is_none() {
+        if let Some(key) = &pass_key {
+            write_check_pass(dir, key, &passed, &fresh_usability_notes);
+        }
+    }
     Ok(CheckSummary {
         passed,
         imports,
         shoot: shot,
         usability_notes,
         source_changes,
+        reused_secs: reused.map(|(_, _, age)| age),
     })
 }
 
@@ -21508,25 +21832,18 @@ fn run_phone_stage(
         "--auto-grant".into(),
         "--headless".into(),
     ];
-    // SAFETY: single-threaded at this point in check-app.
-    unsafe {
-        std::env::set_var("KRATE_PULLEY", "1");
-        std::env::set_var("KRATE_SCREEN", "390x844");
-        std::env::set_var("KRATE_DRIVE_SCROLL", "40");
-        std::env::set_var("KRATE_COST_REPORT", &report);
-    }
+    // Given to this run alone: the usability stage runs beside it.
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let _ = run_self(dir, &refs);
-    unsafe {
-        for name in [
-            "KRATE_PULLEY",
-            "KRATE_SCREEN",
-            "KRATE_DRIVE_SCROLL",
-            "KRATE_COST_REPORT",
-        ] {
-            std::env::remove_var(name);
-        }
-    }
+    let _ = run_self_env(
+        dir,
+        &refs,
+        &[
+            ("KRATE_PULLEY", Some("1".into())),
+            ("KRATE_SCREEN", Some("390x844".into())),
+            ("KRATE_DRIVE_SCROLL", Some("40".into())),
+            ("KRATE_COST_REPORT", Some(report.clone().into_os_string())),
+        ],
+    );
     // Nothing measured is not a failure: an app that never waits for input
     // has no frames to time.
     let Some(cost) = fs::read_to_string(&report)
@@ -21628,22 +21945,17 @@ fn run_screens_stage(
                 "--".into(),
                 "quick".into(),
             ];
-            // SAFETY: single-threaded at this point in check-app.
-            unsafe {
-                std::env::set_var("KRATE_SCREEN", format!("{w:.0}x{h:.0}"));
-                std::env::set_var("KRATE_FIT_REPORT", &report);
-                match look {
-                    Some(look) => std::env::set_var("KRATE_APPEARANCE", look),
-                    None => std::env::remove_var("KRATE_APPEARANCE"),
-                }
-            }
+            // Given to this run alone: the usability stage runs beside it.
             let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            let _ = run_self(dir, &refs);
-            unsafe {
-                std::env::remove_var("KRATE_SCREEN");
-                std::env::remove_var("KRATE_FIT_REPORT");
-                std::env::remove_var("KRATE_APPEARANCE");
-            }
+            let _ = run_self_env(
+                dir,
+                &refs,
+                &[
+                    ("KRATE_SCREEN", Some(format!("{w:.0}x{h:.0}").into())),
+                    ("KRATE_FIT_REPORT", Some(report.clone().into_os_string())),
+                    ("KRATE_APPEARANCE", look.map(Into::into)),
+                ],
+            );
             fs::read_to_string(&report)
                 .ok()
                 .and_then(|text| serde_json::from_str(&text).ok())
@@ -29259,6 +29571,96 @@ mod app_id_tests {
             app_id_suffix("a timer for my workouts"),
             suffix,
             "another app with the name, another id"
+        );
+    }
+}
+
+#[cfg(test)]
+mod check_pass_tests {
+    use super::{check_pass_file, check_pass_key, read_check_pass, write_check_pass};
+    use std::fs;
+
+    fn app() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp dir");
+        fs::write(dir.path().join("manifest.toml"), "[app]\nid = \"a\"\n").expect("manifest");
+        fs::create_dir_all(dir.path().join("assets/img")).expect("assets");
+        fs::write(dir.path().join("assets/img/a.png"), b"one").expect("asset");
+        dir
+    }
+
+    fn key(dir: &std::path::Path, wasm: &[u8]) -> String {
+        check_pass_key(dir, wasm, &dir.join("manifest.toml")).expect("a key")
+    }
+
+    #[test]
+    fn the_same_bytes_give_the_same_key() {
+        let dir = app();
+        assert_eq!(key(dir.path(), b"wasm"), key(dir.path(), b"wasm"));
+    }
+
+    #[test]
+    fn every_input_the_verdict_depends_on_changes_the_key() {
+        let dir = app();
+        let first = key(dir.path(), b"wasm");
+        assert_ne!(first, key(dir.path(), b"wasm2"), "the component");
+
+        fs::write(dir.path().join("manifest.toml"), "[app]\nid = \"b\"\n").expect("manifest");
+        let after_manifest = key(dir.path(), b"wasm");
+        assert_ne!(first, after_manifest, "the manifest");
+
+        fs::write(dir.path().join("krate-check.toml"), "").expect("empty task");
+        assert_ne!(
+            after_manifest,
+            key(dir.path(), b"wasm"),
+            "an empty task file is not the same as none"
+        );
+        fs::write(dir.path().join("krate-check.toml"), "name = \"t\"\n").expect("task");
+        let after_task = key(dir.path(), b"wasm");
+        assert_ne!(after_manifest, after_task, "the task file");
+
+        fs::write(dir.path().join("assets/img/a.png"), b"two").expect("asset");
+        let after_asset = key(dir.path(), b"wasm");
+        assert_ne!(after_task, after_asset, "an asset's bytes");
+
+        fs::write(dir.path().join("assets/b.txt"), b"new").expect("asset");
+        assert_ne!(after_asset, key(dir.path(), b"wasm"), "a new asset");
+    }
+
+    #[test]
+    fn a_pass_is_read_back_only_for_its_own_key_and_only_while_fresh() {
+        let dir = app();
+        let k = key(dir.path(), b"wasm");
+        assert!(
+            read_check_pass(dir.path(), &k).is_none(),
+            "nothing recorded yet"
+        );
+
+        write_check_pass(
+            dir.path(),
+            &k,
+            &["layout", "build", "run", "usability"],
+            &["responds to a press: not checked".to_string()],
+        );
+        let (passed, notes, age) = read_check_pass(dir.path(), &k).expect("the pass");
+        assert_eq!(passed, vec!["layout", "build", "run", "usability"]);
+        assert_eq!(notes, vec!["responds to a press: not checked".to_string()]);
+        assert!(age < 5);
+
+        let other = key(dir.path(), b"changed wasm");
+        assert!(
+            read_check_pass(dir.path(), &other).is_none(),
+            "a pass never answers for other bytes"
+        );
+
+        // An hour old: judged again.
+        let file = check_pass_file(dir.path());
+        let mut record: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&file).expect("record")).expect("json");
+        record["at"] = serde_json::json!(super::unix_now() - 3600);
+        fs::write(&file, record.to_string()).expect("age it");
+        assert!(
+            read_check_pass(dir.path(), &k).is_none(),
+            "a stale pass is not reused"
         );
     }
 }

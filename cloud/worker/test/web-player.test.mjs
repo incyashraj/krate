@@ -199,3 +199,21 @@ test("a phone that opens a shared link is offered to open it here, in the tab", 
   assert.ok(!/runs on computers/.test(html), "no longer sends a phone to a computer");
   assert.ok(html.indexOf(`/run/${hash}`) < html.indexOf("Copy the link"), "opening comes before copying");
 });
+
+test("an org app's link opened by a browser goes to the app's page; the CLI and the console still get its answer (K-1166)", async () => {
+  const env = withAssets(orgEnv());
+  const at = "https://hub.example/orgs/acme/apps/dev.acme.inspections/current";
+  const browser = await worker.fetch(new Request(at, { headers: { accept: "text/html,application/xhtml+xml,*/*;q=0.8" } }), env);
+  assert.strictEqual(browser.status, 303);
+  assert.strictEqual(browser.headers.get("location"), "/run/org/acme/dev.acme.inspections");
+  // A tool asks without text/html; the console asks with its session.
+  for (const headers of [{ accept: "application/json" }, { accept: "text/html", authorization: "Bearer gho_dan" }]) {
+    const res = await worker.fetch(new Request(at, { headers }), env);
+    assert.notStrictEqual(res.status, 303, JSON.stringify(headers));
+  }
+  // Only that address: no other org path, and no made-up slug, is sent anywhere.
+  for (const other of ["/orgs/acme/apps", "/orgs/Acme/apps/x/current", "/orgs/acme/apps/a/b/current"]) {
+    const res = await worker.fetch(new Request(`https://hub.example${other}`, { headers: { accept: "text/html" } }), env);
+    assert.notStrictEqual(res.status, 303, other);
+  }
+});

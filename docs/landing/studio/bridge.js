@@ -2197,18 +2197,16 @@ const COMMANDS = {
     }
     return { v: 1, signed_in: true, policy_org: null, offline: false, orgs: out };
   },
-  /* Open one in a tab: the browser cannot run it, so the release that opens
-   * now is downloaded (with every check a download makes) and the person
-   * double-clicks it, as open_app does for their own apps. */
+  /* Open one in a new tab: the app's own address on the hub, which runs it
+   * there (IC-956) and opens the version the team has on now, so an update
+   * or a rollback reaches it with nothing to download (K-1166). The tab asks
+   * its own sign-in, with the company's own door first (K-1165). */
   async org_app_open({ slug, appId } = {}) {
     if (!bridge.token) return refuse("Sign in first: company apps are only for the people they were made for.");
-    const link = `${HUB}/orgs/${encodeURIComponent(slug || "")}/apps/${encodeURIComponent(appId || "")}/current`;
-    if (!hasKrateAlready()) {
-      askFirstRun({ url: link, name: `${appId}.krate` });
-      return "asking";
+    if (!/^[a-z][a-z0-9-]{1,38}$/.test(slug || "") || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(appId || "")) {
+      return refuse("That app's address is not one Krate opens.");
     }
-    await downloadApp(link, `${appId}.krate`);
-    return refuse("Downloaded. Double-click the file on your Mac, Windows or Linux. That is where the app really runs.");
+    window.open(`${HUB}/run/org/${slug}/${appId}`, "_blank", "noopener");
   },
   /* The desktop's test hook (KRATE_STUDIO_AUTORUN): Studio types whatever
    * this returns into the box and starts a build. A tab has no such hook,

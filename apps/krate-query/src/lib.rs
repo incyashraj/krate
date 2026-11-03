@@ -82,6 +82,8 @@ const KEYWORD: gfx::Color = rgb(0.780, 0.545, 0.980);
 const STRING: gfx::Color = rgb(0.980, 0.702, 0.404);
 const NUMBER: gfx::Color = rgb(0.404, 0.824, 0.729);
 const IDENT: gfx::Color = rgb(0.847, 0.882, 0.925);
+/// Commas, dots, brackets and operators: quieter than the words they join.
+const PUNCT: gfx::Color = INK_DIM;
 
 const fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
     gfx::Color { r, g, b, a: 1.0 }
@@ -304,7 +306,8 @@ enum Kind { Clear, Fill, Round, Disc, Text, Clip, Unclip, Heading, Button, Said 
 
 /// One recorded step. `x, y, w, h` is its box -- for text the origin, the
 /// measured width and the size; for a disc the centre and, in `w`, the
-/// radius -- `r` a corner radius and `text` a range of the arena.
+/// radius -- `r` and `rb` the top and bottom corner radii and `text` a range
+/// of the arena.
 #[derive(Clone, Copy)]
 struct Op {
     kind: Kind,
@@ -314,11 +317,12 @@ struct Op {
     w: f32,
     h: f32,
     r: f32,
+    rb: f32,
     c: gfx::Color,
     text: (usize, usize),
 }
 
-const NO_OP: Op = Op { kind: Kind::Fill, scrolls: false, x: 0.0, y: 0.0, w: 0.0, h: 0.0, r: 0.0, c: BG, text: (0, 0) };
+const NO_OP: Op = Op { kind: Kind::Fill, scrolls: false, x: 0.0, y: 0.0, w: 0.0, h: 0.0, r: 0.0, rb: 0.0, c: BG, text: (0, 0) };
 const MAX_OPS: usize = 640;
 const ARENA: usize = 8192;
 
@@ -338,7 +342,9 @@ impl List {
 
     /// Record one step. A list that is full drops the rest of the frame
     /// rather than writing past its end.
-    fn push(&mut self, kind: Kind, b: Rect, r: f32, c: gfx::Color, s: &str) {
+    fn push(&mut self, kind: Kind, b: Rect, r: f32, c: gfx::Color, s: &str) { self.push_radii(kind, b, (r, r), c, s) }
+
+    fn push_radii(&mut self, kind: Kind, b: Rect, (r, rb): (f32, f32), c: gfx::Color, s: &str) {
         let start = self.used;
         if let Some(dst) = self.arena.get_mut(start..start + s.len()) {
             dst.copy_from_slice(s.as_bytes());
@@ -346,7 +352,7 @@ impl List {
         }
         if let Some(slot) = self.ops.get_mut(self.n) {
             let text = (start, self.used);
-            *slot = Op { kind, scrolls: self.scrolls, x: b.x, y: b.y, w: b.w, h: b.h, r, c, text };
+            *slot = Op { kind, scrolls: self.scrolls, x: b.x, y: b.y, w: b.w, h: b.h, r, rb, c, text };
             self.n += 1;
         }
     }
@@ -370,8 +376,9 @@ impl List {
                 Kind::Clear => canvas2d::clear(canvas, op.c)?,
                 Kind::Fill => canvas2d::fill_rect(canvas, rect, op.c)?,
                 Kind::Round => {
-                    let r = op.r.min(op.w * 0.5).min(op.h * 0.5).max(0.0);
-                    let radii = gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r };
+                    let most = (op.w * 0.5).min(op.h * 0.5);
+                    let (r, rb) = (op.r.min(most).max(0.0), op.rb.min(most).max(0.0));
+                    let radii = gfx::CornerRadii { top_left: r, top_right: r, bottom_right: rb, bottom_left: rb };
                     canvas2d::fill_round_rect(canvas, rect, radii, op.c)?
                 }
                 Kind::Disc => canvas2d::fill_circle(canvas, gfx::Point { x: op.x, y }, op.w, op.c)?,
@@ -469,6 +476,43 @@ impl Frame<'_> {
     fn width(&self, s: &str, size: f32) -> f32 { est_width(self.canvas, s, size) }
     fn fill(&mut self, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) { self.list.push(Kind::Fill, Rect::new(x, y, w, h), 0.0, c, "") }
     fn round(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) { self.list.push(Kind::Round, Rect::new(x, y, w, h), r, c, "") }
+    /// A box with its top corners rounded `top` and its bottom ones `bottom`:
+    /// the first and last bands of a card.
+    fn round_ends(&mut self, b: Rect, top: f32, bottom: f32, c: gfx::Color) { self.list.push_radii(Kind::Round, b, (top, bottom), c, "") }
+    /// A card: a hairline edge round a filled body, the way a phone sets a
+    /// section off from the ground.
+    fn card(&mut self, b: Rect, r: f32, c: gfx::Color) {
+        self.rounded_box(b, (r, r), LINE_SOFT, true);
+        self.rounded_box(Rect::new(b.x + 1.0, b.y + 1.0, b.w - 2.0, b.h - 2.0), (r - 1.0, r - 1.0), c, false);
+    }
+    /// A rounded box drawn as its two rounded ends and a plain middle (or,
+    /// for an `outline` that a fill will cover, just the middle's two sides).
+    /// The pixels are a single rounded rect's; the host's rounded fill costs
+    /// by area, and a whole card of it was several times the rest of a
+    /// phone's scroll frame (measured). Each end is a band twice its radius
+    /// tall (the host fits a corner to half a shape's height), overlapping
+    /// the middle; the colours are opaque, so the overlap never shows.
+    fn rounded_box(&mut self, b: Rect, (top, bottom): (f32, f32), c: gfx::Color, outline: bool) {
+        let most = (b.w * 0.5).min(b.h * 0.5);
+        let (top, bottom) = (top.min(most).max(0.0), bottom.min(most).max(0.0));
+        if b.h <= 2.0 * (top + bottom) {
+            self.round_ends(b, top, bottom, c);
+            return;
+        }
+        if top > 0.0 {
+            self.round_ends(Rect::new(b.x, b.y, b.w, 2.0 * top), top, 0.0, c);
+        }
+        let mid = b.h - top - bottom;
+        if outline {
+            self.fill(b.x, b.y + top, 1.0, mid, c);
+            self.fill(b.right() - 1.0, b.y + top, 1.0, mid, c);
+        } else {
+            self.fill(b.x, b.y + top, b.w, mid, c);
+        }
+        if bottom > 0.0 {
+            self.round_ends(Rect::new(b.x, b.bottom() - 2.0 * bottom, b.w, 2.0 * bottom), 0.0, bottom, c);
+        }
+    }
     fn disc(&mut self, x: f32, y: f32, r: f32, c: gfx::Color) { self.list.push(Kind::Disc, Rect::new(x, y, r, 0.0), 0.0, c, "") }
     fn clip(&mut self, b: Rect) { self.list.push(Kind::Clip, b, 0.0, BG, "") }
     fn unclip(&mut self) { self.list.push(Kind::Unclip, Rect::new(0.0, 0.0, 0.0, 0.0), 0.0, BG, "") }
@@ -542,7 +586,9 @@ impl Grid {
         // measured, so a right-aligned figure never reaches the rule.
         let mut orders_min = f.width("orders", head);
         let mut revenue_min = f.width("revenue", head);
+        let mut widest = 0.0f32;
         for record in answer.records() {
+            widest = widest.max(f.width(as_str(&record.email, record.email_len), cell));
             let mut buf = [0u8; 24];
             orders_min = orders_min.max(f.width(grouped(&mut buf, record.orders), cell));
             revenue_min = revenue_min.max(f.width(money(&mut buf, record.revenue), cell));
@@ -553,7 +599,9 @@ impl Grid {
         let orders_w = orders_min.max(avail * 0.16);
         let revenue_w = revenue_min.max(avail * 0.25);
         let email_w = avail - orders_w - revenue_w;
-        let stacked = email_w < EMAIL_MIN * f.t;
+        // A phone would rather give a row two lines than cut an address:
+        // there the whole address is the answer, and the column is narrow.
+        let stacked = email_w < EMAIL_MIN * f.t || (f.narrow && widest > email_w + 0.5);
         let orders_right = b.x + pad + email_w + pad + orders_w;
         Grid {
             pad,
@@ -639,7 +687,7 @@ fn draw_wide(f: &mut Frame, body: Rect, answer: &Answer, view: &mut View) {
     // The statement never takes more than half: the answer is the point.
     let editor = Rect::new(rail_right, body.y, pane_w, editor_height(f, lines).min(body.h * 0.5));
     f.clip(editor);
-    draw_editor(f, editor, pad);
+    draw_editor(f, editor, pad, false);
     f.unclip();
 
     let pane = Rect::new(rail_right, editor.bottom(), pane_w, body.bottom() - editor.bottom());
@@ -661,16 +709,17 @@ fn draw_column(f: &mut Frame, body: Rect, answer: &Answer, view: &mut View) {
     let mut y = body.y + margin;
     y += draw_chips(f, x, y, w) + margin;
 
-    // The statement and the results run edge to edge, the way a phone's own
-    // apps lay out a section, with the ground showing between them.
-    let lines = sql_block(f, 0.0, 0.0, body.w - 2.0 * margin, false);
-    let editor = Rect::new(body.x, y, body.w, editor_height(f, lines));
-    draw_editor(f, editor, margin);
+    // The statement and the results are each a rounded card, inset to the
+    // chips' edge, with the ground showing between them.
+    let pad = 14.0;
+    let lines = sql_block(f, 0.0, 0.0, w - 2.0 * pad, false);
+    let editor = Rect::new(x, y, w, editor_height(f, lines));
+    draw_editor(f, editor, pad, true);
     y += editor.h + margin;
 
-    let grid = Grid::new(f, Rect::new(body.x, y, body.w, 0.0), answer);
+    let grid = Grid::new(f, Rect::new(x, y, w, 0.0), answer);
     let grid_h = grid.header_h + answer.count.max(1) as f32 * grid.row_h;
-    draw_grid(f, Rect::new(body.x, y, body.w, grid_h), &grid, answer, false, grid_h);
+    draw_grid(f, Rect::new(x, y, w, grid_h), &grid, answer, false, grid_h);
     y += grid_h + margin;
 
     f.list.scrolls = false;
@@ -699,8 +748,9 @@ fn draw_titlebar(f: &mut Frame, bar: Rect, tap: f32, live: bool) -> Rect {
     let title_end = title_x + f.text("Query", title_x, cy + title * 0.35, title, INK);
     f.say(Kind::Heading, Rect::new(mx, cy - title * 0.7, title_end - mx, title * 1.4), "Query");
 
-    // Run: label plus a small triangle, drawn from slices so it stays crisp
-    // without a path API. It runs the statement against the database again.
+    // Run: label plus a small triangle, drawn from half-point slices so its
+    // edge stays smooth at a large text size without a path API. It runs the
+    // statement against the database again.
     let label = f.pt(12.5);
     let label_w = f.width("Run", label);
     let run_w = (label_w + 44.0 * t).max(tap);
@@ -708,9 +758,9 @@ fn draw_titlebar(f: &mut Frame, bar: Rect, tap: f32, live: bool) -> Rect {
     let run = Rect::new(bar.right() - margin - run_w, cy - run_h * 0.5, run_w, run_h);
     f.round(run.x, run.y, run.w, run.h, 6.0 * t, SEL_WASH);
     let tri_x = run.x + (run.w - label_w - 30.0 * t) * 0.5;
-    for k in 0..5 {
-        let k = k as f32;
-        f.fill(tri_x + k * t, cy - (5.0 - k) * t, 1.2 * t, (10.0 - 2.0 * k) * t, ACCENT);
+    for k in 0..10 {
+        let k = k as f32 * 0.5;
+        f.fill(tri_x + k * t, cy - (5.0 - k) * t, 0.7 * t, (10.0 - 2.0 * k) * t, ACCENT);
     }
     f.text("Run", tri_x + 16.0 * t, cy + label * 0.35, label, ACCENT);
     f.say(Kind::Button, run, "Run query");
@@ -772,7 +822,9 @@ fn draw_rail(f: &mut Frame, r: Rect) {
             f.round(r.x + 8.0, y, r.w - 20.0, row_h - 4.0, 6.0, SEL_WASH);
             // The active-marker bar: what tells you at a glance which table the
             // statement above is actually reading.
-            f.round(0.0, y + 6.0 * t, 3.0, row_h - 16.0 * t, 1.5, ACCENT);
+            // At the rail's own edge: on a phone turned sideways the
+            // screen's edge is under the notch, a hand away from the row.
+            f.round(r.x, y + 6.0 * t, 3.0, row_h - 16.0 * t, 1.5, ACCENT);
         }
 
         // Table glyph: a filled cap over two rules, the shape every client uses.
@@ -817,11 +869,9 @@ fn draw_chips(f: &mut Frame, x: f32, y: f32, w: f32) -> f32 {
             line_y += chip_h + gap;
         }
         let selected = i == SELECTED_TABLE;
-        // Only the table the statement reads wears a pill: the rest are
-        // plain words, which is also less for a phone to paint.
-        if selected {
-            f.round(pen, line_y, chip_w, chip_h, 8.0 * t, SEL_WASH);
-        }
+        // Every table is a pill, so the strip reads as a set of choices; the
+        // one the statement reads wears the selection tint.
+        f.round(pen, line_y, chip_w, chip_h, 8.0 * t, if selected { SEL_WASH } else { PANE });
         let base = line_y + chip_h * 0.5 + name_size * 0.35;
         f.text_right(count, pen + chip_w - pad, base, count_size, if selected { INK_DIM } else { INK_QUIET });
         let ink = if selected { ACCENT } else { INK_DIM };
@@ -838,10 +888,15 @@ fn editor_height(f: &Frame, lines: usize) -> f32 {
 }
 
 /// The statement pane: a QUERY label, the file name when it fits, and the
-/// statement itself with a line-number gutter.
-fn draw_editor(f: &mut Frame, b: Rect, pad: f32) {
-    f.fill(b.x, b.y, b.w, b.h, EDITOR);
-    f.fill(b.x, b.bottom() - 1.0, b.w, 1.0, LINE);
+/// statement itself with a line-number gutter. A `card` (the phone) is a
+/// rounded card; otherwise the pane runs edge to edge over a rule.
+fn draw_editor(f: &mut Frame, b: Rect, pad: f32, card: bool) {
+    if card {
+        f.card(b, 12.0 * f.t, EDITOR);
+    } else {
+        f.fill(b.x, b.y, b.w, b.h, EDITOR);
+        f.fill(b.x, b.bottom() - 1.0, b.w, 1.0, LINE);
+    }
     if !f.short {
         let label = f.pt(10.5);
         let base = b.y + f.pt(28.0);
@@ -862,11 +917,10 @@ fn draw_editor(f: &mut Frame, b: Rect, pad: f32) {
 /// statement's own lines gets one line number, on its first visual line.
 /// Returns how many visual lines it takes, so the editor can be sized first.
 ///
-/// Each word is coloured by role, and neighbouring words of one colour --
-/// with the spaces and punctuation between them -- go to the host as one
-/// string: `count(o.id)` is still the keyword `count` and the reference
-/// `(o.id)`, but a line costs a handful of calls rather than one per token,
-/// which on a phone was a fifth of a scroll frame.
+/// Each word is coloured by role and the punctuation between words a step
+/// dimmer, and neighbouring runs of one colour -- with the spaces between
+/// them -- go to the host as one string, so a line costs one call per change
+/// of colour rather than one per token.
 fn sql_block(f: &mut Frame, x: f32, top: f32, room: f32, paint: bool) -> usize {
     let size = f.pt(if f.narrow { 13.5 } else { 14.5 });
     let num = f.pt(11.5);
@@ -928,7 +982,10 @@ fn sql_block(f: &mut Frame, x: f32, top: f32, room: f32, paint: bool) -> usize {
                         e += 1;
                     }
                     let part = line.get(s..e).unwrap_or("");
-                    let colour = if word { word_colour(part) } else { IDENT };
+                    // Punctuation is a step dimmer than an identifier, but
+                    // only a step: at INK_QUIET the dot in `u.email` went and
+                    // the qualifier read as two unrelated words.
+                    let colour = if word { word_colour(part) } else { PUNCT };
                     run = match run {
                         Some((rs, _, rx, rc)) if rc.r == colour.r && rc.g == colour.g && rc.b == colour.b => Some((rs, e, rx, rc)),
                         other => {
@@ -982,14 +1039,22 @@ fn word_colour(word: &str) -> gfx::Color {
 /// The results: a header band, banded rows, figures right-aligned. With
 /// `inside` the rows scroll inside the pane (the desktop), its banding
 /// carried `reach` down so a scrolled pane is still banded; otherwise the
-/// pane is as tall as its rows and the page scrolls past it (the phone).
+/// pane is as tall as its rows, a rounded card, and the page scrolls past it
+/// (the phone).
 fn draw_grid(f: &mut Frame, b: Rect, g: &Grid, answer: &Answer, inside: bool, reach: f32) {
     let t = f.t;
     // Header band, then the rule that separates it from data. The rule is the
-    // single strongest signal that this is a result set.
-    f.fill(b.x, b.y, b.w, b.h, PANE);
-    f.fill(b.x, b.y, b.w, g.header_h, RAIL);
-    f.fill(b.x, b.y + g.header_h - 1.0, b.w, 1.0, LINE);
+    // single strongest signal that this is a result set. A card's bands stay
+    // inside its hairline edge, and its first and last follow its corners.
+    let (edge, r) = if inside { (0.0, 0.0) } else { (1.0, 12.0 * t - 1.0) };
+    let (band_x, band_w) = (b.x + edge, b.w - 2.0 * edge);
+    if inside {
+        f.fill(b.x, b.y, b.w, b.h, PANE);
+    } else {
+        f.card(b, r + 1.0, PANE);
+    }
+    f.rounded_box(Rect::new(band_x, b.y + edge, band_w, g.header_h - edge), (r, 0.0), RAIL, false);
+    f.fill(band_x, b.y + g.header_h - 1.0, band_w, 1.0, LINE);
 
     let head = f.pt(11.5);
     let hb = b.y + g.header_h * 0.5 + head * 0.35;
@@ -1028,11 +1093,13 @@ fn draw_grid(f: &mut Frame, b: Rect, g: &Grid, answer: &Answer, inside: bool, re
         if y >= rows_end - 0.5 || (!inside && k >= bands) {
             break;
         }
+        let last = !inside && k + 1 == bands;
         if k % 2 == 1 {
-            f.fill(b.x, y, b.w, g.row_h.min(rows_end - y), ROW_TINT);
+            let band = Rect::new(band_x, y, band_w, g.row_h.min(rows_end - y) - if last { edge } else { 0.0 });
+            f.rounded_box(band, (0.0, if last { r } else { 0.0 }), ROW_TINT, false);
         }
-        if inside || k + 1 < bands {
-            f.fill(b.x, y + g.row_h - 1.0, b.w, 1.0, LINE_SOFT);
+        if !last {
+            f.fill(band_x, y + g.row_h - 1.0, band_w, 1.0, LINE_SOFT);
         }
         k += 1;
     }

@@ -309,7 +309,7 @@ async function runEngine(name, type) {
     const { context, page } = await open(browser, `/run/${id('org')}`);
     const r = await k(page);
     check(name, 'org app: signed out, the tab asks for sign-in', r.state === 'signin', r.state);
-    const hrefs = await page.evaluate(() => [document.getElementById('signinGithub').href, sessionStorage.getItem('krate-player-nonce')]);
+    const hrefs = await page.evaluate(() => [document.getElementById('signinGithub').href, JSON.parse(localStorage.getItem('krate-player-nonce') || '[]').length]);
     check(name, 'org app: sign-in starts on the hub and comes back to this app', hrefs[0].includes('/login/start?from=player%3A' + id('org')) && !!hrefs[1]);
     await context.close();
   }

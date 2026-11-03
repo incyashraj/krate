@@ -467,10 +467,18 @@ such a field in a \
 k.modifiers.control)`, draw `selection()` behind the text. It selects with \
 Shift and Cmd/Ctrl+A, and the person's own Cmd+V or Ctrl+V arrives as \
 `TextInput` with no clipboard permission: never ask for \
-`ui.clipboard:read` just to paste. A game that reads keys and never \
-reads touch gets an on-screen pad on a phone by itself, built from the \
-keys it asks `key_held` about (Space or Enter is the big button): do not \
-draw one too. On a phone the game should also tap back: \
+`ui.clipboard:read` just to paste. A game takes touch itself: most \
+people open a sent link on a phone, where there are no arrow keys, and a \
+browser tab shows no pad. The simplest that always works: each frame, \
+`if pointer::button_held(PointerButton::Primary) { pointer::position(win) }` \
+is where the finger is (the mouse on a computer), in the game's own \
+coordinates when it set a design size -- steer toward a point a little \
+above it so the finger never hides the player, act while it is held \
+(fire, thrust, jump), and let a press event (`Event::Pointer` with \
+`pressed`) start again after game over. `apps/krate-nova` does exactly \
+this beside its keys. (Krate's own phone app also lays a pad over a game \
+that never reads the pointer or touch; do not rely on it.) On a phone the \
+game should also tap back: \
 `krate::ui::haptics::play(Feel::Light)` on a button press, `Selection` as \
 a choice changes, `Success`/`Warning`/`Error` for outcomes, and \
 `impact(strength)` (0 to 1) for a hit or a landing. No capability; a \
@@ -621,8 +629,9 @@ never moves -- so they are listed here in full rather than guessed at:\n\n\
 - **Function keys**: `F1` to `F12`.\n\n\
 A run-and-gun game therefore reads: \
 `key_held(\"ArrowLeft\")`, `key_held(\"Space\")` to jump, \
-`key_held(\"z\")` to shoot. `apps/krate-nova` and `apps/krate-bounce` \
-are shipped examples doing exactly this.\n\n\
+`key_held(\"z\")` to shoot, and the finger as above for a phone. \
+`apps/krate-nova` and `apps/krate-bounce` are shipped examples of the \
+keys; Nova takes the finger too.\n\n\
 ## The clock is real: dates, daily resets, elapsed time\n\n\
 `time.clock` gives wall-clock time (milliseconds since the Unix epoch) and \
 it IS granted -- do not talk yourself out of it. \"Show today's date\", \

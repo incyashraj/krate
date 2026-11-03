@@ -13,7 +13,16 @@
 //   - Report sends with no account and lands in the hub's record;
 //   - a phone is never told "your computer";
 //   - a phone that used the app is offered a way to keep it, once, with
-//     the steps for that phone, and the app's data is asked to stay.
+//     the steps for that phone, and the app's data is asked to stay;
+//   - the home screen keeps the app's own link (/run/v<line>), which opens
+//     the current version, so an update reaches a kept app too;
+//   - a phone held sideways can read a tall permission card from its top,
+//     and a phone or a tablet is never offered Krate for a computer;
+//   - an in-app browser that cannot run the app sends the person to the
+//     phone's own browser (Chrome on Android, Safari on an iPhone);
+//   - krate.tech/open on an iPad (which says it is a Mac) leads with the
+//     tab and offers no Mac download, and on a computer says the app opens
+//     in the tab before it says anything about installing.
 // PLAYWRIGHT_MODULE and CHROMIUM may point at a playwright-core and a
 // browser already on the machine.
 import http from 'node:http';
@@ -50,6 +59,10 @@ const bytes = new Uint8Array(readFileSync(join(repo, 'evidence', 'ported', 'savi
 const up = await call(env, 'alice', 'POST', '/publish', { bytes });
 if (up.status !== 200) throw new Error(`publish: ${up.status} ${JSON.stringify(up.body)}`);
 const hash = up.body.id;
+const line = (/\/a\/(v[0-9a-f]{11})$/.exec(up.body.url) || [])[1];
+// An app with a long list of asks, for the card on a phone held sideways.
+const tall = await call(env, 'alice', 'POST', '/publish', { bytes: new Uint8Array(readFileSync(join(repo, 'evidence', 'ported', 'ddh.krate'))) });
+if (tall.status !== 200) throw new Error(`publish ddh: ${tall.status}`);
 
 const server = http.createServer(async (req, res) => {
   const chunks = [];
@@ -142,6 +155,120 @@ for (const [label, viewport, ua] of [['phone', { width: 375, height: 812 }, IPHO
   } else {
     check(!first.shown && !first.keep.offered, '[desktop] a computer is not offered a home screen', first);
   }
+  await context.close();
+}
+// The home screen keeps the app's own link: the manifest a phone adds is
+// /run/v<line>, and that address opens the app as it is now.
+{
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 }, userAgent: IPHONE, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  await page.goto(`${base}/run/${hash}`);
+  await page.waitForFunction(() => window.__krate && window.__krate.install, null, { timeout: 30000 }).catch(() => {});
+  const kept = await page.evaluate(() => ({ install: window.__krate.install, manifest: (document.querySelector('link[rel="manifest"]') || {}).href || '' }));
+  check(line && kept.install && kept.install.base === `/run/${line}` && kept.manifest.startsWith(`${base}/run/${line}/app.webmanifest`),
+    "[phone] the home screen keeps the app's own link, not this one build", { line, kept });
+  const manifest = await (await fetch(kept.manifest)).json().catch(() => ({}));
+  check(manifest.start_url === `/run/${line}`, '[phone] and the app it adds starts there', manifest);
+  await page.goto(`${base}/run/${line}`);
+  await page.waitForFunction(() => window.__krate && window.__krate.state === 'consent', null, { timeout: 30000 }).catch(() => {});
+  await page.click('#consentAllow').catch(() => {});
+  await page.waitForFunction(() => window.__krate && window.__krate.frames > 0, null, { timeout: 30000 }).catch(() => {});
+  const there = await page.evaluate(() => (window.__krate ? { frames: window.__krate.frames, app: window.__krate.app && window.__krate.app.name, base: window.__krate.install && window.__krate.install.base } : { page: document.body.innerText.slice(0, 120) }));
+  check(there.frames > 0 && there.app === 'Budget Splitter' && there.base === `/run/${line}`, "[phone] the app's own link opens the app as it is now", there);
+  await page.goto(`${base}/run/v00000000000`);
+  await page.waitForFunction(() => window.__krate && window.__krate.state === 'refused', null, { timeout: 30000 }).catch(() => {});
+  const madeUp = await page.evaluate(() => (window.__krate ? window.__krate.refused : document.body.innerText.slice(0, 120)));
+  check(madeUp && madeUp.title === 'This app is not on Krate', '[phone] a made-up app link says it is not on Krate', madeUp);
+  await context.close();
+}
+// A phone held sideways and a tablet: the tall card starts at its top, and
+// Krate for a computer is not offered in the bar.
+const IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+for (const [label, viewport, ua, touch] of [['phone sideways', { width: 844, height: 390 }, IPHONE, 0], ['iPad', { width: 820, height: 1180 }, IPAD, 5], ['desktop', { width: 1280, height: 800 }, undefined, 0]]) {
+  const context = await browser.newContext({ viewport, userAgent: ua, isMobile: label === 'phone sideways', hasTouch: Boolean(ua) });
+  // An iPad's Safari says Macintosh and has five touch points.
+  if (touch) await context.addInitScript((n) => Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => n }), touch);
+  const page = await context.newPage();
+  await page.goto(`${base}/run/${tall.body.id}`);
+  await page.waitForFunction(() => window.__krate && window.__krate.state === 'consent', null, { timeout: 30000 }).catch(() => {});
+  const look = await page.evaluate(() => {
+    const t = document.getElementById('consentTitle').getBoundingClientRect(), st = document.getElementById('stage').getBoundingClientRect();
+    const k = document.getElementById('inKrate'), kr = k.getBoundingClientRect();
+    return { titleTop: t.top, stageTop: st.top, inKrate: kr.width > 0 && getComputedStyle(k).display !== 'none' };
+  });
+  check(look.titleTop >= look.stageTop - 0.5, `[${label}] the permission card starts at its top, where it can be read`, look);
+  check(look.inKrate === (label === 'desktop'), `[${label}] ${label === 'desktop' ? 'a computer is offered Krate in the bar' : 'Krate for a computer is not offered in the bar'}`, look);
+  if (shots && label === 'phone sideways') await page.screenshot({ path: join(shots, 'receive-proof-sideways.png') });
+  await context.close();
+}
+// An in-app browser that does not give a tab shared memory (the hub's
+// isolation headers taken off on the way in): the way out is the phone's
+// own browser, never a computer.
+const INSTAGRAM_ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A.240805.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 Instagram 352.0.0.38.100 Android';
+const INSTAGRAM_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 352.0.0.20.104 (iPhone15,2; iOS 18_0)';
+for (const [label, ua] of [['Instagram on Android', INSTAGRAM_ANDROID], ['Instagram on an iPhone', INSTAGRAM_IPHONE]]) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: ua, isMobile: true, hasTouch: true, permissions: ['clipboard-read', 'clipboard-write'] });
+  await context.route(`${base}/**`, async (route) => {
+    const r = await route.fetch();
+    const h = { ...r.headers() };
+    delete h['cross-origin-opener-policy'];
+    delete h['cross-origin-embedder-policy'];
+    return route.fulfill({ response: r, headers: h });
+  });
+  const page = await context.newPage();
+  await page.goto(`${base}/run/${hash}?via=proof`);
+  await page.waitForFunction(() => window.__krate && window.__krate.state === 'refused', null, { timeout: 30000 }).catch(() => {});
+  const r = await page.evaluate(() => ({ text: document.body.innerText, act: document.getElementById('refusedAct').textContent, href: document.getElementById('refusedAct').getAttribute('href') }));
+  if (/Android/.test(ua)) {
+    check(r.act === 'Open in Chrome' && r.href === `intent://127.0.0.1:${port}/run/${hash}?via=proof#Intent;scheme=http;package=com.android.chrome;end` && /Instagram's browser cannot run Krate apps/.test(r.text),
+      `[${label}] the way out is Chrome, by an intent link to this same address`, r);
+  } else {
+    await page.click('#refusedAct');
+    await page.waitForFunction(() => window.__krate.copied, null, { timeout: 5000 }).catch(() => {});
+    const copied = await page.evaluate(() => window.__krate.copied);
+    check(r.act === 'Copy the link' && /Open in Safari/.test(r.text) && copied === `${base}/run/${hash}?via=proof`, `[${label}] the way out is Safari: the steps, and the link copied`, { ...r, copied });
+  }
+  check(!/computer/i.test(r.text), `[${label}] nothing tells a phone to use a computer`, r.text);
+  if (shots) await page.screenshot({ path: join(shots, `receive-proof-in-app-${/Android/.test(ua) ? 'android' : 'iphone'}.png`) });
+  await context.close();
+}
+// krate.tech/open, served from the repo, with the hub's /meta answered by
+// the hub running here: an iPad gets the tab and no Mac download; a
+// computer is told the app opens in the tab before anything about Krate.
+for (const [label, viewport, ua, touch] of [['iPad', { width: 820, height: 1180 }, IPAD, 5], ['desktop', { width: 1280, height: 900 }, undefined, 0]]) {
+  const context = await browser.newContext({ viewport, userAgent: ua, hasTouch: Boolean(ua) });
+  if (touch) await context.addInitScript((n) => Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => n }), touch);
+  await context.route('https://krate.tech/**', async (route) => {
+    let p = normalize(new URL(route.request().url()).pathname);
+    if (p.startsWith('/open')) p = '/open/index.html';
+    for (const root of [join(repo, 'docs'), join(repo, 'docs', 'landing')]) {
+      try { return route.fulfill({ status: 200, contentType: p.endsWith('.html') ? 'text/html' : p.endsWith('.css') ? 'text/css' : p.endsWith('.js') ? 'text/javascript' : undefined, body: await readFile(join(root, p)) }); } catch {}
+    }
+    return route.fulfill({ status: 404, body: '' });
+  });
+  await context.route('https://api.github.com/**', (route) => route.fulfill({ status: 404, body: '' }));
+  await context.route('https://hub.krate.tech/**', async (route) => {
+    const u = new URL(route.request().url());
+    if (!u.pathname.startsWith('/meta/')) return route.fulfill({ status: 204, body: '' });
+    const r = await route.fetch({ url: base + u.pathname });
+    return route.fulfill({ response: r, headers: { ...r.headers(), 'access-control-allow-origin': '*' } });
+  });
+  const page = await context.newPage();
+  await page.goto(`https://krate.tech/open/?a=${hash}`);
+  await page.waitForSelector('#taTab:not([hidden])', { timeout: 10000 }).catch(() => {});
+  const o = await page.evaluate(() => {
+    const seen = (id) => { const e = document.getElementById(id); return Boolean(e && !e.closest('[hidden]') && e.getBoundingClientRect().width > 0); };
+    return { tab: seen('taTab'), href: document.getElementById('taTab').href, get: seen('taGet'), steps: seen('steps'), lede: document.querySelector('.pagesub').textContent, sub: document.getElementById('taSize').textContent, main: document.querySelector('main').innerText };
+  });
+  const tabFirst = o.tab && o.href === `https://hub.krate.tech/run/${hash}`;
+  if (label === 'iPad') {
+    check(tabFirst && !o.get && !o.steps && !/\bMacs?\b|computer|Download/.test(o.main) && /opens right here in your browser/.test(o.lede),
+      '[iPad] /open leads with the tab, with no Mac download and no computer steps', o);
+  } else {
+    check(tabFirst && o.get && o.steps && /^It opens right here in this tab/.test(o.lede) && /opens in this tab/.test(o.sub),
+      '[desktop] /open says the app opens in this tab first, and keeps Krate second', { lede: o.lede, sub: o.sub, get: o.get });
+  }
+  if (shots) await page.screenshot({ path: join(shots, `receive-proof-open-${label.toLowerCase()}.png`) });
   await context.close();
 }
 await browser.close();

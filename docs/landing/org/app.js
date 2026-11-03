@@ -72,8 +72,11 @@
       if (a.inv && a.inv.built) bits.push("made with " + a.inv.built_words);
       var acts = [];
       if (cur && cur.url) {
-        var copy = el("button", { class: "btn ghost sm", type: "button", text: "Copy link" });
-        copy.addEventListener("click", function () { K.copy(cur.url, copy); });
+        // The app's own address, not this version's: it keeps working
+        // through updates, rollbacks and withdrawals, and opens on a phone.
+        var link = K.appLink(slug, a.id, a.rel && a.rel.share_url) || cur.url;
+        var copy = el("button", { class: "btn ghost sm", type: "button", text: "Copy link", title: "Opens the version that is current for each person, now and after updates, on a phone or a computer" });
+        copy.addEventListener("click", function () { K.copy(link, copy); });
         acts.push(copy);
         acts.push(el("a", { class: "btn dark sm", href: "/open/?a=" + cur.digest, text: "Open" }));
       }
@@ -103,7 +106,11 @@
       var u = a.use || {};
       var refused = (u.refusals || []).reduce(function (s, r) { return s + (Number(r.n) || 0); }, 0);
       b.appendChild(tiles([
-        ["People, 7 days", u.people_week == null ? (a.inv && a.inv.people ? String(a.inv.people.month || 0) : "-") : String(num(u.people_week)), u.people_week == null ? "in 30 days" : "who opened it"],
+        // Someone who did not send the app has no row of their own in
+        // Insights; the inventory's 30-day count is theirs.
+        u.people_week == null
+          ? ["People, 30 days", a.inv && a.inv.people_30_days != null ? String(a.inv.people_30_days) : "-", "who opened it"]
+          : ["People, 7 days", String(num(u.people_week)), "who opened it"],
         ["Versions", String(((a.rel && a.rel.releases) || []).length + a.waiting.length), a.waiting.length ? a.waiting.length + " waiting" : "released"],
         ["Refused, 30 days", u.refusals ? String(refused) : "-", refused ? "people turned away" : "nobody turned away"],
         ["Team data", u.data ? bytes(u.data.bytes) : "-", u.data ? "of " + bytes(u.data.quota) : "not used yet"],
@@ -174,8 +181,31 @@
       }
     }
 
+    /// Who has which version, last 30 days, from the inventory: each person
+    /// once, on the version they opened last, the one that opens now first.
+    /// Names for owners and admins; counts for a reviewer.
+    function whoHas(a) {
+      var vs = (a.inv && a.inv.versions) || [];
+      var rows = vs.map(function (v) {
+        var n = v.people === "<3" ? "fewer than 3 people" : plural(num(v.people), "person", "people");
+        var tag = v.current ? el("span", { class: "tag ok", text: "Opens now" }) : v.state === "withdrawn" ? el("span", { class: "tag warn", text: "Withdrawn" }) : null;
+        var who = (v.names || []).map(function (p) { return K.who(p.principal).label; }).join(", ");
+        var said = v.current ? n : v.state === "withdrawn"
+          ? n + " last opened it before it was withdrawn; it no longer opens for them"
+          : n + " still on it; they get the one that opens now the next time they open it online";
+        return el("div", { class: "prow" }, [
+          el("span", { class: "pr-t" }, [el("b", {}, [el("span", { class: "mono", text: v.version || "" }), tag ? " " : null, tag]), el("small", { text: said }), who ? el("small", { text: who }) : null]),
+          el("span", { class: "pr-s", text: v.people === "<3" ? "<3" : String(num(v.people)) }),
+        ]);
+      });
+      return el("section", { class: "card pnl" }, [el("div", { class: "pnl-h" }, [el("h3", { text: "Who has which version, last 30 days" })])].concat(rows.length
+        ? rows
+        : [el("p", { class: "sub", style: "padding:0 0 18px", text: "Nobody opened " + a.name + " in the last 30 days. Copy its link and send it to the people it is for." })]));
+    }
+
     function usage(b, a) {
       var u = a.use;
+      if (!u && a.inv && a.inv.versions) { b.appendChild(whoHas(a)); return; }
       if (!u) { b.appendChild(el("div", { class: "card" }, [el("div", { class: "empty" }, [el("b", { text: "Usage is for its makers and the people who run " + nameOf() }), el("p", { text: "Insights has the organisation's numbers." })])])); return; }
       var daily = u.daily || [];
       var max = Math.max(1, Math.max.apply(null, daily.map(function (d) { return num(d.people); })));
@@ -194,6 +224,7 @@
         return el("div", { class: "prow" }, [el("span", { class: "pr-t" }, [el("b", { class: "mono", text: v.version }), el("small", { text: v.current ? "Opens now" : "An older version" })]), el("span", { class: "pr-s", text: v.people === "<3" ? "fewer than 3" : plural(num(v.people), "person", "people") })]);
       });
       b.appendChild(el("section", { class: "card pnl" }, [el("div", { class: "pnl-h" }, [el("h3", { text: "Versions in use, last 7 days" })])].concat(vrows.length ? vrows : [el("p", { class: "sub", style: "padding:0 0 18px", text: "No version was opened this week." })])));
+      if (a.inv && a.inv.versions && a.inv.versions.some(function (v) { return v.names; })) b.appendChild(whoHas(a));
       if ((u.refusals || []).length) {
         b.appendChild(el("section", { class: "card pnl" }, [el("div", { class: "pnl-h" }, [el("h3", { text: "Turned away, last 30 days" })])].concat(u.refusals.map(function (r) {
           return el("div", { class: "prow" }, [el("span", { class: "pr-t" }, [el("b", { text: (K.refusal(r.reason, { org: nameOf() }).title) || r.reason })]), el("span", { class: "pr-s", text: String(r.n) })]);

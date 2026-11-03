@@ -29,6 +29,32 @@ use krate_adapter_common::ui::{
 /// Native events paired with the Krate window they belong to.
 pub type CollectedNativeEvents = Vec<(WindowId, WinitWindowNativeEvent)>;
 
+/// Whether the app about to open lays itself out for any screen (IC-912).
+static ADAPTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Say, before the app's first window, whether it adapts to any screen.
+pub fn set_adapts(adapts: bool) {
+    ADAPTS.store(adapts, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The orientation Android is asked to hold for a window the app asked for
+/// at `width` x `height`: an app that lays itself out for any screen turns
+/// with the phone (`-1`, SCREEN_ORIENTATION_UNSPECIFIED); a fixed design
+/// wider than tall holds landscape either way up (`6`,
+/// SCREEN_ORIENTATION_SENSOR_LANDSCAPE), so a 16:10 game is not shown in a
+/// strip across an upright phone; anything else is the phone's choice.
+///
+/// Every app was held to the shape of the window it asked for: a notes app
+/// that asked for 1024x768 and reads krate:ui/screen could never be used
+/// upright, though it lays out for a phone held either way.
+pub fn orientation_for(width: u32, height: u32, adapts: bool) -> i32 {
+    if !adapts && width > height {
+        6
+    } else {
+        -1
+    }
+}
+
 #[cfg(target_os = "android")]
 mod real {
     use super::*;
@@ -58,9 +84,7 @@ mod real {
     /// window wider than tall, and give the choice back to the phone for any
     /// other. A game drawn 16:10 was otherwise shown in a strip across an
     /// upright phone whenever the person happened to hold it that way.
-    fn request_orientation(landscape: bool) {
-        // ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE / _UNSPECIFIED.
-        let orientation: i32 = if landscape { 6 } else { -1 };
+    fn request_orientation(orientation: i32) {
         ANDROID_APP.with(|slot| {
             let Some(app) = slot.borrow().clone() else {
                 return;
@@ -262,7 +286,11 @@ mod real {
     impl PumpApp {
         fn drain_pending_creates(&mut self, event_loop: &ActiveEventLoop) {
             for pending in self.pending_creates.drain(..) {
-                request_orientation(pending.size.width > pending.size.height);
+                request_orientation(orientation_for(
+                    pending.size.width,
+                    pending.size.height,
+                    ADAPTS.load(std::sync::atomic::Ordering::Relaxed),
+                ));
                 let attributes = WindowAttributes::default()
                     .with_title(pending.title)
                     // Physical, not logical -- see the same note in the Windows
@@ -558,6 +586,15 @@ mod real {
                                         pressed: false,
                                     });
                                     if let Some(tracked) = self.windows.get_mut(&native) {
+                                        // A tap on a text field brings the
+                                        // keyboard up, the same as on any
+                                        // phone -- a tap on the field it is
+                                        // already in too (K-1024).
+                                        if let Some(many_lines) =
+                                            crate::typing::field_at(&tracked.placements, x, y)
+                                        {
+                                            crate::typing::set(krate, true, many_lines);
+                                        }
                                         let hovered =
                                             krate_adapter_common::painter::topmost_interactive_at(
                                                 &tracked.placements,
@@ -1256,5 +1293,21 @@ mod stub {
     /// Winit windows are only available in Linux builds.
     pub fn drain_wheel_samples() -> Vec<RawWheelSample> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod orientation_tests {
+    use super::orientation_for;
+
+    #[test]
+    fn an_app_that_adapts_turns_with_the_phone_and_a_wide_design_holds_landscape() {
+        // A fixed 16:10 game holds landscape.
+        assert_eq!(orientation_for(1280, 800, false), 6);
+        // The same window from an app that reads krate:ui/screen turns.
+        assert_eq!(orientation_for(1280, 800, true), -1);
+        // Taller than wide, or square: the phone decides.
+        assert_eq!(orientation_for(390, 844, false), -1);
+        assert_eq!(orientation_for(600, 600, false), -1);
     }
 }

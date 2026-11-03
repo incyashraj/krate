@@ -71,6 +71,15 @@ mod real {
         .unwrap_or((0.0, 0.0, 0.0, 0.0))
     }
 
+    /// Whether a screen reader that explores by touch (TalkBack) is on.
+    pub fn screen_reader_on() -> bool {
+        with_activity("asking about the screen reader", |env, activity| {
+            env.call_method(activity, "krateScreenReaderOn", "()Z", &[])?
+                .z()
+        })
+        .unwrap_or(false)
+    }
+
     pub fn read_clipboard() -> Result<String, String> {
         with_activity("reading the clipboard", |env, activity| {
             let text = env
@@ -214,6 +223,11 @@ mod stub {
     /// No phone, nothing covering the edges.
     pub fn covered_edges() -> (f32, f32, f32, f32) {
         (0.0, 0.0, 0.0, 0.0)
+    }
+
+    /// No screen reader off a phone.
+    pub fn screen_reader_on() -> bool {
+        false
     }
 
     pub fn read_clipboard() -> Result<String, String> {

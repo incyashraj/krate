@@ -305,6 +305,8 @@ pub(crate) fn inspect_json(target: &str, allow_http: bool) -> Result<Value> {
 /// session when the link is on a Krate hub, and a private app's refusal in
 /// the same words, never "403".
 fn fetch_with_session(target: &str, allow_http: bool) -> Result<krate_bundle::Fetched> {
+    // A Player address copied from a browser names the same app (K-1166).
+    let target = &*crate::org::bundle_address(target);
     let authorization = crate::org::link_authorization(target);
     krate_bundle::fetch_resolved_authorized(target, allow_http, authorization.as_deref()).map_err(
         |err| match crate::access::refused_words(&err, target) {

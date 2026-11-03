@@ -141,7 +141,7 @@ const shown = (n) => t(n.shown);
 
 /* ---- Apps: narrowed by what needs doing ---- */
 {
-  const app = (name, extra) => ({ app_id: "com.acme." + name.toLowerCase(), name, state: "released", version: "1.0.0", audience: null, owner: { principal: "github:carol" }, needs_owner: false, last_sent_by: "github:carol", last_sent_at: NOW, capabilities: [], people: { month: 2 }, ...extra });
+  const app = (name, extra) => ({ app_id: "com.acme." + name.toLowerCase(), name, state: "released", version: "1.0.0", audience: null, owner: { principal: "github:carol" }, needs_owner: false, last_sent_by: "github:carol", last_sent_at: NOW, capabilities: [], people_30_days: 2, ...extra });
   const inv = { apps: [app("Rota", { needs_owner: true, owner: { principal: "github:gone" } }), app("Expenses", {}), app("Old", { state: "withdrawn" })] };
   const p = await page("https://krate.tech/org/?o=acme&tab=apps", DASH, { token: "t", routes: { ...routes("owner"), "GET /orgs/acme/inventory": () => [200, inv] } });
   await settle();

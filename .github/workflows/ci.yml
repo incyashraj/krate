@@ -1897,6 +1897,18 @@ jobs:
           cargo install wasm-bindgen-cli --locked --version 0.2.120
           rustup toolchain install 1.96.0 --profile minimal --target wasm32-unknown-unknown
           scripts/build-web-player.sh
+      # The browser-tab proofs below open apps in this Player, so they take
+      # this build rather than making a second one.
+      - name: Keep the Player for the browser-tab proofs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: web-player
+          path: |
+            cloud/worker/player-dist/
+            cloud/worker/src/validator.wasm
+            cloud/worker/src/transpiler.wasm
+          if-no-files-found: error
+          retention-days: 3
       # The hub signs people in with SAML through @node-saml/node-saml
       # (IC-955), so the worker has npm dependencies now; exactly the
       # locked ones.
@@ -1963,6 +1975,83 @@ jobs:
           Write-Host "install.ps1 parses cleanly"
       - name: Check Go SDK shape
         run: node packages/sdk-go/scripts/check-shape.mjs
+
+  # ──────────────────────────────────────────────
+  # 13b. The tab Player, opened from a link in real browsers
+  # ──────────────────────────────────────────────
+  #
+  # A Krate app opened from a link runs in the browser's tab (IC-956). Its
+  # proofs -- a database, live connections, picked and saved files, a shared
+  # store and secrets, the device's senses, sound, and a link that follows
+  # an app to its next version -- each run the hub Worker in Node over the
+  # worker tests' stand-ins, publish a committed .krate to it, and open it
+  # in Chromium (computer and phone), WebKit (iPhone) and, for live
+  # connections, Firefox. Until this job they ran only on the founder's Mac.
+  #
+  # Every push, not only the full lanes: the Player is already built by the
+  # docs job on every push and handed over here, the proofs take about five
+  # minutes, and this job ends well before the Ubuntu test job does, so it
+  # adds no time to a run. A tab guard that runs nightly finds the break the
+  # morning after it shipped.
+  #
+  # Runs once the docs job has uploaded the Player even if a later docs
+  # check fails, so an unrelated red line does not hide these verdicts.
+  browser-tab-proofs:
+    name: Browser-tab proofs (Chromium, WebKit, Firefox)
+    needs: docs
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # The hub's tests need node:sqlite (Node 22); pinned so a runner image
+      # change cannot move it.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+      - name: Fetch the Player the docs job built
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: web-player
+          path: cloud/worker
+      - name: Install the hub's dependencies
+        run: cd cloud/worker && npm ci --no-audit --no-fund
+      # Playwright 1.63.0, the version crates/adapter-web/player/package.json
+      # names, from a lock file that holds nothing else.
+      - name: Install Playwright
+        run: cd cloud/worker/browser-test && npm ci --no-audit --no-fund
+      - name: Cache Playwright's browsers
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('cloud/worker/browser-test/package-lock.json') }}
+      # --with-deps installs the system libraries WebKit and Firefox need on
+      # Ubuntu every time (apt, not cached); the browsers come from the cache.
+      - name: Install Chromium, WebKit and Firefox
+        run: cd cloud/worker/browser-test && npx playwright install --with-deps --only-shell chromium webkit firefox
+      # Every proof runs even when one fails, and the step fails naming each
+      # one that did not exit 0. ws-proof exits 2 when an engine on its list
+      # (Firefox among them) did not start: here that is a failure, not a
+      # pass. No screenshot folder is passed: share-proof's pictures inject a
+      # style WebKit's content policy logs, and it reads that log after them.
+      - name: Run the browser-tab proofs
+        env:
+          PLAYWRIGHT_MODULE: ${{ github.workspace }}/cloud/worker/browser-test/node_modules/playwright/index.mjs
+        run: |
+          failed=""
+          for proof in sql ws file share senses audio versions storage signin; do
+            echo "== $proof-proof"
+            start=$SECONDS
+            code=0
+            timeout 600 node --experimental-wasm-modules "crates/adapter-web/player/$proof-proof.mjs" || code=$?
+            echo "== $proof-proof exited $code after $((SECONDS - start))s"
+            if [ "$code" -ne 0 ]; then failed="$failed $proof-proof($code)"; fi
+          done
+          if [ -n "$failed" ]; then
+            echo "failed, or not run in every engine:$failed" >&2
+            exit 1
+          fi
+          echo "every browser-tab proof passed in every engine"
 
   # ──────────────────────────────────────────────
   # 14. Benchmark smoke + warning-only regression check

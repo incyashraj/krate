@@ -180,8 +180,11 @@ async function asset(env, url, name) {
 /// organisation's app as it is now (`/run/org/<slug>/<app-id>`, which the
 /// page resolves to the current release with the person's session -- the
 /// address a phone keeps on its home screen, so an update never breaks it),
-/// each with its web app manifest and icon.
-export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127}))(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
+/// or a public app as it is now (`/run/v<line>`, the app's own link,
+/// IC-976: what a home screen keeps for it, so an update reaches it too),
+/// each with its web app manifest and icon. The line is not a group of its
+/// own, so the groups others read keep their numbers.
+export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|v[0-9a-f]{11})(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
 
 /// What a home screen calls an app: the name the page judged, trimmed, with
 /// nothing that is not printable.
@@ -247,7 +250,7 @@ function iconFor(base, name) {
 export async function playerPage(request, url, env) {
   const m = RUN_PATH.exec(url.pathname);
   if (!m) return null;
-  const base = m[1] ? `/run/${m[1]}` : `/run/org/${m[2]}/${m[3]}`;
+  const base = m[1] ? `/run/${m[1]}` : m[2] ? `/run/org/${m[2]}/${m[3]}` : url.pathname.slice(0, "/run/v".length + 11);
   if (m[4] === "app.webmanifest") return manifestFor(base, appName(url.searchParams.get("name")));
   if (m[4] === "icon.svg") return iconFor(base, appName(url.searchParams.get("name")));
   const page = await asset(env, url, "run.html");
@@ -286,7 +289,7 @@ export async function validatorFile(request, url, env) {
 
 /// GET /a/<hash>/web. `access(object)` applies /a/<hash>'s own checks and
 /// answers null (go ahead) or the refusal Response.
-export async function webPackRoute(env, hash, { lookup, access, judgedComponent }) {
+export async function webPackRoute(env, hash, { lookup, access, judgedComponent, storeTag }) {
   const found = await lookup(hash);
   if (found.response) return found.response;
   const { object, privateOrg } = found;
@@ -309,12 +312,17 @@ export async function webPackRoute(env, hash, { lookup, access, judgedComponent 
   new DataView(body.buffer).setUint32(0, bundle.length, true);
   body.set(bundle, 4);
   body.set(pack.bytes, 4 + bundle.length);
+  // Whose app this is, as the hub knows it from the publisher's sign-in: the
+  // Player keys the app's storage by it, so another publisher declaring the
+  // same app id never reaches this one's data (security review, 2026-11-03).
+  const tag = storeTag ? await storeTag().catch(() => null) : null;
   return new Response(body, {
     headers: {
       "content-type": "application/octet-stream",
       "content-length": String(body.length),
       "cross-origin-resource-policy": "same-origin",
       "x-krate-web-pack": WEB_PACK_TAG,
+      ...(tag ? { "x-krate-store": tag } : {}),
       ...cache,
     },
   });

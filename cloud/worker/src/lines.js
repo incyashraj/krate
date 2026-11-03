@@ -32,6 +32,47 @@ export async function lineIdOf(owner, appId) {
   return "v" + (await sha256Hex(`${owner}\n${appId}`)).slice(0, 11);
 }
 
+/// The line this owner's app lives on: the derived id, or -- when that id
+/// already belongs to another owner -- the one minted for this owner when
+/// they first met the collision. The derived id is 44 bits of a hash anyone
+/// can compute for any (owner, app id), so a stranger who knows both can
+/// search for an app id of their own that lands on the same id and publish
+/// it first. They gain nothing (a line never takes another owner's build),
+/// but without this the real owner's every update would fall off versioning.
+/// The minted id is random, so it cannot be searched for. Costs one read
+/// only on a collision; ordinary lines are found exactly as before.
+export async function lineFor(env, owner, appId) {
+  const derived = await lineIdOf(owner, appId);
+  const line = await readLine(env, derived);
+  if (!line || line.owner === owner) return { id: derived, line };
+  const pointer = `lineof:${await sha256Hex(`${owner}\n${appId}`)}`;
+  let minted = null;
+  try {
+    minted = await env.APPS.get(pointer);
+  } catch (_) {
+    minted = null;
+  }
+  if (minted && LINE_ID.test(minted)) {
+    const mine = await readLine(env, minted);
+    if (!mine || mine.owner === owner) return { id: minted, line: mine };
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  const id = "v" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 11);
+  await env.APPS.put(pointer, id);
+  return { id, line: null };
+}
+
+/// The storage name a tab gives one publisher's apps (store.kv, sql,
+/// shared, secret): a digest of the owner the hub vouched for at publish.
+/// The manifest's app id is the author's own word, so an app keyed by it
+/// alone opens any other publisher's data under the same id; the Player
+/// joins the id with this tag. 64 bits of SHA-256 over a principal nobody
+/// chooses freely (a GitHub login or a random account id).
+export async function storeTagOf(owner) {
+  if (!owner) return null;
+  return "k" + (await sha256Hex(`krate store\n${owner}`)).slice(0, 16);
+}
+
 export async function readLine(env, id) {
   if (!LINE_ID.test(String(id || ""))) return null;
   try {
@@ -66,9 +107,10 @@ export async function versionOf(env, hash) {
 /// Record a publish on its line: the next version, or nothing new when these
 /// bytes are already a version of it. Returns { id, n, line, added }.
 export async function advanceLine(env, { owner, appId, name, hash, version, size }) {
-  const id = await lineIdOf(owner, appId);
+  const found = await lineFor(env, owner, appId);
+  const id = found.id;
   const now = Math.floor(Date.now() / 1000);
-  const line = (await readLine(env, id)) || { id, owner, app_id: appId, name, current: 0, versions: [], created: now };
+  const line = found.line || { id, owner, app_id: appId, name, current: 0, versions: [], created: now };
   // Never another owner's line, whatever the id says.
   if (line.owner !== owner) return null;
   const known = line.versions.find((v) => v.hash === hash);
@@ -142,7 +184,7 @@ export async function linesRoute(request, url, env, { ownerOf, identity, base })
     if (!me) return { status: 401, body: { error: "sign in to see your apps" } };
     const appId = String(url.searchParams.get("app") || "").slice(0, 200);
     if (!appId) return { status: 400, body: { error: "say which app (?app=<its id>)" } };
-    const line = await readLine(env, await lineIdOf(me, appId));
+    const { line } = await lineFor(env, me, appId);
     if (!line || line.owner !== me) return { status: 404, body: { error: "not published yet" } };
     return { status: 200, body: lineView(line, base, { owner: true }) };
   }

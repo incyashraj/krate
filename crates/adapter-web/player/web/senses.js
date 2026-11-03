@@ -220,9 +220,13 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
   };
   const say = async ({ text, voice, rate }) => {
     if (!synth) return no('unsupported', NO_VOICES);
+    // A browser with no voices at all accepts a line and then fails to say
+    // it; the app is told so instead, in the words voices() uses.
+    const list = await voicesNow();
+    if (!list.length && (voice === null || voice === undefined)) return no('unsupported', NO_VOICES);
     let chosen = null;
     if (voice !== null && voice !== undefined) {
-      chosen = (await voicesNow()).find((v) => v.voiceURI === voice);
+      chosen = list.find((v) => v.voiceURI === voice);
       if (!chosen) return no('invalid-request', `this browser has no voice ${voice}`);
     }
     // A new line replaces the old one rather than queueing behind it.
@@ -279,7 +283,7 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
       v.muted = true;
       v.playsInline = true;
       v.autoplay = true;
-      v.className = 'pick';
+      v.className = 'feed';
       v.srcObject = stream;
       document.body.appendChild(v);
       v.play().catch(() => {});
@@ -350,7 +354,10 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
       const height = v.videoHeight;
       if (!width || !height || v.readyState < 2) return ok(null);
       // The newest picture, once: nothing new since the last read is none.
-      if (s.seq >= 0 ? s.seq === s.read : v.currentTime === s.lastTime) return ok(null);
+      // The frame callback says when a picture is new; until it has fired
+      // once, the video's clock does. Linux WebKit never fires it for this
+      // hidden video, so waiting on it alone read no frame at all there.
+      if (s.seq > 0 ? s.seq === s.read : v.currentTime === s.lastTime) return ok(null);
       if (!s.canvas) s.canvas = document.createElement('canvas');
       if (s.canvas.width !== width || s.canvas.height !== height) { s.canvas.width = width; s.canvas.height = height; s.g = null; }
       if (!s.g) s.g = s.canvas.getContext('2d', { willReadFrequently: true });

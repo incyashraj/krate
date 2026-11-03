@@ -172,6 +172,52 @@ const ops = {
     return first ? first.uploaded_by : null;
   },
 
+  /// Who has which version of `app`: each person who opened it since
+  /// `since`, counted once, on the version they opened last -- the answer
+  /// to "who is still on 1.0.0" before withdrawing it, and to "has the new
+  /// one reached everyone" after an update. Current first, then by people.
+  /// Names only when `names` (owners and admins); anyone else reads counts,
+  /// with 1 or 2 people said as "<3" (Insights' rule).
+  versionsInUse(app, list, since, currentDigest, names) {
+    const order = new Map(list.map((c, i) => [c.digest, i]));
+    const latest = new Map();
+    for (const r of this.rows(
+      "SELECT principal, day, digest, version FROM usage_daily WHERE app_id = ? AND day >= ? ORDER BY day",
+      app,
+      since,
+    )) {
+      const had = latest.get(r.principal);
+      // A later day wins; on the same day, the newer version (list is
+      // newest first, so a smaller index is newer).
+      if (!had || r.day > had.day || (r.day === had.day && (order.get(r.digest) ?? 1e9) < (order.get(had.digest) ?? 1e9))) {
+        latest.set(r.principal, r);
+      }
+    }
+    const byDigest = new Map();
+    for (const [principal, r] of latest) {
+      if (!byDigest.has(r.digest)) byDigest.set(r.digest, { version: r.version, last: r.day, who: [] });
+      const v = byDigest.get(r.digest);
+      v.who.push(principal);
+      if (r.day > v.last) v.last = r.day;
+    }
+    const states = new Map(list.map((c) => [c.digest, c.state]));
+    return [...byDigest.entries()]
+      .map(([digest, v]) => {
+        const n = v.who.length;
+        const out = {
+          digest,
+          version: v.version,
+          state: states.get(digest) || "released",
+          current: digest === currentDigest,
+          people: names || n >= 3 ? n : "<3",
+          last_opened: v.last,
+        };
+        if (names) out.names = v.who.sort().map((p) => ({ principal: p, display: displayOf(p) }));
+        return out;
+      })
+      .sort((a, b) => Number(b.current) - Number(a.current) || (typeof b.people === "number" ? b.people : 1) - (typeof a.people === "number" ? a.people : 1) || String(b.version).localeCompare(String(a.version)));
+  },
+
   inventoryRows(ctx, me) {
     const names = allows(me.role, "inventory.people") === "yes";
     const since = dayBefore(this.orgDay(ctx.now), RECENT_DAYS - 1);
@@ -207,6 +253,7 @@ const ops = {
         app,
         since,
       ).map((r) => r.principal);
+      const versions = this.versionsInUse(app, list, since, currentDigest, names);
       out.push({
         app_id: app,
         name: shown.name,
@@ -237,6 +284,8 @@ const ops = {
         rollout: rolloutOf(this, app),
         people_30_days: people.length,
         ...(names ? { people: people.map((p) => ({ principal: p, display: displayOf(p) })) } : {}),
+        // Who has which version: each person on the one they opened last.
+        versions,
       });
     }
     out.sort((a, b) => Number(b.needs_owner) - Number(a.needs_owner) || String(a.name || a.app_id).localeCompare(String(b.name || b.app_id)));
@@ -389,6 +438,20 @@ function install(OrgClass) {
   const view = P.op_view;
   P.op_view = function (ctx) {
     const answer = view.call(this, ctx);
+    if (answer.status === 200) {
+      const c = this.row("SELECT * FROM candidates WHERE digest = ?", String(ctx.args.digest || ""));
+      if (c && c.state === "released") this.noteUse(ctx, c);
+    }
+    return answer;
+  };
+
+  // An open in a browser tab (the Player, on a phone or a computer) is a
+  // download each time, with no check-in after it: counted the same way, so
+  // the people who use an app only in a tab are not missing from who uses
+  // it and which version they have.
+  const download = P.op_download;
+  P.op_download = function (ctx) {
+    const answer = download.call(this, ctx);
     if (answer.status === 200) {
       const c = this.row("SELECT * FROM candidates WHERE digest = ?", String(ctx.args.digest || ""));
       if (c && c.state === "released") this.noteUse(ctx, c);

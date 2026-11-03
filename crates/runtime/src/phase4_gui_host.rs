@@ -288,7 +288,11 @@ pub(crate) fn error_to_phase4(err: ui3::types::UiError) -> ui4::types::UiError {
 /// frozen, and an interface it never had cannot break an app built for it.
 impl ui4::pointer::Host for Phase3GuiHost {
     fn position(&mut self, window: u64) -> wasmtime::Result<Option<(f32, f32)>> {
-        Ok(self.pointer_state(window).position)
+        // In the app's own coordinates, as its pointer events are (K-1176).
+        Ok(self
+            .pointer_state(window)
+            .position
+            .map(|(x, y)| self.point_to_design(x, y)))
     }
 
     fn button_held(&mut self, button: ui4::types::PointerButton) -> wasmtime::Result<bool> {
@@ -326,7 +330,11 @@ impl ui4::touch::Host for Phase3GuiHost {
         Ok(self
             .touch_points(window)
             .into_iter()
-            .map(|(id, x, y)| ui4::touch::TouchPoint { id, x, y })
+            .map(|(id, x, y)| {
+                // In the app's own coordinates, as its pointer events are.
+                let (x, y) = self.point_to_design(x, y);
+                ui4::touch::TouchPoint { id, x, y }
+            })
             .collect())
     }
 }

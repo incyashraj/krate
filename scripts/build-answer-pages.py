@@ -409,7 +409,7 @@ krate run app.krate --prompt</pre>
         "lead": f"Describe your app in Krate Studio, then send it as a link: {LINK_OPENS}. On Mac, Windows and Linux the same <code>.krate</code> file also runs natively, and every app shows what it asks for before it opens.",
         "reviewed": REVIEWED,
         "faq": [
-            ("Can I change the app after I send it?", "<p>Yes. Ask for the change, then send the new version. Studio keeps each version, so you can go back if a change goes wrong.</p>"),
+            ("Can I change the app after I send it?", "<p>Yes. Ask Studio for the change and publish the update: the link you already sent opens the new version, with everything people saved in it still there. Each version keeps its own link, and you can make an earlier one current again if a change goes wrong.</p>"),
             ("Does the person I send it to need my AI tool or an account?", "<p>No. A link opens in their browser with nothing to install and no account. You need a Krate account only to publish a link; opening one never needs one.</p>"),
             ("Which AI tools can make a .krate?", "<p>Krate Studio on your computer works with Claude, Codex, Grok or Gemini. In the browser, Krate's own AI makes your first app.</p>"),
             ("Do I need to know how to code?", "<p>No. You describe the app in plain words and the AI writes the Rust, checks it and packs it. Developers can still open the source and change it by hand.</p>"),
@@ -431,10 +431,10 @@ krate create "a regex tester with a pattern box and live matches" --agent claude
 <pre class="answer-cmd">krate run regex.krate --dump-caps
 krate run regex.krate --prompt</pre>
 <p>The first command shows the permission request without running anything. The second opens the app after you review it.</p>"""),
-            ("Send it as a link or a file", f"""<p><strong>As a link.</strong> Publish the app and you get a link like <code>https://hub.krate.tech/run/&lt;id&gt;</code>. Paste it into a chat or an email; {LINK_OPENS}. Publishing needs a Krate account; opening never does.</p>
+            ("Send it as a link or a file", f"""<p><strong>As a link.</strong> Publish the app and you get a link like <code>https://hub.krate.tech/a/v&lt;id&gt;</code>. Paste it into a chat or an email; {LINK_OPENS}. Publish the app again and that same link opens the new version, so nobody has to be sent a second one. Publishing needs a Krate account; opening never does.</p>
 <pre class="answer-cmd">krate publish regex.krate</pre>
 <p><strong>As a file.</strong> Once you have <a href="#test-before-you-send-it">tried the app</a>, send the <code>.krate</code> itself by email, chat or a shared drive. One file, from 37 KB. On Mac, Windows and Linux, the Krate runtime opens it natively; <a href="/open/">here is what the person receiving it does</a>. They never need your AI account, your source or a Rust toolchain.</p>"""),
-            ("What the person you send it to sees", """<p>Before the app opens, they see exactly what it asks for and decide. It starts with no access to their files or the network, hosts it did not declare stay unreachable, and it keeps its data in storage of its own. See <a href="/run-ai-generated-code-safely.html">how permissions work</a> and <a href="/portable-desktop-app-format.html">how one file opens on every screen</a>.</p>"""),
+            ("What the person you send it to sees", """<p>Before the app opens, they see exactly what it asks for and decide. It starts with no access to their files or the network, hosts it did not declare stay unreachable, and it keeps its data in storage of its own. From a link it can still use its own database, files they open or drop in, live connections, sound, and, once they allow it, the camera, microphone and location. See <a href="/run-ai-generated-code-safely.html">how permissions work</a> and <a href="/portable-desktop-app-format.html">how one file opens on every screen</a>.</p>"""),
         ],
     },
     {
@@ -643,7 +643,7 @@ PAGES += [
                 ["What you run", "A server or hosting account, for as long as people use the app.", "No server. Krate's hub serves the link, and the native app runs from the file."],
                 ["Offline", "Only with extra work, such as a service worker.", "The native app works without a connection unless it needs the network itself."],
                 ["Local files", f'Depends on the browser. The File System Access picker is <a href="{MDN_FSA}">not available in all major browsers</a>.', "Through a file dialog or a folder the person grants."],
-                ["Updates", "Every visitor gets the new version on reload.", "You publish or send the new version."],
+                ["Updates", "Every visitor gets the new version on reload.", "Publish the update and the link people already have opens it, with what they saved kept. Each version keeps its own link."],
                 ["Phones", "Yes.", "Yes, from a link in the phone's browser."],
                 ["What people install", "Nothing.", "Nothing, to open a link. The Krate runtime, once, to run it natively."],
             ])),
@@ -656,7 +656,7 @@ PAGES += [
             ("Can I still use the web from a Krate app?", "<p>Yes. A Krate app can call APIs over HTTP and WebSockets for the hosts it declares, which the person approves before it runs.</p>"),
             ("Can I turn my website into a desktop app?", "<p>Often, yes. <code>krate port</code> (beta) reads your project and shows what maps across, and Krate Studio's AI rewrites it against Krate's interfaces, so you get one file that runs natively and opens from a link, with no per-OS package to build or sign.</p>"),
             ("Do Krate apps need an internet connection?", "<p>The native app does not, unless it uses the network itself, and then only to the hosts the person allows. A link needs a connection to load, like any page.</p>"),
-            ("Can people open a .krate on their phone?", "<p>Yes. Send a link and it opens in the phone's browser, with nothing to install and no account.</p>"),
+            ("Can people open a .krate on their phone?", "<p>Yes. Send a link and it opens in the phone's browser, with nothing to install and no account. There it can use its own database, files, live connections and sound, and the camera, microphone and location once the person allows them.</p>"),
         ],
     },
     {
@@ -710,6 +710,7 @@ PAGES += [
             ("How do I distribute a desktop app to Windows, macOS and Linux?", '<p>Ship one <code>.krate</code> file: it runs natively on all three, and a link opens it in any browser. The usual alternative is to build, sign and host a package for each system. <a href="/how-to-distribute-a-desktop-app.html">Both routes, step by step</a>.</p>'),
             ("Can I ship one app file to Windows, Mac and Linux?", '<p>Yes, as a <code>.krate</code>: the same bytes run natively on all three, and the same app opens from a link in any browser. A normal native executable cannot do this. <a href="/portable-desktop-app-format.html">How the format works</a>.</p>'),
             ("Can people open my app on their phone?", '<p>Yes. Send a link and it opens in the phone\'s browser, with nothing to install and no account. <a href="/share-an-app-made-with-ai.html">Sending an app as a link</a>.</p>'),
+            ("How do I update an app people already have?", '<p>Publish the new version. The link people already have opens it, and what they saved in the app is still there. Each version keeps its own link, and you can make an earlier one current again. <a href="/share-an-app-made-with-ai.html">Sending an app as a link</a>.</p>'),
             ("What is a good Electron alternative?", '<p>Krate, if you want one small file for every screen: it runs natively with no browser inside and opens from a link anywhere. Tauri, Wails and Neutralino keep a web frontend in the system WebView, and Flutter and Qt draw their own interface. <a href="/krate-vs-electron.html">Krate vs Electron</a>.</p>'),
             ("Is there a Tauri alternative that doesn't need a build per OS?", '<p>Krate. Tauri builds an installer or bundle for each operating system; Krate ships one file and does the per-OS work once, in runtimes Krate maintains. <a href="/krate-vs-tauri.html">Krate vs Tauri</a>.</p>'),
             ("How do I share an app I built with AI?", '<p>Make it in Krate Studio and send the link or the <code>.krate</code> file. If another AI tool built you a website, open the project in Krate Studio and bring it over. <a href="/share-an-app-made-with-ai.html">Sharing an app made with AI</a>.</p>'),
@@ -949,7 +950,7 @@ class MetadataTests(unittest.TestCase):
         self.assertIn('href="#test-before-you-send-it"', result)
         self.assertIn('href="/open/"', result)
         self.assertIn('href="/docs/porting.html"', result)
-        self.assertIn("https://hub.krate.tech/run/", result)
+        self.assertIn("https://hub.krate.tech/a/v", result)
         self.assertIn("Publishing needs a Krate account; opening never does", result)
 
     def test_portability_proof_links_the_tested_file_and_per_host_evidence(self):

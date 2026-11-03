@@ -168,7 +168,7 @@ The first command shows the permission request without running anything. The sec
 
 ### Send it as a link or a file
 
-As a link. Publish the app and you get a link like https://hub.krate.tech/run/<id>. Paste it into a chat or an email; it opens in any modern browser, phones included, with nothing to install and no account. Publishing needs a Krate account; opening never does.
+As a link. Publish the app and you get a link like https://hub.krate.tech/a/v<id>. Paste it into a chat or an email; it opens in any modern browser, phones included, with nothing to install and no account. Publish the app again and that same link opens the new version, so nobody has to be sent a second one. Publishing needs a Krate account; opening never does.
 
 krate publish regex.krate
 
@@ -176,12 +176,12 @@ As a file. Once you have tried the app, send the .krate itself by email, chat or
 
 ### What the person you send it to sees
 
-Before the app opens, they see exactly what it asks for and decide. It starts with no access to their files or the network, hosts it did not declare stay unreachable, and it keeps its data in storage of its own. See how permissions work (https://krate.tech/run-ai-generated-code-safely.html) and how one file opens on every screen (https://krate.tech/portable-desktop-app-format.html).
+Before the app opens, they see exactly what it asks for and decide. It starts with no access to their files or the network, hosts it did not declare stay unreachable, and it keeps its data in storage of its own. From a link it can still use its own database, files they open or drop in, live connections, sound, and, once they allow it, the camera, microphone and location. See how permissions work (https://krate.tech/run-ai-generated-code-safely.html) and how one file opens on every screen (https://krate.tech/portable-desktop-app-format.html).
 
 ### Questions
 
 Q: Can I change the app after I send it?
-A: Yes. Ask for the change, then send the new version. Studio keeps each version, so you can go back if a change goes wrong.
+A: Yes. Ask Studio for the change and publish the update: the link you already sent opens the new version, with everything people saved in it still there. Each version keeps its own link, and you can make an earlier one current again if a change goes wrong.
 
 Q: Does the person I send it to need my AI tool or an account?
 A: No. A link opens in their browser with nothing to install and no account. You need a Krate account only to publish a link; opening one never needs one.
@@ -546,7 +546,7 @@ Offline | Only with extra work, such as a service worker. | The native app works
 
 Local files | Depends on the browser. The File System Access picker is not available in all major browsers (https://developer.mozilla.org/en-US/docs/Web/API/Window/showOpenFilePicker). | Through a file dialog or a folder the person grants.
 
-Updates | Every visitor gets the new version on reload. | You publish or send the new version.
+Updates | Every visitor gets the new version on reload. | Publish the update and the link people already have opens it, with what they saved kept. Each version keeps its own link.
 
 Phones | Yes. | Yes, from a link in the phone's browser.
 
@@ -578,7 +578,7 @@ Q: Do Krate apps need an internet connection?
 A: The native app does not, unless it uses the network itself, and then only to the hosts the person allows. A link needs a connection to load, like any page.
 
 Q: Can people open a .krate on their phone?
-A: Yes. Send a link and it opens in the phone's browser, with nothing to install and no account.
+A: Yes. Send a link and it opens in the phone's browser, with nothing to install and no account. There it can use its own database, files, live connections and sound, and the camera, microphone and location once the person allows them.
 
 ## Ship a desktop app without code signing for every OS
 
@@ -656,6 +656,9 @@ A: Yes, as a .krate: the same bytes run natively on all three, and the same app 
 
 Q: Can people open my app on their phone?
 A: Yes. Send a link and it opens in the phone's browser, with nothing to install and no account. Sending an app as a link (https://krate.tech/share-an-app-made-with-ai.html).
+
+Q: How do I update an app people already have?
+A: Publish the new version. The link people already have opens it, and what they saved in the app is still there. Each version keeps its own link, and you can make an earlier one current again. Sending an app as a link (https://krate.tech/share-an-app-made-with-ai.html).
 
 Q: What is a good Electron alternative?
 A: Krate, if you want one small file for every screen: it runs natively with no browser inside and opens from a link anywhere. Tauri, Wails and Neutralino keep a web frontend in the system WebView, and Flutter and Qt draw their own interface. Krate vs Electron (https://krate.tech/krate-vs-electron.html).
