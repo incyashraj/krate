@@ -35,6 +35,14 @@ impl DiskFs {
         DiskFs { root, watch }
     }
 
+    /// The app's own folder (`.`), for automated runs: reading it needs the
+    /// fs grant a test manifest gives.
+    pub fn own() -> Self {
+        let root = String::from(".");
+        let watch = fs::watch::start(&root).ok();
+        DiskFs { root, watch }
+    }
+
     fn at(&self, path: &str) -> String {
         let mut s = self.root.clone();
         if !path.is_empty() {
@@ -48,6 +56,10 @@ impl DiskFs {
 impl Vfs for DiskFs {
     fn is_real(&self) -> bool {
         true
+    }
+
+    fn folder(&self) -> Option<String> {
+        Some(self.root.clone())
     }
 
     fn list(&mut self, dir: &str) -> Result<Vec<Entry>, String> {

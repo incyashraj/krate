@@ -46,6 +46,8 @@ pub enum Action {
     BiggerText,
     SmallerText,
     Keys,
+    FormatOnSave,
+    ShowDebug,
     Tool(Tool),
 }
 
@@ -117,10 +119,53 @@ pub const COMMANDS: &[Command] = &[
     c(
         Action::Tool(Tool::Definition),
         Tool::Definition.title(),
-        "F12  (gd works in this file)",
+        "F12  gd",
+    ),
+    c(
+        Action::Tool(Tool::References),
+        Tool::References.title(),
+        "Shift+F12  gr",
+    ),
+    c(
+        Action::Tool(Tool::RenameSymbol),
+        Tool::RenameSymbol.title(),
+        "F2  :rename",
+    ),
+    c(
+        Action::Tool(Tool::CodeAction),
+        Tool::CodeAction.title(),
+        "Ctrl+.  :actions",
     ),
     c(Action::Tool(Tool::Debug), Tool::Debug.title(), "Shift+F5"),
-    c(Action::Tool(Tool::Terminal), Tool::Terminal.title(), ""),
+    c(Action::Tool(Tool::Continue), Tool::Continue.title(), "F5"),
+    c(Action::Tool(Tool::StepOver), Tool::StepOver.title(), "F10"),
+    c(Action::Tool(Tool::StepIn), Tool::StepIn.title(), "F11"),
+    c(
+        Action::Tool(Tool::StepOut),
+        Tool::StepOut.title(),
+        "Shift+F11",
+    ),
+    c(
+        Action::Tool(Tool::StopDebug),
+        Tool::StopDebug.title(),
+        "Shift+F5",
+    ),
+    c(
+        Action::ShowDebug,
+        "Show the debugger's variables and call stack",
+        "",
+    ),
+    c(
+        Action::Tool(Tool::Terminal),
+        Tool::Terminal.title(),
+        "Ctrl+`  :term",
+    ),
+    c(Action::Tool(Tool::Stop), Tool::Stop.title(), ":stop"),
+    c(
+        Action::FormatOnSave,
+        "Format on save on or off (rustfmt)",
+        ":fos",
+    ),
     c(Action::ThemeAuto, "Theme: follow the system", ":theme auto"),
     c(Action::ThemeDark, "Theme: Dusk (dark)", ":theme dark"),
     c(Action::ThemeLight, "Theme: Paper (light)", ":theme light"),
