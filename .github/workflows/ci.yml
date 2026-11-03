@@ -1871,6 +1871,16 @@ jobs:
         run: |
           python3 scripts/check-version-pins.py
           python3 scripts/check-version-pins.py --self-test
+      # The organisation starters are copies twice over: twelve apps share
+      # one kit by copying it, and each shipped .krate carries the source it
+      # was built from. A fix that misses a copy, or is never repacked, ships
+      # the old behaviour. Neither check ran anywhere before.
+      - name: The starters agree with each other and with apps/
+        run: |
+          python3 scripts/check-starter-kit.py
+          python3 scripts/check-starter-kit.py --self-test
+          python3 scripts/check-starters-fresh.py
+          python3 scripts/check-starters-fresh.py --self-test
       # The hub worker's tests mirror its logic rather than importing it (it
       # is one file with no module boundary), and a mirrored test that never
       # runs cannot catch the drift it was written for. Three of these
