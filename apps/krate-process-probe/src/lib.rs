@@ -127,7 +127,11 @@ fn terminal() -> String {
         sleep_millis(10);
     }
     if !saw {
-        return String::from("terminal: NEVER SAW hi");
+        // What the terminal did say, so a run on another system shows why.
+        let said = String::from_utf8_lossy(&seen);
+        let tail: String = said.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
+        let ended = matches!(term.wait(0), Ok(Some(_)));
+        return format!("terminal: NEVER SAW hi (ended={ended}, {} bytes: {:?})", seen.len(), tail);
     }
     if let Err(err) = term.resize(100, 30) {
         return format!("terminal: resize {}", refusal(&err));

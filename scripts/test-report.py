@@ -107,6 +107,9 @@ FIXTURES = [
     # "classify me", which is exactly what happened (K-744).
     ("no usable GPU", "optional",
      "a GPU the shared presenter device can open; a headless runner has none"),
+    # The same absence, worded by the GPU app test through the CLI.
+    ("this machine has no GPU", "optional",
+     "a GPU the app's renderer can open; a headless runner has none"),
 ]
 
 # Reasons that are not a fixture at all: a platform the test does not cover,
