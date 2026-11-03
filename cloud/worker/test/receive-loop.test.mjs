@@ -41,6 +41,7 @@ const PREVIEWER_UAS = {
   linkedin: ["LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)", "text/html"],
   facebook: ["facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "*/*"],
   telegram: ["TelegramBot (like TwitterBot)", "text/html"],
+  snapchat: ["Mozilla/5.0 (compatible; Snap URL Preview Service; bot; snapchat; https://developers.snap.com/robots)", "*/*"],
 };
 
 /* In-app browsers are people: the user agents a tap inside the app sends. */
@@ -222,9 +223,12 @@ for (const [who, [ua, accept]] of Object.entries(PREVIEWER_UAS)) {
     assert.equal(tag(res.text, "og:title"), name);
     assert.equal(tag(res.text, "og:description"), "A ball that bounces off the walls. Made with Krate: opens in your browser with a tap, nothing to install.");
     assert.equal(tag(res.text, "og:image"), `https://hub.example/shot/${hash}`);
-    assert.equal(tag(res.text, "og:url"), `https://hub.example/a/${hash}`);
+    // The app's own link, which opens whichever version is current (IC-976).
+    const line = JSON.parse(env._kv.get(`app:${hash}`)).line;
+    assert.match(line, /^v[0-9a-f]{11}$/);
+    assert.equal(tag(res.text, "og:url"), `https://hub.example/a/${line}`);
     assert.equal(tag(res.text, "twitter:card"), "summary_large_image");
-    assert.ok(res.text.includes(`<link rel="canonical" href="https://hub.example/a/${hash}">`));
+    assert.ok(res.text.includes(`<link rel="canonical" href="https://hub.example/a/${line}">`));
     assert.match(res.text, /<meta name="robots" content="noindex">/);
     // Counted as a preview, not as a person's tap.
     assert.equal(env.points[0].blobs[2], "preview");
@@ -287,7 +291,7 @@ test("a name with quotes and angle brackets is escaped in the card", async () =>
 test("a /run/ link gets the same card; the Player page is still the Player for a person", async () => {
   const { env, hash } = await hub();
   const card = await ask(env, "GET", `/run/${hash}`, { ua: PREVIEWER_UAS.discord[0] });
-  assert.equal(tag(card.text, "og:url"), `https://hub.example/a/${hash}`);
+  assert.equal(tag(card.text, "og:url"), `https://hub.example/a/${JSON.parse(env._kv.get(`app:${hash}`)).line}`);
   const page = await ask(env, "GET", `/run/${hash}`);
   assert.match(page.text, /<title>Player<\/title>/);
   assert.equal(page.headers.get("cross-origin-embedder-policy"), "require-corp");
@@ -378,4 +382,37 @@ test("the desk's page script still parses with the App reports tab in it", async
   assert.ok(html.includes('data-t="apps"'));
   const script = /<script>([\s\S]*?)<\/script>/.exec(html)[1];
   assert.doesNotThrow(() => new Function(script));
+});
+
+test("a card names the app's own link while it is current; after an update the old build names itself", async () => {
+  const env = withAssets(orgEnv({ PUBLIC_BASE: "https://hub.example" }));
+  env.USAGE = { writeDataPoint() {} };
+  const fixtures = join(here, "fixtures");
+  const v1 = await call(env, "alice", "POST", "/publish", { bytes: new Uint8Array(readFileSync(join(fixtures, "notes-0.1.0.krate"))) });
+  assert.equal(v1.status, 200, JSON.stringify(v1.body));
+  const line = v1.body.url.split("/a/")[1];
+  const ua = PREVIEWER_UAS.facebook[0];
+  // Shared as the app's link: the card keeps the app's link, so a chat that
+  // keeps the card's address still opens the next version.
+  const byLine = await ask(env, "GET", `/a/${line}`, { ua });
+  assert.equal(tag(byLine.text, "og:url"), `https://hub.example/a/${line}`);
+  const v2 = await call(env, "alice", "POST", "/publish", { bytes: new Uint8Array(readFileSync(join(fixtures, "notes-0.2.0.krate"))) });
+  assert.equal(v2.body.version, 2);
+  assert.equal(tag((await ask(env, "GET", `/a/${line}`, { ua })).text, "og:url"), `https://hub.example/a/${line}`);
+  // v1 is no longer current: its own card names v1, not the app.
+  assert.equal(tag((await ask(env, "GET", `/a/${v1.body.id}`, { ua })).text, "og:url"), `https://hub.example/a/${v1.body.id}`);
+});
+
+test("the app's own address opens the Player, and a home screen keeps it", async () => {
+  const { env, hash } = await hub();
+  const line = JSON.parse(env._kv.get(`app:${hash}`)).line;
+  const page = await ask(env, "GET", `/run/${line}`);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /<title>Player<\/title>/);
+  assert.equal(page.headers.get("cross-origin-embedder-policy"), "require-corp");
+  const m = JSON.parse((await ask(env, "GET", `/run/${line}/app.webmanifest?name=Bounce`)).text);
+  assert.deepEqual([m.id, m.start_url, m.scope, m.name], [`/run/${line}`, `/run/${line}`, "/run/", "Bounce"]);
+  for (const bad of [`/run/${line}0`, "/run/vXYZ00000000", `/run/${line}/other.json`]) {
+    assert.equal((await ask(env, "GET", bad)).status, 404, bad);
+  }
 });

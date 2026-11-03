@@ -8,12 +8,17 @@ import assert from "node:assert/strict";
 
 /* A document with just enough of an element for these scripts: they only
  * ever set text, hidden, href, src and alt, and read them back. */
-function stubDocument(ids) {
+function stubDocument(ids, selectors = {}) {
   const els = {};
   for (const id of ids) els[id] = { id, textContent: "", hidden: true, href: "", src: "", alt: "" };
+  const picked = {};
+  for (const [sel, key] of Object.entries(selectors)) {
+    picked[sel] = els[key] = { textContent: "", hidden: false };
+  }
   return {
     els,
     getElementById: (id) => els[id] || null,
+    querySelector: (sel) => picked[sel] || null,
   };
 }
 
@@ -40,11 +45,11 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
   const code = lift(page, "var hash;");
   const HASH = "7edf315d97eca7db3142c9976cb19a465673c7f698e5ff13732cf64fb9196036";
 
-  async function open(ua) {
+  async function open(ua, maxTouchPoints = 0) {
     const doc = stubDocument([
       "taName", "taSize", "taShot", "theirApp", "pageHead", "galleryCard",
-      "taRow", "taGet", "taTab", "openTitle", "openBody",
-    ]);
+      "taRow", "taGet", "taTab", "openTitle", "openBody", "steps",
+    ], { ".pagesub": "lede" });
     // As the page has them: the download shows, "Open in this tab" waits.
     doc.els.taGet.hidden = false;
     const fetched = [];
@@ -56,7 +61,7 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
       };
     };
     new Function("document", "fetch", "location", "navigator", "URLSearchParams", code)(
-      doc, fetch, { search: `?a=${HASH}` }, { userAgent: ua }, URLSearchParams,
+      doc, fetch, { search: `?a=${HASH}` }, { userAgent: ua, maxTouchPoints }, URLSearchParams,
     );
     await settle(); await settle(); await settle();
     return { doc: doc.els, fetched };
@@ -76,6 +81,8 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
   assert.equal(mac.doc.taGet.className, "btn ghost", "and the download sits beside it");
   assert.equal(mac.doc.taGet.hidden, false, "the download stays on a computer");
   assert.equal(mac.doc.taGet.hidden, false, "the download stays the main way in on a desktop");
+  assert.match(mac.doc.lede.textContent, /^It opens right here in this tab, with nothing to install\./,
+    "the words under the heading lead with the tab, as the buttons do");
 
   const phone = await open("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
   assert.equal(phone.doc.theirApp.hidden, false, "a phone still sees what it was sent");
@@ -83,6 +90,10 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
   assert.equal(phone.doc.taRow.hidden, false, "a phone is offered the app in the tab instead (IC-956)");
   assert.equal(phone.doc.taTab.hidden, false, "the tab button shows on a phone");
   assert.equal(phone.doc.taTab.className, "btn dark", "and it is the main button there");
+  assert.equal(phone.doc.steps.hidden, true, "a phone is not shown a computer's steps");
+  const ipad = await open("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/604.1", 5);
+  assert.equal(ipad.doc.taGet.hidden, true, "an iPad, which says it is a Mac, is not handed a file either");
+  assert.equal(ipad.doc.steps.hidden, true, "nor a computer's steps");
   console.log("ok  a shared link on a desktop browser offers the app itself (K-858), and the tab (IC-956)");
 }
 

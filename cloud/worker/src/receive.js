@@ -37,11 +37,12 @@ export async function newerVersionLine(env, hash, base) {
 }
 
 /// The link previewers, by their own user agents. iMessage's previewer
-/// says facebookexternalhit and Twitterbot. Only previewers: an in-app
-/// browser (LinkedInApp, FBAN, Instagram, Snapchat, Line) is a person and
-/// keeps going where a browser goes.
+/// says facebookexternalhit and Twitterbot, and Snapchat's says Snap URL
+/// Preview. Only previewers: an in-app browser
+/// (LinkedInApp, FBAN, Instagram, Snapchat, Line) is a person and keeps
+/// going where a browser goes.
 export const PREVIEWERS =
-  /facebookexternalhit|Facebot|meta-externalagent|Twitterbot|Slackbot|Slack-ImgProxy|LinkedInBot|WhatsApp\/|Discordbot|TelegramBot|Applebot|redditbot|Embedly|SkypeUriPreview|Iframely|Pinterestbot|Mastodon\/|Bluesky|Cardyb|kakaotalk-scrap|Google-PageRenderer|vkShare/i;
+  /facebookexternalhit|Facebot|meta-externalagent|Twitterbot|Slackbot|Slack-ImgProxy|LinkedInBot|WhatsApp\/|Discordbot|TelegramBot|Applebot|redditbot|Embedly|SkypeUriPreview|Iframely|Pinterestbot|Mastodon\/|Bluesky|Cardyb|kakaotalk-scrap|Google-PageRenderer|vkShare|Snap URL Preview/i;
 
 export function isPreviewer(request) {
   return PREVIEWERS.test(request.headers.get("user-agent") || "");
@@ -102,7 +103,12 @@ export function cardDescription(name, description, where) {
 /// private app, and the card says no more.
 export async function linkCard(env, hash, { privateOrg = null } = {}) {
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-  const link = `${base}/a/${hash}`;
+  // The address the card names as the link: the app's own link (IC-976)
+  // while this build is its current version, so a chat that keeps the
+  // card's address (Facebook, LinkedIn) still opens the next version after
+  // an update; an older build keeps its own address.
+  const v = privateOrg ? null : await versionOf(env, hash).catch(() => null);
+  const link = v && v.line && !(Number(v.current) > Number(v.n)) ? `${base}/a/${v.line}` : `${base}/a/${hash}`;
   const card = `${base}/player/krate-card.png`;
   let title;
   let description;

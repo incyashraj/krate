@@ -241,13 +241,20 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
  * this page's own "about 24 MB" describes.
  */
 (function () {
+  /* A phone or a tablet: an iPad's Safari says "Macintosh", and only a Mac
+   * with a touch screen is one. */
+  function handheld() {
+    return /Android|iPhone|iPad|iPod/.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  }
   var ua = navigator.userAgent;
   var os = /Windows/.test(ua) ? "win"
     : (/Linux|X11/.test(ua) && !/Mac/.test(ua)) ? "linux"
     : /Mac/.test(ua) ? "mac" : "";
   // A phone cannot run a desktop app. Say so rather than handing them a
-  // download that will never open.
-  var mobile = /Android/.test(ua) || /iPhone|iPad|iPod/.test(ua);
+  // download that will never open. An iPad says it is a Mac; its touch
+  // screen tells it apart.
+  var mobile = handheld();
 
   var btn = document.getElementById("dlBtn");
   var btn2 = document.getElementById("dlBtn2");
@@ -420,6 +427,11 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
  * person who was sent one specific app landed on "Nothing to open yet?".
  */
 (function () {
+  // The same test as the block above; each block keeps its own scope.
+  function handheld() {
+    return /Android|iPhone|iPad|iPod/.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  }
   var hash;
   try { hash = new URLSearchParams(location.search).get("a"); } catch (e) { return; }
   // The app in this browser tab, nothing installed (IC-956): the Player on
@@ -439,6 +451,16 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
     if (phone) get.hidden = true;
     else get.className = "btn ghost";
     document.getElementById("taRow").hidden = false;
+    // The page now leads with the tab, so its words do too: nothing to
+    // install to use it here. A phone or a tablet has nothing else to do,
+    // so the computer's steps go; a computer keeps them, second.
+    var lede = document.querySelector(".pagesub");
+    if (phone) {
+      if (lede) lede.textContent = "It opens right here in your browser, with nothing to install, and shows you first what it may touch.";
+      document.getElementById("steps").hidden = true;
+    } else if (lede) {
+      lede.textContent = "It opens right here in this tab, with nothing to install. To keep it as an app on this computer, get Krate once: after that, every app anyone sends you opens with a double-click.";
+    }
   }
   if (!hash || !/^[0-9a-f]{8,64}$/.test(hash)) return;
   // An organisation's private release (IC-947, CONTRACT.md Addendum 2):
@@ -463,9 +485,12 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
       } else if (typeof size === "string" && size.trim()) {
         pretty = size.trim();
       }
+      var where = /^[0-9a-f]{64}$/.test(hash)
+        ? (handheld() ? "it opens in this browser" : "it opens in this tab, or in Krate on Mac, Windows and Linux")
+        : "it runs on Mac, Windows and Linux";
       document.getElementById("taSize").textContent = pretty
-        ? pretty + " -- it runs on Mac, Windows and Linux"
-        : "It runs on Mac, Windows and Linux";
+        ? pretty + " -- " + where
+        : where.charAt(0).toUpperCase() + where.slice(1);
       // A link to one older version of an app that has moved on (IC-976):
       // say so once, quietly, with the way to the version everyone else
       // with the app's link now gets. The app's own link opens it.
@@ -491,7 +516,7 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
       // was sent (K-858). `?dl=1` is the hub's "the bytes, please", so this
       // link can never come back to this page. A phone cannot open the
       // file, and the steps above already tell it to use a computer.
-      if (!/Android|iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      if (!handheld()) {
         var get = document.getElementById("taGet");
         get.href = "https://hub.krate.tech/a/" + hash + "?dl=1";
         get.textContent = "Download " + name;
@@ -501,7 +526,7 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
           + "double-click it, the same as a document or a photo. Nothing to unzip, nothing to "
           + "install per app.";
       }
-      inThisTab(/Android|iPhone|iPad|iPod/.test(navigator.userAgent));
+      inThisTab(handheld());
       document.getElementById("theirApp").hidden = false;
       document.getElementById("pageHead").textContent = "Someone sent you " + name + ".";
       // They have a specific app in hand; an invitation to browse the
@@ -521,7 +546,7 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
     var here = "/open/?a=" + hash + "&private=1";
     var card = document.getElementById("theirApp");
     var more = document.getElementById("taMore");
-    var phone = /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+    var phone = handheld();
     document.getElementById("galleryCard").hidden = true;
     card.classList.add("private");
     function state(kick, title, sub, kids, refused) {

@@ -32,15 +32,28 @@ const mark = (name) => { report.marks[name] = performance.now(); };
 const SITE = 'https://krate.tech';
 const params = new URLSearchParams(location.search);
 // /run/<hash> opens one release; /run/org/<slug>/<app-id> opens an
-// organisation's app as it is now (the address a home screen keeps).
-const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127}))\/?$/) || [];
+// organisation's app as it is now, and /run/v<line> a public app as it is
+// now (IC-976): the addresses a home screen keeps, so an update reaches it.
+const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|(v[0-9a-f]{11}))\/?$/) || [];
 let HASH = RUN[1];
 const ORG_APP = RUN[2] ? { slug: RUN[2], app: RUN[3] } : null;
-const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH}`;
+const LINE = RUN[4] || null;
+const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH || LINE}`;
 // The post a link came from (`?via=reddit`), carried to the open's count.
 const VIA = ((params.get('via') || '').toLowerCase().match(/^[a-z0-9][a-z0-9_-]{0,31}$/) || [''])[0];
 // A phone or a tablet: nothing here may tell it to use "your computer".
 const PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+// A chat or social app's own browser (Instagram, Facebook, LinkedIn,
+// TikTok, Snapchat, LINE, X): it may not give a tab what an app needs, and
+// the way out is the phone's own browser, never a computer.
+const IN_APP = (() => {
+  const ua = navigator.userAgent;
+  for (const [name, re] of [['Instagram', /Instagram/], ['Facebook', /FBAN|FBAV|FB_IAB|FBIOS/], ['LinkedIn', /LinkedInApp/],
+    ['TikTok', /TikTok|musical_ly|BytedanceWebview/], ['Snapchat', /Snapchat/], ['LINE', /\bLine\//], ['X', /Twitter for/]]) {
+    if (re.test(ua)) return name;
+  }
+  return /; wv\)/.test(ua) ? 'this app' : null;
+})();
 const SESSION_KEY = 'krate-player-session';
 const NONCE_KEY = 'krate-player-nonce';
 
@@ -62,7 +75,12 @@ function refuse(title, words, { act = 'krate', detail } = {}) {
   $('refusedDetail').textContent = detail || '';
   const a = $('refusedAct');
   a.onclick = null;
-  if (act === 'krate' && PHONE) { a.textContent = 'Send it to a computer'; a.href = '#'; a.onclick = sendToComputer; }
+  if (act === 'browser' && /Android/.test(navigator.userAgent)) {
+    // Android hands an intent: link to Chrome, out of the app's browser.
+    a.textContent = 'Open in Chrome';
+    a.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=${location.protocol.replace(':', '')};package=com.android.chrome;end`;
+  } else if (act === 'browser') { a.textContent = 'Copy the link'; a.href = '#'; a.onclick = copyLink; }
+  else if (act === 'krate' && PHONE) { a.textContent = 'Send it to a computer'; a.href = '#'; a.onclick = sendToComputer; }
   else if (act === 'krate') { a.textContent = 'Open in Krate'; a.href = openInKrate(); }
   else if (act === 'home') { a.textContent = 'Go to krate.tech'; a.href = SITE + '/'; }
   report.refused = { title, words, detail };
@@ -80,6 +98,17 @@ async function sendToComputer(e) {
   }
   try {
     await navigator.clipboard.writeText(url);
+    if (button) { const was = button.textContent; button.textContent = 'Link copied'; setTimeout(() => { button.textContent = was; }, 1500); }
+  } catch { prompt('Copy this link:', url); }
+}
+/// This page's address on the clipboard, to paste into the phone's browser.
+async function copyLink(e) {
+  if (e) e.preventDefault();
+  const button = e && e.currentTarget;
+  const url = location.origin + location.pathname + location.search;
+  try {
+    await navigator.clipboard.writeText(url);
+    report.copied = url;
     if (button) { const was = button.textContent; button.textContent = 'Link copied'; setTimeout(() => { button.textContent = was; }, 1500); }
   } catch { prompt('Copy this link:', url); }
 }
@@ -361,12 +390,29 @@ async function resolveOrgApp() {
   return false;
 }
 
+/// A public app's own address (/run/v<line>): the release it opens now.
+/// True when HASH is set; otherwise the page already says what to do.
+let lineOf = Promise.resolve(null);
+async function resolveLine() {
+  const res = await fetch(`/meta/${LINE}`, { cache: 'no-store' }).catch(() => null);
+  if (!res) {
+    refuse('This app did not open', 'Krate could not be reached. Check the connection and try again.', { act: 'home' });
+    return false;
+  }
+  const body = await res.json().catch(() => ({}));
+  if (res.ok && /^[0-9a-f]{64}$/.test(body.id || '')) { HASH = body.id; return true; }
+  if (res.status === 451) refuse('This app was taken down', body.reason ? `Krate took it down: ${body.reason}` : 'Krate took it down, and it does not open.', { act: 'home' });
+  else refuse('This app is not on Krate', 'The link may be mistyped, or the app was removed.', { act: 'home' });
+  return false;
+}
+
 /// Make the page addable to a home screen as the app: its name, its icon,
 /// and for an organisation's app the address that always opens the version
 /// the team released last.
 async function installable(name, slug, appId) {
   const id = String(appId || '').toLowerCase();
-  const base = slug && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(id) ? `/run/org/${slug}/${id}` : `/run/${HASH}`;
+  const line = LINE || (await lineOf);
+  const base = slug && /^[a-z0-9][a-z0-9._-]{0,127}$/.test(id) ? `/run/org/${slug}/${id}` : line ? `/run/${line}` : `/run/${HASH}`;
   const link = (rel, href) => {
     let el = document.querySelector(`link[rel="${rel}"]`);
     if (!el) { el = document.createElement('link'); el.rel = rel; document.head.appendChild(el); }
@@ -406,18 +452,38 @@ async function main() {
   mark('start');
   takeSignIn();
   if (ORG_APP && self.crossOriginIsolated && !(await resolveOrgApp())) return;
+  if (LINE && !(await resolveLine())) return;
   if (!HASH) {
     refuse('This is not an app link', 'A Krate app link ends in the app’s 64-character address.', { act: 'home' });
     return;
   }
   report.private = params.get('private') === '1';
   $('inKrate').href = openInKrate();
+  // A phone or a tablet in any orientation: Krate's own app is for a
+  // computer, so the bar does not offer it.
+  if (PHONE) $('inKrate').hidden = true;
+  // The app's own link, for the home screen (IC-976). Asked now, beside the
+  // fetches below; nothing waits on it but the home screen.
+  if (!LINE && !ORG_APP) lineOf = fetch(`/meta/${HASH}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((m) => {
+    const v = m && m.version;
+    const line = v && !v.newer && /\/a\/(v[0-9a-f]{11})$/.exec(String(v.app_url || ''));
+    return line ? line[1] : null;
+  }).catch(() => null);
   if (!self.crossOriginIsolated || typeof SharedArrayBuffer !== 'function') {
-    refuse(PHONE ? 'Open this in your browser' : 'This browser cannot open Krate apps in a tab',
-      PHONE
-        ? 'This in-app browser cannot run Krate apps. Open the link in Safari or Chrome.'
-        : 'It does not allow the shared memory a Krate app needs here. The app opens in Krate on this computer.',
-      { detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+    const android = /Android/.test(navigator.userAgent);
+    const browser = android ? 'Chrome' : 'Safari';
+    const whose = IN_APP && IN_APP !== 'this app' ? `${IN_APP}'s browser` : 'This in-app browser';
+    if (PHONE) {
+      refuse(`Open this in ${browser}`,
+        `${whose} cannot run Krate apps. ` + (android
+          ? 'Tap Open in Chrome, or tap \u22ee and choose Open in Chrome.'
+          : 'Tap \u22ef or the share button and choose Open in Safari, or copy the link and paste it there.'),
+        { act: 'browser', detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+    } else {
+      refuse('This browser cannot open Krate apps in a tab',
+        'It does not allow the shared memory a Krate app needs here. The app opens in Krate on this computer.',
+        { detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+    }
     return;
   }
 

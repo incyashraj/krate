@@ -180,8 +180,11 @@ async function asset(env, url, name) {
 /// organisation's app as it is now (`/run/org/<slug>/<app-id>`, which the
 /// page resolves to the current release with the person's session -- the
 /// address a phone keeps on its home screen, so an update never breaks it),
-/// each with its web app manifest and icon.
-export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127}))(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
+/// or a public app as it is now (`/run/v<line>`, the app's own link,
+/// IC-976: what a home screen keeps for it, so an update reaches it too),
+/// each with its web app manifest and icon. The line is not a group of its
+/// own, so the groups others read keep their numbers.
+export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|v[0-9a-f]{11})(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
 
 /// What a home screen calls an app: the name the page judged, trimmed, with
 /// nothing that is not printable.
@@ -247,7 +250,7 @@ function iconFor(base, name) {
 export async function playerPage(request, url, env) {
   const m = RUN_PATH.exec(url.pathname);
   if (!m) return null;
-  const base = m[1] ? `/run/${m[1]}` : `/run/org/${m[2]}/${m[3]}`;
+  const base = m[1] ? `/run/${m[1]}` : m[2] ? `/run/org/${m[2]}/${m[3]}` : url.pathname.slice(0, "/run/v".length + 11);
   if (m[4] === "app.webmanifest") return manifestFor(base, appName(url.searchParams.get("name")));
   if (m[4] === "icon.svg") return iconFor(base, appName(url.searchParams.get("name")));
   const page = await asset(env, url, "run.html");
