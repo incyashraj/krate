@@ -298,7 +298,7 @@
       case "digest-mismatch":
         return { title: "That version is not waiting any more", body: "It was approved, replaced or never sent here. The list below is fresh.", action: null };
       case "not-signed-for-this-org":
-        return { title: "This app is not signed for " + org, body: "It needs the organisation's root key, or a release key that root delegated and has not withdrawn. Sign it again and send it again.", action: null };
+        return { title: "This app is not signed by " + org + " yet", body: "Send it from this page or from Krate Studio: either signs it for " + org + " on the way. Nothing was sent.", action: null };
       case "invite-expired":
         return { title: "This invitation has expired", body: "Invitations last 7 days. Ask " + (ctx.inviter || "the person who invited you") + " for a new one.", action: null };
       case "invite-used":
@@ -431,7 +431,7 @@
         return { title: "Connections are not switched on on this hub yet", body: "Nothing changed.", action: null };
       // The organisation keyring (F-316): a credential is sealed to it.
       case "no-org-key":
-        return { title: org + " needs one setup step first", body: "Credentials are encrypted so that only " + org + "'s computers can read them, never Krate. An owner turns that on once, on their computer: krate org keys init. Nothing was sent.", action: null };
+        return { title: org + " needs one setup step first", body: "Credentials are encrypted so that only " + org + "'s computers can read them, never Krate. An owner turns that on once, by releasing " + org + "'s first app from this page or from Krate Studio. Nothing was sent.", action: null };
       case "key-rotated":
         return { title: "Save once more", body: org + "'s encryption was just renewed after someone left. Nothing was saved: save again and it is encrypted the new way.", action: null };
       case "credential-needs-entry":
@@ -1028,6 +1028,20 @@
     return String(z).split("/").pop().replace(/_/g, " ") + " time";
   }
 
+  /// The address to send people for one of an organisation's apps: the
+  /// hub's answer (`share_url`) when it gave one, else the same address made
+  /// here (the Player's /run/org/<slug>/<app-id>). It opens the version that
+  /// is theirs now -- after an update, a rollback or a withdrawal too -- in
+  /// a browser tab on a phone or a computer, with "Open in Krate" beside it.
+  /// A version's own link stops when that version is withdrawn. Null when
+  /// the app id cannot be carried (then the caller keeps the version link).
+  function appLink(slug, appId, given) {
+    if (given) return given;
+    var id = String(appId || "").toLowerCase();
+    if (!/^[a-z][a-z0-9-]{1,38}$/.test(String(slug || "")) || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(id)) return null;
+    return hub() + "/run/org/" + slug + "/" + id;
+  }
+
   function fileName(name) {
     var s = String(name || "app").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     return (s || "app") + ".krate";
@@ -1038,7 +1052,7 @@
     who: who, ROLES: ROLES, ROLE_NAME: ROLE_NAME, ROLE_SAYS: ROLE_SAYS, ROLE_PLAIN: ROLE_PLAIN, MATRIX: MATRIX,
     can: can, tabsFor: tabsFor, invitable: invitable, memberActions: memberActions,
     refusal: refusal, signInHref: signInHref, eventWords: eventWords, fingerprint: fingerprint,
-    day: day, moment: moment, zone: zone, zoneName: zoneName, appName: appName, joinUrl: joinUrl, fileName: fileName,
+    day: day, moment: moment, zone: zone, zoneName: zoneName, appName: appName, joinUrl: joinUrl, fileName: fileName, appLink: appLink,
     ssoNotice: ssoNotice, takeSsoNotice: takeSsoNotice,
     OFFLINE: OFFLINE, offlineName: offlineName, offlineNotice: offlineNotice, PROVIDERS: PROVIDERS, money: money,
     el: el, refusalBlock: refusalBlock, signInChoices: signInChoices, copy: copy, download: download,

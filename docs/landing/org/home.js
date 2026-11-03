@@ -244,7 +244,14 @@
       var r = a.releases.filter(function (x) { return x.digest === a.current; })[0];
       var name = a.name || a.app_id;
       var say = el("small", { class: "lc-say", role: "status" });
-      var open = el("button", { class: "btn dark sm", type: "button", text: "Open in Krate" });
+      // The app's own address: it opens in a browser tab, on a phone or a
+      // computer, and keeps opening the version that is theirs after an
+      // update. On a phone it is the way in (a .krate file is no use
+      // there); on a computer Krate comes first and the tab is beside it.
+      var link = K.appLink(slug, a.app_id, a.share_url);
+      var phone = /Android|iPhone|iPad|iPod|Mobile/i.test((window.navigator && window.navigator.userAgent) || "");
+      var go = link ? el("a", { class: "btn " + (phone ? "dark" : "ghost") + " sm", href: link, text: phone ? "Open" : "Open here" }) : null;
+      var open = el("button", { class: "btn " + (go && phone ? "ghost" : "dark") + " sm", type: "button", text: "Open in Krate", hidden: Boolean(go && phone) });
       open.addEventListener("click", function () {
         open.disabled = true; open.textContent = "Getting it";
         var file = K.fileName(r.name);
@@ -254,7 +261,7 @@
         });
       });
       var copy = el("button", { class: "btn ghost sm", type: "button", text: "Copy link" });
-      copy.addEventListener("click", function () { K.copy(r.url, copy); });
+      copy.addEventListener("click", function () { K.copy(link || r.url, copy); });
       var fresh = (Date.now() / 1000 - (Number(r.at) || 0)) < 7 * 86400;
       return el("div", { class: "lcard", "data-app": a.app_id }, [
         el("div", { class: "lc-h" }, [
@@ -264,7 +271,7 @@
         // Staged rollout: why this person has the version they have.
         a.for_you && a.for_you.ring === "pilot" ? el("small", { class: "lc-ring", text: "Version " + (r.version || "") + ", early: you are in the " + a.for_you.group + " group, which gets new versions first." }) : null,
         a.for_you && a.for_you.ring === "pin" ? el("small", { class: "lc-ring", text: "Version " + (r.version || "") + ": your " + a.for_you.group + " group is kept on it for now." }) : null,
-        el("div", { class: "lc-a" }, [open, copy]),
+        el("div", { class: "lc-a" }, phone ? [go, open, copy] : [open, go, copy]),
         say,
       ]);
     }
@@ -310,7 +317,7 @@
         if (!res.ok && res.status !== 404) return D.failed(p, res, { what: "see your apps" });
         p.appendChild(el("div", { class: "lgrid" }, apps.map(function (a) { return launchCard(a, used[a.app_id] || used[a.name]); }).concat([askCard()])));
         p.appendChild(el("p", { class: "sub hfoot" }, [
-          el("span", { text: "Apps open in Krate, free on Mac, Windows and Linux. " }),
+          el("span", { text: "Open runs an app right here, on a phone too. Krate, free on Mac, Windows and Linux, opens them offline as well. " }),
           el("a", { href: "/download/", text: "Get Krate" }),
         ]));
       });

@@ -58,6 +58,11 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
     // "removed" and "offline" are words already; a code with a dash is not.
     check(w.title && w.body && (!r.includes("-") || !all.includes(r)) && !/[—–`]|--/.test(all), `"${r}" is words: ${w.title}`);
   }
+  // Refusals a person meets on the page name no machinery (seamless bar rule 3).
+  for (const r of ["not-signed-for-this-org", "no-org-key"]) {
+    const w = K.refusal(r, { org: "Acme" });
+    check(!/root key|release key|delegat|krate org|keys init/i.test(w.title + " " + w.body), `"${r}" names no keys or commands: ${w.body}`);
+  }
   const si = K.refusal("not-signed-in", { here: "/org/?o=acme&tab=people" });
   check(si.action && si.action.href === "/login/?next=%2Forg%2F%3Fo%3Dacme%26tab%3Dpeople", "the sign-in refusal comes back to the same page");
 

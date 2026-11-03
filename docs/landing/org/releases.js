@@ -150,7 +150,16 @@
         });
       });
       var copyBtn = el("button", { class: "btn ghost sm", type: "button", text: "Copy link" });
-      copyBtn.addEventListener("click", function () { K.copy(r.url, copyBtn); });
+      // The version that opens now copies the app's own address, which
+      // keeps working after the next update or a rollback; any other
+      // version copies its own link, which opens exactly that build.
+      var share = isCurrent ? K.appLink(slug, a.app_id, a.share_url) : null;
+      copyBtn.addEventListener("click", function () {
+        K.copy(share || r.url, copyBtn);
+        say(share
+          ? "Copied the link to " + (a.name || a.app_id) + ". It opens the version that is current for each person, now and after updates, on a phone or a computer."
+          : "Copied the link to version " + (r.version || "") + ". It opens exactly this version, and stops if it is withdrawn.");
+      });
       acts.push(open, copyBtn);
 
       var manage = [];

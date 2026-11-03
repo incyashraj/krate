@@ -363,7 +363,7 @@ const set = (root, name, v) => { inputs(root, name)[0].value = v; };
   set(form, "credValue", SECRET);
   button(form, "Add connection").click();
   await settle();
-  check(/Acme needs one setup step first/.test(form.shown) && /krate org keys init/.test(form.shown) && !posted, "no organisation key: the one step is said, and nothing is sent");
+  check(/Acme needs one setup step first/.test(form.shown) && /by releasing Acme's first app from this page or from Krate Studio/.test(form.shown) && !/krate org/.test(form.shown) && !posted, "no organisation key: the one step is said in the page's own terms, no command, and nothing is sent");
   check(!clearIn(leftThePage(p), [SECRET]), "and the credential stayed in the browser");
 
   // A credential kept the old way says it must be entered again, and how.

@@ -411,7 +411,9 @@
       return dv.apps.map(function (a, i) {
         var kids = [];
         var refused = a.refusals.reduce(function (t, r) { return t + r.n; }, 0);
-        var link = K.hub() + "/orgs/" + slug + "/apps/" + encodeURIComponent(a.app_id) + "/current";
+        // The app's own address: a browser opens it (the /current door is
+        // for Krate and answers a browser "sign in" in JSON).
+        var link = K.appLink(slug, a.app_id) || K.hub() + "/orgs/" + slug + "/apps/" + encodeURIComponent(a.app_id) + "/current";
         var copyBtn = el("button", { class: "act", type: "button", text: "Copy its link", onclick: function () { K.copy(link, copyBtn); } });
         kids.push(tiles([
           tile({ label: "People in the last 7 days", value: numSaid(a.people_week), means: a.released ? "who opened it, of everyone it is for" : "it has no approved version yet", act: a.released ? copyBtn : go("waiting", "See what is waiting") }),

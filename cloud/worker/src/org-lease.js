@@ -217,6 +217,23 @@ function installLeases(OrgClass) {
     return answer;
   };
 
+  // The people list, for the owners and admins who remove people: until
+  // when each member's offline access already handed out still opens apps
+  // on a computer that stays offline (R9). Removal stops everything online
+  // at once; this is what it cannot call back, said before anyone confirms.
+  const show = OrgClass.prototype.op_show;
+  OrgClass.prototype.op_show = function (ctx) {
+    const answer = show.call(this, ctx);
+    if (answer.status !== 200 || !answer.body || !Array.isArray(answer.body.members)) return answer;
+    const me = answer.body.me;
+    if (!me || (me.role !== "owner" && me.role !== "admin")) return answer;
+    const held = new Map(
+      this.rows("SELECT principal, MAX(expires_at) AS until FROM leases WHERE expires_at > ? GROUP BY principal", ctx.now).map((r) => [r.principal, r.until]),
+    );
+    for (const m of answer.body.members) if (held.has(m.principal)) m.offline_until = held.get(m.principal);
+    return answer;
+  };
+
   const view = OrgClass.prototype.op_view;
   OrgClass.prototype.op_view = function (ctx) {
     const answer = view.call(this, ctx);
