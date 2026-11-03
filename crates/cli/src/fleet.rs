@@ -1056,7 +1056,7 @@ fn app_id_shape(id: &str) -> bool {
 }
 
 /// An organisation's short name, as the hub allows it (org.js SLUG).
-fn org_slug(slug: &str) -> bool {
+pub(crate) fn org_slug(slug: &str) -> bool {
     let bytes = slug.as_bytes();
     (2..=39).contains(&bytes.len())
         && bytes[0].is_ascii_lowercase()

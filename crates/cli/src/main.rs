@@ -15739,7 +15739,8 @@ type RunTarget = (
 /// make it trusted.
 fn resolve_run_target(target: &str, insecure_http: bool) -> Result<RunTarget> {
     if krate_bundle::is_url(target) {
-        return run_target_from_link(target, target, insecure_http);
+        // A Player address copied from a browser opens the same app here.
+        return run_target_from_link(&org::bundle_address(target), target, insecure_http);
     }
 
     let path = PathBuf::from(target);
@@ -17282,6 +17283,8 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
     if !krate_bundle::is_url(&raw) {
         return Ok(bundle.to_path_buf());
     }
+    // A Player address copied from a browser opens the same app (K-1166).
+    let raw = org::bundle_address(&raw).into_owned();
     let dir = home_dir()
         .map(|home| home.join(".krate/cloud"))
         .context("no home directory")?;
