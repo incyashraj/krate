@@ -759,7 +759,7 @@ impl Workspace {
         let rows = p.rows.max(1) as f32;
         p.top = match to {
             ScrollTo::Top => line,
-            ScrollTo::Center => line - (rows / 2.0).floor(),
+            ScrollTo::Center => line - ((rows as usize) / 2) as f32,
             ScrollTo::Bottom => line - rows + 1.0,
         }
         .max(0.0);
