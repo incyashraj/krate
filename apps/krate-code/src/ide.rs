@@ -1610,7 +1610,7 @@ impl Workspace {
     fn apply_edits_to(&mut self, d: usize, edits: &[TextEdit]) -> usize {
         let utf8 = self.lsp.as_ref().is_none_or(|l| l.client.utf8);
         let mut sorted: Vec<&TextEdit> = edits.iter().collect();
-        sorted.sort_by(|a, b| (b.line, b.col).cmp(&(a.line, a.col)));
+        sorted.sort_by_key(|e| core::cmp::Reverse((e.line, e.col)));
         let Some(doc) = self.docs.get_mut(d) else {
             return 0;
         };
@@ -1770,7 +1770,7 @@ impl Workspace {
         pane.cur.pos = end;
         // Extra edits (an import at the top) keep the cursor on its text.
         let mut extra = item.extra.clone();
-        extra.sort_by(|x, y| (y.line, y.col).cmp(&(x.line, x.col)));
+        extra.sort_by_key(|e| core::cmp::Reverse((e.line, e.col)));
         for e in extra {
             let last = doc.buf.last_line();
             let l0 = e.line.min(last);
@@ -1859,11 +1859,9 @@ impl Workspace {
                     }
                 }
             }
-            Mode::Normal => {
-                if *input == Input::Char('K') && self.vim.pending_is(&[]) {
-                    self.lsp_ready_or_say();
-                    return true;
-                }
+            Mode::Normal if *input == Input::Char('K') && self.vim.pending_is(&[]) => {
+                self.lsp_ready_or_say();
+                return true;
             }
             _ => {}
         }

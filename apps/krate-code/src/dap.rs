@@ -512,13 +512,11 @@ impl Dap {
             "exited" => {
                 self.exit_code = body.get("exitCode").int();
             }
-            "terminated" => {
-                if self.state != DapState::Ended {
-                    self.state = DapState::Ended;
-                    self.frames.clear();
-                    self.vars.clear();
-                    ev.push(DapEvent::Ended(self.exit_code));
-                }
+            "terminated" if self.state != DapState::Ended => {
+                self.state = DapState::Ended;
+                self.frames.clear();
+                self.vars.clear();
+                ev.push(DapEvent::Ended(self.exit_code));
             }
             _ => {}
         }

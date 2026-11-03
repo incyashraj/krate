@@ -534,11 +534,14 @@ impl Vt {
                 let p = core::mem::take(&mut self.cur_param);
                 self.params.push(p);
             }
-            b'<'..=b'?' => {
-                if self.params.is_empty() && self.cur_param.is_empty() && self.cur_num.is_none() {
-                    self.private = Some(b);
-                }
+            b'<'..=b'?'
+                if self.params.is_empty()
+                    && self.cur_param.is_empty()
+                    && self.cur_num.is_none() =>
+            {
+                self.private = Some(b);
             }
+            b'<'..=b'?' => {}
             0x20..=0x2f => self.inter.push(b),
             0x40..=0x7e => {
                 self.cur_param.push(self.cur_num.take());

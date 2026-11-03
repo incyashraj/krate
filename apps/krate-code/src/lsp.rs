@@ -721,13 +721,11 @@ impl Lsp {
                 }
                 ev.push(LspEvent::Progress(self.progress.values().next().cloned()));
             }
-            "window/showMessage" => {
-                if p.get("type").int().unwrap_or(4) <= 2 {
-                    if let Some(m) = p.get("message").str() {
-                        let mut s = String::from("rust-analyzer: ");
-                        s.push_str(m.lines().next().unwrap_or(""));
-                        ev.push(LspEvent::Say(s));
-                    }
+            "window/showMessage" if p.get("type").int().unwrap_or(4) <= 2 => {
+                if let Some(m) = p.get("message").str() {
+                    let mut s = String::from("rust-analyzer: ");
+                    s.push_str(m.lines().next().unwrap_or(""));
+                    ev.push(LspEvent::Say(s));
                 }
             }
             _ => {}
