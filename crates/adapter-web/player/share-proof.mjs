@@ -271,13 +271,13 @@ for (const [engine, label, viewport, ua] of RUNS) {
   }));
   check(/^refused/.test(exported), `${tag} page script cannot export the key`, exported);
 
+  // Read before the pictures, which inject a style WebKit's CSP logs.
+  const errorsAB = [...a.errors, ...b.errors];
+  const statesAB = [await a.state(), await b.state()];
   if (shots) {
     await a.page.screenshot({ path: join(shots, `share-proof-${engine}-${label}-a.png`) });
     await b.page.screenshot({ path: join(shots, `share-proof-${engine}-${label}-b.png`) });
   }
-  // Read before the pictures, which inject a style WebKit's CSP logs.
-  const errorsAB = [...a.errors, ...b.errors];
-  const statesAB = [await a.state(), await b.state()];
   await a.page.close();
   await b.page.close();
 
