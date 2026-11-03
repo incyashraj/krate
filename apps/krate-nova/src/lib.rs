@@ -28,7 +28,7 @@ extern crate alloc;
 use krate::gfx::{canvas2d, types as gfx};
 use krate::bindings::krate::io::{args, stdio};
 use krate::bindings::krate::time::clock;
-use krate::ui::{events, tree, types, window};
+use krate::ui::{events, pointer, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -48,6 +48,8 @@ const MAX_POPUPS: usize = 16;
 const PLAYER_W: f32 = 30.0;
 const PLAYER_H: f32 = 30.0;
 const PLAYER_SPEED: f32 = 340.0;
+/// How far above a finger the ship steers to, so the finger never hides it.
+const FINGER_LEAD: f32 = 70.0;
 const BULLET_SPEED: f32 = 620.0;
 const FIRE_COOLDOWN: f32 = 0.14;
 const EBULLET_SPEED: f32 = 230.0;
@@ -982,6 +984,7 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
         if let Ok(txt) = core::str::from_utf8(s) {
             draw_text(canvas, 0.0, 0.0, txt, WIDTH * 0.5 - 70.0, HEIGHT * 0.5 + 30.0, 20.0, color(0.9, 0.95, 1.0, 1.0))?;
         }
+        draw_text(canvas, 0.0, 0.0, "TAP OR PRESS SPACE TO PLAY AGAIN", WIDTH * 0.5 - 150.0, HEIGHT * 0.5 + 70.0, 14.0, color(0.75, 0.8, 0.95, 0.9))?;
     }
 
     canvas2d::present(canvas)?;
@@ -1435,6 +1438,7 @@ impl krate::Guest for Component {
         }
 
         let frame_cap = if quick { QUICK_FRAMES } else { MAX_FRAMES };
+        let seed = (started as u32) ^ 0xA53C_1FE9;
         let mut last = clock::monotonic_nanos();
         let mut frames = 0u32;
         let mut blink_acc = 0.0f32;
@@ -1456,6 +1460,32 @@ impl krate::Guest for Component {
                 blink_on = !blink_on;
             }
 
+            // Every event this frame, not one: a moving finger sends many.
+            let mut closing = false;
+            let mut tapped = false;
+            while let Some(event) = events::poll() {
+                match event {
+                    types::Event::CloseRequested(id) if id == win => closing = true,
+                    types::Event::Pointer(p) if p.window == win && p.pressed => tapped = true,
+                    _ => {}
+                }
+            }
+            if closing {
+                break;
+            }
+            // After GAME OVER, a tap or Space starts a new game.
+            if world.game_over && !quick && (tapped || events::key_held("Space") || events::key_held(" ")) {
+                world = World::new(seed ^ frames, false);
+            }
+            // A finger on a phone, or a held mouse button, where it is in the
+            // game's own coordinates. A phone has no arrow keys, so the ship
+            // follows the finger and fires while it is down.
+            let finger = if pointer::button_held(types::PointerButton::Primary) {
+                pointer::position(win)
+            } else {
+                None
+            };
+
             let (left, right, up, down, firing) = if quick {
                 // Auto-pilot for the automated shot: slide under the lowest
                 // enemy and hold fire, so the captured frame is full of bullets
@@ -1469,6 +1499,17 @@ impl krate::Guest for Component {
                     }
                 }
                 (l, r, false, false, true)
+            } else if let Some((fx, fy)) = finger {
+                // Toward a point a thumb's width above the finger, so the
+                // finger never covers the ship.
+                let (tx, ty) = (fx, fy - FINGER_LEAD);
+                (
+                    tx < world.px - 6.0,
+                    tx > world.px + 6.0,
+                    ty < world.py - 6.0,
+                    ty > world.py + 6.0,
+                    true,
+                )
             } else {
                 (
                     events::key_held("ArrowLeft") || events::key_held("a"),
@@ -1485,12 +1526,6 @@ impl krate::Guest for Component {
                 break;
             }
             frames += 1;
-
-            if let Some(types::Event::CloseRequested(id)) = events::poll() {
-                if id == win {
-                    break;
-                }
-            }
         }
 
         // Report on exit.
