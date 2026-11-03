@@ -220,9 +220,13 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
   };
   const say = async ({ text, voice, rate }) => {
     if (!synth) return no('unsupported', NO_VOICES);
+    // A browser with no voices at all accepts a line and then fails to say
+    // it; the app is told so instead, in the words voices() uses.
+    const list = await voicesNow();
+    if (!list.length && (voice === null || voice === undefined)) return no('unsupported', NO_VOICES);
     let chosen = null;
     if (voice !== null && voice !== undefined) {
-      chosen = (await voicesNow()).find((v) => v.voiceURI === voice);
+      chosen = list.find((v) => v.voiceURI === voice);
       if (!chosen) return no('invalid-request', `this browser has no voice ${voice}`);
     }
     // A new line replaces the old one rather than queueing behind it.

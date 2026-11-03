@@ -280,10 +280,10 @@ for (const [engine, label, viewport, ua] of RUNS) {
     } else {
       not.skip(tag, SPOKEN, engine, 'speech voices');
       // The honest answer: no voices, in words; nothing claims to speak.
-      // (say itself answers Ok today and the browser's synthesis fails;
-      // a say that refused with the same words would be as honest.)
+      // say refuses in the same words rather than accepting a line the
+      // browser cannot speak (K-1173).
       check(speech['voices: '] === NO_VOICES && speech['say-voice: '] === 'Err(InvalidRequest("this browser has no voice no-such-voice"))'
-        && (speech['say: '] === 'Ok(())' || speech['say: '] === `Err(${NO_VOICES})`) && speech['speaking: '] === 'Ok(false)'
+        && speech['say: '] === `Err(${NO_VOICES})` && speech['speaking: '] === 'Ok(false)'
         && speech['stop: '] === 'Ok(())' && speech['speaking-after-stop: '] === 'Ok(false)' && !spoken.spoken.length,
       `${tag} with no voices, the app hears "no speech voices" in words, and nothing claims to speak`, { speech, spoken: spoken.spoken, events: spoken.speechEvents });
     }
@@ -303,7 +303,11 @@ for (const [engine, label, viewport, ua] of RUNS) {
         probeInPage: await page.evaluate(cameraProbe).catch((e) => String(e)),
         probeInPageHidden: await page.evaluate(cameraProbe, 'pick').catch((e) => String(e)),
       };
-      check(framed, `${tag} ${FRAME}`, { ...cam, ...why });
+      // Linux WebKit's fake camera sends frames only some of the time. The
+      // app is at fault only when the camera works at the moment it asks:
+      // the probe run again in the app's page says whether it does.
+      if (framed || !why.probeInPage || why.probeInPage.frame !== false) check(framed, `${tag} ${FRAME}`, { ...cam, ...why });
+      else not.skip(tag, FRAME, engine, `frames from its fake camera, which stopped sending them (in the app's page too: ${why.probeInPage.why})`);
     } else {
       not.skip(tag, FRAME, engine, `frames from its fake camera (${camProbe.why})`);
       // The app waited its fifteen seconds and was handed nothing: no
