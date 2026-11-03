@@ -128,30 +128,62 @@ function readRevocations(bytes) {
 /// The component of a bundle exactly as the validator judged it, for the
 /// web pack (IC-956): `{ ok: true, bytes }` or `{ ok: false, problem }`.
 function judgedComponent(bytes) {
-  const v = validator();
-  const input = v.krate_alloc(bytes.length);
-  new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
-  const out = v.krate_judged_component(input, bytes.length);
-  const length = new DataView(v.memory.buffer).getUint32(out, true);
-  const body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
-  v.krate_free(out, 4 + length);
-  v.krate_free(input, bytes.length);
-  return body[0] === 1
-    ? { ok: true, bytes: body.subarray(1) }
-    : { ok: false, problem: new TextDecoder().decode(body.subarray(1)) };
+  try {
+    const v = validator();
+    const input = v.krate_alloc(bytes.length);
+    new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
+    const out = v.krate_judged_component(input, bytes.length);
+    const length = new DataView(v.memory.buffer).getUint32(out, true);
+    const body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
+    v.krate_free(out, 4 + length);
+    v.krate_free(input, bytes.length);
+    return body[0] === 1
+      ? { ok: true, bytes: body.subarray(1) }
+      : { ok: false, problem: new TextDecoder().decode(body.subarray(1)) };
+  } catch (err) {
+    return validatorCrashed("krate_judged_component", err);
+  }
 }
 
 function callValidator(name, bytes) {
-  const v = validator();
-  const input = v.krate_alloc(bytes.length);
-  new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
-  const out = v[name](input, bytes.length);
-  const view = new DataView(v.memory.buffer);
-  const length = view.getUint32(out, true);
-  const json = new TextDecoder().decode(new Uint8Array(v.memory.buffer, out + 4, length));
-  v.krate_free(out, 4 + length);
-  v.krate_free(input, bytes.length);
-  return JSON.parse(json);
+  try {
+    const v = validator();
+    const input = v.krate_alloc(bytes.length);
+    new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
+    const out = v[name](input, bytes.length);
+    const view = new DataView(v.memory.buffer);
+    const length = view.getUint32(out, true);
+    const json = new TextDecoder().decode(new Uint8Array(v.memory.buffer, out + 4, length));
+    v.krate_free(out, 4 + length);
+    v.krate_free(input, bytes.length);
+    return JSON.parse(json);
+  } catch (err) {
+    return validatorCrashed(name, err);
+  }
+}
+
+/// The validator trapped or answered nothing readable (IC-833, test 1839).
+/// Nothing it was judging is admitted -- a judgement that did not finish is
+/// a refusal -- and the instance is dropped, since a trap leaves its memory
+/// in a state no later call should trust; the next call starts a fresh one.
+/// It cannot have run the app: the validator imports nothing, so it has no
+/// way to call out of its own memory.
+function validatorCrashed(name, err) {
+  console.error(`validator ${name} failed: ${err && err.stack ? err.stack : err}`);
+  if (validatorImport.default instanceof WebAssembly.Module) validatorExports = null;
+  return {
+    ok: false,
+    crashed: true,
+    problem: "Krate could not finish checking this bundle, so nothing was published. Try again in a moment.",
+  };
+}
+
+/// Tests only: answer with another validator, so a crash can be made on
+/// purpose (test 1839). Returns the one it replaced.
+export function __validatorForTests(replacement) {
+  const before = validator();
+  validatorExports = replacement || null;
+  return before;
 }
 
 /// What the archive may declare, judged from the central directory before
@@ -1043,6 +1075,11 @@ async function publish(request, env) {
   // The listing's permissions, identities and release come from this
   // judgement, never from a header (1835).
   const judged = judgeBundle(body);
+  // A judgement that did not finish is not the bundle's fault: said as
+  // "try again", and nothing stored (test 1839).
+  if (judged.crashed) {
+    return new Response(judged.problem, { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "5" } });
+  }
   if (!judged.ok) {
     return text(`not a valid .krate bundle: ${judged.problem}`, 422);
   }
@@ -7954,6 +7991,7 @@ async function orgCandidate(request, env, slug, principals, path, base) {
   const problem = archiveProblem(body);
   if (problem) return invalid(problem);
   const judged = judgeBundle(body);
+  if (judged.crashed) return json({ error: "try-again", message: judged.problem }, 503);
   if (!judged.ok) return invalid(judged.problem);
   const digest = await sha256Hex(body);
   const idempotency = await idempotencyOf(request, path, digest);

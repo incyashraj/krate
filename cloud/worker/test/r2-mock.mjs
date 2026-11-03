@@ -25,6 +25,8 @@ export function r2Mock(blobs = new Map()) {
     };
   };
   return {
+    // This machine's stand-in, never R2 itself (publish-corpus.test.mjs, 1823).
+    __standIn: true,
     head: (k) => object(k),
     get: (k) => object(k),
     put: async (k, v, opts = {}) => {

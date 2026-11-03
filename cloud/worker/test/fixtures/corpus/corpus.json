@@ -1,0 +1,152 @@
+[
+  {
+    "file": "minimal.krate",
+    "kind": "valid minimal",
+    "committed": true,
+    "size": 483,
+    "sha256": "90db38d7d3c1c6dc468d4dd512d662a60f592dd5361db707dbc58c163f7df983",
+    "expanded": 265,
+    "manifest": {
+      "id": "dev.krate.corpus.minimal",
+      "name": "Minimal",
+      "version": "0.1.0"
+    },
+    "expect": {
+      "status": 200
+    }
+  },
+  {
+    "file": "source-carrying.krate",
+    "kind": "valid, carries its source",
+    "committed": true,
+    "size": 761,
+    "sha256": "ef2aa7907e13d0e293d106a079c12bfb5333adbed87c8759f65a69397709607d",
+    "expanded": 323,
+    "manifest": {
+      "id": "dev.krate.corpus.source",
+      "name": "Source",
+      "version": "0.1.0"
+    },
+    "expect": {
+      "status": 200
+    }
+  },
+  {
+    "file": "asset-heavy.krate",
+    "kind": "valid, asset-heavy (24 assets, ~1 MB)",
+    "committed": true,
+    "size": 963293,
+    "sha256": "c077f8a6aaf19b18c62b5e1d71093226b1c1bd1457e4e800c343bdaa66686c21",
+    "expanded": 960263,
+    "manifest": {
+      "id": "dev.krate.corpus.assets",
+      "name": "Assets",
+      "version": "0.1.0"
+    },
+    "expect": {
+      "status": 200
+    }
+  },
+  {
+    "file": "duplicate.krate",
+    "kind": "a name twice",
+    "committed": true,
+    "size": 711,
+    "sha256": "2371ee07337f22850fa241ef4f549af6678064507e22744c3ce543e5cd261f40",
+    "expanded": 399,
+    "manifest": {
+      "id": "dev.krate.corpus.dup",
+      "name": "Dup",
+      "version": "0.1.0"
+    },
+    "expect": {
+      "status": 422,
+      "reason": "same file twice"
+    }
+  },
+  {
+    "file": "traversal.krate",
+    "kind": "a path that climbs out",
+    "committed": true,
+    "size": 741,
+    "sha256": "0771f2b123e8126cb03fdf38eb549a838d741623245f7b1bea0cf8c45ce55aee",
+    "expanded": 401,
+    "manifest": {
+      "id": "dev.krate.corpus.trav",
+      "name": "Trav",
+      "version": "0.1.0"
+    },
+    "expect": {
+      "status": 422,
+      "reason": "unsafe entry path"
+    }
+  },
+  {
+    "file": "compression-bomb.krate",
+    "kind": "an entry inflating far past its declared size",
+    "committed": true,
+    "size": 4440,
+    "sha256": "d2aa7c95c83e1680bb58127e047b561038ef044de0ebbeec579178ee9a8b1b05",
+    "expanded": 143,
+    "manifest": null,
+    "expect": {
+      "status": 422,
+      "reason": "not a valid .krate bundle"
+    }
+  },
+  {
+    "file": "malformed-marker.krate",
+    "kind": "a zip marker and two file names, no archive",
+    "committed": true,
+    "size": 34,
+    "sha256": "3e4b292c692b35e0f8f612f484643830e68514a89515fd7a484c316596992530",
+    "expanded": null,
+    "manifest": null,
+    "expect": {
+      "status": 422,
+      "reason": "no central directory"
+    }
+  },
+  {
+    "file": "empty.krate",
+    "kind": "no bytes",
+    "committed": true,
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "expanded": null,
+    "manifest": null,
+    "expect": {
+      "status": 400,
+      "reason": "empty body"
+    }
+  },
+  {
+    "file": "no-component.krate",
+    "kind": "a manifest and no code",
+    "committed": true,
+    "size": 246,
+    "sha256": "62d507f5e3db872c98fda7ec5eff2e0f0ed3972b04865f9cb6ad7c95d82c113d",
+    "expanded": 122,
+    "manifest": {
+      "id": "dev.krate.corpus.nocode",
+      "name": "No code",
+      "version": "0.1.0"
+    },
+    "expect": {
+      "status": 422,
+      "reason": "not a valid .krate bundle"
+    }
+  },
+  {
+    "file": "too-large.krate",
+    "kind": "one byte over the 5 MiB door (made at test time, not committed)",
+    "committed": false,
+    "size": 5242881,
+    "sha256": "09b203d5582fff801c1990a28ad8d1ab2a1d89a78ffff0208841e59def0d64d7",
+    "expanded": null,
+    "manifest": null,
+    "expect": {
+      "status": 413
+    }
+  }
+]
