@@ -500,8 +500,13 @@ mod tests {
             live.pace(quick_poll) <= quick_poll,
             "back to the quick pace"
         );
+        // No later than the backoff: either still inside it (at most 20 ms
+        // to wait), or it has passed and the sync wants a ticket now. On a
+        // slow runner the check can land after the 20 ms are up, and then
+        // pace rightly answers the quick poll -- read as a failure, it made
+        // this test fail on CI now and then.
         assert!(
-            live.pace(quick_poll) <= Duration::from_millis(20),
+            live.pace(quick_poll) <= Duration::from_millis(20) || live.wants_ticket(),
             "no later than the backoff"
         );
         assert_eq!(live.fails(), 1);
