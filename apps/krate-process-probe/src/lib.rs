@@ -104,6 +104,32 @@ fn start_line(label: &str, program: &str, cwd: &str) -> String {
     }
 }
 
+/// What a terminal's output says as lines of text: ESC [ ... sequences and
+/// carriage returns dropped.
+fn plain_lines(bytes: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                // Parameters, then one final letter or `~`.
+                for d in chars.by_ref() {
+                    if d.is_ascii_alphabetic() || d == '~' {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        if c != '\r' {
+            out.push(c);
+        }
+    }
+    out.split('\n').map(|l| String::from(l.trim_end())).collect()
+}
+
 fn terminal() -> String {
     let term = match Process::terminal(".", 80, 24) {
         Ok(term) => term,
@@ -120,7 +146,10 @@ fn terminal() -> String {
             Err(err) => return format!("terminal: read {}", refusal(&err)),
         }
         // The command echoed as typed, then its output on a line of its own.
-        if String::from_utf8_lossy(&seen).contains("\nhi\r\n") {
+        // Shells wrap lines in control sequences (bash on Linux turns
+        // bracketed paste off and back on around each command), so read
+        // the screen's text: escapes and carriage returns removed.
+        if plain_lines(&seen).iter().any(|line| line == "hi") {
             saw = true;
             break;
         }
