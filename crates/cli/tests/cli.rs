@@ -10704,6 +10704,50 @@ fn smoke_component() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// A development manifest's entry is its build output, and pack writes the
+/// bundle's copy as `code.wasm` -- whatever the app is called. Krate Code's
+/// `krate_code.wasm` was mistaken for `code.wasm` (the line contained it) and
+/// the pack was refused.
+#[test]
+fn pack_takes_a_build_path_whose_name_ends_in_code_wasm() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(component) = smoke_component() else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let built = dir.path().join("target/wasm32-wasip1/release/krate_code.wasm");
+    std::fs::create_dir_all(built.parent().unwrap()).unwrap();
+    std::fs::copy(&component, &built).expect("copy component");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        BUNDLE_MANIFEST.replace(
+            "entry = \"code.wasm\"",
+            "entry = \"target/wasm32-wasip1/release/krate_code.wasm\"",
+        ),
+    )
+    .unwrap();
+    let bundle = dir.path().join("Code.krate");
+    let out = krate()
+        .args(["pack"])
+        .arg(&built)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .output()
+        .expect("pack");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&bundle).unwrap()).unwrap();
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("manifest.toml").unwrap(), &mut text).unwrap();
+    assert!(text.contains("entry = \"code.wasm\""), "{text}");
+    assert!(
+        std::fs::read_to_string(&manifest).unwrap().contains("krate_code.wasm"),
+        "the developer's own manifest is untouched"
+    );
+}
+
 fn pack_fixture(dir: &std::path::Path) -> Option<PathBuf> {
     let component = smoke_component()?;
     let manifest = dir.join("manifest.toml");

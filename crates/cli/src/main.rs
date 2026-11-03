@@ -6258,9 +6258,11 @@ fn pack_bundle(
     // only the copy that goes into the bundle is touched.
     let manifest_text =
         fs::read_to_string(manifest).with_context(|| format!("read {}", manifest.display()))?;
-    let needs_entry_rewrite = manifest_text
-        .lines()
-        .any(|line| line.trim_start().starts_with("entry =") && !line.contains("code.wasm"));
+    // The value, not the line: `krate_code.wasm` contains "code.wasm", and
+    // Krate Code's build path was taken for the bundle's name and refused.
+    let needs_entry_rewrite = krate_manifest::Manifest::parse(&manifest_text)
+        .map(|m| m.app.entry.display().to_string() != "code.wasm")
+        .unwrap_or(false);
     let rewritten =
         std::env::temp_dir().join(format!("krate-pack-manifest-{}.toml", std::process::id()));
     let pack_manifest: &Path = if needs_entry_rewrite {
