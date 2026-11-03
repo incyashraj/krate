@@ -134,7 +134,21 @@ pub struct Mirror {
     /// refused, never applied.
     #[serde(default)]
     pub rejected: u64,
+    /// The people this release reaches, as the last sync named them, kept
+    /// so they read offline (IC-979). Empty until a hub has said.
+    #[serde(default)]
+    pub people: Vec<Person>,
 }
+
+/// Someone the app is released to: their sign-in name and role.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Person {
+    pub name: String,
+    pub role: String,
+}
+
+/// The most people kept from one answer, as the hub sends at most.
+const PEOPLE_MAX: usize = 2000;
 
 /// What one round of a sync sends, and what [`Mirror::apply`] needs back.
 #[derive(Debug, Clone, PartialEq)]
@@ -541,6 +555,24 @@ impl Mirror {
         })
     }
 
+    /// `store.org.members`: the people this release reaches, by name, as the
+    /// last sync named them (IC-979).
+    pub fn members(&self) -> Vec<Member> {
+        let org = self
+            .me
+            .as_ref()
+            .map(|me| me.org.clone())
+            .unwrap_or_default();
+        self.people
+            .iter()
+            .map(|p| Member {
+                name: p.name.clone(),
+                role: p.role.clone(),
+                org: org.clone(),
+            })
+            .collect()
+    }
+
     /// The next push: this device's pending writes, as many as fit, sent at
     /// `sent_now` on this device's clock ([`Mirror::clock`]).
     pub fn prepare(&self, sent_now: u64) -> Round {
@@ -701,6 +733,24 @@ impl Mirror {
                     .unwrap_or("")
                     .to_string(),
             });
+        }
+        // An older hub says nothing of people: what was known stays.
+        if let Some(list) = answer["people"].as_array() {
+            let people: Vec<Person> = list
+                .iter()
+                .filter_map(|p| {
+                    let name = p["name"].as_str()?.trim();
+                    (!name.is_empty() && name.len() <= 320).then(|| Person {
+                        name: name.to_string(),
+                        role: p["role"].as_str().unwrap_or("").to_string(),
+                    })
+                })
+                .take(PEOPLE_MAX)
+                .collect();
+            // Not a change to the team's data: `changed` tells an app to
+            // read its records again, and an app reads `members` after
+            // every sync anyway.
+            self.people = people;
         }
         changed
     }

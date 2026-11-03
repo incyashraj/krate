@@ -1105,7 +1105,10 @@ bytes, a record up to 64 KiB, the app's data up to 50 MiB.\n\n\
 cursor. `org::text(&entry, \"note\")` and `org::field(&entry, name)` read a \
 field; `entry.changed_by` names who changed it last, so the app can say \
 \"added by dana\". `org::who()` is the signed-in person and their role, \
-once a sync has reached the organisation.\n\n\
+once a sync has reached the organisation. `org::members()` is everyone \
+the app is released to, by sign-in name and role, kept from the last sync: \
+offer them in any field that names a person (who approves, who does it), \
+and store the sign-in name, never a short form.\n\n\
 3. **The runtime syncs; the app shows where it stands.** The runtime \
 exchanges changes in the background every five seconds and when the app \
 closes. `org::status()` answers at once, from this device, with `link` -- \

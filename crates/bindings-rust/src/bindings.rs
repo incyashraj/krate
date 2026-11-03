@@ -11374,8 +11374,9 @@ pub mod krate {
                         .finish()
                 }
             }
-            /// The signed-in person, as the organisation knows them, so an app can
-            /// say who added something.
+            /// A member as the organisation knows them: the signed-in person
+            /// (`who`), so an app can say who added something, or someone the app
+            /// is released to (`members`).
             #[derive(Clone)]
             pub struct Member {
                 /// Their name in the organisation: a GitHub login or an email address.
@@ -12765,6 +12766,180 @@ pub mod krate {
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
+            /// The people this release of the app reaches, to offer when the app
+            /// asks who should do something: members inside its audience (owners,
+            /// admins and reviewers see every release), sorted by name, each with
+            /// their role. Names and roles only. Kept on this device from the last
+            /// sync, so it answers offline; empty before the first one.
+            pub fn members() -> Result<_rt::Vec<Member>, OrgError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/org@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "members"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result29 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base14 = l3;
+                                let len14 = l4;
+                                let mut result14 = _rt::Vec::with_capacity(len14);
+                                for i in 0..len14 {
+                                    let base =
+                                        base14.add(i * (6 * ::core::mem::size_of::<*const u8>()));
+                                    let e14 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 =
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+                                        let l8 = *base
+                                            .add(2 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<*mut u8>();
+                                        let l9 = *base
+                                            .add(3 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len10 = l9;
+                                        let bytes10 =
+                                            _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+                                        let l11 = *base
+                                            .add(4 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<*mut u8>();
+                                        let l12 = *base
+                                            .add(5 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len13 = l12;
+                                        let bytes13 =
+                                            _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                        Member {
+                                            name: _rt::string_lift(bytes7),
+                                            role: _rt::string_lift(bytes10),
+                                            org: _rt::string_lift(bytes13),
+                                        }
+                                    };
+                                    result14.push(e14);
+                                }
+                                _rt::cabi_dealloc(
+                                    base14,
+                                    len14 * (6 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                result14
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l15 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v28 = match l15 {
+                                    0 => OrgError::Denied,
+                                    1 => OrgError::NotAnOrgApp,
+                                    2 => {
+                                        let e28 = {
+                                            let l16 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        OrgError::Invalid(e28)
+                                    }
+                                    3 => OrgError::TooLarge,
+                                    4 => OrgError::OverQuota,
+                                    5 => {
+                                        let e28 = {
+                                            let l19 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 =
+                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
+                                            let l22 = *ptr0
+                                                .add(4 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr0
+                                                .add(5 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 =
+                                                _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
+
+                                            Refusal {
+                                                reason: _rt::string_lift(bytes21),
+                                                message: _rt::string_lift(bytes24),
+                                            }
+                                        };
+                                        OrgError::Refused(e28)
+                                    }
+                                    6 => OrgError::Unsupported,
+                                    n => {
+                                        debug_assert_eq!(n, 7, "invalid enum discriminant");
+                                        let e28 = {
+                                            let l25 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 =
+                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
+
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        OrgError::Io(e28)
+                                    }
+                                };
+
+                                v28
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result29
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
             /// Where this device stands, from this device: it never waits and never
             /// reaches the network. Cheap enough to ask every frame.
             pub fn status() -> Result<Standing, OrgError> {
@@ -13279,8 +13454,8 @@ pub(crate) use __export_cli_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.1.0:cli:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 7328] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa68\x01A\x02\x01AD\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 7354] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc08\x01A\x02\x01AD\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -13415,7 +13590,7 @@ group-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x02\x05groups\x03ke
 ys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x03\x05groups\x03keys\x05value\
 \x02\0\x06\x04\0\x03set\x01\x07\x01@\x02\x05groups\x03keys\0\x06\x04\0\x06delete\
 \x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\x01\x05groups\0\x0a\x04\0\x04keys\x01\x0b\
-\x03\0\x17krate:store/group@0.1.0\x05$\x01B1\x01p}\x01q\x05\x04null\0\0\x04text\x01\
+\x03\0\x17krate:store/group@0.1.0\x05$\x01B5\x01p}\x01q\x05\x04null\0\0\x04text\x01\
 s\0\x06number\x01u\0\x07boolean\x01\x7f\0\x05bytes\x01\0\0\x04\0\x05value\x03\0\x01\
 \x01o\x02s\x02\x01p\x03\x01r\x04\x02ids\x06fields\x04\x0achanged-bys\x0achanged-\
 atw\x04\0\x05entry\x03\0\x05\x01s\x04\0\x06cursor\x03\0\x07\x01p\x06\x01ps\x01r\x04\
@@ -13432,28 +13607,29 @@ r\x03\0\x18\x01j\0\x01\x19\x01@\x03\x0acollections\x02ids\x06fields\x04\0\x1a\x0
 \x1d\x04\0\x03get\x01\x1e\x01@\x02\x0acollections\x02ids\0\x1a\x04\0\x06delete\x01\
 \x1f\x01k\x08\x01j\x01\x0c\x01\x19\x01@\x02\x0acollections\x05since\x20\0!\x04\0\
 \x07records\x01\"\x01j\x01\x0f\x01\x19\x01@\0\0#\x04\0\x04sync\x01$\x01k\x15\x01\
-j\x01%\x01\x19\x01@\0\0&\x04\0\x03who\x01'\x01j\x01\x13\x01\x19\x01@\0\0(\x04\0\x06\
-status\x01)\x03\0\x15krate:store/org@0.1.0\x05%\x01B\x0b\x01q\x04\x06denied\0\0\x09\
-too-large\0\0\x0bempty-range\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\
-\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01\
-j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\
-\0\x05below\x01\x07\x03\0\x18krate:random/bytes@0.1.0\x05&\x01B$\x01w\x04\0\x0ep\
-rocess-handle\x03\0\0\x01q\x07\x0cnot-declared\x01s\0\x09not-found\x01s\0\x11ref\
-used-by-person\x01s\0\x0abad-folder\x01s\0\x08too-many\x01s\0\x0eunknown-handle\0\
-\0\x08platform\x01s\0\x04\0\x0dprocess-error\x03\0\x02\x01kz\x01r\x02\x04code\x04\
-\x06signal\x04\x04\0\x0bexit-status\x03\0\x05\x01p}\x01r\x02\x05bytes\x07\x05end\
-ed\x7f\x04\0\x06output\x03\0\x08\x01ps\x01o\x02ss\x01p\x0b\x01j\x01\x01\x01\x03\x01\
-@\x04\x07programs\x04args\x0a\x03cwds\x03env\x0c\0\x0d\x04\0\x05start\x01\x0e\x01\
-@\x03\x03cwds\x04cols{\x04rows{\0\x0d\x04\0\x0dopen-terminal\x01\x0f\x01j\0\x01\x03\
-\x01@\x02\x06handle\x01\x05bytes\x07\0\x10\x04\0\x0bwrite-stdin\x01\x11\x01@\x01\
-\x06handle\x01\0\x10\x04\0\x0bclose-stdin\x01\x12\x01j\x01\x09\x01\x03\x01@\x02\x06\
-handle\x01\x03maxy\0\x13\x04\0\x0bread-stdout\x01\x14\x04\0\x0bread-stderr\x01\x14\
-\x01k\x06\x01j\x01\x15\x01\x03\x01@\x02\x06handle\x01\x0atimeout-msy\0\x16\x04\0\
-\x04wait\x01\x17\x04\0\x04kill\x01\x12\x01@\x03\x06handle\x01\x04cols{\x04rows{\0\
-\x10\x04\0\x06resize\x01\x18\x01@\x01\x06handle\x01\x01\0\x04\0\x07release\x01\x19\
-\x03\0\x1dkrate:process/processes@0.1.0\x05'\x01@\0\0z\x04\0\x03run\x01(\x04\0\x13\
-krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cpr\
-ocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+j\x01%\x01\x19\x01@\0\0&\x04\0\x03who\x01'\x01p\x15\x01j\x01(\x01\x19\x01@\0\0)\x04\
+\0\x07members\x01*\x01j\x01\x13\x01\x19\x01@\0\0+\x04\0\x06status\x01,\x03\0\x15\
+krate:store/org@0.1.0\x05%\x01B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\x0be\
+mpty-range\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\
+\x02\x01\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01\
+@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\
+\x03\0\x18krate:random/bytes@0.1.0\x05&\x01B$\x01w\x04\0\x0eprocess-handle\x03\0\
+\0\x01q\x07\x0cnot-declared\x01s\0\x09not-found\x01s\0\x11refused-by-person\x01s\
+\0\x0abad-folder\x01s\0\x08too-many\x01s\0\x0eunknown-handle\0\0\x08platform\x01\
+s\0\x04\0\x0dprocess-error\x03\0\x02\x01kz\x01r\x02\x04code\x04\x06signal\x04\x04\
+\0\x0bexit-status\x03\0\x05\x01p}\x01r\x02\x05bytes\x07\x05ended\x7f\x04\0\x06ou\
+tput\x03\0\x08\x01ps\x01o\x02ss\x01p\x0b\x01j\x01\x01\x01\x03\x01@\x04\x07progra\
+ms\x04args\x0a\x03cwds\x03env\x0c\0\x0d\x04\0\x05start\x01\x0e\x01@\x03\x03cwds\x04\
+cols{\x04rows{\0\x0d\x04\0\x0dopen-terminal\x01\x0f\x01j\0\x01\x03\x01@\x02\x06h\
+andle\x01\x05bytes\x07\0\x10\x04\0\x0bwrite-stdin\x01\x11\x01@\x01\x06handle\x01\
+\0\x10\x04\0\x0bclose-stdin\x01\x12\x01j\x01\x09\x01\x03\x01@\x02\x06handle\x01\x03\
+maxy\0\x13\x04\0\x0bread-stdout\x01\x14\x04\0\x0bread-stderr\x01\x14\x01k\x06\x01\
+j\x01\x15\x01\x03\x01@\x02\x06handle\x01\x0atimeout-msy\0\x16\x04\0\x04wait\x01\x17\
+\x04\0\x04kill\x01\x12\x01@\x03\x06handle\x01\x04cols{\x04rows{\0\x10\x04\0\x06r\
+esize\x01\x18\x01@\x01\x06handle\x01\x01\0\x04\0\x07release\x01\x19\x03\0\x1dkra\
+te:process/processes@0.1.0\x05'\x01@\0\0z\x04\0\x03run\x01(\x04\0\x13krate:app/c\
+li@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\
+\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 
 #[inline(never)]
 #[doc(hidden)]

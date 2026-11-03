@@ -246,6 +246,16 @@ fn op(input: &Json) -> Result<Json, Fail> {
                 json!({ "member": open.mirror.who().map(|m| json!({ "name": m.name, "role": m.role, "org": m.org })) }),
             )
         }),
+        // The people this release reaches (IC-979), as the last sync named them.
+        "members" => with_store(input, |open| {
+            let people: Vec<serde_json::Value> = open
+                .mirror
+                .members()
+                .into_iter()
+                .map(|m| json!({ "name": m.name, "role": m.role, "org": m.org }))
+                .collect();
+            Ok(json!({ "members": people }))
+        }),
         "status" => with_store(input, |open| {
             let m = &open.mirror;
             Ok(json!({
@@ -448,7 +458,8 @@ mod tests {
         let end = call(json!({
             "op": "sync_end", "store": store, "org": "acme", "app_id": "dev.acme.tasks",
             "envelope": envelope, "device_secret": hex(device.secret()),
-            "answer": { "now": 1_760_000_000_200u64, "rows": rows, "cursor": "3", "me": { "name": "dana", "role": "developer" }, "org": { "name": "Acme" } },
+            "answer": { "now": 1_760_000_000_200u64, "rows": rows, "cursor": "3", "me": { "name": "dana", "role": "developer" }, "org": { "name": "Acme" },
+                        "people": [{ "name": "dana", "role": "developer" }, { "name": "lee", "role": "recipient" }] },
         }));
         assert_eq!(
             (end["rejected"].as_u64(), end["pending"].as_u64()),
@@ -459,6 +470,14 @@ mod tests {
         assert_eq!(
             who["member"],
             json!({ "name": "dana", "role": "developer", "org": "Acme" })
+        );
+        let members = call(json!({ "op": "members", "store": store }));
+        assert_eq!(
+            members["members"],
+            json!([
+                { "name": "dana", "role": "developer", "org": "Acme" },
+                { "name": "lee", "role": "recipient", "org": "Acme" }
+            ])
         );
         let status = call(json!({ "op": "status", "store": store }));
         assert_eq!(status["rejected"], 1);

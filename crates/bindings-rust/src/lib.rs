@@ -782,6 +782,14 @@ pub mod org {
         crate::bindings::krate::store::org::who()
     }
 
+    /// The people this release of the app reaches, sorted by name, each with
+    /// their role: who to offer when the app asks who should do something
+    /// (an approver, an owner, a host). Kept from the last sync, so it
+    /// answers offline; empty before the first one.
+    pub fn members() -> Result<alloc::vec::Vec<Member>, OrgError> {
+        crate::bindings::krate::store::org::members()
+    }
+
     /// Where this computer stands: synced, syncing, offline, or waiting for
     /// the team's key, with what is pending and the organisation's name. It
     /// never waits, so a status line can ask every frame.

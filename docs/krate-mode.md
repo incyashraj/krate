@@ -426,6 +426,7 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `org::delete(collection: &str, id: &str) -> Result<(), OrgError>`
 - `org::field(entry: &'a Entry, name: &str) -> Option<&'a Value>`
 - `org::get(collection: &str, id: &str) -> Result<Option<Entry>, OrgError>`
+- `org::members() -> Result<alloc::vec::Vec<Member>, OrgError>`
 - `org::put(collection: &str, id: &str, fields: &[(&str, Value)]) -> Result<(), OrgError>`
 - `org::put_text(collection: &str, id: &str, field: &str, text: &str) -> Result<(), OrgError>`
 - `org::records(collection: &str, since: Option<&str>) -> Result<Page, OrgError>`
@@ -905,6 +906,7 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 - `org::records: func(collection: string, since: option<cursor>) -> result<page, org-error>`
 - `org::sync: func() -> result<sync-state, org-error>`
 - `org::who: func() -> result<option<member>, org-error>`
+- `org::members: func() -> result<list<member>, org-error>`
 - `org::status: func() -> result<standing, org-error>`
 
 ## `time`

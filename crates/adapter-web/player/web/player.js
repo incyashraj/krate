@@ -1480,6 +1480,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     'org.records': teamCall((t, a) => t.records(a.collection, a.since)),
     'org.sync': teamCall((t) => t.sync()),
     'org.who': teamCall((t) => t.who()),
+    'org.members': teamCall((t) => t.members()),
     'org.status': teamCall((t) => t.standing()),
     'open-url': ({ url }) => {
       const opened = window.open(url, '_blank', 'noopener,noreferrer');

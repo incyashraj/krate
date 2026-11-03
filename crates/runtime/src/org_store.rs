@@ -577,6 +577,14 @@ impl AppOrg {
         Ok(inner.mirror.who())
     }
 
+    /// The people this release reaches, as the last sync named them, read
+    /// from this device's copy (IC-979).
+    pub fn members(&self) -> Result<Vec<Member>, OrgError> {
+        let inner = self.inner()?;
+        inner.check()?;
+        Ok(inner.mirror.members())
+    }
+
     /// Where this device stands, from here: it never reaches the network and
     /// never waits behind a sync (K-1107, K-1108).
     pub fn status(&self) -> Result<Status, OrgError> {
@@ -1108,6 +1116,7 @@ mod tests {
                 "now": hub_now, "rows": out, "cursor": self.seq.to_string(), "more": false,
                 "full": false, "me": { "name": by, "role": "developer" }, "org": { "slug": "acme", "name": "Acme" },
                 "quota": { "limit": DEFAULT_QUOTA },
+                "people": [{ "name": "carol", "role": "developer" }, { "name": "dan", "role": "recipient" }],
             })
         }
     }
@@ -1325,6 +1334,38 @@ mod tests {
             assert_eq!(org.inner().unwrap().mirror.pending(), 0);
         }
         assert_eq!(carol.who().unwrap().unwrap().org, "Acme");
+        // The people the release reaches, from the same answer (IC-979).
+        let names: Vec<String> = dan.members().unwrap().into_iter().map(|m| m.name).collect();
+        assert_eq!(names, vec!["carol", "dan"]);
+    }
+
+    /// The people are kept with the copy: a restart with no network still
+    /// has them (IC-979).
+    #[test]
+    fn the_people_read_offline_after_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let g = grant(dir.path(), "carol", 0);
+        {
+            let org = AppOrg::open(OrgAccess::Granted(g.clone()));
+            assert!(org.members().unwrap().is_empty(), "nobody before a sync");
+            let mut hub = MiniHub::default();
+            sync_with(&org, &mut hub, "carol", real_now());
+            org.inner().unwrap().save().unwrap();
+        }
+        let org = AppOrg::open(OrgAccess::Granted(g));
+        let people: Vec<(String, String)> = org
+            .members()
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.name, m.role))
+            .collect();
+        assert_eq!(
+            people,
+            vec![
+                ("carol".to_string(), "developer".to_string()),
+                ("dan".to_string(), "recipient".to_string())
+            ]
+        );
     }
 
     /// A device whose clock is a day fast edits first, offline; a device

@@ -10715,7 +10715,9 @@ fn pack_takes_a_build_path_whose_name_ends_in_code_wasm() {
         eprintln!("skipping: phase2 smoke fixture not built");
         return;
     };
-    let built = dir.path().join("target/wasm32-wasip1/release/krate_code.wasm");
+    let built = dir
+        .path()
+        .join("target/wasm32-wasip1/release/krate_code.wasm");
     std::fs::create_dir_all(built.parent().unwrap()).unwrap();
     std::fs::copy(&component, &built).expect("copy component");
     let manifest = dir.path().join("manifest.toml");
@@ -10737,13 +10739,19 @@ fn pack_takes_a_build_path_whose_name_ends_in_code_wasm() {
         .arg(&bundle)
         .output()
         .expect("pack");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let mut zip = zip::ZipArchive::new(std::fs::File::open(&bundle).unwrap()).unwrap();
     let mut text = String::new();
     std::io::Read::read_to_string(&mut zip.by_name("manifest.toml").unwrap(), &mut text).unwrap();
     assert!(text.contains("entry = \"code.wasm\""), "{text}");
     assert!(
-        std::fs::read_to_string(&manifest).unwrap().contains("krate_code.wasm"),
+        std::fs::read_to_string(&manifest)
+            .unwrap()
+            .contains("krate_code.wasm"),
         "the developer's own manifest is untouched"
     );
 }
@@ -15669,6 +15677,25 @@ impl FakeOrgHub {
             .split_once(':')
             .map_or(who.as_str(), |(_, v)| v)
             .to_string();
+        // The people this release reaches, as org-releases.js names them
+        // (IC-979): active members inside its audience, by name and role.
+        let mut people: Vec<(String, String)> = org
+            .members
+            .iter()
+            .filter(|(_, (_, state))| state == "active")
+            .filter(|(p, (r, _))| org.in_audience(p, r, &audience))
+            .map(|(p, (r, _))| {
+                (
+                    p.split_once(':').map_or(p.as_str(), |(_, v)| v).to_string(),
+                    r.clone(),
+                )
+            })
+            .collect();
+        people.sort();
+        let people: Vec<serde_json::Value> = people
+            .into_iter()
+            .map(|(name, role)| serde_json::json!({ "name": name, "role": role }))
+            .collect();
         fake_json(
             200,
             serde_json::json!({
@@ -15677,6 +15704,7 @@ impl FakeOrgHub {
                 "me": { "name": display, "role": role },
                 "org": { "slug": slug, "name": org.name },
                 "quota": { "used": used, "limit": quota },
+                "people": people,
             }),
         )
     }
@@ -24152,7 +24180,9 @@ fn starter_requests_is_shared_by_two_people_through_its_window() {
             ("expect_text", "Say who: who approves it."),
             ("shoot", "requests-form-error.png"),
             ("click", "Who approves it"),
-            ("type", "dan@acme.example"),
+            // Just "dan": the one person the app is released to by that
+            // name, so the request is his to decide (IC-979, K-1189).
+            ("type", "dan"),
             ("click", "Send request"),
             ("expect_text", "Waiting for dan"),
             ("expect_text", "Asked dan"),

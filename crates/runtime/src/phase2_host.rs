@@ -1092,6 +1092,25 @@ impl store::org::Host for Phase2Host<'_> {
         }))
     }
 
+    fn members(
+        &mut self,
+    ) -> wasmtime::Result<Result<Vec<store::org::Member>, store::org::OrgError>> {
+        Ok(self.org().and_then(|org| {
+            org.members()
+                .map(|people| {
+                    people
+                        .into_iter()
+                        .map(|m| store::org::Member {
+                            name: m.name,
+                            role: m.role,
+                            org: m.org,
+                        })
+                        .collect()
+                })
+                .map_err(org_error_to_wit)
+        }))
+    }
+
     fn status(&mut self) -> wasmtime::Result<Result<store::org::Standing, store::org::OrgError>> {
         use crate::org_store::Link;
         Ok(self.org().and_then(|org| {

@@ -1333,6 +1333,13 @@ Accepted capability strings for this module, generated from the runtime manifest
 > organisation with its key; `none` before that.
 
 - `who() -> result<option<member>, org-error>`
+> The people this release of the app reaches, to offer when the app
+> asks who should do something: members inside its audience (owners,
+> admins and reviewers see every release), sorted by name, each with
+> their role. Names and roles only. Kept on this device from the last
+> sync, so it answers offline; empty before the first one.
+
+- `members() -> result<list<member>, org-error>`
 > Where this device stands, from this device: it never waits and never
 > reaches the network. Cheap enough to ask every frame.
 
@@ -1464,8 +1471,9 @@ Accepted capability strings for this module, generated from the runtime manifest
 
 #### `member` record
 
-> The signed-in person, as the organisation knows them, so an app can
-> say who added something.
+> A member as the organisation knows them: the signed-in person
+> (`who`), so an app can say who added something, or someone the app
+> is released to (`members`).
 
 > Their name in the organisation: a GitHub login or an email address.
 

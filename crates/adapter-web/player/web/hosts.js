@@ -590,6 +590,9 @@ export function buildImports(ctx) {
         const m = orgCall('org.who', {});
         return m ? { name: m.name, role: m.role, org: m.org } : undefined;
       },
+      members() {
+        return orgCall('org.members', {}).map((m) => ({ name: m.name, role: m.role, org: m.org }));
+      },
       // Where this tab stands, never waiting (K-1108's status).
       status() {
         const s = orgCall('org.status', {});
