@@ -137,6 +137,9 @@ async function openLink(context, arg) {
   await page.waitForFunction(() => window.__krate && (window.__krate.state === 'consent' || window.__krate.state === 'refused'), null, { timeout: 45000 }).catch(() => {});
   if (await page.evaluate(() => window.__krate.state === 'consent')) await page.click('#consentAllow');
   await ready(page);
+  // The link's own count of the open names the same digest: it lands
+  // before the file's pages start, so it is never taken for theirs.
+  await page.waitForFunction(() => window.__krate.counted, null, { timeout: 10000 }).catch(() => {});
   const out = { lines: await linesOf(page), storeKey: await page.evaluate(() => window.__krate.storeKey) };
   await page.close();
   return out;
