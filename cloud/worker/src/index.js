@@ -2249,7 +2249,6 @@ async function mobileLanding(hash, env, via = "-") {
     }
   }
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-  const link = `${base}/a/${hash}`;
   const shot = (await env.BUNDLES.head(`shot:${hash}`))
     ? `${base}/shot/${hash}`
     : null;
@@ -2276,8 +2275,6 @@ async function mobileLanding(hash, env, via = "-") {
   .go { display: block; box-sizing: border-box; width: 100%; padding: 14px; border-radius: 999px;
          background: #fff; color: #0a0a0a; font-size: 15.5px; font-weight: 600; text-decoration: none;
          margin-bottom: 10px; }
-  button.second { width: 100%; padding: 13px; border: 1px solid #2a2d33; border-radius: 999px;
-                  background: transparent; color: #fff; font-size: 15px; font-weight: 500; margin-bottom: 18px; }
   a { color: rgba(255,255,255,0.5); font-size: 13px; }
 </style>
 </head>
@@ -2289,8 +2286,7 @@ async function mobileLanding(hash, env, via = "-") {
   ${await newerVersionLine(env, hash, base)}
   <p>Someone made this and sent it to you. It opens right here, with nothing to install, and shows you first what it may touch.</p>
   <a class="go" href="${base}/run/${hash}${viaQuery(via)}">Open it</a>
-  <button class="second" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link for a computer</button>
-  <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file</a>
+  <a href="https://krate.tech">What is Krate?</a>
 </main>
 </body>
 </html>`;

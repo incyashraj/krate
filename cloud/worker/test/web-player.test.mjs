@@ -197,7 +197,10 @@ test("a phone that opens a shared link is offered to open it here, in the tab", 
   const html = String(page.body);
   assert.match(html, new RegExp(`<a class="go" href="[^"]*/run/${hash}">Open it</a>`), html);
   assert.ok(!/runs on computers/.test(html), "no longer sends a phone to a computer");
-  assert.ok(html.indexOf(`/run/${hash}`) < html.indexOf("Copy the link"), "opening comes before copying");
+  // No dead ends on a phone: the link itself opens on a computer too, and a
+  // phone cannot open the downloaded file.
+  assert.ok(!/Copy the link/.test(html), "no copying the link for a computer");
+  assert.ok(!/\?dl=1/.test(html), "no download a phone cannot open");
 });
 
 test("an org app's link opened by a browser goes to the app's page; the CLI and the console still get its answer (K-1166)", async () => {
