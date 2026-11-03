@@ -608,6 +608,10 @@ pub fn reaches_outside_the_run(cap: &Capability) -> bool {
         "ui.dialog:file-save",
         "ui.dialog:open-folder",
         "ui.dialog:*",
+        // Programs and the person's own shell (IC-977): they act with the
+        // person's whole power, far beyond the run's folder.
+        "process.run",
+        "process.terminal",
     ];
     let name = format!("{}.{}", cap.module(), cap.action());
     let with_resource = match cap.resource() {
@@ -801,6 +805,11 @@ fn capability_allows(grant: &Capability, required: &Capability) -> bool {
             // A company connection is named exactly (IC-952): one name, no
             // pattern, so a grant for `finance-api` is never `finance-*`.
             if grant.module() == "net" && grant.action() == "connection" {
+                return grant_resource == required_resource;
+            }
+            // A program is named exactly (IC-977): `process.run:cargo` runs
+            // cargo and nothing else, whatever the name looks like.
+            if grant.module() == "process" && grant.action() == "run" {
                 return grant_resource == required_resource;
             }
             // `fs.list:images/**` must cover listing `images` itself. The glob
@@ -1712,6 +1721,23 @@ mod tests {
         assert!(!policy.allows(&fs_read));
     }
 
+    /// A grant to run one program runs that program only (IC-977), and no
+    /// `process.run` grant opens a terminal.
+    #[test]
+    fn a_program_grant_names_one_program_exactly() {
+        let policy =
+            SessionPolicy::from_cli_grants(&["process.run:cargo".to_string()]).expect("grants");
+        let cap = |s: &str| s.parse::<Capability>().expect(s);
+        assert!(policy.allows(&cap("process.run:cargo")));
+        for other in [
+            "process.run:rustc",
+            "process.run:cargo-fmt",
+            "process.terminal",
+        ] {
+            assert!(!policy.allows(&cap(other)), "{other} was never granted");
+        }
+    }
+
     /// The verification split, on the shapes that matter (IC-364).
     ///
     /// Withheld: everything that reaches the person or the world. Granted:
@@ -1733,6 +1759,8 @@ mod tests {
             "ui.clipboard:read",
             "ui.clipboard:write",
             "ui.dialog:file-open",
+            "process.run:cargo",
+            "process.terminal",
         ] {
             let cap = outside.parse().expect("parse capability");
             assert!(
@@ -1782,6 +1810,8 @@ mod tests {
             "ui.open-url",
             "ui.clipboard",
             "ui.dialog",
+            "process.run",
+            "process.terminal",
         ] {
             assert!(
                 known.contains(entry),

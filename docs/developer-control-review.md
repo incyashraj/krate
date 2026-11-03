@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 77 boundaries reviewed, 68 of them WIT interfaces (68 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 40 optional.
+- 78 boundaries reviewed, 69 of them WIT interfaces (69 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 41 optional.
 - 6 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -52,6 +52,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:net@0.1.0/types` | wit | request, response and error shapes every host lowers to | what is sent and how it is interpreted | none needed: a type carries no authority | yes | portability |
 | `krate:net@0.1.0/ws` | wit | the same boundary for a live connection: a net.connect grant to that host and port, checked at open | the protocol over the socket, the framing, the server | raw message frames; krate:net/sockets for a transport of the app's own | yes | recipient-permission |
 | `krate:phase1@0.0.1/host` | wit | the first-generation host world, kept for the bundles that use it | none new: this world is superseded and not for new apps | the Phase 2 and Phase 3 worlds | no | -- |
+| `krate:process@0.1.0/processes` | wit | that a program runs only when the manifest names it by its bare name and the person allowed it, is found on the person's PATH or in ~/.cargo/bin without the app learning where, runs in the app's own folder or one the person picked, gets the person's environment without Krate's, and ends with the app, its whole process group with it | which programs, their arguments and input, how output is read and shown, whether to offer a terminal | none needed: a program is the person's own tool, and not running one costs the app nothing else | no | -- |
 | `krate:random@0.1.0/bytes` | wit | where operating-system randomness comes from | any PRNG or crate over it (rand, uuid, getrandom route here) | seed the app's own generator from it, or use none | no | -- |
 | `krate:resources@0.1.0/assets` | wit | that the app's own bundled files are readable with no grant, because they are the app's | what is bundled and in what format | embed bytes in the component itself | no | -- |
 | `krate:speech@0.1.0/synthesis` | wit | that speech is sound: allowed by audio.playback, replaced rather than queued, and stopped when the app stops | what is said, when, in which of the computer's voices and at what speed | audio/playback with the app's own synthesizer or recorded clips | no | -- |

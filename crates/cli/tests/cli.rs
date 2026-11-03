@@ -6257,6 +6257,200 @@ fn a_watch_reports_what_changed_in_a_folder_and_nothing_outside_its_grant() {
     );
 }
 
+/// An app runs a program on the computer only when its manifest names it
+/// and the person allowed it, in its own folder, and nothing it started
+/// outlives it (krate:process, IC-977).
+///
+/// `process-probe.wasm` is apps/krate-process-probe built. Its manifest here
+/// names `cargo`, `sh` and a terminal, all optional, so a run with only the
+/// basics is the person saying no.
+#[test]
+fn an_app_runs_only_the_programs_it_names_and_they_end_with_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/process-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.process-probe\"\nname = \"process-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"process.run:cargo\"\nrationale = \"build\"\nrequired = false\n\n\
+         [[capabilities]]\ncap = \"process.run:sh\"\nrationale = \"a child\"\nrequired = false\n\n\
+         [[capabilities]]\ncap = \"process.terminal\"\nrationale = \"a terminal\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("process.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let run = |grants: &[&str], check: &str| {
+        let out = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .args(grants)
+            .args(["--", check])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let all = ["--auto-grant"];
+
+    // Runs, and the app reads what it printed.
+    let version = run(&all, "version");
+    assert!(
+        version.starts_with("version: cargo 1.") && version.ends_with(" code=0"),
+        "{version}"
+    );
+    // Not named in the manifest: refused in words, whatever was granted.
+    assert_eq!(
+        run(&all, "undeclared"),
+        "undeclared: not-declared: the app did not ask to run rustc"
+    );
+    assert!(
+        run(&all, "path").starts_with("path: not-declared: the app did not ask to run `/bin/sh`"),
+        "a path is never a program name"
+    );
+    // Named, and the person did not allow it.
+    assert_eq!(
+        run(&["--grant", "io.stdout", "--grant", "io.args"], "version"),
+        "version: refused-by-person: you did not allow this app to run cargo"
+    );
+    // A folder on the computer, or out of one by `..`: never.
+    assert_eq!(
+        run(&all, "raw-cwd"),
+        "raw-cwd: bad-folder: there is no folder `/tmp`"
+    );
+    assert!(
+        run(&all, "escape").starts_with("escape: bad-folder: "),
+        "`..` leaves no folder"
+    );
+
+    if cfg!(unix) {
+        // A terminal: typed input reaches the shell and its output comes
+        // back; it resizes and ends when killed.
+        assert_eq!(run(&all, "terminal"), "terminal: saw hi, resized, ended");
+        // Without the grant, no terminal.
+        assert!(
+            run(&["--grant", "io.stdout", "--grant", "io.args"], "terminal")
+                .starts_with("terminal: refused-by-person: ")
+        );
+
+        // The app forgets a running program and exits: it ends with the app.
+        let orphan = run(&all, "orphan");
+        let pid = orphan
+            .strip_prefix("orphan pid=")
+            .unwrap_or_else(|| panic!("{orphan}"))
+            .to_string();
+        assert!(pid.parse::<u32>().is_ok(), "{orphan}");
+        let alive = std::process::Command::new("ps")
+            .args(["-p", &pid])
+            .output()
+            .expect("ps");
+        assert!(
+            !alive.status.success(),
+            "pid {pid} outlived its app: {}",
+            String::from_utf8_lossy(&alive.stdout)
+        );
+    }
+}
+
+/// A program ends with Krate however Krate is stopped (krate:process,
+/// IC-977): `kill` and the terminal closing. A program leads its own process
+/// group, so a signal sent to Krate never reaches it; Krate has to end it on
+/// the way out. (Ctrl-C is Krate's own handler's: the run ends as it would,
+/// and dropping the run ends its programs.)
+#[cfg(unix)]
+#[test]
+fn a_program_ends_when_krate_is_interrupted_or_killed() {
+    use std::io::BufRead;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/process-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.process-probe\"\nname = \"process-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"process.run:sh\"\nrationale = \"a child\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("process.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    for signal in ["-TERM", "-HUP"] {
+        let mut running = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .args(["--", "hold"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("run");
+        let mut line = String::new();
+        std::io::BufReader::new(running.stdout.take().expect("stdout"))
+            .read_line(&mut line)
+            .expect("the program's pid");
+        let pid = line
+            .trim()
+            .strip_prefix("orphan pid=")
+            .unwrap_or_else(|| panic!("{line}"))
+            .to_string();
+        assert!(pid.parse::<u32>().is_ok(), "{line}");
+        let alive = |pid: &str| {
+            std::process::Command::new("ps")
+                .args(["-p", pid])
+                .output()
+                .expect("ps")
+                .status
+                .success()
+        };
+        assert!(alive(&pid), "the program runs while the app does");
+        assert!(std::process::Command::new("kill")
+            .args([signal, &running.id().to_string()])
+            .status()
+            .expect("kill")
+            .success());
+        let status = running.wait().expect("krate ended");
+        assert!(!status.success(), "{signal} ended Krate as it always did");
+        let mut gone = false;
+        for _ in 0..100 {
+            if !alive(&pid) {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(gone, "pid {pid} outlived Krate stopped with {signal}");
+    }
+}
+
 /// Krate's own logs never land in an app's output (K-884).
 ///
 /// The log writer defaulted to stdout, so on a Windows runner a wgpu driver

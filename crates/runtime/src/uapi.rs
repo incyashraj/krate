@@ -32,6 +32,25 @@ pub enum UapiCall {
     /// makes at run time -- the budget is fixed before the app starts -- but
     /// named here so the capability has a UAPI identity like every other.
     Memory(MemoryCall),
+    /// A program or a terminal on the computer (IC-977).
+    Process(ProcessCall),
+}
+
+/// Starting something on the computer: one program by its bare name, or the
+/// person's own shell in a terminal (IC-977).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessCall {
+    Run { program: String },
+    Terminal,
+}
+
+impl fmt::Display for ProcessCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Run { program } => write!(f, "run:{program}"),
+            Self::Terminal => f.write_str("terminal"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +88,7 @@ impl UapiCall {
             Self::Store(call) => format!("store.{call}"),
             Self::Random(call) => format!("random.{call}"),
             Self::Memory(call) => format!("memory.{call}"),
+            Self::Process(call) => format!("process.{call}"),
         }
     }
 }
@@ -810,6 +830,10 @@ mod tests {
             }),
             UapiCall::Random(RandomCall::Bytes),
             UapiCall::Memory(MemoryCall::Budget { mib: 1024 }),
+            UapiCall::Process(ProcessCall::Run {
+                program: "cargo".to_string(),
+            }),
+            UapiCall::Process(ProcessCall::Terminal),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

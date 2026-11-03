@@ -281,6 +281,24 @@ once, then `krate::fs::watch::changes(w)?` from the event loop: a list of \
 with `path` ready to pass to `fs::read`. It looks at most four times a \
 second (asking sooner returns an empty list), so calling it every frame is \
 fine. Allowed wherever listing the folder is; no extra capability.\n\n\
+To run a program on the computer -- an editor building with `cargo`, \
+formatting with `rustfmt`, talking to `rust-analyzer` -- declare each one by \
+its bare name, `process.run:cargo` (no path, no `*`), and `process.terminal` \
+for a terminal; the person is asked about each, in words that say a program \
+can do what they can. `let p = krate::process::Process::start(\"cargo\", \
+&[\"build\", \"--message-format=json\"], \"picked/<token>\")?` runs it in the \
+picked folder (or `\".\"`, the app's own); then from the event loop \
+`p.read_stdout(65536)?` and `p.read_stderr(65536)?` (never wait: empty when \
+nothing new, `ended` when done) and `p.wait(0)?` (`Some(status)` once it \
+ended). `p.write(bytes)` feeds stdin (a language server's requests). \
+`Process::terminal(\"picked/<token>\", cols, rows)` opens the person's shell: \
+type with `write`, draw what `read_stdout` returns (escape sequences \
+included), `resize` when the panel changes. Dropping a `Process` kills it, \
+and every one ends with the app. A command-line app may call \
+`krate::process::run(\"cargo\", &[\"--version\"], \".\")?` and get the whole \
+output. On a refusal show `krate::process::words(&err)`: \"the app did not ask \
+to run X\", \"X is not installed on this computer\". A computer only: a \
+browser tab and a phone refuse every call in words.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \
@@ -940,6 +958,8 @@ fn capability_note(pattern: &str) -> &'static str {
         "location.read" => "where the phone is; the person is asked on Krate's sheet and by the phone itself",
         "bluetooth.connect" => "Bluetooth devices the person picks in Krate's own list; only the picked one is reachable",
         "photos.add" => "add pictures to the person's photo library (add-only: the app never sees the library)",
+        "process.run" => "run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can",
+        "process.terminal" => "the person's own shell in a terminal the app draws",
         _ => "",
     }
 }

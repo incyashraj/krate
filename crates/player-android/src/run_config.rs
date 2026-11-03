@@ -104,6 +104,9 @@ pub fn use_in_words(cap: &str) -> Option<String> {
         "store.secret" => "Keeping secrets safe".to_string(),
         "store.group" => "Sharing data with its maker's other apps".to_string(),
         "store.org" => "Your organisation's data".to_string(),
+        // Refused on a phone (IC-977), named so the menu is not a raw id.
+        "process.run" => "Running programs".to_string(),
+        "process.terminal" => "A terminal".to_string(),
         "ui.clipboard" => "The clipboard".to_string(),
         "ui.notify" => "Notifications".to_string(),
         "ui.open-url" => "Opening links".to_string(),

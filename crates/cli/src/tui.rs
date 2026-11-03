@@ -1372,6 +1372,14 @@ fn plain_capability(cap: &str) -> Option<String> {
         "audio.playback" => "play sound",
         "audio.capture" => "record from your microphone",
         "speech.transcribe" => "turn speech into text, on this computer",
+        // A program or a terminal (IC-977): the card's own words, which say
+        // what a program can do.
+        "process.run" | "process.terminal" => {
+            return cap
+                .parse::<krate_manifest::Capability>()
+                .ok()
+                .map(|cap| cap.plain());
+        }
         _ => return None,
     };
     Some(text.to_string())
@@ -1775,6 +1783,15 @@ mod tests {
         assert_eq!(
             plain_capability("audio.capture").as_deref(),
             Some("record from your microphone")
+        );
+        // A program has the person's power, and the line says so (IC-977).
+        assert_eq!(
+            plain_capability("process.run:cargo").as_deref(),
+            Some("run cargo on this computer -- a project's build can run any code it contains")
+        );
+        assert_eq!(
+            plain_capability("process.terminal").as_deref(),
+            Some("open a terminal on this computer -- it can do anything you can")
         );
     }
 

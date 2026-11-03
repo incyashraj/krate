@@ -321,6 +321,15 @@ pub trait FsAdapter {
         let _ = (path, limit);
         Err(AdapterError::Unsupported)
     }
+    /// The real folder behind an app path -- its sandbox, or a folder the
+    /// person picked (`picked/<token>/...`) -- by exactly the rules every
+    /// file call resolves a path by: no `..`, no link out, no raw host path.
+    /// For a program's working folder (krate:process, IC-977); the result
+    /// never reaches the app.
+    fn resolve_folder(&self, path: &str) -> std::result::Result<std::path::PathBuf, AdapterError> {
+        let _ = path;
+        Err(AdapterError::Unsupported)
+    }
     fn remove_file(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn remove_dir(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn mkdir(&self, path: &str) -> std::result::Result<(), AdapterError>;

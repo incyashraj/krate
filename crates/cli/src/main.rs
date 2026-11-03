@@ -16853,6 +16853,9 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // `[runtime] interpreter = true` (IC-949): every app on the
         // portable interpreter, from the policy rather than an environment.
         interpreter: fleet::interpreter(),
+        // What the manifest names, so a program it does not name is refused
+        // as never asked for (krate:process, IC-977).
+        declared_capabilities: declared_set(manifest),
         usability_plan: match (request.usability_report.as_ref(), request.task.as_deref()) {
             (Some(path), task) => Some(krate_runtime::usability::UsabilityPlan {
                 report_path: path.clone(),
@@ -20652,6 +20655,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "photos.add" => Some(":ui/photos"),
             "ui.dialog" => Some(":ui/dialog"),
             "ui.clipboard" => Some(":ui/clipboard"),
+            "process.run" | "process.terminal" => Some(":process/"),
             // System and always-on families carry no signal here.
             _ => None,
         };
@@ -24754,6 +24758,16 @@ fn shared_hub_url() -> String {
 /// The env var a debug build reads to move the clock an app's organisation
 /// data is stamped with, so a test can be a device whose clock is wrong.
 const ORG_CLOCK_SKEW_ENV: &str = "KRATE_TEST_ORG_CLOCK_SKEW_MS";
+
+/// What a manifest declared, for the runtime's "never asked" refusals
+/// (krate:process, IC-977). `None` with no manifest, which names nothing.
+pub(crate) fn declared_set(
+    manifest: Option<&krate_manifest::Manifest>,
+) -> Option<std::collections::BTreeSet<krate_manifest::Capability>> {
+    manifest
+        .and_then(|manifest| manifest.declared_capabilities().ok())
+        .map(|caps| caps.into_iter().collect())
+}
 
 /// The organisation's team data (store.org, IC-951) for a run the
 /// organisation gate let through: only the private app it opened, as that
