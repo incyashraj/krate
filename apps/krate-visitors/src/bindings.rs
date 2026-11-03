@@ -30595,6 +30595,1882 @@ pub mod krate {
             }
         }
     }
+    pub mod process {
+        /// Programs on the computer the app opens on (IC-977): a compiler, a
+        /// formatter, a language server, a debugger, and the person's own shell in a
+        /// terminal. What lets a Rust IDE made as a Krate app build, format, suggest,
+        /// debug and give the person a terminal.
+        ///
+        /// An app runs only what its manifest names and the person allowed:
+        /// `process.run:<program>` for each program, by bare name (`cargo`,
+        /// `rustfmt`, `rust-analyzer`), and `process.terminal` for a terminal. The
+        /// host finds the program on the person's PATH, then in `~/.cargo/bin`; the
+        /// app never sees where it was found. A program runs in a folder the app
+        /// names the way it names files: its own (`.`, `src`, ...) or one the person
+        /// picked (`picked/<token>/...` from `ui.dialog` open-folder), resolved by
+        /// the host, never a path on the computer. It runs with the person's own
+        /// environment, without Krate's.
+        ///
+        /// A program is the person's own power: it can read and change anything they
+        /// can, and a project's build runs whatever code the project contains. The
+        /// permission card says so in those words.
+        ///
+        /// Every process ends when the app does: when it returns, stops with an
+        /// error, or its window closes. A program and everything it started is one
+        /// group, and the group is killed.
+        ///
+        /// Desktop only. In a browser tab and on a phone every call answers
+        /// `platform` with the words those places use for an ability Krate has on a
+        /// computer.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod processes {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// A running (or finished, not yet released) process. Numbers are never
+            /// reused within a run.
+            pub type ProcessHandle = u64;
+            /// Why a call was refused or failed. Each case carries words to show a
+            /// person, except `unknown-handle`, which is the app's own mistake.
+            #[derive(Clone)]
+            pub enum ProcessError {
+                /// The manifest does not name it: `process.run:<program>` for a program,
+                /// `process.terminal` for a terminal. "the app did not ask to run cargo".
+                NotDeclared(_rt::String),
+                /// The program is not on the person's PATH nor in `~/.cargo/bin`.
+                /// "cargo is not installed on this computer".
+                NotFound(_rt::String),
+                /// The manifest names it and the person did not allow it.
+                RefusedByPerson(_rt::String),
+                /// The folder is not the app's own nor one the person picked this run,
+                /// does not exist, or is not a folder.
+                BadFolder(_rt::String),
+                /// 16 processes are running in this app, or 64 are held (running, or
+                /// ended and not yet released); one must end or be released first.
+                TooMany(_rt::String),
+                /// No process has this handle in this run, or it was released.
+                UnknownHandle,
+                /// The computer refused (with its words), an argument cannot be passed
+                /// (a NUL character), or Krate cannot run programs here: a browser tab or
+                /// a phone.
+                Platform(_rt::String),
+            }
+            impl ::core::fmt::Debug for ProcessError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        ProcessError::NotDeclared(e) => {
+                            f.debug_tuple("ProcessError::NotDeclared").field(e).finish()
+                        }
+                        ProcessError::NotFound(e) => {
+                            f.debug_tuple("ProcessError::NotFound").field(e).finish()
+                        }
+                        ProcessError::RefusedByPerson(e) => {
+                            f.debug_tuple("ProcessError::RefusedByPerson")
+                                .field(e)
+                                .finish()
+                        }
+                        ProcessError::BadFolder(e) => {
+                            f.debug_tuple("ProcessError::BadFolder").field(e).finish()
+                        }
+                        ProcessError::TooMany(e) => {
+                            f.debug_tuple("ProcessError::TooMany").field(e).finish()
+                        }
+                        ProcessError::UnknownHandle => {
+                            f.debug_tuple("ProcessError::UnknownHandle").finish()
+                        }
+                        ProcessError::Platform(e) => {
+                            f.debug_tuple("ProcessError::Platform").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for ProcessError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+            #[cfg(feature = "std")]
+            impl std::error::Error for ProcessError {}
+            /// How a process ended.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct ExitStatus {
+                /// The exit code it returned; none when a signal ended it.
+                pub code: Option<i32>,
+                /// The signal that ended it (macOS and Linux), e.g. 9 after `kill`;
+                /// none when it exited on its own or on Windows.
+                pub signal: Option<i32>,
+            }
+            impl ::core::fmt::Debug for ExitStatus {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("ExitStatus")
+                        .field("code", &self.code)
+                        .field("signal", &self.signal)
+                        .finish()
+                }
+            }
+            /// What a read found.
+            #[derive(Clone)]
+            pub struct Output {
+                /// The bytes that had arrived, at most the `max` asked for; empty when
+                /// nothing has arrived since the last read.
+                pub bytes: _rt::Vec<u8>,
+                /// True when the stream is finished and every byte has been read: the
+                /// program closed it or ended. Nothing more will arrive.
+                pub ended: bool,
+            }
+            impl ::core::fmt::Debug for Output {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Output")
+                        .field("bytes", &self.bytes)
+                        .field("ended", &self.ended)
+                        .finish()
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Start `program` (a bare name the manifest names as
+            /// `process.run:<program>`) with `args`, in the folder `cwd` (the app's
+            /// own folder or a picked one, as files are named; `.` is the app's own),
+            /// with the person's environment plus `env`. Its stdin, stdout and stderr
+            /// are pipes the app writes and reads with the calls below.
+            ///
+            /// Output waits for the app: each stream holds up to 8 MiB, and when that
+            /// much is unread the program is held at its next write until the app
+            /// reads. Nothing is dropped.
+            pub fn start(
+                program: &str,
+                args: &[_rt::String],
+                cwd: &str,
+                env: &[(_rt::String, _rt::String)],
+            ) -> Result<ProcessHandle, ProcessError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = program;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec2 = args;
+                    let len2 = vec2.len();
+                    let layout2 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec2.len() * (2 * ::core::mem::size_of::<*const u8>()),
+                        ::core::mem::size_of::<*const u8>(),
+                    );
+                    let result2 = if layout2.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout2).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout2);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec2.into_iter().enumerate() {
+                        let base = result2
+                            .add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            let vec1 = e;
+                            let ptr1 = vec1.as_ptr().cast::<u8>();
+                            let len1 = vec1.len();
+                            *base
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len1;
+                            *base.add(0).cast::<*mut u8>() = ptr1.cast_mut();
+                        }
+                    }
+                    let vec3 = cwd;
+                    let ptr3 = vec3.as_ptr().cast::<u8>();
+                    let len3 = vec3.len();
+                    let vec7 = env;
+                    let len7 = vec7.len();
+                    let layout7 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec7.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                        ::core::mem::size_of::<*const u8>(),
+                    );
+                    let result7 = if layout7.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout7).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout7);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec7.into_iter().enumerate() {
+                        let base = result7
+                            .add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            let (t4_0, t4_1) = e;
+                            let vec5 = t4_0;
+                            let ptr5 = vec5.as_ptr().cast::<u8>();
+                            let len5 = vec5.len();
+                            *base
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len5;
+                            *base.add(0).cast::<*mut u8>() = ptr5.cast_mut();
+                            let vec6 = t4_1;
+                            let ptr6 = vec6.as_ptr().cast::<u8>();
+                            let len6 = vec6.len();
+                            *base
+                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len6;
+                            *base
+                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                .cast::<*mut u8>() = ptr6.cast_mut();
+                        }
+                    }
+                    let ptr8 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "start"]
+                        fn wit_import9(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import9(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import9(
+                            ptr0.cast_mut(),
+                            len0,
+                            result2,
+                            len2,
+                            ptr3.cast_mut(),
+                            len3,
+                            result7,
+                            len7,
+                            ptr8,
+                        )
+                    };
+                    let l10 = i32::from(*ptr8.add(0).cast::<u8>());
+                    let result32 = match l10 {
+                        0 => {
+                            let e = {
+                                let l11 = *ptr8.add(8).cast::<i64>();
+                                l11 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l12 = i32::from(*ptr8.add(8).cast::<u8>());
+                                let v31 = match l12 {
+                                    0 => {
+                                        let e31 = {
+                                            let l13 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        ProcessError::NotDeclared(e31)
+                                    }
+                                    1 => {
+                                        let e31 = {
+                                            let l16 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        ProcessError::NotFound(e31)
+                                    }
+                                    2 => {
+                                        let e31 = {
+                                            let l19 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        ProcessError::RefusedByPerson(e31)
+                                    }
+                                    3 => {
+                                        let e31 = {
+                                            let l22 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 = _rt::Vec::from_raw_parts(
+                                                l22.cast(),
+                                                len24,
+                                                len24,
+                                            );
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        ProcessError::BadFolder(e31)
+                                    }
+                                    4 => {
+                                        let e31 = {
+                                            let l25 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 = _rt::Vec::from_raw_parts(
+                                                l25.cast(),
+                                                len27,
+                                                len27,
+                                            );
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        ProcessError::TooMany(e31)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e31 = {
+                                            let l28 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l29 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len30 = l29;
+                                            let bytes30 = _rt::Vec::from_raw_parts(
+                                                l28.cast(),
+                                                len30,
+                                                len30,
+                                            );
+                                            _rt::string_lift(bytes30)
+                                        };
+                                        ProcessError::Platform(e31)
+                                    }
+                                };
+                                v31
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    if layout2.size() != 0 {
+                        _rt::alloc::dealloc(result2.cast(), layout2);
+                    }
+                    if layout7.size() != 0 {
+                        _rt::alloc::dealloc(result7.cast(), layout7);
+                    }
+                    result32
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Open the person's own login shell in a pseudo-terminal of `cols` by
+            /// `rows` characters, in the folder `cwd`. Needs `process.terminal`.
+            /// Bytes typed go in with `write-stdin`; everything the terminal shows
+            /// (escape sequences included) comes out of `read-stdout`. `TERM` is
+            /// `xterm-256color`.
+            pub fn open_terminal(
+                cwd: &str,
+                cols: u16,
+                rows: u16,
+            ) -> Result<ProcessHandle, ProcessError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = cwd;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open-terminal"]
+                        fn wit_import2(_: *mut u8, _: usize, _: i32, _: i32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            ptr0.cast_mut(),
+                            len0,
+                            _rt::as_i32(&cols),
+                            _rt::as_i32(&rows),
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result25 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1.add(8).cast::<i64>();
+                                l4 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(*ptr1.add(8).cast::<u8>());
+                                let v24 = match l5 {
+                                    0 => {
+                                        let e24 = {
+                                            let l6 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        ProcessError::NotDeclared(e24)
+                                    }
+                                    1 => {
+                                        let e24 = {
+                                            let l9 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        ProcessError::NotFound(e24)
+                                    }
+                                    2 => {
+                                        let e24 = {
+                                            let l12 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        ProcessError::RefusedByPerson(e24)
+                                    }
+                                    3 => {
+                                        let e24 = {
+                                            let l15 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        ProcessError::BadFolder(e24)
+                                    }
+                                    4 => {
+                                        let e24 = {
+                                            let l18 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l19 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len20 = l19;
+                                            let bytes20 = _rt::Vec::from_raw_parts(
+                                                l18.cast(),
+                                                len20,
+                                                len20,
+                                            );
+                                            _rt::string_lift(bytes20)
+                                        };
+                                        ProcessError::TooMany(e24)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e24 = {
+                                            let l21 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l22 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len23 = l22;
+                                            let bytes23 = _rt::Vec::from_raw_parts(
+                                                l21.cast(),
+                                                len23,
+                                                len23,
+                                            );
+                                            _rt::string_lift(bytes23)
+                                        };
+                                        ProcessError::Platform(e24)
+                                    }
+                                };
+                                v24
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result25
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Queue `bytes` for the process's stdin (a terminal: as if typed). Never
+            /// waits: at most 8 MiB may be waiting for the program to read, and more
+            /// is refused (`platform`) until it reads.
+            pub fn write_stdin(
+                handle: ProcessHandle,
+                bytes: &[u8],
+            ) -> Result<(), ProcessError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = bytes;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "write-stdin"]
+                        fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(_rt::as_i64(handle), ptr0.cast_mut(), len0, ptr1)
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result24 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v23 = match l4 {
+                                    0 => {
+                                        let e23 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        ProcessError::NotDeclared(e23)
+                                    }
+                                    1 => {
+                                        let e23 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        ProcessError::NotFound(e23)
+                                    }
+                                    2 => {
+                                        let e23 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        ProcessError::RefusedByPerson(e23)
+                                    }
+                                    3 => {
+                                        let e23 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        ProcessError::BadFolder(e23)
+                                    }
+                                    4 => {
+                                        let e23 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        ProcessError::TooMany(e23)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e23 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        ProcessError::Platform(e23)
+                                    }
+                                };
+                                v23
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result24
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Close stdin once what was queued is written, so the program reads end
+            /// of input. A terminal is sent end-of-input (Ctrl-D) instead.
+            pub fn close_stdin(handle: ProcessHandle) -> Result<(), ProcessError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "close-stdin"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(handle), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result23 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v22 = match l3 {
+                                    0 => {
+                                        let e22 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        ProcessError::NotDeclared(e22)
+                                    }
+                                    1 => {
+                                        let e22 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        ProcessError::NotFound(e22)
+                                    }
+                                    2 => {
+                                        let e22 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        ProcessError::RefusedByPerson(e22)
+                                    }
+                                    3 => {
+                                        let e22 = {
+                                            let l13 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        ProcessError::BadFolder(e22)
+                                    }
+                                    4 => {
+                                        let e22 = {
+                                            let l16 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        ProcessError::TooMany(e22)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e22 = {
+                                            let l19 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        ProcessError::Platform(e22)
+                                    }
+                                };
+                                v22
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result23
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Take up to `max` bytes (at most 4 MiB) of what the program wrote to
+            /// stdout; a terminal's whole output comes here. Never waits.
+            pub fn read_stdout(
+                handle: ProcessHandle,
+                max: u32,
+            ) -> Result<Output, ProcessError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "read-stdout"]
+                        fn wit_import1(_: i64, _: i32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(handle), _rt::as_i32(&max), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result27 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+                                let l6 = i32::from(
+                                    *ptr0
+                                        .add(3 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>(),
+                                );
+                                Output {
+                                    bytes: _rt::Vec::from_raw_parts(l3.cast(), len5, len5),
+                                    ended: _rt::bool_lift(l6 as u8),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v26 = match l7 {
+                                    0 => {
+                                        let e26 = {
+                                            let l8 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        ProcessError::NotDeclared(e26)
+                                    }
+                                    1 => {
+                                        let e26 = {
+                                            let l11 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        ProcessError::NotFound(e26)
+                                    }
+                                    2 => {
+                                        let e26 = {
+                                            let l14 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        ProcessError::RefusedByPerson(e26)
+                                    }
+                                    3 => {
+                                        let e26 = {
+                                            let l17 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        ProcessError::BadFolder(e26)
+                                    }
+                                    4 => {
+                                        let e26 = {
+                                            let l20 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        ProcessError::TooMany(e26)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e26 = {
+                                            let l23 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        ProcessError::Platform(e26)
+                                    }
+                                };
+                                v26
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result27
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// The same for stderr. A terminal has none: always empty and ended.
+            pub fn read_stderr(
+                handle: ProcessHandle,
+                max: u32,
+            ) -> Result<Output, ProcessError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "read-stderr"]
+                        fn wit_import1(_: i64, _: i32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(handle), _rt::as_i32(&max), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result27 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+                                let l6 = i32::from(
+                                    *ptr0
+                                        .add(3 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>(),
+                                );
+                                Output {
+                                    bytes: _rt::Vec::from_raw_parts(l3.cast(), len5, len5),
+                                    ended: _rt::bool_lift(l6 as u8),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v26 = match l7 {
+                                    0 => {
+                                        let e26 = {
+                                            let l8 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        ProcessError::NotDeclared(e26)
+                                    }
+                                    1 => {
+                                        let e26 = {
+                                            let l11 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        ProcessError::NotFound(e26)
+                                    }
+                                    2 => {
+                                        let e26 = {
+                                            let l14 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        ProcessError::RefusedByPerson(e26)
+                                    }
+                                    3 => {
+                                        let e26 = {
+                                            let l17 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        ProcessError::BadFolder(e26)
+                                    }
+                                    4 => {
+                                        let e26 = {
+                                            let l20 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        ProcessError::TooMany(e26)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e26 = {
+                                            let l23 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        ProcessError::Platform(e26)
+                                    }
+                                };
+                                v26
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result27
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Wait up to `timeout-ms` for the process to end; 0 only looks. None
+            /// while it still runs. Asking again after it ended gives the same status.
+            pub fn wait(
+                handle: ProcessHandle,
+                timeout_ms: u32,
+            ) -> Result<Option<ExitStatus>, ProcessError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "wait"]
+                        fn wit_import1(_: i64, _: i32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import1(_rt::as_i64(handle), _rt::as_i32(&timeout_ms), ptr0)
+                    };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result28 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                match l3 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l4 = i32::from(
+                                                *ptr0
+                                                    .add(4 + 1 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<u8>(),
+                                            );
+                                            let l6 = i32::from(
+                                                *ptr0
+                                                    .add(12 + 1 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<u8>(),
+                                            );
+                                            ExitStatus {
+                                                code: match l4 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l5 = *ptr0
+                                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                                .cast::<i32>();
+                                                            l5
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                signal: match l6 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l7 = *ptr0
+                                                                .add(16 + 1 * ::core::mem::size_of::<*const u8>())
+                                                                .cast::<i32>();
+                                                            l7
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v27 = match l8 {
+                                    0 => {
+                                        let e27 = {
+                                            let l9 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        ProcessError::NotDeclared(e27)
+                                    }
+                                    1 => {
+                                        let e27 = {
+                                            let l12 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        ProcessError::NotFound(e27)
+                                    }
+                                    2 => {
+                                        let e27 = {
+                                            let l15 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        ProcessError::RefusedByPerson(e27)
+                                    }
+                                    3 => {
+                                        let e27 = {
+                                            let l18 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l19 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len20 = l19;
+                                            let bytes20 = _rt::Vec::from_raw_parts(
+                                                l18.cast(),
+                                                len20,
+                                                len20,
+                                            );
+                                            _rt::string_lift(bytes20)
+                                        };
+                                        ProcessError::BadFolder(e27)
+                                    }
+                                    4 => {
+                                        let e27 = {
+                                            let l21 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l22 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len23 = l22;
+                                            let bytes23 = _rt::Vec::from_raw_parts(
+                                                l21.cast(),
+                                                len23,
+                                                len23,
+                                            );
+                                            _rt::string_lift(bytes23)
+                                        };
+                                        ProcessError::TooMany(e27)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e27 = {
+                                            let l24 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l25 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len26 = l25;
+                                            let bytes26 = _rt::Vec::from_raw_parts(
+                                                l24.cast(),
+                                                len26,
+                                                len26,
+                                            );
+                                            _rt::string_lift(bytes26)
+                                        };
+                                        ProcessError::Platform(e27)
+                                    }
+                                };
+                                v27
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result28
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// End the process and everything it started, at once. A process that
+            /// already ended is not an error.
+            pub fn kill(handle: ProcessHandle) -> Result<(), ProcessError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "kill"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(handle), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result23 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v22 = match l3 {
+                                    0 => {
+                                        let e22 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        ProcessError::NotDeclared(e22)
+                                    }
+                                    1 => {
+                                        let e22 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        ProcessError::NotFound(e22)
+                                    }
+                                    2 => {
+                                        let e22 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        ProcessError::RefusedByPerson(e22)
+                                    }
+                                    3 => {
+                                        let e22 = {
+                                            let l13 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        ProcessError::BadFolder(e22)
+                                    }
+                                    4 => {
+                                        let e22 = {
+                                            let l16 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        ProcessError::TooMany(e22)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e22 = {
+                                            let l19 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        ProcessError::Platform(e22)
+                                    }
+                                };
+                                v22
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result23
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Tell a terminal it is now `cols` by `rows`. Not a terminal: `platform`.
+            pub fn resize(
+                handle: ProcessHandle,
+                cols: u16,
+                rows: u16,
+            ) -> Result<(), ProcessError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "resize"]
+                        fn wit_import1(_: i64, _: i32, _: i32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import1(
+                            _rt::as_i64(handle),
+                            _rt::as_i32(&cols),
+                            _rt::as_i32(&rows),
+                            ptr0,
+                        )
+                    };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result23 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v22 = match l3 {
+                                    0 => {
+                                        let e22 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        ProcessError::NotDeclared(e22)
+                                    }
+                                    1 => {
+                                        let e22 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        ProcessError::NotFound(e22)
+                                    }
+                                    2 => {
+                                        let e22 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        ProcessError::RefusedByPerson(e22)
+                                    }
+                                    3 => {
+                                        let e22 = {
+                                            let l13 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        ProcessError::BadFolder(e22)
+                                    }
+                                    4 => {
+                                        let e22 = {
+                                            let l16 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        ProcessError::TooMany(e22)
+                                    }
+                                    5 => ProcessError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e22 = {
+                                            let l19 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        ProcessError::Platform(e22)
+                                    }
+                                };
+                                v22
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result23
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Forget a process: kill it if it still runs and drop what is unread.
+            /// Its handle is unknown afterwards. Releasing an unknown handle is
+            /// ignored.
+            pub fn release(handle: ProcessHandle) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:process/processes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "release"]
+                        fn wit_import0(_: i64);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(handle)) };
+                }
+            }
+        }
+    }
     pub mod random {
         /// Random bytes from the operating system.
         ///
@@ -47377,9 +49253,9 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 32041] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xae\xf9\x01\x01A\x02\
-\x01A\xd1\x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 32634] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xff\xfd\x01\x01A\x02\
+\x01A\xd3\x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\
 \x09log-level\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eo\
 f\0\0\x0cinvalid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14k\
 rate:io/types@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\
@@ -47536,23 +49412,37 @@ ollections\x02ids\0\x1a\x04\0\x06delete\x01\x1f\x01k\x08\x01j\x01\x0c\x01\x19\x0
 unavailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\
 \x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08\
 next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:\
-random/bytes@0.1.0\x05&\x01B7\x01m\x04\x06normal\x09minimized\x09maximized\x0afu\
-llscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\0\x0bwi\
-ndow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\
-\x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\x04\x07p\
-rimary\x09secondary\x06middle\x05other\x04\0\x0epointer-button\x03\0\x08\x01r\x04\
-\x05shift\x7f\x07control\x7f\x03alt\x7f\x04meta\x7f\x04\0\x09modifiers\x03\0\x0a\
-\x01kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x06button\x0d\x07p\
-ressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x07\x06windoww\
-\x06widget\x0c\x01xv\x01yv\x02dxv\x02dyv\x09modifiers\x0b\x04\0\x0bwheel-event\x03\
-\0\x10\x01r\x03\x06windoww\x06widgetw\x04texts\x04\0\x12text-changed-event\x03\0\
-\x12\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\
-\0\x09key-event\x03\0\x14\x01q\x05\x11permission-denied\0\0\x0einvalid-window\0\0\
-\x0einvalid-widget\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08ui-erro\
-r\x03\0\x16\x01m\x12\x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05\
-radio\x06switch\x06slider\x08progress\x04text\x0atext-field\x09text-area\x09list\
--view\x09tree-view\x05image\x06canvas\x07overlay\x04\0\x0bwidget-kind\x03\0\x18\x01\
-r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01r\x04\x01r}\x01g}\x01\
+random/bytes@0.1.0\x05&\x01B$\x01w\x04\0\x0eprocess-handle\x03\0\0\x01q\x07\x0cn\
+ot-declared\x01s\0\x09not-found\x01s\0\x11refused-by-person\x01s\0\x0abad-folder\
+\x01s\0\x08too-many\x01s\0\x0eunknown-handle\0\0\x08platform\x01s\0\x04\0\x0dpro\
+cess-error\x03\0\x02\x01kz\x01r\x02\x04code\x04\x06signal\x04\x04\0\x0bexit-stat\
+us\x03\0\x05\x01p}\x01r\x02\x05bytes\x07\x05ended\x7f\x04\0\x06output\x03\0\x08\x01\
+ps\x01o\x02ss\x01p\x0b\x01j\x01\x01\x01\x03\x01@\x04\x07programs\x04args\x0a\x03\
+cwds\x03env\x0c\0\x0d\x04\0\x05start\x01\x0e\x01@\x03\x03cwds\x04cols{\x04rows{\0\
+\x0d\x04\0\x0dopen-terminal\x01\x0f\x01j\0\x01\x03\x01@\x02\x06handle\x01\x05byt\
+es\x07\0\x10\x04\0\x0bwrite-stdin\x01\x11\x01@\x01\x06handle\x01\0\x10\x04\0\x0b\
+close-stdin\x01\x12\x01j\x01\x09\x01\x03\x01@\x02\x06handle\x01\x03maxy\0\x13\x04\
+\0\x0bread-stdout\x01\x14\x04\0\x0bread-stderr\x01\x14\x01k\x06\x01j\x01\x15\x01\
+\x03\x01@\x02\x06handle\x01\x0atimeout-msy\0\x16\x04\0\x04wait\x01\x17\x04\0\x04\
+kill\x01\x12\x01@\x03\x06handle\x01\x04cols{\x04rows{\0\x10\x04\0\x06resize\x01\x18\
+\x01@\x01\x06handle\x01\x01\0\x04\0\x07release\x01\x19\x03\0\x1dkrate:process/pr\
+ocesses@0.1.0\x05'\x01B7\x01m\x04\x06normal\x09minimized\x09maximized\x0afullscr\
+een\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\0\x0bwindow-\
+size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\x04\
+\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\x04\x07prima\
+ry\x09secondary\x06middle\x05other\x04\0\x0epointer-button\x03\0\x08\x01r\x04\x05\
+shift\x7f\x07control\x7f\x03alt\x7f\x04meta\x7f\x04\0\x09modifiers\x03\0\x0a\x01\
+kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x06button\x0d\x07press\
+ed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x07\x06windoww\x06\
+widget\x0c\x01xv\x01yv\x02dxv\x02dyv\x09modifiers\x0b\x04\0\x0bwheel-event\x03\0\
+\x10\x01r\x03\x06windoww\x06widgetw\x04texts\x04\0\x12text-changed-event\x03\0\x12\
+\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\0\
+\x09key-event\x03\0\x14\x01q\x05\x11permission-denied\0\0\x0einvalid-window\0\0\x0e\
+invalid-widget\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08ui-error\x03\
+\0\x16\x01m\x12\x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05radi\
+o\x06switch\x06slider\x08progress\x04text\x0atext-field\x09text-area\x09list-vie\
+w\x09tree-view\x05image\x06canvas\x07overlay\x04\0\x0bwidget-kind\x03\0\x18\x01r\
+\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01r\x04\x01r}\x01g}\x01\
 b}\x01a}\x04\0\x05color\x03\0\x1c\x01k\x1d\x01kv\x01r\x05\x05color\x1e\x07outlin\
 e\x1e\x0doutline-widthv\x04size\x1f\x04bold\x7f\x04\0\x0atext-style\x03\0\x20\x01\
 r\x04\x0abackground\x1e\x06border\x1e\x0cborder-widthv\x0dcorner-radiusv\x04\0\x09\
@@ -47568,82 +49458,82 @@ quested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07pointer\x01\x0
 \0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\x0ctext-changed\x01\x13\
 \0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-changed\x01\x07\0\x0cfil\
 e-dropped\x014\0\x0dfile-hovering\x01\x7f\0\x04\0\x05event\x03\05\x03\0\x14krate\
-:ui/types@0.1.0\x05'\x02\x03\0\x19\x08ui-error\x02\x03\0\x19\x0bwindow-size\x02\x03\
-\0\x19\x0cwindow-state\x01B\x16\x02\x03\x02\x01(\x04\0\x08ui-error\x03\0\0\x02\x03\
-\x02\x01)\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01*\x04\0\x0cwindow-state\x03\
+:ui/types@0.1.0\x05(\x02\x03\0\x1a\x08ui-error\x02\x03\0\x1a\x0bwindow-size\x02\x03\
+\0\x1a\x0cwindow-state\x01B\x16\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x02\x03\
+\x02\x01*\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01+\x04\0\x0cwindow-state\x03\
 \0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\
 \x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05clo\
 se\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\
 \x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05s\
 tate\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x01@\x02\
 \x06windoww\x07enabled\x7f\0\x08\x04\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:\
-ui/window@0.1.0\x05+\x02\x03\0\x19\x0bwidget-node\x01B\x0e\x02\x03\x02\x01(\x04\0\
-\x08ui-error\x03\0\0\x02\x03\x02\x01,\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\
+ui/window@0.1.0\x05,\x02\x03\0\x1a\x0bwidget-node\x01B\x0e\x02\x03\x02\x01)\x04\0\
+\x08ui-error\x03\0\0\x02\x03\x02\x01-\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\
 \x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06win\
 doww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\x06windoww\x06widge\
 tw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06wi\
 ndoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krat\
-e:ui/tree@0.1.0\x05-\x01B\x0a\x02\x03\x02\x01(\x04\0\x08ui-error\x03\0\0\x01p}\x01\
+e:ui/tree@0.1.0\x05.\x01B\x0a\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x01p}\x01\
 r\x03\x05widthy\x06heighty\x04rgba\x02\x04\0\x0cimage-pixels\x03\0\x03\x01j\0\x01\
 \x01\x01@\x03\x06windoww\x06widgetw\x06pixels\x04\0\x05\x04\0\x0aset-pixels\x01\x06\
 \x01@\x02\x06windoww\x06widgetw\0\x05\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/i\
-mage@0.1.0\x05.\x02\x03\0\x19\x05event\x01B\x10\x02\x03\x02\x01/\x04\0\x05event\x03\
+mage@0.1.0\x05/\x02\x03\0\x1a\x05event\x01B\x10\x02\x03\x02\x010\x04\0\x05event\x03\
 \0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0etimeout-milli\
 s\x04\0\x02\x04\0\x04wait\x01\x05\x01@\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\
 \x01@\0\0\x7f\x04\0\x11gamepad-connected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\
 \x0cgamepad-held\x01\x08\x01@\x01\x04axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\
-\x15krate:ui/events@0.1.0\x050\x02\x03\0\x19\x0epointer-button\x01B\x13\x02\x03\x02\
-\x011\x04\0\x0epointer-button\x03\0\0\x02\x03\x02\x01(\x04\0\x08ui-error\x03\0\x02\
+\x15krate:ui/events@0.1.0\x051\x02\x03\0\x1a\x0epointer-button\x01B\x13\x02\x03\x02\
+\x012\x04\0\x0epointer-button\x03\0\0\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\x02\
 \x01o\x02vv\x01k\x04\x01@\x01\x06windoww\0\x05\x04\0\x08position\x01\x06\x01@\x01\
 \x06button\x01\0\x7f\x04\0\x0bbutton-held\x01\x07\x01@\x01\x06windoww\0\x04\x04\0\
 \x0btake-motion\x01\x08\x01j\0\x01\x03\x01@\x01\x06windoww\0\x09\x04\0\x07captur\
 e\x01\x0a\x01@\x01\x06windoww\x01\0\x04\0\x07release\x01\x0b\x01@\x01\x06windoww\
-\0\x7f\x04\0\x08captured\x01\x0c\x03\0\x16krate:ui/pointer@0.1.0\x052\x01B\x05\x01\
+\0\x7f\x04\0\x08captured\x01\x0c\x03\0\x16krate:ui/pointer@0.1.0\x053\x01B\x05\x01\
 r\x03\x02idw\x01xv\x01yv\x04\0\x0btouch-point\x03\0\0\x01p\x01\x01@\x01\x06windo\
-ww\0\x02\x04\0\x07touches\x01\x03\x03\0\x14krate:ui/touch@0.1.0\x053\x01B\x04\x01\
+ww\0\x02\x04\0\x07touches\x01\x03\x03\0\x14krate:ui/touch@0.1.0\x054\x01B\x04\x01\
 @\x01\x06windoww\0\x7f\x04\0\x05start\x01\0\x01@\x01\x06windoww\x01\0\x04\0\x04s\
-top\x01\x01\x03\0\x19krate:ui/text-entry@0.1.0\x054\x01B\x0a\x01m\x03\x07compact\
+top\x01\x01\x03\0\x19krate:ui/text-entry@0.1.0\x055\x01B\x0a\x01m\x03\x07compact\
 \x06medium\x05large\x04\0\x0asize-class\x03\0\0\x01m\x02\x05touch\x07pointer\x04\
 \0\x0ainput-kind\x03\0\x02\x01r\x04\x03topv\x05rightv\x06bottomv\x04leftv\x04\0\x06\
 insets\x03\0\x04\x01r\x06\x05widthv\x06heightv\x0bwidth-class\x01\x0cheight-clas\
 s\x01\x05input\x03\x04safe\x05\x04\0\x0cscreen-facts\x03\0\x06\x01@\x01\x06windo\
-ww\0\x07\x04\0\x05facts\x01\x08\x03\0\x15krate:ui/screen@0.1.0\x055\x02\x03\0\x19\
-\x0bchosen-file\x01B\x16\x02\x03\x02\x016\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\
-\x01(\x04\0\x08ui-error\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\x0dchosen-fo\
+ww\0\x07\x04\0\x05facts\x01\x08\x03\0\x15krate:ui/screen@0.1.0\x056\x02\x03\0\x1a\
+\x0bchosen-file\x01B\x16\x02\x03\x02\x017\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\
+\x01)\x04\0\x08ui-error\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\x0dchosen-fo\
 lder\x03\0\x04\x01j\0\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\x06\x04\0\
 \x07message\x01\x07\x01j\x01\x7f\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\
 \x08\x04\0\x07confirm\x01\x09\x01k\x01\x01j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05\
 titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01@\x04\x06windoww\x05titles\
 \x09suggesteds\x06filters\0\x0b\x04\0\x09save-file\x01\x0d\x01k\x05\x01j\x01\x0e\
 \x01\x03\x01@\x02\x06windoww\x05titles\0\x0f\x04\0\x0bopen-folder\x01\x10\x03\0\x15\
-krate:ui/dialog@0.1.0\x057\x01B\x0b\x02\x03\x02\x01(\x04\0\x08ui-error\x03\0\0\x01\
+krate:ui/dialog@0.1.0\x058\x01B\x0b\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x01\
 m\x03\x07printed\x09cancelled\x10opened-in-viewer\x04\0\x0dprint-outcome\x03\0\x02\
 \x01j\x01\x03\x01\x01\x01@\x02\x06windoww\x05titles\0\x04\x04\0\x06window\x01\x05\
 \x01j\x01y\x01\x01\x01@\x01\x06windoww\0\x06\x04\0\x08add-page\x01\x07\x04\0\x06\
-finish\x01\x05\x03\0\x14krate:ui/print@0.1.0\x058\x01B\x08\x02\x03\x02\x01(\x04\0\
+finish\x01\x05\x03\0\x14krate:ui/print@0.1.0\x059\x01B\x08\x02\x03\x02\x01)\x04\0\
 \x08ui-error\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01\
 j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:u\
-i/clipboard@0.1.0\x059\x02\x03\0\x19\x09menu-item\x01B\x08\x02\x03\x02\x01:\x04\0\
-\x09menu-item\x03\0\0\x02\x03\x02\x01(\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\
+i/clipboard@0.1.0\x05:\x02\x03\0\x1a\x09menu-item\x01B\x08\x02\x03\x02\x01;\x04\0\
+\x09menu-item\x03\0\0\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\
 \0\x01\x03\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\
-\0\x13krate:ui/menu@0.1.0\x05;\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01\
+\0\x13krate:ui/menu@0.1.0\x05<\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01\
 s\0\x0bunavailable\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03\
-urls\0\x02\x04\0\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x05<\x01B\x05\
+urls\0\x02\x04\0\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x05=\x01B\x05\
 \x01q\x03\x06denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0c\
 notify-error\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04s\
-how\x01\x03\x03\0\x15krate:ui/notify@0.1.0\x05=\x01B\x08\x01m\x07\x05light\x06me\
+how\x01\x03\x03\0\x15krate:ui/notify@0.1.0\x05>\x01B\x08\x01m\x07\x05light\x06me\
 dium\x05heavy\x09selection\x07success\x07warning\x05error\x04\0\x04feel\x03\0\0\x01\
 @\0\0\x7f\x04\0\x09available\x01\x02\x01@\x01\x04feel\x01\x01\0\x04\0\x04play\x01\
 \x03\x01@\x01\x08strengthv\x01\0\x04\0\x06impact\x01\x04\x03\0\x16krate:ui/hapti\
-cs@0.1.0\x05>\x01B\x0a\x01r\x03\x01xv\x01yv\x01zv\x04\0\x06vector\x03\0\0\x01kv\x01\
+cs@0.1.0\x05?\x01B\x0a\x01r\x03\x01xv\x01yv\x01zv\x04\0\x06vector\x03\0\0\x01kv\x01\
 r\x04\x07gravity\x01\x0cacceleration\x01\x08rotation\x01\x07heading\x02\x04\0\x07\
 reading\x03\0\x03\x01@\0\0\x7f\x04\0\x09available\x01\x05\x01k\x04\x01@\0\0\x06\x04\
-\0\x04read\x01\x07\x03\0\x15krate:ui/motion@0.1.0\x05?\x01B\x0a\x01kv\x01r\x07\x08\
+\0\x04read\x01\x07\x03\0\x15krate:ui/motion@0.1.0\x05@\x01B\x0a\x01kv\x01r\x07\x08\
 latitudeu\x09longitudeu\x08accuracyv\x08altitude\0\x05speed\0\x06course\0\x06age\
 -msw\x04\0\x08position\x03\0\x01\x01q\x03\x0bnot-allowed\0\0\x0bunavailable\0\0\x07\
 finding\0\0\x04\0\x0elocation-error\x03\0\x03\x01@\0\0\x7f\x04\0\x09available\x01\
 \x05\x01j\x01\x02\x01\x04\x01@\0\0\x06\x04\0\x07current\x01\x07\x03\0\x17krate:u\
-i/location@0.1.0\x05@\x01B\x1c\x01r\x02\x02idw\x04names\x04\0\x06device\x03\0\0\x01\
+i/location@0.1.0\x05A\x01B\x1c\x01r\x02\x02idw\x04names\x04\0\x06device\x03\0\0\x01\
 p}\x01r\x03\x07services\x0echaracteristics\x04data\x02\x04\0\x0cnotification\x03\
 \0\x03\x01q\x05\x0bnot-allowed\0\0\x0bunavailable\0\0\x09not-found\0\0\x0cdiscon\
 nected\0\0\x06failed\x01s\0\x04\0\x0fbluetooth-error\x03\0\x05\x01@\0\0\x7f\x04\0\
@@ -47655,40 +49545,40 @@ icew\x07services\x0echaracteristics\0\x0b\x04\0\x04read\x01\x0c\x01j\0\x01\x06\x
 \0\x0d\x04\0\x09subscribe\x01\x0f\x01p\x04\x01@\x01\x06devicew\0\x10\x04\0\x0dno\
 tifications\x01\x11\x01@\x01\x06devicew\0\x7f\x04\0\x09connected\x01\x12\x01@\x01\
 \x06devicew\x01\0\x04\0\x0adisconnect\x01\x13\x03\0\x18krate:ui/bluetooth@0.1.0\x05\
-A\x01B\x0a\x01p}\x01r\x02\x04names\x04data\0\x04\0\x0bshared-file\x03\0\x01\x01q\
+B\x01B\x0a\x01p}\x01r\x02\x04names\x04data\0\x04\0\x0bshared-file\x03\0\x01\x01q\
 \x02\x0bunavailable\x01s\0\x07invalid\x01s\0\x04\0\x0bshare-error\x03\0\x03\x01k\
 s\x01p\x02\x01j\x01\x7f\x01\x04\x01@\x04\x06windoww\x04text\x05\x03url\x05\x05fi\
-les\x06\0\x07\x04\0\x05share\x01\x08\x03\0\x14krate:ui/share@0.1.0\x05B\x01B\x0c\
-\x02\x03\x02\x016\x04\0\x0bchosen-file\x03\0\0\x01q\x03\x0bnot-allowed\0\0\x0bun\
+les\x06\0\x07\x04\0\x05share\x01\x08\x03\0\x14krate:ui/share@0.1.0\x05C\x01B\x0c\
+\x02\x03\x02\x017\x04\0\x0bchosen-file\x03\0\0\x01q\x03\x0bnot-allowed\0\0\x0bun\
 available\x01s\0\x07invalid\x01s\0\x04\0\x0cphotos-error\x03\0\x02\x01p\x01\x01j\
 \x01\x04\x01\x03\x01@\x02\x06windoww\x05limity\0\x05\x04\0\x04pick\x01\x06\x01p}\
 \x01j\0\x01\x03\x01@\x02\x06windoww\x04data\x07\0\x08\x04\0\x04save\x01\x09\x03\0\
-\x15krate:ui/photos@0.1.0\x05C\x02\x03\0'\x0cnotify-error\x01B\x0a\x02\x03\x02\x01\
-D\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01@\x05\x02ids\x05titles\x04body\
+\x15krate:ui/photos@0.1.0\x05D\x02\x03\0(\x0cnotify-error\x01B\x0a\x02\x03\x02\x01\
+E\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01@\x05\x02ids\x05titles\x04body\
 s\x0dafter-secondsw\x05daily\x7f\0\x02\x04\0\x08schedule\x01\x03\x01@\x01\x02ids\
 \x01\0\x04\0\x06cancel\x01\x04\x01ps\x01@\0\0\x05\x04\0\x07pending\x01\x06\x03\0\
-\x18krate:ui/reminders@0.1.0\x05E\x01B\x08\x01q\x03\x09cancelled\0\0\x0bunavaila\
+\x18krate:ui/reminders@0.1.0\x05F\x01B\x08\x01q\x03\x09cancelled\0\0\x0bunavaila\
 ble\x01s\0\x07invalid\x01s\0\x04\0\x0dsign-in-error\x03\0\0\x01o\x02ss\x01@\0\0\x02\
 \x04\0\x04pkce\x01\x03\x01j\x01s\x01\x01\x01@\x03\x06windoww\x0dauthorize-urls\x0f\
 callback-schemes\0\x04\x04\0\x05start\x01\x05\x03\0\x16krate:ui/sign-in@0.1.0\x05\
-F\x01B\x06\x01q\x03\x03yes\0\0\x02no\0\0\x0bunavailable\x01s\0\x04\0\x0dunlock-a\
+G\x01B\x06\x01q\x03\x03yes\0\0\x02no\0\0\x0bunavailable\x01s\0\x04\0\x0dunlock-a\
 nswer\x03\0\0\x01@\0\0\x7f\x04\0\x09available\x01\x02\x01@\x01\x06reasons\0\x01\x04\
-\0\x05check\x01\x03\x03\0\x15krate:ui/unlock@0.1.0\x05G\x01B\x04\x01r\x03\x04dar\
+\0\x05check\x01\x03\x03\0\x15krate:ui/unlock@0.1.0\x05H\x01B\x04\x01r\x03\x04dar\
 k\x7f\x0dhigh-contrast\x7f\x0atext-scalev\x04\0\x04look\x03\0\0\x01@\0\0\x01\x04\
-\0\x07current\x01\x02\x03\0\x19krate:ui/appearance@0.1.0\x05H\x01B\x0d\x02\x03\x02\
-\x01(\x04\0\x08ui-error\x03\0\0\x01m\x08\x06button\x04link\x07heading\x04text\x05\
+\0\x07current\x01\x02\x03\0\x19krate:ui/appearance@0.1.0\x05I\x01B\x0d\x02\x03\x02\
+\x01)\x04\0\x08ui-error\x03\0\0\x01m\x08\x06button\x04link\x07heading\x04text\x05\
 image\x06toggle\x0aadjustable\x05field\x04\0\x04role\x03\0\x02\x01k\x7f\x01r\x09\
 \x01xv\x01yv\x05widthv\x06heightv\x04role\x03\x05labels\x05values\x07checked\x04\
 \x07enabled\x7f\x04\0\x07element\x03\0\x05\x01p\x06\x01j\0\x01\x01\x01@\x02\x06w\
 indoww\x08elements\x07\0\x08\x04\0\x08describe\x01\x09\x01@\0\0\x7f\x04\0\x10scr\
-een-reader-on\x01\x0a\x03\0\x1ckrate:ui/accessibility@0.1.0\x05I\x01B\x12\x02\x03\
-\x02\x01(\x04\0\x08ui-error\x03\0\0\x01r\x04\x07addresss\x05titles\x07loading\x7f\
+een-reader-on\x01\x0a\x03\0\x1ckrate:ui/accessibility@0.1.0\x05J\x01B\x12\x02\x03\
+\x02\x01)\x04\0\x08ui-error\x03\0\0\x01r\x04\x07addresss\x05titles\x07loading\x7f\
 \x07problems\x04\0\x0apage-state\x03\0\x02\x01j\x01w\x01\x01\x01@\x06\x06windoww\
 \x07addresss\x01xv\x01yv\x05widthv\x06heightv\0\x04\x04\0\x04open\x01\x05\x01j\0\
 \x01\x01\x01@\x05\x04pagew\x01xv\x01yv\x05widthv\x06heightv\0\x06\x04\0\x05place\
 \x01\x07\x01@\x02\x04pagew\x07addresss\0\x06\x04\0\x02go\x01\x08\x01@\x01\x04pag\
 ew\x01\0\x04\0\x04back\x01\x09\x01j\x01\x03\x01\x01\x01@\x01\x04pagew\0\x0a\x04\0\
-\x05state\x01\x0b\x04\0\x05close\x01\x09\x03\0\x17krate:ui/web-page@0.1.0\x05J\x01\
+\x05state\x01\x0b\x04\0\x05close\x01\x09\x03\0\x17krate:ui/web-page@0.1.0\x05K\x01\
 B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\x01xv\x01\
 yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06heightv\x04\0\x04size\x03\0\x04\
 \x01r\x04\x05widthv\x06heightv\x06ascentv\x07descentv\x04\0\x0ctext-metrics\x03\0\
@@ -47698,16 +49588,16 @@ mono\x04\0\x0bfont-family\x03\0\x0c\x01r\x04\x06weight{\x06italic\x7f\x0eletter-
 spacingv\x06family\x0d\x04\0\x0atext-style\x03\0\x0e\x01r\x04\x08top-leftv\x09to\
 p-rightv\x0cbottom-rightv\x0bbottom-leftv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\
 \x11permission-denied\0\0\x0einvalid-target\0\0\x0bunsupported\x01s\0\x08platfor\
-m\x01s\0\x04\0\x09gfx-error\x03\0\x12\x03\0\x15krate:gfx/types@0.1.0\x05K\x02\x03\
-\04\x05color\x02\x03\04\x05point\x02\x03\04\x04rect\x02\x03\04\x04size\x02\x03\0\
-4\x0ctext-metrics\x02\x03\04\x09gfx-error\x02\x03\04\x0dgradient-stop\x02\x03\04\
-\x0ccorner-radii\x02\x03\04\x0atext-style\x02\x03\04\x0bfont-family\x01BK\x02\x03\
-\x02\x01L\x04\0\x05color\x03\0\0\x02\x03\x02\x01M\x04\0\x05point\x03\0\x02\x02\x03\
-\x02\x01N\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01O\x04\0\x04size\x03\0\x06\x02\x03\
-\x02\x01P\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\x02\x01Q\x04\0\x09gfx-error\x03\
-\0\x0a\x02\x03\x02\x01R\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\x01S\x04\0\x0c\
-corner-radii\x03\0\x0e\x02\x03\x02\x01T\x04\0\x0atext-style\x03\0\x10\x02\x03\x02\
-\x01U\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06windoww\x06wi\
+m\x01s\0\x04\0\x09gfx-error\x03\0\x12\x03\0\x15krate:gfx/types@0.1.0\x05L\x02\x03\
+\05\x05color\x02\x03\05\x05point\x02\x03\05\x04rect\x02\x03\05\x04size\x02\x03\0\
+5\x0ctext-metrics\x02\x03\05\x09gfx-error\x02\x03\05\x0dgradient-stop\x02\x03\05\
+\x0ccorner-radii\x02\x03\05\x0atext-style\x02\x03\05\x0bfont-family\x01BK\x02\x03\
+\x02\x01M\x04\0\x05color\x03\0\0\x02\x03\x02\x01N\x04\0\x05point\x03\0\x02\x02\x03\
+\x02\x01O\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01P\x04\0\x04size\x03\0\x06\x02\x03\
+\x02\x01Q\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\x02\x01R\x04\0\x09gfx-error\x03\
+\0\x0a\x02\x03\x02\x01S\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\x01T\x04\0\x0c\
+corner-radii\x03\0\x0e\x02\x03\x02\x01U\x04\0\x0atext-style\x03\0\x10\x02\x03\x02\
+\x01V\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06windoww\x06wi\
 dgetw\0\x14\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06canvasw\0\x16\
 \x04\0\x0bcanvas-size\x01\x17\x01j\0\x01\x0b\x01@\x02\x06canvasw\x04size\x07\0\x18\
 \x04\0\x0fset-design-size\x01\x19\x01@\x05\x06canvasw\x01xv\x01yv\x01wv\x01hv\0\x18\
@@ -47736,8 +49626,8 @@ canvasw\x04area\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0flinear-gradient\x01-
 e-text\x01/\x01@\x05\x06canvasw\x04area\x05\x05widthy\x06heighty\x04rgba(\0\x18\x04\
 \0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06center\x03\x03dst\x07\x05anglev\x05\
 widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-sprite\x011\x04\0\x07present\x01\x1b\
-\x03\0\x18krate:gfx/canvas2d@0.1.0\x05V\x01B%\x02\x03\x02\x01L\x04\0\x05color\x03\
-\0\0\x02\x03\x02\x01Q\x04\0\x09gfx-error\x03\0\x02\x01pv\x01r\x0a\x07ambientv\x08\
+\x03\0\x18krate:gfx/canvas2d@0.1.0\x05W\x01B%\x02\x03\x02\x01M\x04\0\x05color\x03\
+\0\0\x02\x03\x02\x01R\x04\0\x09gfx-error\x03\0\x02\x01pv\x01r\x0a\x07ambientv\x08\
 specularv\x09shininessv\x0bfog-densityv\x09fog-color\x01\x0efill-direction\x04\x0a\
 fill-color\x01\x0dshadow-radiusv\x0fshadow-softnessv\x08exposurev\x04\0\x08light\
 ing\x03\0\x05\x01j\x01w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x07\x04\0\x04bi\
@@ -47755,7 +49645,7 @@ set-lighting\x01\x13\x01@\x08\x05scenew\x08vertices\x04\x07normals\x04\x08tangen
 ts\x04\x03uvs\x04\x07texturew\x0enormal-texturew\x04tint\x01\0\x09\x04\0\x0dnorm\
 al-mapped\x01\x14\x04\0\x05unlit\x01\x11\x01@\x02\x05scenew\x07enabled\x7f\0\x09\
 \x04\0\x0fcull-back-faces\x01\x15\x01@\x01\x05scenew\0\x09\x04\0\x07present\x01\x16\
-\x03\0\x17krate:gfx/scene3d@0.1.0\x05W\x01B\xf6\x01\x01w\x04\0\x06handle\x03\0\0\
+\x03\0\x17krate:gfx/scene3d@0.1.0\x05X\x01B\xf6\x01\x01w\x04\0\x06handle\x03\0\0\
 \x01q\x06\x0einvalid-handle\x01s\0\x0avalidation\x01s\0\x0dout-of-memory\0\0\x04\
 lost\x01s\0\x0bunsupported\x01s\0\x08internal\x01s\0\x04\0\x09gpu-error\x03\0\x02\
 \x01r\x05\x07messages\x04liney\x06columny\x06offsety\x06lengthy\x04\0\x0cshader-\
@@ -47911,42 +49801,42 @@ rame\x03\0\xf0\x01\x01q\x05\x0enot-configured\0\0\x08outdated\0\0\x08occluded\0\
 \x04lost\x01s\0\x05other\x01s\0\x04\0\x0dsurface-error\x03\0\xf2\x01\x01r\x05\x0e\
 allowed-usages\x1d\x0dsample-counts\xc6\x01\x0afilterable\x7f\x09blendable\x7f\x12\
 storage-read-write\x7f\x04\0\x0fformat-features\x03\0\xf4\x01\x03\0\x15krate:gpu\
-/types@0.1.0\x05X\x02\x03\07\x06handle\x02\x03\07\x09gpu-error\x02\x03\07\x0csha\
-der-error\x02\x03\07\x13compilation-message\x02\x03\07\x05limit\x02\x03\07\x0fad\
-apter-options\x02\x03\07\x0cadapter-info\x02\x03\07\x11device-descriptor\x02\x03\
-\07\x11buffer-descriptor\x02\x03\07\x12texture-descriptor\x02\x03\07\x17texture-\
-view-descriptor\x02\x03\07\x12sampler-descriptor\x02\x03\07\x1cbind-group-layout\
--descriptor\x02\x03\07\x15bind-group-descriptor\x02\x03\07\x1apipeline-layout-de\
-scriptor\x02\x03\07\x18shader-module-descriptor\x02\x03\07\x1arender-pipeline-de\
-scriptor\x02\x03\07\x1bcompute-pipeline-descriptor\x02\x03\07\x14query-set-descr\
-iptor\x02\x03\07\x17texel-copy-texture-info\x02\x03\07\x18texel-copy-buffer-layo\
-ut\x02\x03\07\x16texel-copy-buffer-info\x02\x03\07\x08extent3d\x02\x03\07\x16ren\
-der-pass-descriptor\x02\x03\07\x0erender-command\x02\x03\07\x17compute-pass-desc\
-riptor\x02\x03\07\x0fcompute-command\x02\x03\07\x08map-mode\x02\x03\07\x14surfac\
-e-capabilities\x02\x03\07\x15surface-configuration\x02\x03\07\x0dsurface-frame\x02\
-\x03\07\x0dsurface-error\x02\x03\07\x0fformat-features\x01B\xc5\x01\x02\x03\x02\x01\
-Y\x04\0\x06handle\x03\0\0\x02\x03\x02\x01Z\x04\0\x09gpu-error\x03\0\x02\x02\x03\x02\
-\x01[\x04\0\x0cshader-error\x03\0\x04\x02\x03\x02\x01\\\x04\0\x13compilation-mes\
-sage\x03\0\x06\x02\x03\x02\x01]\x04\0\x05limit\x03\0\x08\x02\x03\x02\x01^\x04\0\x0f\
-adapter-options\x03\0\x0a\x02\x03\x02\x01_\x04\0\x0cadapter-info\x03\0\x0c\x02\x03\
-\x02\x01`\x04\0\x11device-descriptor\x03\0\x0e\x02\x03\x02\x01a\x04\0\x11buffer-\
-descriptor\x03\0\x10\x02\x03\x02\x01b\x04\0\x12texture-descriptor\x03\0\x12\x02\x03\
-\x02\x01c\x04\0\x17texture-view-descriptor\x03\0\x14\x02\x03\x02\x01d\x04\0\x12s\
-ampler-descriptor\x03\0\x16\x02\x03\x02\x01e\x04\0\x1cbind-group-layout-descript\
-or\x03\0\x18\x02\x03\x02\x01f\x04\0\x15bind-group-descriptor\x03\0\x1a\x02\x03\x02\
-\x01g\x04\0\x1apipeline-layout-descriptor\x03\0\x1c\x02\x03\x02\x01h\x04\0\x18sh\
-ader-module-descriptor\x03\0\x1e\x02\x03\x02\x01i\x04\0\x1arender-pipeline-descr\
-iptor\x03\0\x20\x02\x03\x02\x01j\x04\0\x1bcompute-pipeline-descriptor\x03\0\"\x02\
-\x03\x02\x01k\x04\0\x14query-set-descriptor\x03\0$\x02\x03\x02\x01l\x04\0\x17tex\
-el-copy-texture-info\x03\0&\x02\x03\x02\x01m\x04\0\x18texel-copy-buffer-layout\x03\
-\0(\x02\x03\x02\x01n\x04\0\x16texel-copy-buffer-info\x03\0*\x02\x03\x02\x01o\x04\
-\0\x08extent3d\x03\0,\x02\x03\x02\x01p\x04\0\x16render-pass-descriptor\x03\0.\x02\
-\x03\x02\x01q\x04\0\x0erender-command\x03\00\x02\x03\x02\x01r\x04\0\x17compute-p\
-ass-descriptor\x03\02\x02\x03\x02\x01s\x04\0\x0fcompute-command\x03\04\x02\x03\x02\
-\x01t\x04\0\x08map-mode\x03\06\x02\x03\x02\x01u\x04\0\x14surface-capabilities\x03\
-\08\x02\x03\x02\x01v\x04\0\x15surface-configuration\x03\0:\x02\x03\x02\x01w\x04\0\
-\x0dsurface-frame\x03\0<\x02\x03\x02\x01x\x04\0\x0dsurface-error\x03\0>\x02\x03\x02\
-\x01y\x04\0\x0fformat-features\x03\0@\x01j\x01\x01\x01\x03\x01@\x01\x07options\x0b\
+/types@0.1.0\x05Y\x02\x03\08\x06handle\x02\x03\08\x09gpu-error\x02\x03\08\x0csha\
+der-error\x02\x03\08\x13compilation-message\x02\x03\08\x05limit\x02\x03\08\x0fad\
+apter-options\x02\x03\08\x0cadapter-info\x02\x03\08\x11device-descriptor\x02\x03\
+\08\x11buffer-descriptor\x02\x03\08\x12texture-descriptor\x02\x03\08\x17texture-\
+view-descriptor\x02\x03\08\x12sampler-descriptor\x02\x03\08\x1cbind-group-layout\
+-descriptor\x02\x03\08\x15bind-group-descriptor\x02\x03\08\x1apipeline-layout-de\
+scriptor\x02\x03\08\x18shader-module-descriptor\x02\x03\08\x1arender-pipeline-de\
+scriptor\x02\x03\08\x1bcompute-pipeline-descriptor\x02\x03\08\x14query-set-descr\
+iptor\x02\x03\08\x17texel-copy-texture-info\x02\x03\08\x18texel-copy-buffer-layo\
+ut\x02\x03\08\x16texel-copy-buffer-info\x02\x03\08\x08extent3d\x02\x03\08\x16ren\
+der-pass-descriptor\x02\x03\08\x0erender-command\x02\x03\08\x17compute-pass-desc\
+riptor\x02\x03\08\x0fcompute-command\x02\x03\08\x08map-mode\x02\x03\08\x14surfac\
+e-capabilities\x02\x03\08\x15surface-configuration\x02\x03\08\x0dsurface-frame\x02\
+\x03\08\x0dsurface-error\x02\x03\08\x0fformat-features\x01B\xc5\x01\x02\x03\x02\x01\
+Z\x04\0\x06handle\x03\0\0\x02\x03\x02\x01[\x04\0\x09gpu-error\x03\0\x02\x02\x03\x02\
+\x01\\\x04\0\x0cshader-error\x03\0\x04\x02\x03\x02\x01]\x04\0\x13compilation-mes\
+sage\x03\0\x06\x02\x03\x02\x01^\x04\0\x05limit\x03\0\x08\x02\x03\x02\x01_\x04\0\x0f\
+adapter-options\x03\0\x0a\x02\x03\x02\x01`\x04\0\x0cadapter-info\x03\0\x0c\x02\x03\
+\x02\x01a\x04\0\x11device-descriptor\x03\0\x0e\x02\x03\x02\x01b\x04\0\x11buffer-\
+descriptor\x03\0\x10\x02\x03\x02\x01c\x04\0\x12texture-descriptor\x03\0\x12\x02\x03\
+\x02\x01d\x04\0\x17texture-view-descriptor\x03\0\x14\x02\x03\x02\x01e\x04\0\x12s\
+ampler-descriptor\x03\0\x16\x02\x03\x02\x01f\x04\0\x1cbind-group-layout-descript\
+or\x03\0\x18\x02\x03\x02\x01g\x04\0\x15bind-group-descriptor\x03\0\x1a\x02\x03\x02\
+\x01h\x04\0\x1apipeline-layout-descriptor\x03\0\x1c\x02\x03\x02\x01i\x04\0\x18sh\
+ader-module-descriptor\x03\0\x1e\x02\x03\x02\x01j\x04\0\x1arender-pipeline-descr\
+iptor\x03\0\x20\x02\x03\x02\x01k\x04\0\x1bcompute-pipeline-descriptor\x03\0\"\x02\
+\x03\x02\x01l\x04\0\x14query-set-descriptor\x03\0$\x02\x03\x02\x01m\x04\0\x17tex\
+el-copy-texture-info\x03\0&\x02\x03\x02\x01n\x04\0\x18texel-copy-buffer-layout\x03\
+\0(\x02\x03\x02\x01o\x04\0\x16texel-copy-buffer-info\x03\0*\x02\x03\x02\x01p\x04\
+\0\x08extent3d\x03\0,\x02\x03\x02\x01q\x04\0\x16render-pass-descriptor\x03\0.\x02\
+\x03\x02\x01r\x04\0\x0erender-command\x03\00\x02\x03\x02\x01s\x04\0\x17compute-p\
+ass-descriptor\x03\02\x02\x03\x02\x01t\x04\0\x0fcompute-command\x03\04\x02\x03\x02\
+\x01u\x04\0\x08map-mode\x03\06\x02\x03\x02\x01v\x04\0\x14surface-capabilities\x03\
+\08\x02\x03\x02\x01w\x04\0\x15surface-configuration\x03\0:\x02\x03\x02\x01x\x04\0\
+\x0dsurface-frame\x03\0<\x02\x03\x02\x01y\x04\0\x0dsurface-error\x03\0>\x02\x03\x02\
+\x01z\x04\0\x0fformat-features\x03\0@\x01j\x01\x01\x01\x03\x01@\x01\x07options\x0b\
 \0\xc2\0\x04\0\x0frequest-adapter\x01C\x01j\x01\x0d\x01\x03\x01@\x01\x07adapter\x01\
 \0\xc4\0\x04\0\x10describe-adapter\x01E\x01ps\x01j\x01\xc6\0\x01\x03\x01@\x01\x07\
 adapter\x01\0\xc7\0\x04\0\x10adapter-features\x01H\x01p\x09\x01j\x01\xc9\0\x01\x03\
@@ -48005,15 +49895,15 @@ ce\x01\0\x86\x01\x04\0\x12surface-pixel-size\x01\x87\x01\x01j\x019\x01\x03\x01@\
 nfigure-surface\x01\x8a\x01\x01j\x01=\x01?\x01@\x01\x07surface\x01\0\x8b\x01\x04\
 \0\x0fcurrent-texture\x01\x8c\x01\x01@\x01\x07surface\x01\0\xd1\0\x04\0\x07prese\
 nt\x01\x8d\x01\x01@\x01\x06object\x01\x01\0\x04\0\x07release\x01\x8e\x01\x03\0\x13\
-krate:gpu/gpu@0.1.0\x05z\x01B\x11\x02\x03\x02\x01N\x04\0\x04rect\x03\0\0\x02\x03\
-\x02\x01S\x04\0\x0ccorner-radii\x03\0\x02\x02\x03\x02\x01Q\x04\0\x09gfx-error\x03\
+krate:gpu/gpu@0.1.0\x05{\x01B\x11\x02\x03\x02\x01O\x04\0\x04rect\x03\0\0\x02\x03\
+\x02\x01T\x04\0\x0ccorner-radii\x03\0\x02\x02\x03\x02\x01R\x04\0\x09gfx-error\x03\
 \0\x04\x01p}\x01j\x01w\x01\x05\x01@\x04\x06canvasw\x05widthy\x06heighty\x04rgba\x06\
 \0\x07\x04\0\x04keep\x01\x08\x01j\0\x01\x05\x01@\x03\x06canvasw\x05imagew\x04are\
 a\x01\0\x09\x04\0\x04draw\x01\x0a\x01@\x04\x06canvasw\x05imagew\x04area\x01\x05r\
 adii\x03\0\x09\x04\0\x0adraw-round\x01\x0b\x01@\x02\x06canvasw\x05imagew\x01\0\x04\
-\0\x06forget\x01\x0c\x03\0\x1dkrate:gfx/canvas-images@0.1.0\x05{\x01B\x1e\x02\x03\
-\x02\x01N\x04\0\x04rect\x03\0\0\x02\x03\x02\x01S\x04\0\x0ccorner-radii\x03\0\x02\
-\x02\x03\x02\x01Q\x04\0\x09gfx-error\x03\0\x04\x01r\x08\x0fposition-millisw\x0fd\
+\0\x06forget\x01\x0c\x03\0\x1dkrate:gfx/canvas-images@0.1.0\x05|\x01B\x1e\x02\x03\
+\x02\x01O\x04\0\x04rect\x03\0\0\x02\x03\x02\x01T\x04\0\x0ccorner-radii\x03\0\x02\
+\x02\x03\x02\x01R\x04\0\x09gfx-error\x03\0\x04\x01r\x08\x0fposition-millisw\x0fd\
 uration-millisw\x05widthy\x06heighty\x05ready\x7f\x07playing\x7f\x05ended\x7f\x07\
 problems\x04\0\x0bvideo-state\x03\0\x06\x01j\x01w\x01\x05\x01@\x01\x06sources\0\x08\
 \x04\0\x04open\x01\x09\x01j\0\x01\x05\x01@\x01\x05videow\0\x0a\x04\0\x04play\x01\
@@ -48023,64 +49913,64 @@ problems\x04\0\x0bvideo-state\x03\0\x06\x01j\x01w\x01\x05\x01@\x01\x06sources\0\
 @\x01\x05videow\0\x0f\x04\0\x05state\x01\x10\x01@\x03\x06canvasw\x05videow\x04ar\
 ea\x01\0\x0a\x04\0\x04draw\x01\x11\x01@\x04\x06canvasw\x05videow\x04area\x01\x05\
 radii\x03\0\x0a\x04\0\x0adraw-round\x01\x12\x01@\x01\x05videow\x01\0\x04\0\x05cl\
-ose\x01\x13\x03\0\x15krate:gfx/video@0.1.0\x05|\x01B\x06\x01m\x02\x07pcm-s16\x07\
+ose\x01\x13\x03\0\x15krate:gfx/video@0.1.0\x05}\x01B\x06\x01m\x02\x07pcm-s16\x07\
 float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06\
 format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permis\
 sion-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01\
 s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types\
-@0.1.0\x05}\x02\x03\0;\x0baudio-error\x02\x03\0;\x0dstream-config\x01B\x15\x02\x03\
-\x02\x01~\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x7f\x04\0\x0dstream-confi\
-g\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\
-\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04sto\
-p\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\
-\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-sound\x01\
-\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\x0c\
-\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1akra\
-te:audio/playback@0.1.0\x05\x80\x01\x01B\x05\x02\x03\x02\x01~\x04\0\x0baudio-err\
-or\x03\0\0\x01j\x01y\x01\x01\x01@\x01\x09stream-idw\0\x02\x04\0\x06queued\x01\x03\
-\x03\0\x20krate:audio/playback-queue@0.1.0\x05\x81\x01\x01B\x0f\x02\x03\x02\x01~\
-\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x7f\x04\0\x0dstream-config\x03\0\x02\
-\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\
-\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01\
-p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\
-\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05\x82\x01\x01B\x0d\x01m\x01\x05rgb\
-a8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\
-\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06f\
-ormat\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevic\
-e-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eelapsed-mil\
-lisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einvalid-strea\
-m\0\0\x12device-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01s\0\x08pl\
-atform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05\
-\x83\x01\x02\x03\0?\x0ccamera-error\x02\x03\0?\x0bdevice-info\x02\x03\0?\x05fram\
-e\x02\x03\0?\x0aframe-info\x02\x03\0?\x0dstream-config\x01B\x1d\x02\x03\x02\x01\x84\
-\x01\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01\x85\x01\x04\0\x0bdevice-info\x03\
-\0\x02\x02\x03\x02\x01\x86\x01\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01\x87\x01\x04\
-\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01\x88\x01\x04\0\x0dstream-config\x03\0\x08\
-\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\
-\x01\x01@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\
-\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09\
-stream-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\
-\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\
-\x03\0\x1akrate:camera/capture@0.1.0\x05\x89\x01\x01B\x12\x01r\x01\x04texts\x04\0\
-\x0atranscript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\
-\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspee\
-ch-error\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-inval\
-id\x0bunsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\
-\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08langu\
-age\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-as\
-sets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0a\
-match-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s1\
-6-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11\
-match-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05\x8a\x01\x01\
-B\x12\x01r\x03\x02ids\x04names\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11p\
-ermission-denied\0\0\x0finvalid-request\x01s\0\x0bunsupported\x01s\0\x08platform\
-\x01s\0\x04\0\x09say-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\
-\0\x06voices\x01\x06\x01ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04\
-rate\x08\0\x09\x04\0\x03say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\
-\x01\x03\x01@\0\0\x0c\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@\
-0.1.0\x05\x8b\x01\x01@\0\0z\x04\0\x03run\x01\x8c\x01\x04\0\x13krate:app/gui@0.2.\
-0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0d\
-wit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+@0.1.0\x05~\x02\x03\0<\x0baudio-error\x02\x03\0<\x0dstream-config\x01B\x15\x02\x03\
+\x02\x01\x7f\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x80\x01\x04\0\x0dstrea\
+m-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\
+\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04\
+stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\
+\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-soun\
+d\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\
+\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1a\
+krate:audio/playback@0.1.0\x05\x81\x01\x01B\x05\x02\x03\x02\x01\x7f\x04\0\x0baud\
+io-error\x03\0\0\x01j\x01y\x01\x01\x01@\x01\x09stream-idw\0\x02\x04\0\x06queued\x01\
+\x03\x03\0\x20krate:audio/playback-queue@0.1.0\x05\x82\x01\x01B\x0f\x02\x03\x02\x01\
+\x7f\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x80\x01\x04\0\x0dstream-config\
+\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01\
+j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\
+\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\
+\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05\x83\x01\x01B\x0d\x01m\x01\
+\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06\
+format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03fps\
+y\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0b\
+device-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eelapse\
+d-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einvalid-\
+stream\0\0\x12device-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01s\0\x08\
+platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/types@0.1.\
+0\x05\x84\x01\x02\x03\0@\x0ccamera-error\x02\x03\0@\x0bdevice-info\x02\x03\0@\x05\
+frame\x02\x03\0@\x0aframe-info\x02\x03\0@\x0dstream-config\x01B\x1d\x02\x03\x02\x01\
+\x85\x01\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01\x86\x01\x04\0\x0bdevice-i\
+nfo\x03\0\x02\x02\x03\x02\x01\x87\x01\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01\x88\
+\x01\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01\x89\x01\x04\0\x0dstream-confi\
+g\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01\
+j\x01w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01\
+j\x01\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\
+\x01@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\
+\x01j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05\
+close\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05\x8a\x01\x01B\x12\x01r\x01\x04\
+texts\x04\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-no\
+t-found\0\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\
+\0\x0cspeech-error\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dm\
+odel-invalid\x0bunsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01\
+ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-rat\
+ey\x08language\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0b\
+model-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\
+\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\
+\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\
+\x04\0\x11match-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05\
+\x8b\x01\x01B\x12\x01r\x03\x02ids\x04names\x08languages\x04\0\x05voice\x03\0\0\x01\
+q\x04\x11permission-denied\0\0\x0finvalid-request\x01s\0\x0bunsupported\x01s\0\x08\
+platform\x01s\0\x04\0\x09say-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\
+\0\x05\x04\0\x06voices\x01\x06\x01ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05v\
+oice\x07\x04rate\x08\0\x09\x04\0\x03say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\
+\x01j\x01\x7f\x01\x03\x01@\0\0\x0c\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:spee\
+ch/synthesis@0.1.0\x05\x8c\x01\x01@\0\0z\x04\0\x03run\x01\x8d\x01\x04\0\x13krate\
+:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocess\
+ed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
