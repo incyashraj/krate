@@ -37,6 +37,22 @@
     <p class="say" id="loadingWords">Opening the app...</p>
   </section>
 
+  <!-- /run/file: a .krate the person has, opened here and sent nowhere. -->
+  <section class="card state" id="file" hidden aria-labelledby="fileTitle">
+    <h1 id="fileTitle">Open a .krate file</h1>
+    <p class="say" id="fileWords">It opens in this tab, on this device. The file is not uploaded anywhere.</p>
+    <div class="drop" id="fileDrop">
+      <div class="doc" aria-hidden="true">
+        <svg viewBox="0 0 44 54"><path class="pg" d="M9 2.5h18.5L41.5 16.5V48a3.5 3.5 0 0 1-3.5 3.5H9A3.5 3.5 0 0 1 5.5 48V6A3.5 3.5 0 0 1 9 2.5z"/><path class="fold" d="M27.5 2.5v10.5a3.5 3.5 0 0 0 3.5 3.5h10.5"/></svg>
+        <img src="/player/krate-mark-3d-96.png" alt="">
+      </div>
+      <p class="dropsay" id="fileDropSay">Drop it here, or</p>
+      <button class="btn dark" id="filePick" type="button">Choose a file</button>
+    </div>
+    <p class="fine" id="fileFine" hidden><span id="fileTip"></span> <button class="link" id="fileInstall" type="button" hidden>Install</button></p>
+    <input type="file" id="fileInput" class="pick" tabindex="-1" aria-hidden="true">
+  </section>
+
   <section class="card state" id="consent" hidden aria-labelledby="consentTitle">
     <div class="perm">
       <div class="ph2"><img src="/player/krate-mark-3d-96.png" alt=""><h1 id="consentTitle">"App" wants to:</h1></div>
@@ -79,6 +95,7 @@
     </div>
     <pre class="term" id="term" hidden tabindex="0" aria-label="What the app printed"></pre>
     <p class="ended" id="ended" hidden></p>
+    <a class="btn ghost small" id="another" href="/run/file" hidden>Open another file</a>
   </section>
 
   <div class="notice" id="notice" hidden role="status">

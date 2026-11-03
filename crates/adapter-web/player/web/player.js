@@ -34,10 +34,12 @@ const params = new URLSearchParams(location.search);
 // /run/<hash> opens one release; /run/org/<slug>/<app-id> opens an
 // organisation's app as it is now, and /run/v<line> a public app as it is
 // now (IC-976): the addresses a home screen keeps, so an update reaches it.
-const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|(v[0-9a-f]{11}))\/?$/) || [];
+// /run/file opens a .krate file the person has, without sending it anywhere.
+const RUN = location.pathname.match(/^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|(v[0-9a-f]{11})|(file))\/?$/) || [];
 let HASH = RUN[1];
 const ORG_APP = RUN[2] ? { slug: RUN[2], app: RUN[3] } : null;
 const LINE = RUN[4] || null;
+const FILE = RUN[5] === 'file';
 const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH || LINE}`;
 // The post a link came from (`?via=reddit`), carried to the open's count.
 const VIA = ((params.get('via') || '').toLowerCase().match(/^[a-z0-9][a-z0-9_-]{0,31}$/) || [''])[0];
@@ -62,7 +64,7 @@ const forced = params.get('theme');
 if (forced === 'dark' || forced === 'light') document.documentElement.dataset.theme = forced;
 const dark = () => (forced ? forced === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
 
-const STATES = ['loading', 'consent', 'signin', 'refused', 'app'];
+const STATES = ['loading', 'file', 'consent', 'signin', 'refused', 'app'];
 function show(state) {
   report.state = state;
   for (const s of STATES) $(s).hidden = s !== state;
@@ -75,7 +77,11 @@ function refuse(title, words, { act = 'krate', detail } = {}) {
   $('refusedDetail').textContent = detail || '';
   const a = $('refusedAct');
   a.onclick = null;
-  if (act === 'browser' && /Android/.test(navigator.userAgent)) {
+  // A file is not on the hub: the way on is another file, or (on a
+  // computer) Krate itself.
+  if (FILE && (act === 'home' || (act === 'krate' && PHONE))) act = 'another';
+  if (act === 'another') { a.textContent = 'Choose another file'; a.href = '/run/file'; }
+  else if (act === 'browser' && /Android/.test(navigator.userAgent)) {
     // Android hands an intent: link to Chrome, out of the app's browser.
     a.textContent = 'Open in Chrome';
     a.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=${location.protocol.replace(':', '')};package=com.android.chrome;end`;
@@ -113,6 +119,8 @@ async function copyLink(e) {
   } catch { prompt('Copy this link:', url); }
 }
 function openInKrate() {
+  // A file opens in Krate by a double-click once it is installed.
+  if (FILE) return `${SITE}/open/`;
   return HASH ? `${SITE}/open/?a=${HASH}${report.private ? '&private=1' : ''}` : `${SITE}/open/`;
 }
 
@@ -160,7 +168,9 @@ $('noticeClose').onclick = () => { $('notice').hidden = true; };
 // and a way to report it that needs no account. Not on a team's private
 // app: a coworker is not a lead, and the team answers for its own apps.
 function beacon(event) {
-  if (!HASH) return Promise.resolve(null);
+  // A file opened here is the person's own business: the hub never hears of
+  // it, not even its digest.
+  if (!HASH || FILE) return Promise.resolve(null);
   const me = session();
   return fetch('/tab', {
     method: 'POST',
@@ -247,8 +257,15 @@ function keepData() {
 }
 function madeWith(teamApp) {
   if (teamApp || !HASH) return;
-  $('makeOwn').href = `${SITE}/app/?via=player&from=${HASH}`;
-  $('makeOwn').onclick = () => { beacon('make'); };
+  if (FILE) {
+    // Nothing about the file goes with the link, and there is nothing on
+    // the hub to report: a file is taken down by not sending it.
+    $('makeOwn').href = `${SITE}/app/?via=player-file`;
+    $('reportOpen').hidden = true;
+  } else {
+    $('makeOwn').href = `${SITE}/app/?via=player&from=${HASH}`;
+    $('makeOwn').onclick = () => { beacon('make'); };
+  }
   $('made').hidden = false;
   document.body.classList.add('has-made');
 }
@@ -510,9 +527,253 @@ function colourOf(text) {
   return ICON_COLOURS[h % ICON_COLOURS.length];
 }
 
+/// The tab can run an app: it is cross-origin isolated (the shared memory
+/// the app's worker needs). Otherwise the page says what to do, and false.
+function isolated() {
+  if (self.crossOriginIsolated && typeof SharedArrayBuffer === 'function') return true;
+  const android = /Android/.test(navigator.userAgent);
+  const browser = android ? 'Chrome' : 'Safari';
+  const whose = IN_APP && IN_APP !== 'this app' ? `${IN_APP}'s browser` : 'This in-app browser';
+  if (PHONE) {
+    refuse(`Open this in ${browser}`,
+      `${whose} cannot run Krate apps. ` + (android
+        ? 'Tap Open in Chrome, or tap ⋮ and choose Open in Chrome.'
+        : 'Tap ⋯ or the share button and choose Open in Safari, or copy the link and paste it there.'),
+      { act: 'browser', detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+  } else {
+    refuse('This browser cannot open Krate apps in a tab',
+      'It does not allow the shared memory a Krate app needs here. The app opens in Krate on this computer.',
+      { detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
+  }
+  return false;
+}
+
+// ------------------------------------------------------------ a file
+// /run/file: a .krate the person has -- from a chat, AirDrop, an email, a
+// download -- opened in this tab without being sent anywhere. The page does
+// here what the hub does for a link (web-player.js ensureWebPack): the
+// validator judges the file and hands over its component exactly as judged,
+// and the transpiler the hub uses makes the web pack from it. From there it
+// is the link's own path (openChecked): the same checks, the same consent
+// card, the same hosts. Its storage is keyed by its own bytes.
+
+/// The hub's limit for making a web pack (MAX_PACK_SOURCE_BYTES), and its
+/// words for a bundle past it.
+const MAX_FILE_BYTES = 16 * 1024 * 1024;
+let fileModules = null;
+/// The Player, the validator and the transpiler, fetched and compiled once,
+/// from the moment the page knows it is for a file.
+function loadForFile() {
+  if (!fileModules) {
+    const compiled = (path, name) => WebAssembly.compileStreaming(fetch(path)).then((m) => { mark(`${name}Compiled`); return m; });
+    fileModules = Promise.all([
+      compiled('/player/krate_web_bg.wasm', 'player'),
+      compiled('/player/validator.wasm', 'validator'),
+      compiled('/player/transpiler.wasm', 'transpiler'),
+    ]);
+  }
+  return fileModules;
+}
+/// The component of a bundle exactly as the validator judged it, as the hub
+/// asks for it (index.js judgedComponent): `{ ok, bytes }` or `{ ok, problem }`.
+async function judgedComponent(validatorModule, bytes) {
+  const v = (await WebAssembly.instantiate(validatorModule, {})).exports;
+  const input = v.krate_alloc(bytes.length);
+  new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
+  const out = v.krate_judged_component(input, bytes.length);
+  const length = new DataView(v.memory.buffer).getUint32(out, true);
+  const body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
+  v.krate_free(out, 4 + length);
+  v.krate_free(input, bytes.length);
+  return body[0] === 1 ? { ok: true, bytes: body.subarray(1) } : { ok: false, problem: new TextDecoder().decode(body.subarray(1)) };
+}
+/// The web pack for a judged component, as the hub makes it
+/// (web-player.js transpileComponent): `{ header, bytes }`.
+async function transpileHere(transpilerModule, component) {
+  const t = (await WebAssembly.instantiate(transpilerModule, {})).exports;
+  const input = t.krate_alloc(component.length);
+  new Uint8Array(t.memory.buffer, input, component.length).set(component);
+  const out = t.krate_transpile(input, component.length);
+  const length = new DataView(t.memory.buffer).getUint32(out, true);
+  const bytes = new Uint8Array(t.memory.buffer, out + 4, length).slice();
+  t.krate_free(out, 4 + length);
+  t.krate_free(input, component.length);
+  const hlen = new DataView(bytes.buffer).getUint32(0, true);
+  return { header: JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + hlen))), bytes };
+}
+
+let opening = false;
+/// Open one file the person chose, dropped, shared or double-clicked.
+function openFile(file) {
+  return openFileNow(file).catch(failed);
+}
+async function openFileNow(file) {
+  if (opening || !file) return;
+  opening = true;
+  report.file = { name: String(file.name || 'app.krate'), size: file.size };
+  mark('fileChosen');
+  say('Opening the file...');
+  show('loading');
+  if (file.size > MAX_FILE_BYTES) {
+    refuse('This app opens in Krate, not in a tab yet', 'This app is too big to open in a tab. It opens in Krate on a computer.');
+    return;
+  }
+  let bytes;
+  try { bytes = new Uint8Array(await file.arrayBuffer()); } catch (e) {
+    refuse('This file did not open', 'The browser could not read it. Choose it again.', { act: 'another', detail: String((e && e.message) || e) });
+    return;
+  }
+  const [playerModule, validatorModule, transpilerModule] = await loadForFile();
+  await init({ module_or_path: playerModule });
+  HASH = await sha256(bytes);
+  say('Checking it...');
+  // The validator's verdict first, in its own words, before anything of the
+  // file is made into something to run -- as the hub's door refuses a bad
+  // upload before it is ever a link.
+  const first = await judge(validatorModule, bytes);
+  if (!first.ok) {
+    refuse('This app did not pass Krate’s checks', 'It was not opened.', { act: 'home', detail: first.problem });
+    return;
+  }
+  say('Getting it ready for this tab...');
+  const component = await judgedComponent(validatorModule, bytes);
+  if (!component.ok) {
+    refuse('This app did not pass Krate’s checks', 'It was not opened.', { act: 'home', detail: component.problem });
+    return;
+  }
+  const started = performance.now();
+  const pack = await transpileHere(transpilerModule, component.bytes);
+  report.transpileMs = performance.now() - started;
+  mark('transpiled');
+  if (!pack.header.ok) {
+    refuse('This app opens in Krate, not in a tab yet', 'This app opens in Krate, not in a tab yet.', { detail: pack.header.problem });
+    return;
+  }
+  // [u32 bundle length][bundle][pack]: what /a/<hash>/web answers.
+  const buf = new Uint8Array(4 + bytes.length + pack.bytes.length);
+  new DataView(buf.buffer).setUint32(0, bytes.length, true);
+  buf.set(bytes, 4);
+  buf.set(pack.bytes, 4 + bytes.length);
+  say('Checking it is the app in the file...');
+  await openChecked(buf.buffer, { told: '', validatorModule, playerModule, me: session() });
+}
+
+/// The file card, and every way a file reaches it.
+async function fileMode() {
+  document.title = 'Open a .krate file - Krate';
+  $('inKrate').href = openInKrate();
+  if (PHONE) $('inKrate').hidden = true;
+  // The Player as an app that opens .krate files (file_handlers,
+  // share_target), and the worker that takes a shared file in the browser.
+  const manifest = document.createElement('link');
+  manifest.rel = 'manifest';
+  manifest.href = '/run/file/app.webmanifest';
+  document.head.appendChild(manifest);
+  report.launchQueue = 'launchQueue' in window;
+  if (!isolated()) return;
+  // A file double-clicked on a computer that installed the Player. The
+  // browser holds the launch until a consumer is set.
+  if (report.launchQueue) {
+    window.launchQueue.setConsumer(async (launch) => {
+      const handle = launch && launch.files && launch.files[0];
+      if (!handle) return;
+      report.launched = true;
+      let file;
+      try { file = await handle.getFile(); } catch (e) {
+        refuse('This file did not open', 'The browser could not read it. Choose it again.', { act: 'another', detail: String((e && e.message) || e) });
+        return;
+      }
+      openFile(file);
+    });
+  }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/player/file-sw.js', { scope: '/run/file' })
+      .then(() => { report.fileWorker = true; }).catch((e) => { report.fileWorker = String((e && e.message) || e); });
+  }
+  loadForFile().catch((e) => { report.error = String((e && e.stack) || e); });
+
+  // A file shared to the installed Player (Android): file-sw.js kept it in
+  // this origin's cache. Read once, then gone; nothing else is kept there.
+  const sharedId = params.get('shared');
+  if (window.caches) {
+    try {
+      const cache = await caches.open('krate-file-share');
+      const keys = await cache.keys();
+      let shared = null;
+      for (const key of keys) {
+        if (sharedId && new URL(key.url).pathname === `/run/file/shared/${sharedId}`) {
+          const res = await cache.match(key);
+          if (res) shared = new File([await res.blob()], decodeURIComponent(res.headers.get('x-krate-name') || 'app.krate'));
+        }
+        await cache.delete(key);
+      }
+      if (sharedId) history.replaceState(null, '', location.pathname);
+      if (shared) { report.shared = true; openFile(shared); return; }
+    } catch { /* the card below */ }
+  }
+
+  const input = $('fileInput');
+  // An iPhone or an Android phone greys out every file whose type it does
+  // not know when told to accept .krate, so a phone is not told.
+  if (!PHONE) input.accept = '.krate,application/x-krate';
+  input.addEventListener('change', () => { const f = input.files && input.files[0]; input.value = ''; openFile(f); });
+  $('filePick').onclick = () => input.click();
+  const zone = $('fileDrop');
+  const dragging = (e) => Boolean(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+  // Dropped anywhere on the card's page, the file opens here; the browser
+  // never opens it in place of the page.
+  document.addEventListener('dragover', (e) => {
+    if (!dragging(e)) return;
+    e.preventDefault();
+    if (report.state === 'file') { e.dataTransfer.dropEffect = 'copy'; zone.classList.add('over'); }
+  });
+  document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) zone.classList.remove('over'); });
+  document.addEventListener('drop', (e) => {
+    if (!dragging(e)) return;
+    e.preventDefault();
+    zone.classList.remove('over');
+    if (report.state !== 'file') return;
+    report.dropped = true;
+    openFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+
+  // What this device can do beyond the picker, in its own words.
+  if (PHONE) $('fileDropSay').hidden = true;
+  const tip = $('fileTip');
+  const android = /Android/.test(navigator.userAgent);
+  const chromium = /Chrome\/|Chromium\//.test(navigator.userAgent) && !/Edg\/|OPR\//.test(navigator.userAgent);
+  if (params.get('share') === 'lost' || params.get('share') === 'empty') {
+    tip.textContent = 'The shared file did not reach this page. Choose it here instead.';
+  } else if (isIos()) {
+    tip.textContent = 'Got it in Messages, Mail or WhatsApp? Save it to Files first, then choose it here.';
+  } else if (android && chromium) {
+    tip.textContent = standalone()
+      ? 'From any app, share a .krate and choose Krate.'
+      : 'Add this page to your home screen, and sharing a .krate from any app opens it here.';
+  } else if (!PHONE && report.launchQueue) {
+    tip.textContent = standalone()
+      ? 'A .krate file on this computer opens here: choose Open With, then Krate.'
+      : 'Install this page, and a .krate file on this computer opens here like any other app.';
+    const offer = () => { $('fileInstall').hidden = !installPrompt || standalone(); };
+    addEventListener('beforeinstallprompt', () => setTimeout(offer));
+    $('fileInstall').onclick = async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => null);
+      installPrompt = null;
+      offer();
+    };
+    offer();
+  }
+  $('fileFine').hidden = !tip.textContent;
+  show('file');
+  mark('fileCard');
+}
+
 async function main() {
   mark('start');
   takeSignIn();
+  if (FILE) return fileMode();
   if (ORG_APP && self.crossOriginIsolated && !(await resolveOrgApp())) return;
   if (LINE && !(await resolveLine())) return;
   if (!HASH) {
@@ -531,23 +792,7 @@ async function main() {
     const line = v && !v.newer && /\/a\/(v[0-9a-f]{11})$/.exec(String(v.app_url || ''));
     return line ? line[1] : null;
   }).catch(() => null);
-  if (!self.crossOriginIsolated || typeof SharedArrayBuffer !== 'function') {
-    const android = /Android/.test(navigator.userAgent);
-    const browser = android ? 'Chrome' : 'Safari';
-    const whose = IN_APP && IN_APP !== 'this app' ? `${IN_APP}'s browser` : 'This in-app browser';
-    if (PHONE) {
-      refuse(`Open this in ${browser}`,
-        `${whose} cannot run Krate apps. ` + (android
-          ? 'Tap Open in Chrome, or tap \u22ee and choose Open in Chrome.'
-          : 'Tap \u22ef or the share button and choose Open in Safari, or copy the link and paste it there.'),
-        { act: 'browser', detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
-    } else {
-      refuse('This browser cannot open Krate apps in a tab',
-        'It does not allow the shared memory a Krate app needs here. The app opens in Krate on this computer.',
-        { detail: `crossOriginIsolated=${self.crossOriginIsolated}` });
-    }
-    return;
-  }
+  if (!isolated()) return;
 
   say('Opening the app...');
   const slow = setTimeout(() => say('Still opening... a slow connection'), 4000);
@@ -588,7 +833,14 @@ async function main() {
   }
 
   say('Checking it is the app that was sent...');
-  const { bundle, meta, files } = unpack(await res.arrayBuffer());
+  await openChecked(await res.arrayBuffer(), { told: res.headers.get('x-krate-store') || '', validatorModule, playerModule, me });
+}
+
+/// Steps 2 to 4 for what the hub sent for a link, or for a file the person
+/// opened made into the same thing in this page: the same checks, the same
+/// consent card, the same hosts.
+async function openChecked(buf, { told, validatorModule, playerModule, me }) {
+  const { bundle, meta, files } = unpack(buf);
   // The bytes are the ones the link names.
   const digest = await sha256(bundle);
   if (digest !== HASH) {
@@ -635,14 +887,20 @@ async function main() {
   document.title = `${name} - Krate`;
   $('whoName').textContent = name;
   const release = sig === 'valid' && j.release;
-  $('whoSig').textContent = release ? `Signed by ${release.namespace.split('/')[0]}` : 'Not signed';
+  $('whoSig').textContent = (release ? `Signed by ${release.namespace.split('/')[0]}` : 'Not signed') + (FILE ? ', from a file' : '');
   $('who').hidden = false;
   report.app = { id: app.id, name, world: app.world, signature: sig };
   madeWith(report.private || Boolean(sig === 'valid' && j.org_mark));
-  installable(name, sig === 'valid' ? j.org_mark : null, app.id);
+  // A file has no address to keep on a home screen; the page stays the
+  // Player that opens files.
+  if (!FILE) installable(name, sig === 'valid' ? j.org_mark : null, app.id);
 
   // ---- consent: the desktop's words, the tab's reach
   const rows = JSON.parse(consent(JSON.stringify(j.manifest.capabilities || []))).rows || [];
+  // A team's data comes with the team's link, which the hub opens only for
+  // a member; a file has no one to ask, so it opens without it.
+  const TEAM_LINK = 'opens from your team’s link, not from a file';
+  if (FILE) for (const r of rows) if (r.cap === 'store.org' && r.in_tab) { r.in_tab = false; r.away = TEAM_LINK; }
   const blocked = rows.filter((r) => r.required && !r.in_tab);
   const granted = rows.filter((r) => r.in_tab).map((r) => r.cap);
   // Storage belongs to the publisher the hub vouched for (x-krate-store, a
@@ -650,9 +908,14 @@ async function main() {
   // author picks that id, every app shares this origin, and another
   // publisher's app declaring the same id read this one's data, secrets
   // included. With no tag, the build itself -- never the bare id.
-  const told = res.headers.get('x-krate-store') || '';
   const owner = /^k[0-9a-f]{16}$/.test(told) ? told : `h${HASH.slice(0, 16)}`;
-  const storeKey = release ? `${app.id}@${release.authority.slice(0, 16)}` : `${app.id}~${owner}`;
+  // A file's storage is its own bytes' (`f`), whoever signed it: no link
+  // keys anything with `f`, and an app id cannot hold `~` or `@`, so a file
+  // never reaches a published app's data -- not even the same build's
+  // opened from its link -- and the same file always finds its own.
+  const storeKey = FILE ? `${app.id}~f${HASH.slice(0, 16)}`
+    : release ? `${app.id}@${release.authority.slice(0, 16)}` : `${app.id}~${owner}`;
+  report.storeKey = storeKey;
   if (rows.length) {
     $('consentTitle').textContent = `“${name}” wants to:`;
     const list = $('consentRows');
@@ -662,17 +925,30 @@ async function main() {
       if (!r.in_tab) li.className = 'away';
       li.innerHTML = '<i><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span><b></b><em></em></span>';
       li.querySelector('b').textContent = r.plain;
-      li.querySelector('em').textContent = r.in_tab ? r.rationale : `${r.rationale ? r.rationale + ' - ' : ''}works in Krate on a computer`;
+      li.querySelector('em').textContent = r.in_tab ? r.rationale : `${r.rationale ? r.rationale + ' - ' : ''}${r.away || 'works in Krate on a computer'}`;
       list.appendChild(li);
     }
+    const teamOnly = (list) => list.length > 0 && list.every((r) => r.away === TEAM_LINK);
     if (blocked.length) {
-      $('consentNote').textContent = `${name} needs ${blocked.map((r) => r.plain).join(', ')}, which works in Krate on a computer, not in a tab yet.`;
-      $('consentAllow').textContent = PHONE ? 'Send it to a computer' : 'Open in Krate';
-      $('consentAllow').onclick = PHONE ? sendToComputer : () => { location.href = openInKrate(); };
+      $('consentNote').textContent = teamOnly(blocked)
+        ? `${name} needs your team’s shared data, which ${TEAM_LINK}.`
+        : `${name} needs ${blocked.map((r) => r.plain).join(', ')}, which works in Krate on a computer, not in a tab yet.`;
+      if (FILE && PHONE) {
+        $('consentAllow').textContent = 'Choose another file';
+        $('consentAllow').onclick = () => { location.href = '/run/file'; };
+      } else {
+        $('consentAllow').textContent = PHONE ? 'Send it to a computer' : 'Open in Krate';
+        $('consentAllow').onclick = PHONE ? sendToComputer : () => { location.href = openInKrate(); };
+      }
     } else {
-      $('consentNote').textContent = rows.some((r) => !r.in_tab)
-        ? 'Greyed out: works in Krate on a computer. The app opens here without it.' : '';
+      const away = rows.filter((r) => !r.in_tab);
+      $('consentNote').textContent = !away.length ? ''
+        : teamOnly(away) ? 'Greyed out: it opens from your team’s link. The app opens here without it.'
+          : 'Greyed out: works in Krate on a computer. The app opens here without it.';
       $('consentAllow').textContent = 'Allow and open';
+    }
+    if (FILE) {
+      $('consentFine').textContent = `Opened from the file “${report.file.name}” on this device. Nothing was uploaded. It gets nothing else, runs in this tab and stops when you close it.`;
     }
     $('consentCancel').onclick = () => refuse('Not opened', `${name} did not open. Nothing was allowed.`, { act: 'home' });
     show('consent');
@@ -688,7 +964,7 @@ async function main() {
   show('loading');
   // An organisation's app, signed and marked for it, opened by a signed-in
   // member: its team data, as on a computer (store.org).
-  const org = { slug: (sig === 'valid' && j.org_mark) || null, appId: app.id, digest: HASH, session: me, validatorModule };
+  const org = { slug: (!FILE && sig === 'valid' && j.org_mark) || null, appId: app.id, digest: HASH, session: me, validatorModule };
   await start({ meta, modules, glue: new TextDecoder().decode(glue), granted, storeKey, playerModule, world: app.world, name, org });
 }
 
@@ -1315,6 +1591,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     const ended = $('ended');
     ended.textContent = words;
     ended.hidden = false;
+    if (FILE) $('another').hidden = false;
     if (crashed) notice(words);
     worker.terminate();
     audio.close();
@@ -1498,7 +1775,8 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   });
 }
 
-main().catch((e) => {
+function failed(e) {
   report.error = String((e && e.stack) || e);
   refuse('This app did not open', 'Something went wrong in this tab. Reload to try again.', { act: 'home', detail: String((e && e.message) || e) });
-});
+}
+main().catch(failed);

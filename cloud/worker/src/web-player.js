@@ -147,6 +147,13 @@ const PLAYER_FILES = new Set([
   // page, and it has no fetch handler).
   "senses.js",
   "notify-sw.js",
+  // A .krate file opened in the tab (/run/file): the transpiler the hub
+  // makes each release's web pack with, run in the page instead, so the file
+  // never leaves the browser; and the service worker that takes a file
+  // shared to the installed Player (Android's share sheet) before it can
+  // reach the network.
+  "transpiler.wasm",
+  "file-sw.js",
   "krate_web.js",
   "krate_web_bg.wasm",
   "validator.wasm",
@@ -172,6 +179,8 @@ async function asset(env, url, name) {
       ...ISOLATED,
       // The link card is fetched by chat apps from anywhere, not by this page.
       ...(name === "krate-card.png" ? { "cross-origin-resource-policy": "cross-origin" } : {}),
+      // The file page's service worker answers for /run/file and nothing else.
+      ...(name === "file-sw.js" ? { "service-worker-allowed": FILE_PAGE } : {}),
     },
   });
 }
@@ -182,9 +191,14 @@ async function asset(env, url, name) {
 /// address a phone keeps on its home screen, so an update never breaks it),
 /// or a public app as it is now (`/run/v<line>`, the app's own link,
 /// IC-976: what a home screen keeps for it, so an update reaches it too),
-/// each with its web app manifest and icon. The line is not a group of its
-/// own, so the groups others read keep their numbers.
-export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|v[0-9a-f]{11})(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
+/// each with its web app manifest and icon; or `/run/file`, a .krate file the
+/// person has, opened in the page without being sent anywhere. Neither the
+/// line nor `file` is a group of its own, so the groups others read keep
+/// their numbers.
+export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|v[0-9a-f]{11}|file)(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
+
+/// The Player's page for a .krate file the person has.
+export const FILE_PAGE = "/run/file";
 
 /// What a home screen calls an app: the name the page judged, trimmed, with
 /// nothing that is not printable.
@@ -235,6 +249,50 @@ function manifestFor(base, name) {
   });
 }
 
+/// GET /run/file/app.webmanifest: the Player as an app that opens .krate
+/// files. Installed (Chromium on a computer), the computer opens a .krate
+/// with it (file_handlers, read by the page's launchQueue); on Android, a
+/// .krate shared from any app comes to it (share_target, which the page's
+/// service worker, file-sw.js, takes before it can reach the network).
+/// Browsers without either ignore them, and the page's own picker is the
+/// way in.
+function fileManifest() {
+  const body = {
+    id: FILE_PAGE,
+    name: "Krate",
+    short_name: "Krate",
+    description: "Open .krate apps in this browser. The file is not uploaded.",
+    start_url: FILE_PAGE,
+    scope: FILE_PAGE,
+    display: "standalone",
+    background_color: "#fbfbfd",
+    theme_color: "#fbfbfd",
+    icons: [{ src: "/player/krate-app-icon.png", sizes: "1024x1024", type: "image/png", purpose: "any" }],
+    file_handlers: [{ action: FILE_PAGE, accept: { "application/x-krate": [".krate"] } }],
+    // Each file in its own window, so an app already open keeps running.
+    launch_handler: { client_mode: "navigate-new" },
+    share_target: {
+      action: FILE_PAGE,
+      method: "POST",
+      enctype: "multipart/form-data",
+      // A chat app hands a .krate over as whatever type it guessed.
+      params: { files: [{ name: "file", accept: [".krate", "application/x-krate", "application/octet-stream", "application/zip"] }] },
+    },
+  };
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/manifest+json; charset=utf-8", "cache-control": "public, max-age=300", ...ISOLATED },
+  });
+}
+
+/// POST /run/file: a share that reached the hub instead of the page's
+/// service worker (one not installed yet, or cleared). The file is not read,
+/// kept or answered with: the body is dropped unread and the person is sent
+/// to the page, which asks them to choose the file there.
+export async function fileShareFallback(request) {
+  try { if (request.body && request.body.cancel) await request.body.cancel(); } catch (_) {}
+  return new Response(null, { status: 303, headers: { location: `${FILE_PAGE}?share=lost`, "cache-control": "no-store" } });
+}
+
 /// GET /run/<...>/icon.svg?name=<name>: the app's initial on its colour.
 function iconFor(base, name) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="${colourOf(base)}"/>` +
@@ -250,6 +308,10 @@ function iconFor(base, name) {
 export async function playerPage(request, url, env) {
   const m = RUN_PATH.exec(url.pathname);
   if (!m) return null;
+  if (!m[1] && !m[2] && url.pathname.startsWith(FILE_PAGE)) {
+    if (m[4] === "app.webmanifest") return fileManifest();
+    if (m[4] === "icon.svg") return iconFor(FILE_PAGE, "Krate");
+  }
   const base = m[1] ? `/run/${m[1]}` : m[2] ? `/run/org/${m[2]}/${m[3]}` : url.pathname.slice(0, "/run/v".length + 11);
   if (m[4] === "app.webmanifest") return manifestFor(base, appName(url.searchParams.get("name")));
   if (m[4] === "icon.svg") return iconFor(base, appName(url.searchParams.get("name")));
