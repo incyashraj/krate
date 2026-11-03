@@ -802,6 +802,19 @@ impl Vim {
         }
     }
 
+    /// Whether the keys typed so far in normal mode are exactly `keys`
+    /// (`g` waiting for its second key), for the editor to take over a
+    /// command the language server does better.
+    pub fn pending_is(&self, keys: &[Input]) -> bool {
+        self.pending.as_slice() == keys
+    }
+
+    /// Forget keys typed toward a command.
+    pub fn clear_pending(&mut self) {
+        self.pending.clear();
+        self.showcmd.clear();
+    }
+
     /// Enter insert mode at the cursor without a command (a click into the
     /// text, a mouse user starting to type).
     pub fn begin_insert(&mut self, buf: &mut Buffer, cur: &mut Cursor) {

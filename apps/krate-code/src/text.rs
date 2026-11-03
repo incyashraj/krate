@@ -112,6 +112,21 @@ pub fn expand_tabs(line: &str, tab: usize) -> String {
     out
 }
 
+/// The byte column of character `n` on `line` (its end when past it).
+pub fn byte_of_char(line: &str, n: usize) -> usize {
+    line.char_indices()
+        .nth(n)
+        .map(|(i, _)| i)
+        .unwrap_or(line.len())
+}
+
+/// The character column of byte `b` on `line`.
+pub fn char_of_byte(line: &str, b: usize) -> usize {
+    line.get(..b.min(line.len()))
+        .map(|s| s.chars().count())
+        .unwrap_or(b)
+}
+
 /// A number as text, without `format!`.
 pub fn num(mut n: usize) -> String {
     if n == 0 {

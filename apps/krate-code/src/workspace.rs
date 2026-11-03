@@ -7,14 +7,16 @@
 //! window -- is left in [`Workspace::host`] for the guest to carry out.
 
 use crate::buffer::{Buffer, Pos};
+use crate::ide::{Completion, DapSession, Hover, Job, LspSession, Pick, Signature, Term};
 use crate::palette::{self, Action, COMMANDS};
 use crate::project::{self, MemFs, Project, Vfs};
 use crate::syntax::Highlighter;
 use crate::text;
-use crate::tools::{self, Diagnostic, NoRunner, Runner, Tool};
+use crate::tools::{Diagnostic, NoRunner, Runner, Tool};
 use crate::vim::{Ctx, Cursor, Effect, Input, Key, Mode, ScrollTo, Vim};
+use crate::vt::Vt;
 use alloc::boxed::Box;
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -119,6 +121,7 @@ pub enum PanelTab {
     Problems,
     Output,
     Terminal,
+    Debug,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +143,8 @@ pub enum PromptKind {
     ProjectName,
     /// The window is closing with unsaved files.
     CloseUnsaved,
+    /// A new name for the symbol under the cursor (rust-analyzer).
+    RenameSymbol,
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +169,8 @@ impl Prompt {
 pub enum PaletteMode {
     Commands,
     Files,
+    /// A list to choose from: references, code actions.
+    Pick,
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +181,10 @@ pub struct PaletteState {
     pub items: Vec<usize>,
     pub files: Vec<String>,
     pub selected: usize,
+    /// What each row of a `Pick` list does.
+    pub picks: Vec<Pick>,
+    /// The title of a `Pick` list.
+    pub title: String,
 }
 
 impl PaletteState {
@@ -183,7 +194,9 @@ impl PaletteState {
                 .get(item)
                 .map(|c| (c.title, c.keys))
                 .unwrap_or(("", "")),
-            PaletteMode::Files => (self.files.get(item).map(String::as_str).unwrap_or(""), ""),
+            PaletteMode::Files | PaletteMode::Pick => {
+                (self.files.get(item).map(String::as_str).unwrap_or(""), "")
+            }
         }
     }
 }
@@ -213,6 +226,8 @@ pub struct Settings {
     pub tree: bool,
     /// Code text size in points, before the person's own text scale.
     pub font: f32,
+    /// Run rustfmt on a Rust file each time it is saved.
+    pub format_on_save: bool,
 }
 
 impl Default for Settings {
@@ -223,6 +238,7 @@ impl Default for Settings {
             relative_numbers: false,
             tree: true,
             font: 13.5,
+            format_on_save: true,
         }
     }
 }
@@ -246,6 +262,11 @@ impl Settings {
             "\nrnu=0"
         });
         s.push_str(if self.tree { "\ntree=1" } else { "\ntree=0" });
+        s.push_str(if self.format_on_save {
+            "\nfmt=1"
+        } else {
+            "\nfmt=0"
+        });
         s.push_str("\nfont=");
         s.push_str(&text::num((self.font * 2.0) as usize));
         s.push('\n');
@@ -265,6 +286,7 @@ impl Settings {
                 ("click", v) => s.click_inserts = v != "normal",
                 ("rnu", v) => s.relative_numbers = v == "1",
                 ("tree", v) => s.tree = v != "0",
+                ("fmt", v) => s.format_on_save = v != "0",
                 ("font", v) => {
                     if let Ok(n) = v.parse::<usize>() {
                         let f = n as f32 / 2.0;
@@ -295,8 +317,49 @@ pub struct Workspace {
     pub problem_selected: usize,
     pub palette: Option<PaletteState>,
     pub prompt: Option<Prompt>,
-    pub output: Vec<String>,
+    /// The Output panel: a log with colours, drawn like a terminal.
+    pub output: Vt,
+    /// Every problem shown: the last build's and the language server's.
     pub problems: Vec<Diagnostic>,
+    pub build_problems: Vec<Diagnostic>,
+    pub lsp_problems: BTreeMap<String, Vec<Diagnostic>>,
+    /// Programs running for the editor: builds, `cargo new`.
+    pub jobs: Vec<Job>,
+    /// The time now, in milliseconds, set by the guest each turn.
+    pub now_ms: u64,
+    pub terminals: Vec<Term>,
+    pub term_active: usize,
+    /// The columns and rows the terminal panel fits (set by the guest).
+    pub term_size: (u16, u16),
+    pub lsp: Option<LspSession>,
+    pub dap: Option<DapSession>,
+    pub completion: Option<Completion>,
+    pub hover: Option<Hover>,
+    pub signature: Option<Signature>,
+    /// The project folder's place on the computer, as cargo reports it --
+    /// what the language server and the debugger need.
+    pub root_abs: Option<String>,
+    /// Programs found missing this run, so they are not tried every key.
+    pub missing: BTreeSet<String>,
+    /// What rust-analyzer is busy with ("Indexing").
+    pub lsp_busy: Option<String>,
+    /// The binary the last build made, for the debugger.
+    pub last_exe: Option<String>,
+    /// Start the debugger when the build that is going succeeds.
+    pub debug_after_build: bool,
+    /// The last Escape typed into a terminal: twice quickly leaves it.
+    pub last_esc_ms: u64,
+    /// A selection in the terminal or Output panel, in rows from the first
+    /// line of history and columns.
+    pub term_sel: Option<((usize, usize), (usize, usize))>,
+    /// Text for the guest to put on the clipboard.
+    pub clipboard_out: Option<String>,
+    /// The next hover answer was asked by resting the mouse.
+    pub hover_from_mouse: bool,
+    /// The variable row chosen in the Debug panel.
+    pub var_selected: usize,
+    /// A project being made by `cargo init`: its folder and name.
+    pub(crate) creating: Option<(String, Box<dyn Vfs>, String, u64)>,
     pub host: Option<HostRequest>,
     /// A line for the status area that is not the engine's.
     pub status: Option<(String, bool)>,
@@ -336,8 +399,35 @@ impl Workspace {
             problem_selected: 0,
             palette: None,
             prompt: None,
-            output: Vec::new(),
+            output: {
+                let mut v = Vt::new(120, 12);
+                v.max_scrollback = 20_000;
+                v
+            },
             problems: Vec::new(),
+            build_problems: Vec::new(),
+            lsp_problems: BTreeMap::new(),
+            jobs: Vec::new(),
+            now_ms: 0,
+            terminals: Vec::new(),
+            term_active: 0,
+            term_size: (100, 16),
+            lsp: None,
+            dap: None,
+            completion: None,
+            hover: None,
+            signature: None,
+            root_abs: None,
+            missing: BTreeSet::new(),
+            lsp_busy: None,
+            last_exe: None,
+            debug_after_build: false,
+            last_esc_ms: 0,
+            term_sel: None,
+            clipboard_out: None,
+            creating: None,
+            hover_from_mouse: false,
+            var_selected: 0,
             host: None,
             status: None,
             runner: Box::new(NoRunner),
@@ -390,21 +480,29 @@ impl Workspace {
             .or(self.status.as_ref().map(|(m, e)| (m.as_str(), *e)))
     }
 
-    fn say(&mut self, msg: &str) {
+    pub(crate) fn say(&mut self, msg: &str) {
         self.vim.message = None;
         self.status = Some((String::from(msg), false));
     }
 
-    fn fail(&mut self, msg: &str) {
+    pub(crate) fn fail(&mut self, msg: &str) {
         self.vim.message = None;
         self.status = Some((String::from(msg), true));
     }
 
-    fn log(&mut self, line: &str) {
-        self.output.push(String::from(line));
-        if self.output.len() > 2000 {
-            self.output.remove(0);
+    /// A line for the Output panel.
+    pub(crate) fn log(&mut self, line: &str) {
+        self.output.write_text(line);
+        self.output.write_text("\n");
+    }
+
+    /// Every line of the Output panel, for tests and automated runs.
+    pub fn output_lines(&self) -> Vec<String> {
+        let mut v = self.output.all_text();
+        while v.last().is_some_and(|l| l.is_empty()) {
+            v.pop();
         }
+        v
     }
 
     // ---- projects ----------------------------------------------------------------
@@ -416,11 +514,15 @@ impl Workspace {
             self.fail("Save or close your changed files before opening another folder (:wa)");
             return;
         }
+        self.close_ide();
         self.docs.clear();
         self.panes = alloc::vec![Pane::new(None)];
         self.active = 0;
         self.problems.clear();
+        self.build_problems.clear();
+        self.lsp_problems.clear();
         let real = fs.is_real();
+        self.runner.set_folder(fs.folder());
         let mut p = Project::new(name, fs);
         let first = ["src/main.rs", "src/lib.rs", "README.md", "Cargo.toml"]
             .iter()
@@ -435,6 +537,14 @@ impl Workspace {
         self.log(&line);
         if let Some(f) = first {
             self.open_file(&f);
+        }
+        if real
+            && self
+                .project
+                .as_mut()
+                .is_some_and(|p| p.fs.exists("Cargo.toml"))
+        {
+            self.start_lsp(false);
         }
         if !real {
             self.say("The tour keeps its files in memory. Press i to type, Esc for commands, Ctrl+Shift+P for everything.");
@@ -481,6 +591,14 @@ impl Workspace {
         let Some((folder, mut fs)) = self.new_project.take() else {
             return Err(String::from("Pick a folder first"));
         };
+        // cargo makes it the standard way when it is installed; the files
+        // below are the same skeleton for when it is not.
+        if fs.is_real() && !self.missing.contains("cargo") {
+            match self.cargo_init(&folder, fs, name) {
+                Ok(()) => return Ok(()),
+                Err(back) => fs = back,
+            }
+        }
         for (path, body) in project::new_project_files(name) {
             if fs.exists(path) {
                 continue;
@@ -500,7 +618,9 @@ impl Workspace {
         self.open_project(&folder, fs);
         let mut m = String::from("Made the project ");
         m.push_str(name);
-        m.push_str(" -- building it comes with the run-programs ability");
+        if self.project.as_ref().is_some_and(|p| p.fs.is_real()) {
+            m.push_str(" -- F7 builds it, F5 runs it");
+        }
         self.say(&m);
         Ok(())
     }
@@ -585,7 +705,7 @@ impl Workspace {
         self.focus = Focus::Editor;
     }
 
-    fn leave_mode(&mut self) {
+    pub(crate) fn leave_mode(&mut self) {
         let a = self.active;
         match self.panes.get(a).and_then(|p| p.doc) {
             Some(d) => {
@@ -601,6 +721,9 @@ impl Workspace {
 
     /// Write a file. `as_path` saves it under a new name (relative).
     pub fn save(&mut self, doc: usize, as_path: Option<&str>) -> bool {
+        if as_path.is_none() && self.settings.format_on_save {
+            self.format_doc(doc, true);
+        }
         let Some(project) = self.project.as_mut() else {
             self.fail("Open a folder first: files are saved into the project you open");
             return false;
@@ -639,7 +762,7 @@ impl Workspace {
                 project.refresh();
                 self.log(&m);
                 self.say(&m);
-                let _ = path;
+                self.lsp_saved(&path);
                 true
             }
             Err(e) => {
@@ -683,6 +806,13 @@ impl Workspace {
         if self.vim.mode != Mode::Normal {
             self.leave_mode();
         }
+        let gone = self.docs[i].path.clone();
+        if let Some(l) = self.lsp.as_mut() {
+            l.client.closed(&gone);
+            l.synced.remove(&gone);
+        }
+        self.completion = None;
+        self.hover = None;
         self.docs.remove(i);
         let count = self.docs.len();
         for p in self.panes.iter_mut() {
@@ -867,6 +997,10 @@ impl Workspace {
             return;
         };
         self.vim.message = None;
+        if self.ide_intercept(&input) {
+            return;
+        }
+        let was_insert = self.vim.mode == Mode::Insert;
         let fx = {
             let (docs, panes) = (&mut self.docs, &mut self.panes);
             let (Some(doc), Some(pane)) = (docs.get_mut(d), panes.get_mut(a)) else {
@@ -878,16 +1012,17 @@ impl Workspace {
                 page: pane.rows.max(1),
                 top: pane.top as usize,
             };
-            let fx = self.vim.feed(&mut ctx, input);
+            let fx = self.vim.feed(&mut ctx, input.clone());
             doc.sync();
             fx
         };
         self.effects(fx);
         self.after_edit();
+        self.ide_after_input(&input, was_insert);
     }
 
     /// Keep every pane's cursor valid and the active one on screen.
-    fn after_edit(&mut self) {
+    pub(crate) fn after_edit(&mut self) {
         for i in 0..self.panes.len() {
             let Some(d) = self.panes[i].doc else { continue };
             if let Some(doc) = self.docs.get(d) {
@@ -1069,7 +1204,27 @@ impl Workspace {
             "check" => self.run(Action::Tool(Tool::Check)),
             "fmt" | "format" => self.run(Action::Tool(Tool::Format)),
             "term" | "terminal" => self.run(Action::Tool(Tool::Terminal)),
+            "new" | "cargo-new" => self.run(Action::NewProject),
             "debug" => self.run(Action::Tool(Tool::Debug)),
+            "stop" => self.run(Action::Tool(Tool::Stop)),
+            "rename" => {
+                if arg.is_empty() {
+                    self.run(Action::Tool(Tool::RenameSymbol));
+                } else {
+                    self.lsp_rename(arg);
+                }
+            }
+            "refs" | "references" => self.run(Action::Tool(Tool::References)),
+            "actions" | "fix" => self.run(Action::Tool(Tool::CodeAction)),
+            "hover" => self.run(Action::Tool(Tool::Hover)),
+            "def" | "definition" => self.run(Action::Tool(Tool::Definition)),
+            "continue" | "cont" => self.run(Action::Tool(Tool::Continue)),
+            "step" => self.run(Action::Tool(Tool::StepIn)),
+            "over" => self.run(Action::Tool(Tool::StepOver)),
+            "finish" => self.run(Action::Tool(Tool::StepOut)),
+            "fos" | "formatonsave" => self.run(Action::FormatOnSave),
+            "lsp" => self.start_lsp(true),
+            "clippy" => self.run(Action::Tool(Tool::Clippy)),
             "bp" | "breakpoint" => self.run(Action::ToggleBreakpoint),
             "copen" | "problems" => self.run(Action::ShowProblems),
             "messages" | "output" => self.run(Action::ShowOutput),
@@ -1102,6 +1257,7 @@ impl Workspace {
             ('z', false) => Action::Undo,
             ('z', true) | ('y', _) => Action::Redo,
             ('`', _) => Action::ShowTerminal,
+            ('.', _) => Action::Tool(Tool::CodeAction),
             ('=', _) | ('+', _) => Action::BiggerText,
             ('-', _) => Action::SmallerText,
             ('n', _) => Action::NewFile,
@@ -1123,12 +1279,20 @@ impl Workspace {
 
     /// F5, F7, F9, F12.
     pub fn function_key(&mut self, n: u8, shift: bool) -> bool {
+        let debugging = self.dap.is_some();
         let a = match (n, shift) {
+            (2, _) => Action::Tool(Tool::RenameSymbol),
+            (5, false) if debugging => Action::Tool(Tool::Continue),
             (5, false) => Action::Tool(Tool::Run),
+            (5, true) if debugging => Action::Tool(Tool::StopDebug),
             (5, true) => Action::Tool(Tool::Debug),
             (7, _) => Action::Tool(Tool::Build),
             (9, _) => Action::ToggleBreakpoint,
-            (12, _) => Action::Tool(Tool::Definition),
+            (10, _) => Action::Tool(Tool::StepOver),
+            (11, false) => Action::Tool(Tool::StepIn),
+            (11, true) => Action::Tool(Tool::StepOut),
+            (12, false) => Action::Tool(Tool::Definition),
+            (12, true) => Action::Tool(Tool::References),
             _ => return false,
         };
         self.run(a);
@@ -1176,6 +1340,8 @@ impl Workspace {
         let done = self.vim.copy_selection(&mut ctx, cut);
         doc.sync();
         if done {
+            // The system clipboard too, so it pastes into other apps.
+            self.clipboard_out = self.vim.registers.get(&'"').map(|r| r.text.clone());
             self.say(if cut {
                 "Cut (paste it with p)"
             } else {
@@ -1328,7 +1494,7 @@ impl Workspace {
             }
             Action::ShowProblems => self.show_panel(PanelTab::Problems),
             Action::ShowOutput => self.show_panel(PanelTab::Output),
-            Action::ShowTerminal => self.run(Action::Tool(Tool::Terminal)),
+            Action::ShowTerminal => self.toggle_terminal(),
             Action::Find => self.editor_keys_from_normal("/"),
             Action::Replace => self.editor_keys_from_normal(":%s/"),
             Action::GotoLine => self.editor_keys_from_normal(":"),
@@ -1354,10 +1520,11 @@ impl Workspace {
                         "Breakpoint removed from line "
                     });
                     m.push_str(&text::num(line + 1));
-                    m.push_str(
-                        " -- the debugger that stops there comes with the run-programs ability",
-                    );
+                    if self.dap.is_none() {
+                        m.push_str(" -- Shift+F5 builds and debugs, stopping there");
+                    }
                     self.say(&m);
+                    self.dap_breakpoints_changed(d);
                 }
             }
             Action::ThemeAuto | Action::ThemeDark | Action::ThemeLight => {
@@ -1387,6 +1554,16 @@ impl Workspace {
                 self.settings_changed();
             }
             Action::Keys => self.show_keys = !self.show_keys,
+            Action::FormatOnSave => {
+                self.settings.format_on_save = !self.settings.format_on_save;
+                self.settings_changed();
+                self.say(if self.settings.format_on_save {
+                    "Rust files are formatted with rustfmt each time you save"
+                } else {
+                    "Saving no longer formats (Format file still does)"
+                });
+            }
+            Action::ShowDebug => self.show_panel(PanelTab::Debug),
             Action::Tool(t) => self.tool(t),
         }
     }
@@ -1416,85 +1593,9 @@ impl Workspace {
         }
     }
 
-    fn show_panel(&mut self, tab: PanelTab) {
+    pub(crate) fn show_panel(&mut self, tab: PanelTab) {
         self.panel_open = true;
         self.panel_tab = tab;
-    }
-
-    /// Build, run, format, rust-analyzer, debug, terminal: through the
-    /// runner, which today says they are coming.
-    pub fn tool(&mut self, t: Tool) {
-        let file = self.active_doc().map(|d| d.path.clone());
-        let args = t.args(file.as_deref());
-        let program = t.program();
-        let mut line = String::from("$ ");
-        line.push_str(program);
-        for a in &args {
-            line.push(' ');
-            line.push_str(a);
-        }
-        self.log(&line);
-        match self.runner.start(program, &args) {
-            Ok(_) => {
-                self.show_panel(if t == Tool::Terminal {
-                    PanelTab::Terminal
-                } else {
-                    PanelTab::Output
-                });
-            }
-            Err(e) => {
-                let mut m = String::from(t.title());
-                m.push_str(": ");
-                m.push_str(&e);
-                self.log(&m);
-                self.show_panel(match t {
-                    Tool::Terminal => PanelTab::Terminal,
-                    t if t.reports_problems() => PanelTab::Problems,
-                    _ => PanelTab::Output,
-                });
-                self.fail(&m);
-            }
-        }
-    }
-
-    /// What a runner hands back: output to the panel, problems parsed out.
-    pub fn poll_runner(&mut self) -> bool {
-        let events = self.runner.poll();
-        if events.is_empty() {
-            return false;
-        }
-        let mut text_seen = String::new();
-        for e in events {
-            match e {
-                tools::JobEvent::Output { text, .. } => {
-                    for l in text.lines() {
-                        self.log(l);
-                    }
-                    text_seen.push_str(&text);
-                }
-                tools::JobEvent::Exited { code, .. } => {
-                    let mut m = String::from("exited with code ");
-                    if code < 0 {
-                        m.push('-');
-                    }
-                    m.push_str(&text::num(code.unsigned_abs() as usize));
-                    self.log(&m);
-                }
-            }
-        }
-        let found = tools::parse_cargo(&text_seen);
-        if !found.is_empty() {
-            self.set_problems(found);
-        }
-        true
-    }
-
-    pub fn set_problems(&mut self, p: Vec<Diagnostic>) {
-        self.problems = p;
-        self.problem_selected = 0;
-        if !self.problems.is_empty() {
-            self.show_panel(PanelTab::Problems);
-        }
     }
 
     /// Open the file of problem `i` at its place.
@@ -1506,7 +1607,10 @@ impl Workspace {
         if self.open_file(&d.file) {
             let a = self.active;
             if let (Some(di), Some(p)) = (self.active_doc_index(), self.panes.get_mut(a)) {
-                let pos = self.docs[di].buf.clamp(Pos::new(d.line, d.col));
+                let buf = &self.docs[di].buf;
+                let line = d.line.min(buf.last_line());
+                let col = text::byte_of_char(buf.line(line), d.col);
+                let pos = buf.clamp(Pos::new(line, col));
                 p.cur.pos = pos;
                 self.vim.sync_want(&self.docs[di].buf, &mut p.cur);
             }
@@ -1529,15 +1633,17 @@ impl Workspace {
             items: Vec::new(),
             files,
             selected: 0,
+            picks: Vec::new(),
+            title: String::new(),
         };
         Self::refilter(&mut st);
         self.palette = Some(st);
     }
 
-    fn refilter(st: &mut PaletteState) {
+    pub(crate) fn refilter(st: &mut PaletteState) {
         st.items = match st.mode {
             PaletteMode::Commands => palette::filter(&st.query),
-            PaletteMode::Files => {
+            PaletteMode::Files | PaletteMode::Pick => {
                 let mut scored: Vec<(i32, usize)> = st
                     .files
                     .iter()
@@ -1569,6 +1675,11 @@ impl Workspace {
             PaletteMode::Files => {
                 if let Some(f) = st.files.get(item).cloned() {
                     self.open_file(&f);
+                }
+            }
+            PaletteMode::Pick => {
+                if let Some(p) = st.picks.get(item).cloned() {
+                    self.pick_chosen(p);
                 }
             }
         }
@@ -1796,6 +1907,16 @@ impl Workspace {
                 self.prompt = None;
                 return;
             }
+            PromptKind::RenameSymbol => {
+                let name = String::from(pr.text.trim());
+                if name.is_empty() {
+                    Err(String::from("Type the new name"))
+                } else {
+                    self.prompt = None;
+                    self.lsp_rename(&name);
+                    return;
+                }
+            }
         };
         if let (Err(e), Some(p)) = (result, self.prompt.as_mut()) {
             p.error = Some(e);
@@ -1916,6 +2037,13 @@ impl Workspace {
     }
 
     fn panel_key(&mut self, input: Input) {
+        if self.panel_tab == PanelTab::Debug {
+            self.debug_panel_key(input);
+            return;
+        }
+        if self.panel_tab == PanelTab::Terminal && self.term_text_input(&input) {
+            return;
+        }
         match input {
             Input::Char('j') | Input::Key(Key::Down) => {
                 if !self.problems.is_empty() {
@@ -2112,6 +2240,26 @@ impl Workspace {
             ),
         );
         kv("problems", &text::num(self.problems.len()));
+        kv("jobs", &text::num(self.jobs.len()));
+        kv("terminals", &text::num(self.terminals.len()));
+        kv(
+            "lsp",
+            match &self.lsp {
+                Some(l) if l.client.ready => "ready",
+                Some(_) => "starting",
+                None => "off",
+            },
+        );
+        kv(
+            "debug",
+            match self.dap.as_ref().map(|d| d.client.state) {
+                Some(crate::dap::DapState::Stopped) => "stopped",
+                Some(crate::dap::DapState::Running) => "running",
+                Some(crate::dap::DapState::Starting) => "starting",
+                Some(crate::dap::DapState::Ended) => "ended",
+                None => "off",
+            },
+        );
         s
     }
 }
@@ -2119,6 +2267,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools;
     use crate::vim::parse_keys;
 
     fn ws() -> Workspace {
@@ -2331,20 +2480,16 @@ mod tests {
     }
 
     #[test]
-    fn tools_say_they_need_the_run_programs_ability() {
+    fn the_tour_says_it_has_nothing_on_disk_to_build() {
         let mut w = ws();
         w.run(Action::Tool(Tool::Build));
-        assert!(w.message().unwrap().0.contains(tools::NEEDS_PROCESS));
-        assert!(w.panel_open);
-        assert_eq!(w.panel_tab, PanelTab::Problems);
-        assert!(w
-            .output
-            .iter()
-            .any(|l| l == "$ cargo build --message-format=short"));
+        assert!(w.message().unwrap().0.contains(tools::NEEDS_FOLDER));
         keys(&mut w, ":cargo test<CR>");
-        assert!(w.output.iter().any(|l| l == "$ cargo test"));
+        assert!(w.message().unwrap().0.contains(tools::NEEDS_FOLDER));
         w.run(Action::Tool(Tool::Terminal));
+        assert!(w.panel_open);
         assert_eq!(w.panel_tab, PanelTab::Terminal);
+        assert!(w.message().unwrap().0.contains(tools::NEEDS_FOLDER));
     }
 
     #[test]
@@ -2461,6 +2606,7 @@ mod tests {
             relative_numbers: true,
             tree: false,
             font: 15.5,
+            format_on_save: false,
         };
         assert_eq!(Settings::from_text(&s.to_text()), s);
         assert_eq!(Settings::from_text("garbage"), Settings::default());

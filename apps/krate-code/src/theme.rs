@@ -180,6 +180,21 @@ pub const PAPER: Theme = Theme {
 };
 
 impl Theme {
+    /// A terminal's sixteen colours (0-7 and their bright forms), tuned to
+    /// read on this theme's panel.
+    pub fn ansi(&self, i: u8) -> Rgba {
+        const DARK: [u32; 16] = [
+            0x2a2f3a, 0xe0787a, 0x9ec58b, 0xe6c07b, 0x7aa6e0, 0xc493d6, 0x6cc2c2, 0xc9ced6,
+            0x5c6370, 0xf08f90, 0xb5dca0, 0xf2d38f, 0x96bdf2, 0xd7aee6, 0x8ad6d6, 0xf2f4f7,
+        ];
+        const LIGHT: [u32; 16] = [
+            0x2b2b2b, 0xb4282d, 0x3c7a2a, 0x8a6200, 0x2457a8, 0x8a3aa0, 0x1f7a7a, 0x9a9a9a,
+            0x5a5a5a, 0xd0383d, 0x4e9a37, 0xa67a00, 0x2f6cc7, 0xa64bbf, 0x2a9595, 0x6e6e6e,
+        ];
+        let table = if self.dark { &DARK } else { &LIGHT };
+        hex(table[(i & 15) as usize])
+    }
+
     pub fn for_dark(dark: bool) -> &'static Theme {
         if dark {
             &DUSK

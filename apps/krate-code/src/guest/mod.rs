@@ -12,6 +12,8 @@
 //! after Cmd/Ctrl+V is a paste (inserted as text, never run as commands).
 
 mod disk;
+mod panels;
+mod run;
 
 use crate::buffer::Pos;
 use crate::palette::Action;
@@ -64,6 +66,14 @@ enum Hit {
     OpenPalette,
     /// Inside a card: a click there is not a click on the backdrop.
     Card,
+    TermTab(usize),
+    TermClose(usize),
+    TermArea,
+    OutputArea,
+    Frame(usize),
+    Var(usize),
+    Completion(usize),
+    Breakpoint(usize),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -305,6 +315,16 @@ struct Ui {
     tree_sheet: bool,
     last_click: (u64, f32, f32, u8),
     title: String,
+    term_geo: Option<panels::GridGeo>,
+    output_geo: Option<panels::GridGeo>,
+    /// The selection being made is in the Output panel (else a terminal).
+    sel_in_output: bool,
+    /// A drag is selecting text in a grid.
+    grid_drag: bool,
+    /// Where the mouse rests and since when, for hover; true once asked.
+    rest: (f32, f32, u64, bool),
+    /// The last time a program printed, to keep the frame quick then.
+    last_output: u64,
 }
 
 impl Ui {
@@ -396,6 +416,18 @@ impl Ui {
                 };
                 self.draw_tree(&mut f, t, sheet);
             }
+        }
+        if !start {
+            self.draw_popups(
+                &mut f,
+                t,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w,
+                    h,
+                },
+            );
         }
         self.draw_status(&mut f, t, status, compact);
         self.draw_cmdline(&mut f, t, cmd);
@@ -1140,6 +1172,21 @@ impl Ui {
         };
         let doc = &self.ws.docs[di];
         let buf = &doc.buf;
+        let debug_line = self.ws.debug_line(&doc.path);
+        let problems: Vec<(usize, usize, usize, usize, crate::theme::Rgba)> = self
+            .ws
+            .problems
+            .iter()
+            .filter(|d| d.file == doc.path)
+            .map(|d| {
+                let c = match d.severity {
+                    Severity::Error => t.danger,
+                    Severity::Warning => t.warn,
+                    Severity::Note => t.muted,
+                };
+                (d.line, d.col, d.end_line.max(d.line), d.end_col, c)
+            })
+            .collect();
         let mut state = start_state;
         f.clip(r);
         let mut said_lines = 0;
@@ -1161,6 +1208,18 @@ impl Ui {
             };
             if ln == cursor.line && is_active_pane && sel.is_none() {
                 f.fill(line_r, t.current_line);
+            }
+            if debug_line == Some(ln) {
+                f.fill(line_r, t.warn.with_alpha(0.16));
+                f.fill(
+                    Rect {
+                        x: r.x + 2.0,
+                        y: y + 3.0,
+                        w: 3.0,
+                        h: lh - 6.0,
+                    },
+                    t.warn,
+                );
             }
             // Gutter: breakpoint and number.
             if doc.breakpoints.contains(&ln) {
@@ -1200,6 +1259,16 @@ impl Ui {
                     h: lh,
                 },
                 Hit::Gutter(ln),
+            );
+            // The left edge of the gutter sets and clears breakpoints.
+            f.hit(
+                Rect {
+                    x: r.x,
+                    y,
+                    w: 20.0,
+                    h: lh,
+                },
+                Hit::Breakpoint(ln),
             );
 
             f.clip(Rect {
@@ -1321,6 +1390,42 @@ impl Ui {
             if let Some((s, e, kind)) = run_start {
                 flush(f, s, e, kind);
             }
+            // Problems: a squiggle under the place, and a mark in the gutter.
+            let mut worst: Option<crate::theme::Rgba> = None;
+            for &(l0, c0, l1, c1, c) in &problems {
+                if ln < l0 || ln > l1 {
+                    continue;
+                }
+                worst.get_or_insert(c);
+                let a = if ln == l0 {
+                    text::byte_of_char(line, c0)
+                } else {
+                    0
+                };
+                let b = if ln == l1 {
+                    text::byte_of_char(line, c1)
+                } else {
+                    line.len()
+                };
+                let (da, db) = (dcol(a), dcol(b.max(a)));
+                let db = if db <= da { da + 1.0 } else { db };
+                let xa = x0 + (da - left as f32) * cw;
+                let xb = x0 + (db - left as f32) * cw;
+                Self::squiggle(f, xa, xb, y + lh - 4.0, c);
+            }
+            if let Some(c) = worst {
+                if !doc.breakpoints.contains(&ln) {
+                    f.fill(
+                        Rect {
+                            x: r.x + 9.0,
+                            y: y + lh * 0.5 - 2.5,
+                            w: 5.0,
+                            h: 5.0,
+                        },
+                        c,
+                    );
+                }
+            }
             // Cursor.
             if ln == cursor.line && is_active_pane {
                 let cx = x0 + (dcol(cursor.col) - left as f32) * cw;
@@ -1439,11 +1544,7 @@ impl Ui {
         let mut r = r;
         let head = r.take_top((f.m.ui * 2.4).round());
         let mut x = head.x + 10.0;
-        let tabs = [
-            (PanelTab::Problems, "Problems"),
-            (PanelTab::Output, "Output"),
-            (PanelTab::Terminal, "Terminal"),
-        ];
+        let tabs = self.panel_tabs();
         for (tab, name) in tabs {
             let mut label = String::from(name);
             if tab == PanelTab::Problems && !self.ws.problems.is_empty() {
@@ -1480,13 +1581,28 @@ impl Ui {
         };
         f.text_mid("x", close.x + 9.0, close, f.m.ui, t.muted, 500);
         f.button(close, "Close the panel", Hit::PanelClose);
+        // A build or run going: what it is, and a Stop.
+        if let Some(label) = self.ws.running_label() {
+            let stop = Rect {
+                x: close.x - 70.0,
+                y: head.y + 5.0,
+                w: 62.0,
+                h: head.h - 10.0,
+            };
+            f.round(stop, 6.0, t.danger.with_alpha(0.18));
+            f.text_mid("Stop", stop.x + 16.0, stop, f.m.small, t.danger, 700);
+            f.button(stop, "Stop the build", Hit::Act(Action::Tool(Tool::Stop)));
+            let lw = f.width(&label, f.m.small, 500);
+            f.text_mid(&label, stop.x - lw - 12.0, head, f.m.small, t.muted, 500);
+            f.said.text(head, &label);
+        }
         let body = r.pad(12.0);
         f.clip(r);
         match self.ws.panel_tab {
             PanelTab::Problems => {
                 if self.ws.problems.is_empty() {
                     let a = "No problems listed.";
-                    let b = "Build and Check (F7) fill this list with cargo's errors once the run-programs ability arrives; click one to jump to it.";
+                    let b = "Build (F7) and Check fill this list with cargo's errors and warnings, and rust-analyzer adds what it finds as you type. Enter or a click on one jumps to it.";
                     f.text(a, body.x, body.y, f.m.ui, t.ink, 500);
                     f.said.text(
                         Rect {
@@ -1546,66 +1662,16 @@ impl Ui {
                 }
             }
             PanelTab::Output => {
-                let rh = f.m.ui_h * 1.3;
-                let fit = (body.h / rh).floor().max(1.0) as usize;
-                let start = self.ws.output.len().saturating_sub(fit);
-                if self.ws.output.is_empty() {
-                    let s = "Saves, opens and commands are logged here.";
-                    f.text(s, body.x, body.y, f.m.ui, t.muted, 400);
-                    f.said.text(
-                        Rect {
-                            x: body.x,
-                            y: body.y,
-                            w: body.w,
-                            h: f.m.ui_h,
-                        },
-                        s,
-                    );
-                }
-                for (k, l) in self.ws.output.iter().skip(start).enumerate() {
-                    let y = body.y + k as f32 * rh;
-                    let maxc = (body.w / f.m.cw).floor().max(4.0) as usize;
-                    let cut: String = l.chars().take(maxc).collect();
-                    f.code(
-                        &cut,
-                        body.x,
-                        y - (f.m.lh - rh) * 0.5,
-                        if l.starts_with("$ ") { t.ink } else { t.muted },
-                        false,
-                    );
-                    f.said.text(
-                        Rect {
-                            x: body.x,
-                            y,
-                            w: body.w,
-                            h: rh,
-                        },
-                        l,
-                    );
-                }
+                f.unclip();
+                self.draw_output(f, t, body);
             }
             PanelTab::Terminal => {
-                let a = "A terminal runs your own shell here, in the project folder.";
-                let b = "It needs the run-programs ability (coming). Until then Krate Code edits, saves and organises the project; building, running and the terminal arrive with it.";
-                f.text(a, body.x, body.y, f.m.ui, t.ink, 500);
-                f.said.text(
-                    Rect {
-                        x: body.x,
-                        y: body.y,
-                        w: body.w,
-                        h: f.m.ui_h,
-                    },
-                    a,
-                );
-                self.wrap(
-                    f,
-                    b,
-                    body.x,
-                    body.y + f.m.ui_h * 1.5,
-                    body.w,
-                    f.m.small,
-                    t.muted,
-                );
+                f.unclip();
+                self.draw_terminal_panel(f, t, r.pad(8.0));
+            }
+            PanelTab::Debug => {
+                f.unclip();
+                self.draw_debug_panel(f, t, body);
             }
         }
         f.unclip();
@@ -1689,6 +1755,38 @@ impl Ui {
                 &name,
             );
             x += f.width(&shown, f.m.small, 500) + 14.0;
+        }
+        let busy = self.ws.running_label().or_else(|| {
+            self.ws.lsp_busy.as_ref().map(|b| {
+                let mut s = String::from("rust-analyzer: ");
+                s.push_str(b);
+                s
+            })
+        });
+        if let Some(b) = busy {
+            if !compact {
+                let shown = f.fit(&b, f.m.small, 500, r.w * 0.22);
+                f.round(
+                    Rect {
+                        x,
+                        y: r.y + 8.0,
+                        w: 7.0,
+                        h: 7.0,
+                    },
+                    3.5,
+                    t.accent,
+                );
+                f.text_mid(&shown, x + 13.0, r, f.m.small, t.muted, 500);
+                f.said.text(
+                    Rect {
+                        x,
+                        y: r.y,
+                        w: r.w * 0.22,
+                        h: r.h,
+                    },
+                    &b,
+                );
+            }
         }
         let _ = x;
         // Right side: keys being typed, position, language.
@@ -1872,10 +1970,10 @@ impl Ui {
         };
         f.round(input, 7.0, t.editor);
         f.outline(input, 7.0, 1.0, t.accent.with_alpha(0.7));
-        let placeholder = if st.mode == PaletteMode::Commands {
-            "Type to find an action"
-        } else {
-            "Type to find a file"
+        let placeholder = match st.mode {
+            PaletteMode::Commands => "Type to find an action",
+            PaletteMode::Files => "Type to find a file",
+            PaletteMode::Pick => st.title.as_str(),
         };
         let shown_q = if st.query.is_empty() {
             placeholder
@@ -1906,10 +2004,10 @@ impl Ui {
         );
         f.said.field(
             input,
-            if st.mode == PaletteMode::Commands {
-                "Find an action"
-            } else {
-                "Find a file"
+            match st.mode {
+                PaletteMode::Commands => "Find an action",
+                PaletteMode::Files => "Find a file",
+                PaletteMode::Pick => st.title.as_str(),
             },
             &st.query,
         );
@@ -1951,10 +2049,7 @@ impl Ui {
                 f.round(row, 7.0, t.selection);
             }
             let (title, keys) = st.label(item);
-            let needs = st.mode == PaletteMode::Commands
-                && crate::palette::COMMANDS
-                    .get(item)
-                    .is_some_and(|c| matches!(c.action, Action::Tool(_)));
+            let needs = false;
             let shown = f.fit(title, f.m.ui, 600, row.w - 28.0);
             f.text_mid(
                 &shown,
@@ -2261,6 +2356,44 @@ impl Ui {
                 Hit::Act(a) => self.ws.run(a),
                 Hit::ModeChip => self.ws.toggle_mode(),
                 Hit::KeysClose => self.ws.show_keys = false,
+                Hit::TermTab(i) => self.ws.select_terminal(i),
+                Hit::TermClose(i) => self.ws.close_terminal(i),
+                Hit::TermArea | Hit::OutputArea => {
+                    let out = h == Hit::OutputArea;
+                    let geo = if out { self.output_geo } else { self.term_geo };
+                    self.ws.focus = Focus::Panel;
+                    if let Some(g) = geo {
+                        let c = g.cell(x, y);
+                        self.ws.term_sel = Some((c, c));
+                        self.sel_in_output = out;
+                        self.grid_drag = true;
+                    }
+                }
+                Hit::Frame(i) => self.ws.debug_select_frame(i),
+                Hit::Var(i) => {
+                    self.ws.focus = Focus::Panel;
+                    self.ws.debug_toggle_var(i);
+                }
+                Hit::Completion(k) => {
+                    if let Some(c) = self.ws.completion.as_mut() {
+                        c.selected = k;
+                    }
+                    self.ws.input(Input::Key(Key::Tab));
+                }
+                Hit::Breakpoint(line) => {
+                    if let Some((pane, _)) = self.pos_at(
+                        self.panes
+                            .iter()
+                            .find(|g| g.area.contains(x, y))
+                            .map(|g| g.text_x + 1.0)
+                            .unwrap_or(x),
+                        y,
+                    ) {
+                        self.ws.press_text(pane, Pos::new(line, 0), 1, false);
+                        self.ws.release();
+                        self.ws.run(Action::ToggleBreakpoint);
+                    }
+                }
                 Hit::Gutter(line) => {
                     if let Some((pane, _)) = self.pos_at(
                         self.panes
@@ -2295,6 +2428,23 @@ impl Ui {
     }
 
     fn drag(&mut self) {
+        if self.grid_drag {
+            if !pointer::button_held(pointer::PointerButton::Primary) {
+                self.grid_drag = false;
+                return;
+            }
+            let geo = if self.sel_in_output {
+                self.output_geo
+            } else {
+                self.term_geo
+            };
+            if let (Some((x, y)), Some(g), Some((a, _))) =
+                (pointer::position(self.win), geo, self.ws.term_sel)
+            {
+                self.ws.term_sel = Some((a, g.cell(x, y)));
+            }
+            return;
+        }
         if !self.ws.dragging() {
             return;
         }
@@ -2338,6 +2488,35 @@ impl Ui {
             } else if dy < 0.0 {
                 st.selected = st.selected.saturating_sub(1);
             }
+            return;
+        }
+        if let Some(g) = self.term_geo.filter(|g| g.area.contains(x, y)) {
+            let rows = (dy / g.ch).round() as isize;
+            if rows == 0 {
+                return;
+            }
+            let (c, r) = g.cell(x, y);
+            let k = self.ws.term_active;
+            let reply = self.ws.terminals.get(k).and_then(|tm| {
+                tm.vt
+                    .wheel_bytes(rows < 0, r, c.saturating_sub(g.first_abs))
+            });
+            match reply {
+                Some(b) => {
+                    let s = String::from_utf8_lossy(&b).into_owned();
+                    self.ws.term_text(&s);
+                }
+                None => {
+                    if let Some(tm) = self.ws.terminals.get_mut(k) {
+                        tm.vt.scroll_view(-rows);
+                    }
+                }
+            }
+            return;
+        }
+        if let Some(g) = self.output_geo.filter(|g| g.area.contains(x, y)) {
+            let rows = (dy / g.ch).round() as isize;
+            self.ws.output.scroll_view(-rows);
             return;
         }
         if self.tree_area.is_some_and(|r| r.contains(x, y)) {
@@ -2490,12 +2669,26 @@ impl krate::Guest for Component {
             tree_sheet: false,
             last_click: (0, 0.0, 0.0, 0),
             title: String::new(),
+            term_geo: None,
+            output_geo: None,
+            sel_in_output: false,
+            grid_drag: false,
+            rest: (0.0, 0.0, 0, true),
+            last_output: 0,
         };
+        ui.ws.runner = Box::new(run::ProcessRunner::default());
         let raw = krate::io::args::raw();
         if raw.split('\n').next() == Some("quick") {
             quick(&mut ui);
             let _ = window::close(win);
             return 0;
+        }
+        // `open=.`: open the app's own folder as the project. For automated
+        // runs, which cannot answer a folder picker; it needs the fs grant a
+        // test manifest gives, which the shipped one does not ask for.
+        if raw.split('\n').any(|a| a == "open=.") {
+            ui.ws.now_ms = krate::time::now_millis();
+            ui.ws.open_project("project", Box::new(disk::DiskFs::own()));
         }
         let _ = krate::ui::text_entry::start(win);
         ui.draw();
@@ -2505,14 +2698,24 @@ impl krate::Guest for Component {
         let mut paste_next = false;
         let mut shift = false;
         loop {
-            let timeout = if ui.ws.dragging() {
+            let now = krate::time::now_millis();
+            ui.ws.now_ms = now;
+            let timeout = if ui.ws.dragging() || ui.grid_drag {
                 Some(16)
+            } else if ui.ws.busy() {
+                // Quick while a program prints, easier while it waits.
+                if now.saturating_sub(ui.last_output) < 1500 {
+                    Some(16)
+                } else {
+                    Some(60)
+                }
             } else if ui.ws.project.as_ref().is_some_and(|p| p.fs.is_real()) {
                 Some(300)
             } else {
                 None
             };
             let mut ev = events::wait(timeout);
+            ui.ws.now_ms = krate::time::now_millis();
             let mut changed = false;
             let mut close = false;
             while let Some(e) = ev {
@@ -2538,6 +2741,42 @@ impl krate::Guest for Component {
                                 _ => None,
                             }
                         };
+                        if ui.ws.terminal_focused() {
+                            // The terminal has the keyboard. Cmd chords (and
+                            // Ctrl+Shift+C/V) stay the editor's; Ctrl with a
+                            // key is the terminal's own (Ctrl+C stops a
+                            // program).
+                            let lower = single.map(|c| c.to_ascii_lowercase());
+                            let editor_chord = single.is_some()
+                                && (m.meta
+                                    || (m.control
+                                        && m.shift
+                                        && matches!(lower, Some('c' | 'v' | 'p'))));
+                            if primary && lower == Some('`') {
+                                drop_text = lower;
+                                ui.ws.toggle_terminal();
+                            } else if editor_chord {
+                                let c = lower.unwrap_or(' ');
+                                drop_text = Some(c);
+                                match c {
+                                    'c' => {
+                                        ui.ws.term_copy();
+                                    }
+                                    'v' => paste_next = true,
+                                    _ => {
+                                        ui.ws.shortcut(c, m.shift && m.meta);
+                                    }
+                                }
+                            } else if m.control && single.is_some() {
+                                drop_text = lower;
+                                ui.ws.term_key(&k.key, m.shift, true, m.alt);
+                            } else if single.is_none() {
+                                ui.ws.term_key(&k.key, m.shift, m.control, m.alt);
+                            }
+                            changed = true;
+                            ev = events::poll();
+                            continue;
+                        }
                         if let Some(n) = k.key.strip_prefix('F').and_then(|r| r.parse::<u8>().ok())
                         {
                             ui.ws.function_key(n, m.shift);
@@ -2574,6 +2813,22 @@ impl krate::Guest for Component {
                             // A typed character: it arrives again as text.
                             if drop_text.is_some() && !primary {
                                 drop_text = None;
+                            }
+                        }
+                    }
+                    types::Event::TextInput(t) if ui.ws.terminal_focused() => {
+                        if drop_text.is_some_and(|d| {
+                            t.chars().count() == 1 && t.to_lowercase().starts_with(d)
+                        }) {
+                            drop_text = None;
+                        } else if paste_next {
+                            paste_next = false;
+                            drop_text = None;
+                            ui.ws.term_paste(&t);
+                        } else {
+                            let clean: String = t.chars().filter(|c| !c.is_control()).collect();
+                            if !clean.is_empty() {
+                                ui.ws.term_text(&clean);
                             }
                         }
                     }
@@ -2659,6 +2914,32 @@ impl krate::Guest for Component {
             }
             if ui.ws.poll_runner() {
                 changed = true;
+                ui.last_output = krate::time::now_millis();
+            }
+            if let Some(text) = ui.ws.clipboard_out.take() {
+                let _ = krate::ui::clipboard::write_text(&text);
+            }
+            // Resting the mouse over a name asks rust-analyzer about it.
+            if ui.ws.lsp.is_some() && !ui.grid_drag && !ui.ws.dragging() {
+                if let Some((px, py)) = pointer::position(win) {
+                    let (rx, ry, since, asked) = ui.rest;
+                    let now = krate::time::now_millis();
+                    if (px - rx).abs() > 3.0 || (py - ry).abs() > 3.0 {
+                        ui.rest = (px, py, now, false);
+                        if ui.ws.hover.as_ref().is_some_and(|h| h.from_mouse) {
+                            ui.ws.hover = None;
+                            changed = true;
+                        }
+                    } else if !asked && now.saturating_sub(since) > 650 {
+                        ui.rest.3 = true;
+                        let over_card = ui.ws.completion.is_some() || ui.ws.palette.is_some();
+                        if !over_card {
+                            if let Some((pane, pos)) = ui.pos_at(px, py) {
+                                ui.ws.hover_at(pane, pos);
+                            }
+                        }
+                    }
+                }
             }
             if ui.ws.settings_dirty {
                 ui.ws.settings_dirty = false;

@@ -35,6 +35,11 @@ pub trait Vfs {
     fn changed(&mut self) -> bool {
         false
     }
+    /// The folder programs run in for this project (`picked/<token>`), or
+    /// `None` when it is not on disk.
+    fn folder(&self) -> Option<String> {
+        None
+    }
 }
 
 pub fn join(dir: &str, name: &str) -> String {

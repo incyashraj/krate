@@ -29,13 +29,19 @@ extern crate alloc;
 extern crate std;
 
 pub mod buffer;
+pub mod dap;
+pub mod ide;
+pub mod json;
+pub mod lsp;
 pub mod palette;
 pub mod project;
+pub mod rpc;
 pub mod syntax;
 pub mod text;
 pub mod theme;
 pub mod tools;
 pub mod vim;
+pub mod vt;
 pub mod workspace;
 
 #[cfg(test)]
