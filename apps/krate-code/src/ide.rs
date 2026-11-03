@@ -60,6 +60,8 @@ pub struct LspSession {
     pub synced: BTreeMap<String, u64>,
     /// A completion request is out: no second one until it answers.
     pub asking_completion: bool,
+    /// The start of what it said on stderr, to say why when it ends early.
+    pub stderr: String,
 }
 
 pub struct DapSession {
@@ -389,6 +391,10 @@ impl Workspace {
                 for e in ev {
                     self.lsp_event(e);
                 }
+            } else if let Some(l) = self.lsp.as_mut() {
+                if l.stderr.len() < 4096 {
+                    l.stderr.push_str(&String::from_utf8_lossy(bytes));
+                }
             }
             return;
         }
@@ -466,8 +472,25 @@ impl Workspace {
             return;
         }
         if self.lsp.as_ref().is_some_and(|l| l.job == job) {
-            self.lsp = None;
+            let gone = self.lsp.take();
             self.runner.release(job);
+            if let Some(l) = gone.filter(|l| !l.client.ready) {
+                // It ended before it answered: rustup's stand-in when the
+                // component is not installed does exactly that.
+                self.missing.insert(String::from("rust-analyzer"));
+                self.lsp_busy = None;
+                let why = tools::strip_ansi(l.stderr.lines().next().unwrap_or("").trim());
+                let mut m = String::from("rust-analyzer could not start");
+                if !why.is_empty() {
+                    m.push_str(" (");
+                    m.push_str(why.trim());
+                    m.push(')');
+                }
+                m.push_str(". ");
+                m.push_str(tools::install_hint("rust-analyzer"));
+                self.log(&m);
+                return;
+            }
             self.lsp_busy = None;
             self.completion = None;
             self.lsp_problems.clear();
@@ -1129,6 +1152,7 @@ impl Workspace {
                     client: Lsp::new(&root),
                     synced: BTreeMap::new(),
                     asking_completion: false,
+                    stderr: String::new(),
                 });
                 self.lsp_busy = Some(String::from("Starting rust-analyzer"));
                 self.flush_protocols();
@@ -2639,6 +2663,41 @@ mod tests {
         assert_eq!(w.problems.len(), 1);
         assert_eq!(w.problems[0].source, Source::Lsp);
         assert_eq!(w.problems_on("src/main.rs", 0).count(), 1);
+    }
+
+    #[test]
+    fn a_server_that_ends_before_answering_says_why() {
+        let (mut w, r) = ws();
+        r.0.borrow_mut().finished.push((
+            String::from("cargo"),
+            Finished {
+                code: Some(0),
+                stdout: b"/x/Cargo.toml".to_vec(),
+                stderr: Vec::new(),
+            },
+        ));
+        w.start_lsp(true);
+        let job = r.job_of("rust-analyzer").unwrap();
+        r.push(JobEvent::Output {
+            job,
+            bytes: b"error: Unknown binary 'rust-analyzer' in official toolchain\n".to_vec(),
+            stderr: true,
+        });
+        r.exit(job, 1);
+        w.poll_runner();
+        assert!(w.lsp.is_none());
+        // The log wraps at the panel's width; the words are what count.
+        let out = w.output_lines().concat();
+        assert!(
+            out.contains("Unknown binary") && out.contains("rustup component add rust-analyzer"),
+            "{out}"
+        );
+        keys(&mut w, "K");
+        assert!(w
+            .message()
+            .unwrap()
+            .0
+            .contains("rust-analyzer is not installed"));
     }
 
     #[test]
