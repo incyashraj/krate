@@ -384,7 +384,11 @@ impl Ui {
                 self.draw_tree(&mut f, t, tree_r);
             }
             if self.ws.panel_open {
-                let ph = (area.h * 0.3).clamp(120.0, 280.0);
+                // A terminal and the debugger want more rows than a list.
+                let ph = match self.ws.panel_tab {
+                    PanelTab::Terminal | PanelTab::Debug => (area.h * 0.42).clamp(140.0, 440.0),
+                    _ => (area.h * 0.3).clamp(120.0, 280.0),
+                };
                 let pr = area.take_bottom(ph);
                 self.draw_panel(&mut f, t, pr);
             }
