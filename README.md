@@ -5,13 +5,14 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Ship a desktop app as one file that opens natively on macOS, Windows and Linux.</strong>
+  <strong>Make and send apps like pictures.</strong>
 </p>
 
 <p align="center">
-  Write the app in Rust, build it into a WebAssembly component, and send one <code>.krate</code>.<br>
-  The runtime is open source, runs on Wasmtime, and is installed once per machine.<br>
-  The same bytes open on all three systems, and an app can reach only what its manifest declares.
+  Describe an app to Krate Studio, or write it in Rust, and get one small <code>.krate</code> file.<br>
+  Send it as a link and it opens in any browser, phones included, with nothing to install and no account.<br>
+  On macOS, Windows and Linux the same file runs natively on an open-source runtime built on Wasmtime.<br>
+  Every app starts with no access to your files or the network, and asks before it touches either.
 </p>
 
 <p align="center">
@@ -48,7 +49,7 @@
     <td align="center"><img src="docs/landing/showcase/editor.webp" width="280" alt="Editor, a code editor with tree, tabs and minimap"><br><sub><b>Editor</b> · code editor</sub></td>
   </tr>
 </table>
-<p align="center"><sub>Each is one <code>.krate</code> file built with Krate, with its source in <a href="apps/">apps/</a>. See them running at <a href="https://krate.tech/#made">krate.tech</a>.</sub></p>
+<p align="center"><sub>Each is one <code>.krate</code> file built with Krate, with its source in <a href="apps/">apps/</a>. Open <a href="https://hub.krate.tech/run/cab0ce2d8c90b8399584f98de86344bcf0d677574e62efeb5d00e2b80edd389c?via=github">Aurora in your browser</a> right now, on a phone or a computer, or browse the <a href="https://krate.tech/cloud/">gallery</a>.</sub></p>
 
 ## In numbers
 
@@ -59,7 +60,7 @@ MarkText 0.17.1, an Electron editor. Both ARM64, measured 25 August 2026.
 |---|---:|---:|
 | Memory with the document open | 2,299.4 MiB across four processes | **178.5 MiB, one process** |
 | Warm open to a visible window | 611.5 ms, median of 10 | **237.1 ms, median of 10** |
-| The app on disk | 284.6 MiB installed | **36.6 KiB**, plus the 88.6 MiB runtime installed once for every app |
+| The app on disk | 284.6 MiB installed | **36.6 KiB**, plus the 88.6 MiB runtime installed once for every app (nothing at all from a link) |
 
 That is one workload, and other apps will measure differently. The
 [benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md) and
@@ -91,7 +92,9 @@ runs it once, and tells you which stage failed and how to fix it. In CI,
 [setup-krate](https://github.com/incyashraj/setup-krate) installs Krate on
 any GitHub runner.
 
-**Open an app someone sent you.** Install Krate once:
+**Open an app someone sent you.** If it is a link, just open it: the app runs
+in your browser, on a phone or a computer, and shows what it asks for first.
+To run apps natively, install Krate once:
 
 ```sh
 curl -fsSL https://krate.tech/install.sh | sh
@@ -155,26 +158,28 @@ an AI you already have (Claude, Codex, Gemini, or an API key you hold). The
 session follows your account, so anything you start in the browser opens on
 the desktop ready to edit.
 
-## Why a file
+## Why a file and a link
 
 <p align="center">
   <img src="docs/landing/og-v5.png" width="760" alt="Krate: make and send apps like pictures. Opens from a link in any browser, phones included, and natively on Mac, Windows and Linux">
 </p>
 
-Cross-platform frameworks can share source while still producing separate
-application packages for each platform. Krate moves the platform-specific
-part into a shared runtime and makes the application artifact portable.
+Cross-platform frameworks share source and still produce a separate package,
+build and signature for every platform. Krate moves the platform-specific part
+into one shared runtime, so the app itself becomes one portable file that
+travels the way a picture does.
 
 1. The app and the access it asks for go into one `.krate` file.
-2. That same file opens on Mac, Windows, and Linux. The bytes do not change.
-3. Krate shows the person what it wants before it runs.
-4. Host operations are checked against the session's capabilities.
+2. Send it as a link and it opens in any browser, iPhone and Android included,
+   with nothing to install and no account.
+3. The same file runs natively on Mac, Windows and Linux. The bytes do not change.
+4. Before it opens, the person sees what it wants. Every protected call is
+   checked against what they allowed.
 
-A Krate app is a WebAssembly component compiled from ordinary Rust. It
-carries no browser engine or per-app native runtime. Package size depends on
-code, source, dependencies and assets; there is no universal size promise.
-The goal is to make `.krate` a standard way developers ship software.
-Today, that depends on the app fitting Krate's supported interfaces.
+A Krate app is a WebAssembly component compiled from ordinary Rust. It carries
+no browser engine and no per-app runtime, which is why a whole app is tens of
+kilobytes. The goal: `.krate` as the standard way people send software to
+each other.
 
 ## Krate Studio
 
@@ -194,8 +199,8 @@ A session is a conversation beside a panel. On the left, what you asked,
 the plan, and the AI's working (folded into one live line you can open).
 On the right, the app itself: **Preview** runs it, **Files** lists what is
 inside the `.krate`, **Code** shows the Rust it was built from, **Details**
-says what it may use. **Share** gives a link, the file, or a one-click
-installer for someone new to Krate.
+says what it may use. **Share** gives a link that opens in any browser, the
+file itself, or a one-click installer for someone who wants it natively.
 
 Studio runs the same engine the CLI does: build, import-check, run and
 pack, with the engine's real output on screen, not a summary of it. It uses
@@ -211,9 +216,8 @@ lookalikes:
   does the writing and the build happens on our machines. Nothing to
   install, and your first app and first change are free.
 - **On your machine**, from [krate.tech/download](https://krate.tech/download/).
-  Signed `.dmg` on macOS, installer on Windows (unsigned for now, so
-  SmartScreen asks once), AppImage on Linux. Free and unlimited with your
-  own AI.
+  A `.dmg` signed and notarised by Apple on macOS, an installer on Windows,
+  an AppImage on Linux. Free and unlimited with your own AI.
 
 Sessions live on your account, so an app you start in the browser opens on
 the desktop with its conversation intact and editable.
@@ -297,9 +301,10 @@ never work.
 ## `krate check-app`: the oracle behind AI authoring
 
 An AI writing code needs a truthful, fast answer to "is this actually
-correct?" `check-app` runs six stages and prints one verdict; because the
-failure text names the fix, an agent can loop on it without a human in the
-middle.
+correct?" `check-app` runs every stage below and prints one verdict; because
+the failure text names the fix, an agent loops on it without a human in the
+middle, and what reaches a person has already been opened, pressed and fitted
+to a phone.
 
 | Stage | Exit | What it proves |
 | --- | --- | --- |
@@ -309,6 +314,9 @@ middle.
 | imports | 13 | It imports only `krate:*`, no `wasi:*` leak |
 | run | 14 | It actually runs, headless |
 | shoot | 15 | A GUI app paints a real frame |
+| usability | 16 | It stays open, follows a resize and answers a press |
+| screens | 17 | It fits a phone, a phone turned, a tablet and a desktop, with no text drawn over text, at the largest text size and in dark mode |
+| phone | 18 | It draws its first frame and scrolls in time on a phone's interpreter |
 
 `--json` gives the same verdict as a machine-readable object; `--shoot
 frame.png` writes the app's first frame to a PNG so output can be looked at
@@ -316,26 +324,18 @@ rather than guessed about.
 
 ## Where things stand
 
-One `.krate` runs on Mac, Windows, and Linux, GPU-rendered with a CPU
-fallback; files, network, storage, and clipboard sit behind the permission
-wall; apps run from a file or straight from an HTTPS URL; publishing a
-link works from Studio, `krate publish`, or
+One `.krate` runs natively on Mac, Windows and Linux, GPU-rendered with a CPU
+fallback, and the same file opens in a browser tab from a link, phones
+included. Files, network, storage, the camera, the microphone and the
+clipboard sit behind the permission wall. Apps run from a file, from an HTTPS
+URL or from a link; publishing a link works from Studio, `krate publish`, or
 [krate.tech/publish](https://krate.tech/publish). Exact evidence:
 [STATUS.md](STATUS.md).
 
-Known limits, stated plainly:
-
-- Apps use Krate's interfaces. Existing native binaries, Electron apps and
-  Tauri apps need a port, not a file-extension change. Check
-  [capability limits](https://krate.tech/docs/limits.html) and the
-  [porting guide](https://krate.tech/docs/porting.html).
-- Windows and Linux studio builds are unsigned for now; macOS is signed and
-  notarised by Apple.
-- An AI has to write against the current Krate APIs, which are still changing.
-- Permission review and desktop polish differ between operating systems.
-- File formats and interfaces will change before 1.0.
-- This is a young product, not a frozen API. Use it for your own apps and
-  the published examples, not as a shield against hostile third-party code.
+Bringing an app you already have? `krate port ./my-project` reads it and
+shows what maps across; the [porting guide](https://krate.tech/docs/porting.html)
+and the [capability reference](https://krate.tech/docs/limits.html) cover the
+rest. Krate is in public beta and moving fast toward 1.0.
 
 ## Build from source
 
