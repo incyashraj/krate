@@ -857,29 +857,111 @@ fn is_runnable(path: &Path) -> bool {
     }
 }
 
-/// Process groups still alive in this Krate, killed by an exit hook when
-/// Krate leaves without dropping [`Processes`] (`std::process::exit`).
+/// Process groups still alive in this Krate, killed when Krate leaves without
+/// dropping [`Processes`]: by `std::process::exit` (an exit hook), or by a
+/// signal that would end it -- `kill`, the terminal closing, Ctrl-\, or an
+/// abort after a panic (release builds abort). A program leads its own
+/// process group, so a signal the terminal sends Krate never reaches it;
+/// without this it would outlive the app.
+///
+/// Signal-safe by construction: the registry is a fixed table of atomics,
+/// and the handler only reads it and sends signals. A handler is installed
+/// for a signal only when nothing else handles it. `krate run` handles
+/// Ctrl-C itself (the run is told and ends the way it would), so Ctrl-C is
+/// left to that: the run ends and drops its processes. After killing, the
+/// signal's default action runs as it would have.
 mod live {
-    use std::sync::Mutex;
+    #[cfg(unix)]
+    use std::sync::atomic::{AtomicI32, Ordering};
 
-    struct Registered {
-        pid: u32,
-        #[cfg_attr(not(unix), allow(dead_code))]
-        tty_fd: Option<i32>,
-    }
+    #[cfg(unix)]
+    const SLOTS: usize = 256;
+    /// Process group ids, 0 for a free slot.
+    #[cfg(unix)]
+    static GROUPS: [AtomicI32; SLOTS] = [const { AtomicI32::new(0) }; SLOTS];
+    /// A terminal's controlling side, -1 for none: its foreground job.
+    #[cfg(unix)]
+    static TTYS: [AtomicI32; SLOTS] = [const { AtomicI32::new(-1) }; SLOTS];
 
-    static LIVE: Mutex<Vec<Registered>> = Mutex::new(Vec::new());
-
+    #[cfg(unix)]
     pub(super) fn remember(pid: u32, tty_fd: Option<i32>) {
         hook();
-        if let Ok(mut live) = LIVE.lock() {
-            live.push(Registered { pid, tty_fd });
+        let Ok(pgid) = i32::try_from(pid) else {
+            return;
+        };
+        for (group, tty) in GROUPS.iter().zip(TTYS.iter()) {
+            if group
+                .compare_exchange(0, pgid, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                tty.store(tty_fd.unwrap_or(-1), Ordering::SeqCst);
+                return;
+            }
+        }
+        // A full table: dropping the run's processes still ends this one.
+    }
+
+    #[cfg(unix)]
+    pub(super) fn forget(pid: u32) {
+        let Ok(pgid) = i32::try_from(pid) else {
+            return;
+        };
+        for (group, tty) in GROUPS.iter().zip(TTYS.iter()) {
+            if group.load(Ordering::SeqCst) == pgid {
+                tty.store(-1, Ordering::SeqCst);
+                group.store(0, Ordering::SeqCst);
+            }
         }
     }
 
-    pub(super) fn forget(pid: u32) {
-        if let Ok(mut live) = LIVE.lock() {
-            live.retain(|r| r.pid != pid);
+    #[cfg(not(unix))]
+    pub(super) fn remember(_pid: u32, _tty_fd: Option<i32>) {
+        // Windows: each job object kills its tree when the system closes its
+        // handle at exit, whatever way Krate leaves -- a crash included.
+    }
+
+    #[cfg(not(unix))]
+    pub(super) fn forget(_pid: u32) {}
+
+    /// Kill every registered group. Only atomics and system calls that are
+    /// safe in a signal handler.
+    #[cfg(unix)]
+    fn kill_all() {
+        for (group, tty) in GROUPS.iter().zip(TTYS.iter()) {
+            let pgid = group.load(Ordering::SeqCst);
+            if pgid <= 1 {
+                continue;
+            }
+            let fd = tty.load(Ordering::SeqCst);
+            // SAFETY: tcgetpgrp and killpg are async-signal-safe and only
+            // read a number or send a signal.
+            unsafe {
+                if fd >= 0 {
+                    let fg = libc::tcgetpgrp(fd);
+                    if fg > 1 {
+                        libc::killpg(fg, libc::SIGHUP);
+                        libc::killpg(fg, libc::SIGKILL);
+                    }
+                }
+                libc::killpg(pgid, libc::SIGHUP);
+                libc::killpg(pgid, libc::SIGKILL);
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    extern "C" fn at_exit() {
+        kill_all();
+    }
+
+    #[cfg(unix)]
+    extern "C" fn on_signal(signal: libc::c_int) {
+        kill_all();
+        // SA_RESETHAND put the default back on entry: raising again ends
+        // Krate exactly as the signal would have.
+        // SAFETY: raise is async-signal-safe.
+        unsafe {
+            libc::raise(signal);
         }
     }
 
@@ -887,43 +969,31 @@ mod live {
     fn hook() {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
-            // SAFETY: registering a plain extern "C" function.
+            // SAFETY: registering plain extern "C" functions; a handler is
+            // installed only where the current action is the default.
             unsafe {
                 libc::atexit(at_exit);
+                for signal in [
+                    libc::SIGINT,
+                    libc::SIGTERM,
+                    libc::SIGHUP,
+                    libc::SIGQUIT,
+                    libc::SIGABRT,
+                ] {
+                    let mut current: libc::sigaction = std::mem::zeroed();
+                    if libc::sigaction(signal, std::ptr::null(), &mut current) != 0
+                        || current.sa_sigaction != libc::SIG_DFL
+                    {
+                        continue;
+                    }
+                    let mut action: libc::sigaction = std::mem::zeroed();
+                    action.sa_sigaction = on_signal as extern "C" fn(libc::c_int) as usize;
+                    action.sa_flags = libc::SA_RESETHAND;
+                    libc::sigemptyset(&mut action.sa_mask);
+                    libc::sigaction(signal, &action, std::ptr::null_mut());
+                }
             }
         });
-    }
-
-    #[cfg(not(unix))]
-    fn hook() {
-        // Windows: each job object kills its tree when the system closes
-        // its handle at exit, whatever way Krate leaves.
-    }
-
-    #[cfg(unix)]
-    extern "C" fn at_exit() {
-        // try_lock: a thread holding the lock as the process exits must not
-        // hang the exit.
-        let Ok(live) = LIVE.try_lock() else {
-            return;
-        };
-        for r in live.iter() {
-            let pgid = r.pid as libc::pid_t;
-            // SAFETY: only signals are sent; tcgetpgrp reads a number.
-            unsafe {
-                if let Some(fd) = r.tty_fd {
-                    let fg = libc::tcgetpgrp(fd);
-                    if fg > 1 {
-                        libc::killpg(fg, libc::SIGHUP);
-                        libc::killpg(fg, libc::SIGKILL);
-                    }
-                }
-                if pgid > 1 {
-                    libc::killpg(pgid, libc::SIGHUP);
-                    libc::killpg(pgid, libc::SIGKILL);
-                }
-            }
-        }
     }
 }
 

@@ -6369,6 +6369,88 @@ fn an_app_runs_only_the_programs_it_names_and_they_end_with_it() {
     }
 }
 
+/// A program ends with Krate however Krate is stopped (krate:process,
+/// IC-977): `kill` and the terminal closing. A program leads its own process
+/// group, so a signal sent to Krate never reaches it; Krate has to end it on
+/// the way out. (Ctrl-C is Krate's own handler's: the run ends as it would,
+/// and dropping the run ends its programs.)
+#[cfg(unix)]
+#[test]
+fn a_program_ends_when_krate_is_interrupted_or_killed() {
+    use std::io::BufRead;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/process-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.process-probe\"\nname = \"process-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"process.run:sh\"\nrationale = \"a child\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("process.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    for signal in ["-TERM", "-HUP"] {
+        let mut running = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .args(["--", "hold"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("run");
+        let mut line = String::new();
+        std::io::BufReader::new(running.stdout.take().expect("stdout"))
+            .read_line(&mut line)
+            .expect("the program's pid");
+        let pid = line
+            .trim()
+            .strip_prefix("orphan pid=")
+            .unwrap_or_else(|| panic!("{line}"))
+            .to_string();
+        assert!(pid.parse::<u32>().is_ok(), "{line}");
+        let alive = |pid: &str| {
+            std::process::Command::new("ps")
+                .args(["-p", pid])
+                .output()
+                .expect("ps")
+                .status
+                .success()
+        };
+        assert!(alive(&pid), "the program runs while the app does");
+        assert!(std::process::Command::new("kill")
+            .args([signal, &running.id().to_string()])
+            .status()
+            .expect("kill")
+            .success());
+        let status = running.wait().expect("krate ended");
+        assert!(!status.success(), "{signal} ended Krate as it always did");
+        let mut gone = false;
+        for _ in 0..100 {
+            if !alive(&pid) {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(gone, "pid {pid} outlived Krate stopped with {signal}");
+    }
+}
+
 /// Krate's own logs never land in an app's output (K-884).
 ///
 /// The log writer defaulted to stdout, so on a Windows runner a wgpu driver

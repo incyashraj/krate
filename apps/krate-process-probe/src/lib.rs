@@ -13,6 +13,9 @@
 //   terminal    a terminal: type `echo hi`, read `hi`, resize, kill
 //   orphan      a program the app forgets and leaves running as it exits;
 //               prints its pid so a test can see it ended with the app
+//   hold        starts a program, prints its pid, and keeps running, so a
+//               test can stop Krate itself (Ctrl-C, kill) and see the
+//               program end with it
 #![no_std]
 extern crate alloc;
 
@@ -50,6 +53,17 @@ impl Guest for Component {
             "escape" => start_line("escape", "cargo", "picked/folder-1/../.."),
             "terminal" => terminal(),
             "orphan" => orphan(),
+            "hold" => {
+                let line = orphan();
+                if !say(&line) {
+                    return 20;
+                }
+                // Until Krate is stopped from outside (a minute at most).
+                for _ in 0..600 {
+                    sleep_millis(100);
+                }
+                String::from("hold: never stopped")
+            }
             other => format!("unknown check {other}"),
         };
         if say(&line) {
