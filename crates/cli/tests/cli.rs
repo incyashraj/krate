@@ -24520,7 +24520,10 @@ fn starter_assets_is_shared_by_two_people_through_its_window() {
             ("expect_text", "Back"),
             ("expect_text", "Back from repair"),
             ("click", "Back in store"),
-            ("expect_text", "Back in store from you"),
+            // Kept in the history, which Carol reads too: Dan by name, never
+            // "you" (K-1186).
+            ("expect_text", "Back in store from dan"),
+            ("expect_no_text", "Back in store from you"),
             ("shoot", "assets-phone.png"),
             ("click", "Back"),
             ("click", "In store (1)"),
@@ -24669,6 +24672,8 @@ fn starter_visitors_is_shared_by_two_people_through_its_window() {
         None,
         &[
             ("expect_text", "Know who is in the building"),
+            // The count line is said, not only drawn (K-1185).
+            ("expect_text", "Nobody on site"),
             ("click", "Sign the first visitor in"),
             (
                 "expect_text",
@@ -24817,7 +24822,9 @@ fn starter_incidents_is_shared_by_two_people_through_its_window() {
                 "expect_text",
                 "Server room, floor 1 \u{b7} 0 of 1 actions done",
             ),
-            ("expect_text", "Call the plumber, due"),
+            // An action with no day says no "due" (K-1188).
+            ("expect_text", "Call the plumber"),
+            ("expect_no_text", "Call the plumber, due"),
             ("click", leak),
             ("expect_text", "Reported by: Carol"),
             ("expect_text", "Who follows it up: You"),
@@ -25093,7 +25100,7 @@ fn starter_onboarding_is_shared_by_two_people_through_its_window() {
             ("click", "Add task"),
             (
                 "expect_text",
-                "Added a task for you: Lunch on the first Friday",
+                "Added a task for dan: Lunch on the first Friday",
             ),
             ("expect_text", "Checklist, 1 of 9 done"),
             ("shoot", "onboarding-dark.png"),
@@ -25176,7 +25183,9 @@ fn starter_shift_rota_is_shared_by_two_people_through_its_window() {
             ("key", "Backspace"),
             ("type", "14"),
             ("click", "Add shift"),
-            ("expect_text", "Put you on the late shift"),
+            // History is said the same to everyone, so Dan will not read
+            // "Put you on the late shift" for Carol's shift (K-1186).
+            ("expect_text", "Put carol on the late shift"),
             ("expect_text", "You, 14:00 to 22:00"),
             ("click", "Add a shift"),
             ("click", "Tomorrow"),

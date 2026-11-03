@@ -1681,6 +1681,17 @@ impl App {
         String::from(name.split('@').next().unwrap_or(name))
     }
 
+    /// A login without its email domain, and never "you": for words kept in
+    /// a record's history, which everyone else in the team reads too. Dan
+    /// read "Put you on the late shift" for a shift Carol took (K-1186).
+    #[allow(dead_code)] // the kit is shared; not every app uses all of it
+    fn plain_name(&self, name: &str) -> String {
+        if name.is_empty() {
+            return String::from("someone");
+        }
+        String::from(name.split('@').next().unwrap_or(name))
+    }
+
     /// "Carol" at the start of a sentence, "You" for this person.
     fn lead_name(&self, name: &str) -> String {
         let s = self.short_name(name);
@@ -2107,6 +2118,9 @@ impl App {
                 p.k.muted,
                 400,
             );
+            // Said as well as drawn: "Nobody on site" is the first thing a
+            // person reading the screen with VoiceOver needs (K-1185).
+            p.said.text(Rect::new(x, bar.y, right - x, bar.h), &count);
         }
         // The long story, when there is one.
         let explain = if empty && self.team.problem.is_none() && !self.team.trying() {
@@ -3942,6 +3956,8 @@ fn summary(app: &mut App, p: &mut Pen, area: Rect) -> f32 {
     by.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     if by.is_empty() {
         p.put("Nobody has anything out.", x, y + s1, s1, p.k.muted, 400);
+        p.said
+            .text(Rect::new(x, y, w, s1 * 1.5), "Nobody has anything out.");
         y += s1 * 1.7;
     }
     for (who, n) in by.iter().take(6) {
@@ -4029,14 +4045,14 @@ fn check(_app: &App, form: &Form) -> Result<Vec<(&'static str, Value)>, (usize, 
 
 fn log_words(app: &App, form: &Form, _id: &str, new: bool, changed: &str) -> String {
     if form.purpose == HAND_OVER {
-        return format!("Handed it to {}", app.short_name(form.v("holder")));
+        return format!("Handed it to {}", app.plain_name(form.v("holder")));
     }
     if !new {
         return String::from(changed);
     }
     match form.v("holder") {
         "" => String::from("Added it, in store"),
-        h => format!("Added it, with {}", app.short_name(h)),
+        h => format!("Added it, with {}", app.plain_name(h)),
     }
 }
 
@@ -4114,7 +4130,7 @@ fn act(app: &mut App, code: u16, id: &str) {
         STORE => {
             let says = match r.t("holder") {
                 "" => String::from("Back in store"),
-                h => format!("Back in store from {}", app.short_name(h)),
+                h => format!("Back in store from {}", app.plain_name(h)),
             };
             app.write(
                 MAIN,

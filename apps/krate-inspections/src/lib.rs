@@ -1682,6 +1682,17 @@ impl App {
         String::from(name.split('@').next().unwrap_or(name))
     }
 
+    /// A login without its email domain, and never "you": for words kept in
+    /// a record's history, which everyone else in the team reads too. Dan
+    /// read "Put you on the late shift" for a shift Carol took (K-1186).
+    #[allow(dead_code)] // the kit is shared; not every app uses all of it
+    fn plain_name(&self, name: &str) -> String {
+        if name.is_empty() {
+            return String::from("someone");
+        }
+        String::from(name.split('@').next().unwrap_or(name))
+    }
+
     /// "Carol" at the start of a sentence, "You" for this person.
     fn lead_name(&self, name: &str) -> String {
         let s = self.short_name(name);
@@ -2108,6 +2119,9 @@ impl App {
                 p.k.muted,
                 400,
             );
+            // Said as well as drawn: "Nobody on site" is the first thing a
+            // person reading the screen with VoiceOver needs (K-1185).
+            p.said.text(Rect::new(x, bar.y, right - x, bar.h), &count);
         }
         // The long story, when there is one.
         let explain = if empty && self.team.problem.is_none() && !self.team.trying() {
@@ -3965,6 +3979,7 @@ fn summary(app: &mut App, p: &mut Pen, area: Rect) -> f32 {
     }
     if fails.is_empty() {
         p.put("Nothing failed.", x, y + s1, s1, p.k.muted, 400);
+        p.said.text(Rect::new(x, y, w, s1 * 1.5), "Nothing failed.");
         y += s1 * 1.8;
     }
     for (item, whose) in fails.iter().take(6) {

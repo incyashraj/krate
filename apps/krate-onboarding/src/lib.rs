@@ -1681,6 +1681,17 @@ impl App {
         String::from(name.split('@').next().unwrap_or(name))
     }
 
+    /// A login without its email domain, and never "you": for words kept in
+    /// a record's history, which everyone else in the team reads too. Dan
+    /// read "Put you on the late shift" for a shift Carol took (K-1186).
+    #[allow(dead_code)] // the kit is shared; not every app uses all of it
+    fn plain_name(&self, name: &str) -> String {
+        if name.is_empty() {
+            return String::from("someone");
+        }
+        String::from(name.split('@').next().unwrap_or(name))
+    }
+
     /// "Carol" at the start of a sentence, "You" for this person.
     fn lead_name(&self, name: &str) -> String {
         let s = self.short_name(name);
@@ -2107,6 +2118,9 @@ impl App {
                 p.k.muted,
                 400,
             );
+            // Said as well as drawn: "Nobody on site" is the first thing a
+            // person reading the screen with VoiceOver needs (K-1185).
+            p.said.text(Rect::new(x, bar.y, right - x, bar.h), &count);
         }
         // The long story, when there is one.
         let explain = if empty && self.team.problem.is_none() && !self.team.trying() {
@@ -3948,6 +3962,7 @@ fn summary(app: &mut App, p: &mut Pen, area: Rect) -> f32 {
         *y += p.caps(x, *y, w, head) + 10.0;
         if items.is_empty() {
             p.put(empty, x, *y + s1, s1, p.k.muted, 400);
+            p.said.text(Rect::new(x, *y, w, s1 * 1.5), empty);
             *y += s1 * 1.8;
         }
         for t in items.iter().take(5) {
@@ -3983,7 +3998,7 @@ fn summary(app: &mut App, p: &mut Pen, area: Rect) -> f32 {
             );
             p.said.text(
                 Rect::new(x, *y, w, s1 * 1.5 + s2 * 1.5),
-                &format!("{}, {sub}, due {when}", t.t("what")),
+                &format!("{}, {sub}{}", t.t("what"), due_words(&when, late)),
             );
             *y += s1 * 1.5 + s2 * 1.5 + 12.0;
         }
@@ -4067,7 +4082,7 @@ fn log_words(app: &App, form: &Form, _id: &str, new: bool, changed: &str) -> Str
     match form.purpose {
         ADD_TASK => match form.v("owner") {
             "" => format!("Added a task: {}", form.v("what")),
-            o => format!("Added a task for {}: {}", app.short_name(o), form.v("what")),
+            o => format!("Added a task for {}: {}", app.plain_name(o), form.v("what")),
         },
         OPEN_TASK => format!("Changed the task \"{}\"", form.v("what")),
         _ if new => format!("Added them, first day {}", long_day(form.v("starts"))),
@@ -4208,5 +4223,15 @@ fn cell(app: &mut App, code: u16, n: u32) {
             app.open_form(form);
         }
         _ => {}
+    }
+}
+
+/// ", due Fri 6 Nov" as it is said, ", late" when that day has gone, and
+/// nothing for a task with no day (K-1188: it used to say a bare "due ").
+fn due_words(when: &str, late: bool) -> String {
+    match (when.is_empty(), late) {
+        (true, _) => String::new(),
+        (false, true) => format!(", due {when}, late"),
+        (false, false) => format!(", due {when}"),
     }
 }

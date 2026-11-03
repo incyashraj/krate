@@ -1681,6 +1681,17 @@ impl App {
         String::from(name.split('@').next().unwrap_or(name))
     }
 
+    /// A login without its email domain, and never "you": for words kept in
+    /// a record's history, which everyone else in the team reads too. Dan
+    /// read "Put you on the late shift" for a shift Carol took (K-1186).
+    #[allow(dead_code)] // the kit is shared; not every app uses all of it
+    fn plain_name(&self, name: &str) -> String {
+        if name.is_empty() {
+            return String::from("someone");
+        }
+        String::from(name.split('@').next().unwrap_or(name))
+    }
+
     /// "Carol" at the start of a sentence, "You" for this person.
     fn lead_name(&self, name: &str) -> String {
         let s = self.short_name(name);
@@ -2107,6 +2118,9 @@ impl App {
                 p.k.muted,
                 400,
             );
+            // Said as well as drawn: "Nobody on site" is the first thing a
+            // person reading the screen with VoiceOver needs (K-1185).
+            p.said.text(Rect::new(x, bar.y, right - x, bar.h), &count);
         }
         // The long story, when there is one.
         let explain = if empty && self.team.problem.is_none() && !self.team.trying() {
@@ -4262,8 +4276,9 @@ fn check(app: &App, form: &Form) -> Result<Vec<(&'static str, Value)>, (usize, S
         return Err((
             form.at("from").unwrap_or(0),
             format!(
-                "{} already has time off from {} to {}.",
+                "{} already {} time off from {} to {}.",
                 app.lead_name(who),
+                has_word(app, who),
                 day_name(clash.t("from")),
                 day_name(clash.t("to"))
             ),
@@ -4284,7 +4299,7 @@ fn log_words(app: &App, form: &Form, _id: &str, new: bool, changed: &str) -> Str
     let whose = if who == app.team.me {
         String::new()
     } else {
-        format!(" for {}", app.short_name(who))
+        format!(" for {}", app.plain_name(who))
     };
     format!(
         "Booked {} of {}{whose}",
@@ -4360,5 +4375,14 @@ fn cell(app: &mut App, code: u16, n: u32) {
             }
         }
         _ => {}
+    }
+}
+
+/// "have" after "You", "has" after anyone else (K-1187: "You already has").
+fn has_word(app: &App, who: &str) -> &'static str {
+    if !app.team.me.is_empty() && who == app.team.me {
+        "have"
+    } else {
+        "has"
     }
 }

@@ -1681,6 +1681,17 @@ impl App {
         String::from(name.split('@').next().unwrap_or(name))
     }
 
+    /// A login without its email domain, and never "you": for words kept in
+    /// a record's history, which everyone else in the team reads too. Dan
+    /// read "Put you on the late shift" for a shift Carol took (K-1186).
+    #[allow(dead_code)] // the kit is shared; not every app uses all of it
+    fn plain_name(&self, name: &str) -> String {
+        if name.is_empty() {
+            return String::from("someone");
+        }
+        String::from(name.split('@').next().unwrap_or(name))
+    }
+
     /// "Carol" at the start of a sentence, "You" for this person.
     fn lead_name(&self, name: &str) -> String {
         let s = self.short_name(name);
@@ -2107,6 +2118,9 @@ impl App {
                 p.k.muted,
                 400,
             );
+            // Said as well as drawn: "Nobody on site" is the first thing a
+            // person reading the screen with VoiceOver needs (K-1185).
+            p.said.text(Rect::new(x, bar.y, right - x, bar.h), &count);
         }
         // The long story, when there is one.
         let explain = if empty && self.team.problem.is_none() && !self.team.trying() {
@@ -4180,7 +4194,7 @@ fn log_words(app: &App, form: &Form, _id: &str, new: bool, changed: &str) -> Str
         DECLINE => format!("Declined it: {note}"),
         _ if new => format!(
             "Asked {} to approve {}",
-            app.short_name(form.v("approver")),
+            app.plain_name(form.v("approver")),
             match parse_number(form.v("amount")) {
                 Some(n) => money(n, &form.v("currency").to_uppercase()),
                 None => String::new(),
