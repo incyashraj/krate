@@ -176,19 +176,6 @@ for (const [engine, label, viewport, ua] of RUNS) {
   });
   const yes = (launched[`${engine}-yes`] ||= await launch('yes'));
   const nay = engine === 'chromium' ? (launched[`${engine}-no`] ||= await launch('no')) : yes;
-  // Whether this engine's camera sends frames at all, asked outside the
-  // app: in a context of its own, granted the camera, on a blank page of
-  // the Player's origin.
-  const camProbe = await (async () => {
-    const c = await yes.newContext({ viewport, userAgent: ua, isMobile: touch && engine === 'chromium', hasTouch: touch });
-    await c.grantPermissions(['camera'], { origin: ORIGIN });
-    await c.route(`${base}/engine-probe`, (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>probe</title>' }));
-    const p = await c.newPage();
-    await p.goto(`${base}/engine-probe`);
-    const got = await p.evaluate(cameraProbe);
-    await c.close();
-    return got;
-  })();
   const open = async (kind, hash) => {
     const tag = `[${engine} ${label} ${kind}]`;
     const browser = kind === 'granted' ? yes : nay;
@@ -293,34 +280,33 @@ for (const [engine, label, viewport, ua] of RUNS) {
     check(Number(cam['camera-devices: ']) >= 1 && cam['camera-info-before: '] === '320x240' && cam['camera-read-before-start: '] === 'Ok(false)',
       `${tag} the camera is there, says the size asked for before a frame, and gives nothing before start`, cam);
     const FRAME = 'a camera frame arrives, of the size it says, opaque and lit';
-    if (camProbe.frame) {
-      const framed = cam['camera: '] === 'frame 320x240 fits=true opaque=true lit=true' && cam['camera-info: '] === '320x240';
-      // No frame where the engine's own camera sends them: say why, in the
-      // same run -- the Player's video as it was, and the probe again in
-      // the app's page, plain and with the Player's hidden style.
-      const why = framed ? {} : {
+    // Judged by what the app was handed. Linux WebKit's fake camera sends
+    // frames only some of the time and sometimes starts late, so a probe
+    // taken before the app opened says little: the app is at fault only
+    // when it is handed no frame while the camera works in its own page at
+    // that moment, which the probe run there says.
+    const framed = cam['camera: '] === 'frame 320x240 fits=true opaque=true lit=true' && cam['camera-info: '] === '320x240';
+    const none = cam['camera: '] === 'no frame in 15 s' && cam['camera-info: '].startsWith('(none)');
+    if (framed || !none) {
+      check(framed, `${tag} ${FRAME}`, cam);
+    } else {
+      // Why, in the same run: the Player's video as it was, the probe again
+      // in the app's page (plain, in the camera's style, and with each
+      // property of the old hidden style alone).
+      const why = {
         videos: await page.evaluate(() => (window.__vids || []).filter((x) => x.cls === 'feed').slice(-4)),
         probeInPage: await page.evaluate(cameraProbe).catch((e) => String(e)),
         probeInPageFeed: await page.evaluate(cameraProbe, 'feed').catch((e) => String(e)),
-        // Each property of the old hidden style alone, so a run that fails
-        // says which one this engine will not decode behind.
         ...Object.fromEntries(await Promise.all(Object.entries({
           offscreen: { position: 'fixed', left: '-10000px', top: '0' },
           onePixel: { position: 'fixed', left: '0', top: '0', width: '1px', height: '1px' },
           transparent: { position: 'fixed', left: '0', top: '0', opacity: '0' },
         }).map(async ([k, css]) => [`probe_${k}`, await page.evaluate(cameraProbe, css).catch((e) => String(e))]))),
       };
-      // Linux WebKit's fake camera sends frames only some of the time. The
-      // app is at fault only when the camera works at the moment it asks:
-      // the probe run again in the app's page says whether it does.
-      if (framed || !why.probeInPage || why.probeInPage.frame !== false) check(framed, `${tag} ${FRAME}`, { ...cam, ...why });
-      else not.skip(tag, FRAME, engine, `frames from its fake camera, which stopped sending them (in the app's page too: ${why.probeInPage.why})`);
-    } else {
-      not.skip(tag, FRAME, engine, `frames from its fake camera (${camProbe.why})`);
-      // The app waited its fifteen seconds and was handed nothing: no
-      // made-up frame, no error.
-      check(cam['camera: '] === 'no frame in 15 s' && cam['camera-info: '].startsWith('(none)'),
-        `${tag} with a camera that sends no frame, the app is handed none and no error`, cam);
+      if (!why.probeInPage || why.probeInPage.frame !== false) check(false, `${tag} ${FRAME}`, { ...cam, ...why });
+      // The camera sends nothing here either: the app was handed nothing,
+      // no made-up frame and no error, which is right.
+      else not.skip(tag, FRAME, engine, `frames from its fake camera (${why.probeInPage.why}, in the app's page too)`);
     }
     check(cam['camera-stop: '] === 'Ok(())' && cam['camera-read-after-stop: '] === 'Ok(false)' && cam['camera-close: '] === 'Ok(())' && cam['camera-read-after-close: '] === 'Err(InvalidStream)',
       `${tag} after stop nothing is handed out, and after close the stream is gone`, cam);
