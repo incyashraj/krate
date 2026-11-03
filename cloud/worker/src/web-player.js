@@ -286,7 +286,7 @@ export async function validatorFile(request, url, env) {
 
 /// GET /a/<hash>/web. `access(object)` applies /a/<hash>'s own checks and
 /// answers null (go ahead) or the refusal Response.
-export async function webPackRoute(env, hash, { lookup, access, judgedComponent }) {
+export async function webPackRoute(env, hash, { lookup, access, judgedComponent, storeTag }) {
   const found = await lookup(hash);
   if (found.response) return found.response;
   const { object, privateOrg } = found;
@@ -309,12 +309,17 @@ export async function webPackRoute(env, hash, { lookup, access, judgedComponent 
   new DataView(body.buffer).setUint32(0, bundle.length, true);
   body.set(bundle, 4);
   body.set(pack.bytes, 4 + bundle.length);
+  // Whose app this is, as the hub knows it from the publisher's sign-in: the
+  // Player keys the app's storage by it, so another publisher declaring the
+  // same app id never reaches this one's data (security review, 2026-11-03).
+  const tag = storeTag ? await storeTag().catch(() => null) : null;
   return new Response(body, {
     headers: {
       "content-type": "application/octet-stream",
       "content-length": String(body.length),
       "cross-origin-resource-policy": "same-origin",
       "x-krate-web-pack": WEB_PACK_TAG,
+      ...(tag ? { "x-krate-store": tag } : {}),
       ...cache,
     },
   });

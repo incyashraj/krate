@@ -2039,7 +2039,7 @@ jobs:
           PLAYWRIGHT_MODULE: ${{ github.workspace }}/cloud/worker/browser-test/node_modules/playwright/index.mjs
         run: |
           failed=""
-          for proof in sql ws file share senses audio versions; do
+          for proof in sql ws file share senses audio versions storage; do
             echo "== $proof-proof"
             start=$SECONDS
             code=0

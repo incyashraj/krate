@@ -143,3 +143,45 @@ test("the first file a build makes is mailed to the person who asked for it, onc
     mail.restore();
   }
 });
+
+test("moment mails stop at a daily ceiling per inbox and per hub, so they cannot spend the sign-in mail's allowance", async () => {
+  const mail = stubResend();
+  try {
+    const env = hubEnv();
+    const apps = ["bounce", "chart", "cubes", "ddh", "envelope", "eo2", "grex", "hexyl", "mdview"];
+    // One account publishing nine new apps in a day: five mails, not nine.
+    for (const name of apps) {
+      const up = await call(env, "spender@example.com", "POST", "/publish", { bytes: ported(`${name}.krate`), headers: { "x-krate-name": name } });
+      assert.equal(up.status, 200, `${name}: ${JSON.stringify(up.body)}`);
+    }
+    assert.equal(mail.sent.length, 5, "one inbox hears at most five moments a day");
+    assert.ok(mail.sent.every((m) => m.to[0] === "spender@example.com"));
+    // The hub's own ceiling, made small here: past it nobody is mailed.
+    const env2 = hubEnv();
+    env2.MAIL_MOMENTS_PER_DAY = "3";
+    mail.sent.length = 0;
+    for (const [i, name] of apps.slice(0, 5).entries()) {
+      await call(env2, `p${i}@example.com`, "POST", "/publish", { bytes: ported(`${name}.krate`), headers: { "x-krate-name": name } });
+    }
+    assert.equal(mail.sent.length, 3, "the hub sends at most its daily ceiling of moments");
+  } finally {
+    mail.restore();
+  }
+});
+
+test("someone opening a newer version of an app already opened is not news again", async () => {
+  const mail = stubResend();
+  try {
+    const env = hubEnv();
+    const { tellFirstOpen } = await import("../src/mail.js");
+    await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("bounce.krate"), headers: { "x-krate-name": "Bounce" } });
+    mail.sent.length = 0;
+    const record = { owner: "account:x", name: "Bounce", line: "v0123456789a" };
+    env.APPS.put("user:x", JSON.stringify({ email: "ada@example.com" }));
+    assert.equal(await tellFirstOpen(env, "a".repeat(64), record, "https://hub.example"), null);
+    assert.equal(await tellFirstOpen(env, "b".repeat(64), record, "https://hub.example"), "already told");
+    assert.equal(mail.sent.length, 1, "v2 of the same app does not mail a second first-open");
+  } finally {
+    mail.restore();
+  }
+});

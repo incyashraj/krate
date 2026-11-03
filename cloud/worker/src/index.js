@@ -47,7 +47,7 @@ import { leaseRoute, leaseKeyRoute } from "./org-lease.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
-import { LINE_ID, advanceLine, currentHash, dropVersion, linesRoute, settleRows, versionOf } from "./lines.js";
+import { LINE_ID, advanceLine, currentHash, dropVersion, linesRoute, settleRows, storeTagOf, versionOf } from "./lines.js";
 // Staged rollout: a pilot group first, pinned groups (G10).
 import { orgRolloutRoute } from "./org-rollout.js";
 // What an approver sees and must confirm (IC-950); after release control.
@@ -218,6 +218,9 @@ const RATE_LIMITS = {
   "report/app": 5,
   // The Player's open and "Make your own" beacons: one each per app opened.
   tab: 30,
+  // Choosing an app's current version (IC-976): 1 to 3 KV writes each, and
+  // the free plan's daily writes are shared with sign-in.
+  "lines/current": 30,
   "share/new": 10,
   usage: 60,
   founding: 5,
@@ -798,6 +801,10 @@ export default {
           lookup: (h) => bundleObject(h, env),
           access: (object, slug) => privateRefusal(request, hash, object, slug, env),
           judgedComponent,
+          storeTag: async () => {
+            const raw = (await env.APPS.get(`app:${hash}`)) || (await env.APPS.get(`owner:${hash}`));
+            return storeTagOf(raw ? ownerOfRecord(JSON.parse(raw)) : null);
+          },
         }));
       }
       // HEAD answers exactly like GET, minus the body (K-798). Link
@@ -820,6 +827,10 @@ export default {
       // An app's versions (IC-976): its current one, and for its owner every
       // one and the choice of which is current.
       if (pathname === "/lines" || pathname.startsWith("/lines/")) {
+        if (request.method === "POST") {
+          const over = await rateLimited(request, env, "lines/current");
+          if (over) return cors(over);
+        }
         const identity = request.headers.get("authorization") ? await verifyGitHub(request, env).catch(() => null) : null;
         const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
         const answer = await linesRoute(request, url, env, { ownerOf, identity, base });

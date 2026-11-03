@@ -517,7 +517,14 @@ async function main() {
   const rows = JSON.parse(consent(JSON.stringify(j.manifest.capabilities || []))).rows || [];
   const blocked = rows.filter((r) => r.required && !r.in_tab);
   const granted = rows.filter((r) => r.in_tab).map((r) => r.cap);
-  const storeKey = release ? `${app.id}@${release.authority.slice(0, 16)}` : app.id;
+  // Storage belongs to the publisher the hub vouched for (x-krate-store, a
+  // digest of the signed-in owner), never to the manifest's id alone: the
+  // author picks that id, every app shares this origin, and another
+  // publisher's app declaring the same id read this one's data, secrets
+  // included. With no tag, the build itself -- never the bare id.
+  const told = res.headers.get('x-krate-store') || '';
+  const owner = /^k[0-9a-f]{16}$/.test(told) ? told : `h${HASH.slice(0, 16)}`;
+  const storeKey = release ? `${app.id}@${release.authority.slice(0, 16)}` : `${app.id}~${owner}`;
   if (rows.length) {
     $('consentTitle').textContent = `“${name}” wants to:`;
     const list = $('consentRows');
