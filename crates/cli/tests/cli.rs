@@ -23786,6 +23786,48 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
     );
 }
 
+/// A person copies and cuts in a field the app draws with their own
+/// keystrokes, though Team Notes holds no clipboard permission (K-1190):
+/// Cmd/Ctrl+X takes the note's text out, and Cmd/Ctrl+V puts it back, so
+/// the cut really reached the clipboard before the text went.
+#[test]
+fn a_starter_field_cuts_and_pastes_with_the_persons_keystrokes() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping a_starter_field_cuts_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (notes, _) = released_starter(&world, &root, "team-notes.krate");
+    new_laptop(&world, "carol");
+    use_starter(
+        &world,
+        "carol",
+        &notes,
+        None,
+        &[
+            ("click", "Write a note"),
+            ("type", "Chairs"),
+            ("key", "Enter"),
+            ("type", "Twelve, stackable."),
+            ("expect_text", "Twelve, stackable."),
+            ("key", "Primary+a"),
+            ("key", "Primary+x"),
+            // The app answers the cut in its next frame; a person's Cmd+V
+            // comes later than that, and so does this one.
+            ("wait_ms", "600"),
+            ("expect_no_text", "Twelve, stackable."),
+            ("key", "Primary+v"),
+            ("expect_text", "Twelve, stackable."),
+            ("key", "Primary+a"),
+            ("key", "Primary+c"),
+            ("wait_ms", "600"),
+            ("key", "End"),
+            ("key", "Primary+v"),
+            ("expect_text", "Twelve, stackable.Twelve, stackable."),
+        ],
+    );
+}
+
 /// Expenses, two people: a form that says what is missing; Carol's expense
 /// reaches Dan with who is owed; Dan logs his own and marks Carol's paid
 /// back; Carol sees both, corrects Dan's amount, and a delete comes back

@@ -118,6 +118,18 @@ export function buildImports(ctx) {
   // --------------------------------------------------------------- input
   // Events the page makes rather than the ui host: a dropped file, a hover.
   const fileEvents = [];
+  // The person's own Cmd/Ctrl+C or X: for a moment after it the app may
+  // put text on the clipboard once without ui.clipboard:write, as the
+  // desktop allows (K-1190). The browser still decides: Safari refuses a
+  // write that is not inside the keystroke itself, and a cut then keeps
+  // its text.
+  let copyKeyAt = 0;
+  const isCopyKey = (r) => (r.mods & (2 | 8)) !== 0 && (r.mods & 4) === 0 && /^[cx]$/i.test(r.key);
+  const takeCopyKey = () => {
+    const fresh = Date.now() - copyKeyAt < 1000;
+    copyKeyAt = 0;
+    return fresh;
+  };
   // Apply one record from the page's ring to the ui host.
   const apply = (r) => {
     const w = r.window;
@@ -128,7 +140,10 @@ export function buildImports(ctx) {
       case 'leave': ui.pointer_left(w); break;
       case 'wheel': ui.wheel(w, r.x, r.y, r.dx, r.dy, r.mods); ctx.inputAt(r.at); break;
       case 'touch': ui.touch(w, r.phase, r.finger, r.x, r.y); if (r.phase !== 'move') ctx.inputAt(r.at); break;
-      case 'key': ui.key(w, r.key, r.pressed, r.mods, r.text); if (r.pressed) ctx.inputAt(r.at); break;
+      case 'key':
+        ui.key(w, r.key, r.pressed, r.mods, r.text);
+        if (r.pressed) { ctx.inputAt(r.at); if (isCopyKey(r)) copyKeyAt = Date.now(); }
+        break;
       case 'text': ui.text(w, r.text); ctx.inputAt(r.at); break;
       case 'close': ui.close_requested(w); break;
       case 'resize': ctx.resize(w, r.width, r.height); break;
@@ -708,7 +723,9 @@ export function buildImports(ctx) {
         return json.ok;
       },
       writeText(text) {
-        if (!allows('ui.clipboard:write')) throw new HostError({ tag: 'permission-denied' });
+        if (!allows('ui.clipboard:write') && !takeCopyKey()) {
+          throw new HostError({ tag: 'permission-denied' });
+        }
         const { json } = bridge.call('clipboard.write', { text });
         if (json.err) throw new HostError(json.err);
       },

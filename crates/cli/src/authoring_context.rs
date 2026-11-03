@@ -483,9 +483,10 @@ such a field in a \
 `krate::layout::Field`: `insert` the `TextInput` text, pass keys to \
 `key_with(&k.key, k.modifiers.shift, k.modifiers.meta || \
 k.modifiers.control)`, draw `selection()` behind the text. It selects with \
-Shift and Cmd/Ctrl+A, and the person's own Cmd+V or Ctrl+V arrives as \
-`TextInput` with no clipboard permission: never ask for \
-`ui.clipboard:read` just to paste. A game takes touch itself: most \
+Shift and Cmd/Ctrl+A, copies and cuts with Cmd/Ctrl+C and X, and the \
+person's own Cmd+V or Ctrl+V arrives as `TextInput`, all with no clipboard \
+permission: never ask for `ui.clipboard:read` just to paste or \
+`ui.clipboard:write` just to copy. A game takes touch itself: most \
 people open a sent link on a phone, where there are no arrow keys, and a \
 browser tab shows no pad. The simplest that always works: each frame, \
 `if pointer::button_held(PointerButton::Primary) { pointer::position(win) }` \

@@ -409,6 +409,18 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.write_clipboard_text(text).map_err(Into::into)
     }
 
+    /// Write what the person copied or cut with their own keystroke (Cmd+C
+    /// or Cmd+X on a Mac, Ctrl elsewhere) from a field the app draws, with no
+    /// `ui.clipboard:write` grant (K-1190). The caller holds the keystroke:
+    /// this is only reached just after one, once. It is a write, so the app
+    /// learns nothing; the organisation's ceiling still applies.
+    pub fn write_clipboard_for_person(&self, text: &str) -> UiDispatchResult<()> {
+        if self.organisation_blocks_cap("ui.clipboard:write") {
+            return Err(UiDispatchError::PermissionDenied);
+        }
+        self.adapter.write_clipboard_text(text).map_err(Into::into)
+    }
+
     pub fn window(&self, id: WindowId) -> UiDispatchResult<Option<WindowRecord>> {
         Ok(self.adapter.window(id)?)
     }
@@ -824,6 +836,17 @@ impl<'a> Phase3UiDispatcher<'a> {
     fn check(&self, call: &UapiCall) -> UiDispatchResult<()> {
         self.guard.check(call).map(|_| ()).map_err(map_ui_policy)
     }
+}
+
+/// The keystrokes a person copies or cuts with: Cmd+C or Cmd+X on a Mac,
+/// Ctrl elsewhere, with no other modifier but Shift.
+pub(crate) fn is_copy_chord(key: &str, m: Modifiers) -> bool {
+    let primary = if cfg!(target_os = "macos") {
+        m.meta && !m.control
+    } else {
+        m.control && !m.meta
+    };
+    primary && !m.alt && (key.eq_ignore_ascii_case("c") || key.eq_ignore_ascii_case("x"))
 }
 
 /// The keystroke a person pastes with: Cmd+V on a Mac, Ctrl+V elsewhere,
@@ -2006,6 +2029,56 @@ mod tests {
         let pieces = paste_pieces(&long);
         assert_eq!(pieces.len(), 2);
         assert_eq!(pieces.concat(), long);
+    }
+
+    /// K-1190: the person's own copy reaches the clipboard with no grant,
+    /// the organisation's ceiling still stops it, and only Cmd/Ctrl+C or X
+    /// count as that keystroke.
+    #[test]
+    fn the_persons_copy_reaches_the_clipboard_without_the_grant() {
+        let primary = if cfg!(target_os = "macos") {
+            Modifiers {
+                meta: true,
+                ..Default::default()
+            }
+        } else {
+            Modifiers {
+                control: true,
+                ..Default::default()
+            }
+        };
+        let copy_with = |policy: SessionPolicy| {
+            let guard = UapiGuard::new(policy);
+            let adapter = DraftUiAdapter::default();
+            let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+            let refused = dispatcher.write_clipboard_text("Room 4").is_err();
+            let written = dispatcher.write_clipboard_for_person("Room 4").is_ok();
+            (
+                refused,
+                written,
+                adapter.read_clipboard_text().unwrap_or_default(),
+            )
+        };
+        let window_only =
+            SessionPolicy::from_cli_grants(&["ui.window:create".to_string()]).expect("policy");
+        assert_eq!(
+            copy_with(window_only.clone()),
+            (true, true, "Room 4".to_string())
+        );
+        let blocked = window_only.with_organisation(krate_policy::OrgCeiling {
+            deny: vec![krate_policy::DenyRule::parse("ui.clipboard").expect("rule")],
+            network: None,
+            calls: Vec::new(),
+        });
+        assert_eq!(copy_with(blocked), (true, false, String::new()));
+        assert!(is_copy_chord("c", primary) && is_copy_chord("X", primary));
+        assert!(!is_copy_chord("c", Modifiers::default()));
+        assert!(!is_copy_chord("v", primary));
+        let alt = Modifiers {
+            alt: true,
+            ..primary
+        };
+        assert!(!is_copy_chord("c", alt));
     }
 
     #[test]

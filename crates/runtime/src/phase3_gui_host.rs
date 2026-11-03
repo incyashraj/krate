@@ -279,6 +279,10 @@ pub struct Phase3GuiHost {
     /// keeps running forever when someone alt-tabs mid-stride: the release
     /// went to another window and never arrives.
     held_keys: std::cell::RefCell<std::collections::BTreeSet<String>>,
+    /// When the person last pressed their own copy or cut keystroke: for a
+    /// moment after it the app may put text on the clipboard once without
+    /// `ui.clipboard:write`, as a browser allows during a keystroke (K-1190).
+    copy_keystroke: std::cell::Cell<Option<std::time::Instant>>,
     /// Bound 3D scenes, sharing the canvas id space so a scene and a canvas
     /// can never collide on one number.
     scenes: std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, SceneBackend)>>,
@@ -674,6 +678,7 @@ impl Phase3GuiHost {
             next_kept_image: std::cell::Cell::new(1),
             gamepads: std::cell::RefCell::new(crate::gamepad::Gamepads::new()),
             held_keys: std::cell::RefCell::new(std::collections::BTreeSet::new()),
+            copy_keystroke: std::cell::Cell::new(None),
             scenes: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             gpu: Default::default(),
             next_canvas_id: std::cell::Cell::new(1),
@@ -908,6 +913,24 @@ impl Phase3GuiHost {
 
     fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
         self.runtime.dispatcher()
+    }
+
+    /// What a key the person pressed means beyond the key itself: their
+    /// paste puts what they pasted into the field (K-1109), and their copy
+    /// or cut lets the app answer it on the clipboard (K-1190). One place,
+    /// for a real keyboard and a check task's key step alike.
+    fn persons_keystroke(
+        &self,
+        dispatcher: &Phase3UiDispatcher<'_>,
+        window: WindowId,
+        focused: Option<WidgetId>,
+        key: &str,
+        modifiers: krate_adapter_common::ui::Modifiers,
+    ) {
+        dispatcher.paste_for_person(window, focused, key, modifiers);
+        if crate::phase3_ui::is_copy_chord(key, modifiers) {
+            self.copy_keystroke.set(Some(std::time::Instant::now()));
+        }
     }
 
     /// Schedule a reminder (IC-921), behind `ui.notify`: the id checked
@@ -2735,7 +2758,7 @@ impl Phase3GuiHost {
                     .is_ok();
                 if pressed {
                     let focused = dispatcher.focused_widget(window).ok().flatten();
-                    dispatcher.paste_for_person(window, focused, &key, modifiers);
+                    self.persons_keystroke(&dispatcher, window, focused, &key, modifiers);
                 }
                 routed
             })
@@ -3473,7 +3496,13 @@ impl Phase3GuiHost {
                 // The person's own paste: what they pasted arrives as typed
                 // text, so every text field an app draws itself takes a
                 // paste (K-1109).
-                dispatcher.paste_for_person(sample.window, focused, &sample.key, sample.modifiers);
+                self.persons_keystroke(
+                    &dispatcher,
+                    sample.window,
+                    focused,
+                    &sample.key,
+                    sample.modifiers,
+                );
             }
         }
 
@@ -6212,6 +6241,10 @@ impl ui::image::Host for Phase3GuiHost {
 }
 
 /// A check step's chord: Shift, and Cmd on a Mac or Ctrl elsewhere.
+/// How long after the person's copy keystroke the app may still answer it.
+/// An app reads its keys once a frame; a slow frame is well under this.
+const COPY_KEYSTROKE_LASTS: std::time::Duration = std::time::Duration::from_secs(1);
+
 fn chord_modifiers(shift: bool, primary: bool) -> krate_adapter_common::ui::Modifiers {
     let mac = cfg!(target_os = "macos");
     krate_adapter_common::ui::Modifiers {
@@ -6231,10 +6264,21 @@ impl ui::clipboard::Host for Phase3GuiHost {
     }
 
     fn write_text(&mut self, text: String) -> wasmtime::Result<Result<(), ui::types::UiError>> {
-        Ok(self
-            .dispatcher()
-            .write_clipboard_text(&text)
-            .map_err(dispatch_error_to_ui_error))
+        let dispatcher = self.dispatcher();
+        let written = match dispatcher.write_clipboard_text(&text) {
+            // No grant: the person's own copy or cut, just pressed, still
+            // reaches the clipboard -- once (K-1190).
+            Err(crate::phase3_ui::UiDispatchError::PermissionDenied)
+                if self
+                    .copy_keystroke
+                    .take()
+                    .is_some_and(|at| at.elapsed() < COPY_KEYSTROKE_LASTS) =>
+            {
+                dispatcher.write_clipboard_for_person(&text)
+            }
+            other => other,
+        };
+        Ok(written.map_err(dispatch_error_to_ui_error))
     }
 }
 
