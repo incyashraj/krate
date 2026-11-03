@@ -855,6 +855,19 @@ export default {
         const live = await orgLiveRoute(request, url, env, { rateLimited });
         if (live) return live;
       }
+      // An org app's link opened by a person's browser (K-1166): the app's
+      // page, which signs them in and opens the version it is on now, not
+      // the JSON the CLI and the console read here. The same rule as /a/:
+      // a page navigation is text/html with no Authorization.
+      {
+        const orgApp = /^\/orgs\/([a-z][a-z0-9-]{1,38})\/apps\/([a-z0-9][a-z0-9._-]{0,127})\/current\/?$/.exec(pathname);
+        if (orgApp && request.method === "GET" && (request.headers.get("accept") || "").includes("text/html") && !request.headers.get("authorization")) {
+          return new Response(null, {
+            status: 303,
+            headers: { location: `/run/org/${orgApp[1]}/${orgApp[2]}`, "cache-control": "no-store", vary: "accept, authorization" },
+          });
+        }
+      }
       // Organisations (IC-946).
       if (pathname === "/orgs" || pathname.startsWith("/orgs/")) {
         return cors(await orgRoute(request, url, env, ctx));
