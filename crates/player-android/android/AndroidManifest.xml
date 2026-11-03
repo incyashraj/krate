@@ -76,7 +76,18 @@
         android:name="tech.krate.player.KrateActivity"
         android:exported="true"
         android:launchMode="singleTask"
-        android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode|fontScale">
+        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|touchscreen|density|uiMode|fontScale|locale|layoutDirection|colorMode"
+        android:windowSoftInputMode="adjustResize|stateHidden">
+      <!-- configChanges: Android restarts an activity for any change it does
+           not name here, and restarting Krate's ends the app in it with
+           whatever the person had not saved. A keyboard plugged into a
+           tablet, a phone folded or unfolded, split screen resized, the
+           language or the colours changed: each used to end the running
+           app. Krate reads every one of them live instead (the window's size
+           and the look, krate:ui/appearance).
+           windowSoftInputMode: the on-screen keyboard is reported as a
+           covered bottom edge, so an app lays its fields out above it
+           (K-1024); hidden until a text field asks for it. -->
       <meta-data android:name="android.app.lib_name" android:value="krate_player" />
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />

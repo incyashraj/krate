@@ -69,6 +69,8 @@ public class KrateActivity extends NativeActivity {
 
     /** Pixels the status bar, gesture bar and camera cutout cover: top, right, bottom, left. */
     private volatile int[] covered = new int[4];
+    /** The invisible text editor the on-screen keyboard talks to (K-1024). */
+    private volatile Typing typing;
 
     @Override
     protected void onCreate(android.os.Bundle saved) {
@@ -86,7 +88,15 @@ public class KrateActivity extends NativeActivity {
                             android.graphics.Insets bars = insets.getInsets(
                                     android.view.WindowInsets.Type.systemBars()
                                     | android.view.WindowInsets.Type.displayCutout());
-                            edges = new int[] {bars.top, bars.right, bars.bottom, bars.left};
+                            // The keyboard, while it is up, covers the
+                            // bottom too: an app lays its fields out above
+                            // it (K-1024). Before Android 11 the system
+                            // window inset below already counts it
+                            // (windowSoftInputMode adjustResize).
+                            android.graphics.Insets typing = insets.getInsets(
+                                    android.view.WindowInsets.Type.ime());
+                            edges = new int[] {bars.top, bars.right,
+                                    Math.max(bars.bottom, typing.bottom), bars.left};
                         } else {
                             edges = new int[] {insets.getSystemWindowInsetTop(),
                                     insets.getSystemWindowInsetRight(),
@@ -874,5 +884,52 @@ public class KrateActivity extends NativeActivity {
     /** Write the file at path into the document at uri; true when it all went. */
     public boolean krateCopyOut(String path, String uri) {
         return Documents.copyOut(this, path, Uri.parse(uri));
+    }
+
+    // Dialogs (krate:ui/dialog message and confirm).
+
+    /** Show an app's message (OK) or question (Yes, No); see Dialog. */
+    public void krateDialog(String title, String body, boolean question) {
+        Dialog.show(this, title, body, question);
+    }
+
+    /** -1 while the dialog is up; then 0 for Yes or OK, 1 for anything else. */
+    public int krateDialogAnswer() {
+        return Dialog.answer();
+    }
+
+    // The on-screen keyboard (K-1024).
+
+    /** Bring the keyboard up for a field (one line or many), or put it away. */
+    public boolean krateTextEntry(final boolean on, final boolean many) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (typing == null) {
+                    if (!on) {
+                        return;
+                    }
+                    Typing made = new Typing(KrateActivity.this);
+                    addContentView(made, new android.view.ViewGroup.LayoutParams(1, 1));
+                    typing = made;
+                }
+                typing.set(on, many);
+            }
+        });
+        return on;
+    }
+
+    /** What the keyboard did since the last ask; see Typing. */
+    public String[] krateTyped() {
+        Typing now = typing;
+        return now == null ? new String[0] : now.take();
+    }
+
+    /** Whether TalkBack, or another reader that explores by touch, is on (IC-926). */
+    public boolean krateScreenReaderOn() {
+        android.view.accessibility.AccessibilityManager readers =
+                (android.view.accessibility.AccessibilityManager)
+                        getSystemService(ACCESSIBILITY_SERVICE);
+        return readers != null && readers.isEnabled() && readers.isTouchExplorationEnabled();
     }
 }
