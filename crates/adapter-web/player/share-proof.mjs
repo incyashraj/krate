@@ -41,6 +41,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, normalize } from 'node:path';
 import { orgEnv, call, worker } from '../../../cloud/worker/test/org-tools.mjs';
+import { consoleError } from './engine-abilities.mjs';
 
 const engines = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -118,7 +119,7 @@ const launched = {};
 async function launch(context, hash, arg) {
   const page = await context.newPage();
   const errors = [];
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
+  page.on('console', (m) => { if (consoleError(m)) errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/run/${hash}?probe=1&arg=${encodeURIComponent(arg)}`);
   // An app asking for nothing past the defaults opens with no card.

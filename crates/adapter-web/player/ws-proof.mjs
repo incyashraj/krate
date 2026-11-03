@@ -32,6 +32,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, normalize } from 'node:path';
 import { orgEnv, call, worker } from '../../../cloud/worker/test/org-tools.mjs';
+import { consoleError } from './engine-abilities.mjs';
 
 const engines = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -132,7 +133,7 @@ for (const [engine, label, viewport, ua] of RUNS) {
   await context.route(/^(https?|wss?):\/\/(?!127\.0\.0\.1[:/]).*/, (route) => { outside.push(route.request().url()); route.abort(); });
   const page = await context.newPage();
   const errors = [];
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('console', (m) => { if (consoleError(m)) errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
   const sockets = [];
   page.on('websocket', (w) => sockets.push(w.url()));

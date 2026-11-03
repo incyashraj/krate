@@ -30,14 +30,22 @@
 //   (d) a notification asked for with no tap behind it is one tap on the
 //       sheet away, asked inside that tap, and shown under the app's name;
 //       one from a tap needs no sheet;
-//   (e) share: WebKit's share sheet opens (from the sheet, and from a tap)
-//       and says sent; where a browser has none, unavailable in words;
+//   (e) share: where the engine has Web Share, its share sheet opens (from
+//       the sheet, and from a tap) and says sent; where it has none,
+//       unavailable in words;
 //   (f) refused: location not-allowed, camera system-denied, the
 //       microphone "not allowed", a notification denied, a cancelled
 //       share false -- the desktop's refusals;
 //   (g) bare: every sense refused with the desktop's refusal, and the
 //       browser asked nothing at all;
 //   (h) no console errors and no notice that anything needs a computer.
+//
+// Each check that needs an ability -- speech voices, Web Share, a camera
+// that sends frames -- asks the engine in the page whether it has it
+// (engine-abilities.mjs). Where it has not (Linux builds: Chromium has no
+// voices, WebKit no Web Share and a fake camera with no frames), the app's
+// honest refusal is checked instead, a SKIP line names the engine and the
+// ability, and the last line lists what was not proven where.
 //
 // Headless browsers have no notification service at all (Chromium answers
 // "denied" whatever it is granted, WebKit "default"), so the browser's
@@ -51,6 +59,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, normalize } from 'node:path';
 import { orgEnv, call, worker } from '../../../cloud/worker/test/org-tools.mjs';
+import { consoleError, unproven, voiceProbe, shareProbe, cameraProbe } from './engine-abilities.mjs';
 
 const engines = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -148,8 +157,11 @@ const RUNS = [
 const ORIGIN = base;
 const launched = {};
 const measured = [];
+const not = unproven();
 const MIC_REFUSED = 'Err(Platform("the microphone was not allowed: the browser said no. Allow it in the browser\'s settings for this site, then open the app again"))';
 const NO_SHARE = 'Err(Unavailable("this browser has no share sheet"))';
+const NO_VOICES = 'Unsupported("this browser has no speech voices Krate can use")';
+const SHARE = 'share sheet';
 
 for (const [engine, label, viewport, ua] of RUNS) {
   const touch = Boolean(ua);
@@ -164,6 +176,19 @@ for (const [engine, label, viewport, ua] of RUNS) {
   });
   const yes = (launched[`${engine}-yes`] ||= await launch('yes'));
   const nay = engine === 'chromium' ? (launched[`${engine}-no`] ||= await launch('no')) : yes;
+  // Whether this engine's camera sends frames at all, asked outside the
+  // app: in a context of its own, granted the camera, on a blank page of
+  // the Player's origin.
+  const camProbe = await (async () => {
+    const c = await yes.newContext({ viewport, userAgent: ua, isMobile: touch && engine === 'chromium', hasTouch: touch });
+    await c.grantPermissions(['camera'], { origin: ORIGIN });
+    await c.route(`${base}/engine-probe`, (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>probe</title>' }));
+    const p = await c.newPage();
+    await p.goto(`${base}/engine-probe`);
+    const got = await p.evaluate(cameraProbe);
+    await c.close();
+    return got;
+  })();
   const open = async (kind, hash) => {
     const tag = `[${engine} ${label} ${kind}]`;
     const browser = kind === 'granted' ? yes : nay;
@@ -175,7 +200,7 @@ for (const [engine, label, viewport, ua] of RUNS) {
     await context.addInitScript(watch, kind === 'granted' ? 'granted' : 'denied');
     const page = await context.newPage();
     const errors = [];
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
+    page.on('console', (m) => { if (consoleError(m)) errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
     page.on('pageerror', (e) => errors.push(String(e)));
     const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
     const lines = () => page.evaluate(() => window.__krate.out.split('\n').filter(Boolean));
@@ -234,17 +259,37 @@ for (const [engine, label, viewport, ua] of RUNS) {
     const speech = {};
     for (const p of ['voices: ', 'say-voice: ', 'say: ', 'speaking: ', 'stop: ', 'speaking-after-stop: ']) speech[p] = await line(p);
     const spoken = await page.evaluate(() => window.__krate.senses);
-    check(speech['voices: '] === 'some=true' && speech['say-voice: '] === 'Err(InvalidRequest("this browser has no voice no-such-voice"))'
-      && speech['say: '] === 'Ok(())' && speech['speaking: '] === 'Ok(true)' && speech['stop: '] === 'Ok(())' && speech['speaking-after-stop: '] === 'Ok(false)'
-      && spoken.spoken.includes('Hello from Senses Check.') && !spoken.speechErrors.length,
-    `${tag} a line is said aloud (the browser started it), and stopped`, { speech, spoken: spoken.spoken, errors: spoken.speechErrors, events: spoken.speechEvents, said: spoken.said });
+    const SPOKEN = 'a line is said aloud (the browser started it), and stopped';
+    if (await page.evaluate(voiceProbe)) {
+      check(speech['voices: '] === 'some=true' && speech['say-voice: '] === 'Err(InvalidRequest("this browser has no voice no-such-voice"))'
+        && speech['say: '] === 'Ok(())' && speech['speaking: '] === 'Ok(true)' && speech['stop: '] === 'Ok(())' && speech['speaking-after-stop: '] === 'Ok(false)'
+        && spoken.spoken.includes('Hello from Senses Check.') && !spoken.speechErrors.length,
+      `${tag} ${SPOKEN}`, { speech, spoken: spoken.spoken, errors: spoken.speechErrors, events: spoken.speechEvents, said: spoken.said });
+    } else {
+      not.skip(tag, SPOKEN, engine, 'speech voices');
+      // The honest answer: no voices, in words; nothing claims to speak.
+      // (say itself answers Ok today and the browser's synthesis fails;
+      // a say that refused with the same words would be as honest.)
+      check(speech['voices: '] === NO_VOICES && speech['say-voice: '] === 'Err(InvalidRequest("this browser has no voice no-such-voice"))'
+        && (speech['say: '] === 'Ok(())' || speech['say: '] === `Err(${NO_VOICES})`) && speech['speaking: '] === 'Ok(false)'
+        && speech['stop: '] === 'Ok(())' && speech['speaking-after-stop: '] === 'Ok(false)' && !spoken.spoken.length,
+      `${tag} with no voices, the app hears "no speech voices" in words, and nothing claims to speak`, { speech, spoken: spoken.spoken, events: spoken.speechEvents });
+    }
     // (c) camera
     const cam = {};
     for (const p of ['camera-devices: ', 'camera-info-before: ', 'camera-read-before-start: ', 'camera: ', 'camera-info: ', 'camera-stop: ', 'camera-read-after-stop: ', 'camera-close: ', 'camera-read-after-close: ']) cam[p] = await line(p, 30000);
     check(Number(cam['camera-devices: ']) >= 1 && cam['camera-info-before: '] === '320x240' && cam['camera-read-before-start: '] === 'Ok(false)',
       `${tag} the camera is there, says the size asked for before a frame, and gives nothing before start`, cam);
-    check(cam['camera: '] === 'frame 320x240 fits=true opaque=true lit=true' && cam['camera-info: '] === '320x240',
-      `${tag} a camera frame arrives, of the size it says, opaque and lit`, cam);
+    const FRAME = 'a camera frame arrives, of the size it says, opaque and lit';
+    if (camProbe.frame) {
+      check(cam['camera: '] === 'frame 320x240 fits=true opaque=true lit=true' && cam['camera-info: '] === '320x240', `${tag} ${FRAME}`, cam);
+    } else {
+      not.skip(tag, FRAME, engine, `frames from its fake camera (${camProbe.why})`);
+      // The app waited its fifteen seconds and was handed nothing: no
+      // made-up frame, no error.
+      check(cam['camera: '] === 'no frame in 15 s' && cam['camera-info: '].startsWith('(none)'),
+        `${tag} with a camera that sends no frame, the app is handed none and no error`, cam);
+    }
     check(cam['camera-stop: '] === 'Ok(())' && cam['camera-read-after-stop: '] === 'Ok(false)' && cam['camera-close: '] === 'Ok(())' && cam['camera-read-after-close: '] === 'Err(InvalidStream)',
       `${tag} after stop nothing is handed out, and after close the stream is gone`, cam);
     // (c) microphone
@@ -275,7 +320,8 @@ for (const [engine, label, viewport, ua] of RUNS) {
     // (e) share with no tap behind it
     let sstart;
     let swords = null;
-    if (engine === 'webkit') {
+    const canShare = await page.evaluate(shareProbe);
+    if (canShare) {
       const sup = await sheetUp();
       swords = sup ? await sheetWords() : null;
       if (sup) await press('#askYes');
@@ -283,6 +329,7 @@ for (const [engine, label, viewport, ua] of RUNS) {
       check(sup && swords.title === 'Senses Check wants to share' && swords.yes === 'Share' && sstart === 'Ok(true)',
         `${tag} with no tap behind it, the share sheet is one tap on a sheet away, and says sent`, { swords, sstart });
     } else {
+      not.skip(tag, 'with no tap behind it, the share sheet is one tap on a sheet away, and says sent', engine, SHARE);
       sstart = await line('share-start: ');
       check(sstart === NO_SHARE, `${tag} where the browser has no share sheet, unavailable in words`, sstart);
     }
@@ -297,11 +344,12 @@ for (const [engine, label, viewport, ua] of RUNS) {
     await press('#screen');
     const stap = await line('share-tap: ');
     const shares = await page.evaluate(() => window.__krate.senses.shares);
-    if (engine === 'webkit') {
+    if (canShare) {
       const last = shares[shares.length - 1] || {};
       check(stap === 'Ok(true)' && (last.how === 'release' || last.how === 'direct') && last.text === 'From a tap',
         `${tag} from a tap the share sheet opens at once, and says sent`, { stap, shares });
     } else {
+      not.skip(tag, 'from a tap the share sheet opens at once, and says sent', engine, SHARE);
       check(stap === NO_SHARE, `${tag} from a tap too, unavailable in words`, stap);
     }
     measured.push({ run: `[${engine} ${label}]`, mic: mic['mic: '], camera: cam['camera: '], share: shares.map((s) => s.how).join(',') || 'none' });
@@ -324,7 +372,7 @@ for (const [engine, label, viewport, ua] of RUNS) {
     const nstart = await line('notify-start: ');
     const fake = await page.evaluate(() => window.__fakeNotify);
     check(up && nstart === 'Err(Denied)' && fake.asked.length === 1 && !fake.shown.length, `${tag} the browser's no to notifications is denied`, { up, nstart, fake });
-    if (engine === 'webkit') {
+    if (await page.evaluate(shareProbe)) {
       const sup = await sheetUp();
       const w = sup ? await sheetWords() : null;
       if (sup) await press('#askNo');
@@ -332,6 +380,7 @@ for (const [engine, label, viewport, ua] of RUNS) {
       const asked = await page.evaluate(() => window.__asked.share);
       check(sup && w.no === 'Cancel' && sstart === 'Ok(false)' && asked === 0, `${tag} a share the person cancels is false, and the browser's sheet never opens`, { w, sstart, asked });
     } else {
+      not.skip(tag, 'a share the person cancels is false, and the browser\'s sheet never opens', engine, SHARE);
       check((await line('share-start: ')) === NO_SHARE, `${tag} where the browser has no share sheet, unavailable`, await o.lines());
     }
     await line('ready');
@@ -362,5 +411,4 @@ for (const b of Object.values(launched)) await b.close();
 server.close();
 console.log('what each run heard, saw and shared:');
 for (const m of measured) console.log(`  ${m.run} mic ${m.mic}; camera ${m.camera}; share ${m.share}`);
-console.log(failed ? `${failed} failed` : 'all passed');
-process.exit(failed ? 1 : 0);
+process.exit(not.end(failed));
