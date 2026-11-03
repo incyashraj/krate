@@ -350,7 +350,10 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
       const height = v.videoHeight;
       if (!width || !height || v.readyState < 2) return ok(null);
       // The newest picture, once: nothing new since the last read is none.
-      if (s.seq >= 0 ? s.seq === s.read : v.currentTime === s.lastTime) return ok(null);
+      // The frame callback says when a picture is new; until it has fired
+      // once, the video's clock does. Linux WebKit never fires it for this
+      // hidden video, so waiting on it alone read no frame at all there.
+      if (s.seq > 0 ? s.seq === s.read : v.currentTime === s.lastTime) return ok(null);
       if (!s.canvas) s.canvas = document.createElement('canvas');
       if (s.canvas.width !== width || s.canvas.height !== height) { s.canvas.width = width; s.canvas.height = height; s.g = null; }
       if (!s.g) s.g = s.canvas.getContext('2d', { willReadFrequently: true });
