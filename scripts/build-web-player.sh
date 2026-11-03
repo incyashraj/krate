@@ -80,8 +80,12 @@ web=crates/adapter-web/player/web
 cp "$web"/run.html "$web"/player.js "$web"/player.css "$web"/app-worker.js \
   "$web"/hosts.js "$web"/bridge.js "$web"/ring.js "$web"/audio.js "$web"/audio-worklet.js \
   "$web"/org-data.js "$web"/sqldb.js "$web"/shared-store.js "$web"/secret-store.js \
-  "$web"/senses.js "$web"/notify-sw.js "$web"/krate-card.png "$out"/
+  "$web"/senses.js "$web"/notify-sw.js "$web"/file-sw.js "$web"/krate-card.png "$out"/
 cp target/wasm32-wasip1/release/krate_sql_web.wasm "$out"/sql.wasm
+# A .krate file opened in the tab (/run/file) is made into its web pack in
+# the page, by the same transpiler the publish door uses, so the file never
+# leaves the browser. Fetched only by that page.
+cp cloud/worker/src/transpiler.wasm "$out"/transpiler.wasm
 # The browser as an organisation's device: the console's own file, so a tab
 # that keeps an app's team data registers and holds the key the same way.
 cp docs/landing/kit/org-device.js "$out"/

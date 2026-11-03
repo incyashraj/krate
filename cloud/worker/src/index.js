@@ -74,7 +74,7 @@ import { orgLiveRoute } from "./org-data-live.js";
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
 // serves it behind /a/'s own checks, and the cross-origin-isolated page.
-import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH } from "./web-player.js";
+import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
 // The receive loop (F-320): the link card, the open counted per person, a
 // stranger's report (receive.js).
 import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState, newerVersionLine } from "./receive.js";
@@ -782,6 +782,11 @@ export default {
       // The browser Player (IC-956): its page, cross-origin isolated, and
       // the files it is made of. Not wrapped in CORS: nothing but this
       // origin loads them.
+      // A file shared to the installed Player is the page's own (file-sw.js
+      // takes it in the browser); one that reaches the hub is not read.
+      if (request.method === "POST" && pathname === FILE_PAGE) {
+        return await fileShareFallback(request);
+      }
       if (request.method === "GET" && pathname.startsWith("/run/")) {
         // A chat app showing a /run/ link gets the app's card, as for /a/.
         const run = RUN_PATH.exec(pathname);
