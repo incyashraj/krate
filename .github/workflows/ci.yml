@@ -1114,6 +1114,7 @@ jobs:
             --strict \
             --output "krate-evidence/adapter-evidence-${{ matrix.os }}.md"
       - name: Upload adapter evidence
+        if: ${{ !cancelled() && hashFiles('krate-evidence/adapter-evidence-*.md') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: adapter-evidence-${{ matrix.os }}

@@ -7183,8 +7183,11 @@ fn wrap_mac_zip(
             } else {
                 mode
             };
+            // Said as Unix entries: on Windows the zip library writes DOS
+            // entries by default, and a DOS entry carries no mode at all.
             let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated)
+                .system(zip::System::Unix)
                 .unix_permissions(mode);
             if path.is_dir() {
                 zip.add_directory(format!("{name}/"), options)?;
