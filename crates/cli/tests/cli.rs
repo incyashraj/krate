@@ -10878,6 +10878,28 @@ fn a_linux_wrap_is_one_file_that_is_still_a_bundle() {
 /// `krate player-install` puts the player where the person owns it and
 /// declares `.krate` for it -- the step a gift's first open runs. A second
 /// run keeps what is there.
+/// Windows has no gift player yet (it waits for a signing certificate):
+/// `krate player-install` says so in words and installs nothing.
+#[cfg(windows)]
+#[test]
+fn player_install_on_windows_says_it_is_not_there_yet() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let out = krate()
+        .arg("player-install")
+        .arg("--home")
+        .arg(home.path())
+        .env("KRATE_PLAYER_NO_REGISTER", "1")
+        .output()
+        .expect("run krate player-install");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("not available on this system yet"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[cfg(not(windows))]
 #[test]
 fn player_install_puts_a_registered_player_in_the_home_folder() {
     let home = tempfile::tempdir().expect("tempdir");
@@ -10891,17 +10913,6 @@ fn player_install_puts_a_registered_player_in_the_home_folder() {
             .expect("run krate player-install")
     };
     let out = run();
-    // Windows has no gift player yet (it waits for a signing certificate):
-    // it says so in words and installs nothing.
-    if cfg!(windows) {
-        assert!(!out.status.success());
-        assert!(
-            String::from_utf8_lossy(&out.stderr).contains("not available on this system yet"),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        return;
-    }
     assert!(
         out.status.success(),
         "{}",
