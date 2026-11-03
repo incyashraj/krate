@@ -60,13 +60,20 @@ export const shareProbe = () => typeof navigator.share === 'function';
 /// Whether the engine's camera sends a frame at all: the camera opened
 /// straight through getUserMedia, outside any app, into a video element,
 /// for up to ten seconds; then put away.
-export const cameraProbe = () => new Promise((resolve) => {
+/// `style` names a class to give the video (the Player's hidden 'pick' style),
+/// so the same probe run in the app's page tells style from page apart.
+export const cameraProbe = (style) => new Promise((resolve) => {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') { resolve({ frame: false, why: 'no getUserMedia' }); return; }
+  // A camera that never answers is an answer too, after fifteen seconds.
+  let done = false;
+  const finish = (got) => { if (!done) { done = true; resolve(got); } };
+  setTimeout(() => finish({ frame: false, why: 'the camera never answered in 15 s' }), 15000);
   navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false }).then((stream) => {
     const v = document.createElement('video');
     v.muted = true;
     v.playsInline = true;
     v.autoplay = true;
+    if (style) v.className = style;
     v.srcObject = stream;
     document.body.appendChild(v);
     v.play().catch(() => {});
@@ -78,11 +85,11 @@ export const cameraProbe = () => new Promise((resolve) => {
         for (const t of stream.getTracks()) t.stop();
         v.srcObject = null;
         v.remove();
-        resolve(got);
+        finish(got);
         return;
       }
       setTimeout(look, 100);
     };
     look();
-  }, (e) => resolve({ frame: false, why: `getUserMedia: ${e && e.name}` }));
+  }, (e) => finish({ frame: false, why: `getUserMedia: ${e && e.name}` }));
 });

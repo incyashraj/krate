@@ -198,6 +198,18 @@ for (const [engine, label, viewport, ua] of RUNS) {
       await context.setGeolocation({ latitude: 51.5007, longitude: -0.1246, accuracy: 12 });
     }
     await context.addInitScript(watch, kind === 'granted' ? 'granted' : 'denied');
+    // What every video in the page is doing, sampled: when the app is handed
+    // no camera frame, this says whether the Player's video ever decoded.
+    await context.addInitScript(() => {
+      window.__vids = [];
+      setInterval(() => {
+        for (const v of document.querySelectorAll('video')) {
+          const t = v.srcObject && v.srcObject.getVideoTracks ? v.srcObject.getVideoTracks()[0] : null;
+          window.__vids.push({ cls: v.className, ready: v.readyState, w: v.videoWidth, h: v.videoHeight, time: Math.round(v.currentTime * 100) / 100, paused: v.paused, track: t ? `${t.readyState} muted=${t.muted} enabled=${t.enabled}` : 'none' });
+        }
+        if (window.__vids.length > 400) window.__vids.splice(0, 200);
+      }, 500);
+    });
     const page = await context.newPage();
     const errors = [];
     page.on('console', (m) => { if (consoleError(m)) errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
@@ -282,7 +294,16 @@ for (const [engine, label, viewport, ua] of RUNS) {
       `${tag} the camera is there, says the size asked for before a frame, and gives nothing before start`, cam);
     const FRAME = 'a camera frame arrives, of the size it says, opaque and lit';
     if (camProbe.frame) {
-      check(cam['camera: '] === 'frame 320x240 fits=true opaque=true lit=true' && cam['camera-info: '] === '320x240', `${tag} ${FRAME}`, cam);
+      const framed = cam['camera: '] === 'frame 320x240 fits=true opaque=true lit=true' && cam['camera-info: '] === '320x240';
+      // No frame where the engine's own camera sends them: say why, in the
+      // same run -- the Player's video as it was, and the probe again in
+      // the app's page, plain and with the Player's hidden style.
+      const why = framed ? {} : {
+        videos: await page.evaluate(() => (window.__vids || []).filter((x) => x.cls === 'pick').slice(-4)),
+        probeInPage: await page.evaluate(cameraProbe).catch((e) => String(e)),
+        probeInPageHidden: await page.evaluate(cameraProbe, 'pick').catch((e) => String(e)),
+      };
+      check(framed, `${tag} ${FRAME}`, { ...cam, ...why });
     } else {
       not.skip(tag, FRAME, engine, `frames from its fake camera (${camProbe.why})`);
       // The app waited its fifteen seconds and was handed nothing: no
