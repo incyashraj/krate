@@ -68,7 +68,9 @@ pub fn clean_relative(name: &str) -> Result<String, String> {
         return Err(String::from("Type a name first"));
     }
     if name.starts_with('/') || name.contains('\\') || name.contains(':') {
-        return Err(String::from("Use a name inside the project, like src/util.rs"));
+        return Err(String::from(
+            "Use a name inside the project, like src/util.rs",
+        ));
     }
     let mut out = String::new();
     for part in name.split('/') {
@@ -113,7 +115,9 @@ pub fn crate_name_from(folder: &str) -> String {
 pub fn valid_crate_name(name: &str) -> bool {
     !name.is_empty()
         && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
-        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
 /// The files `cargo new` would make for a binary crate.
@@ -136,9 +140,11 @@ pub fn is_heavy_dir(name: &str) -> bool {
 
 fn sort_entries(v: &mut [Entry]) {
     v.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+        b.is_dir.cmp(&a.is_dir).then_with(|| {
+            a.name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase())
+        })
     });
 }
 
@@ -231,7 +237,9 @@ impl Tree {
     }
 
     pub fn toggle(&mut self, fs: &mut dyn Vfs, index: usize) {
-        let Some(row) = self.rows.get(index).cloned() else { return };
+        let Some(row) = self.rows.get(index).cloned() else {
+            return;
+        };
         if !row.is_dir {
             return;
         }
@@ -308,7 +316,9 @@ impl Project {
         let mut out = Vec::new();
         let mut stack: Vec<String> = alloc::vec![String::new()];
         while let Some(dir) = stack.pop() {
-            let Ok(mut entries) = self.fs.list(&dir) else { continue };
+            let Ok(mut entries) = self.fs.list(&dir) else {
+                continue;
+            };
             sort_entries(&mut entries);
             for e in entries.iter().rev() {
                 let path = join(&dir, &e.name);
@@ -408,7 +418,10 @@ impl Vfs for MemFs {
     }
 
     fn read(&mut self, path: &str) -> Result<String, String> {
-        self.files.get(path).cloned().ok_or_else(|| String::from("No such file"))
+        self.files
+            .get(path)
+            .cloned()
+            .ok_or_else(|| String::from("No such file"))
     }
 
     fn write(&mut self, path: &str, text: &str) -> Result<(), String> {
@@ -464,12 +477,17 @@ impl Vfs for MemFs {
     }
 
     fn remove_file(&mut self, path: &str) -> Result<(), String> {
-        self.files.remove(path).map(|_| ()).ok_or_else(|| String::from("No such file"))
+        self.files
+            .remove(path)
+            .map(|_| ())
+            .ok_or_else(|| String::from("No such file"))
     }
 
     fn remove_dir(&mut self, path: &str) -> Result<(), String> {
         let prefix = String::from(path) + "/";
-        if self.files.keys().any(|k| k.starts_with(&prefix)) || self.dirs.iter().any(|d| d.starts_with(&prefix)) {
+        if self.files.keys().any(|k| k.starts_with(&prefix))
+            || self.dirs.iter().any(|d| d.starts_with(&prefix))
+        {
             return Err(String::from("The folder is not empty"));
         }
         if self.dirs.remove(path) {
@@ -494,7 +512,8 @@ pub fn tour_files() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
-const TOUR_CARGO: &str = "[package]\nname = \"tour\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n";
+const TOUR_CARGO: &str =
+    "[package]\nname = \"tour\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n";
 
 const TOUR_README: &str = "# The tour\n\nA small crate to try Krate Code on. Nothing here is saved to your disk:\nopen a folder (Ctrl+O) or make a new project for that.\n\nTry: `w` `b` `e` to move by words, `dw` to delete one, `u` to undo it,\n`ci(` inside a call, `/area` then `n`, `:%s/Shape/Figure/g`, `Ctrl+W v`.\n";
 
@@ -593,8 +612,22 @@ mod tests {
     #[test]
     fn the_tree_lists_folders_first_and_opens_src() {
         let p = tour();
-        let names: Vec<(&str, usize)> = p.tree.rows.iter().map(|r| (r.name.as_str(), r.depth)).collect();
-        assert_eq!(names, [("src", 0), ("main.rs", 1), ("shapes.rs", 1), ("Cargo.toml", 0), ("README.md", 0)]);
+        let names: Vec<(&str, usize)> = p
+            .tree
+            .rows
+            .iter()
+            .map(|r| (r.name.as_str(), r.depth))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("src", 0),
+                ("main.rs", 1),
+                ("shapes.rs", 1),
+                ("Cargo.toml", 0),
+                ("README.md", 0)
+            ]
+        );
     }
 
     #[test]

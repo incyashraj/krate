@@ -63,7 +63,8 @@ impl Vfs for DiskFs {
                 p.push('/');
             }
             p.push_str(&name);
-            let is_dir = raw.ends_with('/') || fs::stat(&self.at(&p)).map(|s| s.is_dir).unwrap_or(false);
+            let is_dir =
+                raw.ends_with('/') || fs::stat(&self.at(&p)).map(|s| s.is_dir).unwrap_or(false);
             out.push(Entry { name, is_dir });
         }
         Ok(out)
@@ -103,7 +104,9 @@ impl Vfs for DiskFs {
 
     fn changed(&mut self) -> bool {
         match self.watch {
-            Some(w) => fs::watch::changes(w).map(|c| !c.is_empty()).unwrap_or(false),
+            Some(w) => fs::watch::changes(w)
+                .map(|c| !c.is_empty())
+                .unwrap_or(false),
             None => false,
         }
     }

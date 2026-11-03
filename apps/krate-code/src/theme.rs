@@ -259,8 +259,16 @@ mod tests {
             for kind in ROLES {
                 let c = contrast(theme.syntax(kind), theme.editor);
                 // Comments are allowed to be quieter, never unreadable.
-                let floor = if matches!(kind, Kind::Comment) { 3.0 } else { 4.5 };
-                assert!(c >= floor, "{kind:?} on {} is {c}", if theme.dark { "dusk" } else { "paper" });
+                let floor = if matches!(kind, Kind::Comment) {
+                    3.0
+                } else {
+                    4.5
+                };
+                assert!(
+                    c >= floor,
+                    "{kind:?} on {} is {c}",
+                    if theme.dark { "dusk" } else { "paper" }
+                );
             }
             assert!(contrast(theme.ink, theme.current_line) >= 7.0);
             assert!(contrast(theme.on_mode, theme.mode_normal) >= 4.5);

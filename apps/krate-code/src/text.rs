@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn fuzzy_prefers_word_starts_and_runs() {
-        assert!(fuzzy_score("sv", "Save file").is_none() == false);
+        assert!(fuzzy_score("sv", "Save file").is_some());
         assert!(fuzzy_score("xyz", "Save file").is_none());
         let a = fuzzy_score("split", "Split vertically").unwrap();
         let b = fuzzy_score("split", "Show palette list items too").unwrap_or(-999);

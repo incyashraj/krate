@@ -57,7 +57,11 @@ pub struct Command {
 }
 
 const fn c(action: Action, title: &'static str, keys: &'static str) -> Command {
-    Command { action, title, keys }
+    Command {
+        action,
+        title,
+        keys,
+    }
 }
 
 pub const COMMANDS: &[Command] = &[
@@ -80,7 +84,11 @@ pub const COMMANDS: &[Command] = &[
     c(Action::NextPane, "Focus the next split", "Ctrl+W w"),
     c(Action::ClosePane, "Close split", "Ctrl+W c  :close"),
     c(Action::ToggleTree, "Show or hide the file tree", "Ctrl+B"),
-    c(Action::TogglePanel, "Show or hide the bottom panel", "Ctrl+J"),
+    c(
+        Action::TogglePanel,
+        "Show or hide the bottom panel",
+        "Ctrl+J",
+    ),
     c(Action::ShowProblems, "Show Problems", ""),
     c(Action::ShowOutput, "Show Output", ""),
     c(Action::ShowTerminal, "Show Terminal", "Ctrl+`"),
@@ -89,23 +97,43 @@ pub const COMMANDS: &[Command] = &[
     c(Action::GotoLine, "Go to line", ":<line>"),
     c(Action::Undo, "Undo", "u  Ctrl+Z"),
     c(Action::Redo, "Redo", "Ctrl+R  Ctrl+Shift+Z"),
-    c(Action::ToggleBreakpoint, "Toggle breakpoint on this line", "F9"),
+    c(
+        Action::ToggleBreakpoint,
+        "Toggle breakpoint on this line",
+        "F9",
+    ),
     c(Action::Tool(Tool::Build), Tool::Build.title(), "F7"),
     c(Action::Tool(Tool::Run), Tool::Run.title(), "F5"),
     c(Action::Tool(Tool::Test), Tool::Test.title(), ""),
     c(Action::Tool(Tool::Check), Tool::Check.title(), ""),
     c(Action::Tool(Tool::Clippy), Tool::Clippy.title(), ""),
     c(Action::Tool(Tool::Format), Tool::Format.title(), ""),
-    c(Action::Tool(Tool::Complete), Tool::Complete.title(), "Ctrl+Space"),
+    c(
+        Action::Tool(Tool::Complete),
+        Tool::Complete.title(),
+        "Ctrl+Space",
+    ),
     c(Action::Tool(Tool::Hover), Tool::Hover.title(), "K"),
-    c(Action::Tool(Tool::Definition), Tool::Definition.title(), "F12  (gd works in this file)"),
+    c(
+        Action::Tool(Tool::Definition),
+        Tool::Definition.title(),
+        "F12  (gd works in this file)",
+    ),
     c(Action::Tool(Tool::Debug), Tool::Debug.title(), "Shift+F5"),
     c(Action::Tool(Tool::Terminal), Tool::Terminal.title(), ""),
     c(Action::ThemeAuto, "Theme: follow the system", ":theme auto"),
     c(Action::ThemeDark, "Theme: Dusk (dark)", ":theme dark"),
     c(Action::ThemeLight, "Theme: Paper (light)", ":theme light"),
-    c(Action::ClickMode, "Clicking text: start typing or stay in normal mode", ""),
-    c(Action::RelativeNumbers, "Relative line numbers on or off", ":set rnu"),
+    c(
+        Action::ClickMode,
+        "Clicking text: start typing or stay in normal mode",
+        "",
+    ),
+    c(
+        Action::RelativeNumbers,
+        "Relative line numbers on or off",
+        ":set rnu",
+    ),
     c(Action::BiggerText, "Bigger text", "Ctrl+="),
     c(Action::SmallerText, "Smaller text", "Ctrl+-"),
     c(Action::Keys, "Keys: a short guide to the modes", ":help"),
@@ -132,7 +160,10 @@ mod tests {
     #[test]
     fn every_tool_is_in_the_palette() {
         for t in Tool::ALL {
-            assert!(COMMANDS.iter().any(|c| c.action == Action::Tool(t)), "{t:?}");
+            assert!(
+                COMMANDS.iter().any(|c| c.action == Action::Tool(t)),
+                "{t:?}"
+            );
         }
     }
 

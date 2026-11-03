@@ -64,7 +64,9 @@ pub enum Mode {
     /// The `:` line.
     Command,
     /// The `/` (forward) or `?` (backward) line.
-    Search { forward: bool },
+    Search {
+        forward: bool,
+    },
 }
 
 impl Mode {
@@ -203,17 +205,25 @@ enum Motion {
     LineEnd,
     LastNonBlank,
     /// `gg` (no count: first line) and `G` (no count: last line).
-    GotoLine { last: bool },
+    GotoLine {
+        last: bool,
+    },
     MatchPair,
     Find(FindKind, char),
-    RepeatFind { reverse: bool },
+    RepeatFind {
+        reverse: bool,
+    },
     ParaFwd,
     ParaBack,
     ScreenTop,
     ScreenMid,
     ScreenBottom,
-    SearchNext { reverse: bool },
-    SearchWord { forward: bool },
+    SearchNext {
+        reverse: bool,
+    },
+    SearchWord {
+        forward: bool,
+    },
     NextLineStart,
     PrevLineStart,
     HalfDown,
@@ -233,9 +243,19 @@ enum MKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Obj {
-    Word { big: bool, around: bool },
-    Pair { open: char, close: char, around: bool },
-    Quote { q: char, around: bool },
+    Word {
+        big: bool,
+        around: bool,
+    },
+    Pair {
+        open: char,
+        close: char,
+        around: bool,
+    },
+    Quote {
+        q: char,
+        around: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -460,10 +480,26 @@ fn parse_object(inputs: &[Input], at: usize) -> Result<Option<(Obj, usize)>, ()>
     let obj = match next {
         Input::Char('w') => Obj::Word { big: false, around },
         Input::Char('W') => Obj::Word { big: true, around },
-        Input::Char('(') | Input::Char(')') | Input::Char('b') => Obj::Pair { open: '(', close: ')', around },
-        Input::Char('{') | Input::Char('}') | Input::Char('B') => Obj::Pair { open: '{', close: '}', around },
-        Input::Char('[') | Input::Char(']') => Obj::Pair { open: '[', close: ']', around },
-        Input::Char('<') | Input::Char('>') => Obj::Pair { open: '<', close: '>', around },
+        Input::Char('(') | Input::Char(')') | Input::Char('b') => Obj::Pair {
+            open: '(',
+            close: ')',
+            around,
+        },
+        Input::Char('{') | Input::Char('}') | Input::Char('B') => Obj::Pair {
+            open: '{',
+            close: '}',
+            around,
+        },
+        Input::Char('[') | Input::Char(']') => Obj::Pair {
+            open: '[',
+            close: ']',
+            around,
+        },
+        Input::Char('<') | Input::Char('>') => Obj::Pair {
+            open: '<',
+            close: '>',
+            around,
+        },
         Input::Char(q @ ('"' | '\'' | '`')) => Obj::Quote { q: *q, around },
         _ => return Ok(None),
     };
@@ -525,7 +561,11 @@ fn parse(inputs: &[Input]) -> Parse {
         _ => None,
     };
     if let Some(op) = op {
-        let op_len = if matches!(first, Input::Char('g')) { 2 } else { 1 };
+        let op_len = if matches!(first, Input::Char('g')) {
+            2
+        } else {
+            1
+        };
         let op_char = ch(inputs.get(at + op_len - 1));
         let mut k = at + op_len;
         let Some(next) = inputs.get(k) else {
@@ -747,8 +787,16 @@ impl Vim {
             (cur.pos, cur.anchor)
         };
         match self.mode {
-            Mode::Visual => Some((a, Pos::new(b.line, buf.next_col(b.line, b.col).max(b.col)), false)),
-            Mode::VisualLine => Some((Pos::new(a.line, 0), Pos::new(b.line, buf.line_len(b.line)), true)),
+            Mode::Visual => Some((
+                a,
+                Pos::new(b.line, buf.next_col(b.line, b.col).max(b.col)),
+                false,
+            )),
+            Mode::VisualLine => Some((
+                Pos::new(a.line, 0),
+                Pos::new(b.line, buf.line_len(b.line)),
+                true,
+            )),
             Mode::Select if a != b => Some((a, b, false)),
             _ => None,
         }
@@ -854,7 +902,11 @@ impl Vim {
         }
         // Shift with an arrow starts a selection a mouse user expects.
         if let Input::Shift(k) = input {
-            let anchor = if self.mode.is_visual() { ctx.cur.anchor } else { ctx.cur.pos };
+            let anchor = if self.mode.is_visual() {
+                ctx.cur.anchor
+            } else {
+                ctx.cur.pos
+            };
             self.begin_select(ctx.buf, ctx.cur, anchor);
             self.select_return = Mode::Normal;
             self.shift_move(ctx, k);
@@ -942,7 +994,15 @@ impl Vim {
         let sel = self.selection(ctx.buf, ctx.cur)?;
         // Capitals act on whole lines, whatever the selection.
         let whole = matches!(input, Input::Char('D' | 'X' | 'Y' | 'C' | 'S' | 'R'));
-        let sel = if whole { (Pos::new(sel.0.line, 0), Pos::new(sel.1.line, ctx.buf.line_len(sel.1.line)), true) } else { sel };
+        let sel = if whole {
+            (
+                Pos::new(sel.0.line, 0),
+                Pos::new(sel.1.line, ctx.buf.line_len(sel.1.line)),
+                true,
+            )
+        } else {
+            sel
+        };
         let op = match input {
             Input::Char('D') | Input::Char('X') => Some(Op::Delete),
             Input::Char('Y') => Some(Op::Yank),
@@ -960,7 +1020,11 @@ impl Vim {
         if let Some(op) = op {
             let (a, b, linewise) = sel;
             self.visual_marks = Some((a, b, linewise));
-            let kind = if linewise { MKind::Linewise } else { MKind::Exclusive };
+            let kind = if linewise {
+                MKind::Linewise
+            } else {
+                MKind::Exclusive
+            };
             self.mode = Mode::Normal;
             ctx.buf.begin_group(ctx.cur.pos);
             self.apply_op(ctx, op, a, b, kind, None, fx);
@@ -1006,7 +1070,14 @@ impl Vim {
                 let reg = self.registers.get(&'"').cloned().unwrap_or_default();
                 self.mode = Mode::Normal;
                 ctx.buf.begin_group(ctx.cur.pos);
-                let (from, to) = if linewise { (Pos::new(a.line, 0), Pos::new(b.line, ctx.buf.line_len(b.line))) } else { (a, b) };
+                let (from, to) = if linewise {
+                    (
+                        Pos::new(a.line, 0),
+                        Pos::new(b.line, ctx.buf.line_len(b.line)),
+                    )
+                } else {
+                    (a, b)
+                };
                 let mut removed = ctx.buf.slice(from, to);
                 if linewise {
                     removed.push('\n');
@@ -1023,7 +1094,11 @@ impl Vim {
                 }
                 let end = ctx.buf.replace(from, to, &text);
                 self.set_register(None, removed, linewise);
-                ctx.cur.pos = if reg.linewise { Pos::new(from.line, ctx.buf.first_non_blank(from.line)) } else { ctx.buf.prev_pos(end).unwrap_or(from) };
+                ctx.cur.pos = if reg.linewise {
+                    Pos::new(from.line, ctx.buf.first_non_blank(from.line))
+                } else {
+                    ctx.buf.prev_pos(end).unwrap_or(from)
+                };
                 ctx.buf.end_group(ctx.cur.pos);
                 self.clamp_normal(ctx.buf, ctx.cur);
                 Some(true)
@@ -1086,7 +1161,10 @@ impl Vim {
                 self.last_change = Some(rec);
             }
         }
-        if !matches!(self.mode, Mode::Insert | Mode::Command | Mode::Search { .. }) {
+        if !matches!(
+            self.mode,
+            Mode::Insert | Mode::Command | Mode::Search { .. }
+        ) {
             self.clamp_normal(ctx.buf, ctx.cur);
         }
     }
@@ -1107,11 +1185,19 @@ impl Vim {
                     }
                     match m {
                         Motion::HalfDown | Motion::PageDown => {
-                            let step = if m == Motion::HalfDown { ctx.page / 2 } else { ctx.page.saturating_sub(2) };
+                            let step = if m == Motion::HalfDown {
+                                ctx.page / 2
+                            } else {
+                                ctx.page.saturating_sub(2)
+                            };
                             fx.push(Effect::ScrollLines((step.max(1) * n) as isize));
                         }
                         Motion::HalfUp | Motion::PageUp => {
-                            let step = if m == Motion::HalfUp { ctx.page / 2 } else { ctx.page.saturating_sub(2) };
+                            let step = if m == Motion::HalfUp {
+                                ctx.page / 2
+                            } else {
+                                ctx.page.saturating_sub(2)
+                            };
                             fx.push(Effect::ScrollLines(-((step.max(1) * n) as isize)));
                         }
                         _ => {}
@@ -1121,7 +1207,15 @@ impl Vim {
             (Some(op), Target::Lines) => {
                 let a = ctx.cur.pos.line;
                 let b = (a + n - 1).min(ctx.buf.last_line());
-                self.apply_op(ctx, op, Pos::new(a, 0), Pos::new(b, 0), MKind::Linewise, cmd.reg, fx);
+                self.apply_op(
+                    ctx,
+                    op,
+                    Pos::new(a, 0),
+                    Pos::new(b, 0),
+                    MKind::Linewise,
+                    cmd.reg,
+                    fx,
+                );
             }
             (Some(op), Target::Motion(m)) => {
                 let start = ctx.cur.pos;
@@ -1154,16 +1248,24 @@ impl Vim {
                         }
                     }
                 }
-                if kind == MKind::Exclusive && end > start && end.col == 0 && end.line > start.line {
+                if kind == MKind::Exclusive && end > start && end.col == 0 && end.line > start.line
+                {
                     // An exclusive motion ending at a line's start ends at
                     // the end of the line before (`d}`).
                     let l = end.line - 1;
                     end = Pos::new(l, ctx.buf.line_len(l));
-                    if start.col <= ctx.buf.first_non_blank(start.line) && end.col >= ctx.buf.line_len(end.line) && matches!(m, Motion::ParaFwd) {
+                    if start.col <= ctx.buf.first_non_blank(start.line)
+                        && end.col >= ctx.buf.line_len(end.line)
+                        && matches!(m, Motion::ParaFwd)
+                    {
                         kind = MKind::Linewise;
                     }
                 }
-                let (a, b) = if end < start { (end, start) } else { (start, end) };
+                let (a, b) = if end < start {
+                    (end, start)
+                } else {
+                    (start, end)
+                };
                 let b = if kind == MKind::Inclusive {
                     let nc = ctx.buf.next_col(b.line, b.col);
                     Pos::new(b.line, nc.max(b.col))
@@ -1180,8 +1282,16 @@ impl Vim {
             }
             (Some(op), Target::Object(obj)) => {
                 if let Some((a, b, linewise)) = self.object_range(ctx.buf, ctx.cur.pos, obj, n) {
-                    let kind = if linewise { MKind::Linewise } else { MKind::Exclusive };
-                    let (a, b) = if linewise { (Pos::new(a.line, 0), Pos::new(b.line, 0)) } else { (a, b) };
+                    let kind = if linewise {
+                        MKind::Linewise
+                    } else {
+                        MKind::Exclusive
+                    };
+                    let (a, b) = if linewise {
+                        (Pos::new(a.line, 0), Pos::new(b.line, 0))
+                    } else {
+                        (a, b)
+                    };
                     self.apply_op(ctx, op, a, b, kind, cmd.reg, fx);
                 }
             }
@@ -1196,21 +1306,35 @@ impl Vim {
         if b < buf.last_line() {
             (Pos::new(a, 0), Pos::new(b + 1, 0))
         } else if a > 0 {
-            (Pos::new(a - 1, buf.line_len(a - 1)), Pos::new(b, buf.line_len(b)))
+            (
+                Pos::new(a - 1, buf.line_len(a - 1)),
+                Pos::new(b, buf.line_len(b)),
+            )
         } else {
             (Pos::new(0, 0), Pos::new(b, buf.line_len(b)))
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn apply_op(&mut self, ctx: &mut Ctx, op: Op, a: Pos, b: Pos, kind: MKind, reg: Option<char>, fx: &mut Vec<Effect>) {
+    fn apply_op(
+        &mut self,
+        ctx: &mut Ctx,
+        op: Op,
+        a: Pos,
+        b: Pos,
+        kind: MKind,
+        reg: Option<char>,
+        fx: &mut Vec<Effect>,
+    ) {
         let _ = fx;
         let linewise = kind == MKind::Linewise;
         let (la, lb) = (a.line.min(b.line), a.line.max(b.line));
         match op {
             Op::Yank => {
                 let text = if linewise {
-                    let mut t = ctx.buf.slice(Pos::new(la, 0), Pos::new(lb, ctx.buf.line_len(lb)));
+                    let mut t = ctx
+                        .buf
+                        .slice(Pos::new(la, 0), Pos::new(lb, ctx.buf.line_len(lb)));
                     t.push('\n');
                     t
                 } else {
@@ -1229,7 +1353,9 @@ impl Vim {
             }
             Op::Delete => {
                 if linewise {
-                    let mut t = ctx.buf.slice(Pos::new(la, 0), Pos::new(lb, ctx.buf.line_len(lb)));
+                    let mut t = ctx
+                        .buf
+                        .slice(Pos::new(la, 0), Pos::new(lb, ctx.buf.line_len(lb)));
                     t.push('\n');
                     let (from, to) = self.line_span(ctx.buf, la, lb);
                     ctx.buf.replace(from, to, "");
@@ -1248,7 +1374,9 @@ impl Vim {
             }
             Op::Change => {
                 if linewise {
-                    let mut t = ctx.buf.slice(Pos::new(la, 0), Pos::new(lb, ctx.buf.line_len(lb)));
+                    let mut t = ctx
+                        .buf
+                        .slice(Pos::new(la, 0), Pos::new(lb, ctx.buf.line_len(lb)));
                     t.push('\n');
                     let indent = String::from(text::indent_of(ctx.buf.line(la)));
                     let end = Pos::new(lb, ctx.buf.line_len(lb));
@@ -1265,14 +1393,21 @@ impl Vim {
                 self.insert_from = ctx.cur.pos;
             }
             Op::Indent | Op::Dedent => {
-                let lb = if !linewise && b.col == 0 && b.line > la { b.line - 1 } else { lb };
+                let lb = if !linewise && b.col == 0 && b.line > la {
+                    b.line - 1
+                } else {
+                    lb
+                };
                 for l in la..=lb {
                     self.shift_line(ctx.buf, l, op == Op::Indent);
                 }
                 ctx.cur.pos = Pos::new(la, ctx.buf.first_non_blank(la));
                 let n = lb - la + 1;
                 if n > 2 {
-                    self.info(alloc::format!("{n} lines {}ed 1 time", if op == Op::Indent { ">" } else { "<" }));
+                    self.info(alloc::format!(
+                        "{n} lines {}ed 1 time",
+                        if op == Op::Indent { ">" } else { "<" }
+                    ));
                 }
             }
             Op::Lower | Op::Upper | Op::ToggleCase => {
@@ -1351,7 +1486,15 @@ impl Vim {
         }
     }
 
-    fn act(&mut self, ctx: &mut Ctx, act: Act, n: usize, count: Option<usize>, reg: Option<char>, fx: &mut Vec<Effect>) {
+    fn act(
+        &mut self,
+        ctx: &mut Ctx,
+        act: Act,
+        n: usize,
+        count: Option<usize>,
+        reg: Option<char>,
+        fx: &mut Vec<Effect>,
+    ) {
         let p = ctx.cur.pos;
         match act {
             Act::Insert => self.enter_insert(ctx, p, n),
@@ -1430,11 +1573,27 @@ impl Vim {
             }
             Act::SubstLine => {
                 let b = (p.line + n - 1).min(ctx.buf.last_line());
-                self.apply_op(ctx, Op::Change, Pos::new(p.line, 0), Pos::new(b, 0), MKind::Linewise, reg, fx);
+                self.apply_op(
+                    ctx,
+                    Op::Change,
+                    Pos::new(p.line, 0),
+                    Pos::new(b, 0),
+                    MKind::Linewise,
+                    reg,
+                    fx,
+                );
             }
             Act::YankLine => {
                 let b = (p.line + n - 1).min(ctx.buf.last_line());
-                self.apply_op(ctx, Op::Yank, Pos::new(p.line, 0), Pos::new(b, 0), MKind::Linewise, reg, fx);
+                self.apply_op(
+                    ctx,
+                    Op::Yank,
+                    Pos::new(p.line, 0),
+                    Pos::new(b, 0),
+                    MKind::Linewise,
+                    reg,
+                    fx,
+                );
             }
             Act::Replace(c) => {
                 let len = ctx.buf.line_len(p.line);
@@ -1491,7 +1650,11 @@ impl Vim {
                         p
                     };
                     let end = ctx.buf.insert(at, &t);
-                    ctx.cur.pos = if t.contains('\n') { at } else { ctx.buf.prev_pos(end).unwrap_or(at) };
+                    ctx.cur.pos = if t.contains('\n') {
+                        at
+                    } else {
+                        ctx.buf.prev_pos(end).unwrap_or(at)
+                    };
                 }
             }
             Act::Undo => {
@@ -1572,7 +1735,13 @@ impl Vim {
                 let t = ctx.buf.slice(p, Pos::new(p.line, end));
                 let flipped: String = t
                     .chars()
-                    .map(|c| if c.is_uppercase() { c.to_ascii_lowercase() } else { c.to_ascii_uppercase() })
+                    .map(|c| {
+                        if c.is_uppercase() {
+                            c.to_ascii_lowercase()
+                        } else {
+                            c.to_ascii_uppercase()
+                        }
+                    })
                     .collect();
                 if flipped != t {
                     ctx.buf.replace(p, Pos::new(p.line, end), &flipped);
@@ -1605,8 +1774,17 @@ impl Vim {
             let lead = next.len() - next.trim_start().len();
             let next_trim_starts_close = next.trim_start().starts_with(')');
             let cur_ends_space = ctx.buf.line(l).ends_with(' ');
-            let sep = if next.trim().is_empty() || next_trim_starts_close || cur_ends_space || cur_len == 0 { "" } else { " " };
-            ctx.buf.replace(Pos::new(l, cur_len), Pos::new(l + 1, lead), sep);
+            let sep = if next.trim().is_empty()
+                || next_trim_starts_close
+                || cur_ends_space
+                || cur_len == 0
+            {
+                ""
+            } else {
+                " "
+            };
+            ctx.buf
+                .replace(Pos::new(l, cur_len), Pos::new(l + 1, lead), sep);
             col = cur_len;
         }
         ctx.cur.pos = Pos::new(l, col);
@@ -1662,7 +1840,11 @@ impl Vim {
                 if line == p.line && count.is_none() {
                     return None;
                 }
-                let want = if ctx.cur.want == usize::MAX { usize::MAX } else { ctx.cur.want };
+                let want = if ctx.cur.want == usize::MAX {
+                    usize::MAX
+                } else {
+                    ctx.cur.want
+                };
                 let mut to = vertical(line, want);
                 if want == usize::MAX {
                     to.col = buf.line_len(line);
@@ -1692,7 +1874,10 @@ impl Vim {
                 (q, MKind::Inclusive)
             }
             Motion::LineStart => (Pos::new(p.line, 0), MKind::Exclusive),
-            Motion::FirstNonBlank => (Pos::new(p.line, buf.first_non_blank(p.line)), MKind::Exclusive),
+            Motion::FirstNonBlank => (
+                Pos::new(p.line, buf.first_non_blank(p.line)),
+                MKind::Exclusive,
+            ),
             Motion::LineEnd => {
                 let line = (p.line + n - 1).min(buf.last_line());
                 (Pos::new(line, buf.last_char_col(line)), MKind::Inclusive)
@@ -1748,7 +1933,11 @@ impl Vim {
                         l += 1;
                     }
                 }
-                let col = if l == buf.last_line() && !buf.line(l).trim().is_empty() { buf.line_len(l) } else { 0 };
+                let col = if l == buf.last_line() && !buf.line(l).trim().is_empty() {
+                    buf.line_len(l)
+                } else {
+                    0
+                };
                 (Pos::new(l, col), MKind::Exclusive)
             }
             Motion::ParaBack => {
@@ -1774,7 +1963,9 @@ impl Vim {
             }
             Motion::ScreenBottom => {
                 let bottom = (ctx.top + ctx.page.max(1) - 1).min(buf.last_line());
-                let l = bottom.saturating_sub(count.unwrap_or(1) - 1).max(ctx.top.min(bottom));
+                let l = bottom
+                    .saturating_sub(count.unwrap_or(1) - 1)
+                    .max(ctx.top.min(bottom));
                 (Pos::new(l, buf.first_non_blank(l)), MKind::Linewise)
             }
             Motion::HalfDown | Motion::HalfUp | Motion::PageDown | Motion::PageUp => {
@@ -1813,7 +2004,10 @@ impl Vim {
             Motion::Definition => {
                 let (a, b) = self.word_under(buf, p)?;
                 let word = String::from(buf.line(p.line).get(a..b)?);
-                (self.definition_of(buf, &word).unwrap_or(p), MKind::Exclusive)
+                (
+                    self.definition_of(buf, &word).unwrap_or(p),
+                    MKind::Exclusive,
+                )
             }
         };
         Some(r)
@@ -1851,7 +2045,9 @@ impl Vim {
 
     fn word_back(&self, buf: &Buffer, p: Pos, big: bool) -> Pos {
         let cls = |c| if big { big_class(c) } else { class(c) };
-        let Some(mut q) = buf.prev_pos(p) else { return p };
+        let Some(mut q) = buf.prev_pos(p) else {
+            return p;
+        };
         // Skip blanks back, stopping on an empty line.
         loop {
             if buf.line_len(q.line) == 0 && q.col == 0 && q != p {
@@ -1932,7 +2128,12 @@ impl Vim {
         }
         while a > 0 {
             let prev = buf.prev_col(p.line, a);
-            if !s.get(prev..)?.chars().next().is_some_and(text::is_word_char) {
+            if !s
+                .get(prev..)?
+                .chars()
+                .next()
+                .is_some_and(text::is_word_char)
+            {
                 break;
             }
             a = prev;
@@ -1945,17 +2146,37 @@ impl Vim {
     }
 
     fn definition_of(&self, buf: &Buffer, word: &str) -> Option<Pos> {
-        const INTRO: [&str; 12] = ["fn ", "struct ", "enum ", "trait ", "type ", "mod ", "const ", "static ", "let ", "let mut ", "union ", "macro_rules! "];
+        const INTRO: [&str; 12] = [
+            "fn ",
+            "struct ",
+            "enum ",
+            "trait ",
+            "type ",
+            "mod ",
+            "const ",
+            "static ",
+            "let ",
+            "let mut ",
+            "union ",
+            "macro_rules! ",
+        ];
         for l in 0..buf.line_count() {
             let s = buf.line(l);
             for intro in INTRO {
                 let mut from = 0;
                 while let Some(i) = s.get(from..).and_then(|r| r.find(intro)) {
                     let at = from + i + intro.len();
-                    let before_ok = from + i == 0 || !s.as_bytes().get(from + i - 1).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_');
+                    let before_ok = from + i == 0
+                        || !s
+                            .as_bytes()
+                            .get(from + i - 1)
+                            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_');
                     if before_ok && s.get(at..).is_some_and(|r| r.starts_with(word)) {
                         let end = at + word.len();
-                        let after_ok = !s.as_bytes().get(end).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_');
+                        let after_ok = !s
+                            .as_bytes()
+                            .get(end)
+                            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_');
                         if after_ok {
                             return Some(Pos::new(l, at));
                         }
@@ -2000,11 +2221,23 @@ impl Vim {
             if depth == 0 {
                 return Some(q);
             }
-            q = if fwd { buf.next_pos(q)? } else { buf.prev_pos(q)? };
+            q = if fwd {
+                buf.next_pos(q)?
+            } else {
+                buf.prev_pos(q)?
+            };
         }
     }
 
-    fn find_char(&self, buf: &Buffer, p: Pos, kind: FindKind, c: char, n: usize, repeat: bool) -> Option<Pos> {
+    fn find_char(
+        &self,
+        buf: &Buffer,
+        p: Pos,
+        kind: FindKind,
+        c: char,
+        n: usize,
+        repeat: bool,
+    ) -> Option<Pos> {
         let s = buf.line(p.line);
         let mut col = p.col;
         let mut hits = 0;
@@ -2130,12 +2363,18 @@ impl Vim {
             }
             Obj::Quote { q, around } => {
                 let s = buf.line(p.line);
-                let quotes: Vec<usize> = s.char_indices().filter(|(i, c)| *c == q && (*i == 0 || s.as_bytes().get(i - 1) != Some(&b'\\'))).map(|(i, _)| i).collect();
+                let quotes: Vec<usize> = s
+                    .char_indices()
+                    .filter(|(i, c)| {
+                        *c == q && (*i == 0 || s.as_bytes().get(i - 1) != Some(&b'\\'))
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
                 let mut k = 0;
                 while k + 1 < quotes.len() {
                     let (a, b) = (quotes[k], quotes[k + 1]);
-                    if p.col <= b {
-                        if p.col >= a || k == 0 {
+                    if p.col <= b && (p.col >= a || k == 0) {
+                        {
                             return if around {
                                 Some((Pos::new(p.line, a), Pos::new(p.line, b + 1), false))
                             } else {
@@ -2147,7 +2386,11 @@ impl Vim {
                 }
                 None
             }
-            Obj::Pair { open, close, around } => {
+            Obj::Pair {
+                open,
+                close,
+                around,
+            } => {
                 // Walk out from the cursor to the enclosing open bracket.
                 let mut depth = 0i32;
                 let mut q = p;
@@ -2200,7 +2443,13 @@ impl Vim {
                 let mut start = Pos::new(a.line, buf.next_col(a.line, a.col));
                 let mut end = b;
                 // A block whose brackets sit on their own lines is its lines.
-                if start.col >= buf.line_len(start.line) && start.line < b.line && buf.line(b.line).get(..b.col).is_some_and(|h| h.trim().is_empty()) {
+                if start.col >= buf.line_len(start.line)
+                    && start.line < b.line
+                    && buf
+                        .line(b.line)
+                        .get(..b.col)
+                        .is_some_and(|h| h.trim().is_empty())
+                {
                     if start.line + 1 > b.line - 1 {
                         return Some((Pos::new(b.line, 0), Pos::new(b.line, 0), false));
                     }
@@ -2223,8 +2472,16 @@ impl Vim {
         match input {
             Input::Key(Key::Esc) => {
                 // `3ihi<Esc>` types the text three times.
-                if self.insert_count > 1 && self.insert_from.line == p.line && p.col >= self.insert_from.col {
-                    let typed = String::from(ctx.buf.line(p.line).get(self.insert_from.col..p.col).unwrap_or(""));
+                if self.insert_count > 1
+                    && self.insert_from.line == p.line
+                    && p.col >= self.insert_from.col
+                {
+                    let typed = String::from(
+                        ctx.buf
+                            .line(p.line)
+                            .get(self.insert_from.col..p.col)
+                            .unwrap_or(""),
+                    );
                     let mut at = p;
                     for _ in 1..self.insert_count {
                         at = ctx.buf.insert(at, &typed);
@@ -2248,9 +2505,13 @@ impl Vim {
                 // A closing brace on a blank line steps back a level.
                 if c == '}' || c == ')' || c == ']' {
                     let s = ctx.buf.line(p.line);
-                    if !s.is_empty() && s.get(..p.col).is_some_and(|h| h.trim().is_empty()) && p.col == s.len() {
+                    if !s.is_empty()
+                        && s.get(..p.col).is_some_and(|h| h.trim().is_empty())
+                        && p.col == s.len()
+                    {
                         let width = text::display_width(s, self.tab);
-                        let target = width.saturating_sub(self.shiftwidth) / self.shiftwidth * self.shiftwidth;
+                        let target = width.saturating_sub(self.shiftwidth) / self.shiftwidth
+                            * self.shiftwidth;
                         let ind = self.indent_string(target);
                         ctx.buf.replace(Pos::new(p.line, 0), p, &ind);
                         ctx.cur.pos = Pos::new(p.line, ind.len());
@@ -2277,9 +2538,12 @@ impl Vim {
                 let after = s.get(p.col..).unwrap_or("");
                 let mut indent = String::from(text::indent_of(s));
                 let opens = before.ends_with('{') || before.ends_with('(') || before.ends_with('[');
-                let closes_next = after.trim_start().starts_with('}') || after.trim_start().starts_with(')') || after.trim_start().starts_with(']');
+                let closes_next = after.trim_start().starts_with('}')
+                    || after.trim_start().starts_with(')')
+                    || after.trim_start().starts_with(']');
                 // Trailing spaces before the cursor go, as every editor does.
-                let trailing = s.get(..p.col).unwrap_or("").len() - s.get(..p.col).unwrap_or("").trim_end().len();
+                let trailing = s.get(..p.col).unwrap_or("").len()
+                    - s.get(..p.col).unwrap_or("").trim_end().len();
                 let from = Pos::new(p.line, p.col - trailing.min(p.col));
                 let lead = after.len() - after.trim_start().len();
                 let to = Pos::new(p.line, p.col + lead);
@@ -2334,13 +2598,12 @@ impl Vim {
                     let s = ctx.buf.line(p.line);
                     let head = s.get(..p.col).unwrap_or("");
                     // In leading spaces, step back to the previous indent stop.
-                    let from = if self.expandtab && !head.is_empty() && head.bytes().all(|b| b == b' ') {
-                        let w = head.len();
-                        let stop = (w - 1) / self.shiftwidth * self.shiftwidth;
-                        stop
-                    } else {
-                        ctx.buf.prev_col(p.line, p.col)
-                    };
+                    let from =
+                        if self.expandtab && !head.is_empty() && head.bytes().all(|b| b == b' ') {
+                            (head.len() - 1) / self.shiftwidth * self.shiftwidth
+                        } else {
+                            ctx.buf.prev_col(p.line, p.col)
+                        };
                     ctx.buf.delete(Pos::new(p.line, from), p);
                     ctx.cur.pos = Pos::new(p.line, from);
                 }
@@ -2357,7 +2620,11 @@ impl Vim {
             Input::Ctrl('w') => {
                 // Delete the word before the cursor.
                 let start = self.word_back(ctx.buf, p, false);
-                let start = if start.line < p.line { Pos::new(p.line, 0) } else { start };
+                let start = if start.line < p.line {
+                    Pos::new(p.line, 0)
+                } else {
+                    start
+                };
                 if start < p {
                     if !ctx.buf.group_open() {
                         ctx.buf.begin_group(p);
@@ -2403,13 +2670,21 @@ impl Vim {
             Key::Left => ctx.cur.pos = Pos::new(p.line, buf.prev_col(p.line, p.col)),
             Key::Right => ctx.cur.pos = Pos::new(p.line, buf.next_col(p.line, p.col)),
             Key::Up | Key::Down | Key::PageUp | Key::PageDown => {
-                let step = if matches!(k, Key::PageUp | Key::PageDown) { ctx.page.saturating_sub(2).max(1) } else { 1 };
+                let step = if matches!(k, Key::PageUp | Key::PageDown) {
+                    ctx.page.saturating_sub(2).max(1)
+                } else {
+                    1
+                };
                 let line = if matches!(k, Key::Down | Key::PageDown) {
                     (p.line + step).min(buf.last_line())
                 } else {
                     p.line.saturating_sub(step)
                 };
-                let col = if ctx.cur.want == usize::MAX { buf.line_len(line) } else { text::col_for_display(buf.line(line), ctx.cur.want, self.tab) };
+                let col = if ctx.cur.want == usize::MAX {
+                    buf.line_len(line)
+                } else {
+                    text::col_for_display(buf.line(line), ctx.cur.want, self.tab)
+                };
                 ctx.cur.pos = Pos::new(line, col);
                 return;
             }
@@ -2447,8 +2722,21 @@ impl Vim {
                 self.clamp_normal(ctx.buf, ctx.cur);
             }
             Input::Shift(k) => self.shift_move(ctx, k),
-            Input::Key(k @ (Key::Left | Key::Right | Key::Up | Key::Down | Key::Home | Key::End | Key::PageUp | Key::PageDown)) => {
-                ctx.cur.pos = if matches!(k, Key::Left | Key::Up) { a } else { b };
+            Input::Key(
+                k @ (Key::Left
+                | Key::Right
+                | Key::Up
+                | Key::Down
+                | Key::Home
+                | Key::End
+                | Key::PageUp
+                | Key::PageDown),
+            ) => {
+                ctx.cur.pos = if matches!(k, Key::Left | Key::Up) {
+                    a
+                } else {
+                    b
+                };
                 self.mode = self.select_return;
                 if self.mode == Mode::Insert {
                     ctx.buf.begin_group(ctx.cur.pos);
@@ -2504,7 +2792,11 @@ impl Vim {
         let Some((a, b, linewise)) = self.selection(ctx.buf, ctx.cur) else {
             return false;
         };
-        let (from, to) = if linewise { self.line_span(ctx.buf, a.line, b.line) } else { (a, b) };
+        let (from, to) = if linewise {
+            self.line_span(ctx.buf, a.line, b.line)
+        } else {
+            (a, b)
+        };
         let mut t = ctx.buf.slice(a, b);
         if linewise {
             t.push('\n');
@@ -2646,7 +2938,11 @@ impl Vim {
         }
         let name = rest.get(..name_end).unwrap_or("");
         let arg = rest.get(name_end..).unwrap_or("").trim_start_matches(' ');
-        let arg_opt = if arg.trim().is_empty() { None } else { Some(String::from(arg.trim())) };
+        let arg_opt = if arg.trim().is_empty() {
+            None
+        } else {
+            Some(String::from(arg.trim()))
+        };
         match name {
             "w" | "write" => fx.push(Effect::Write { path: arg_opt }),
             "w!" => fx.push(Effect::Write { path: arg_opt }),
@@ -2660,9 +2956,17 @@ impl Vim {
                 fx.push(Effect::WriteAll);
                 fx.push(Effect::QuitAll { force: false });
             }
-            "e" | "edit" => fx.push(Effect::Edit { path: arg_opt, force: false }),
-            "e!" | "edit!" => fx.push(Effect::Edit { path: arg_opt, force: true }),
-            "vs" | "vsp" | "vsplit" | "sp" | "split" | "vnew" | "new" => fx.push(Effect::Split { path: arg_opt }),
+            "e" | "edit" => fx.push(Effect::Edit {
+                path: arg_opt,
+                force: false,
+            }),
+            "e!" | "edit!" => fx.push(Effect::Edit {
+                path: arg_opt,
+                force: true,
+            }),
+            "vs" | "vsp" | "vsplit" | "sp" | "split" | "vnew" | "new" => {
+                fx.push(Effect::Split { path: arg_opt })
+            }
             "clo" | "close" => fx.push(Effect::ClosePane),
             "on" | "only" => fx.push(Effect::OnlyPane),
             "bn" | "bnext" => fx.push(Effect::NextBuffer { forward: true }),
@@ -2671,19 +2975,39 @@ impl Vim {
             "bd!" | "bdelete!" => fx.push(Effect::CloseBuffer { force: true }),
             "noh" | "nohlsearch" => self.highlight = false,
             "s" | "substitute" | "%s" => {
-                let range = if name == "%s" { Some((0, ctx.buf.last_line())) } else { range };
+                let range = if name == "%s" {
+                    Some((0, ctx.buf.last_line()))
+                } else {
+                    range
+                };
                 self.substitute(ctx, range, arg);
             }
             "set" | "se" => self.set_option(arg),
             "d" | "delete" => {
                 let (a, b) = range.unwrap_or((ctx.cur.pos.line, ctx.cur.pos.line));
                 ctx.buf.begin_group(ctx.cur.pos);
-                self.apply_op(ctx, Op::Delete, Pos::new(a, 0), Pos::new(b, 0), MKind::Linewise, None, fx);
+                self.apply_op(
+                    ctx,
+                    Op::Delete,
+                    Pos::new(a, 0),
+                    Pos::new(b, 0),
+                    MKind::Linewise,
+                    None,
+                    fx,
+                );
                 ctx.buf.end_group(ctx.cur.pos);
             }
             "y" | "yank" => {
                 let (a, b) = range.unwrap_or((ctx.cur.pos.line, ctx.cur.pos.line));
-                self.apply_op(ctx, Op::Yank, Pos::new(a, 0), Pos::new(b, 0), MKind::Linewise, None, fx);
+                self.apply_op(
+                    ctx,
+                    Op::Yank,
+                    Pos::new(a, 0),
+                    Pos::new(b, 0),
+                    MKind::Linewise,
+                    None,
+                    fx,
+                );
             }
             ">" | "<" => {
                 let (a, b) = range.unwrap_or((ctx.cur.pos.line, ctx.cur.pos.line));
@@ -2713,7 +3037,10 @@ impl Vim {
             return (Some((0, last)), rest);
         }
         if let Some(rest) = line.strip_prefix("'<,'>") {
-            let r = self.visual_marks.map(|(a, b, _)| (a.line, b.line)).unwrap_or((here, here));
+            let r = self
+                .visual_marks
+                .map(|(a, b, _)| (a.line, b.line))
+                .unwrap_or((here, here));
             return (Some(r), rest);
         }
         let addr = |s: &'s str| -> (Option<usize>, &'s str) {
@@ -2730,12 +3057,20 @@ impl Vim {
             };
             if let Some(r) = rest.strip_prefix('+') {
                 let k = r.chars().take_while(|c| c.is_ascii_digit()).count();
-                let n: usize = if k == 0 { 1 } else { r[..k].parse().unwrap_or(1) };
+                let n: usize = if k == 0 {
+                    1
+                } else {
+                    r[..k].parse().unwrap_or(1)
+                };
                 v = Some(v.unwrap_or(here) + n);
                 rest = &r[k..];
             } else if let Some(r) = rest.strip_prefix('-') {
                 let k = r.chars().take_while(|c| c.is_ascii_digit()).count();
-                let n: usize = if k == 0 { 1 } else { r[..k].parse().unwrap_or(1) };
+                let n: usize = if k == 0 {
+                    1
+                } else {
+                    r[..k].parse().unwrap_or(1)
+                };
                 v = Some(v.unwrap_or(here).saturating_sub(n));
                 rest = &r[k..];
             }
@@ -2759,7 +3094,9 @@ impl Vim {
                 Some((n, v)) => (n, Some(v)),
                 None => (opt, None),
             };
-            let num = value.and_then(|v| v.parse::<usize>().ok()).filter(|n| (1..=16).contains(n));
+            let num = value
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|n| (1..=16).contains(n));
             match (name, num) {
                 ("rnu" | "relativenumber", _) => self.relative_numbers = true,
                 ("nornu" | "norelativenumber", _) => self.relative_numbers = false,
@@ -2878,9 +3215,17 @@ impl Vim {
                 ctx.cur.pos = Pos::new(l, ctx.buf.first_non_blank(l));
                 self.last_search = Some((pat, true));
                 let mut m = text::num(count);
-                m.push_str(if count == 1 { " substitution on " } else { " substitutions on " });
+                m.push_str(if count == 1 {
+                    " substitution on "
+                } else {
+                    " substitutions on "
+                });
                 m.push_str(&text::num(lines_changed));
-                m.push_str(if lines_changed == 1 { " line" } else { " lines" });
+                m.push_str(if lines_changed == 1 {
+                    " line"
+                } else {
+                    " lines"
+                });
                 self.info(m);
             }
             None => {
@@ -2934,7 +3279,10 @@ pub fn parse_keys(s: &str) -> Vec<Input> {
                     "S-Down" => Some(Input::Shift(Key::Down)),
                     "S-Up" => Some(Input::Shift(Key::Up)),
                     "lt" => Some(Input::Char('<')),
-                    _ => name.strip_prefix("C-").and_then(|r| r.chars().next()).map(|c| Input::Ctrl(c.to_ascii_lowercase())),
+                    _ => name
+                        .strip_prefix("C-")
+                        .and_then(|r| r.chars().next())
+                        .map(|c| Input::Ctrl(c.to_ascii_lowercase())),
                 };
                 if let Some(k) = key {
                     out.push(k);
@@ -2959,4 +3307,3 @@ impl Vim {
         self.last_change.as_ref().map(|(_, k)| k.len()).unwrap_or(0)
     }
 }
-

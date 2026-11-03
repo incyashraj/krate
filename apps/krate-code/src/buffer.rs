@@ -632,7 +632,10 @@ mod tests {
         }
         g.insert(3, 100);
         g.insert(0, 200);
-        assert_eq!(g.iter().copied().collect::<Vec<_>>(), [200, 0, 1, 2, 100, 3, 4, 5, 6, 7, 8, 9]);
+        assert_eq!(
+            g.iter().copied().collect::<Vec<_>>(),
+            [200, 0, 1, 2, 100, 3, 4, 5, 6, 7, 8, 9]
+        );
         assert_eq!(g.remove(5), Some(3));
         assert_eq!(g.get(5), Some(&4));
         assert_eq!(g.get(11), None);

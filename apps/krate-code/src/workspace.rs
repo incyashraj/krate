@@ -123,10 +123,19 @@ pub enum PanelTab {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptKind {
-    NewFile { dir: String },
-    NewFolder { dir: String },
-    Rename { path: String },
-    Delete { path: String, is_dir: bool },
+    NewFile {
+        dir: String,
+    },
+    NewFolder {
+        dir: String,
+    },
+    Rename {
+        path: String,
+    },
+    Delete {
+        path: String,
+        is_dir: bool,
+    },
     /// Name the crate a new project makes.
     ProjectName,
     /// The window is closing with unsaved files.
@@ -144,7 +153,10 @@ pub struct Prompt {
 impl Prompt {
     /// Whether it asks a yes/no question rather than for text.
     pub fn is_question(&self) -> bool {
-        matches!(self.kind, PromptKind::Delete { .. } | PromptKind::CloseUnsaved)
+        matches!(
+            self.kind,
+            PromptKind::Delete { .. } | PromptKind::CloseUnsaved
+        )
     }
 }
 
@@ -167,7 +179,10 @@ pub struct PaletteState {
 impl PaletteState {
     pub fn label(&self, item: usize) -> (&str, &str) {
         match self.mode {
-            PaletteMode::Commands => COMMANDS.get(item).map(|c| (c.title, c.keys)).unwrap_or(("", "")),
+            PaletteMode::Commands => COMMANDS
+                .get(item)
+                .map(|c| (c.title, c.keys))
+                .unwrap_or(("", "")),
             PaletteMode::Files => (self.files.get(item).map(String::as_str).unwrap_or(""), ""),
         }
     }
@@ -220,8 +235,16 @@ impl Settings {
             ThemeChoice::Dark => "dark",
             ThemeChoice::Light => "light",
         });
-        s.push_str(if self.click_inserts { "\nclick=insert" } else { "\nclick=normal" });
-        s.push_str(if self.relative_numbers { "\nrnu=1" } else { "\nrnu=0" });
+        s.push_str(if self.click_inserts {
+            "\nclick=insert"
+        } else {
+            "\nclick=normal"
+        });
+        s.push_str(if self.relative_numbers {
+            "\nrnu=1"
+        } else {
+            "\nrnu=0"
+        });
         s.push_str(if self.tree { "\ntree=1" } else { "\ntree=0" });
         s.push_str("\nfont=");
         s.push_str(&text::num((self.font * 2.0) as usize));
@@ -232,7 +255,9 @@ impl Settings {
     pub fn from_text(t: &str) -> Self {
         let mut s = Settings::default();
         for line in t.lines() {
-            let Some((k, v)) = line.split_once('=') else { continue };
+            let Some((k, v)) = line.split_once('=') else {
+                continue;
+            };
             match (k.trim(), v.trim()) {
                 ("theme", "dark") => s.theme = ThemeChoice::Dark,
                 ("theme", "light") => s.theme = ThemeChoice::Light,
@@ -338,7 +363,10 @@ impl Workspace {
     // ---- what the guest reads --------------------------------------------------
 
     pub fn pane_doc(&self, pane: usize) -> Option<&Doc> {
-        self.panes.get(pane).and_then(|p| p.doc).and_then(|d| self.docs.get(d))
+        self.panes
+            .get(pane)
+            .and_then(|p| p.doc)
+            .and_then(|d| self.docs.get(d))
     }
 
     pub fn active_doc_index(&self) -> Option<usize> {
@@ -446,7 +474,9 @@ impl Workspace {
 
     fn finish_new_project(&mut self, name: &str) -> Result<(), String> {
         if !project::valid_crate_name(name) {
-            return Err(String::from("Use lowercase letters, digits, - or _, starting with a letter"));
+            return Err(String::from(
+                "Use lowercase letters, digits, - or _, starting with a letter",
+            ));
         }
         let Some((folder, mut fs)) = self.new_project.take() else {
             return Err(String::from("Pick a folder first"));
@@ -531,7 +561,9 @@ impl Workspace {
         if self.vim.mode != Mode::Normal {
             self.leave_mode();
         }
-        let Some(pane) = self.panes.get_mut(self.active) else { return };
+        let Some(pane) = self.panes.get_mut(self.active) else {
+            return;
+        };
         if pane.doc != Some(i) {
             // Another pane on the same file lends its place.
             let other = self.panes.iter().find(|p| p.doc == Some(i)).copied();
@@ -573,7 +605,9 @@ impl Workspace {
             self.fail("Open a folder first: files are saved into the project you open");
             return false;
         };
-        let Some(d) = self.docs.get_mut(doc) else { return false };
+        let Some(d) = self.docs.get_mut(doc) else {
+            return false;
+        };
         if let Some(p) = as_path {
             match project::clean_relative(p) {
                 Ok(p) => d.path = p,
@@ -636,7 +670,9 @@ impl Workspace {
 
     /// Close a file; `force` drops unsaved changes.
     pub fn close_doc(&mut self, i: usize, force: bool) -> bool {
-        let Some(d) = self.docs.get(i) else { return false };
+        let Some(d) = self.docs.get(i) else {
+            return false;
+        };
         if d.buf.modified() && !force {
             let mut m = String::from("No write since last change in ");
             m.push_str(d.name());
@@ -677,7 +713,11 @@ impl Workspace {
         if self.vim.mode != Mode::Normal {
             self.leave_mode();
         }
-        let copy = self.panes.get(self.active).copied().unwrap_or(Pane::new(None));
+        let copy = self
+            .panes
+            .get(self.active)
+            .copied()
+            .unwrap_or(Pane::new(None));
         self.panes.insert(self.active + 1, copy);
         self.active += 1;
         if let Some(p) = path {
@@ -710,8 +750,12 @@ impl Workspace {
     /// Keep the cursor of `pane` on screen, `SCROLL_OFF` lines from the edges.
     pub fn ensure_visible(&mut self, pane: usize) {
         let tab = self.vim.tab;
-        let Some(p) = self.panes.get(pane).copied() else { return };
-        let Some(doc) = p.doc.and_then(|d| self.docs.get(d)) else { return };
+        let Some(p) = self.panes.get(pane).copied() else {
+            return;
+        };
+        let Some(doc) = p.doc.and_then(|d| self.docs.get(d)) else {
+            return;
+        };
         let line = p.cur.pos.line;
         let rows = p.rows.max(1);
         let off = SCROLL_OFF.min(rows.saturating_sub(1) / 2);
@@ -741,8 +785,12 @@ impl Workspace {
 
     /// Scroll a pane by whole or partial lines and columns (a wheel).
     pub fn scroll(&mut self, pane: usize, lines: f32, cols: f32) {
-        let Some(p) = self.panes.get(pane).copied() else { return };
-        let Some(doc) = p.doc.and_then(|d| self.docs.get(d)) else { return };
+        let Some(p) = self.panes.get(pane).copied() else {
+            return;
+        };
+        let Some(doc) = p.doc.and_then(|d| self.docs.get(d)) else {
+            return;
+        };
         let count = doc.buf.line_count();
         let max_top = count.saturating_sub(p.rows.saturating_sub(2).max(1)).max(0) as f32;
         let widest = 400.0f32;
@@ -754,7 +802,9 @@ impl Workspace {
 
     fn scroll_to(&mut self, to: ScrollTo) {
         let a = self.active;
-        let Some(p) = self.panes.get_mut(a) else { return };
+        let Some(p) = self.panes.get_mut(a) else {
+            return;
+        };
         let line = p.cur.pos.line as f32;
         let rows = p.rows.max(1) as f32;
         p.top = match to {
@@ -819,7 +869,9 @@ impl Workspace {
         self.vim.message = None;
         let fx = {
             let (docs, panes) = (&mut self.docs, &mut self.panes);
-            let (Some(doc), Some(pane)) = (docs.get_mut(d), panes.get_mut(a)) else { return };
+            let (Some(doc), Some(pane)) = (docs.get_mut(d), panes.get_mut(a)) else {
+                return;
+            };
             let mut ctx = Ctx {
                 buf: &mut doc.buf,
                 cur: &mut pane.cur,
@@ -874,7 +926,11 @@ impl Workspace {
                     let dirty = self.dirty_count();
                     if dirty > 0 && !force {
                         let mut m = text::num(dirty);
-                        m.push_str(if dirty == 1 { " file has" } else { " files have" });
+                        m.push_str(if dirty == 1 {
+                            " file has"
+                        } else {
+                            " files have"
+                        });
                         m.push_str(" unsaved changes (:wa to save, :qa! to drop them)");
                         self.fail(&m);
                     } else {
@@ -893,7 +949,11 @@ impl Workspace {
                     if self.focus == Focus::Tree {
                         self.focus = Focus::Editor;
                     } else if n > 1 {
-                        let next = if forward { (self.active + 1) % n } else { (self.active + n - 1) % n };
+                        let next = if forward {
+                            (self.active + 1) % n
+                        } else {
+                            (self.active + n - 1) % n
+                        };
                         self.focus_pane(next);
                     } else if !forward && self.settings.tree && self.project.is_some() {
                         self.focus = Focus::Tree;
@@ -946,18 +1006,26 @@ impl Workspace {
             return;
         }
         let cur = self.active_doc_index().unwrap_or(0);
-        let next = if forward { (cur + 1) % n } else { (cur + n - 1) % n };
+        let next = if forward {
+            (cur + 1) % n
+        } else {
+            (cur + n - 1) % n
+        };
         self.show_doc(next);
     }
 
     fn reload_active(&mut self, force: bool) {
-        let Some(d) = self.active_doc_index() else { return };
+        let Some(d) = self.active_doc_index() else {
+            return;
+        };
         if self.docs[d].buf.modified() && !force {
             self.fail("No write since last change (:e! drops the changes and reloads)");
             return;
         }
         let path = self.docs[d].path.clone();
-        let Some(p) = self.project.as_mut() else { return };
+        let Some(p) = self.project.as_mut() else {
+            return;
+        };
         match p.fs.read(&path) {
             Ok(t) => {
                 self.docs[d] = Doc::new(&path, &t);
@@ -1069,17 +1137,24 @@ impl Workspace {
 
     fn select_all(&mut self) {
         let a = self.active;
-        let Some(d) = self.active_doc_index() else { return };
+        let Some(d) = self.active_doc_index() else {
+            return;
+        };
         let (docs, panes) = (&mut self.docs, &mut self.panes);
-        let (Some(doc), Some(pane)) = (docs.get_mut(d), panes.get_mut(a)) else { return };
+        let (Some(doc), Some(pane)) = (docs.get_mut(d), panes.get_mut(a)) else {
+            return;
+        };
         let end = doc.buf.end();
         pane.cur.pos = end;
-        self.vim.begin_select(&mut doc.buf, &mut pane.cur, Pos::new(0, 0));
+        self.vim
+            .begin_select(&mut doc.buf, &mut pane.cur, Pos::new(0, 0));
     }
 
     fn copy_or_cut(&mut self, cut: bool) -> bool {
         let a = self.active;
-        let Some(d) = self.active_doc_index() else { return false };
+        let Some(d) = self.active_doc_index() else {
+            return false;
+        };
         if !self.vim.mode.is_visual() {
             // Ctrl+C with nothing selected is Vim's: back to normal.
             if !cut {
@@ -1089,7 +1164,9 @@ impl Workspace {
             return false;
         }
         let (docs, panes) = (&mut self.docs, &mut self.panes);
-        let (Some(doc), Some(pane)) = (docs.get_mut(d), panes.get_mut(a)) else { return false };
+        let (Some(doc), Some(pane)) = (docs.get_mut(d), panes.get_mut(a)) else {
+            return false;
+        };
         let mut ctx = Ctx {
             buf: &mut doc.buf,
             cur: &mut pane.cur,
@@ -1099,7 +1176,11 @@ impl Workspace {
         let done = self.vim.copy_selection(&mut ctx, cut);
         doc.sync();
         if done {
-            self.say(if cut { "Cut (paste it with p)" } else { "Copied (paste it with p)" });
+            self.say(if cut {
+                "Cut (paste it with p)"
+            } else {
+                "Copied (paste it with p)"
+            });
         }
         self.after_edit();
         done
@@ -1143,13 +1224,23 @@ impl Workspace {
                 let dir = if self.focus == Focus::Tree {
                     p.tree.target_dir()
                 } else {
-                    self.active_doc().map(|d| String::from(project::parent(&d.path))).unwrap_or_else(|| p.tree.target_dir())
+                    self.active_doc()
+                        .map(|d| String::from(project::parent(&d.path)))
+                        .unwrap_or_else(|| p.tree.target_dir())
                 };
                 let file = a == Action::NewFile;
-                let mut title = String::from(if file { "New file in " } else { "New folder in " });
+                let mut title = String::from(if file {
+                    "New file in "
+                } else {
+                    "New folder in "
+                });
                 title.push_str(if dir.is_empty() { "the project" } else { &dir });
                 self.prompt = Some(Prompt {
-                    kind: if file { PromptKind::NewFile { dir } } else { PromptKind::NewFolder { dir } },
+                    kind: if file {
+                        PromptKind::NewFile { dir }
+                    } else {
+                        PromptKind::NewFolder { dir }
+                    },
                     title,
                     text: String::new(),
                     error: None,
@@ -1157,7 +1248,9 @@ impl Workspace {
             }
             Action::Rename | Action::Delete => {
                 let target = match (self.focus, self.project.as_ref()) {
-                    (Focus::Tree, Some(p)) => p.tree.selected_row().map(|r| (r.path.clone(), r.is_dir)),
+                    (Focus::Tree, Some(p)) => {
+                        p.tree.selected_row().map(|r| (r.path.clone(), r.is_dir))
+                    }
                     (_, Some(_)) => self.active_doc().map(|d| (d.path.clone(), false)),
                     _ => None,
                 };
@@ -1177,7 +1270,11 @@ impl Workspace {
                 } else {
                     let mut title = String::from("Delete ");
                     title.push_str(&path);
-                    title.push_str(if is_dir { " and everything in it?" } else { "?" });
+                    title.push_str(if is_dir {
+                        " and everything in it?"
+                    } else {
+                        "?"
+                    });
                     if self.project.as_ref().is_some_and(|p| p.fs.is_real()) {
                         title.push_str(" It is removed from your disk, not moved to the bin.");
                     }
@@ -1190,7 +1287,10 @@ impl Workspace {
                 }
             }
             Action::RevealInTree => {
-                if let (Some(d), Some(p)) = (self.active_doc().map(|d| d.path.clone()), self.project.as_mut()) {
+                if let (Some(d), Some(p)) = (
+                    self.active_doc().map(|d| d.path.clone()),
+                    self.project.as_mut(),
+                ) {
                     p.tree.reveal(&mut *p.fs, &d);
                     self.settings.tree = true;
                     self.focus = Focus::Tree;
@@ -1248,9 +1348,15 @@ impl Workspace {
                         doc.breakpoints.insert(line);
                         true
                     };
-                    let mut m = String::from(if on { "Breakpoint on line " } else { "Breakpoint removed from line " });
+                    let mut m = String::from(if on {
+                        "Breakpoint on line "
+                    } else {
+                        "Breakpoint removed from line "
+                    });
                     m.push_str(&text::num(line + 1));
-                    m.push_str(" -- the debugger that stops there comes with the run-programs ability");
+                    m.push_str(
+                        " -- the debugger that stops there comes with the run-programs ability",
+                    );
                     self.say(&m);
                 }
             }
@@ -1330,7 +1436,11 @@ impl Workspace {
         self.log(&line);
         match self.runner.start(program, &args) {
             Ok(_) => {
-                self.show_panel(if t == Tool::Terminal { PanelTab::Terminal } else { PanelTab::Output });
+                self.show_panel(if t == Tool::Terminal {
+                    PanelTab::Terminal
+                } else {
+                    PanelTab::Output
+                });
             }
             Err(e) => {
                 let mut m = String::from(t.title());
@@ -1389,7 +1499,9 @@ impl Workspace {
 
     /// Open the file of problem `i` at its place.
     pub fn jump_to_problem(&mut self, i: usize) {
-        let Some(d) = self.problems.get(i).cloned() else { return };
+        let Some(d) = self.problems.get(i).cloned() else {
+            return;
+        };
         self.problem_selected = i;
         if self.open_file(&d.file) {
             let a = self.active;
@@ -1442,8 +1554,12 @@ impl Workspace {
     }
 
     pub fn palette_choose(&mut self, row: usize) {
-        let Some(st) = self.palette.take() else { return };
-        let Some(&item) = st.items.get(row) else { return };
+        let Some(st) = self.palette.take() else {
+            return;
+        };
+        let Some(&item) = st.items.get(row) else {
+            return;
+        };
         match st.mode {
             PaletteMode::Commands => {
                 if let Some(c) = COMMANDS.get(item) {
@@ -1459,7 +1575,9 @@ impl Workspace {
     }
 
     fn palette_key(&mut self, input: Input) {
-        let Some(st) = self.palette.as_mut() else { return };
+        let Some(st) = self.palette.as_mut() else {
+            return;
+        };
         match input {
             Input::Key(Key::Esc) => self.palette = None,
             Input::Key(Key::Enter) => {
@@ -1495,9 +1613,14 @@ impl Workspace {
     // ---- prompts -----------------------------------------------------------------
 
     fn prompt_key(&mut self, input: Input) {
-        let Some(pr) = self.prompt.as_mut() else { return };
+        let Some(pr) = self.prompt.as_mut() else {
+            return;
+        };
         if pr.is_question() {
-            let yes = matches!(input, Input::Char('y') | Input::Char('Y') | Input::Key(Key::Enter));
+            let yes = matches!(
+                input,
+                Input::Char('y') | Input::Char('Y') | Input::Key(Key::Enter)
+            );
             match (&pr.kind, input) {
                 (_, Input::Key(Key::Esc)) | (_, Input::Char('n')) | (_, Input::Char('N')) => {
                     if pr.kind == PromptKind::CloseUnsaved {
@@ -1505,7 +1628,8 @@ impl Workspace {
                     }
                     self.prompt = None;
                 }
-                (PromptKind::CloseUnsaved, Input::Char('s')) | (PromptKind::CloseUnsaved, Input::Key(Key::Enter)) => {
+                (PromptKind::CloseUnsaved, Input::Char('s'))
+                | (PromptKind::CloseUnsaved, Input::Key(Key::Enter)) => {
                     self.prompt = None;
                     self.save_all();
                     if self.dirty_count() == 0 {
@@ -1545,7 +1669,9 @@ impl Workspace {
 
     /// The prompt's button (or Enter).
     pub fn prompt_confirm(&mut self) {
-        let Some(pr) = self.prompt.clone() else { return };
+        let Some(pr) = self.prompt.clone() else {
+            return;
+        };
         let result: Result<(), String> = match &pr.kind {
             PromptKind::NewFile { dir } | PromptKind::NewFolder { dir } => {
                 let is_file = matches!(pr.kind, PromptKind::NewFile { .. });
@@ -1555,13 +1681,19 @@ impl Workspace {
                         let taken = self.project.as_mut().is_some_and(|p| p.fs.exists(&path));
                         match self.project.as_mut() {
                             None => Err(String::from("Open a folder first")),
-                            Some(_) if taken => Err(String::from("Something with that name is already there")),
+                            Some(_) if taken => {
+                                Err(String::from("Something with that name is already there"))
+                            }
                             Some(p) => {
                                 let parent = String::from(project::parent(&path));
                                 if !parent.is_empty() && !p.fs.exists(&parent) {
                                     let _ = p.fs.mkdir(&parent);
                                 }
-                                let r = if is_file { p.fs.write(&path, "") } else { p.fs.mkdir(&path) };
+                                let r = if is_file {
+                                    p.fs.write(&path, "")
+                                } else {
+                                    p.fs.mkdir(&path)
+                                };
                                 match r {
                                     Ok(()) => {
                                         p.tree.invalidate(&parent);
@@ -1570,8 +1702,13 @@ impl Workspace {
                                         if is_file {
                                             self.open_file(&path);
                                             let a = self.active;
-                                            if let (Some(d), Some(pane)) = (self.active_doc_index(), self.panes.get_mut(a)) {
-                                                self.vim.begin_insert(&mut self.docs[d].buf, &mut pane.cur);
+                                            if let (Some(d), Some(pane)) =
+                                                (self.active_doc_index(), self.panes.get_mut(a))
+                                            {
+                                                self.vim.begin_insert(
+                                                    &mut self.docs[d].buf,
+                                                    &mut pane.cur,
+                                                );
                                             }
                                         }
                                         return;
@@ -1677,7 +1814,11 @@ impl Workspace {
         }
         self.close_warned = true;
         let mut title = text::num(dirty);
-        title.push_str(if dirty == 1 { " file has" } else { " files have" });
+        title.push_str(if dirty == 1 {
+            " file has"
+        } else {
+            " files have"
+        });
         title.push_str(" unsaved changes. Save them before closing?");
         self.prompt = Some(Prompt {
             kind: PromptKind::CloseUnsaved,
@@ -1702,31 +1843,47 @@ impl Workspace {
                     p.tree.selected = (p.tree.selected + 1).min(n - 1);
                 }
             }
-            Input::Char('k') | Input::Key(Key::Up) => p.tree.selected = p.tree.selected.saturating_sub(1),
+            Input::Char('k') | Input::Key(Key::Up) => {
+                p.tree.selected = p.tree.selected.saturating_sub(1)
+            }
             Input::Char('g') | Input::Key(Key::Home) => p.tree.selected = 0,
             Input::Char('G') | Input::Key(Key::End) => p.tree.selected = n.saturating_sub(1),
-            Input::Key(Key::Enter) | Input::Char('l') | Input::Char('o') | Input::Key(Key::Right) => {
+            Input::Key(Key::Enter)
+            | Input::Char('l')
+            | Input::Char('o')
+            | Input::Key(Key::Right) => {
                 let i = p.tree.selected;
                 self.tree_open(i);
             }
             Input::Char('h') | Input::Key(Key::Left) => {
-                let Some(row) = p.tree.selected_row().cloned() else { return };
+                let Some(row) = p.tree.selected_row().cloned() else {
+                    return;
+                };
                 if row.is_dir && row.expanded {
                     let i = p.tree.selected;
                     p.tree.toggle(&mut *p.fs, i);
-                } else if let Some(i) = p.tree.rows.iter().position(|r| r.path == project::parent(&row.path)) {
+                } else if let Some(i) = p
+                    .tree
+                    .rows
+                    .iter()
+                    .position(|r| r.path == project::parent(&row.path))
+                {
                     p.tree.selected = i;
                 }
             }
             Input::Char('a') | Input::Char('%') => self.run(Action::NewFile),
             Input::Char('A') => self.run(Action::NewFolder),
             Input::Char('r') => self.run(Action::Rename),
-            Input::Char('d') | Input::Key(Key::Delete) | Input::Char('D') => self.run(Action::Delete),
+            Input::Char('d') | Input::Key(Key::Delete) | Input::Char('D') => {
+                self.run(Action::Delete)
+            }
             Input::Char('R') => {
                 p.reload();
                 self.say("Reloaded the tree");
             }
-            Input::Key(Key::Esc) | Input::Key(Key::Tab) | Input::Ctrl('l') => self.focus = Focus::Editor,
+            Input::Key(Key::Esc) | Input::Key(Key::Tab) | Input::Ctrl('l') => {
+                self.focus = Focus::Editor
+            }
             Input::Ctrl('w') => {}
             Input::Char(':') => {
                 self.focus = Focus::Editor;
@@ -1738,8 +1895,12 @@ impl Workspace {
 
     /// A tree row was chosen: open the file, or fold the folder.
     pub fn tree_open(&mut self, i: usize) {
-        let Some(p) = self.project.as_mut() else { return };
-        let Some(row) = p.tree.rows.get(i).cloned() else { return };
+        let Some(p) = self.project.as_mut() else {
+            return;
+        };
+        let Some(row) = p.tree.rows.get(i).cloned() else {
+            return;
+        };
         p.tree.selected = i;
         if row.is_dir {
             p.tree.toggle(&mut *p.fs, i);
@@ -1758,10 +1919,13 @@ impl Workspace {
         match input {
             Input::Char('j') | Input::Key(Key::Down) => {
                 if !self.problems.is_empty() {
-                    self.problem_selected = (self.problem_selected + 1).min(self.problems.len() - 1);
+                    self.problem_selected =
+                        (self.problem_selected + 1).min(self.problems.len() - 1);
                 }
             }
-            Input::Char('k') | Input::Key(Key::Up) => self.problem_selected = self.problem_selected.saturating_sub(1),
+            Input::Char('k') | Input::Key(Key::Up) => {
+                self.problem_selected = self.problem_selected.saturating_sub(1)
+            }
             Input::Key(Key::Enter) => {
                 let i = self.problem_selected;
                 self.jump_to_problem(i);
@@ -1783,12 +1947,20 @@ impl Workspace {
         if matches!(self.vim.mode, Mode::Command | Mode::Search { .. }) {
             self.leave_mode();
         }
-        let Some(d) = self.panes.get(pane).and_then(|p| p.doc) else { return };
+        let Some(d) = self.panes.get(pane).and_then(|p| p.doc) else {
+            return;
+        };
         let (docs, panes) = (&mut self.docs, &mut self.panes);
-        let (Some(doc), Some(p)) = (docs.get_mut(d), panes.get_mut(pane)) else { return };
+        let (Some(doc), Some(p)) = (docs.get_mut(d), panes.get_mut(pane)) else {
+            return;
+        };
         let pos = doc.buf.clamp(pos);
         if shift {
-            let anchor = if self.vim.mode.is_visual() { p.cur.anchor } else { p.cur.pos };
+            let anchor = if self.vim.mode.is_visual() {
+                p.cur.anchor
+            } else {
+                p.cur.pos
+            };
             p.cur.pos = pos;
             self.vim.begin_select(&mut doc.buf, &mut p.cur, anchor);
             self.drag_from = Some(anchor);
@@ -1799,7 +1971,11 @@ impl Workspace {
             let (a, b) = if clicks == 2 {
                 let mut a = pos.col;
                 let mut b = pos.col;
-                let is_w = |col: usize| s.get(col..).and_then(|r| r.chars().next()).is_some_and(text::is_word_char);
+                let is_w = |col: usize| {
+                    s.get(col..)
+                        .and_then(|r| r.chars().next())
+                        .is_some_and(text::is_word_char)
+                };
                 while a > 0 && is_w(doc.buf.prev_col(pos.line, a)) {
                     a = doc.buf.prev_col(pos.line, a);
                 }
@@ -1812,7 +1988,8 @@ impl Workspace {
             };
             if a < b {
                 p.cur.pos = Pos::new(pos.line, b);
-                self.vim.begin_select(&mut doc.buf, &mut p.cur, Pos::new(pos.line, a));
+                self.vim
+                    .begin_select(&mut doc.buf, &mut p.cur, Pos::new(pos.line, a));
                 self.drag_from = None;
                 return;
             }
@@ -1840,9 +2017,13 @@ impl Workspace {
         if pane != self.active {
             return;
         }
-        let Some(d) = self.panes.get(pane).and_then(|p| p.doc) else { return };
+        let Some(d) = self.panes.get(pane).and_then(|p| p.doc) else {
+            return;
+        };
         let (docs, panes) = (&mut self.docs, &mut self.panes);
-        let (Some(doc), Some(p)) = (docs.get_mut(d), panes.get_mut(pane)) else { return };
+        let (Some(doc), Some(p)) = (docs.get_mut(d), panes.get_mut(pane)) else {
+            return;
+        };
         let pos = doc.buf.clamp(pos);
         if pos == p.cur.pos {
             return;
@@ -1869,9 +2050,13 @@ impl Workspace {
     /// and commands.
     pub fn toggle_mode(&mut self) {
         let a = self.active;
-        let Some(d) = self.active_doc_index() else { return };
+        let Some(d) = self.active_doc_index() else {
+            return;
+        };
         let (docs, panes) = (&mut self.docs, &mut self.panes);
-        let (Some(doc), Some(p)) = (docs.get_mut(d), panes.get_mut(a)) else { return };
+        let (Some(doc), Some(p)) = (docs.get_mut(d), panes.get_mut(a)) else {
+            return;
+        };
         if self.vim.mode == Mode::Normal {
             self.vim.begin_insert(&mut doc.buf, &mut p.cur);
         } else {
@@ -1898,7 +2083,13 @@ impl Workspace {
             s.push_str(v);
             s.push('\n');
         };
-        kv("project", self.project.as_ref().map(|p| p.name.as_str()).unwrap_or("none"));
+        kv(
+            "project",
+            self.project
+                .as_ref()
+                .map(|p| p.name.as_str())
+                .unwrap_or("none"),
+        );
         kv("files_open", &text::num(self.docs.len()));
         kv("panes", &text::num(self.panes.len()));
         kv("mode", self.vim.mode.label());
@@ -1911,7 +2102,15 @@ impl Workspace {
             kv("line", &text::num(p.line + 1));
             kv("col", &text::num(p.col + 1));
         }
-        kv("tree_rows", &text::num(self.project.as_ref().map(|p| p.tree.rows.len()).unwrap_or(0)));
+        kv(
+            "tree_rows",
+            &text::num(
+                self.project
+                    .as_ref()
+                    .map(|p| p.tree.rows.len())
+                    .unwrap_or(0),
+            ),
+        );
         kv("problems", &text::num(self.problems.len()));
         s
     }
@@ -1956,7 +2155,14 @@ mod tests {
         keys(&mut w, ":w src/copy.rs<CR>");
         assert_eq!(w.active_doc().unwrap().path, "src/copy.rs");
         assert!(read(&mut w, "src/copy.rs").starts_with("// edited"));
-        assert!(w.project.as_ref().unwrap().tree.rows.iter().any(|r| r.path == "src/copy.rs"));
+        assert!(w
+            .project
+            .as_ref()
+            .unwrap()
+            .tree
+            .rows
+            .iter()
+            .any(|r| r.path == "src/copy.rs"));
     }
 
     #[test]
@@ -1979,7 +2185,10 @@ mod tests {
         keys(&mut w, ":bn<CR>");
         assert_eq!(w.active_doc().unwrap().path, "src/main.rs");
         keys(&mut w, ":e ../../etc/passwd<CR>");
-        assert!(w.message().unwrap().1, "a path outside the project is refused");
+        assert!(
+            w.message().unwrap().1,
+            "a path outside the project is refused"
+        );
         keys(&mut w, ":e notes.txt<CR>itext<Esc>:w<CR>");
         assert_eq!(read(&mut w, "notes.txt"), "text");
     }
@@ -2014,10 +2223,21 @@ mod tests {
         w.run(Action::FocusTree);
         assert_eq!(w.focus, Focus::Tree);
         // Select src/main.rs, then make a file beside it.
-        let i = w.project.as_ref().unwrap().tree.rows.iter().position(|r| r.path == "src/main.rs").unwrap();
+        let i = w
+            .project
+            .as_ref()
+            .unwrap()
+            .tree
+            .rows
+            .iter()
+            .position(|r| r.path == "src/main.rs")
+            .unwrap();
         w.project.as_mut().unwrap().tree.selected = i;
         keys(&mut w, "a");
-        assert!(matches!(w.prompt.as_ref().unwrap().kind, PromptKind::NewFile { .. }));
+        assert!(matches!(
+            w.prompt.as_ref().unwrap().kind,
+            PromptKind::NewFile { .. }
+        ));
         keys(&mut w, "util.rs<CR>");
         assert!(w.prompt.is_none());
         assert_eq!(w.active_doc().unwrap().path, "src/util.rs");
@@ -2026,15 +2246,32 @@ mod tests {
         assert_eq!(read(&mut w, "src/util.rs"), "pub fn x() {}");
         // Rename it from the tree.
         w.run(Action::FocusTree);
-        let i = w.project.as_ref().unwrap().tree.rows.iter().position(|r| r.path == "src/util.rs").unwrap();
+        let i = w
+            .project
+            .as_ref()
+            .unwrap()
+            .tree
+            .rows
+            .iter()
+            .position(|r| r.path == "src/util.rs")
+            .unwrap();
         w.project.as_mut().unwrap().tree.selected = i;
         keys(&mut w, "r<C-u>src/helpers.rs<CR>");
-        assert_eq!(w.active_doc().unwrap().path, "src/helpers.rs", "the open file follows the rename");
+        assert_eq!(
+            w.active_doc().unwrap().path,
+            "src/helpers.rs",
+            "the open file follows the rename"
+        );
         assert!(w.project.as_mut().unwrap().fs.exists("src/helpers.rs"));
         // Delete asks first; n keeps it, y removes it and closes its tab.
         w.run(Action::FocusTree);
         keys(&mut w, "d");
-        assert!(w.prompt.as_ref().unwrap().title.starts_with("Delete src/helpers.rs"));
+        assert!(w
+            .prompt
+            .as_ref()
+            .unwrap()
+            .title
+            .starts_with("Delete src/helpers.rs"));
         keys(&mut w, "n");
         assert!(w.project.as_mut().unwrap().fs.exists("src/helpers.rs"));
         keys(&mut w, "dy");
@@ -2067,7 +2304,10 @@ mod tests {
         assert!(read(&mut w, ".gitignore").contains("target"));
         // A folder that is already a crate just opens.
         let mut w = Workspace::new();
-        w.new_project_folder("x", Box::new(MemFs::with(&[("Cargo.toml", "[package]\nname=\"x\"")])));
+        w.new_project_folder(
+            "x",
+            Box::new(MemFs::with(&[("Cargo.toml", "[package]\nname=\"x\"")])),
+        );
         assert!(w.prompt.is_none());
         assert!(w.project.is_some());
     }
@@ -2097,7 +2337,10 @@ mod tests {
         assert!(w.message().unwrap().0.contains(tools::NEEDS_PROCESS));
         assert!(w.panel_open);
         assert_eq!(w.panel_tab, PanelTab::Problems);
-        assert!(w.output.iter().any(|l| l == "$ cargo build --message-format=short"));
+        assert!(w
+            .output
+            .iter()
+            .any(|l| l == "$ cargo build --message-format=short"));
         keys(&mut w, ":cargo test<CR>");
         assert!(w.output.iter().any(|l| l == "$ cargo test"));
         w.run(Action::Tool(Tool::Terminal));
@@ -2107,7 +2350,9 @@ mod tests {
     #[test]
     fn problems_jump_to_their_place() {
         let mut w = ws();
-        w.set_problems(tools::parse_cargo("src/shapes.rs:18:9: error[E0308]: mismatched types\n"));
+        w.set_problems(tools::parse_cargo(
+            "src/shapes.rs:18:9: error[E0308]: mismatched types\n",
+        ));
         assert!(w.panel_open);
         w.jump_to_problem(0);
         assert_eq!(w.active_doc().unwrap().path, "src/shapes.rs");
@@ -2121,9 +2366,15 @@ mod tests {
         w.run(Action::ToggleBreakpoint);
         assert!(w.active_doc().unwrap().breakpoints.contains(&9));
         keys(&mut w, "ggOx<Esc>");
-        assert!(w.active_doc().unwrap().breakpoints.contains(&10), "a line added above moves it down");
+        assert!(
+            w.active_doc().unwrap().breakpoints.contains(&10),
+            "a line added above moves it down"
+        );
         keys(&mut w, "11Gdd");
-        assert!(w.active_doc().unwrap().breakpoints.is_empty(), "deleting its line removes it");
+        assert!(
+            w.active_doc().unwrap().breakpoints.is_empty(),
+            "deleting its line removes it"
+        );
     }
 
     #[test]
@@ -2132,13 +2383,21 @@ mod tests {
         w.press_text(0, Pos::new(0, 4), 1, false);
         assert_eq!(w.vim.mode, Mode::Insert, "a click into text starts typing");
         keys(&mut w, "ABC");
-        assert!(w.active_doc().unwrap().buf.line(0).starts_with("//! ABCThe tour"));
+        assert!(w
+            .active_doc()
+            .unwrap()
+            .buf
+            .line(0)
+            .starts_with("//! ABCThe tour"));
         w.press_text(0, Pos::new(0, 0), 1, false);
         w.drag_text(0, Pos::new(0, 3));
         w.release();
         assert_eq!(w.vim.mode, Mode::Select);
         keys(&mut w, "X");
-        assert!(w.active_doc().unwrap().buf.line(0).starts_with("X ABC"), "typing replaces the selection");
+        assert!(
+            w.active_doc().unwrap().buf.line(0).starts_with("X ABC"),
+            "typing replaces the selection"
+        );
         // A double click selects a word.
         w.press_text(0, Pos::new(5, 6), 2, false);
         assert_eq!(w.vim.mode, Mode::Select);
@@ -2233,7 +2492,12 @@ mod tests {
             big.push_str(&text::num(i));
             big.push_str("); // line\n");
         }
-        w.project.as_mut().unwrap().fs.write("src/big.rs", &big).unwrap();
+        w.project
+            .as_mut()
+            .unwrap()
+            .fs
+            .write("src/big.rs", &big)
+            .unwrap();
         keys(&mut w, ":e src/big.rs<CR>G");
         assert_eq!(w.panes[0].cur.pos.line, 20_000);
         // Highlight state down to the bottom, then edit at the top.

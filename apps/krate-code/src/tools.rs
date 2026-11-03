@@ -108,8 +108,15 @@ impl Tool {
 /// Something a running program did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobEvent {
-    Output { job: u64, text: String, stderr: bool },
-    Exited { job: u64, code: i32 },
+    Output {
+        job: u64,
+        text: String,
+        stderr: bool,
+    },
+    Exited {
+        job: u64,
+        code: i32,
+    },
 }
 
 /// Running programs, as the editor needs it. Paths never appear: the
@@ -195,7 +202,11 @@ fn location(s: &str) -> Option<(String, usize, usize)> {
     if file.is_empty() {
         return None;
     }
-    Some((String::from(file), line.saturating_sub(1), col.saturating_sub(1)))
+    Some((
+        String::from(file),
+        line.saturating_sub(1),
+        col.saturating_sub(1),
+    ))
 }
 
 /// Read cargo/rustc output -- the long form (`error: ...` then `--> file:l:c`)
@@ -208,19 +219,32 @@ pub fn parse_cargo(output: &str) -> Vec<Diagnostic> {
         let t = line.trim_start();
         if let Some(rest) = t.strip_prefix("--> ") {
             if let (Some((sev, code, msg)), Some((file, l, c))) = (open.take(), location(rest)) {
-                out.push(Diagnostic { file, line: l, col: c, severity: sev, message: msg, code });
+                out.push(Diagnostic {
+                    file,
+                    line: l,
+                    col: c,
+                    severity: sev,
+                    message: msg,
+                    code,
+                });
             }
             continue;
         }
         if !line.starts_with(' ') {
             if let Some(h) = header(line) {
                 // A summary like "error: could not compile" has no place.
-                open = if h.2.starts_with("could not compile") || h.2.contains("generated ") { None } else { Some(h) };
+                open = if h.2.starts_with("could not compile") || h.2.contains("generated ") {
+                    None
+                } else {
+                    Some(h)
+                };
                 continue;
             }
             // Short form: `src/main.rs:4:18: error[E0308]: mismatched types`
             let mut pieces = line.splitn(4, ':');
-            if let (Some(f), Some(l), Some(c), Some(rest)) = (pieces.next(), pieces.next(), pieces.next(), pieces.next()) {
+            if let (Some(f), Some(l), Some(c), Some(rest)) =
+                (pieces.next(), pieces.next(), pieces.next(), pieces.next())
+            {
                 if let (Ok(l), Ok(c)) = (l.trim().parse::<usize>(), c.trim().parse::<usize>()) {
                     if let Some((sev, code, msg)) = header(rest.trim_start()) {
                         out.push(Diagnostic {
@@ -249,17 +273,26 @@ mod tests {
         let d = parse_cargo(text);
         assert_eq!(d.len(), 2);
         assert_eq!(d[0].severity, Severity::Warning);
-        assert_eq!((d[0].file.as_str(), d[0].line, d[0].col), ("src/main.rs", 2, 8));
+        assert_eq!(
+            (d[0].file.as_str(), d[0].line, d[0].col),
+            ("src/main.rs", 2, 8)
+        );
         assert_eq!(d[1].code.as_deref(), Some("E0308"));
         assert_eq!(d[1].message, "mismatched types");
-        assert_eq!((d[1].file.as_str(), d[1].line, d[1].col), ("src/shapes.rs", 11, 17));
+        assert_eq!(
+            (d[1].file.as_str(), d[1].line, d[1].col),
+            ("src/shapes.rs", 11, 17)
+        );
     }
 
     #[test]
     fn short_form() {
         let d = parse_cargo("src/main.rs:4:18: error[E0425]: cannot find value `y` in this scope\nsrc/lib.rs:1:1: warning: missing docs\n");
         assert_eq!(d.len(), 2);
-        assert_eq!((d[0].line, d[0].col, d[0].severity), (3, 17, Severity::Error));
+        assert_eq!(
+            (d[0].line, d[0].col, d[0].severity),
+            (3, 17, Severity::Error)
+        );
         assert_eq!(d[1].severity, Severity::Warning);
     }
 
@@ -269,9 +302,18 @@ mod tests {
         for t in Tool::ALL {
             assert!(!t.title().is_empty());
             assert!(!t.program().is_empty());
-            assert_eq!(r.start(t.program(), &t.args(Some("src/main.rs"))), Err(String::from(NEEDS_PROCESS)));
+            assert_eq!(
+                r.start(t.program(), &t.args(Some("src/main.rs"))),
+                Err(String::from(NEEDS_PROCESS))
+            );
         }
-        assert_eq!(Tool::Format.args(Some("src/main.rs")).last().map(String::as_str), Some("src/main.rs"));
+        assert_eq!(
+            Tool::Format
+                .args(Some("src/main.rs"))
+                .last()
+                .map(String::as_str),
+            Some("src/main.rs")
+        );
         assert!(r.poll().is_empty());
     }
 }

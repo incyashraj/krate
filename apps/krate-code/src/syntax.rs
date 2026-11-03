@@ -52,10 +52,42 @@ pub struct Span {
 }
 
 const KEYWORDS: &[&str] = &[
-    "as", "async", "await", "break", "const", "continue", "dyn", "else", "enum", "extern", "fn",
-    "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
-    "return", "static", "struct", "trait", "type", "union", "unsafe", "use", "where", "while",
-    "yield", "macro_rules", "try",
+    "as",
+    "async",
+    "await",
+    "break",
+    "const",
+    "continue",
+    "dyn",
+    "else",
+    "enum",
+    "extern",
+    "fn",
+    "for",
+    "if",
+    "impl",
+    "in",
+    "let",
+    "loop",
+    "match",
+    "mod",
+    "move",
+    "mut",
+    "pub",
+    "ref",
+    "return",
+    "static",
+    "struct",
+    "trait",
+    "type",
+    "union",
+    "unsafe",
+    "use",
+    "where",
+    "while",
+    "yield",
+    "macro_rules",
+    "try",
 ];
 
 const SPECIAL: &[&str] = &["self", "Self", "true", "false", "crate", "super"];
@@ -188,12 +220,18 @@ pub fn highlight_line(line: &str, state: State) -> (Vec<Span>, State) {
 
         // Comments.
         if c == b'/' && s.get(i + 1) == Some(&b'/') {
-            let doc = matches!(s.get(i + 2), Some(b'/') | Some(b'!')) && s.get(i + 3) != Some(&b'/');
-            out.push(i, s.len(), if doc { Kind::DocComment } else { Kind::Comment });
+            let doc =
+                matches!(s.get(i + 2), Some(b'/') | Some(b'!')) && s.get(i + 3) != Some(&b'/');
+            out.push(
+                i,
+                s.len(),
+                if doc { Kind::DocComment } else { Kind::Comment },
+            );
             return (out.spans, State::Code);
         }
         if c == b'/' && s.get(i + 1) == Some(&b'*') {
-            let doc = matches!(s.get(i + 2), Some(b'*') | Some(b'!')) && s.get(i + 3) != Some(&b'/');
+            let doc =
+                matches!(s.get(i + 2), Some(b'*') | Some(b'!')) && s.get(i + 3) != Some(&b'/');
             let (end, left) = block_comment(s, i + 2, 1);
             out.push(i, end, if doc { Kind::DocComment } else { Kind::Comment });
             if left > 0 {
@@ -204,7 +242,10 @@ pub fn highlight_line(line: &str, state: State) -> (Vec<Span>, State) {
         }
 
         // Attributes.
-        if c == b'#' && (s.get(i + 1) == Some(&b'[') || (s.get(i + 1) == Some(&b'!') && s.get(i + 2) == Some(&b'['))) {
+        if c == b'#'
+            && (s.get(i + 1) == Some(&b'[')
+                || (s.get(i + 1) == Some(&b'!') && s.get(i + 2) == Some(&b'[')))
+        {
             // `#[...]` runs to its closing bracket; nested brackets count.
             let mut attr_depth = 0usize;
             let mut j = i;
@@ -316,9 +357,7 @@ pub fn highlight_line(line: &str, state: State) -> (Vec<Span>, State) {
                 let d = s[j];
                 let more = d.is_ascii_alphanumeric()
                     || d == b'_'
-                    || (d == b'.'
-                        && !hex
-                        && s.get(j + 1).is_some_and(|n| n.is_ascii_digit()))
+                    || (d == b'.' && !hex && s.get(j + 1).is_some_and(|n| n.is_ascii_digit()))
                     || ((d == b'+' || d == b'-')
                         && !hex
                         && matches!(s.get(j - 1), Some(b'e') | Some(b'E')));
@@ -351,17 +390,23 @@ pub fn highlight_line(line: &str, state: State) -> (Vec<Span>, State) {
             } else if PRIMITIVES.contains(&word) {
                 Kind::Type
             } else if word.len() > 1
-                && word.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
                 && word.bytes().any(|b| b.is_ascii_uppercase())
             {
                 Kind::Constant
             } else if word.as_bytes().first().is_some_and(u8::is_ascii_uppercase) {
                 Kind::Type
             } else if next == Some(b'(')
-                || (next == Some(b':') && s.get(j + 1) == Some(&b':') && s.get(j + 2) == Some(&b'<'))
+                || (next == Some(b':')
+                    && s.get(j + 1) == Some(&b':')
+                    && s.get(j + 2) == Some(&b'<'))
+                || (start >= 3
+                    && line
+                        .get(..start)
+                        .is_some_and(|h| h.trim_end().ends_with("fn")))
             {
-                Kind::Function
-            } else if start >= 3 && line.get(..start).is_some_and(|h| h.trim_end().ends_with("fn")) {
                 Kind::Function
             } else {
                 Kind::Text
@@ -432,7 +477,9 @@ pub struct Highlighter {
 
 impl Highlighter {
     pub fn new() -> Self {
-        Highlighter { states: alloc::vec![State::Code] }
+        Highlighter {
+            states: alloc::vec![State::Code],
+        }
     }
 
     /// An edit touched line `line`: every state after it may have changed.
@@ -444,7 +491,11 @@ impl Highlighter {
     }
 
     /// The state line `line` starts in, computing down to it.
-    pub fn state_at(&mut self, line: usize, text: impl Fn(usize) -> alloc::string::String) -> State {
+    pub fn state_at(
+        &mut self,
+        line: usize,
+        text: impl Fn(usize) -> alloc::string::String,
+    ) -> State {
         while self.states.len() <= line {
             let i = self.states.len() - 1;
             let st = self.states.last().copied().unwrap_or_default();
@@ -496,7 +547,10 @@ mod tests {
         assert_eq!(kind_of("let x = foo(1);", "foo"), Kind::Function);
         assert_eq!(kind_of("self.x = true;", "self"), Kind::Special);
         assert_eq!(kind_of("self.x = true;", "true"), Kind::Special);
-        assert_eq!(kind_of("const MAX_LEN: usize = 4;", "MAX_LEN"), Kind::Constant);
+        assert_eq!(
+            kind_of("const MAX_LEN: usize = 4;", "MAX_LEN"),
+            Kind::Constant
+        );
         assert_eq!(kind_of("x != y", "x"), Kind::Text);
     }
 
@@ -539,8 +593,20 @@ mod tests {
         assert_eq!(spans[0].end, "/* a /* b */ still */".len());
         // Across lines, with depth carried.
         let (_, st) = highlight_line("x /* one /* two", State::Code);
-        assert_eq!(st, State::Block { depth: 2, doc: false });
-        let (spans, st) = highlight_line("still */ inside */ fn", State::Block { depth: 2, doc: false });
+        assert_eq!(
+            st,
+            State::Block {
+                depth: 2,
+                doc: false
+            }
+        );
+        let (spans, st) = highlight_line(
+            "still */ inside */ fn",
+            State::Block {
+                depth: 2,
+                doc: false,
+            },
+        );
         assert_eq!(st, State::Code);
         assert_eq!(spans[0].kind, Kind::Comment);
         assert_eq!(spans.last().unwrap().kind, Kind::Keyword);
@@ -602,8 +668,20 @@ mod tests {
             let v = v.clone();
             move |i: usize| v.get(i).cloned().unwrap_or_default()
         };
-        assert_eq!(h.state_at(2, get(&lines)), State::Block { depth: 1, doc: false });
-        assert_eq!(h.state_at(3, get(&lines)), State::Block { depth: 1, doc: false });
+        assert_eq!(
+            h.state_at(2, get(&lines)),
+            State::Block {
+                depth: 1,
+                doc: false
+            }
+        );
+        assert_eq!(
+            h.state_at(3, get(&lines)),
+            State::Block {
+                depth: 1,
+                doc: false
+            }
+        );
         lines[1] = String::from("// closed now");
         h.invalidate_from(1);
         assert_eq!(h.state_at(3, get(&lines)), State::Code);
