@@ -299,9 +299,16 @@ for (const [engine, label, viewport, ua] of RUNS) {
       // same run -- the Player's video as it was, and the probe again in
       // the app's page, plain and with the Player's hidden style.
       const why = framed ? {} : {
-        videos: await page.evaluate(() => (window.__vids || []).filter((x) => x.cls === 'pick').slice(-4)),
+        videos: await page.evaluate(() => (window.__vids || []).filter((x) => x.cls === 'feed').slice(-4)),
         probeInPage: await page.evaluate(cameraProbe).catch((e) => String(e)),
-        probeInPageHidden: await page.evaluate(cameraProbe, 'pick').catch((e) => String(e)),
+        probeInPageFeed: await page.evaluate(cameraProbe, 'feed').catch((e) => String(e)),
+        // Each property of the old hidden style alone, so a run that fails
+        // says which one this engine will not decode behind.
+        ...Object.fromEntries(await Promise.all(Object.entries({
+          offscreen: { position: 'fixed', left: '-10000px', top: '0' },
+          onePixel: { position: 'fixed', left: '0', top: '0', width: '1px', height: '1px' },
+          transparent: { position: 'fixed', left: '0', top: '0', opacity: '0' },
+        }).map(async ([k, css]) => [`probe_${k}`, await page.evaluate(cameraProbe, css).catch((e) => String(e))]))),
       };
       // Linux WebKit's fake camera sends frames only some of the time. The
       // app is at fault only when the camera works at the moment it asks:

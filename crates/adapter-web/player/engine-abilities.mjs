@@ -60,8 +60,9 @@ export const shareProbe = () => typeof navigator.share === 'function';
 /// Whether the engine's camera sends a frame at all: the camera opened
 /// straight through getUserMedia, outside any app, into a video element,
 /// for up to ten seconds; then put away.
-/// `style` names a class to give the video (the Player's hidden 'pick' style),
-/// so the same probe run in the app's page tells style from page apart.
+/// `style` is a class to give the video (the Player's camera style) or the
+/// style properties to set on it, so the same probe run in the app's page
+/// tells page from style apart. Set from script, which a page's CSP allows.
 export const cameraProbe = (style) => new Promise((resolve) => {
   if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') { resolve({ frame: false, why: 'no getUserMedia' }); return; }
   // A camera that never answers is an answer too, after fifteen seconds.
@@ -73,7 +74,8 @@ export const cameraProbe = (style) => new Promise((resolve) => {
     v.muted = true;
     v.playsInline = true;
     v.autoplay = true;
-    if (style) v.className = style;
+    if (typeof style === 'string') v.className = style;
+    else if (style) Object.assign(v.style, style);
     v.srcObject = stream;
     document.body.appendChild(v);
     v.play().catch(() => {});

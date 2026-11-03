@@ -171,6 +171,11 @@ body.has-made #stage { padding-bottom: 4px; }
 .sheet .lede.ask { white-space: pre-line; overflow-wrap: anywhere; color: var(--ink-2); }
 /* The file picker and the download link a dialog uses: never seen. */
 .pick { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; opacity: 0; }
+/* The camera's video, which the app reads frames from: on the screen and
+   all but transparent, behind everything. WebKit on Linux never decodes a
+   video that is off the screen, a pixel wide and fully transparent (the
+   .pick style above), so an app there was handed no frame at all. */
+.feed { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: .01; pointer-events: none; z-index: -1; }
 
 @media (max-width: 560px) {
   .made { height: calc(36px + env(safe-area-inset-bottom, 0px)); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }

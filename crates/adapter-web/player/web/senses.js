@@ -283,7 +283,7 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
       v.muted = true;
       v.playsInline = true;
       v.autoplay = true;
-      v.className = 'pick';
+      v.className = 'feed';
       v.srcObject = stream;
       document.body.appendChild(v);
       v.play().catch(() => {});
