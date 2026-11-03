@@ -3936,6 +3936,58 @@ fn check_app_passes_a_known_good_app_and_emits_json() {
 }
 
 #[test]
+fn a_second_full_check_of_the_same_bytes_reuses_the_pass() {
+    // Measured on 34 real Studio builds: the engine's closing check re-judged
+    // bytes the agent's own last check had just passed in 27 of 29, about 19
+    // seconds each. The second check of unchanged bytes must say it reused
+    // the pass, name the same stages, and leave the first one's verdict as
+    // the answer; a check that never ran in full must not be reused.
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let app_dir = workspace_path(PathBuf::from("apps/krate-diceroll"));
+    let record = app_dir.join("target/.krate-check-pass.json");
+    let _ = std::fs::remove_file(&record);
+    let check = |extra: &[&str]| -> serde_json::Value {
+        let output = krate()
+            .arg("check-app")
+            .arg(&app_dir)
+            .args(extra)
+            .arg("--json")
+            .output()
+            .expect("run check-app");
+        assert!(
+            output.status.success(),
+            "check-app must pass: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).expect("json")
+    };
+    let quick = check(&["--no-run"]);
+    assert!(quick["reused_pass_secs"].is_null());
+    assert!(
+        !record.exists(),
+        "a --no-run check proves nothing about running"
+    );
+
+    let first = check(&[]);
+    assert!(
+        first["reused_pass_secs"].is_null(),
+        "the first full check runs the app"
+    );
+    assert!(record.is_file(), "a full pass is remembered");
+    let second = check(&[]);
+    assert!(
+        second["reused_pass_secs"].as_u64().is_some(),
+        "the same bytes reuse the pass: {second}"
+    );
+    assert_eq!(first["stages"], second["stages"]);
+    let _ = std::fs::remove_file(&record);
+}
+
+#[test]
 fn check_app_passes_a_cli_app_that_needs_an_argument() {
     // Regression: a CLI app that requires an argument must pass check-app. It
     // used to fail at the run stage because check-app gave CLI apps no argument

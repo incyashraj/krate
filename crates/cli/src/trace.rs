@@ -133,6 +133,18 @@ pub fn check_app(ok: bool, stage: Option<&str>, detail: Option<&str>) {
     event("check_app", &fields);
 }
 
+/// How long each stage of the engine's own check-app took, in milliseconds,
+/// and -- when the check reused a pass for the same bytes -- how old that
+/// pass was. Written just before the `check_app` verdict it belongs to.
+pub fn check_stages(stages: &[(&str, u64)], reused_secs: Option<u64>) {
+    let mut fields: Vec<(&str, String)> =
+        stages.iter().map(|(stage, ms)| (*stage, num(ms))).collect();
+    if let Some(age) = reused_secs {
+        fields.push(("reused_pass_secs", num(age)));
+    }
+    event("check_stages", &fields);
+}
+
 /// Krate's post-agent auto-repair opened a round.
 pub fn repair(round: u32, of: u32, because: &str) {
     event(
