@@ -81,6 +81,14 @@ img { display: block; }
 .card h1 { font-size: 21px; line-height: 1.25; letter-spacing: -.025em; font-weight: 600; }
 .card .say { margin-top: 8px; font-size: 15px; color: var(--mute); }
 .card .stack { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+/* a team's own sign-in leads, the width of the card; the others share a line */
+#signinCompany { flex-basis: 100%; }
+#signin .stack .btn { flex: 1; }
+/* sign in by an emailed link: the field and its button on one line */
+.card .mail { display: flex; gap: 10px; margin-top: 10px; }
+.card .mail input { flex: 1; min-width: 0; height: 40px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--s2); color: var(--ink); font: inherit; font-size: 14.5px; box-shadow: inset 0 0 0 1px var(--line); }
+.card .mail input:focus { outline: none; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.card .mail input::placeholder { color: var(--ink-3); }
 .card details { margin-top: 12px; font-size: 13px; color: var(--ink-3); }
 .card details pre { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; }
 #loading { display: flex; align-items: center; gap: 14px; width: auto; padding: 18px 22px; box-shadow: var(--sh-1); }

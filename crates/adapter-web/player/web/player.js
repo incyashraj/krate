@@ -304,28 +304,90 @@ $('reportForm').onsubmit = async (e) => {
 function session() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
 }
+// The proof that this browser started a sign-in (K-909), as the site keeps
+// it (docs/landing/login/signin.js): a few nonces in this origin's
+// localStorage, each used once and dropped after an hour. localStorage, not
+// sessionStorage, because an emailed link opens in a new tab.
+const NONCE_MAX_MS = 60 * 60 * 1000;
+function nonces() {
+  try {
+    const list = JSON.parse(localStorage.getItem(NONCE_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((e) => e && typeof e.n === 'string' && Date.now() - e.at < NONCE_MAX_MS) : [];
+  } catch { return []; }
+}
+function keepNonces(list) {
+  try { localStorage.setItem(NONCE_KEY, JSON.stringify(list.slice(-5))); } catch {}
+}
+function beginSignIn() {
+  const n = Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, '0')).join('');
+  keepNonces([...nonces(), { n, at: Date.now() }]);
+  return n;
+}
+function acceptSignIn(n) {
+  if (!n) return false;
+  const list = nonces();
+  const at = list.findIndex((e) => e.n === n);
+  if (at >= 0) { list.splice(at, 1); keepNonces(list); return true; }
+  // A sign-in started before this Player kept its nonces here.
+  let legacy = null;
+  try { legacy = sessionStorage.getItem(NONCE_KEY); sessionStorage.removeItem(NONCE_KEY); } catch {}
+  return legacy === n;
+}
 // A finished sign-in comes back in the fragment (it never leaves the
-// browser), with the nonce this tab made: taken only when it matches.
+// browser), with a nonce this browser made: taken only when it matches.
 function takeSignIn() {
   if (!location.hash.includes('token=')) return;
   const got = new URLSearchParams(location.hash.slice(1));
-  let expected = null;
-  try { expected = sessionStorage.getItem(NONCE_KEY); sessionStorage.removeItem(NONCE_KEY); } catch {}
   history.replaceState(null, '', location.pathname + location.search);
-  if (!expected || got.get('nonce') !== expected) return;
+  if (!acceptSignIn(got.get('nonce'))) return;
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify({ token: got.get('token'), login: got.get('login') || '', name: got.get('name') || '' }));
   } catch {}
 }
 function signIn(words) {
-  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, '0')).join('');
-  try { sessionStorage.setItem(NONCE_KEY, nonce); } catch {}
-  const q = (path) => `${path}?${new URLSearchParams({ from: FROM, nonce })}`;
+  const nonce = beginSignIn();
+  const q = (path, extra = {}) => `${path}?${new URLSearchParams({ ...extra, from: FROM, nonce })}`;
   $('signinGithub').href = q('/login/start');
   $('signinGoogle').href = q('/login/google/start');
+  // An organisation's app: its own sign-in first (Okta, Entra, Google
+  // Workspace, SAML -- the hub sends it on to whichever the company set
+  // up), with GitHub stepping back beside Google, as on krate.tech/login.
+  if (ORG_APP) {
+    $('signinCompany').href = q('/login/oidc/start', { org: ORG_APP.slug });
+    $('signinCompany').hidden = false;
+    $('signinGithub').className = 'btn ghost';
+  }
   if (words) $('signinWords').textContent = words;
   show('signin');
 }
+// Sign in by a link in an email: the hub mails it, and opening it on this
+// device comes back here signed in.
+$('signinMail').onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $('signinEmail').value.trim();
+  const said = $('signinSaid');
+  said.hidden = false;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    said.textContent = 'Type the email address your team invited.';
+    $('signinEmail').focus();
+    return;
+  }
+  $('signinSend').disabled = true;
+  said.textContent = 'Sending…';
+  const res = await fetch('/login/email', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, from: FROM, nonce: beginSignIn() }),
+  }).catch(() => null);
+  $('signinSend').disabled = false;
+  if (res && res.ok) {
+    said.textContent = `We sent a link to ${email}. Open it on this device to sign in; it works for 15 minutes.`;
+  } else if (res && res.status === 429) {
+    said.textContent = 'Too many links asked for just now. Wait a minute and try again.';
+  } else {
+    said.textContent = res ? ((await res.text().catch(() => '')) || 'The link did not send. Try again.') : 'Krate could not be reached. Check the connection and try again.';
+  }
+};
 
 // ------------------------------------------------------------------ the app
 const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');

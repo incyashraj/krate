@@ -54,9 +54,15 @@
     <h1 id="signinTitle">Sign in to open this app</h1>
     <p class="say" id="signinWords">It was shared with your team. Sign in with the account your team invited.</p>
     <div class="stack">
+      <a class="btn dark" id="signinCompany" href="#" hidden>Continue with your company</a>
       <a class="btn dark" id="signinGithub" href="#">Continue with GitHub</a>
       <a class="btn ghost" id="signinGoogle" href="#">Continue with Google</a>
     </div>
+    <form class="mail" id="signinMail" novalidate>
+      <input type="email" id="signinEmail" placeholder="Or your email" autocomplete="email" inputmode="email" aria-label="Your email">
+      <button class="btn ghost" type="submit" id="signinSend">Email me a link</button>
+    </form>
+    <p class="fine" id="signinSaid" role="status" hidden></p>
   </section>
 
   <section class="card state" id="refused" hidden aria-labelledby="refusedTitle">
