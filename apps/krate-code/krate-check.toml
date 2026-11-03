@@ -1,0 +1,32 @@
+# The one thing Krate Code exists to do: edit code with the keyboard, in
+# modes, and save it. The tour stands in for a folder, because a headless
+# run has no folder picker to answer.
+name = "edit a Rust file in normal and insert mode, then save it"
+[[step]]
+click = "Take the tour"
+[[step]]
+expect_text = "fn main()"
+[[step]]
+type = "ggO// hello from Krate Code"
+[[step]]
+expect_text = "INSERT"
+[[step]]
+key = "Escape"
+[[step]]
+expect_text = "NORMAL"
+[[step]]
+expect_text = "hello from Krate Code"
+[[step]]
+type = "dd"
+[[step]]
+expect_no_text = "hello from Krate Code"
+[[step]]
+type = "u"
+[[step]]
+expect_text = "hello from Krate Code"
+[[step]]
+type = ":w"
+[[step]]
+key = "Enter"
+[[step]]
+expect_text = "written"
