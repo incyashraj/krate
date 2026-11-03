@@ -22,6 +22,10 @@
 //! window events into editor input.
 
 #![cfg_attr(target_arch = "wasm32", no_std)]
+// Key handling matches an input, then checks a state inside the arm on
+// purpose: moved into a match guard, a false check would fall through to a
+// later arm (a `j` in an empty tree would be typed as a letter).
+#![allow(clippy::collapsible_match)]
 
 extern crate alloc;
 

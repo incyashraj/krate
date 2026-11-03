@@ -922,7 +922,7 @@ impl Workspace {
             return;
         };
         let count = doc.buf.line_count();
-        let max_top = count.saturating_sub(p.rows.saturating_sub(2).max(1)).max(0) as f32;
+        let max_top = count.saturating_sub(p.rows.saturating_sub(2).max(1)) as f32;
         let widest = 400.0f32;
         if let Some(pm) = self.panes.get_mut(pane) {
             pm.top = (pm.top + lines).clamp(0.0, max_top.max(0.0));
