@@ -181,9 +181,12 @@
       "a focus timer that lives in the corner", "flashcards for twenty Spanish words a day"];
     const lead = "Describe an app, like ";
     const sync = () => wrap.classList.toggle("has", ta.value.length > 0);
-    ta.addEventListener("input", sync); sync();
+    ta.addEventListener("input", sync); ta.addEventListener("focus", sync); sync();
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const paint = (s) => { ph.innerHTML = esc(s) + '<span class="kr-car"></span>'; };
+    // Checked on every step too, not only on typing: Studio empties the box
+    // in code after a build starts (app.js), no input event fires, and the
+    // ideas stayed hidden over an empty box on the way back home.
+    const paint = (s) => { sync(); ph.innerHTML = esc(s) + '<span class="kr-car"></span>'; };
     (async () => {
       for (let k = 0; ; k++) {
         const s = lead + IDEAS[k % IDEAS.length];
@@ -1401,6 +1404,9 @@
   // where it is seen. Only when a NEW link appeared, so closing the sheet
   // any other way says nothing.
   let linking = false; // Share's Make a link publishes too, and says so itself
+  // The last publish was an update (IC-976): say so, with its number.
+  const lastPublish = () => { try { return (typeof state !== "undefined" && state.lastPublish) || null; } catch (e) { return null; } };
+  const updatedWords = () => { const o = lastPublish(); return o && o.updated && o.version ? `Updated to v${o.version}. Everyone with the link gets it` : ""; };
   (function published() {
     const sheet = $("publishSheet");
     if (!sheet) return;
@@ -1409,7 +1415,7 @@
     watch(sheet, { attributes: true, attributeFilter: ["class"] }, () => {
       if (!sheet.classList.contains("hidden")) { before = link(); return; }
       const now = link();
-      if (now && now !== before && !linking) toast("Published. The link is copied", true);
+      if (now && now !== before && !linking) toast(updatedWords() || "Published. The link is copied", true);
       before = now;
     });
   })();
@@ -1701,6 +1707,12 @@
   </div>`;
   document.body.appendChild(shareWrap);
   let shareApp = null, shareVer = null;
+  // What publishing this build would do (IC-976, app.js publishPlan): a
+  // first publish, the next version behind the same link, or nothing new.
+  let sharePlan = null;
+  const planOf = () => (sharePlan && isCurrent() ? sharePlan : null);
+  const makeLabel = () => { const p = planOf(); return p && p.update ? p.label : "Make a link"; };
+  const pubLabel = () => { const p = planOf(); return p && p.update ? p.label : "Publish"; };
   const linkOf = () => { const s = app(); const r = s && s.session && s.session.result; return r && r.share_url ? r.share_url : null; };
   const isCurrent = () => { try { const c = currentApp(); return !!(c && shareApp && c.path === shareApp.path); } catch (e) { return false; } };
   function closeShare() { shareWrap.classList.add("hidden"); }
@@ -1734,7 +1746,24 @@
       pane.innerHTML = `<p class="kr-shp">A link is made for the newest version. Open it and share from there.</p>`;
       return;
     }
-    pane.innerHTML = `<button type="button" class="btn kr-dark kr-make"><span class="kr-pg"></span><span class="kr-lb">Make a link</span></button><p class="kr-sherr" hidden></p>`;
+    const plan = planOf();
+    // Published before: the link they already sent is here to copy, and
+    // the button puts this build behind it as the next version.
+    pane.innerHTML = (plan && plan.update
+      ? `<div class="kr-linkf"><span class="kr-u"></span><button type="button" class="btn kr-ghost" data-copy>${ico("copy")}<span>Copy</span></button></div>` +
+        `<p class="kr-shp kr-upd">This link opens v${esc(String(plan.current || plan.n - 1))}. Your changes are not at it yet.</p>`
+      : "") +
+      `<button type="button" class="btn kr-dark kr-make"><span class="kr-pg"></span><span class="kr-lb">${esc(makeLabel())}</span></button>` +
+      (plan && plan.update ? `<p class="kr-shst">${esc(plan.sub)}</p>` : "") +
+      `<p class="kr-sherr" hidden></p>`;
+    if (plan && plan.update) {
+      q(".kr-u", pane).textContent = plan.url.replace(/^https?:\/\//, "");
+      q("[data-copy]", pane).addEventListener("click", (e) => {
+        const c = e.currentTarget;
+        const done = () => { c.classList.add("ok"); q("span", c).textContent = "Copied"; setTimeout(() => { c.classList.remove("ok"); q("span", c).textContent = "Copy"; }, 1400); };
+        (navigator.clipboard ? navigator.clipboard.writeText(plan.url) : Promise.reject()).then(done, done);
+      });
+    }
     const b = q(".kr-make", pane);
     b.addEventListener("click", async () => {
       if (b.dataset.busy) return;
@@ -1744,7 +1773,7 @@
       linking = true;
       // Signed out: the popup asks, and when it lands this button makes the
       // link again, right here (as Publish does).
-      window.__krPubAgain = () => { delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link"; b.click(); };
+      window.__krPubAgain = () => { delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = makeLabel(); b.click(); };
       try {
         openPublishSheet();
         if (sheet) sheet.classList.add("hidden");
@@ -1753,16 +1782,16 @@
       } catch (e) { /* app.js says why in the publish sheet's note */ }
       linking = false;
       const url = linkOf();
-      if (url) { window.__krPubAgain = null; paintLink(url, true); toast("Link made and copied", true); return; }
+      if (url) { window.__krPubAgain = null; settled(); paintLink(url, true); toast(updatedWords() || "Link made and copied", true); return; }
       // Waiting on the sign-in popup, already open over this pane; the old
       // publish sheet stays shut (it was left behind on its sign-in step).
       if ($("pubSignin") && !$("pubSignin").classList.contains("hidden")) {
         if (sheet) sheet.classList.add("hidden");
-        delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link";
+        delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = makeLabel();
         return;
       }
       window.__krPubAgain = null;
-      delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link";
+      delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = makeLabel();
       const why = (($("pubNote") || {}).textContent || "").trim();
       const err = q(".kr-sherr", pane); err.textContent = why || "The link could not be made just now. Try again in a moment."; err.hidden = false;
     });
@@ -1853,7 +1882,8 @@
         <label>Name<input class="kr-field" data-n maxlength="60"></label>
         <label>One line about it<input class="kr-field" data-d maxlength="140" placeholder="What it does, in a sentence"></label>
         <div class="kr-tog"><span>List it in the gallery<small>Off: only people with the link can find it.</small></span><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="List it in the gallery" data-l></button></div>
-        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}<span>Publish</span></button><button type="button" class="btn kr-ghost" data-more>Add a picture or a logo</button></div>
+        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}<span>${esc(pubLabel())}</span></button><button type="button" class="btn kr-ghost" data-more>Add a picture or a logo</button></div>
+        <p class="kr-shst" data-plan${planOf() && planOf().update ? "" : " hidden"}>${esc((planOf() && planOf().update && planOf().sub) || "")}</p>
         <p class="kr-sherr" hidden></p></div>`;
     const n = q("[data-n]", pane), d = q("[data-d]", pane), l = q("[data-l]", pane), go = q("[data-pub]", pane), err = q(".kr-sherr", pane);
     n.value = nameV; d.value = descV;
@@ -1887,25 +1917,25 @@
       // Signed out: the popup asks, and when it lands this same button
       // publishes again here, ring and stamp and all (it finished behind the
       // old sheet with only a toast).
-      window.__krPubAgain = () => { delete go.dataset.busy; q("span", go).textContent = "Publish"; go.click(); };
+      window.__krPubAgain = () => { delete go.dataset.busy; q("span", go).textContent = pubLabel(); go.click(); };
       try { await publishFromSheet(); } catch (e) {}
       linking = false;
       cancelAnimationFrame(raf); clearTimeout(upT);
       if (linkOf() && !($("pubSignin") && !$("pubSignin").classList.contains("hidden"))) {
         bar.style.transition = "transform .4s var(--ease)"; bar.style.transform = "scaleX(1)";
         await new Promise((r) => setTimeout(r, reduce ? 0 : 420));
-        ring.dataset.ph = "done"; window.krSwap(q(".kr-swp", ring), listed ? "In the gallery" : "Your link is ready");
+        ring.dataset.ph = "done"; window.krSwap(q(".kr-swp", ring), updatedWords() ? `Updated to v${lastPublish().version}` : listed ? "In the gallery" : "Your link is ready");
         await new Promise((r) => setTimeout(r, reduce ? 0 : 1500));
       }
       ring.remove(); frm.hidden = false;
       if (sheet) sheet.classList.add("hidden");
       const url = linkOf();
       const signIn = $("pubSignin") && !$("pubSignin").classList.contains("hidden");
-      if (url && !signIn) { window.__krPubAgain = null; return published(pane, n.value.trim(), url, listed); }
+      if (url && !signIn) { window.__krPubAgain = null; settled(); return published(pane, n.value.trim(), url, listed); }
       // Waiting on the sign-in popup, which is already open over this pane.
-      if (signIn) { if (sheet) sheet.classList.add("hidden"); delete go.dataset.busy; q("span", go).textContent = "Publish"; return; }
+      if (signIn) { if (sheet) sheet.classList.add("hidden"); delete go.dataset.busy; q("span", go).textContent = pubLabel(); return; }
       window.__krPubAgain = null;
-      delete go.dataset.busy; q("span", go).textContent = "Publish";
+      delete go.dataset.busy; q("span", go).textContent = pubLabel();
       err.textContent = (($("pubNote") || {}).textContent || "").trim() || "It did not publish just now. Try again in a moment."; err.hidden = false;
     });
   }
@@ -1926,6 +1956,12 @@
       <div class="kr-linkf"><span class="kr-u"></span><button type="button" class="btn kr-dark" data-copy>${ico("copy")}<span>Copy</span></button></div>
       ${listed ? `<div class="kr-shacts kr-center"><button type="button" class="btn kr-ghost" data-gal>See it in the gallery</button></div>` : ""}`;
     q(".kr-pubdone b", pane).textContent = listed ? `${name} is in the gallery` : `${name} has a link`;
+    // An update says what changed for the people who already have the link.
+    const upd = lastPublish();
+    if (upd && upd.updated && upd.version) {
+      q(".kr-pubdone b", pane).textContent = `${name} is updated to v${upd.version}`;
+      q(".kr-pubdone p", pane).textContent = `Everyone with the link now gets v${upd.version}.` + (listed ? " The gallery shows it too." : "");
+    }
     // The link types itself in, as a freshly made link does.
     const shownUrl = url.replace(/^https?:\/\//, ""), uEl = q(".kr-u", pane);
     if (reduce) uEl.textContent = shownUrl;
@@ -1937,6 +1973,19 @@
     const g = q("[data-gal]", pane);
     if (g) g.addEventListener("click", () => { closeShare(); const r = q('#side .side-row[data-side="discover"]'); if (r) r.click(); });
     paintLink(url, false);
+  }
+  // Published just now: this build is the version it became, at the link.
+  function settled() {
+    const o = lastPublish();
+    sharePlan = o && o.version ? { update: false, same: true, n: o.version, url: linkOf(), label: "Publish", sub: "" } : null;
+    paintWays();
+  }
+  // The Publish tile says "Publish update" once the app is out.
+  function paintWays() {
+    const w = q('.kr-way[data-w="pub"]', shareWrap); if (!w) return;
+    const p = planOf();
+    q("b", w).textContent = p && p.update ? "Publish update" : "Publish";
+    q("small", w).textContent = p && p.update ? `v${p.n}, behind the same link` : p && p.same ? `v${p.n} is at your link` : "List it in the public gallery";
   }
   function openShare(which, version) {
     let cur = null; try { cur = currentApp(); } catch (e) {}
@@ -1951,9 +2000,29 @@
     const builds = s && s.session && s.session.builds;
     const v = q("[data-v]", shareWrap);
     if (version && builds && version < builds) { v.hidden = false; v.textContent = `v${version} · newest is v${builds}`; } else v.hidden = true;
+    sharePlan = null;
+    paintWays();
     const url = isCurrent() ? linkOf() : null;
     if (url) paintLink(url, false); else paintMakeLink();
     paintFile(); paintPub(); paintOrg();
+    // Published before (IC-976)? Then the link and Publish say "update",
+    // with the version it becomes; this exact build is already at its link.
+    const asked = shareApp;
+    if (isCurrent() && typeof versionsOf === "function") versionsOf(asked).then((line) => {
+      if (shareApp !== asked || shareWrap.classList.contains("hidden") || !line) return;
+      sharePlan = publishPlan(line);
+      paintWays();
+      const mk = q('.kr-wp[data-w="link"] .kr-make', shareWrap);
+      if (!linkOf() && !(mk && mk.dataset.busy)) {
+        if (sharePlan.same) paintLink(sharePlan.url, false); else paintMakeLink();
+      }
+      const pub = q('.kr-wp[data-w="pub"] [data-pub]', shareWrap);
+      if (pub && !pub.dataset.busy) {
+        q("span", pub).textContent = pubLabel();
+        const note = q('.kr-wp[data-w="pub"] [data-plan]', shareWrap);
+        if (note) { note.textContent = sharePlan.update ? sharePlan.sub : ""; note.hidden = !sharePlan.update; }
+      }
+    }).catch(() => {});
     try { if (!orgTargets.list) refreshOrgTargets().then(() => { if (!shareWrap.classList.contains("hidden")) paintOrg(); }); } catch (e) {}
     // Opened for an organisation, Share starts on sending it there.
     const forOrg = typeof window.krOrgPick === "function" && window.krOrgPick() && orgList().some((o) => o.slug === window.krOrgPick());

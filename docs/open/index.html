@@ -25,6 +25,10 @@
 .ta-kicker::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
 .theirapp h2 { margin-top: 6px; font-size: 24px; letter-spacing: -.03em; line-height: 1.15; overflow-wrap: anywhere; }
 .ta-sub { margin-top: 4px; font-size: 14px; color: var(--mute); }
+/* An older version than the app's current one (IC-976): one quiet line. */
+.ta-newer { margin-top: 6px; font-size: 13px; color: var(--ink-3); }
+.ta-newer a { color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.ta-newer a:hover { color: var(--ink); text-decoration-color: currentColor; }
 .dlrow { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
 .theirapp .dlrow { margin-top: 14px; }
 /* a private app (?private=1): sign-in choices or a refusal inside the card */
@@ -136,6 +140,7 @@
       <p class="ta-kicker" id="taKick">Waiting for you</p>
       <h2 id="taName">Your app</h2>
       <p class="ta-sub" id="taSize"></p>
+      <p class="ta-newer" id="taNewer" hidden></p>
       <p class="dlrow" id="taRow" hidden><a class="btn dark" id="taTab" href="#" hidden>Open in this tab</a><a class="btn ghost" id="taGet" href="#">Download the app</a></p>
       <div id="taMore" hidden></div>
     </div>
@@ -461,6 +466,19 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
       document.getElementById("taSize").textContent = pretty
         ? pretty + " -- it runs on Mac, Windows and Linux"
         : "It runs on Mac, Windows and Linux";
+      // A link to one older version of an app that has moved on (IC-976):
+      // say so once, quietly, with the way to the version everyone else
+      // with the app's link now gets. The app's own link opens it.
+      var v = d.version;
+      if (v && v.newer && /^https:\/\/hub\.krate\.tech\/a\/v[0-9a-f]{11}$/.test(String(v.app_url || ""))) {
+        var newer = document.getElementById("taNewer");
+        newer.textContent = "This is v" + v.n + ". There is a newer version, v" + v.current + ". ";
+        var to = document.createElement("a");
+        to.href = v.app_url;
+        to.textContent = "Open v" + v.current;
+        newer.appendChild(to);
+        newer.hidden = false;
+      }
       if (d.shot) {
         var img = document.getElementById("taShot");
         img.src = d.shot;

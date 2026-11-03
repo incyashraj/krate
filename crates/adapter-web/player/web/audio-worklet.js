@@ -143,3 +143,40 @@ class KrateMix extends AudioWorkletProcessor {
 }
 
 registerProcessor('krate-mix', KrateMix);
+
+// The microphone (IC-974): what the browser hears, every 128 frames, into
+// the app's ring as it arrived -- the context's own rate, one or two
+// channels interleaved -- for hosts.js to convert to what the app asked
+// for, as the desktop's converter does. The counter is published after the
+// samples, so the worker never reads one before it is written; a ring the
+// app does not read in time keeps the newest (hosts.js drops the oldest).
+// Control words as hosts.js's MIC_*.
+const MIC_WRITTEN = 0;
+class KrateListen extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    const o = options.processorOptions;
+    this.ring = new Float32Array(o.ring);
+    this.ctrl = new Int32Array(o.ctrl);
+    this.mask = this.ring.length - 1;
+    this.channels = o.channels;
+  }
+
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || !input.length) return true;
+    const n = input[0].length;
+    const ch = this.channels;
+    let w = Atomics.load(this.ctrl, MIC_WRITTEN);
+    for (let i = 0; i < n; i++) {
+      for (let c = 0; c < ch; c++) {
+        this.ring[w & this.mask] = input[Math.min(c, input.length - 1)][i];
+        w = (w + 1) | 0;
+      }
+    }
+    Atomics.store(this.ctrl, MIC_WRITTEN, w);
+    return true;
+  }
+}
+
+registerProcessor('krate-listen', KrateListen);

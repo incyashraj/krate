@@ -103,19 +103,22 @@ assert.strictEqual(dl.headers.get("cache-control"), "no-store", "a channel resol
 
 /* ---- a name never resolves to bytes now listed under someone else ------ */
 {
-  // Alice's old release was retired from the gallery when she published a
-  // newer one; its bytes stay. Bob then publishes those exact bytes under
-  // his own name, so the hash is listed as bob's. When alice's newer
-  // release goes, her channel must not fall back to a hash that is now
-  // bob's listing.
+  // Alice's old release is a version of her app (IC-976): it leaves the
+  // gallery when she publishes a newer one, but its row stays hers, so bob
+  // publishing those exact bytes takes nothing over. When alice's newer
+  // release goes, her channel falls back to her own older one.
   const e2 = env();
   const a1 = await publish(e2, "alice", V1, "My Notes");
   const a2 = await publish(e2, "alice", V2, "My Notes");
-  assert.strictEqual(await e2.APPS.get(`app:${a1.id}`), null, "the older listing was retired");
-  const b = await publish(e2, "bob", V1, "Bobs Notes");
-  assert.strictEqual(b.id, a1.id, "bob now lists alice's old bytes");
+  const old = JSON.parse(await e2.APPS.get(`app:${a1.id}`));
+  assert.strictEqual(old.superseded, true, "the older version left the gallery");
+  assert.strictEqual(old.owner, "github:alice", "and is still alice's");
+  await publish(e2, "bob", V1, "Bobs Notes");
+  assert.strictEqual(JSON.parse(await e2.APPS.get(`app:${a1.id}`)).owner, "github:alice", "bob cannot take alice's older version");
   await worker.fetch(req(`/app/${a2.id}`, { method: "DELETE", headers: { authorization: "Bearer gho_alice" } }), e2);
-  assert.strictEqual((await channel(e2, "/c/alice/my-notes")).status, 404, "her channel is gone rather than pointing at bob's listing");
+  const back = await channel(e2, "/c/alice/my-notes");
+  assert.strictEqual(back.status, 200, "her channel falls back to her own older version");
+  assert.strictEqual(back.body.current, a1.id);
 }
 
 /* ---- a takedown shows on the resolution -------------------------------- */

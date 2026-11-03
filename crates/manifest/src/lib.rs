@@ -571,9 +571,20 @@ pub fn works_in_a_tab(module: &str, action: &str) -> bool {
             | ("store", "shared" | "secret")
             // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
             // app's own buffers (player/web/audio-worklet.js), heard from
-            // the person's first tap or key, as browsers require. The
-            // microphone stays out.
+            // the person's first tap or key, as browsers require.
             | ("audio", "playback")
+            // The device's senses (IC-974), each behind the same grant as
+            // on desktop and then the browser's own prompt, whose "no" is
+            // the desktop's refusal (player/web/hosts.js, player.js,
+            // senses-proof.mjs): notifications (the Notification API),
+            // where the device is (Geolocation), the camera and the
+            // microphone (getUserMedia; the microphone through an
+            // AudioWorklet into the app's own buffer). Share and speaking
+            // aloud need no capability of their own.
+            | ("ui", "notify")
+            | ("location", "read")
+            | ("camera", "capture")
+            | ("audio", "capture")
             // The dialogs (IC-974): message and confirm as a sheet in the
             // page, open-file through the browser's file picker, save-file
             // as a download once the app lets go of what it wrote

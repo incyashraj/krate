@@ -8479,8 +8479,25 @@ fn publish_bundle(
     if let Some(note) = extract_json_string(&body, "note") {
         println!("note: {note}");
     }
-    println!("Published. Anyone can run it with:");
+    // An app published before is updated, not added again (IC-976): its link
+    // stays the same and now opens this version.
+    let versioned: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    match (
+        versioned["version"].as_u64(),
+        versioned["updated"].as_bool(),
+    ) {
+        (Some(n), Some(true)) => {
+            println!("Updated to v{n}. Everyone with the link gets this version:");
+        }
+        (Some(_), _) => println!("Published (v1). Anyone can run it with:"),
+        _ => println!("Published. Anyone can run it with:"),
+    }
     println!("  krate run {url}");
+    if let Some(pinned) = versioned["version_url"].as_str() {
+        if versioned["version"].is_u64() {
+            println!("  this version alone, unchanged by later updates: {pinned}");
+        }
+    }
     // The moving name for this app: republishing under the same name
     // moves it, and it moves for nobody else (IC-389, test 470).
     if let Some(channel) = extract_json_string(&body, "channel") {
@@ -10556,6 +10573,15 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     let mut steps: Vec<serde_json::Value> = Vec::new();
 
+    // A change keeps the app's id whatever the authoring step writes: the id
+    // is what makes the published result its next version rather than
+    // another app (IC-976), and where its saved data lives.
+    let kept_id = if is_change {
+        manifest_app_id(&app_dir)
+    } else {
+        None
+    };
+
     // Step 1: author. Either an agent command writes the source, or the
     // built-in generator does.
     if !req.json {
@@ -10611,6 +10637,24 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             "step": "asset",
             "detail": format!("verified local speech model: {}", model.display()),
         }));
+    }
+
+    // The app's id, settled before it is built (IC-976). A new app's id is
+    // made from its name (`dev.krate.timer`), so one person's two timers
+    // would be one app with two versions: it gains a short part made from
+    // the request, once, here. A change keeps the id it came with.
+    match &kept_id {
+        Some(id) => {
+            if manifest_app_id(&app_dir).as_deref() != Some(id.as_str()) {
+                set_manifest_app_id(&app_dir, id)?;
+            }
+        }
+        None => {
+            if let Some(id) = manifest_app_id(&app_dir) {
+                let person = person_words_only(&req.request);
+                set_manifest_app_id(&app_dir, &format!("{id}.{}", app_id_suffix(&person)))?;
+            }
+        }
     }
 
     // Step 2: build to a wasm component.
@@ -10945,17 +10989,46 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     println!();
     if acceptance.accepted {
         println!("Created {}", req.output.display());
+        // Served, with a word of the request not seen in the code: a note
+        // the person can act on ("not like this, make it like an input"),
+        // never a failure over an app that does what was asked.
+        let worth: Vec<&str> = acceptance
+            .requirements
+            .iter()
+            .filter_map(|v| v.detail.split_once("; worth checking: ").map(|(_, w)| w))
+            .collect();
+        if !worth.is_empty() {
+            println!("  Worth checking: it may be missing {}.", worth.join(", "));
+        }
     } else if committed {
         // The app exists and works. What it does not do is the thing that was
         // asked for, and that is the first thing to say -- not a footnote
         // under a "Created" line that reads as success.
-        println!(
-            "Built {}, but it is not what you asked for.",
-            req.output.display()
-        );
+        // Most of what was asked is there and something seems missing:
+        // say that, softly, and name it. Only an app about something else
+        // entirely is "not what you asked for".
+        let failures = acceptance.failures();
+        let partial = failures
+            .iter()
+            .all(|f| f.detail.starts_with("it may be missing"));
+        if partial {
+            println!(
+                "Built {}, but part of what you asked for may be missing.",
+                req.output.display()
+            );
+        } else {
+            println!(
+                "Built {}, but it is not what you asked for.",
+                req.output.display()
+            );
+        }
         println!();
-        for failure in acceptance.failures() {
-            println!("  asked for: {}", failure.text.trim());
+        for failure in &failures {
+            // One clause that is the whole request: echoing it back tells
+            // the person nothing they did not just type.
+            if failures.len() > 1 || failure.text.trim() != judged_request.trim() {
+                println!("  asked for: {}", failure.text.trim());
+            }
             println!("  but       {}", failure.detail);
         }
         println!();
@@ -11102,6 +11175,59 @@ fn read_app_source(app_dir: &Path) -> String {
         }
     }
     source
+}
+
+/// The `[app] id` of the manifest in `dir`, if it has one.
+fn manifest_app_id(dir: &Path) -> Option<String> {
+    let text = fs::read_to_string(dir.join("manifest.toml")).ok()?;
+    let value: toml::Value = toml::from_str(&text).ok()?;
+    value.get("app")?.get("id")?.as_str().map(str::to_string)
+}
+
+/// Rewrite the `id =` line of the manifest's `[app]` table, leaving every
+/// other line as it was.
+fn set_manifest_app_id(dir: &Path, id: &str) -> Result<()> {
+    let path = dir.join("manifest.toml");
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let mut in_app = false;
+    let mut done = false;
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            let t = line.trim_start();
+            if t.starts_with('[') {
+                in_app = t.starts_with("[app]");
+            } else if in_app && !done && (t.starts_with("id =") || t.starts_with("id=")) {
+                done = true;
+                return format!("id = \"{id}\"");
+            }
+            line.to_string()
+        })
+        .collect();
+    let mut out = lines.join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    fs::write(&path, out).with_context(|| format!("write {}", path.display()))
+}
+
+/// Six lowercase letters and digits from the person's request: the part of
+/// a new app's id that keeps two apps with one name apart. From the request
+/// rather than the clock, so making the same request twice still makes the
+/// same app, byte for byte.
+fn app_id_suffix(request: &str) -> String {
+    let digest = sha256_hex_of(request.trim().as_bytes());
+    let mut n = u64::from_str_radix(&digest[..15], 16).unwrap_or(0);
+    let digits = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut out = String::new();
+    // The first character is a letter: an id part reads better that way.
+    out.push(digits[(n % 26) as usize] as char);
+    n /= 26;
+    for _ in 0..5 {
+        out.push(digits[(n % 36) as usize] as char);
+        n /= 36;
+    }
+    out
 }
 
 /// The relative path from the app dir to the SDK root, for the generated
@@ -29085,13 +29211,54 @@ mod link_note_tests {
             "net.connect:api.example.com:443",
         ]);
         assert_eq!(link_notes(dir.path()), Vec::<String>::new());
-        manifest(&["ui.window:create", "camera.capture", "store.sql"]);
+        manifest(&["ui.window:create", "photos.add", "store.sql"]);
         let notes = link_notes(dir.path());
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(
-            notes[0].contains("use your camera (camera.capture)"),
+            notes[0].contains("add pictures to your photo library (photos.add)"),
             "{notes:?}"
         );
         assert!(!notes[0].contains("store.sql"), "{notes:?}");
+    }
+}
+
+#[cfg(test)]
+mod app_id_tests {
+    use super::*;
+
+    /// A new app's id gains its own part; rewriting it touches only the
+    /// `[app]` id line, never an id-looking line elsewhere (IC-976).
+    #[test]
+    fn a_new_app_id_is_its_own_and_a_rewrite_touches_only_that_line() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let text = "[app]\nid = \"dev.krate.timer\"\nname = \"Timer\"\nversion = \"0.1.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n[[capabilities]]\ncap = \"ui.window:create\"\nrationale = \"id = not this\"\nrequired = true\n";
+        std::fs::write(dir.path().join("manifest.toml"), text).expect("write");
+        assert_eq!(
+            manifest_app_id(dir.path()).as_deref(),
+            Some("dev.krate.timer")
+        );
+        let suffix = app_id_suffix("a countdown timer for tea");
+        assert_eq!(suffix.len(), 6);
+        assert!(suffix
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase()));
+        set_manifest_app_id(dir.path(), &format!("dev.krate.timer.{suffix}")).expect("set");
+        let after = std::fs::read_to_string(dir.path().join("manifest.toml")).expect("read");
+        assert_eq!(
+            after,
+            text.replace("dev.krate.timer", &format!("dev.krate.timer.{suffix}"))
+        );
+        krate_manifest::Manifest::parse(&after).expect("still a valid manifest");
+        assert_eq!(
+            app_id_suffix("a countdown timer for tea"),
+            suffix,
+            "the same request, the same app"
+        );
+        assert_ne!(
+            app_id_suffix("a timer for my workouts"),
+            suffix,
+            "another app with the name, another id"
+        );
     }
 }

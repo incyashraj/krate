@@ -7340,6 +7340,78 @@ fn noisy_bundle(dir: &std::path::Path, noise_bytes: usize, seed: u64) -> PathBuf
     bundle
 }
 
+/// Publishing an app again says it was an update and which version, keeps
+/// the app's own link in front, and names the build's own link (IC-976).
+#[test]
+fn publishing_an_app_again_says_it_updated_and_to_which_version() {
+    use std::sync::{Arc, Mutex};
+    let home = tempfile::tempdir().expect("home");
+    std::fs::create_dir_all(home.path().join(".krate")).expect("krate home");
+    std::fs::write(
+        home.path().join(".krate/github.json"),
+        r#"{"login":"alice","name":"Alice","avatar_url":null,"token":"krs_alice"}"#,
+    )
+    .expect("sign-in");
+    let bundle =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/ported/bounce.krate");
+    let answer = Arc::new(Mutex::new(serde_json::json!({})));
+    let state = answer.clone();
+    let Some((addr, stop)) =
+        spawn_fake_hub(Arc::new(move |method, path, _headers, _body| {
+            match (method, path) {
+                ("POST", "/publish") => {
+                    (200, vec![], state.lock().unwrap().to_string().into_bytes())
+                }
+                _ => (404, vec![], b"not found".to_vec()),
+            }
+        }))
+    else {
+        eprintln!("skipping publishing_an_app_again_says_it_updated_and_to_which_version: no local port for the fake hub");
+        return;
+    };
+    let publish = || {
+        let out = krate()
+            .arg("publish")
+            .arg(&bundle)
+            .args(["--hub", &format!("http://{addr}")])
+            .args(["--shot", "/nonexistent.png"])
+            .env("HOME", home.path())
+            .output()
+            .expect("publish");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+    *answer.lock().unwrap() = serde_json::json!({
+        "id": "a".repeat(64), "url": "http://hub.example/a/v0123456789a",
+        "version_url": "http://hub.example/a/aaaaaaaaaaaa", "line": "v0123456789a", "version": 1, "updated": false
+    });
+    let first = publish();
+    assert!(first.contains("Published (v1)"), "{first}");
+    assert!(
+        first.contains("krate run http://hub.example/a/v0123456789a"),
+        "{first}"
+    );
+    *answer.lock().unwrap() = serde_json::json!({
+        "id": "b".repeat(64), "url": "http://hub.example/a/v0123456789a",
+        "version_url": "http://hub.example/a/bbbbbbbbbbbb", "line": "v0123456789a", "version": 3, "updated": true
+    });
+    let update = publish();
+    assert!(
+        update.contains("Updated to v3. Everyone with the link gets this version"),
+        "{update}"
+    );
+    assert!(
+        update.contains(
+            "this version alone, unchanged by later updates: http://hub.example/a/bbbbbbbbbbbb"
+        ),
+        "{update}"
+    );
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// `krate publish` sends an app over the publish door's 5 MiB through the
 /// big-file path (IC-945): started, sent in parts, finished, and the hub's
 /// verdict waited for -- and a publish cut off part way resumes, sending

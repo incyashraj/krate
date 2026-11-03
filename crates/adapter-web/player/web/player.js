@@ -21,6 +21,7 @@ import { makeAudioMemory, pageAudio } from './audio.js';
 import { TeamData } from './org-data.js';
 import { SharedStore, SharedFail } from './shared-store.js';
 import { SecretStore, SecretFail } from './secret-store.js';
+import { pageSenses, primeSpeech } from './senses.js';
 // The browser as an organisation's device (window.KrateSigning): the same
 // file the console uses on krate.tech, served here beside the Player.
 import './org-device.js';
@@ -93,10 +94,7 @@ const WHAT = {
   'krate:gfx/scene3d': '3D drawing',
   'krate:gfx/video': 'video',
   'krate:gpu/gpu': 'your graphics card',
-  'krate:audio/capture': 'your microphone',
-  'krate:camera/capture': 'your camera',
   'krate:speech/transcription': 'speech',
-  'krate:speech/synthesis': 'speaking aloud',
   'krate:fs/files': 'your files',
   'krate:fs/watch': 'your files',
   'krate:store/sql': 'its own database',
@@ -108,14 +106,11 @@ const WHAT = {
   'krate:net/sockets': 'network connections',
   'krate:resources/assets': 'its own pictures and files',
   'krate:ui/dialog': 'choosing a folder',
-  'krate:ui/notify': 'notifications',
   'krate:ui/reminders': 'reminders',
   'krate:ui/print': 'printing',
   'krate:ui/menu': 'its own menus',
   'krate:ui/bluetooth': 'Bluetooth',
-  'krate:ui/location': 'your location',
   'krate:ui/photos': 'your photos',
-  'krate:ui/share': 'sharing',
   'krate:ui/sign-in': 'signing in to another service',
   'krate:ui/web-page': 'web pages inside it',
 };
@@ -507,6 +502,8 @@ async function main() {
 
   const app = j.manifest.app;
   const name = app.name || 'This app';
+  // An app that speaks: the person's first tap readies an iPhone's voice.
+  if ((meta.imports || []).some((n) => /^krate:speech\/synthesis(@|$)/.test(n))) primeSpeech();
   document.title = `${name} - Krate`;
   $('whoName').textContent = name;
   const release = sig === 'valid' && j.release;
@@ -813,6 +810,15 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     held = Math.max(0, held - 1);
     if (held === 0 && onRelease) { const go = onRelease; onRelease = null; go(); }
   };
+  // What a browser allows only inside the person's own tap: a file picker,
+  // the share sheet, asking about notifications. From a press still held,
+  // inside its release; from a tap, at once; otherwise one tap on the sheet
+  // away (`ask`).
+  const withTap = (go, ask) => {
+    if (held) onRelease = () => (inGesture() || !navigator.userActivation ? go('release') : ask());
+    else if (inGesture()) go('direct');
+    else ask();
+  };
   // One sheet for every question: a message, a yes/no, "choose a file",
   // "save this file". Escape or a tap outside answers no.
   let answerSheet = null;
@@ -865,9 +871,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     const open = (how) => { report.dialogs.push({ kind: 'open', how }); input.click(); };
     const ask = () => sheet(title || `${name} wants a file`, `${name} gets only the file you choose.`, 'Choose a file', 'Cancel')
       .then((yes) => (yes ? open('sheet') : finish(null)));
-    if (held) onRelease = () => (inGesture() || !navigator.userActivation ? open('release') : ask());
-    else if (inGesture()) open('direct');
-    else ask();
+    withTap(open, ask);
   });
   // Where a save goes in a tab: the name the app suggested, cleaned as the
   // phone's save cleans it (export_path in crates/runtime), with the
@@ -916,7 +920,12 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   document.addEventListener('dragover', (e) => { if (dragging(e)) e.preventDefault(); });
   document.addEventListener('drop', (e) => { if (dragging(e)) e.preventDefault(); });
 
+  // The device's senses (IC-974): notifications, location, share, speech,
+  // the camera and the microphone (senses.js).
+  const devices = pageSenses({ name, report, probe: params.get('probe') === '1', phone: PHONE, sheet, withTap });
+
   const bridge = pageBridge(bridgeMem, {
+    ...devices.handlers,
     'http.fetch': doFetch,
     'http.begin': (args) => {
       const id = nextFetch++;
@@ -1174,6 +1183,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     if (crashed) notice(words);
     worker.terminate();
     audio.close();
+    devices.close();
   }
 
   // ---- input, in logical pixels, to the app's ring
@@ -1339,6 +1349,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     sqlImage,
     storeKey,
     org: team.mode,
+    senses: devices.facts,
     args: params.getAll('arg').join('\n'),
     scale: Math.min(4, Math.max(1, window.devicePixelRatio || 1)),
     dark: dark(),

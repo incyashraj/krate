@@ -90,6 +90,9 @@ self.onmessage = async ({ data }) => {
       storeKey: data.storeKey,
       // store.org: on, not-org or unsupported, as the page found it.
       org: data.org,
+      // What this browser has of the device's senses (IC-974), as the page
+      // found it: a worker cannot see geolocation itself.
+      senses: data.senses,
       sleepCell: new Int32Array(new SharedArrayBuffer(4)),
       // Sound: the page's shared stats and command ring (audio.js), and the
       // streams and sounds this run makes, posted to the page.

@@ -835,6 +835,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
       // person for (the done card shows it, as Studio does on a desktop)
       // and, when the app is not what was asked, the reason.
       let verdict = null;
+      let checkNote = null;
       let asks = [];
       let engineName = "";
       try {
@@ -848,6 +849,14 @@ async function startBuild({ request, token, account, device, revise = null, shap
           : [];
         if (offRequest) {
           verdict = String(written.verdict || "").replace(/^built a working, permission-gated \.krate, but it does not serve the request: ?/, "").trim();
+        } else {
+          // Accepted, with a word of the request not seen in the code: the
+          // same note the desktop's card shows ("Worth checking: ...").
+          const reqs = written.verdicts && written.verdicts.request && written.verdicts.request.requirements;
+          const worth = (Array.isArray(reqs) ? reqs : [])
+            .map((v) => String((v && v.detail) || "").split("; worth checking: ")[1])
+            .filter(Boolean);
+          if (worth.length) checkNote = `Worth checking: it may be missing ${worth.join(", ")}.`;
         }
       } catch (e) {}
       if (job.port) {
@@ -859,7 +868,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
         } catch (e) {}
         verdict = "Built from your project and permission-tested. Not yet compared with the original: open it and check it does what yours did.";
       }
-      if (offRequest) job.line = "built, but it is not what you asked for";
+      if (offRequest) job.line = /may be missing/.test(verdict) ? "built; part of what you asked for may be missing" : "built, but it is not what you asked for";
       if (ported) job.line = "ported; open it and compare";
       job.result = {
         id,
@@ -874,8 +883,8 @@ async function startBuild({ request, token, account, device, revise = null, shap
         shot: job.shot,
         // "off-request": the engine's verdict that the app does not serve
         // the request, with its reason; null when the app was accepted.
-        verdict: offRequest ? "off-request" : ported ? "ported" : null,
-        verdict_detail: verdict || null,
+        verdict: offRequest ? "off-request" : ported ? "ported" : checkNote ? "check" : null,
+        verdict_detail: verdict || checkNote || null,
         // Held in memory and handed over on download. The file is the
         // product; we are not its host.
         bytes,

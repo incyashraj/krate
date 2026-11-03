@@ -267,7 +267,7 @@ async function runEngine(name, type) {
     const { context, page } = await open(browser, `/run/${id('camera')}`, { allow: false });
     const t = await page.textContent('#consent');
     check(name, 'camera: a capability with no browser equivalent is refused in words before running',
-      t.includes('use your camera') && t.includes('works in Krate on your computer') && (await page.textContent('#consentAllow')) === 'Open in Krate', t.replace(/\s+/g, ' ').slice(0, 220));
+      t.includes('add pictures to your photo library') && t.includes('works in Krate on a computer') && (await page.textContent('#consentAllow')) === 'Open in Krate', t.replace(/\s+/g, ' ').slice(0, 220));
     await page.screenshot({ path: join(shots, `${name}-camera-refused.png`) });
     await context.close();
   }
