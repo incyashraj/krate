@@ -9892,6 +9892,37 @@ required = true
         assert!(!held.exists(), "let go, the old entry is swept");
     }
 
+    /// Two packs of the same size written within one tick of the clock
+    /// carry one modified time (Windows keeps time in ticks of about 15 ms),
+    /// so size and time cannot tell them apart: the second must still open
+    /// as itself, not as the first. Made here by giving the second the
+    /// first's exact time, which is what a coarse clock does.
+    #[test]
+    fn a_same_size_pack_written_in_the_same_tick_opens_as_itself() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = dir.path().join("opened");
+        let bundle = cached_fixture(dir.path(), b"first");
+        let tick = modified_of(&bundle);
+        let size = fs::metadata(&bundle).expect("meta").len();
+        let first = open_cached(&bundle, &root).expect("first");
+        drop(first);
+
+        let bundle = cached_fixture(dir.path(), b"other");
+        File::options()
+            .write(true)
+            .open(&bundle)
+            .expect("open")
+            .set_modified(tick)
+            .expect("same tick");
+        // The hazard is really there: same path, same size, same time.
+        assert_eq!(modified_of(&bundle), tick);
+        assert_eq!(size, fs::metadata(&bundle).expect("meta").len());
+
+        let opened = open_cached(&bundle, &root).expect("second");
+        let read = fs::read(opened.assets_path().expect("assets").join("level.bin")).expect("r");
+        assert_eq!(read, b"other", "the second pack, not the first");
+    }
+
     /// A half-written entry (no marker) and one whose files changed after
     /// it was made are never used: the bundle is unpacked again.
     #[test]
