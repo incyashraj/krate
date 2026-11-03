@@ -64,8 +64,13 @@ if [ -z "$wasi_sdk" ] || [ ! -x "$wasi_sdk/bin/clang" ]; then
   echo "  https://github.com/WebAssembly/wasi-sdk/releases to ~/opt/wasi-sdk (or set WASI_SDK_PATH)" >&2
   exit 1
 fi
+# SQLite is compiled for size (-Oz, after cc's -O3, so it wins): a phone
+# downloads this before the app can run, and SQLite is nearly all of it.
+# 1.87 MB -> 1.09 MB, 532 -> 401 KB brotli; queries cost up to a third more
+# CPU, well under a millisecond for an app's own data. Same SQLite version
+# and features as the desktop, so the same SQL runs.
 CC_wasm32_wasip1="$wasi_sdk/bin/clang" AR_wasm32_wasip1="$wasi_sdk/bin/llvm-ar" \
-  CFLAGS_wasm32_wasip1="--sysroot=$wasi_sdk/share/wasi-sysroot" \
+  CFLAGS_wasm32_wasip1="--sysroot=$wasi_sdk/share/wasi-sysroot -Oz" \
   LIBSQLITE3_FLAGS="-USQLITE_THREADSAFE -DSQLITE_THREADSAFE=0 -DSQLITE_TEMP_STORE=3 -DLONGDOUBLE_TYPE=double -DSQLITE_OMIT_LOAD_EXTENSION" \
   cargo build --release --locked --target wasm32-wasip1 -p krate-sql-web
 

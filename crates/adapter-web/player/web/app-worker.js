@@ -20,6 +20,13 @@ self.onmessage = async ({ data }) => {
   if (data.t !== 'start') return;
   const marks = { workerStart: now() };
   try {
+    // An app with its own database starts downloading SQLite now, beside
+    // the Player module, rather than after it: on a phone the download is
+    // nearly all of the wait.
+    const wantsSql = (data.meta.imports || []).some((n) => /^krate:store\/sql(@|$)/.test(n));
+    const sqlUrl = new URL('./sql.wasm', import.meta.url);
+    const sqlFetch = wantsSql ? fetch(sqlUrl) : null;
+    if (sqlFetch) sqlFetch.catch(() => {});
     const player = await init({ module_or_path: data.playerModule });
     marks.playerReady = now();
     const ui = new Ui(data.scale, data.dark);
@@ -30,8 +37,8 @@ self.onmessage = async ({ data }) => {
     // store.sql: only for an app that imports it, so no other app fetches
     // SQLite. Opened before the app runs; a database that cannot start is
     // said on each call rather than leaving the app without the interface.
-    const sql = (data.meta.imports || []).some((n) => /^krate:store\/sql(@|$)/.test(n))
-      ? await openSqlDatabase({ url: new URL('./sql.wasm', import.meta.url), granted: grants.allows('store.sql'), image: data.sqlImage })
+    const sql = wantsSql
+      ? await openSqlDatabase({ url: sqlUrl, granted: grants.allows('store.sql'), image: data.sqlImage, fetched: sqlFetch })
         .catch((e) => ({ startFailed: `the database could not start in this tab (${(e && e.message) || e})` }))
       : null;
     marks.sqlReady = now();
