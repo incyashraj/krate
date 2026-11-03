@@ -2796,6 +2796,10 @@ function friendlyAsk(cap) {
     "clipboard.read": "read what you copied",
     "clipboard.write": "copy things for you",
     "random.bytes": "make random numbers",
+    // IC-977: the manifest crate's own words (Capability::plain).
+    "process.run:cargo": "run cargo on this computer -- a project's build can run any code it contains",
+    "process.run": "run a program on this computer -- it can do what you can",
+    "process.terminal": "open a terminal on this computer -- it can do anything you can",
   };
   return map[cap] || map[cap.split(":")[0]] || cap;
 }
@@ -4875,6 +4879,10 @@ const CAP_WORDS = {
   "store.shared": "Share its data with anyone holding its invite code, via krate.tech",
   "store.org": "Keep its data in your organisation's store on Krate's hub, shared with your team",
   "store.group": "Share data with other apps from the same maker, on this computer",
+  // IC-977: what a program can do, said plainly.
+  "process.run:cargo": "Run cargo on this computer -- a project's build can run any code it contains",
+  "process.run": "Run a program on this computer -- it can do what you can",
+  "process.terminal": "Open a terminal on this computer -- it can do anything you can",
   "memory.budget": "Use more memory than apps normally get",
   "audio.playback": "Play sound",
   "audio.capture": "Record from the microphone",
@@ -5327,6 +5335,10 @@ const CAPS_REACH_OUT = new Set([
   "net.connect",
   "store.shared",
   "store.org",
+  // Programs and a shell on this computer, with the person's own power
+  // (IC-977).
+  "process.run",
+  "process.terminal",
   // Acts on the desktop outside its own window.
   "ui.open-url",
   "ui.notify",

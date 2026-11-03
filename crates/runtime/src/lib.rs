@@ -92,6 +92,12 @@ pub mod phase3_gui_host;
 pub mod phase4_gui_bindings;
 pub mod phase4_gui_host;
 mod print_host;
+// Programs on the computer (krate:process, IC-977): desktop only.
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod process_host;
 pub mod random_host;
 pub mod scene3d;
 pub mod screen_fit;
@@ -244,6 +250,12 @@ pub struct Config {
     /// switch `KRATE_PULLEY=1` makes for measurement, carried as
     /// configuration so a policy does not depend on an environment.
     pub interpreter: bool,
+    /// What the app's manifest declared, so a refusal can say whether the
+    /// app never asked or the person said no. `None` for a run with no
+    /// manifest: then nothing a manifest must name is available --
+    /// `process.run` and `process.terminal` need the manifest to name them
+    /// as well as the person to allow them (IC-977).
+    pub declared_capabilities: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
 }
 
 impl Default for Config {
@@ -275,6 +287,7 @@ impl Default for Config {
             screenshot_scale: 2.0,
             usability_plan: None,
             interpreter: false,
+            declared_capabilities: None,
         }
     }
 }
@@ -1610,6 +1623,9 @@ impl Runtime {
         link_phase2!(store::group);
         link_phase2!(store::org);
         link_phase2!(random::bytes);
+        // Programs on the computer (IC-977); a phone or a tab answers every
+        // call with words, so the import always links.
+        link_phase2!(phase2_bindings::krate::process::processes);
 
         // The two that differ.
         link_gui!(ui4::types);
@@ -1914,7 +1930,10 @@ impl HostState {
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "org", None).expect("store.org"),
                 ),
-            ),
+            )
+            // What the manifest names, for krate:process (IC-977): a program
+            // runs only when it is named there AND the person allowed it.
+            .with_declared(config.declared_capabilities.clone()),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]
@@ -2835,6 +2854,15 @@ impl FsAdapter for LocalPhase2Adapter {
         stat_path_on_host(path.as_path())
             .map(file_stat_from_metadata)
             .map_err(map_io_error)
+    }
+
+    fn resolve_folder(&self, path: &str) -> std::result::Result<PathBuf, AdapterError> {
+        let folder = self.resolve_fs_path(path, FsOperation::Existing)?;
+        match symlink_metadata_on_host(folder.as_path()) {
+            Ok(meta) if meta.is_dir() => Ok(folder),
+            Ok(_) => Err(AdapterError::InvalidPath),
+            Err(err) => Err(map_io_error(err)),
+        }
     }
 
     fn list(&self, path: &str) -> std::result::Result<Vec<String>, AdapterError> {
@@ -5813,6 +5841,179 @@ mod tests {
             .is_err(),
             "a link out of the picked folder must be refused"
         );
+    }
+
+    /// A program runs in a folder the person picked, reached by its token
+    /// alone (krate:process, IC-977): the host resolves `picked/<token>` by
+    /// the file calls' rules, so the app names the folder and never learns
+    /// where it is; `..`, a link out, a forged token and a raw path are
+    /// refused, and a program the manifest does not name never starts.
+    #[cfg(all(feature = "phase2-bindings", unix))]
+    #[test]
+    fn a_program_runs_in_a_picked_folder_by_token_and_nowhere_else() {
+        use phase2_bindings::krate::process::processes::{Host, ProcessError};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let picked_dir = tempfile::tempdir().expect("picked");
+        // A marker only the picked folder has, so the program proves where
+        // it ran without the app being told a path.
+        std::fs::write(picked_dir.path().join("marker.txt"), b"picked").expect("marker");
+        std::fs::create_dir(picked_dir.path().join("src")).expect("src");
+        let outside = tempfile::tempdir().expect("outside");
+        std::os::unix::fs::symlink(outside.path(), picked_dir.path().join("out")).expect("symlink");
+
+        let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        let token = chosen
+            .borrow_mut()
+            .remember_folder(picked_dir.path().to_path_buf())
+            .expect("token");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            sandbox.path().to_path_buf(),
+            chosen,
+        );
+        let caps = |list: &[&str]| -> std::collections::BTreeSet<krate_manifest::Capability> {
+            list.iter().map(|c| c.parse().expect(c)).collect()
+        };
+        let grants: Vec<String> = vec!["process.run:sh".into(), "process.run:cargo".into()];
+        let mut host = phase2_host::Phase2Host::new(
+            UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+            Box::new(adapter),
+        )
+        .with_declared(Some(caps(&["process.run:sh", "process.run:cargo"])));
+
+        // cargo, in the picked folder, finds the project there.
+        std::fs::write(
+            picked_dir.path().join("Cargo.toml"),
+            "[package]\nname = \"picked-probe\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .expect("Cargo.toml");
+        std::fs::write(picked_dir.path().join("src/lib.rs"), "").expect("lib.rs");
+        let h = host
+            .start(
+                "cargo".into(),
+                vec![
+                    "metadata".into(),
+                    "--no-deps".into(),
+                    "--offline".into(),
+                    "--format-version".into(),
+                    "1".into(),
+                ],
+                format!("picked/{token}"),
+                Vec::new(),
+            )
+            .expect("no trap")
+            .expect("cargo starts in the picked folder");
+        let mut metadata = Vec::new();
+        for _ in 0..30_000 {
+            let o = host
+                .read_stdout(h, 1 << 20)
+                .expect("no trap")
+                .expect("read");
+            metadata.extend(o.bytes);
+            if o.ended {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let status = host.wait(h, 60_000).expect("no trap").expect("wait");
+        assert_eq!(status.map(|s| s.code), Some(Some(0)));
+        assert!(
+            String::from_utf8_lossy(&metadata).contains("\"name\":\"picked-probe\""),
+            "cargo ran in the picked folder"
+        );
+        host.release(h).expect("no trap");
+
+        let mut run_in = |cwd: &str| -> std::result::Result<String, ProcessError> {
+            let h = host
+                .start(
+                    "sh".into(),
+                    vec![
+                        "-c".into(),
+                        "cat marker.txt 2>/dev/null || echo none".into(),
+                    ],
+                    cwd.into(),
+                    Vec::new(),
+                )
+                .expect("no trap")?;
+            let mut out = Vec::new();
+            for _ in 0..2000 {
+                let o = host
+                    .read_stdout(h, 1 << 16)
+                    .expect("no trap")
+                    .expect("read");
+                out.extend(o.bytes);
+                if o.ended {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            host.release(h).expect("no trap");
+            Ok(String::from_utf8_lossy(&out).trim().to_string())
+        };
+
+        assert_eq!(
+            run_in(&format!("picked/{token}")).expect("picked"),
+            "picked"
+        );
+        assert_eq!(
+            run_in(&format!("picked/{token}/src")).expect("below"),
+            "none"
+        );
+        assert_eq!(run_in(".").expect("its own folder"), "none");
+        let picked_path = picked_dir.path().to_string_lossy().to_string();
+        for bad in [
+            format!("picked/{token}/.."),
+            format!("picked/{token}/../.."),
+            format!("picked/{token}/out"),
+            "picked/folder-999".to_string(),
+            picked_path.clone(),
+            "../..".to_string(),
+        ] {
+            match run_in(&bad) {
+                // The words repeat what the app said, and never add where
+                // a picked folder really is.
+                Err(ProcessError::BadFolder(words)) => assert!(
+                    bad == picked_path || !words.contains(&picked_path),
+                    "the words never name the real folder: {words}"
+                ),
+                other => panic!("{bad} must be refused as a bad folder, got {other:?}"),
+            }
+        }
+
+        // Granted on the command line but not named by the manifest: no.
+        let mut host = phase2_host::Phase2Host::new(
+            UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+            Box::new(LocalPhase2Adapter::new(
+                Rc::new(RefCell::new(OutputMode::Sink)),
+                None,
+                None,
+                None,
+                None,
+                Vec::new(),
+                1024,
+                sandbox.path().to_path_buf(),
+                Default::default(),
+            )),
+        )
+        .with_declared(Some(caps(&["process.run:cargo"])));
+        assert!(matches!(
+            host.start("sh".into(), Vec::new(), ".".into(), Vec::new())
+                .expect("no trap"),
+            Err(ProcessError::NotDeclared(words)) if words == "the app did not ask to run sh"
+        ));
+        // No manifest at all names nothing.
+        let mut host = host.with_declared(None);
+        assert!(matches!(
+            host.start("cargo".into(), Vec::new(), ".".into(), Vec::new())
+                .expect("no trap"),
+            Err(ProcessError::NotDeclared(_))
+        ));
     }
 
     /// RUSTSEC-2026-0269 is a filesystem sandbox escape through a trailing

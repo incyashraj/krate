@@ -1304,7 +1304,7 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Blocker,
         "Process or shell execution",
-        "Krate has no general process-spawning capability. Replace this behavior or define a reviewed narrow host capability.",
+        "Krate has no shell and no general process spawning. On a computer an app may run a program it names by its bare name (`process.run:<program>`, krate::process, IC-977), which the person is asked about and which a browser tab and a phone refuse; anything else that runs a command line must be replaced.",
         None,
     );
     detect_pattern(
