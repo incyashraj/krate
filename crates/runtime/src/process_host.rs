@@ -733,8 +733,29 @@ fn check_env(env: &[(String, String)]) -> Result<(), OsError> {
                 "`{key}` is one of Krate's own settings, which an app cannot pass on"
             )));
         }
+        if changes_what_runs(key) {
+            return Err(OsError::Platform(format!(
+                "`{key}` changes what a program loads or which programs it finds, which an app \
+                 cannot set: a program runs as the person's own"
+            )));
+        }
     }
     Ok(())
+}
+
+/// Variables that make a program load or find code other than its own: the
+/// dynamic loader's (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, ...), PATH, and
+/// the files a shell reads on start. Given these, an app allowed to run only
+/// `rustfmt` could make rustfmt load a library from its project folder, so
+/// the grant would name one program and mean any code at all.
+fn changes_what_runs(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    upper.starts_with("LD_")
+        || upper.starts_with("DYLD_")
+        || matches!(
+            upper.as_str(),
+            "PATH" | "PATHEXT" | "BASH_ENV" | "ENV" | "ZDOTDIR" | "IFS" | "SHELLOPTS" | "BASHOPTS"
+        )
 }
 
 fn is_krate_variable(key: &std::ffi::OsStr) -> bool {
@@ -1067,6 +1088,39 @@ mod windows_job {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_app_cannot_set_what_a_program_loads_or_finds() {
+        for key in [
+            "LD_PRELOAD",
+            "ld_library_path",
+            "DYLD_INSERT_LIBRARIES",
+            "DYLD_LIBRARY_PATH",
+            "PATH",
+            "Path",
+            "BASH_ENV",
+            "ENV",
+            "ZDOTDIR",
+        ] {
+            let refused = check_env(&[(key.to_string(), "./evil".to_string())]);
+            assert!(
+                matches!(&refused, Err(OsError::Platform(words)) if words.contains("changes what a program loads")),
+                "{key}: {refused:?}"
+            );
+        }
+        for key in [
+            "RUST_LOG",
+            "RUST_BACKTRACE",
+            "CARGO_TERM_COLOR",
+            "RUSTFLAGS",
+            "TERM",
+        ] {
+            assert!(
+                check_env(&[(key.to_string(), "1".to_string())]).is_ok(),
+                "{key} is allowed"
+            );
+        }
+    }
 
     fn gone(pid: u32) -> bool {
         // A process that is gone answers ESRCH; a zombie still answers.
