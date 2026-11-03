@@ -10891,6 +10891,17 @@ fn player_install_puts_a_registered_player_in_the_home_folder() {
             .expect("run krate player-install")
     };
     let out = run();
+    // Windows has no gift player yet (it waits for a signing certificate):
+    // it says so in words and installs nothing.
+    if cfg!(windows) {
+        assert!(!out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("not available on this system yet"),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        return;
+    }
     assert!(
         out.status.success(),
         "{}",
@@ -20126,7 +20137,9 @@ fn the_policy_is_read_from_each_source_and_shown() {
     let file_at = if cfg!(target_os = "macos") {
         root.join("Library/Application Support/Krate/policy.toml")
     } else if cfg!(windows) {
-        root.join("ProgramData/Krate/policy.toml")
+        // One part at a time: Windows writes this path with backslashes,
+        // and a `/` joined in would never equal what krate shows.
+        root.join("ProgramData").join("Krate").join("policy.toml")
     } else {
         root.join("etc/krate/policy.toml")
     };
@@ -20440,6 +20453,12 @@ fn an_unusable_policy_refuses_to_open_apps() {
     let fleet = Fleet::new();
     let app = fleet.app("any", &[]);
     let policy = fleet.path("policy.toml");
+    // The organisation's default record place is %ProgramData% on Windows,
+    // which a CI runner can write: point it at a path that cannot be made
+    // (under a file), so the record falls back to this person's own, as it
+    // does on macOS and Linux, and the test never writes the real one.
+    let blocked = fleet.path("program-data-is-a-file");
+    std::fs::write(&blocked, b"").unwrap();
     for (body, names) in [
         ("version = 2\n", "`version` is 2"),
         (
@@ -20459,6 +20478,7 @@ fn an_unusable_policy_refuses_to_open_apps() {
         std::fs::write(&policy, body).unwrap();
         let run = fleet
             .krate()
+            .env("ProgramData", &blocked)
             .arg("run")
             .arg(&app)
             .args(["--headless"])
@@ -20484,6 +20504,7 @@ fn an_unusable_policy_refuses_to_open_apps() {
     std::fs::create_dir(&policy).unwrap();
     let run = fleet
         .krate()
+        .env("ProgramData", &blocked)
         .arg("run")
         .arg(&app)
         .args(["--headless"])

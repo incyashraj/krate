@@ -7173,6 +7173,16 @@ fn wrap_mac_zip(
             };
             #[cfg(not(unix))]
             let mode = if path.is_dir() { 0o755 } else { 0o644 };
+            // What a Mac must start -- the app's launcher and the players --
+            // is runnable whatever built the gift: on Windows a file carries
+            // no run bit to copy, and a gift made there opened nothing.
+            let mode = if !path.is_dir()
+                && (name.contains("/Contents/MacOS/") || name.contains("/.player/"))
+            {
+                mode | 0o755
+            } else {
+                mode
+            };
             let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated)
                 .unix_permissions(mode);
