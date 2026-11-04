@@ -86,17 +86,26 @@ pub fn show(app_name: &str, title: &str, body: &str) -> Result<(), String> {
     let id = app_user_model_id(app_name);
     register_sender(&id, app_name)?;
 
-    let failed = |err: windows::core::Error| format!("Windows could not show it ({err})");
-    let notifier =
-        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(&id)).map_err(failed)?;
-    if let Some(why) = setting_refusal(notifier.Setting().map_err(failed)?.0) {
-        return Err(why.to_string());
+    fn failed(step: &'static str) -> impl Fn(windows::core::Error) -> String {
+        move |err| format!("Windows could not show it ({step}: {err})")
     }
-    let doc = XmlDocument::new().map_err(failed)?;
+    let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(&id))
+        .map_err(failed("notifier"))?;
+    // A definite "off" is reported as not shown. No answer is not "off": a
+    // toast on CI's windows-2022 runner failed with Element not found
+    // (0x80070490), the answer Windows is known to give from Setting for a
+    // program with no Start menu entry, so a missing answer goes on to Show,
+    // whose own error is the one that counts.
+    if let Ok(setting) = notifier.Setting() {
+        if let Some(why) = setting_refusal(setting.0) {
+            return Err(why.to_string());
+        }
+    }
+    let doc = XmlDocument::new().map_err(failed("document"))?;
     doc.LoadXml(&HSTRING::from(toast_xml(title, body)))
-        .map_err(failed)?;
-    let toast = ToastNotification::CreateToastNotification(&doc).map_err(failed)?;
-    notifier.Show(&toast).map_err(failed)
+        .map_err(failed("content"))?;
+    let toast = ToastNotification::CreateToastNotification(&doc).map_err(failed("toast"))?;
+    notifier.Show(&toast).map_err(failed("show"))
 }
 
 /// Register the sender Windows shows for `id`: the app's name.
