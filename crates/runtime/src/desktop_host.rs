@@ -314,6 +314,15 @@ pub fn notify(title: &str, body: &str, app_name: &str, granted: bool) -> Result<
             .map_err(NotifyError::Unavailable);
     }
 
+    // macOS, an installed app: UserNotifications from the app's own bundle,
+    // its name and icon on the notification and a plain refusal when the
+    // person has switched it off (IC-271). `krate run` has no bundle of its
+    // own and falls through to osascript.
+    #[cfg(target_os = "macos")]
+    if let Some(answer) = krate_adapter_macos::notify_now(title, body) {
+        return answer.map_err(NotifyError::Unavailable);
+    }
+
     #[allow(unreachable_code)]
     let status = if cfg!(target_os = "macos") {
         // osascript rather than a crate: no new dependency, and the text is

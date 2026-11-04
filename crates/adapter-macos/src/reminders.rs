@@ -197,6 +197,77 @@ pub(crate) fn schedule(
     wait(&rx, Duration::from_secs(120)).unwrap_or(Err("macOS did not answer".to_string()))
 }
 
+/// Show a notification now, from an installed app (IC-271): `None` when this
+/// Krate is not an installed app, so the caller uses its fallback.
+///
+/// The bundle is the sender, so macOS draws the app's own name and icon on
+/// the notification, as for every other program -- the osascript fallback
+/// can only say it came from Script Editor. And macOS answers whether this
+/// app's notifications are on, so one the person switched off is reported as
+/// not shown instead of as success.
+pub fn notify_now(title: &str, body: &str) -> Option<Result<(), String>> {
+    installed_app().ok()?;
+    let (Some(center), Some(content_class), Some(request_class)) = (
+        center(),
+        AnyClass::get(c"UNMutableNotificationContent"),
+        AnyClass::get(c"UNNotificationRequest"),
+    ) else {
+        return Some(Err("this Mac has no notification service".to_string()));
+    };
+    let (title, body) = (title.to_string(), body.to_string());
+    // One identifier per notification, so two in a row are both shown.
+    let id = format!(
+        "{PREFIX}now.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    );
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    // SAFETY: authorization, then a content and a request with no trigger
+    // (deliver now) added to the bundle's center; the completions answer on
+    // the channel.
+    unsafe {
+        let center_for_add = center.clone();
+        let asked = block2::RcBlock::new(move |ok: Bool, _error: *mut AnyObject| {
+            if !ok.as_bool() {
+                let _ = tx.send(Err(
+                    "notifications are off for this app: System Settings > Notifications"
+                        .to_string(),
+                ));
+                return;
+            }
+            let ns = |t: &str| NSString::from_str(t);
+            let content: Retained<AnyObject> = msg_send![content_class, new];
+            let _: () = msg_send![&*content, setTitle: &*ns(&title)];
+            let _: () = msg_send![&*content, setBody: &*ns(&body)];
+            let none: *const AnyObject = std::ptr::null();
+            let request: Retained<AnyObject> = msg_send![
+                request_class,
+                requestWithIdentifier: &*ns(&id),
+                content: &*content,
+                trigger: none
+            ];
+            let tx_add = tx.clone();
+            let added = block2::RcBlock::new(move |error: *mut AnyObject| {
+                let _ = tx_add.send(if error.is_null() {
+                    Ok(())
+                } else {
+                    let text: Option<Retained<NSString>> = msg_send![&*error, localizedDescription];
+                    Err(format!(
+                        "macOS refused the notification: {}",
+                        text.map(|t| t.to_string()).unwrap_or_default()
+                    ))
+                });
+            });
+            let _: () = msg_send![&*center_for_add, addNotificationRequest: &*request, withCompletionHandler: &*added];
+        });
+        // Badge (1) | sound (2) | alert (4).
+        let _: () = msg_send![&*center, requestAuthorizationWithOptions: 7usize, completionHandler: &*asked];
+    }
+    Some(wait(&rx, Duration::from_secs(120)).unwrap_or(Err("macOS did not answer".to_string())))
+}
+
 /// Take back one of the app's reminders.
 pub(crate) fn cancel(id: &str) {
     if installed_app().is_err() {
