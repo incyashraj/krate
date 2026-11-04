@@ -703,6 +703,15 @@ impl WebUi {
             .ok_or_else(|| ui_error("invalid-window", None))
     }
 
+    /// Whether `widget` is a canvas drawn at a design size: a game, whose
+    /// finger presses and drags rather than scrolls.
+    fn drawn_at_design(&self, window: WindowId, widget: WidgetId) -> bool {
+        self.canvas
+            .surfaces
+            .values()
+            .any(|(w, c, surface)| *w == window && *c == widget && surface.design_size().is_some())
+    }
+
     fn physical(&self, logical: u32) -> u32 {
         ((logical as f32) * self.scale).round().max(1.0) as u32
     }
@@ -965,9 +974,19 @@ impl WebUi {
     /// phone adapters map one (crates/adapter-android): a tap is one press
     /// and release where it lifted, exactly what a click delivers; a finger
     /// that moves past [`TOUCH_SLOP`] scrolls what is under it, content
-    /// following the finger; one that lands on a canvas or a slider presses
-    /// it at once and the press follows the finger until it lifts. Only the
-    /// first finger is followed. `phase` is start, move, end or cancel.
+    /// following the finger; one that lands on a slider, or on a game's
+    /// canvas, presses it at once and the press follows the finger until it
+    /// lifts. Only the first finger is followed. `phase` is start, move,
+    /// end or cancel.
+    ///
+    /// A game's canvas is one drawn at a design size -- set by the app, or
+    /// given to one that never asked its size -- because a game steers by
+    /// the held finger (the pack teaches `button_held` and `position`). A
+    /// canvas that lays itself out for the screen is a document, a list or
+    /// a table, and a finger moving on it scrolls: every canvas used to
+    /// take the drag, and Trace, Query and Diff could not be scrolled at
+    /// all on a phone in a tab (measured: a finger drag drew no frame),
+    /// though they scroll by the same finger in the Android Player.
     pub fn touch(&mut self, window: u64, phase: &str, finger: u64, x: f32, y: f32) {
         let Ok(id) = self.window_id(window) else {
             return;
@@ -983,7 +1002,11 @@ impl WebUi {
                         .ok()
                         .flatten()
                         .and_then(|tree| tree.node(w).map(|n| n.kind))
-                        .is_some_and(|kind| matches!(kind, WidgetKind::Canvas | WidgetKind::Slider))
+                        .is_some_and(|kind| match kind {
+                            WidgetKind::Slider => true,
+                            WidgetKind::Canvas => self.drawn_at_design(id, w),
+                            _ => false,
+                        })
                 });
                 self.touch = Some(TouchGesture {
                     window,
@@ -1780,6 +1803,68 @@ mod tests {
         let rects = ui.text_rects(win);
         let (fx, fy, fw, fh) = ui.widget_rect(win, 2).unwrap();
         assert_eq!(rects, vec![fx, fy, fw, fh]);
+    }
+
+    /// On a canvas that lays itself out for the screen (a list, a table) a
+    /// finger that moves scrolls, as it does in the Android Player; on a
+    /// game's canvas, drawn at a design size, the same finger presses and
+    /// drags, held, so the game can steer by it.
+    #[test]
+    fn a_finger_scrolls_a_document_canvas_and_drags_a_game_s() {
+        for design in [false, true] {
+            let mut ui = WebUi::new(1.0, false);
+            let win = ui.create_window("Canvas", 390, 844, (390, 844)).unwrap();
+            ui.show_window(win).unwrap();
+            ui.set_root(
+                win,
+                &node(
+                    1,
+                    None,
+                    "canvas",
+                    json!({ "style": { "grow": 1.0, "padding": 0.0 } }),
+                ),
+            )
+            .unwrap();
+            let canvas = ui.canvas_bind(win, 1).unwrap();
+            if design {
+                ui.canvas_set_design(canvas, 480.0, 640.0).unwrap();
+            } else {
+                // A document asks its size and lays out for it: no design.
+                ui.canvas_size(canvas).unwrap();
+            }
+            drain(&mut ui);
+            ui.touch(win, "start", 7, 195.0, 600.0);
+            for step in 1..=10 {
+                ui.touch(win, "move", 7, 195.0, 600.0 - step as f32 * 30.0);
+            }
+            ui.touch(win, "end", 7, 195.0, 300.0);
+            let events = drain(&mut ui);
+            let wheel: f64 = events
+                .iter()
+                .filter(|e| e["tag"] == "wheel")
+                .filter_map(|e| e["val"]["dy"].as_f64())
+                .sum();
+            let presses = events
+                .iter()
+                .filter(|e| e["tag"] == "pointer" && e["val"]["pressed"] == json!(true))
+                .count();
+            if design {
+                assert_eq!(wheel, 0.0, "a game's drag scrolled: {events:?}");
+                assert_eq!(presses, 1, "a game's finger presses at once: {events:?}");
+                assert!(
+                    ui.button_held(0)
+                        || events
+                            .iter()
+                            .any(|e| e["tag"] == "pointer" && e["val"]["pressed"] == json!(false))
+                );
+            } else {
+                assert!(
+                    wheel > 250.0,
+                    "the document did not scroll with the finger ({wheel}): {events:?}"
+                );
+                assert_eq!(presses, 0, "a scroll pressed the document: {events:?}");
+            }
+        }
     }
 
     /// A game that fixed its coordinates asks where the pointer is in those

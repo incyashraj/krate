@@ -59,6 +59,9 @@ const server = http.createServer(async (req, res) => {
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const screens = [
   { label: 'chromium desktop 2x', engine: 'chromium', ctx: { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 } },
+  // Chromium as a phone: the finger drag below is measured here, because
+  // WebKit gives a synthetic PointerEvent a wrong offsetX (203 for 52).
+  { label: 'chromium phone 3x', engine: 'chromium', ctx: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, userAgent: IPHONE, isMobile: true, hasTouch: true } },
   { label: 'webkit iphone 3x', engine: 'webkit', ctx: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, userAgent: IPHONE, isMobile: true, hasTouch: true } },
 ];
 
@@ -111,9 +114,33 @@ for (const path of apps) {
     // over many frames and a tap is one answer.
     const feel = {
       tap: await take((i) => (s.ctx.isMobile ? page.touchscreen.tap(120 + (i % 3) * 40, 300) : page.mouse.click(300 + (i % 3) * 40, 300))),
-      // Mobile WebKit has no wheel: a phone scrolls by touch, not measured here.
-      scroll: s.ctx.isMobile ? [] : await take((i) => page.mouse.wheel(0, i % 2 ? -240 : 240)),
+      // Mobile WebKit has no wheel: a phone scrolls by touch (the drag below).
+      scroll: s.engine === 'webkit' && s.ctx.isMobile ? [] : await take((i) => page.mouse.wheel(0, i % 2 ? -240 : 240)),
     };
+    // A finger dragging up the screen and back, at 60 Hz, through the
+    // browser's own touch input (Chromium's DevTools protocol), so the
+    // Player sees a real finger: a synthetic PointerEvent has no live
+    // pointer, setPointerCapture refuses it, and WebKit gives it a wrong
+    // offsetX. Frames shown during the drag, and each move's time to the
+    // screen.
+    let drag = null;
+    if (s.ctx.isMobile && s.engine === 'chromium') {
+      const cdp = await page.context().newCDPSession(page);
+      const box = await page.evaluate(() => { const r = document.getElementById('screen').getBoundingClientRect(); return { x: r.left + r.width / 2, top: r.top, h: r.height }; });
+      const finger = (type, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: box.x, y, id: 1 }] });
+      const n0 = await page.evaluate(() => window.__krate.latencies.length);
+      const f0 = await page.evaluate(() => window.__krate.frames);
+      const t0 = Date.now();
+      for (const [from, to] of [[box.top + box.h * 0.75, box.top + box.h * 0.25], [box.top + box.h * 0.25, box.top + box.h * 0.75]]) {
+        await finger('touchStart', from);
+        for (let i = 1; i <= 20; i++) { await page.waitForTimeout(16); await finger('touchMove', from + ((to - from) * i) / 20); }
+        await finger('touchEnd');
+        await page.waitForTimeout(16);
+      }
+      await page.waitForTimeout(300);
+      drag = await page.evaluate(({ n0, f0 }) => ({ shown: window.__krate.latencies.slice(n0), frames: window.__krate.frames - f0 }), { n0, f0 });
+      drag.ms = Date.now() - t0;
+    }
     const k = await page.evaluate((b) => ({
       state: window.__krate.state, marks: window.__krate.marks, frames: window.__krate.frames - b.frames,
       puts: window.__puts.slice(b.puts), copies: window.__copies.slice(b.copies),
@@ -148,7 +175,8 @@ for (const path of apps) {
       (render.length ? `worker paint p50 ${pct(render, 0.5).toFixed(1)} p95 ${pct(render, 0.95).toFixed(1)} ms (${render.length}) | ` : '') +
       `canvas vs frame ${stale === null ? 'n/a' : `${stale} bytes differ`} | ` +
       `tap to screen p50 ${pct(feel.tap, 0.5).toFixed(1)} p95 ${pct(feel.tap, 0.95).toFixed(1)} ms (${feel.tap.length}) | ` +
-      `scroll to screen p50 ${pct(feel.scroll, 0.5).toFixed(1)} p95 ${pct(feel.scroll, 0.95).toFixed(1)} ms (${feel.scroll.length})`);
+      `scroll to screen p50 ${pct(feel.scroll, 0.5).toFixed(1)} p95 ${pct(feel.scroll, 0.95).toFixed(1)} ms (${feel.scroll.length})` +
+      (drag ? ` | finger drag ${(drag.frames / (drag.ms / 1000)).toFixed(0)} frames/s, move to screen p50 ${pct(drag.shown, 0.5).toFixed(1)} p95 ${pct(drag.shown, 0.95).toFixed(1)} ms (${drag.shown.length})` : ''));
     await browser.close();
   }
 }
