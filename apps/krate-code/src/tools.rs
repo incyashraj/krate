@@ -281,8 +281,13 @@ impl Runner for NoRunner {
 pub fn install_hint(program: &str) -> &'static str {
     match program {
         "cargo" | "rustc" => "Install Rust from rustup.rs, then try again",
-        "rustfmt" => "Add it with: rustup component add rustfmt",
-        "rust-analyzer" => "Add it with: rustup component add rust-analyzer",
+        // From the project's own folder -- the terminal panel opens there --
+        // because rustup adds a component to the Rust of the folder it runs
+        // in: run elsewhere, it lands in another toolchain and this project
+        // still has none (found 2026-11-04, installed into 1.94.1 while the
+        // project used 1.91.1).
+        "rustfmt" => "Add it in the terminal panel (Ctrl+`), which opens in this project: rustup component add rustfmt",
+        "rust-analyzer" => "Add it in the terminal panel (Ctrl+`), which opens in this project: rustup component add rust-analyzer",
         "lldb-dap" | "xcrun" => {
             "Install a debug adapter: Xcode's command line tools on a Mac (xcode-select --install), the lldb package on Linux (it carries lldb-dap), or LLVM on Windows"
         }
