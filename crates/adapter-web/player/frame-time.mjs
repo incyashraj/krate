@@ -118,6 +118,22 @@ for (const path of apps) {
       state: window.__krate.state, marks: window.__krate.marks, frames: window.__krate.frames - b.frames,
       puts: window.__puts.slice(b.puts), copies: window.__copies.slice(b.copies),
     }), before);
+    if (process.env.KRATE_SHOW_MARKS) {
+      const m = await page.evaluate(() => ({ marks: window.__krate.marks, worker: window.__krate.workerMarks, origin: performance.timeOrigin }));
+      if (m.worker && m.marks.firstFrame !== undefined) {
+        const w = m.worker, at = (t) => m.origin + t;
+        console.log(`  ${basename(path)} ${s.label} after the worker starts: player ${Math.round(w.playerReady - w.workerStart)} ms, ` +
+          `glue ${Math.round(w.glueLoaded - w.workerStart)}, instantiated ${Math.round(w.instantiated - w.workerStart)}, ` +
+          `first frame on screen ${Math.round(at(m.marks.firstFrame) - w.workerStart)} (page asked for the worker ${Math.round(w.workerStart - at(m.marks.workerStarted))} ms before it started)`);
+      }
+      const line = (o) => Object.entries(o || {}).sort((a, b) => a[1] - b[1]).map(([n, t]) => `${n} ${Math.round(t)}`).join(', ');
+      console.log(`  ${basename(path)} ${s.label} page: ${line(m.marks)}`);
+      console.log(`  ${basename(path)} ${s.label} worker: ${line(m.worker)}`);
+      const out = (await page.evaluate(() => window.__krate.out)) || '';
+      console.log(`  ${basename(path)} ${s.label} first paints: ${[...out.matchAll(/#render ([0-9.]+)/g)].slice(0, 3).map((x) => x[1]).join(', ')} ms`);
+      const cp = [...out.matchAll(/#cpresent ([0-9.]+)/g)].map((x) => Number(x[1]));
+      if (cp.length) console.log(`  ${basename(path)} ${s.label} canvas presents: first ${cp.slice(0, 3).join(', ')} ms, ${cp.length} in all, p50 ${pct(cp, 0.5).toFixed(1)} ms`);
+    }
     const put = k.puts.map((p) => p.put);
     // With KRATE_PLAYER_DIST pointing at a copy whose worker prints
     // "#render <ms>" per paint, the worker's own paint time.
