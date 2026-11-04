@@ -35,6 +35,9 @@ pub mod winit_native;
 
 mod clipboard;
 
+/// Toasts attributed to the app (IC-271).
+pub mod toast;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
