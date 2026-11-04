@@ -1787,11 +1787,11 @@ mod tests {
         // A program has the person's power, and the line says so (IC-977).
         assert_eq!(
             plain_capability("process.run:cargo").as_deref(),
-            Some("run cargo on this computer -- a project's build can run any code it contains")
+            Some("run cargo on this computer: a project's build can run any code it contains")
         );
         assert_eq!(
             plain_capability("process.terminal").as_deref(),
-            Some("open a terminal on this computer -- it can do anything you can")
+            Some("open a terminal on this computer: it can do anything you can")
         );
     }
 

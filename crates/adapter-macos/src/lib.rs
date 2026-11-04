@@ -14,6 +14,8 @@ mod open_document;
 #[cfg(target_os = "macos")]
 mod reminders;
 #[cfg(target_os = "macos")]
+pub use reminders::notify_now;
+#[cfg(target_os = "macos")]
 mod share_photos;
 #[cfg(target_os = "macos")]
 mod sign_in;

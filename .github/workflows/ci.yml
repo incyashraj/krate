@@ -555,9 +555,13 @@ jobs:
     # run 34094426007.
     #
     # Measured on that run: macOS 37 min, ubuntu 46 min. Windows reaches the
-    # Phase 1 step at 33 min. 90 leaves real margin on the slowest lane while
-    # still failing, with a step name attached, well before the ceiling.
-    timeout-minutes: 90
+    # Phase 1 step at 33 min.
+    #
+    # By run 41797544618 (2026-11-04) Windows had grown to 89 minutes of
+    # steps, every one green, and the 90-minute cap fired during the cache
+    # save -- a cancelled lane that held rc9 for a passing build. 110 keeps
+    # ten minutes under the ceiling and twenty over the slowest lane.
+    timeout-minutes: 110
     strategy:
       fail-fast: false
       matrix:

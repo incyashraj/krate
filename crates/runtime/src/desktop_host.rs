@@ -304,6 +304,25 @@ pub fn notify(title: &str, body: &str, app_name: &str, granted: bool) -> Result<
             .map_err(NotifyError::Unavailable);
     }
 
+    // Windows: a toast under the app's own AppUserModelID, the app's name
+    // on the sender line, refused plainly when the person has switched this
+    // app's notifications off (IC-271). No helper process: Windows has no
+    // dependency-free one, and WinRT answers in milliseconds.
+    #[cfg(target_os = "windows")]
+    {
+        return krate_adapter_windows::toast::show(app_name, title, body)
+            .map_err(NotifyError::Unavailable);
+    }
+
+    // macOS, an installed app: UserNotifications from the app's own bundle,
+    // its name and icon on the notification and a plain refusal when the
+    // person has switched it off (IC-271). `krate run` has no bundle of its
+    // own and falls through to osascript.
+    #[cfg(target_os = "macos")]
+    if let Some(answer) = krate_adapter_macos::notify_now(title, body) {
+        return answer.map_err(NotifyError::Unavailable);
+    }
+
     #[allow(unreachable_code)]
     let status = if cfg!(target_os = "macos") {
         // osascript rather than a crate: no new dependency, and the text is
@@ -315,12 +334,6 @@ pub fn notify(title: &str, body: &str, app_name: &str, granted: bool) -> Result<
         // post as somebody else.
         let script = macos_script(title, body, app_name);
         Command::new("osascript").args(["-e", &script]).status()
-    } else if cfg!(target_os = "windows") {
-        // Windows has no dependency-free notification path from a plain
-        // process; report that plainly rather than pretending it worked.
-        return Err(NotifyError::Unavailable(
-            "notifications are not available on this system yet".to_string(),
-        ));
     } else {
         Command::new("notify-send")
             .arg("--app-name")

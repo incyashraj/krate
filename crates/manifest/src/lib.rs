@@ -862,16 +862,16 @@ impl Capability {
             // gets the sentence that is true of it.
             ("process", "run") => match resource {
                 Some("cargo") => {
-                    "run cargo on this computer -- a project's build can run any code it contains"
+                    "run cargo on this computer: a project's build can run any code it contains"
                         .to_string()
                 }
                 Some(program) => {
-                    format!("run {program} on this computer -- it can do what you can")
+                    format!("run {program} on this computer: it can do what you can")
                 }
-                None => "run programs on this computer -- they can do what you can".to_string(),
+                None => "run programs on this computer: they can do what you can".to_string(),
             },
             ("process", "terminal") => {
-                "open a terminal on this computer -- it can do anything you can".to_string()
+                "open a terminal on this computer: it can do anything you can".to_string()
             }
             ("gfx", "gpu") => "draw with your graphics card".to_string(),
             ("ui", "menu") => "show its own menus".to_string(),
@@ -1715,15 +1715,15 @@ mod tests {
         let words = |cap: &str| cap.parse::<Capability>().expect(cap).plain();
         assert_eq!(
             words("process.run:cargo"),
-            "run cargo on this computer -- a project's build can run any code it contains"
+            "run cargo on this computer: a project's build can run any code it contains"
         );
         assert_eq!(
             words("process.run:rust-analyzer"),
-            "run rust-analyzer on this computer -- it can do what you can"
+            "run rust-analyzer on this computer: it can do what you can"
         );
         assert_eq!(
             words("process.terminal"),
-            "open a terminal on this computer -- it can do anything you can"
+            "open a terminal on this computer: it can do anything you can"
         );
     }
 
