@@ -154,6 +154,9 @@ pub struct Phase3GuiHost {
     /// see it, so clicking the close button did nothing. Pumped events wait
     /// here and are handed over by the next `poll` or `wait`.
     pending_events: std::cell::RefCell<std::collections::VecDeque<ui::types::Event>>,
+    /// An event the check driver took while looking whether the app had
+    /// taken its input (K-1192); handed over before anything else.
+    peeked_event: std::cell::RefCell<Option<ui::types::Event>>,
     /// Drops and hovers, already turned into what a guest may see.
     ///
     /// Phase 3's `event` variant has no case for either, and its WIT is
@@ -445,6 +448,12 @@ struct UsabilityDriver {
     /// action was dispatched, so the app gets a settle before the next.
     task_index: usize,
     task_dispatched_at: Option<std::time::Instant>,
+    /// Whether the step being settled handed the app input (a click, key,
+    /// text or paste). Such a step settles only once the app has taken all
+    /// of it and come back for more, not merely when time has passed: under
+    /// load the app's next `wait` can begin before it has seen the input,
+    /// and the step after was judged on the frame from before (K-1192).
+    task_sent_input: bool,
     /// What a `pick` step said the next picker answers, inside `picks`.
     pending_pick: Option<std::path::PathBuf>,
     /// The scratch folder `pick` steps choose inside, made on the first.
@@ -618,6 +627,7 @@ impl Phase3GuiHost {
             app_name: None,
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            peeked_event: std::cell::RefCell::new(None),
             pending_drops: std::cell::RefCell::new(std::collections::VecDeque::new()),
             test_drop_done: std::cell::Cell::new(false),
             headless_started: std::cell::Cell::new(None),
@@ -778,6 +788,7 @@ impl Phase3GuiHost {
             press_delivered_at: None,
             task_index: 0,
             task_dispatched_at: None,
+            task_sent_input: false,
             pending_pick: None,
             picks: None,
             look_given: (0.0, 0.0),
@@ -2541,7 +2552,9 @@ impl Phase3GuiHost {
                     driver.look_given = (tx, ty);
                 }
             }
-            let ready = (since >= needed && from_wait) || since >= needed.max(PRESS_GIVE_UP);
+            let sent_input = self.usability.as_ref().is_some_and(|d| d.task_sent_input);
+            let ready = since >= needed.max(PRESS_GIVE_UP)
+                || (since >= needed && from_wait && (!sent_input || self.input_all_taken()));
             if !ready {
                 return;
             }
@@ -2667,6 +2680,7 @@ impl Phase3GuiHost {
             }
             if let Some(driver) = self.usability.as_mut() {
                 driver.task_dispatched_at = Some(std::time::Instant::now());
+                driver.task_sent_input = false;
             }
             return;
         }
@@ -2820,6 +2834,22 @@ impl Phase3GuiHost {
         }
         if let Some(driver) = self.usability.as_mut() {
             driver.task_dispatched_at = Some(std::time::Instant::now());
+            driver.task_sent_input = step.pick.is_none();
+        }
+    }
+
+    /// Whether the app has taken every event waiting for it. Looking means
+    /// taking one, so an event found is kept to be handed over first.
+    fn input_all_taken(&self) -> bool {
+        if self.peeked_event.borrow().is_some() || !self.pending_events.borrow().is_empty() {
+            return false;
+        }
+        match self.poll_one_event() {
+            Ok(Some(event)) => {
+                *self.peeked_event.borrow_mut() = Some(event);
+                false
+            }
+            _ => true,
         }
     }
 
@@ -3418,12 +3448,17 @@ impl Phase3GuiHost {
     }
 
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
+        if let Some(event) = self.peeked_event.borrow_mut().take() {
+            return Ok(Some(event));
+        }
         // Input is hit-tested against the lowered tree, so lower first.
         self.sync_changed_trees();
         // Anything `key-held` pumped comes out first, in arrival order. It is
-        // a real event that simply has not been delivered yet.
+        // a real event that simply has not been delivered yet, and already in
+        // the app's design space: it came out of this function once. Mapped
+        // again, a click in a letterboxed game landed off its target (K-1197).
         if let Some(event) = self.pending_events.borrow_mut().pop_front() {
-            return Ok(Some(self.to_design_space(event)));
+            return Ok(Some(event));
         }
         // Through the coalescing pump, not around it: this ran a full native
         // drain per POLL, and a frame loop polls several times a frame. Each
@@ -8755,6 +8790,7 @@ mod tests {
         match field {
             "click" => s.click = Some(value.to_string()),
             "click_at" => s.click_at = Some(value.to_string()),
+            "paste" => s.paste = Some(value.to_string()),
             "hold" => s.hold = Some(value.to_string()),
             "pad" => s.pad = Some(value.to_string()),
             "stick" => s.stick = Some(value.to_string()),
@@ -8882,6 +8918,43 @@ mod tests {
             "{report:?}"
         );
         assert_eq!(report.task_steps_done, 3);
+    }
+
+    /// K-1192: a step is judged only after the app has taken all of its
+    /// input. A slow app takes one event per turn: the paste's key down,
+    /// its key up, then the text. Judged on the clock alone, the step after
+    /// the paste looked before the text had arrived and failed an app that
+    /// was only slow.
+    #[test]
+    fn a_slow_app_is_judged_after_it_has_taken_the_whole_step() {
+        let task = crate::usability::Task {
+            name: "paste into a slow app".to_string(),
+            steps: vec![step("paste", "hello"), step("expect_text", "Pasted")],
+        };
+        let mut host = host_with_labelled_button("Empty", task_plan(task));
+        let window = host.windows.first().copied().expect("window").get();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let report = loop {
+            let event = ui::events::Host::wait(&mut host, Some(50)).expect("wait");
+            if let Some(ui::types::Event::TextInput(_)) = event {
+                let mut node = wit_node(ui::types::WidgetKind::Button, None);
+                node.label = Some("Pasted".to_string());
+                ui::tree::Host::set_root(&mut host, window, node)
+                    .expect("set_root call")
+                    .expect("root");
+            }
+            let report = host.usability_report().expect("a plan");
+            if report.task.is_some() || std::time::Instant::now() > deadline {
+                break report;
+            }
+            // Slower than a settle per event, as under load.
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        };
+        assert_eq!(
+            report.task,
+            Some(crate::usability::Observation::Held),
+            "{report:?}"
+        );
     }
 
     /// An app that draws its own interface (a game) is driven by point and
@@ -9734,6 +9807,54 @@ mod tests {
             matches!(event, Some(ui::types::Event::CloseRequested(_))),
             "a spent budget must close a loop that only ever polls: {event:?}"
         );
+    }
+
+    /// K-1197: a pointer pumped early (by `key-held`) lands at the same
+    /// design point as one polled straight away.
+    #[test]
+    fn a_pointer_pumped_by_key_held_lands_where_a_polled_one_does() {
+        let at = |pump_first: bool| {
+            let (mut host, window, widget) = host_with_canvas_widget();
+            let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
+                .expect("bind call")
+                .expect("binds");
+            gfx::canvas2d::Host::set_design_size(
+                &mut host,
+                canvas,
+                gfx::types::Size {
+                    width: 100.0,
+                    height: 50.0,
+                },
+            )
+            .expect("call")
+            .expect("design");
+            let id = host.windows.first().copied().expect("window id");
+            assert_eq!(id.get(), window);
+            host.dispatcher()
+                .route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                    window: id,
+                    viewport: LayoutViewport::new(200.0, 200.0).expect("viewport"),
+                    x: 100.0,
+                    y: 100.0,
+                    button: Some(krate_adapter_common::ui::PointerButton::Primary),
+                    pressed: true,
+                    modifiers: Default::default(),
+                })
+                .expect("routed");
+            if pump_first {
+                let _ = ui::events::Host::key_held(&mut host, "w".to_string());
+            }
+            loop {
+                match ui::events::Host::poll(&mut host).expect("poll") {
+                    Some(ui::types::Event::Pointer(p)) => break (p.x, p.y),
+                    Some(_) => continue,
+                    None => panic!("the pointer never came"),
+                }
+            }
+        };
+        let direct = at(false);
+        assert_eq!(direct, (50.0, 25.0), "the design's own centre");
+        assert_eq!(at(true), direct);
     }
 
     #[test]
