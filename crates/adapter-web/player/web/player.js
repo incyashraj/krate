@@ -16,7 +16,7 @@
 
 import init, { consent, Grants } from './krate_web.js';
 import { makeBridgeMemory, pageBridge } from './bridge.js';
-import { makeRing, pageRing } from './ring.js';
+import { makeRing, pageRing, browserKeepsKey } from './ring.js';
 import { makeAudioMemory, pageAudio } from './audio.js';
 import { TeamData } from './org-data.js';
 import { SharedStore, SharedFail } from './shared-store.js';
@@ -1672,9 +1672,9 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     if (current === null) return;
     const typed = pressed && e.key.length === 1 && !e.ctrlKey && !e.metaKey ? e.key : undefined;
     ring.push({ type: 'key', window: win(), key: e.key, pressed, mods: mods(e), text: typed, at: at(e) });
-    // Keys the app takes stay with the app; browser shortcuts (Cmd/Ctrl)
-    // stay with the browser.
-    if (!e.ctrlKey && !e.metaKey) e.preventDefault();
+    // Keys the app takes stay with the app; the browser's own shortcuts
+    // stay the browser's (browserKeepsKey says which).
+    if (!browserKeepsKey(e)) e.preventDefault();
   };
   canvas.addEventListener('keydown', key(true));
   canvas.addEventListener('keyup', key(false));
