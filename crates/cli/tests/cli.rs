@@ -23863,9 +23863,9 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
 /// Cmd/Ctrl+X takes the note's text out, and Cmd/Ctrl+V puts it back, so
 /// the cut really reached the clipboard before the text went.
 #[test]
-fn a_starter_field_cuts_and_pastes_with_the_persons_keystrokes() {
+fn starter_team_notes_cuts_and_pastes_through_its_window() {
     let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
-        eprintln!("skipping a_starter_field_cuts_...: no local port");
+        eprintln!("skipping starter_team_notes_cuts_...: no local port");
         return;
     };
     let root = world.acme();
@@ -23894,6 +23894,9 @@ fn a_starter_field_cuts_and_pastes_with_the_persons_keystrokes() {
             ("key", "Primary+c"),
             ("wait_ms", "600"),
             ("key", "End"),
+            // A key and a paste in one frame can reach the field in either
+            // order (K-1192); a person's are never that close.
+            ("wait_ms", "300"),
             ("key", "Primary+v"),
             ("expect_text", "Twelve, stackable.Twelve, stackable."),
         ],

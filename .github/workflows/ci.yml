@@ -1148,6 +1148,57 @@ jobs:
   #
   # If this job is red, the sentence "one file, any computer" is not true and
   # nothing else on the board matters.
+  # The organisation starters, each used by two people through its window
+  # (crates/cli/tests/cli.rs, every test ending `_through_its_window`): the
+  # fifteen apps an organisation is offered first, plus cutting and pasting
+  # in one. Their own job, beside the full lanes rather than inside them --
+  # run one at a time on Windows they added twenty minutes to the Phase 1
+  # step and pushed that lane past its limit (run 41675230168). They need no
+  # fixtures: the shipped starters are the bundles under test.
+  starter-apps:
+    name: Organisation starters (${{ matrix.os }})
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: ${{ matrix.os }}
+    # Measured on a Mac: the sixteen take about three and a half minutes in
+    # parallel. Windows runs them one at a time; 60 leaves room for that and
+    # the build while still failing well before GitHub's two-hour ceiling.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-2022]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install Linux audio and window-system development files
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
+      - name: Cache cargo registry
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.os }}-starters-${{ hashFiles('**/Cargo.lock') }}
+      - name: Use every starter through its window
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          # One at a time on Windows, as the Phase 1 step runs there.
+          threads=""
+          if [ "$RUNNER_OS" = "Windows" ]; then threads="--test-threads=1"; fi
+          cargo test -p krate-cli --test cli -- _through_its_window --show-output $threads 2>&1 | tee starters.log
+          status=${PIPESTATUS[0]}
+          # Sixteen ran, not zero: a filter that matched nothing passes.
+          ran=$(sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' starters.log | tail -1)
+          ran=${ran:-0}
+          if grep -q "^skipping starter_" starters.log; then echo "a starter test skipped itself" >&2; exit 1; fi
+          echo "starter tests passed: $ran"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [ "$ran" -lt 16 ]; then echo "expected 16 starter tests to pass, $ran did" >&2; exit 1; fi
+
   cross-system-bundles:
     name: Open every bundle on ${{ matrix.os }}
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
