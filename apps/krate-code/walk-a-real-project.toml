@@ -1,5 +1,6 @@
 # A stranger's first ten minutes with Krate Code, on a real project: make one in a
-# folder, run it, break it, build, and see the error listed. Needs cargo.
+# folder, run it, break it, see the error listed, fix it, build clean, run the
+# tests, and type a command in its terminal. Needs cargo.
 #
 #   krate run "Krate Code.krate" --auto-grant --headless --task apps/krate-code/walk-a-real-project.toml
 #
@@ -39,3 +40,45 @@ key = "Enter"
 wait_ms = 15000
 [[step]]
 expect_text = "mismatched types"
+[[step]]
+type = ":2"
+[[step]]
+key = "Enter"
+[[step]]
+type = "ddO7"
+[[step]]
+key = "Escape"
+[[step]]
+type = ":w"
+[[step]]
+key = "Enter"
+[[step]]
+type = ":build"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 15000
+[[step]]
+expect_no_text = "mismatched types"
+[[step]]
+type = ":test"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 15000
+[[step]]
+expect_text = "test result: ok"
+[[step]]
+type = ":term"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 2000
+[[step]]
+type = "echo krate-terminal-$((40+2))"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 2000
+[[step]]
+expect_text = "krate-terminal-42"
