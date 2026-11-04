@@ -165,39 +165,27 @@
     }
   }
 
-  /* ---- Home: the placeholder types out ideas until someone types -------- */
-  (function typingPlaceholder() {
+  /* ---- Home: one example in the box, written there and still ---------- */
+  // It used to type ideas out and erase them, which the founder called a
+  // distraction (2026-11-04): the box holds one plain example now. The
+  // wrapper stays because the Port and IDE doors hide the box through it.
+  (function examplePlaceholder() {
     const ta = $("homePrompt");
-    if (!ta || reduce) return;
+    if (!ta) return;
     const wrap = document.createElement("div");
     wrap.className = "kr-ta";
     ta.parentNode.insertBefore(wrap, ta);
     wrap.appendChild(ta);
-    const ph = document.createElement("div");
-    ph.className = "kr-ph"; ph.setAttribute("aria-hidden", "true");
-    wrap.appendChild(ph);
-    wrap.classList.add("typing");
-    const IDEAS = ["a habit tracker with streaks and a weekly chart", "split a dinner bill four ways, tip included",
-      "a focus timer that lives in the corner", "flashcards for twenty Spanish words a day"];
-    const lead = "Describe an app, like ";
-    const sync = () => wrap.classList.toggle("has", ta.value.length > 0);
-    ta.addEventListener("input", sync); ta.addEventListener("focus", sync); sync();
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    // Checked on every step too, not only on typing: Studio empties the box
-    // in code after a build starts (app.js), no input event fires, and the
-    // ideas stayed hidden over an empty box on the way back home.
-    const paint = (s) => { sync(); ph.innerHTML = esc(s) + '<span class="kr-car"></span>'; };
-    (async () => {
-      for (let k = 0; ; k++) {
-        const s = lead + IDEAS[k % IDEAS.length];
-        for (let i = 0; i <= s.length; i++) {
-          while (document.hidden) await wait(500);
-          paint(s.slice(0, i)); await wait(i < lead.length ? 12 : 30);
-        }
-        await wait(2400);
-        for (let i = s.length; i >= lead.length; i--) { paint(s.slice(0, i)); await wait(10); }
-      }
-    })();
+    // The box shows two lines; at 320 wide the full example needs three
+    // (measured), so the narrowest phones get a shorter one that fits.
+    const narrow = window.matchMedia("(max-width: 360px)");
+    const set = () => {
+      ta.placeholder = narrow.matches
+        ? "Describe an app, like a bill split four ways"
+        : "Describe an app, like split a dinner bill four ways, tip included";
+    };
+    set();
+    narrow.addEventListener("change", set);
   })();
 
   /* ---- Home: Create / Port --------------------------------------------- */

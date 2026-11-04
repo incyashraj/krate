@@ -18431,6 +18431,36 @@ fn install_name_part(name: &str) -> String {
     }
 }
 
+/// Swap a finished install into place (IC-278): the old app exists until
+/// this moment and is replaced by a complete one, so there is no instant at
+/// which the person has neither.
+///
+/// The old directory is moved aside first rather than deleted, so a failed
+/// rename still leaves something to put back; it is removed only once the
+/// new one is in place. One function for the Mac wrapper and the Linux
+/// payload, so the two cannot drift: Linux used to copy straight over the
+/// installed app, and an interrupted update left it half-written.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn publish_staged(staging: &Path, target: &Path, previous: &Path) -> Result<()> {
+    let _ = fs::remove_dir_all(previous);
+    let had_previous = target.exists();
+    if had_previous {
+        fs::rename(target, previous)
+            .with_context(|| format!("setting aside the installed {}", target.display()))?;
+    }
+    if let Err(err) = fs::rename(staging, target) {
+        // Put the old one back before reporting, or a failure here would
+        // itself be the thing that loses the app.
+        if had_previous {
+            let _ = fs::rename(previous, target);
+        }
+        let _ = fs::remove_dir_all(staging);
+        return Err(err).with_context(|| format!("installing {}", target.display()));
+    }
+    let _ = fs::remove_dir_all(previous);
+    Ok(())
+}
+
 /// The wrapper builder `install` and `launch` share: returns the .app it
 /// made, prints nothing.
 #[cfg(target_os = "macos")]
@@ -18597,30 +18627,9 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
         .stderr(std::process::Stdio::null())
         .status();
 
-    // Everything is written. Swap the finished wrapper into place: the old
-    // app exists until this moment and is replaced by a complete one, so
-    // there is no instant at which the person has neither.
-    //
-    // The old directory is moved aside first rather than deleted, so a
-    // failed rename still leaves something to put back; it is removed only
-    // once the new one is in place.
+    // Everything is written. Swap the finished wrapper into place.
     let previous = prefix.join(format!(".{}.replaced", install_directory_name(&opened)));
-    let _ = fs::remove_dir_all(&previous);
-    let had_previous = app_dir.exists();
-    if had_previous {
-        fs::rename(&app_dir, &previous)
-            .with_context(|| format!("setting aside the installed {}", app_dir.display()))?;
-    }
-    if let Err(err) = fs::rename(&staging, &app_dir) {
-        // Put the old one back before reporting, or a failure here would
-        // itself be the thing that loses the app.
-        if had_previous {
-            let _ = fs::rename(&previous, &app_dir);
-        }
-        let _ = fs::remove_dir_all(&staging);
-        return Err(err).with_context(|| format!("installing {}", app_dir.display()));
-    }
-    let _ = fs::remove_dir_all(&previous);
+    publish_staged(&staging, &app_dir, &previous)?;
 
     // Tell Launch Services, so it appears in Launchpad and Spotlight now
     // rather than whenever the system next rescans.
@@ -18667,31 +18676,42 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
         println!("{}", desktop_path.display());
         return Ok(0);
     }
-    fs::create_dir_all(&app_dir)?;
-    let payload = app_dir.join("app.krate");
-    fs::copy(bundle_path, &payload)?;
+    // Built beside the installed app and swapped in, never written over it
+    // (IC-278): a full disk or a killed terminal halfway through an update
+    // used to leave a half-copied payload where a working app had been.
+    let apps = data.join("krate/apps");
+    let staging = apps.join(format!(".{slug}.installing"));
+    let _ = fs::remove_dir_all(&staging);
+    fs::create_dir_all(&staging)?;
+    fs::copy(bundle_path, staging.join("app.krate"))
+        .with_context(|| format!("copying the app into {}", staging.display()))?;
 
     // The app's own icon when it ships one, the Krate mark otherwise; the
     // desktop entry takes an absolute path, so no theme install is needed.
-    let icon_path = app_dir.join("icon.png");
     let mut have_icon = false;
     if let Some(icon) = opened
         .assets_path()
         .map(|assets| assets.join("icon.png"))
         .filter(|path| path.is_file())
     {
-        have_icon = fs::copy(&icon, &icon_path).is_ok();
+        have_icon = fs::copy(&icon, staging.join("icon.png")).is_ok();
     }
     if !have_icon {
         if let Some(mark) = krate_icon_png_source() {
-            have_icon = fs::copy(mark, &icon_path).is_ok();
+            have_icon = fs::copy(mark, staging.join("icon.png")).is_ok();
         }
     }
+    publish_staged(&staging, &app_dir, &apps.join(format!(".{slug}.replaced")))?;
+    let payload = app_dir.join("app.krate");
+    let icon_path = app_dir.join("icon.png");
 
     let engine = current_engine_path()?;
     fs::create_dir_all(desktop_path.parent().expect("applications dir"))?;
+    // Written whole and renamed into place, so the menu never reads half an
+    // entry. The temporary name does not end in .desktop, so no menu lists it.
+    let desktop_tmp = desktop_path.with_extension("desktop.tmp");
     fs::write(
-        &desktop_path,
+        &desktop_tmp,
         format!(
             "[Desktop Entry]\nType=Application\nName={name}\nComment=Made with Krate\nExec={exec}\nTerminal=false\nCategories=Utility;\n{icon}",
             name = desktop_value(&name),
@@ -18707,6 +18727,8 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
             },
         ),
     )?;
+    fs::rename(&desktop_tmp, &desktop_path)
+        .with_context(|| format!("adding {} to the app menu", desktop_path.display()))?;
     // Refresh the menu database where the tool exists; missing it only means
     // the entry appears after the next session.
     let _ = std::process::Command::new("update-desktop-database")
@@ -29691,5 +29713,86 @@ mod check_pass_tests {
             read_check_pass(dir.path(), &k).is_none(),
             "a stale pass is not reused"
         );
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+mod publish_staged_tests {
+    use super::publish_staged;
+    use std::fs;
+
+    /// An update replaces the whole app: nothing of the old version is left
+    /// inside it, and nothing is left beside it (IC-278).
+    #[test]
+    fn an_update_replaces_the_app_whole_and_leaves_nothing_beside_it() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("Notes (notes)");
+        let staging = root.path().join(".Notes (notes).installing");
+        let previous = root.path().join(".Notes (notes).replaced");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("app.krate"), "version 1").unwrap();
+        fs::write(target.join("only-in-v1"), "stale").unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("app.krate"), "version 2").unwrap();
+
+        publish_staged(&staging, &target, &previous).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("app.krate")).unwrap(),
+            "version 2"
+        );
+        assert!(
+            !target.join("only-in-v1").exists(),
+            "nothing of v1 is left inside"
+        );
+        assert!(
+            !staging.exists() && !previous.exists(),
+            "nothing is left beside it"
+        );
+    }
+
+    /// An install that cannot finish leaves the installed app exactly as it
+    /// was: the failure is "the update failed", never "the app is gone".
+    #[test]
+    fn an_install_that_cannot_finish_leaves_the_old_app_working() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("Notes (notes)");
+        let previous = root.path().join(".Notes (notes).replaced");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("app.krate"), "version 1").unwrap();
+        // The staged copy never got written: a full disk, a killed terminal.
+        let staging = root.path().join(".Notes (notes).installing");
+        assert!(!staging.exists(), "the hazard: there is nothing to swap in");
+
+        let err = publish_staged(&staging, &target, &previous).unwrap_err();
+
+        assert!(format!("{err:#}").contains("installing"), "{err:#}");
+        assert_eq!(
+            fs::read_to_string(target.join("app.krate")).unwrap(),
+            "version 1"
+        );
+        assert!(!previous.exists());
+    }
+
+    /// A first install has nothing to set aside, and a leftover from an
+    /// earlier interrupted run does not get in the way.
+    #[test]
+    fn a_first_install_ignores_what_an_interrupted_one_left_behind() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("Notes (notes)");
+        let staging = root.path().join(".Notes (notes).installing");
+        let previous = root.path().join(".Notes (notes).replaced");
+        fs::create_dir_all(&previous).unwrap();
+        fs::write(previous.join("junk"), "from a crash").unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("app.krate"), "version 1").unwrap();
+
+        publish_staged(&staging, &target, &previous).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("app.krate")).unwrap(),
+            "version 1"
+        );
+        assert!(!previous.exists());
     }
 }

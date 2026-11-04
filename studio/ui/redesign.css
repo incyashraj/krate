@@ -1048,11 +1048,7 @@ body:not(.light) .sess-row.on { background: var(--surface-2); }
 .home-tabs .tab-ind { background: linear-gradient(90deg, var(--accent), var(--violet)); transition: left .5s var(--ease), width .5s var(--ease); }
 .kr-ta { position: relative; }
 .kr-ta textarea { display: block; width: 100%; }
-.kr-ph { position: absolute; left: 20px; right: 20px; top: 16px; font-size: 16px; line-height: 1.5; color: var(--ink-4); pointer-events: none; white-space: nowrap; overflow: hidden; }
-.kr-car { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 1px; vertical-align: -2px; background: var(--ink-4); animation: krBlink 1s steps(1) infinite; }
 @keyframes krBlink { 50% { opacity: 0; } }
-#viewHome .kr-ta.typing textarea::placeholder { color: transparent; }
-.kr-ta.has .kr-ph { opacity: 0; }
 
 /* chips in the composer row: who writes it, and Build or Plan first */
 #builtByChip { font-size: 0; gap: 6px; }

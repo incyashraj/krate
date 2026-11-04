@@ -227,6 +227,14 @@ impl Ui {
         self.inner.frame(id(window)).map(|f| f.len()).unwrap_or(0)
     }
 
+    /// `[top, bottom)`: the rows of the frame the last `render` changed.
+    pub fn frame_rows(&self, window: &str) -> Vec<u32> {
+        match self.inner.painted_rows(id(window)) {
+            Some((top, bottom)) => vec![top, bottom],
+            None => Vec::new(),
+        }
+    }
+
     /// `[physical width, physical height, logical width, logical height]`.
     pub fn frame_size(&self, window: &str) -> Vec<u32> {
         let w = id(window);
