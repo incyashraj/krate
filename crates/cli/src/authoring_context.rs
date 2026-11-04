@@ -202,10 +202,13 @@ key = \"Enter\"\n\
 expect_text = \"milk\"   # a label containing this must now be on screen\n\
 ```\n\
 \n\
-Steps: `click`, `type`, `key`, `paste`, `wait_ms`, `expect_text`,\n\
+Steps: `click`, `type`, `key`, `paste`, `pick`, `wait_ms`, `expect_text`,\n\
 `expect_no_text`, one per step; `key = \"Shift+ArrowLeft\"` or\n\
-`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord, and\n\
-`paste = \"text\"` pastes it as a person would. A task with no expectation is refused: completing it has to\n\
+`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord,\n\
+`paste = \"text\"` pastes it as a person would, and `pick = \"notes.txt\"`\n\
+(before the click that opens a picker) answers the app's next file or\n\
+folder picker with an empty file or folder of that name, made for the\n\
+check. A task with no expectation is refused: completing it has to\n\
 mean something. In an app drawn on a canvas, `click` and `expect_text`\n\
 find what the app tells the screen reader (`krate::layout::Said`), at the\n\
 place it said. `krate run <app> --task steps.toml` does the steps alone\n\

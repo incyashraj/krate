@@ -165,6 +165,13 @@ pub struct TaskStep {
     /// clipboard and Cmd+V (Ctrl+V elsewhere) is pressed (K-1109).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paste: Option<String>,
+    /// Answer the app's next folder or file picker with this name, as a
+    /// person choosing it would: a folder or file inside a scratch folder
+    /// made for this run, empty until the app writes to it. Never a path
+    /// on the computer -- an app's own task file runs under check-app, so
+    /// it must not be able to hand the app the person's files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pick: Option<String>,
     /// Type this text, one key per character, into whatever has focus.
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_text: Option<String>,
@@ -177,6 +184,23 @@ pub struct TaskStep {
     /// No label containing this may be on screen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_no_text: Option<String>,
+}
+
+/// A `pick` step's name as a path inside the run's scratch folder: plain
+/// names joined by `/`, never absolute, never `..`, at most 200 bytes.
+pub fn pick_name(name: &str) -> Result<std::path::PathBuf, String> {
+    use std::path::Component;
+    let path = std::path::Path::new(name);
+    let plain = !name.trim().is_empty()
+        && name.len() <= 200
+        && !name.contains('\\')
+        && path.components().all(|c| matches!(c, Component::Normal(_)));
+    if !plain {
+        return Err(format!(
+            "pick {name:?} must name a folder or file inside the run's scratch folder, like \"hello\" or \"notes/plan.txt\": no absolute path, no .."
+        ));
+    }
+    Ok(path.to_path_buf())
 }
 
 impl TaskStep {
@@ -192,6 +216,7 @@ impl TaskStep {
             self.shoot.is_some(),
             self.key.is_some(),
             self.paste.is_some(),
+            self.pick.is_some(),
             self.type_text.is_some(),
             self.wait_ms.is_some(),
             self.expect_text.is_some(),
@@ -220,9 +245,12 @@ impl TaskStep {
                 return Err(format!("shoot {path:?} must name a .png file"));
             }
         }
+        if let Some(name) = &self.pick {
+            pick_name(name)?;
+        }
         match set {
             1 => Ok(()),
-            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, type, wait_ms, shoot, expect_text or expect_no_text".to_string()),
+            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text or expect_no_text".to_string()),
             _ => Err(format!("a step does one thing, this one does {set}: {}", self.describe())),
         }
     }
@@ -254,6 +282,9 @@ impl TaskStep {
         }
         if let Some(t) = &self.paste {
             return format!("paste {t:?}");
+        }
+        if let Some(p) = &self.pick {
+            return format!("pick {p:?}");
         }
         if let Some(t) = &self.type_text {
             return format!("type {t:?}");
@@ -755,6 +786,32 @@ mod fit_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `pick` names something inside the run's scratch folder and
+    /// nothing else: an app's own task file runs under check-app, so it must
+    /// not be able to hand the app the person's files.
+    #[test]
+    fn a_pick_names_only_something_inside_the_scratch_folder() {
+        for ok in ["hello", "notes/plan.txt", "My project"] {
+            assert!(pick_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "  ",
+            "/Users/me/.ssh",
+            "../secrets",
+            "a/../../b",
+            "C:\\Windows",
+            "~/x/../..",
+        ] {
+            assert!(pick_name(bad).is_err(), "{bad:?} must be refused");
+        }
+        let step = TaskStep {
+            pick: Some("/etc".into()),
+            ..TaskStep::default()
+        };
+        assert!(step.validate().unwrap_err().contains("scratch folder"));
+    }
 
     /// K-096's lock: an app pinned to fixed numbers leaves the new space
     /// empty after a resize, and that is exactly what the check must see.

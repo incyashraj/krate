@@ -445,6 +445,10 @@ struct UsabilityDriver {
     /// action was dispatched, so the app gets a settle before the next.
     task_index: usize,
     task_dispatched_at: Option<std::time::Instant>,
+    /// What a `pick` step said the next picker answers, inside `picks`.
+    pending_pick: Option<std::path::PathBuf>,
+    /// The scratch folder `pick` steps choose inside, made on the first.
+    picks: Option<PickRoot>,
     /// How much of a `look` step's motion has been delivered so far.
     look_given: (f32, f32),
     /// The control the pointer step pressed, so the keyboard step can pick a
@@ -774,6 +778,8 @@ impl Phase3GuiHost {
             press_delivered_at: None,
             task_index: 0,
             task_dispatched_at: None,
+            pending_pick: None,
+            picks: None,
             look_given: (0.0, 0.0),
             clicked_widget: None,
             idle_churn: None,
@@ -913,6 +919,12 @@ impl Phase3GuiHost {
 
     fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
         self.runtime.dispatcher()
+    }
+
+    /// The answer a check task's `pick` step left for the next picker,
+    /// taken once.
+    fn take_pick(&mut self) -> Option<std::path::PathBuf> {
+        self.usability.as_mut()?.pending_pick.take()
     }
 
     /// What a key the person pressed means beyond the key itself: their
@@ -2778,6 +2790,17 @@ impl Phase3GuiHost {
                     })
                     .is_ok()
             }) && dispatcher.paste_for_person(window, focused, "v", modifiers)
+        } else if let Some(name) = &step.pick {
+            // Nothing is shown: the next picker the app opens answers this,
+            // as if the person had chosen it.
+            match (crate::usability::pick_name(name), self.usability.as_mut()) {
+                (Ok(rel), Some(driver)) => {
+                    let root = driver.picks.get_or_insert_with(PickRoot::new);
+                    driver.pending_pick = Some(root.0.join(rel));
+                    true
+                }
+                _ => false,
+            }
         } else if let Some(text) = &step.type_text {
             // Typed text is a text-input event, the way a host delivers it,
             // not one key event per character: an app reads its text field
@@ -5969,9 +5992,26 @@ impl ui::dialog::Host for Phase3GuiHost {
         }
         // Headless runs -- --shoot, check-app, CI -- must never block on a
         // native dialog nobody can click. A cancelled dialog is the honest
-        // answer there, and it is a normal outcome the app already handles.
+        // answer there, and it is a normal outcome the app already handles --
+        // unless a check task's `pick` step chose a file for the person.
         if self.headless {
-            return Ok(Ok(None));
+            let Some(file) = self.take_pick() else {
+                return Ok(Ok(None));
+            };
+            if !file.exists() {
+                let made = file
+                    .parent()
+                    .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok())
+                    && std::fs::write(&file, b"").is_ok();
+                if !made {
+                    return Ok(Ok(None));
+                }
+            }
+            let name = crate::chosen_files::ChosenFiles::display_name(&file);
+            let Some(token) = self.chosen_files.borrow_mut().remember(file) else {
+                return Ok(Ok(None));
+            };
+            return Ok(Ok(Some(ui::dialog::ChosenFile { name, token })));
         }
         // Phones have no rfd backend: the adapter shows the platform's own
         // picker (iOS: the Files picker; Android: its document picker).
@@ -6039,7 +6079,18 @@ impl ui::dialog::Host for Phase3GuiHost {
             return Ok(Err(ui::types::UiError::PermissionDenied));
         }
         if self.headless {
-            return Ok(Ok(None));
+            // A check task's `pick` answers it; otherwise it is cancelled.
+            let Some(folder) = self.take_pick() else {
+                return Ok(Ok(None));
+            };
+            if std::fs::create_dir_all(&folder).is_err() {
+                return Ok(Ok(None));
+            }
+            let name = crate::chosen_files::ChosenFiles::display_name(&folder);
+            let Some(token) = self.chosen_files.borrow_mut().remember_folder(folder) else {
+                return Ok(Ok(None));
+            };
+            return Ok(Ok(Some(ui::dialog::ChosenFolder { name, token })));
         }
         // Phones: the platform's own folder picker, through the adapter (see
         // open_file). A music player made in Studio could not be given a
@@ -6241,6 +6292,29 @@ impl ui::image::Host for Phase3GuiHost {
 }
 
 /// A check step's chord: Shift, and Cmd on a Mac or Ctrl elsewhere.
+/// The scratch folder a check run's `pick` steps choose inside: made fresh
+/// for the run under the system's temporary folder, removed when it ends.
+struct PickRoot(std::path::PathBuf);
+
+impl PickRoot {
+    fn new() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("krate-check-picks-{}-{nanos}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        PickRoot(dir)
+    }
+}
+
+impl Drop for PickRoot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 /// How long after the person's copy keystroke the app may still answer it.
 /// An app reads its keys once a frame; a slow frame is well under this.
 const COPY_KEYSTROKE_LASTS: std::time::Duration = std::time::Duration::from_secs(1);
