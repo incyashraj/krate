@@ -100,6 +100,8 @@ export function orgEnv(extra = {}) {
   });
   const env = {
     APPS: {
+      // This machine's stand-in, never KV itself (1823).
+      __standIn: true,
       get: async (k) => kv.get(k) ?? null,
       put: async (k, v) => {
         kv.set(k, v);

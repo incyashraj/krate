@@ -585,6 +585,7 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
         sandbox_root,
         app_org: Some(app_org),
         connections,
+        declared_capabilities: crate::declared_set(manifest.as_ref()),
         ..Config::default()
     };
 

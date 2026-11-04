@@ -2530,9 +2530,42 @@ mod platform {
         Some(ch.to_string())
     }
 
+    /// Whether a Command chord in a drawn window goes to the app.
+    ///
+    /// Everything does but what a Mac person expects macOS itself to answer:
+    /// Quit, Close Window, Hide, Minimize and switching windows (Cmd-`), and
+    /// any chord with Control or Option, where the system keeps its own
+    /// (Cmd-Option-H, Cmd-Control-F, Cmd-Control-Q). Cmd-S, Cmd-C, Cmd-X,
+    /// Cmd-V, Cmd-A, Cmd-Z are the app's: in a window it draws there is
+    /// nothing else to answer them.
+    fn command_chord_is_the_apps(characters: Option<&str>, control: bool, option: bool) -> bool {
+        if control || option {
+            return false;
+        }
+        let Some(key) = characters.and_then(|c| c.chars().next()) else {
+            return false;
+        };
+        !matches!(key.to_ascii_lowercase(), 'q' | 'w' | 'h' | 'm' | '`' | '~')
+    }
+
     #[cfg(test)]
     mod key_name_tests {
-        use super::portable_key_name;
+        use super::{command_chord_is_the_apps, portable_key_name};
+
+        #[test]
+        fn command_shortcuts_reach_a_drawn_app_but_quit_stays_with_the_mac() {
+            // K-1194: only Cmd-V used to get through, so Save, Copy, Cut,
+            // Select All and Undo did nothing in a drawn editor.
+            for key in ["s", "c", "x", "v", "a", "z", "S", "P", "o", "/", "["] {
+                assert!(command_chord_is_the_apps(Some(key), false, false), "{key}");
+            }
+            for key in ["q", "w", "h", "m", "`", "Q", "W"] {
+                assert!(!command_chord_is_the_apps(Some(key), false, false), "{key}");
+            }
+            assert!(!command_chord_is_the_apps(Some("h"), false, true));
+            assert!(!command_chord_is_the_apps(Some("f"), true, false));
+            assert!(!command_chord_is_the_apps(None, false, false));
+        }
 
         #[test]
         fn the_keys_games_use_map_to_the_names_apps_hard_code() {
@@ -2872,22 +2905,19 @@ mod platform {
                 return false;
             }
 
-            // Command shortcuts belong to the menu, not the game. Capturing
-            // them here would eat Cmd-Q and Cmd-W at the pump, and an app you
-            // cannot quit is a worse bug than the one this function fixes.
-            //
-            // One exception: Cmd-V in a window the app draws itself. No
-            // responder there takes the menu's paste:, so the keystroke did
-            // nothing (K-1109). It goes to the runtime as a key, which hands
-            // the app what the person pasted.
+            // A Command shortcut in a window the app draws itself is the
+            // app's: no responder there takes the menu's copy: or paste:, so
+            // Cmd-S, Cmd-C and Cmd-V did nothing in every drawn editor on a
+            // Mac (K-1109, K-1194). The few macOS owns stay with the menu and
+            // the system -- an app you cannot quit is a worse bug.
             let flags = event.modifierFlags();
             if flags.contains(NSEventModifierFlags::Command) {
-                let paste = !flags.contains(NSEventModifierFlags::Control)
-                    && !flags.contains(NSEventModifierFlags::Option)
-                    && event
-                        .charactersIgnoringModifiers()
-                        .is_some_and(|c| c.to_string().eq_ignore_ascii_case("v"));
-                if !paste {
+                let chars = event.charactersIgnoringModifiers();
+                if !command_chord_is_the_apps(
+                    chars.as_deref().map(|c| c.to_string()).as_deref(),
+                    flags.contains(NSEventModifierFlags::Control),
+                    flags.contains(NSEventModifierFlags::Option),
+                ) {
                     return false;
                 }
             }

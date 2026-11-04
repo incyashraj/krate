@@ -782,6 +782,14 @@ pub mod org {
         crate::bindings::krate::store::org::who()
     }
 
+    /// The people this release of the app reaches, sorted by name, each with
+    /// their role: who to offer when the app asks who should do something
+    /// (an approver, an owner, a host). Kept from the last sync, so it
+    /// answers offline; empty before the first one.
+    pub fn members() -> Result<alloc::vec::Vec<Member>, OrgError> {
+        crate::bindings::krate::store::org::members()
+    }
+
     /// Where this computer stands: synced, syncing, offline, or waiting for
     /// the team's key, with what is pending and the organisation's name. It
     /// never waits, so a status line can ask every frame.
@@ -1486,6 +1494,165 @@ pub mod time {
 /// Requires the `random.bytes` capability; every call refuses with `Denied`
 /// without it. There is no seeded generator and no way to ask for one -- an app
 /// handed a predictable stream while believing it is random has no way to tell.
+/// Programs and a terminal on the computer the app opens on (IC-977).
+///
+/// Declare each program by its bare name -- `process.run:cargo` -- and
+/// `process.terminal` for a terminal; the person is asked about each. A
+/// program runs in the app's own folder (`"."`) or one the person picked
+/// (`picked/<token>/...` from the folder dialog), named as files are. Nothing
+/// waits: read output as it arrives (from the event loop in a windowed app),
+/// and `wait(0)` to see whether it ended. Dropping a [`Process`] kills it
+/// and forgets it; every process also ends when the app does.
+///
+/// A computer only: in a browser tab and on a phone every call answers
+/// `ProcessError::Platform` with words saying so.
+pub mod process {
+    use crate::bindings::krate::process::processes as host;
+    pub use crate::bindings::krate::process::processes::{ExitStatus, Output, ProcessError};
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
+
+    /// The words a refusal carries, to show the person.
+    pub fn words(err: &ProcessError) -> &str {
+        match err {
+            ProcessError::NotDeclared(w)
+            | ProcessError::NotFound(w)
+            | ProcessError::RefusedByPerson(w)
+            | ProcessError::BadFolder(w)
+            | ProcessError::TooMany(w)
+            | ProcessError::Platform(w) => w,
+            ProcessError::UnknownHandle => "that process is not running in this app",
+        }
+    }
+
+    /// A program or a terminal this app started. Dropped, it is killed and
+    /// forgotten.
+    #[derive(Debug)]
+    pub struct Process {
+        handle: u64,
+    }
+
+    impl Process {
+        /// Start `program` with `args` in the folder `cwd`.
+        pub fn start(program: &str, args: &[&str], cwd: &str) -> Result<Self, ProcessError> {
+            Self::start_with_env(program, args, cwd, &[])
+        }
+
+        /// The same, with `env` added to the person's environment.
+        pub fn start_with_env(
+            program: &str,
+            args: &[&str],
+            cwd: &str,
+            env: &[(&str, &str)],
+        ) -> Result<Self, ProcessError> {
+            let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+            let env: Vec<(String, String)> = env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            host::start(program, &args, cwd, &env).map(|handle| Self { handle })
+        }
+
+        /// Open the person's own shell in a terminal of `cols` by `rows`.
+        /// Everything it shows comes from [`Process::read_stdout`].
+        pub fn terminal(cwd: &str, cols: u16, rows: u16) -> Result<Self, ProcessError> {
+            host::open_terminal(cwd, cols, rows).map(|handle| Self { handle })
+        }
+
+        /// The handle the host knows it by.
+        pub fn handle(&self) -> u64 {
+            self.handle
+        }
+
+        /// Queue bytes for its stdin (a terminal: as if typed). Never waits.
+        pub fn write(&self, bytes: &[u8]) -> Result<(), ProcessError> {
+            host::write_stdin(self.handle, bytes)
+        }
+
+        /// End its input (a terminal: Ctrl-D).
+        pub fn close_stdin(&self) -> Result<(), ProcessError> {
+            host::close_stdin(self.handle)
+        }
+
+        /// Up to `max` bytes of what it wrote to stdout; empty when nothing
+        /// new has arrived. Never waits.
+        pub fn read_stdout(&self, max: u32) -> Result<Output, ProcessError> {
+            host::read_stdout(self.handle, max)
+        }
+
+        /// The same for stderr (a terminal has none).
+        pub fn read_stderr(&self, max: u32) -> Result<Output, ProcessError> {
+            host::read_stderr(self.handle, max)
+        }
+
+        /// Wait up to `timeout_ms` for it to end; 0 only looks.
+        pub fn wait(&self, timeout_ms: u32) -> Result<Option<ExitStatus>, ProcessError> {
+            host::wait(self.handle, timeout_ms)
+        }
+
+        /// End it and everything it started.
+        pub fn kill(&self) -> Result<(), ProcessError> {
+            host::kill(self.handle)
+        }
+
+        /// Tell a terminal its new size.
+        pub fn resize(&self, cols: u16, rows: u16) -> Result<(), ProcessError> {
+            host::resize(self.handle, cols, rows)
+        }
+    }
+
+    impl Drop for Process {
+        fn drop(&mut self) {
+            host::release(self.handle);
+        }
+    }
+
+    /// What a program that ran to the end left.
+    #[derive(Debug, Clone)]
+    pub struct Finished {
+        pub status: ExitStatus,
+        pub stdout: Vec<u8>,
+        pub stderr: Vec<u8>,
+    }
+
+    /// Run `program` to the end and collect everything it printed. For a
+    /// command-line app; a windowed app reads as output arrives instead, so
+    /// its window keeps drawing.
+    pub fn run(program: &str, args: &[&str], cwd: &str) -> Result<Finished, ProcessError> {
+        let process = Process::start(program, args, cwd)?;
+        process.close_stdin()?;
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let (mut out_done, mut err_done) = (false, false);
+        loop {
+            if !out_done {
+                let out = process.read_stdout(1 << 20)?;
+                stdout.extend_from_slice(&out.bytes);
+                out_done = out.ended;
+            }
+            if !err_done {
+                let err = process.read_stderr(1 << 20)?;
+                stderr.extend_from_slice(&err.bytes);
+                err_done = err.ended;
+            }
+            if out_done && err_done {
+                break;
+            }
+            // Give the program a moment rather than spin.
+            process.wait(5)?;
+        }
+        let status = loop {
+            if let Some(status) = process.wait(1_000)? {
+                break status;
+            }
+        };
+        Ok(Finished {
+            status,
+            stdout,
+            stderr,
+        })
+    }
+}
+
 pub mod random {
     pub use crate::bindings::krate::random::bytes::RandomError;
     use alloc::vec::Vec;

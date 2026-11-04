@@ -131,6 +131,7 @@ world = "cli"
 "krate:resources" = { path = "PREFIX/wit/krate/phase2/deps/resources" }
 "krate:store" = { path = "PREFIX/wit/krate/phase2/deps/store" }
 "krate:random" = { path = "PREFIX/wit/krate/phase2/deps/random" }
+"krate:process" = { path = "PREFIX/wit/krate/phase2/deps/process" }
 
 [profile.release]
 panic = "abort"
@@ -189,6 +190,7 @@ world = "gui"
 "krate:resources" = { path = "PREFIX/wit/krate/phase4/deps/resources" }
 "krate:store" = { path = "PREFIX/wit/krate/phase4/deps/store" }
 "krate:random" = { path = "PREFIX/wit/krate/phase4/deps/random" }
+"krate:process" = { path = "PREFIX/wit/krate/phase4/deps/process" }
 "krate:ui" = { path = "PREFIX/wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "PREFIX/wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "PREFIX/wit/krate/phase4/deps/gpu" }
@@ -424,6 +426,7 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `org::delete(collection: &str, id: &str) -> Result<(), OrgError>`
 - `org::field(entry: &'a Entry, name: &str) -> Option<&'a Value>`
 - `org::get(collection: &str, id: &str) -> Result<Option<Entry>, OrgError>`
+- `org::members() -> Result<alloc::vec::Vec<Member>, OrgError>`
 - `org::put(collection: &str, id: &str, fields: &[(&str, Value)]) -> Result<(), OrgError>`
 - `org::put_text(collection: &str, id: &str, field: &str, text: &str) -> Result<(), OrgError>`
 - `org::records(collection: &str, since: Option<&str>) -> Result<Page, OrgError>`
@@ -432,6 +435,11 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `org::sync() -> Result<SyncState, OrgError>`
 - `org::text(entry: &'a Entry, name: &str) -> Option<&'a str>`
 - `org::who() -> Result<Option<Member>, OrgError>`
+
+### `process`
+
+- `process::run(program: &str, args: &[&str], cwd: &str) -> Result<Finished, ProcessError>`
+- `process::words(err: &ProcessError) -> &str`
 
 ### `random`
 
@@ -554,6 +562,8 @@ people can send. check-app ends with a note naming any it found.
 | `store.group:<group-name>` | no | computer only | share a key-value store with the same publisher's other apps, in a named group its signed list admits |
 | `memory.budget:<MiB>` | no | computer only | more memory than the default, in MiB (up to 3584); the person sees it at consent |
 | `random.bytes` | no | yes | entropy (also what getrandom/rand need) |
+| `process.run:<program>` | no | computer only | run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can |
+| `process.terminal` | no | computer only | the person's own shell in a terminal the app draws |
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |
@@ -896,6 +906,7 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 - `org::records: func(collection: string, since: option<cursor>) -> result<page, org-error>`
 - `org::sync: func() -> result<sync-state, org-error>`
 - `org::who: func() -> result<option<member>, org-error>`
+- `org::members: func() -> result<list<member>, org-error>`
 - `org::status: func() -> result<standing, org-error>`
 
 ## `time`

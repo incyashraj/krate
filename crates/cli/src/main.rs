@@ -6258,9 +6258,11 @@ fn pack_bundle(
     // only the copy that goes into the bundle is touched.
     let manifest_text =
         fs::read_to_string(manifest).with_context(|| format!("read {}", manifest.display()))?;
-    let needs_entry_rewrite = manifest_text
-        .lines()
-        .any(|line| line.trim_start().starts_with("entry =") && !line.contains("code.wasm"));
+    // The value, not the line: `krate_code.wasm` contains "code.wasm", and
+    // Krate Code's build path was taken for the bundle's name and refused.
+    let needs_entry_rewrite = krate_manifest::Manifest::parse(&manifest_text)
+        .map(|m| m.app.entry.display().to_string() != "code.wasm")
+        .unwrap_or(false);
     let rewritten =
         std::env::temp_dir().join(format!("krate-pack-manifest-{}.toml", std::process::id()));
     let pack_manifest: &Path = if needs_entry_rewrite {
@@ -7173,8 +7175,21 @@ fn wrap_mac_zip(
             };
             #[cfg(not(unix))]
             let mode = if path.is_dir() { 0o755 } else { 0o644 };
+            // What a Mac must start -- the app's launcher and the players --
+            // is runnable whatever built the gift: on Windows a file carries
+            // no run bit to copy, and a gift made there opened nothing.
+            let mode = if !path.is_dir()
+                && (name.contains("/Contents/MacOS/") || name.contains("/.player/"))
+            {
+                mode | 0o755
+            } else {
+                mode
+            };
+            // Said as Unix entries: on Windows the zip library writes DOS
+            // entries by default, and a DOS entry carries no mode at all.
             let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated)
+                .system(zip::System::Unix)
                 .unix_permissions(mode);
             if path.is_dir() {
                 zip.add_directory(format!("{name}/"), options)?;
@@ -16853,6 +16868,9 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // `[runtime] interpreter = true` (IC-949): every app on the
         // portable interpreter, from the policy rather than an environment.
         interpreter: fleet::interpreter(),
+        // What the manifest names, so a program it does not name is refused
+        // as never asked for (krate:process, IC-977).
+        declared_capabilities: declared_set(manifest),
         usability_plan: match (request.usability_report.as_ref(), request.task.as_deref()) {
             (Some(path), task) => Some(krate_runtime::usability::UsabilityPlan {
                 report_path: path.clone(),
@@ -20652,6 +20670,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "photos.add" => Some(":ui/photos"),
             "ui.dialog" => Some(":ui/dialog"),
             "ui.clipboard" => Some(":ui/clipboard"),
+            "process.run" | "process.terminal" => Some(":process/"),
             // System and always-on families carry no signal here.
             _ => None,
         };
@@ -24754,6 +24773,16 @@ fn shared_hub_url() -> String {
 /// The env var a debug build reads to move the clock an app's organisation
 /// data is stamped with, so a test can be a device whose clock is wrong.
 const ORG_CLOCK_SKEW_ENV: &str = "KRATE_TEST_ORG_CLOCK_SKEW_MS";
+
+/// What a manifest declared, for the runtime's "never asked" refusals
+/// (krate:process, IC-977). `None` with no manifest, which names nothing.
+pub(crate) fn declared_set(
+    manifest: Option<&krate_manifest::Manifest>,
+) -> Option<std::collections::BTreeSet<krate_manifest::Capability>> {
+    manifest
+        .and_then(|manifest| manifest.declared_capabilities().ok())
+        .map(|caps| caps.into_iter().collect())
+}
 
 /// The organisation's team data (store.org, IC-951) for a run the
 /// organisation gate let through: only the private app it opened, as that

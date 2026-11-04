@@ -170,6 +170,14 @@ fn parse_host(source: &str) -> BTreeMap<String, Interface> {
         let end = source[*pos..end]
             .find("\n#[cfg(test)]")
             .map_or(end, |offset| *pos + offset);
+        // And where the impl block itself closes: a `}` at the start of a
+        // line. Anything between that and the next impl -- a helper type
+        // and its own `impl` -- is not the interface's. PickRoot's `new`
+        // and `drop`, written after ui.image's block, made ui.image four
+        // functions when it has two.
+        let end = source[*pos..end]
+            .find("\n}")
+            .map_or(end, |offset| *pos + offset);
         let body = &source[*pos..end];
         let functions = body.matches("\n    fn ").count();
         // Only a function whose *whole* answer is a refusal counts. An
@@ -245,6 +253,33 @@ impl ui::clipboard::Host for Phase3GuiHost {
     /// of the file -- through `mod tests`, whose every `fn` was counted as
     /// a host function. speech.transcription was published as 29 when the
     /// impl has three, and adding any test to the file moved the number.
+    #[test]
+    fn a_helper_written_after_an_impl_block_is_not_counted_as_its_functions() {
+        let source = r#"
+impl ui::image::Host for Phase3GuiHost {
+    fn set_pixels(&mut self) -> Result<()> { Ok(Ok(())) }
+    fn clear(&mut self) -> Result<()> { Ok(Ok(())) }
+}
+
+struct PickRoot(PathBuf);
+
+impl PickRoot {
+    fn new() -> Self { todo!() }
+}
+
+impl Drop for PickRoot {
+    fn drop(&mut self) {}
+}
+
+impl ui::menu::Host for Phase3GuiHost {
+    fn set_items(&mut self) -> Result<()> { Ok(Ok(())) }
+}
+"#;
+        let parsed = parse_host(source);
+        assert_eq!(parsed["ui.image"].functions, 2);
+        assert_eq!(parsed["ui.menu"].functions, 1);
+    }
+
     #[test]
     fn a_trailing_test_module_is_not_counted_as_the_last_interfaces_functions() {
         let source = r#"

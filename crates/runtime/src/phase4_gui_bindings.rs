@@ -51,6 +51,9 @@ wasmtime::component::bindgen!({
         "krate:store/group@0.1.0": crate::phase2_bindings::krate::store::group,
         "krate:store/org@0.1.0": crate::phase2_bindings::krate::store::org,
         "krate:random/bytes@0.1.0": crate::phase3_gui_bindings::krate::random::bytes,
+        // Programs on the computer (IC-977): Phase 2's, so the one host
+        // serves the command-line and windowed worlds alike.
+        "krate:process/processes@0.1.0": crate::phase2_bindings::krate::process::processes,
 
         // The ui interfaces that do NOT mention widget-kind, reused whole.
         "krate:ui/window@0.1.0": crate::phase3_gui_bindings::krate::ui::window,

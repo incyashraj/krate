@@ -11,6 +11,20 @@ export const SLOTS = 256;
 export const SLOT = 1024;
 const HEAD = 64;
 
+/* Whether the browser keeps its own meaning for a key the app was sent.
+ * Every key goes to the app. Plain keys and the shortcuts an app draws
+ * its own answer for (Save, Open, Print, Find, Select All, Undo) are the
+ * app's, so the browser's dialog does not open over it (K-1196). Copy,
+ * cut, paste and the tab's own keys (new tab, close, reload, address
+ * bar, zoom) stay the browser's: a copy or paste event needs the
+ * browser's default, and a tab you cannot close is worse. */
+const APP_CHORDS = /^[sopfgdbjekazy]$/i;
+export function browserKeepsKey(e) {
+  if (!e.ctrlKey && !e.metaKey) return false;
+  if (e.altKey) return true;
+  return !APP_CHORDS.test(e.key);
+}
+
 export function makeRing() {
   return new SharedArrayBuffer(HEAD + SLOTS * SLOT);
 }

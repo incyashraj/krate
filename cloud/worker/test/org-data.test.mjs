@@ -226,6 +226,37 @@ test("refused: no session, a stranger, a removed member, outside the audience, a
   assert.strictEqual(audit.chain_ok, true);
 });
 
+test("a sync names the people the release reaches: members inside its audience, by name and role, and nobody else (IC-979)", async () => {
+  const { env, digest } = await world();
+  const people = async (who = "carol") => {
+    const r = await sync(env, who, digest, {});
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    return r.body.people;
+  };
+  // Everyone: the four members, sorted, name and role and nothing more.
+  assert.deepStrictEqual(await people(), [
+    { name: "alice", role: "owner" },
+    { name: "bob", role: "reviewer" },
+    { name: "carol", role: "developer" },
+    { name: "dan", role: "recipient" },
+  ]);
+  // Narrowed to finance with Carol in it: Dan is outside, and is not named;
+  // the owner and the reviewer see every release, so they are.
+  await call(env, "alice", "POST", "/orgs/acme/groups", { json: { name: "finance" } });
+  await call(env, "alice", "PUT", `/orgs/acme/groups/finance/members/${enc("github:carol")}`);
+  await call(env, "alice", "PUT", `/orgs/acme/releases/${digest}/audience`, { json: { groups: ["finance"] } });
+  assert.deepStrictEqual((await people()).map((p) => p.name), ["alice", "bob", "carol"]);
+  // Dan joins the group: he is named again.
+  await call(env, "alice", "PUT", `/orgs/acme/groups/finance/members/${enc("github:dan")}`);
+  assert.deepStrictEqual((await people("dan")).map((p) => p.name), ["alice", "bob", "carol", "dan"]);
+  // Widened, then Dan removed from the organisation: gone from the list.
+  await call(env, "alice", "PUT", `/orgs/acme/releases/${digest}/audience`, { json: { everyone: true } });
+  assert.strictEqual((await call(env, "alice", "DELETE", `/orgs/acme/members/${enc("github:dan")}`)).status, 204);
+  assert.deepStrictEqual((await people()).map((p) => p.name), ["alice", "bob", "carol"]);
+  // Only names and roles: no groups, no devices, no sign-in kinds.
+  for (const p of await people()) assert.deepStrictEqual(Object.keys(p).sort(), ["name", "role"]);
+});
+
 test("another release of the same app id shares the data; the data is per app id", async () => {
   const { env, digest } = await world();
   const w = sealedRow("tasks", "t1", "title", st(1760400000000));

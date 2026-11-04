@@ -190,6 +190,15 @@ export class TeamData {
     return a.ok ? { ok: a.member } : { err: a.error };
   }
 
+  /// `store.org.members` (IC-979): the people this release reaches, from
+  /// the copy, so it answers offline.
+  members() {
+    const r = this.check();
+    if (r) return { err: r };
+    const a = this.mod.data({ op: 'members', store: this.name });
+    return a.ok ? { ok: a.members } : { err: a.error };
+  }
+
   /// `store.org.status` (K-1108): never waits, never reaches the network.
   standing() {
     const r = this.check();

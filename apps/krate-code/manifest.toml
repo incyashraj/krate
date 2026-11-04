@@ -1,0 +1,72 @@
+[app]
+id = "dev.krate.code"
+name = "Krate Code"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_code.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the editor window"
+required = true
+
+# No fs capability, deliberately. The person picks a project folder and the
+# pick is the grant: every file is read and written through picked/<token>/
+# for this run only, so the editor can touch nothing they did not choose.
+[[capabilities]]
+cap = "ui.dialog:open-folder"
+rationale = "Open a project folder you choose -- the editor can read and save only inside it, and only while it is open"
+required = true
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Remember your editor settings (theme, how a click behaves, panel sizes) between runs"
+required = true
+
+# Programs, each named and each optional: without one the editor still
+# edits and saves, and says plainly which feature needs what. They run in
+# the folder the person opened, with the person's own powers.
+[[capabilities]]
+cap = "process.run:cargo"
+rationale = "Build, run, test and check your project with cargo, show its errors in Problems, and make new projects (cargo init)"
+required = false
+
+[[capabilities]]
+cap = "process.run:rustfmt"
+rationale = "Format Rust files with rustfmt when you save or ask, following your project's rustfmt.toml"
+required = false
+
+[[capabilities]]
+cap = "process.run:rust-analyzer"
+rationale = "Suggest names as you type, show types and docs, go to definitions, find references and rename, with rust-analyzer"
+required = false
+
+[[capabilities]]
+cap = "process.run:lldb-dap"
+rationale = "Debug your program: stop at breakpoints, step through it and see its variables, with lldb-dap"
+required = false
+
+[[capabilities]]
+cap = "process.run:xcrun"
+rationale = "On a Mac, find Apple's lldb-dap debugger, which comes with Xcode's command line tools"
+required = false
+
+[[capabilities]]
+cap = "process.terminal"
+rationale = "Open your own shell in a terminal panel, in the project folder"
+required = false
+
+[[capabilities]]
+cap = "ui.clipboard:write"
+rationale = "Copy text you select in the editor or a terminal to the clipboard"
+required = false
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the editor state on exit for automated runs"
+required = false
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = false

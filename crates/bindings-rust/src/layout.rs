@@ -567,7 +567,9 @@ impl Screen {
 /// no clipboard permission) and `Event::Key` to [`Field::key_with`]. Draw
 /// [`Field::selection`] behind the text and the caret at [`Field::caret`].
 /// Shift with an arrow, Home or End selects; Cmd+A or Ctrl+A selects all;
-/// typing, pasting, Backspace and Delete replace what is selected.
+/// typing, pasting, Backspace and Delete replace what is selected. Cmd+C or
+/// Ctrl+C copies what is selected and Cmd+X or Ctrl+X cuts it, with no
+/// clipboard permission either: the keystroke is the person's (K-1190).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Field {
     pub text: alloc::string::String,
@@ -638,6 +640,24 @@ impl Field {
             self.anchor = None;
         }
         self.caret = at;
+    }
+
+    /// Put what is selected on the clipboard. True when it is there; false
+    /// when nothing is selected or the host refused. Off WebAssembly (an
+    /// app's own tests) there is no host, and it counts as copied.
+    fn copy_selection(&self) -> bool {
+        let selected = self.selected();
+        if selected.is_empty() {
+            return false;
+        }
+        #[cfg(all(feature = "gui", target_arch = "wasm32"))]
+        {
+            crate::ui::clipboard::write_text(selected).is_ok()
+        }
+        #[cfg(not(all(feature = "gui", target_arch = "wasm32")))]
+        {
+            true
+        }
     }
 
     fn cut_selection(&mut self) -> bool {
@@ -712,6 +732,13 @@ impl Field {
                     self.select_all();
                     (false, true)
                 }
+                "c" | "C" => {
+                    self.copy_selection();
+                    (false, false)
+                }
+                // Removed only once it is on the clipboard: a cut the host
+                // refused must not lose the text.
+                "x" | "X" if self.copy_selection() => (self.cut_selection(), true),
                 _ => (false, false),
             };
         }
@@ -891,6 +918,29 @@ mod tests {
     #[test]
     fn the_safe_area_keeps_clear_of_the_notch_and_home_bar() {
         assert_eq!(phone().safe_area(), Rect::new(0.0, 89.0, 390.0, 721.0));
+    }
+
+    /// K-1190: Cmd/Ctrl+C copies and leaves the text; Cmd/Ctrl+X cuts; with
+    /// nothing selected neither does anything.
+    #[test]
+    fn a_field_copies_and_cuts_what_is_selected() {
+        let mut f = Field::new(false);
+        f.set("Order twelve chairs");
+        assert_eq!(f.key_with("c", false, true), (false, false));
+        assert_eq!(
+            f.text, "Order twelve chairs",
+            "nothing selected, nothing cut"
+        );
+        assert_eq!(f.key_with("x", false, true), (false, false));
+        assert_eq!(f.text, "Order twelve chairs");
+        f.move_to(6, false);
+        f.move_to(13, true);
+        assert_eq!(f.selected(), "twelve ");
+        assert_eq!(f.key_with("c", false, true), (false, false));
+        assert_eq!(f.text, "Order twelve chairs", "a copy leaves the text");
+        assert_eq!(f.key_with("X", false, true), (true, true));
+        assert_eq!(f.text, "Order chairs");
+        assert_eq!((f.caret, f.selection()), (6, None));
     }
 
     #[test]

@@ -1,0 +1,58 @@
+# Krate Code with rust-analyzer, on a real project: a suggestion as you type,
+# taken without eating the line before it, then hover and go to definition.
+# Needs cargo and rust-analyzer (rustup component add rust-analyzer).
+#
+#   krate run "Krate Code.krate" --auto-grant --headless --task apps/krate-code/walk-suggestions.toml
+name = "a suggestion, hover and go to definition"
+[[step]]
+pick = "hello"
+[[step]]
+click = "New Rust project"
+[[step]]
+click = "Make project"
+[[step]]
+wait_ms = 6000
+[[step]]
+type = "Gofn seven() -> i32 { 7 }"
+[[step]]
+key = "Escape"
+[[step]]
+type = ":w"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 15000
+[[step]]
+type = "gg"
+[[step]]
+type = "jA let n = sev"
+[[step]]
+wait_ms = 4000
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 500
+[[step]]
+key = "Escape"
+[[step]]
+expect_text = "let n = seven"
+[[step]]
+type = "b"
+[[step]]
+type = ":hover"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 4000
+[[step]]
+expect_text = "fn seven() -> i32"
+[[step]]
+key = "Escape"
+[[step]]
+type = ":def"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 3000
+[[step]]
+expect_text = "Ln 5"

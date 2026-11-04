@@ -154,6 +154,9 @@ pub struct Phase3GuiHost {
     /// see it, so clicking the close button did nothing. Pumped events wait
     /// here and are handed over by the next `poll` or `wait`.
     pending_events: std::cell::RefCell<std::collections::VecDeque<ui::types::Event>>,
+    /// An event the check driver took while looking whether the app had
+    /// taken its input (K-1192); handed over before anything else.
+    peeked_event: std::cell::RefCell<Option<ui::types::Event>>,
     /// Drops and hovers, already turned into what a guest may see.
     ///
     /// Phase 3's `event` variant has no case for either, and its WIT is
@@ -279,6 +282,10 @@ pub struct Phase3GuiHost {
     /// keeps running forever when someone alt-tabs mid-stride: the release
     /// went to another window and never arrives.
     held_keys: std::cell::RefCell<std::collections::BTreeSet<String>>,
+    /// When the person last pressed their own copy or cut keystroke: for a
+    /// moment after it the app may put text on the clipboard once without
+    /// `ui.clipboard:write`, as a browser allows during a keystroke (K-1190).
+    copy_keystroke: std::cell::Cell<Option<std::time::Instant>>,
     /// Bound 3D scenes, sharing the canvas id space so a scene and a canvas
     /// can never collide on one number.
     scenes: std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, SceneBackend)>>,
@@ -441,6 +448,16 @@ struct UsabilityDriver {
     /// action was dispatched, so the app gets a settle before the next.
     task_index: usize,
     task_dispatched_at: Option<std::time::Instant>,
+    /// Whether the step being settled handed the app input (a click, key,
+    /// text or paste). Such a step settles only once the app has taken all
+    /// of it and come back for more, not merely when time has passed: under
+    /// load the app's next `wait` can begin before it has seen the input,
+    /// and the step after was judged on the frame from before (K-1192).
+    task_sent_input: bool,
+    /// What a `pick` step said the next picker answers, inside `picks`.
+    pending_pick: Option<std::path::PathBuf>,
+    /// The scratch folder `pick` steps choose inside, made on the first.
+    picks: Option<PickRoot>,
     /// How much of a `look` step's motion has been delivered so far.
     look_given: (f32, f32),
     /// The control the pointer step pressed, so the keyboard step can pick a
@@ -610,6 +627,7 @@ impl Phase3GuiHost {
             app_name: None,
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            peeked_event: std::cell::RefCell::new(None),
             pending_drops: std::cell::RefCell::new(std::collections::VecDeque::new()),
             test_drop_done: std::cell::Cell::new(false),
             headless_started: std::cell::Cell::new(None),
@@ -674,6 +692,7 @@ impl Phase3GuiHost {
             next_kept_image: std::cell::Cell::new(1),
             gamepads: std::cell::RefCell::new(crate::gamepad::Gamepads::new()),
             held_keys: std::cell::RefCell::new(std::collections::BTreeSet::new()),
+            copy_keystroke: std::cell::Cell::new(None),
             scenes: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             gpu: Default::default(),
             next_canvas_id: std::cell::Cell::new(1),
@@ -769,6 +788,9 @@ impl Phase3GuiHost {
             press_delivered_at: None,
             task_index: 0,
             task_dispatched_at: None,
+            task_sent_input: false,
+            pending_pick: None,
+            picks: None,
             look_given: (0.0, 0.0),
             clicked_widget: None,
             idle_churn: None,
@@ -908,6 +930,30 @@ impl Phase3GuiHost {
 
     fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
         self.runtime.dispatcher()
+    }
+
+    /// The answer a check task's `pick` step left for the next picker,
+    /// taken once.
+    fn take_pick(&mut self) -> Option<std::path::PathBuf> {
+        self.usability.as_mut()?.pending_pick.take()
+    }
+
+    /// What a key the person pressed means beyond the key itself: their
+    /// paste puts what they pasted into the field (K-1109), and their copy
+    /// or cut lets the app answer it on the clipboard (K-1190). One place,
+    /// for a real keyboard and a check task's key step alike.
+    fn persons_keystroke(
+        &self,
+        dispatcher: &Phase3UiDispatcher<'_>,
+        window: WindowId,
+        focused: Option<WidgetId>,
+        key: &str,
+        modifiers: krate_adapter_common::ui::Modifiers,
+    ) {
+        dispatcher.paste_for_person(window, focused, key, modifiers);
+        if crate::phase3_ui::is_copy_chord(key, modifiers) {
+            self.copy_keystroke.set(Some(std::time::Instant::now()));
+        }
     }
 
     /// Schedule a reminder (IC-921), behind `ui.notify`: the id checked
@@ -2506,7 +2552,9 @@ impl Phase3GuiHost {
                     driver.look_given = (tx, ty);
                 }
             }
-            let ready = (since >= needed && from_wait) || since >= needed.max(PRESS_GIVE_UP);
+            let sent_input = self.usability.as_ref().is_some_and(|d| d.task_sent_input);
+            let ready = since >= needed.max(PRESS_GIVE_UP)
+                || (since >= needed && from_wait && (!sent_input || self.input_all_taken()));
             if !ready {
                 return;
             }
@@ -2632,6 +2680,7 @@ impl Phase3GuiHost {
             }
             if let Some(driver) = self.usability.as_mut() {
                 driver.task_dispatched_at = Some(std::time::Instant::now());
+                driver.task_sent_input = false;
             }
             return;
         }
@@ -2735,7 +2784,7 @@ impl Phase3GuiHost {
                     .is_ok();
                 if pressed {
                     let focused = dispatcher.focused_widget(window).ok().flatten();
-                    dispatcher.paste_for_person(window, focused, &key, modifiers);
+                    self.persons_keystroke(&dispatcher, window, focused, &key, modifiers);
                 }
                 routed
             })
@@ -2755,6 +2804,17 @@ impl Phase3GuiHost {
                     })
                     .is_ok()
             }) && dispatcher.paste_for_person(window, focused, "v", modifiers)
+        } else if let Some(name) = &step.pick {
+            // Nothing is shown: the next picker the app opens answers this,
+            // as if the person had chosen it.
+            match (crate::usability::pick_name(name), self.usability.as_mut()) {
+                (Ok(rel), Some(driver)) => {
+                    let root = driver.picks.get_or_insert_with(PickRoot::new);
+                    driver.pending_pick = Some(root.0.join(rel));
+                    true
+                }
+                _ => false,
+            }
         } else if let Some(text) = &step.type_text {
             // Typed text is a text-input event, the way a host delivers it,
             // not one key event per character: an app reads its text field
@@ -2774,6 +2834,22 @@ impl Phase3GuiHost {
         }
         if let Some(driver) = self.usability.as_mut() {
             driver.task_dispatched_at = Some(std::time::Instant::now());
+            driver.task_sent_input = step.pick.is_none();
+        }
+    }
+
+    /// Whether the app has taken every event waiting for it. Looking means
+    /// taking one, so an event found is kept to be handed over first.
+    fn input_all_taken(&self) -> bool {
+        if self.peeked_event.borrow().is_some() || !self.pending_events.borrow().is_empty() {
+            return false;
+        }
+        match self.poll_one_event() {
+            Ok(Some(event)) => {
+                *self.peeked_event.borrow_mut() = Some(event);
+                false
+            }
+            _ => true,
         }
     }
 
@@ -3372,12 +3448,17 @@ impl Phase3GuiHost {
     }
 
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
+        if let Some(event) = self.peeked_event.borrow_mut().take() {
+            return Ok(Some(event));
+        }
         // Input is hit-tested against the lowered tree, so lower first.
         self.sync_changed_trees();
         // Anything `key-held` pumped comes out first, in arrival order. It is
-        // a real event that simply has not been delivered yet.
+        // a real event that simply has not been delivered yet, and already in
+        // the app's design space: it came out of this function once. Mapped
+        // again, a click in a letterboxed game landed off its target (K-1197).
         if let Some(event) = self.pending_events.borrow_mut().pop_front() {
-            return Ok(Some(self.to_design_space(event)));
+            return Ok(Some(event));
         }
         // Through the coalescing pump, not around it: this ran a full native
         // drain per POLL, and a frame loop polls several times a frame. Each
@@ -3473,7 +3554,13 @@ impl Phase3GuiHost {
                 // The person's own paste: what they pasted arrives as typed
                 // text, so every text field an app draws itself takes a
                 // paste (K-1109).
-                dispatcher.paste_for_person(sample.window, focused, &sample.key, sample.modifiers);
+                self.persons_keystroke(
+                    &dispatcher,
+                    sample.window,
+                    focused,
+                    &sample.key,
+                    sample.modifiers,
+                );
             }
         }
 
@@ -5940,9 +6027,26 @@ impl ui::dialog::Host for Phase3GuiHost {
         }
         // Headless runs -- --shoot, check-app, CI -- must never block on a
         // native dialog nobody can click. A cancelled dialog is the honest
-        // answer there, and it is a normal outcome the app already handles.
+        // answer there, and it is a normal outcome the app already handles --
+        // unless a check task's `pick` step chose a file for the person.
         if self.headless {
-            return Ok(Ok(None));
+            let Some(file) = self.take_pick() else {
+                return Ok(Ok(None));
+            };
+            if !file.exists() {
+                let made = file
+                    .parent()
+                    .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok())
+                    && std::fs::write(&file, b"").is_ok();
+                if !made {
+                    return Ok(Ok(None));
+                }
+            }
+            let name = crate::chosen_files::ChosenFiles::display_name(&file);
+            let Some(token) = self.chosen_files.borrow_mut().remember(file) else {
+                return Ok(Ok(None));
+            };
+            return Ok(Ok(Some(ui::dialog::ChosenFile { name, token })));
         }
         // Phones have no rfd backend: the adapter shows the platform's own
         // picker (iOS: the Files picker; Android: its document picker).
@@ -6010,7 +6114,18 @@ impl ui::dialog::Host for Phase3GuiHost {
             return Ok(Err(ui::types::UiError::PermissionDenied));
         }
         if self.headless {
-            return Ok(Ok(None));
+            // A check task's `pick` answers it; otherwise it is cancelled.
+            let Some(folder) = self.take_pick() else {
+                return Ok(Ok(None));
+            };
+            if std::fs::create_dir_all(&folder).is_err() {
+                return Ok(Ok(None));
+            }
+            let name = crate::chosen_files::ChosenFiles::display_name(&folder);
+            let Some(token) = self.chosen_files.borrow_mut().remember_folder(folder) else {
+                return Ok(Ok(None));
+            };
+            return Ok(Ok(Some(ui::dialog::ChosenFolder { name, token })));
         }
         // Phones: the platform's own folder picker, through the adapter (see
         // open_file). A music player made in Studio could not be given a
@@ -6212,6 +6327,33 @@ impl ui::image::Host for Phase3GuiHost {
 }
 
 /// A check step's chord: Shift, and Cmd on a Mac or Ctrl elsewhere.
+/// The scratch folder a check run's `pick` steps choose inside: made fresh
+/// for the run under the system's temporary folder, removed when it ends.
+struct PickRoot(std::path::PathBuf);
+
+impl PickRoot {
+    fn new() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("krate-check-picks-{}-{nanos}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        PickRoot(dir)
+    }
+}
+
+impl Drop for PickRoot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// How long after the person's copy keystroke the app may still answer it.
+/// An app reads its keys once a frame; a slow frame is well under this.
+const COPY_KEYSTROKE_LASTS: std::time::Duration = std::time::Duration::from_secs(1);
+
 fn chord_modifiers(shift: bool, primary: bool) -> krate_adapter_common::ui::Modifiers {
     let mac = cfg!(target_os = "macos");
     krate_adapter_common::ui::Modifiers {
@@ -6231,10 +6373,21 @@ impl ui::clipboard::Host for Phase3GuiHost {
     }
 
     fn write_text(&mut self, text: String) -> wasmtime::Result<Result<(), ui::types::UiError>> {
-        Ok(self
-            .dispatcher()
-            .write_clipboard_text(&text)
-            .map_err(dispatch_error_to_ui_error))
+        let dispatcher = self.dispatcher();
+        let written = match dispatcher.write_clipboard_text(&text) {
+            // No grant: the person's own copy or cut, just pressed, still
+            // reaches the clipboard -- once (K-1190).
+            Err(crate::phase3_ui::UiDispatchError::PermissionDenied)
+                if self
+                    .copy_keystroke
+                    .take()
+                    .is_some_and(|at| at.elapsed() < COPY_KEYSTROKE_LASTS) =>
+            {
+                dispatcher.write_clipboard_for_person(&text)
+            }
+            other => other,
+        };
+        Ok(written.map_err(dispatch_error_to_ui_error))
     }
 }
 
@@ -8637,6 +8790,7 @@ mod tests {
         match field {
             "click" => s.click = Some(value.to_string()),
             "click_at" => s.click_at = Some(value.to_string()),
+            "paste" => s.paste = Some(value.to_string()),
             "hold" => s.hold = Some(value.to_string()),
             "pad" => s.pad = Some(value.to_string()),
             "stick" => s.stick = Some(value.to_string()),
@@ -8764,6 +8918,43 @@ mod tests {
             "{report:?}"
         );
         assert_eq!(report.task_steps_done, 3);
+    }
+
+    /// K-1192: a step is judged only after the app has taken all of its
+    /// input. A slow app takes one event per turn: the paste's key down,
+    /// its key up, then the text. Judged on the clock alone, the step after
+    /// the paste looked before the text had arrived and failed an app that
+    /// was only slow.
+    #[test]
+    fn a_slow_app_is_judged_after_it_has_taken_the_whole_step() {
+        let task = crate::usability::Task {
+            name: "paste into a slow app".to_string(),
+            steps: vec![step("paste", "hello"), step("expect_text", "Pasted")],
+        };
+        let mut host = host_with_labelled_button("Empty", task_plan(task));
+        let window = host.windows.first().copied().expect("window").get();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let report = loop {
+            let event = ui::events::Host::wait(&mut host, Some(50)).expect("wait");
+            if let Some(ui::types::Event::TextInput(_)) = event {
+                let mut node = wit_node(ui::types::WidgetKind::Button, None);
+                node.label = Some("Pasted".to_string());
+                ui::tree::Host::set_root(&mut host, window, node)
+                    .expect("set_root call")
+                    .expect("root");
+            }
+            let report = host.usability_report().expect("a plan");
+            if report.task.is_some() || std::time::Instant::now() > deadline {
+                break report;
+            }
+            // Slower than a settle per event, as under load.
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        };
+        assert_eq!(
+            report.task,
+            Some(crate::usability::Observation::Held),
+            "{report:?}"
+        );
     }
 
     /// An app that draws its own interface (a game) is driven by point and
@@ -9616,6 +9807,54 @@ mod tests {
             matches!(event, Some(ui::types::Event::CloseRequested(_))),
             "a spent budget must close a loop that only ever polls: {event:?}"
         );
+    }
+
+    /// K-1197: a pointer pumped early (by `key-held`) lands at the same
+    /// design point as one polled straight away.
+    #[test]
+    fn a_pointer_pumped_by_key_held_lands_where_a_polled_one_does() {
+        let at = |pump_first: bool| {
+            let (mut host, window, widget) = host_with_canvas_widget();
+            let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
+                .expect("bind call")
+                .expect("binds");
+            gfx::canvas2d::Host::set_design_size(
+                &mut host,
+                canvas,
+                gfx::types::Size {
+                    width: 100.0,
+                    height: 50.0,
+                },
+            )
+            .expect("call")
+            .expect("design");
+            let id = host.windows.first().copied().expect("window id");
+            assert_eq!(id.get(), window);
+            host.dispatcher()
+                .route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                    window: id,
+                    viewport: LayoutViewport::new(200.0, 200.0).expect("viewport"),
+                    x: 100.0,
+                    y: 100.0,
+                    button: Some(krate_adapter_common::ui::PointerButton::Primary),
+                    pressed: true,
+                    modifiers: Default::default(),
+                })
+                .expect("routed");
+            if pump_first {
+                let _ = ui::events::Host::key_held(&mut host, "w".to_string());
+            }
+            loop {
+                match ui::events::Host::poll(&mut host).expect("poll") {
+                    Some(ui::types::Event::Pointer(p)) => break (p.x, p.y),
+                    Some(_) => continue,
+                    None => panic!("the pointer never came"),
+                }
+            }
+        };
+        let direct = at(false);
+        assert_eq!(direct, (50.0, 25.0), "the design's own centre");
+        assert_eq!(at(true), direct);
     }
 
     #[test]

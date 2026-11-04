@@ -202,10 +202,13 @@ key = \"Enter\"\n\
 expect_text = \"milk\"   # a label containing this must now be on screen\n\
 ```\n\
 \n\
-Steps: `click`, `type`, `key`, `paste`, `wait_ms`, `expect_text`,\n\
+Steps: `click`, `type`, `key`, `paste`, `pick`, `wait_ms`, `expect_text`,\n\
 `expect_no_text`, one per step; `key = \"Shift+ArrowLeft\"` or\n\
-`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord, and\n\
-`paste = \"text\"` pastes it as a person would. A task with no expectation is refused: completing it has to\n\
+`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord,\n\
+`paste = \"text\"` pastes it as a person would, and `pick = \"notes.txt\"`\n\
+(before the click that opens a picker) answers the app's next file or\n\
+folder picker with an empty file or folder of that name, made for the\n\
+check. A task with no expectation is refused: completing it has to\n\
 mean something. In an app drawn on a canvas, `click` and `expect_text`\n\
 find what the app tells the screen reader (`krate::layout::Said`), at the\n\
 place it said. `krate run <app> --task steps.toml` does the steps alone\n\
@@ -281,6 +284,24 @@ once, then `krate::fs::watch::changes(w)?` from the event loop: a list of \
 with `path` ready to pass to `fs::read`. It looks at most four times a \
 second (asking sooner returns an empty list), so calling it every frame is \
 fine. Allowed wherever listing the folder is; no extra capability.\n\n\
+To run a program on the computer -- an editor building with `cargo`, \
+formatting with `rustfmt`, talking to `rust-analyzer` -- declare each one by \
+its bare name, `process.run:cargo` (no path, no `*`), and `process.terminal` \
+for a terminal; the person is asked about each, in words that say a program \
+can do what they can. `let p = krate::process::Process::start(\"cargo\", \
+&[\"build\", \"--message-format=json\"], \"picked/<token>\")?` runs it in the \
+picked folder (or `\".\"`, the app's own); then from the event loop \
+`p.read_stdout(65536)?` and `p.read_stderr(65536)?` (never wait: empty when \
+nothing new, `ended` when done) and `p.wait(0)?` (`Some(status)` once it \
+ended). `p.write(bytes)` feeds stdin (a language server's requests). \
+`Process::terminal(\"picked/<token>\", cols, rows)` opens the person's shell: \
+type with `write`, draw what `read_stdout` returns (escape sequences \
+included), `resize` when the panel changes. Dropping a `Process` kills it, \
+and every one ends with the app. A command-line app may call \
+`krate::process::run(\"cargo\", &[\"--version\"], \".\")?` and get the whole \
+output. On a refusal show `krate::process::words(&err)`: \"the app did not ask \
+to run X\", \"X is not installed on this computer\". A computer only: a \
+browser tab and a phone refuse every call in words.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \
@@ -465,9 +486,10 @@ such a field in a \
 `krate::layout::Field`: `insert` the `TextInput` text, pass keys to \
 `key_with(&k.key, k.modifiers.shift, k.modifiers.meta || \
 k.modifiers.control)`, draw `selection()` behind the text. It selects with \
-Shift and Cmd/Ctrl+A, and the person's own Cmd+V or Ctrl+V arrives as \
-`TextInput` with no clipboard permission: never ask for \
-`ui.clipboard:read` just to paste. A game takes touch itself: most \
+Shift and Cmd/Ctrl+A, copies and cuts with Cmd/Ctrl+C and X, and the \
+person's own Cmd+V or Ctrl+V arrives as `TextInput`, all with no clipboard \
+permission: never ask for `ui.clipboard:read` just to paste or \
+`ui.clipboard:write` just to copy. A game takes touch itself: most \
 people open a sent link on a phone, where there are no arrow keys, and a \
 browser tab shows no pad. The simplest that always works: each frame, \
 `if pointer::button_held(PointerButton::Primary) { pointer::position(win) }` \
@@ -940,6 +962,8 @@ fn capability_note(pattern: &str) -> &'static str {
         "location.read" => "where the phone is; the person is asked on Krate's sheet and by the phone itself",
         "bluetooth.connect" => "Bluetooth devices the person picks in Krate's own list; only the picked one is reachable",
         "photos.add" => "add pictures to the person's photo library (add-only: the app never sees the library)",
+        "process.run" => "run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can",
+        "process.terminal" => "the person's own shell in a terminal the app draws",
         _ => "",
     }
 }
@@ -1084,7 +1108,10 @@ bytes, a record up to 64 KiB, the app's data up to 50 MiB.\n\n\
 cursor. `org::text(&entry, \"note\")` and `org::field(&entry, name)` read a \
 field; `entry.changed_by` names who changed it last, so the app can say \
 \"added by dana\". `org::who()` is the signed-in person and their role, \
-once a sync has reached the organisation.\n\n\
+once a sync has reached the organisation. `org::members()` is everyone \
+the app is released to, by sign-in name and role, kept from the last sync: \
+offer them in any field that names a person (who approves, who does it), \
+and store the sign-in name, never a short form.\n\n\
 3. **The runtime syncs; the app shows where it stands.** The runtime \
 exchanges changes in the background every five seconds and when the app \
 closes. `org::status()` answers at once, from this device, with `link` -- \

@@ -182,13 +182,13 @@ const ops = {
     }
     const outside = this.audienceRefusal(ctx, me, c, action, target);
     if (outside) return { refusal: outside };
-    return { me, app: appOf(c) };
+    return { me, app: appOf(c), release: c };
   },
 
   /// POST /orgs/<slug>/data/<digest>/sync: push this device's sealed
   /// writes, pull what changed since its cursor. One transaction.
   op_data_sync(ctx) {
-    const { me, app, refusal } = this.dataStanding(ctx, "data.sync");
+    const { me, app, release, refusal } = this.dataStanding(ctx, "data.sync");
     if (refusal) return refusal;
     const device = String(ctx.args.device || "");
     if (!/^[0-9a-f]{16}$/.test(device)) return bad("device is 16 lower-case hex digits");
@@ -374,6 +374,9 @@ const ops = {
       full,
       me: { name: displayOf(me.principal), role: me.role },
       org: { slug: this.org().slug, name: this.org().name },
+      // Who this release reaches, for the app to offer as people to
+      // choose (IC-979): names and roles, never groups or devices.
+      people: this.audiencePeople(release),
       quota: { used: Math.max(0, used), limit: quota },
       // A one-use ticket for this app's live socket, when the device asks
       // (org-data-live.js): the same checks as this sync just passed.

@@ -80,7 +80,7 @@ wasmtime.workspace = true
 # is the next real piece of work for running a guest in a tab, and it is
 # tracked as such rather than papered over -- so `load_component` is
 # gated off for wasm32 until those symbols exist.
-wasmtime = { version = "48.0.7", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
+wasmtime = { version = "48.0.8", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
 
 [dependencies]
 # store.sql's rules without SQLite, for the wasm32 build (the target table
@@ -129,6 +129,13 @@ thiserror.workspace = true
 tracing.workspace = true
 whisper-rs = { version = "0.16.0", optional = true }
 
+# krate:process (IC-977): a terminal is a pseudo-terminal -- a posix pty on
+# macOS and Linux, ConPTY on Windows -- and portable-pty (wezterm's, MIT) is
+# the one crate that speaks all three. Desktop only: a phone and a tab run
+# no programs.
+[target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
+portable-pty = "0.9.0"
+
 [target.'cfg(target_os = "android")'.dependencies]
 krate-adapter-android = { path = "../adapter-android" }
 
@@ -175,6 +182,10 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    # A job object per program (krate:process): its whole tree ends with
+    # the app, even if Krate itself is killed.
+    "Win32_Security",
+    "Win32_System_JobObjects",
 ] }
 # Camera capture through Media Foundation. macOS has its own AVFoundation
 # backend because it needs the platform permission dance; Windows and Linux do

@@ -31,6 +31,7 @@ The current world imports these interfaces:
 - `krate:store/group@0.1.0`
 - `krate:store/org@0.1.0`
 - `krate:random/bytes@0.1.0`
+- `krate:process/processes@0.1.0`
 
 The app exports:
 
@@ -1007,6 +1008,129 @@ Accepted capability strings for this module, generated from the runtime manifest
 - `unknown-handle`
 
 
+## `krate:process/processes@0.1.0`
+
+### Functions
+
+> Start `program` (a bare name the manifest names as
+> `process.run:<program>`) with `args`, in the folder `cwd` (the app's
+> own folder or a picked one, as files are named; `.` is the app's own),
+> with the person's environment plus `env`. Its stdin, stdout and stderr
+> are pipes the app writes and reads with the calls below.
+> 
+> Output waits for the app: each stream holds up to 8 MiB, and when that
+> much is unread the program is held at its next write until the app
+> reads. Nothing is dropped.
+
+- `start(program: string, args: list<string>, cwd: string, env: list<tuple<string, string>>) -> result<process-handle, process-error>`
+> Open the person's own login shell in a pseudo-terminal of `cols` by
+> `rows` characters, in the folder `cwd`. Needs `process.terminal`.
+> Bytes typed go in with `write-stdin`; everything the terminal shows
+> (escape sequences included) comes out of `read-stdout`. `TERM` is
+> `xterm-256color`.
+
+- `open-terminal(cwd: string, cols: u16, rows: u16) -> result<process-handle, process-error>`
+> Queue `bytes` for the process's stdin (a terminal: as if typed). Never
+> waits: at most 8 MiB may be waiting for the program to read, and more
+> is refused (`platform`) until it reads.
+
+- `write-stdin(handle: process-handle, bytes: list<u8>) -> result<_, process-error>`
+> Close stdin once what was queued is written, so the program reads end
+> of input. A terminal is sent end-of-input (Ctrl-D) instead.
+
+- `close-stdin(handle: process-handle) -> result<_, process-error>`
+> Take up to `max` bytes (at most 4 MiB) of what the program wrote to
+> stdout; a terminal's whole output comes here. Never waits.
+
+- `read-stdout(handle: process-handle, max: u32) -> result<output, process-error>`
+> The same for stderr. A terminal has none: always empty and ended.
+
+- `read-stderr(handle: process-handle, max: u32) -> result<output, process-error>`
+> Wait up to `timeout-ms` for the process to end; 0 only looks. None
+> while it still runs. Asking again after it ended gives the same status.
+
+- `wait(handle: process-handle, timeout-ms: u32) -> result<option<exit-status>, process-error>`
+> End the process and everything it started, at once. A process that
+> already ended is not an error.
+
+- `kill(handle: process-handle) -> result<_, process-error>`
+> Tell a terminal it is now `cols` by `rows`. Not a terminal: `platform`.
+
+- `resize(handle: process-handle, cols: u16, rows: u16) -> result<_, process-error>`
+> Forget a process: kill it if it still runs and drop what is unread.
+> Its handle is unknown afterwards. Releasing an unknown handle is
+> ignored.
+
+- `release(handle: process-handle)`
+
+### Types
+
+#### `process-handle` type
+
+> A running (or finished, not yet released) process. Numbers are never
+> reused within a run.
+
+`u64`
+
+#### `process-error` variant
+
+> Why a call was refused or failed. Each case carries words to show a
+> person, except `unknown-handle`, which is the app's own mistake.
+
+> The manifest does not name it: `process.run:<program>` for a program,
+> `process.terminal` for a terminal. "the app did not ask to run cargo".
+
+- `not-declared`: `string`
+> The program is not on the person's PATH nor in `~/.cargo/bin`.
+> "cargo is not installed on this computer".
+
+- `not-found`: `string`
+> The manifest names it and the person did not allow it.
+
+- `refused-by-person`: `string`
+> The folder is not the app's own nor one the person picked this run,
+> does not exist, or is not a folder.
+
+- `bad-folder`: `string`
+> 16 processes are running in this app, or 64 are held (running, or
+> ended and not yet released); one must end or be released first.
+
+- `too-many`: `string`
+> No process has this handle in this run, or it was released.
+
+- `unknown-handle`
+> The computer refused (with its words), an argument cannot be passed
+> (a NUL character), or Krate cannot run programs here: a browser tab or
+> a phone.
+
+- `platform`: `string`
+
+#### `exit-status` record
+
+> How a process ended.
+
+> The exit code it returned; none when a signal ended it.
+
+- `code`: `option<s32>`
+> The signal that ended it (macOS and Linux), e.g. 9 after `kill`;
+> none when it exited on its own or on Windows.
+
+- `signal`: `option<s32>`
+
+#### `output` record
+
+> What a read found.
+
+> The bytes that had arrived, at most the `max` asked for; empty when
+> nothing has arrived since the last read.
+
+- `bytes`: `list<u8>`
+> True when the stream is finished and every byte has been read: the
+> program closed it or ended. Nothing more will arrive.
+
+- `ended`: `bool`
+
+
 ## `krate:random/bytes@0.1.0`
 
 ### Functions
@@ -1209,6 +1333,13 @@ Accepted capability strings for this module, generated from the runtime manifest
 > organisation with its key; `none` before that.
 
 - `who() -> result<option<member>, org-error>`
+> The people this release of the app reaches, to offer when the app
+> asks who should do something: members inside its audience (owners,
+> admins and reviewers see every release), sorted by name, each with
+> their role. Names and roles only. Kept on this device from the last
+> sync, so it answers offline; empty before the first one.
+
+- `members() -> result<list<member>, org-error>`
 > Where this device stands, from this device: it never waits and never
 > reaches the network. Cheap enough to ask every frame.
 
@@ -1340,8 +1471,9 @@ Accepted capability strings for this module, generated from the runtime manifest
 
 #### `member` record
 
-> The signed-in person, as the organisation knows them, so an app can
-> say who added something.
+> A member as the organisation knows them: the signed-in person
+> (`who`), so an app can say who added something, or someone the app
+> is released to (`members`).
 
 > Their name in the organisation: a GitHub login or an email address.
 

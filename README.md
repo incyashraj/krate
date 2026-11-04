@@ -5,13 +5,14 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Ship a desktop app as one file that opens natively on macOS, Windows and Linux.</strong>
+  <strong>Make and send apps like pictures.</strong>
 </p>
 
 <p align="center">
-  Write the app in Rust, build it into a WebAssembly component, and send one <code>.krate</code>.<br>
-  The runtime is open source, runs on Wasmtime, and is installed once per machine.<br>
-  The same bytes open on all three systems, and an app can reach only what its manifest declares.
+  Describe an app and Krate makes it, or write it yourself in Rust. It is one <code>.krate</code> file.<br>
+  Send it as a link and it opens in any browser, phones included, with nothing to install.<br>
+  On macOS, Windows and Linux the same file runs natively. Every app is sandboxed: it reaches only<br>
+  what it asks for and the person allows. Open source, built on Wasmtime.
 </p>
 
 <p align="center">
@@ -74,6 +75,19 @@ ship for macOS (Apple silicon, Intel), Windows (x64, ARM64) and Linux
 
 ## Start here
 
+**Send an app as a link.** Publish any `.krate` and send the link:
+
+```sh
+krate publish my-app.krate
+```
+
+Whoever taps it sees the app open in their browser, on a phone, a tablet
+or a computer, with nothing to install. Publishing it again is the app's
+next version: the same link opens the update. A few abilities (working in a
+folder on the computer, Bluetooth) need Krate on a computer, and the app
+says so in words when it asks for one. Or make one in [Krate Studio](https://krate.tech/studio/)
+and press Share.
+
 **Build your own app.** Press **Use this template** on
 [krate-app-template](https://github.com/incyashraj/krate-app-template).
 It is a small working app (a counter that keeps its value) whose CI builds
@@ -91,7 +105,8 @@ runs it once, and tells you which stage failed and how to fix it. In CI,
 [setup-krate](https://github.com/incyashraj/setup-krate) installs Krate on
 any GitHub runner.
 
-**Open an app someone sent you.** Install Krate once:
+**Open an app someone sent you.** A link opens in your browser. To run
+`.krate` files natively on a computer, install Krate once:
 
 ```sh
 curl -fsSL https://krate.tech/install.sh | sh

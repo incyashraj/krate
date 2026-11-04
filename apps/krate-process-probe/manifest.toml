@@ -1,0 +1,31 @@
+[app]
+id = "com.acme.process-probe"
+name = "process-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_process_probe.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what each program did"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read which check to run"
+required = true
+
+[[capabilities]]
+cap = "process.run:cargo"
+rationale = "Ask cargo for its version"
+required = false
+
+[[capabilities]]
+cap = "process.run:sh"
+rationale = "Start a program that outlives its app, to see it ended"
+required = false
+
+[[capabilities]]
+cap = "process.terminal"
+rationale = "Type into a terminal and read it back"
+required = false

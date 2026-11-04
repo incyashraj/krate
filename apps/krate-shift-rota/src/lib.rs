@@ -100,6 +100,9 @@ struct Team {
     /// The signed-in person as the organisation names them; empty until a
     /// sync has said, then learnt from `who`.
     me: String,
+    /// Everyone this release reaches, by sign-in name, from `members`: who
+    /// a person field offers before the records name anyone (IC-979).
+    people: Vec<String>,
     /// The organisation's name, for "Acme's tickets".
     org: String,
     online: bool,
@@ -121,6 +124,7 @@ impl Team {
         Team {
             access: Access::Open,
             me: String::new(),
+            people: Vec::new(),
             org: String::new(),
             online: false,
             pending: 0,
@@ -215,6 +219,9 @@ impl Team {
             self.me = member.name;
             self.org = member.org;
             self.admitted = true;
+        }
+        if let Ok(people) = org::members() {
+            self.people = people.into_iter().map(|m| m.name).collect();
         }
     }
 
@@ -1680,6 +1687,17 @@ impl App {
         String::from(name.split('@').next().unwrap_or(name))
     }
 
+    /// A login without its email domain, and never "you": for words kept in
+    /// a record's history, which everyone else in the team reads too. Dan
+    /// read "Put you on the late shift" for a shift Carol took (K-1186).
+    #[allow(dead_code)] // the kit is shared; not every app uses all of it
+    fn plain_name(&self, name: &str) -> String {
+        if name.is_empty() {
+            return String::from("someone");
+        }
+        String::from(name.split('@').next().unwrap_or(name))
+    }
+
     /// "Carol" at the start of a sentence, "You" for this person.
     fn lead_name(&self, name: &str) -> String {
         let s = self.short_name(name);
@@ -1719,8 +1737,42 @@ impl App {
         if !self.team.me.is_empty() {
             add(&self.team.me.clone(), u64::MAX);
         }
-        seen.sort_by(|a, b| b.1.cmp(&a.1));
+        // Everyone else the app is released to, after the ones the records
+        // name: a new team's first request can name a colleague too.
+        for name in &self.team.people {
+            add(name, 0);
+        }
+        seen.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         seen.into_iter().map(|(n, _)| n).collect()
+    }
+
+    /// A person field's text as the sign-in name it means: "dan" or "Dan"
+    /// is dan@acme.example when exactly one person the app is released to
+    /// goes by that name, and stays as typed otherwise (K-1189).
+    fn person_named(&self, typed: &str) -> String {
+        let typed = typed.trim();
+        let wanted = typed.to_lowercase();
+        let short =
+            |name: &str| String::from(name.split('@').next().unwrap_or(name)).to_lowercase();
+        let exact: Vec<&String> = self
+            .team
+            .people
+            .iter()
+            .filter(|p| p.to_lowercase() == wanted)
+            .collect();
+        if let [one] = exact.as_slice() {
+            return String::from(one.as_str());
+        }
+        let by_short: Vec<&String> = self
+            .team
+            .people
+            .iter()
+            .filter(|p| short(p) == wanted)
+            .collect();
+        match by_short.as_slice() {
+            [one] => String::from(one.as_str()),
+            _ => String::from(typed),
+        }
     }
 
     /// What a field offers one click away: people, or what was written in
@@ -1851,6 +1903,24 @@ impl App {
     /// only in the fields that changed, so a teammate changing another field
     /// at the same time keeps theirs.
     fn submit(&mut self) {
+        // Each person field to the sign-in name it means, before the app's
+        // own rules read it.
+        if let Some(form) = self.form.as_ref() {
+            let named: Vec<(usize, String)> = form
+                .specs
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.kind == Kind::Person)
+                .map(|(i, _)| (i, self.person_named(&form.vals[i].text)))
+                .collect();
+            if let Some(form) = self.form.as_mut() {
+                for (i, name) in named {
+                    if form.vals[i].text != name {
+                        form.vals[i].set(&name);
+                    }
+                }
+            }
+        }
         let Some(form) = self.form.as_ref() else {
             return;
         };
@@ -2106,6 +2176,9 @@ impl App {
                 p.k.muted,
                 400,
             );
+            // Said as well as drawn: "Nobody on site" is the first thing a
+            // person reading the screen with VoiceOver needs (K-1185).
+            p.said.text(Rect::new(x, bar.y, right - x, bar.h), &count);
         }
         // The long story, when there is one.
         let explain = if empty && self.team.problem.is_none() && !self.team.trying() {
@@ -4166,6 +4239,8 @@ fn summary(app: &mut App, p: &mut Pen, area: Rect) -> f32 {
     y += p.caps(x, y, w, "Your next shifts") + 10.0;
     if next.is_empty() {
         p.put("None on the rota.", x, y + s1, s1, p.k.muted, 400);
+        p.said
+            .text(Rect::new(x, y, w, s1 * 1.5), "None on the rota.");
         y += s1 * 1.8;
     }
     for r in next.iter().take(4) {
@@ -4188,6 +4263,8 @@ fn summary(app: &mut App, p: &mut Pen, area: Rect) -> f32 {
     y += p.caps(x, y, w, "Shifts up for grabs") + 10.0;
     if swaps.is_empty() {
         p.put("Nobody wants to swap.", x, y + s1, s1, p.k.muted, 400);
+        p.said
+            .text(Rect::new(x, y, w, s1 * 1.5), "Nobody wants to swap.");
         y += s1 * 1.8;
     }
     for r in swaps.iter().take(5) {
@@ -4277,8 +4354,9 @@ fn check(app: &App, form: &Form) -> Result<Vec<(&'static str, Value)>, (usize, S
         return Err((
             form.at("shift").unwrap_or(0),
             format!(
-                "{} already has a {} shift on {}.",
+                "{} already {} a {} shift on {}.",
                 app.lead_name(who),
+                has_word(app, who),
                 form.v("shift").to_lowercase(),
                 long_day(day)
             ),
@@ -4299,7 +4377,7 @@ fn log_words(app: &App, form: &Form, _id: &str, new: bool, changed: &str) -> Str
     }
     format!(
         "Put {} on the {} shift, {}",
-        app.short_name(form.v("who")),
+        app.plain_name(form.v("who")),
         form.v("shift").to_lowercase(),
         long_day(form.v("day"))
     )
@@ -4358,7 +4436,7 @@ fn act(app: &mut App, code: u16, id: &str) {
         }
         TAKE => {
             let me = app.me();
-            let says = format!("Took the shift from {}", app.short_name(r.t("who")));
+            let says = format!("Took the shift from {}", app.plain_name(r.t("who")));
             app.write(
                 MAIN,
                 id,
@@ -4402,5 +4480,14 @@ fn cell(app: &mut App, code: u16, n: u32) {
             }
         }
         _ => {}
+    }
+}
+
+/// "have" after "You", "has" after anyone else (K-1187: "You already has").
+fn has_word(app: &App, who: &str) -> &'static str {
+    if !app.team.me.is_empty() && who == app.team.me {
+        "have"
+    } else {
+        "has"
     }
 }

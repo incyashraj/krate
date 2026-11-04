@@ -76,7 +76,7 @@ serde_json.workspace = true
 sha2 = "0.10.9"
 ureq.workspace = true
 tracing-subscriber.workspace = true
-calamine = "0.37"
+calamine = "0.38"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 # The card face: decode the app's --shoot still, draw the caption strip,
 # encode the composed picture that the bundle bytes ride behind. Same

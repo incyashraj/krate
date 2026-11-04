@@ -207,6 +207,7 @@ world = \"cli\"
 \"krate:resources\" = { path = \"PREFIX/wit/krate/phase2/deps/resources\" }
 \"krate:store\" = { path = \"PREFIX/wit/krate/phase2/deps/store\" }
 \"krate:random\" = { path = \"PREFIX/wit/krate/phase2/deps/random\" }
+\"krate:process\" = { path = \"PREFIX/wit/krate/phase2/deps/process\" }
 
 [profile.release]
 panic = \"abort\"
@@ -265,6 +266,7 @@ world = \"gui\"
 \"krate:resources\" = { path = \"PREFIX/wit/krate/phase4/deps/resources\" }
 \"krate:store\" = { path = \"PREFIX/wit/krate/phase4/deps/store\" }
 \"krate:random\" = { path = \"PREFIX/wit/krate/phase4/deps/random\" }
+\"krate:process\" = { path = \"PREFIX/wit/krate/phase4/deps/process\" }
 \"krate:ui\" = { path = \"PREFIX/wit/krate/phase4/deps/ui\" }
 \"krate:gfx\" = { path = \"PREFIX/wit/krate/phase4/deps/gfx\" }
 \"krate:gpu\" = { path = \"PREFIX/wit/krate/phase4/deps/gpu\" }

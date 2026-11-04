@@ -38,6 +38,9 @@ export const SEES_ALL = new Set(["owner", "admin", "reviewer"]);
 export const GROUP = /^[a-z][a-z0-9-]{0,38}$/;
 const REASON_MAX = 300;
 const APP_MAX = 120;
+/// The most people a sync names to an app: a large organisation's app
+/// still gets a list it can show, and the reply stays small.
+const PEOPLE_MAX = 2000;
 
 addReasons({
   "release-withdrawn": {
@@ -169,6 +172,28 @@ const ops = {
     // Which groups, for the pages to say; the person is a member already.
     refusal.body.groups = audience;
     return refusal;
+  },
+
+  /// The members a release reaches, as an app may name them (IC-979):
+  /// active, allowed to use an app's data, and inside its audience -- those
+  /// who see every release are inside any. Sign-in name and role only,
+  /// sorted by name, at most PEOPLE_MAX.
+  audiencePeople(c) {
+    const audience = audienceOf(c);
+    const inside = audience
+      ? new Set(
+          this.rows(
+            `SELECT DISTINCT principal FROM group_members WHERE grp IN (${audience.map(() => "?").join(",") || "NULL"})`,
+            ...audience,
+          ).map((r) => r.principal),
+        )
+      : null;
+    return this.rows("SELECT principal, role FROM members WHERE state = 'active'")
+      .filter((m) => allows(m.role, "data.use") === "yes")
+      .filter((m) => !inside || SEES_ALL.has(m.role) || inside.has(m.principal))
+      .map((m) => ({ name: displayOf(m.principal), role: m.role }))
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .slice(0, PEOPLE_MAX);
   },
 
   withdrawnRefusal(ctx, c, action, target) {
