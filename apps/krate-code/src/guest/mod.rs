@@ -1795,6 +1795,22 @@ impl Ui {
         let _ = x;
         // Right side: keys being typed, position, language.
         let mut right = r.right() - 12.0;
+        // The terminal, one click away: a shortcut alone is not a way in
+        // for someone who has never read the keys (K-1195).
+        if self.ws.project.as_ref().is_some_and(|p| p.fs.is_real()) {
+            let g = "Terminal";
+            let w = f.width(g, f.m.small, 600) + 20.0;
+            let b = Rect {
+                x: right - w,
+                y: r.y + 4.0,
+                w,
+                h: r.h - 8.0,
+            };
+            f.round(b, 5.0, t.raised);
+            f.text_mid(g, b.x + 10.0, b, f.m.small, t.ink, 600);
+            f.button(b, "Terminal", Hit::Act(Action::ShowTerminal));
+            right = b.x - 18.0;
+        }
         let mut parts: Vec<String> = Vec::new();
         if let (Some(d), Some(p)) = (self.ws.active_doc(), self.ws.panes.get(self.ws.active)) {
             let mut pos = String::from("Ln ");
