@@ -80,6 +80,11 @@ pub struct Completion {
     pub line: usize,
     /// Where the word being completed starts (bytes).
     pub start: usize,
+    /// Whether the server was asked from inside that word. A reply to a
+    /// request made before the word began -- typing ran on while it was
+    /// out -- carries ranges for text that has since moved, and applying
+    /// them replaced `let n = sev` with `seven`.
+    pub fresh: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1691,6 +1696,7 @@ impl Workspace {
     // ---- completion --------------------------------------------------------
 
     fn completion_arrived(&mut self, at: Asked, items: Vec<CompletionItem>) {
+        let asked_col = self.col_from_server(&at.path, at.line, at.col);
         let Some(doc) = self.active_doc() else { return };
         let p = self.panes[self.active].cur.pos;
         if doc.path != at.path || p.line != at.line || self.vim.mode != Mode::Insert {
@@ -1718,6 +1724,7 @@ impl Workspace {
             path: at.path,
             line: at.line,
             start,
+            fresh: asked_col >= start,
         };
         self.filter_completion(&mut c);
         self.completion = if c.shown.is_empty() { None } else { Some(c) };
@@ -1786,7 +1793,10 @@ impl Workspace {
             }
         };
         let (from, text_in) = match &item.edit {
-            Some(e) if e.line == cur.line => (conv(e.col).min(cur.col), e.text.clone()),
+            Some(e) if c.fresh && e.line == cur.line => (conv(e.col).min(cur.col), e.text.clone()),
+            // Asked before this word began: its range is stale, so only the
+            // word is replaced (see `Completion::fresh`).
+            Some(e) => (c.start.min(cur.col), e.text.clone()),
             _ => (c.start.min(cur.col), item.insert.clone()),
         };
         // Everything typed since the word began is replaced.
@@ -2553,6 +2563,40 @@ mod tests {
         // Typing more filters without asking again.
         keys(&mut w, "<Esc>");
         assert!(w.completion.is_none());
+    }
+
+    /// The request goes out at the first letter; typing runs on while it
+    /// is out. The reply's range is for the text as it was then, so taking
+    /// the suggestion must replace the word now typed, not that range --
+    /// which ate `let n = ` in a real project (rust-analyzer, 2026-11-04).
+    #[test]
+    fn a_suggestion_asked_for_earlier_on_the_line_replaces_only_the_word() {
+        let (mut w, r) = ws();
+        let job = lsp_ready(&mut w, &r);
+        to_server(&r, job);
+        keys(&mut w, "ggO    let n = sh");
+        let sent = to_server(&r, job);
+        let req = sent
+            .iter()
+            .find(|m| m.get("method").str() == Some("textDocument/completion"))
+            .expect("typing a word asks");
+        let asked = req
+            .get("params")
+            .get("position")
+            .get("character")
+            .uint()
+            .unwrap();
+        assert!(asked < 12, "asked before `sh` began, at {asked}");
+        let id = req.get("id").int().unwrap();
+        // What a server answers for that moment: replace the word there.
+        let reply = alloc::format!(
+            r#"{{"items":[{{"label":"show","kind":3,"textEdit":{{"range":{{"start":{{"line":0,"character":4}},"end":{{"line":0,"character":{asked}}}}},"newText":"show()"}}}}]}}"#
+        );
+        answer(&r, job, id, &reply);
+        w.poll_runner();
+        assert!(w.completion.is_some(), "the popup");
+        w.input(Input::Key(Key::Tab));
+        assert_eq!(w.active_doc().unwrap().buf.line(0), "    let n = show()");
     }
 
     #[test]
