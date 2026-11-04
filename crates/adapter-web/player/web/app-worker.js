@@ -44,6 +44,17 @@ self.onmessage = async ({ data }) => {
     marks.sqlReady = now();
 
     const ring = workerRing(data.ring);
+    // No rows waiting: top past any frame, bottom at 0.
+    const ROWS_EMPTY = 0x7fff0000;
+    const mergeRows = (cell, top, bottom, height) => {
+      // A frame taller than 16 bits of rows is copied whole every time.
+      if (height > 0x7fff) { top = 0; bottom = 0xffff; }
+      for (;;) {
+        const was = Atomics.load(cell, 0);
+        const t = Math.min(top, (was >>> 16) & 0x7fff), b = Math.max(bottom, was & 0xffff);
+        if (Atomics.compareExchange(cell, 0, was, (t << 16) | b) === was) return;
+      }
+    };
     const bridge = workerBridge(data.bridge, post);
     const windows = new Map();
     const signal = data.signal ? new Int32Array(data.signal) : null;
@@ -52,20 +63,29 @@ self.onmessage = async ({ data }) => {
 
     // A window's frame goes to the page through shared memory: a blocked
     // worker's OffscreenCanvas never reaches the screen (measured in Phase 0).
+    //
+    // Only the rows a paint changed are copied, and the rows changed since
+    // the page last took them ride in one shared word (top << 16 | bottom),
+    // merged here and taken there in single atomic steps, so a frame the
+    // page never saw still has its rows copied by the one it does see.
     const attachFrame = (id) => {
       const size = ui.frame_size(id);
       if (!size.length) return;
       const [pw, ph, lw, lh] = size;
       const frame = new SharedArrayBuffer(pw * ph * 4);
-      windows.set(id, { ...(windows.get(id) || {}), frame, pw, ph });
-      post({ t: 'window', id, frame, pw, ph, lw, lh });
+      const rows = new SharedArrayBuffer(4);
+      new Int32Array(rows)[0] = ROWS_EMPTY;
+      windows.set(id, { ...(windows.get(id) || {}), frame, pw, ph, rows: new Int32Array(rows) });
+      post({ t: 'window', id, frame, pw, ph, lw, lh, rows });
     };
     const present = () => {
       for (const [id, w] of windows) {
         if (!ui.render(id)) continue;
-        const len = ui.frame_len(id);
-        const view = new Uint8Array(player.memory.buffer, ui.frame_ptr(id), len);
-        new Uint8Array(w.frame).set(view);
+        const [top = 0, bottom = w.ph] = ui.frame_rows(id);
+        const start = top * w.pw * 4;
+        const view = new Uint8Array(player.memory.buffer, ui.frame_ptr(id) + start, (bottom - top) * w.pw * 4);
+        new Uint8Array(w.frame, start, view.length).set(view);
+        mergeRows(w.rows, top, bottom, w.ph);
         // The page wakes on this counter (Atomics.waitAsync) rather than on
         // the message below, which Chromium hands the page only at its next
         // rendering opportunity: ~9 ms of every click (measured).

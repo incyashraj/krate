@@ -1322,6 +1322,13 @@ impl WebUi {
         self.frames.get(&id).map(|f| (f.width, f.height))
     }
 
+    /// The rows `[top, bottom)` of the RGBA frame the last paint changed,
+    /// so the tab copies those rows and not the whole window.
+    pub fn painted_rows(&self, window: u64) -> Option<(u32, u32)> {
+        let id = self.window_id(window).ok()?;
+        self.frames.get(&id).map(|f| f.painted)
+    }
+
     /// The window's size in logical pixels, as the app sees it.
     pub fn logical_size(&self, window: u64) -> Option<(u32, u32)> {
         let id = self.window_id(window).ok()?;

@@ -87,7 +87,7 @@ for (const path of apps) {
   const bytes = new Uint8Array(readFileSync(path));
   const up = await call(env, 'alice', 'POST', '/publish', { bytes, headers: { 'x-krate-name': basename(path, '.krate') } });
   if (up.status !== 200) { console.log(`${basename(path)} | publish refused ${up.status} ${JSON.stringify(up.body)}`); continue; }
-  const link = `${base}/run/${up.body.id}`;
+  const link = `${base}/run/${up.body.id}?probe=1`;
   for (const s of screens) {
     const browser = await engines[s.engine].launch({ headless: true });
     const page = await (await browser.newContext(s.ctx)).newPage();
@@ -121,12 +121,16 @@ for (const path of apps) {
     const put = k.puts.map((p) => p.put);
     // With KRATE_PLAYER_DIST pointing at a copy whose worker prints
     // "#render <ms>" per paint, the worker's own paint time.
+    // Copying only changed rows must leave the canvas equal to the frame.
+    await page.waitForTimeout(300);
+    const stale = await page.evaluate(() => (window.__krate.canvasDiffersFromFrame ? window.__krate.canvasDiffersFromFrame() : null));
     const render = [...((await page.evaluate(() => window.__krate.out)) || '').matchAll(/#render ([0-9.]+)/g)].map((m) => Number(m[1]));
     const px = k.puts.length ? k.puts[k.puts.length - 1].px : 0;
     console.log(`${basename(path)} | ${s.label} | state ${k.state} | first frame ${Math.round((k.marks.firstFrame ?? NaN) - (k.marks.start ?? 0))} ms | ` +
       `${(k.frames / seconds).toFixed(1)} frames/s | frame ${(px * 4 / 1e6).toFixed(1)} MB | ` +
       `copy p50 ${pct(k.copies, 0.5).toFixed(2)} p95 ${pct(k.copies, 0.95).toFixed(2)} ms | putImageData p50 ${pct(put, 0.5).toFixed(2)} p95 ${pct(put, 0.95).toFixed(2)} ms | ` +
       (render.length ? `worker paint p50 ${pct(render, 0.5).toFixed(1)} p95 ${pct(render, 0.95).toFixed(1)} ms (${render.length}) | ` : '') +
+      `canvas vs frame ${stale === null ? 'n/a' : `${stale} bytes differ`} | ` +
       `tap to screen p50 ${pct(feel.tap, 0.5).toFixed(1)} p95 ${pct(feel.tap, 0.95).toFixed(1)} ms (${feel.tap.length}) | ` +
       `scroll to screen p50 ${pct(feel.scroll, 0.5).toFixed(1)} p95 ${pct(feel.scroll, 0.95).toFixed(1)} ms (${feel.scroll.length})`);
     await browser.close();

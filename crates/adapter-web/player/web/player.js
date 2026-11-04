@@ -1498,16 +1498,41 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   const signalBuf = new SharedArrayBuffer(8);
   const signal = new Int32Array(signalBuf);
   const blitted = new Map();
+  // The window last put on the canvas: another window, or a new frame
+  // buffer after a resize, is copied whole, because the canvas and the
+  // scratch hold what that one painted.
+  let onCanvas = null;
   const blit = (id) => {
     const w = windows.get(id);
     if (!w || !scratch) return now();
-    // ImageData cannot wrap shared memory, so one copy out of it.
-    scratch.set(new Uint8Array(w.frame));
-    ctx2d.putImageData(new ImageData(scratch, w.pw, w.ph), 0, 0);
+    // The rows the worker changed since the last blit, taken and reset in
+    // one step (app-worker.js packs them top << 16 | bottom).
+    const packed = w.rowsCell ? Atomics.exchange(w.rowsCell, 0, 0x7fff0000) : 0xffff;
+    let top = (packed >>> 16) & 0x7fff, bottom = Math.min(packed & 0xffff, w.ph);
+    if (onCanvas !== w || !w.rowsCell || bottom === 0xffff) { top = 0; bottom = w.ph; onCanvas = w; }
+    if (bottom <= top) return now();
+    // ImageData cannot wrap shared memory, so one copy out of it: of the
+    // changed rows only, and only those rows are put on the canvas.
+    const start = top * w.pw * 4, len = (bottom - top) * w.pw * 4;
+    scratch.set(new Uint8Array(w.frame, start, len), start);
+    ctx2d.putImageData(new ImageData(scratch, w.pw, w.ph), 0, 0, 0, top, w.pw, bottom - top);
     report.frames += 1;
     if (report.marks.firstFrame === undefined) { report.marks.firstFrame = performance.now(); opened(); }
     return now();
   };
+  // ?probe=1: how many bytes of the canvas differ from the frame the
+  // worker painted -- 0 when copying only the changed rows lost none.
+  if (params.get('probe') === '1') {
+    report.canvasDiffersFromFrame = () => {
+      const w = onCanvas;
+      if (!w) return null;
+      const shown = ctx2d.getImageData(0, 0, w.pw, w.ph).data;
+      const frame = new Uint8Array(w.frame);
+      let differ = 0;
+      for (let i = 0; i < frame.length; i++) if (shown[i] !== frame[i]) differ += 1;
+      return differ;
+    };
+  }
   let seen = 0;
   const listen = () => {
     if (typeof Atomics.waitAsync !== 'function') return;
@@ -1529,7 +1554,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
         bridge.onMessage(data);
         break;
       case 'window': {
-        windows.set(data.id, data);
+        windows.set(data.id, { ...data, rowsCell: data.rows ? new Int32Array(data.rows) : null });
         current = data.id;
         canvas.width = data.pw;
         canvas.height = data.ph;
