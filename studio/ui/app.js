@@ -2797,9 +2797,9 @@ function friendlyAsk(cap) {
     "clipboard.write": "copy things for you",
     "random.bytes": "make random numbers",
     // IC-977: the manifest crate's own words (Capability::plain).
-    "process.run:cargo": "run cargo on this computer -- a project's build can run any code it contains",
-    "process.run": "run a program on this computer -- it can do what you can",
-    "process.terminal": "open a terminal on this computer -- it can do anything you can",
+    "process.run:cargo": "run cargo on this computer: a project's build can run any code it contains",
+    "process.run": "run a program on this computer: it can do what you can",
+    "process.terminal": "open a terminal on this computer: it can do anything you can",
   };
   return map[cap] || map[cap.split(":")[0]] || cap;
 }
@@ -4880,9 +4880,9 @@ const CAP_WORDS = {
   "store.org": "Keep its data in your organisation's store on Krate's hub, shared with your team",
   "store.group": "Share data with other apps from the same maker, on this computer",
   // IC-977: what a program can do, said plainly.
-  "process.run:cargo": "Run cargo on this computer -- a project's build can run any code it contains",
-  "process.run": "Run a program on this computer -- it can do what you can",
-  "process.terminal": "Open a terminal on this computer -- it can do anything you can",
+  "process.run:cargo": "Run cargo on this computer: a project's build can run any code it contains",
+  "process.run": "Run a program on this computer: it can do what you can",
+  "process.terminal": "Open a terminal on this computer: it can do anything you can",
   "memory.budget": "Use more memory than apps normally get",
   "audio.playback": "Play sound",
   "audio.capture": "Record from the microphone",
