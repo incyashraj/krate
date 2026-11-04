@@ -202,6 +202,48 @@ mod tests {
         );
     }
 
+    /// On a real Windows desktop (CI's windows-2022 runner has one): the
+    /// toast is accepted, or refused only because notifications are off --
+    /// never a WinRT error, which is what a malformed toast or a wrong call
+    /// would give -- and the sender Windows shows is the app's name.
+    #[cfg(windows)]
+    #[test]
+    fn windows_takes_the_toast_and_names_the_app_as_its_sender() {
+        use windows::core::HSTRING;
+        use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+
+        let app = "Krate toast test";
+        match show(app, "Build finished", "3 tests passed & 0 failed <ok>") {
+            Ok(()) => {}
+            Err(why) => assert!(
+                why.contains("turned off") || why.contains("will not"),
+                "Windows refused the toast itself: {why}"
+            ),
+        }
+
+        let path = HSTRING::from(format!(
+            "Software\\Classes\\AppUserModelId\\{}",
+            app_user_model_id(app)
+        ));
+        let mut buf = [0u16; 128];
+        let mut len = (buf.len() * 2) as u32;
+        // SAFETY: `buf` and `len` describe one writable buffer.
+        let read = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                &path,
+                &HSTRING::from("DisplayName"),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buf.as_mut_ptr().cast()),
+                Some(&mut len),
+            )
+        };
+        assert!(read.is_ok(), "the sender was not registered: {read:?}");
+        let chars = (len as usize / 2).saturating_sub(1);
+        assert_eq!(String::from_utf16_lossy(&buf[..chars]), app);
+    }
+
     #[test]
     fn a_toast_the_person_switched_off_is_not_reported_as_shown() {
         assert_eq!(setting_refusal(0), None);
