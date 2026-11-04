@@ -616,6 +616,9 @@ pub struct WebUi {
     pub(crate) canvas: crate::web_canvas::Canvases,
     /// The finger being followed on a touch screen, if any.
     touch: Option<TouchGesture>,
+    /// An event taken off the queue while gathering scroll steps, handed
+    /// out next.
+    held_back: Option<UiEvent>,
 }
 
 /// Movement past this many logical pixels turns a touch from a tap into a
@@ -662,6 +665,7 @@ impl WebUi {
             requested: BTreeMap::new(),
             canvas: crate::web_canvas::Canvases::new(),
             touch: None,
+            held_back: None,
         }
     }
 
@@ -1225,7 +1229,43 @@ impl WebUi {
     /// first, then a press and release at the control's centre, exactly as
     /// the desktop delivers them (`krate_lowering::activation_point`).
     pub fn next_event(&mut self) -> Option<String> {
-        while let Ok(Some(event)) = self.adapter.poll_event() {
+        while let Some(event) = self
+            .held_back
+            .take()
+            .or_else(|| self.adapter.poll_event().ok().flatten())
+        {
+            // Scroll steps waiting behind this one, for the same widget,
+            // arrive as one. A finger queues a wheel event per move, up to
+            // 120 a second, and an app that handles one event per frame
+            // then draws falls further behind for as long as the finger
+            // moves -- measured on a real iPhone, "the screen falls seconds
+            // behind the thumb" (the authoring pack's lesson on draining).
+            // The pack teaches apps to drain; summing here keeps the ones
+            // that do not from lagging, as the Android Player already does.
+            let event = match event {
+                UiEvent::Wheel(mut w) => {
+                    while let Ok(Some(next)) = self.adapter.poll_event() {
+                        match next {
+                            UiEvent::Wheel(n)
+                                if n.window == w.window
+                                    && n.widget == w.widget
+                                    && n.modifiers == w.modifiers =>
+                            {
+                                w.dx += n.dx;
+                                w.dy += n.dy;
+                                w.x = n.x;
+                                w.y = n.y;
+                            }
+                            other => {
+                                self.held_back = Some(other);
+                                break;
+                            }
+                        }
+                    }
+                    UiEvent::Wheel(w)
+                }
+                other => other,
+            };
             if let UiEvent::Key(key) = &event {
                 if key.pressed {
                     if let Some(widget) = key.widget {
@@ -1865,6 +1905,36 @@ mod tests {
                 assert_eq!(presses, 0, "a scroll pressed the document: {events:?}");
             }
         }
+    }
+
+    /// Scroll steps queued behind each other reach the app as one, summed,
+    /// and the event after them still arrives, in order.
+    #[test]
+    fn scroll_steps_waiting_together_arrive_as_one() {
+        let mut ui = WebUi::new(1.0, false);
+        let win = rows_window(&mut ui);
+        drain(&mut ui);
+        for _ in 0..5 {
+            ui.wheel(win, 100.0, 300.0, 0.0, 12.0, 0);
+        }
+        ui.key(win, "a", true, 0, None);
+        ui.wheel(win, 100.0, 300.0, 0.0, 7.0, 0);
+        let events = drain(&mut ui);
+        let tags: Vec<_> = events
+            .iter()
+            .map(|e| e["tag"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(tags, ["wheel", "key", "wheel"], "{events:?}");
+        assert_eq!(
+            events[0]["val"]["dy"],
+            json!(60.0),
+            "five steps of 12, summed"
+        );
+        assert_eq!(
+            events[2]["val"]["dy"],
+            json!(7.0),
+            "a step after another event stays its own"
+        );
     }
 
     /// A game that fixed its coordinates asks where the pointer is in those
