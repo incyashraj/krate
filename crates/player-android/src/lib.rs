@@ -309,6 +309,13 @@ mod player {
     /// decoded screenshots -- and acts on the answer: open an app, get one
     /// from the hub, or pick a `.krate` in the phone's files. None when the
     /// person leaves.
+    /// The app id a bundle's manifest declares, read from its bytes.
+    fn bundle_app_id(bytes: &[u8]) -> Option<String> {
+        let open = krate_bundle::open_reader(Cursor::new(bytes)).ok()?;
+        let text = std::fs::read_to_string(open.manifest_path()).ok()?;
+        Some(krate_manifest::Manifest::parse(&text).ok()?.app.id)
+    }
+
     /// A kept app's manifest, read from its bundle.
     fn manifest_of(path: &Path) -> Option<krate_manifest::Manifest> {
         let open = krate_bundle::open(path).ok()?;
@@ -631,46 +638,86 @@ mod player {
                     start = Some(format!("app:{n}"));
                 }
                 HomeAnswer::Update(n) => {
-                    // The hub lists each app's newest version under the same
-                    // name: a different picture of bytes is a newer one.
-                    let newer = manifests
+                    let current = manifests.get(n).and_then(|m| m.clone());
+                    let sha = kept_apps
                         .get(n)
-                        .and_then(|m| m.as_ref())
-                        .and_then(|manifest| {
-                            let sha = library_apps(library)
-                                .get(n)
-                                .map(|(_, kept)| kept.sha.clone())?;
-                            hub_apps
+                        .map(|(_, kept)| kept.sha.clone())
+                        .unwrap_or_default();
+                    // The hub's list as it is now: the screen may have opened
+                    // while it was still loading, and "Up to date" from an
+                    // empty list was wrong.
+                    let catalogue = crate::hub::catalogue(&ui);
+                    match current {
+                        _ if catalogue.is_empty() => notice(
+                            data_root,
+                            "Could not check for updates",
+                            "The hub's list has not loaded. Check the connection and try again.",
+                        ),
+                        None => notice(
+                            data_root,
+                            "Could not check for updates",
+                            "This app's description could not be read.",
+                        ),
+                        Some(manifest) => {
+                            // A name is only a lead: the hub's copy replaces
+                            // this one only when it is the same app (its own
+                            // id), never a stranger's app that shares a name.
+                            let mut found = None;
+                            let mut failed = None;
+                            for app in catalogue
                                 .iter()
-                                .find(|app| {
+                                .filter(|app| {
                                     app.name.eq_ignore_ascii_case(&manifest.app.name)
                                         && app.id != sha
                                 })
-                                .map(|app| app.id.clone())
-                        });
-                    match newer {
-                        Some(id) => match crate::hub::download(&id, MAX_BUNDLE_BYTES as u64) {
-                            Ok(bytes) => {
-                                let _ = keep(&bytes, library, data_root);
-                                notice(
-                                    data_root,
-                                    "Updated",
-                                    "This app is now the newest version on the hub.",
-                                );
+                                .take(3)
+                            {
+                                match crate::hub::download(&app.id, MAX_BUNDLE_BYTES as u64) {
+                                    Ok(bytes)
+                                        if bundle_app_id(&bytes).as_deref()
+                                            == Some(manifest.app.id.as_str()) =>
+                                    {
+                                        found = Some(bytes);
+                                        break;
+                                    }
+                                    Ok(_) => {}
+                                    Err(why) => failed = Some(why),
+                                }
                             }
-                            Err(why) => notice(
-                                data_root,
-                                "Could not update",
-                                &format!("{why}. Check the connection and try again."),
-                            ),
-                        },
-                        None => notice(
-                            data_root,
-                            "Up to date",
-                            "This is the newest version on the hub.",
-                        ),
+                            match (found, failed) {
+                                (Some(bytes), _) => {
+                                    let _ = keep(&bytes, library, data_root);
+                                    notice(
+                                        data_root,
+                                        "Updated",
+                                        "This app is now the newest version on the hub.",
+                                    );
+                                }
+                                (None, Some(why)) => notice(
+                                    data_root,
+                                    "Could not check for updates",
+                                    &format!("{why}. Check the connection and try again."),
+                                ),
+                                (None, None) => notice(
+                                    data_root,
+                                    "Up to date",
+                                    "This is the newest version on the hub.",
+                                ),
+                            }
+                            // Back on its page: a kept copy moves to the top of
+                            // the Library, so find it there by its own id.
+                            let now = library_apps(library)
+                                .iter()
+                                .position(|(path, _)| {
+                                    manifest_of(path).is_some_and(|m| m.app.id == manifest.app.id)
+                                })
+                                .unwrap_or(n);
+                            start = Some(format!("app:{now}"));
+                        }
                     }
-                    start = Some(format!("app:{n}"));
+                    if start.is_none() {
+                        start = Some(format!("app:{n}"));
+                    }
                 }
                 HomeAnswer::Refresh => {
                     refresh_hub(&ui, &art_dir);

@@ -25,6 +25,8 @@
 // deprecated in favour of the scene lifecycle.
 #[allow(deprecated)]
 mod player {
+    use crate::home::{field, human_size, HomeAnswer, Indexed};
+    use crate::run_config::{sanitize, use_in_words};
     use objc2::{define_class, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_foundation::{NSDictionary, NSObject, NSObjectProtocol, NSString, NSURL};
     use objc2_ui_kit::{
@@ -59,6 +61,11 @@ mod player {
     const HOME_WASM: &[u8] =
         include_bytes!("../../../apps/krate-home/target/wasm32-wasip1/release/krate_home.wasm");
     const HOME_MANIFEST: &str = include_str!("../../../apps/krate-home/manifest.toml");
+
+    // iOS's sign-in sheet (ASWebAuthenticationSession), for signing in to
+    // Krate without leaving it.
+    #[link(name = "AuthenticationServices", kind = "framework")]
+    extern "C" {}
 
     /// Larger than any Krate app a phone should be handed.
     const MAX_BUNDLE_BYTES: u64 = 64 * 1024 * 1024;
@@ -317,7 +324,7 @@ mod player {
             let manifest = std::fs::read_to_string(open.manifest_path()).unwrap_or_default();
             let manifest = krate_manifest::Manifest::parse(&manifest)
                 .map_err(|_| "This app's description could not be read.".to_string())?;
-            let into = library.join(format!("{}.krate", sanitize(&manifest.app.id)));
+            let into = library.join(crate::home::library_file(&manifest.app.id));
             std::fs::copy(path, &into).map_err(|err| format!("Could not keep the app: {err}"))?;
             remember(library, &into, &manifest.app.name);
             Ok(into)
@@ -345,41 +352,24 @@ mod player {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let index = library.join("index.tsv");
-        let mut lines: Vec<String> = std::fs::read_to_string(&index)
-            .unwrap_or_default()
-            .lines()
-            .filter(|l| l.split('\t').next() != Some(file_name.as_str()))
-            .map(str::to_string)
-            .collect();
-        lines.push(format!(
-            "{file_name}\t{}\t{}\t{}",
-            field(name),
-            krate_bundle::sha256_hex(&bytes),
-            bytes.len()
-        ));
-        let _ = std::fs::write(index, lines.join("\n") + "\n");
+        let text = std::fs::read_to_string(&index).unwrap_or_default();
+        let kept = Indexed {
+            name: name.to_string(),
+            sha: krate_bundle::sha256_hex(&bytes),
+            size: bytes.len() as u64,
+        };
+        let _ = std::fs::write(index, crate::home::index_with(&text, &file_name, &kept));
     }
 
     /// The library's apps, newest first: (file, name, sha, size). Apps kept
     /// before the index existed are read once and added to it.
     fn library_apps(library: &Path) -> Vec<(PathBuf, String, String, u64)> {
         let index = std::fs::read_to_string(library.join("index.tsv")).unwrap_or_default();
-        let mut known: std::collections::HashMap<String, (String, String, u64)> = index
-            .lines()
-            .filter_map(|l| {
-                let f: Vec<&str> = l.split('\t').collect();
-                (f.len() == 4).then(|| {
-                    (
-                        f[0].to_string(),
-                        (
-                            f[1].to_string(),
-                            f[2].to_string(),
-                            f[3].parse().unwrap_or(0),
-                        ),
-                    )
-                })
-            })
-            .collect();
+        let mut known: std::collections::HashMap<String, (String, String, u64)> =
+            crate::home::read_index(&index)
+                .into_iter()
+                .map(|(file, kept)| (file, (kept.name, kept.sha, kept.size)))
+                .collect();
         let mut files: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(library)
             .into_iter()
             .flatten()
@@ -423,27 +413,299 @@ mod player {
         out
     }
 
-    /// Krate's own screens: Library and Discover (apps/krate-home). The
-    /// player prepares what they show -- the library, the hub catalogue,
-    /// decoded screenshots -- and acts on the answer: open an app, get one
-    /// from the hub, or pick a `.krate` in Files. None when the person
-    /// leaves.
+    /// A kept app's manifest, read from its bundle.
+    fn manifest_of(path: &Path) -> Option<krate_manifest::Manifest> {
+        let open = krate_bundle::open(path).ok()?;
+        let text = std::fs::read_to_string(open.manifest_path()).ok()?;
+        krate_manifest::Manifest::parse(&text).ok()
+    }
+
+    /// Where the sign-in is kept: Application Support, which the Files app
+    /// never shows, not Documents, which a sharing build can.
+    fn private_root() -> PathBuf {
+        let root = std::env::var("HOME")
+            .map(|home| {
+                PathBuf::from(home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("Krate")
+            })
+            .unwrap_or_else(|_| PathBuf::from("."));
+        let _ = std::fs::create_dir_all(&root);
+        root
+    }
+
+    /// The account the profile tab shows, as last fetched: refreshed from
+    /// the hub off the guest thread's way, so the home screen never waits.
+    static ACCOUNT: Mutex<Option<crate::home::Account>> = Mutex::new(None);
+
+    fn refresh_account(private: &Path, art_dir: &Path) {
+        let found = crate::account::account(private, art_dir);
+        *ACCOUNT.lock().expect("account lock") = found;
+    }
+
+    /// The phone's name, for the profile tab. Since iOS 16 an app without
+    /// Apple's entitlement is told the model ("iPhone"), which is still true.
+    fn device_name() -> String {
+        static NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        NAME.get_or_init(|| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                if let Some(mtm) = MainThreadMarker::new() {
+                    let name = objc2_ui_kit::UIDevice::currentDevice(mtm).name();
+                    let _ = tx.send(name.to_string());
+                }
+            });
+            rx.recv_timeout(std::time::Duration::from_secs(2))
+                .ok()
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| "This iPhone".to_string())
+        })
+        .clone()
+    }
+
+    define_class!(
+        // SAFETY:
+        // - NSObject has no subclassing requirements for a context provider.
+        // - The sign-in sheet asks its provider on the main thread.
+        #[unsafe(super = NSObject)]
+        #[thread_kind = MainThreadOnly]
+        struct KrateSignInAnchor;
+
+        unsafe impl NSObjectProtocol for KrateSignInAnchor {}
+
+        impl KrateSignInAnchor {
+            /// ASWebAuthenticationPresentationContextProviding: the window
+            /// the sign-in sheet rises over -- Krate's own.
+            #[unsafe(method_id(presentationAnchorForWebAuthenticationSession:))]
+            fn anchor(&self, _session: &objc2::runtime::AnyObject) -> objc2::rc::Retained<UIWindow> {
+                key_window(self.mtm())
+            }
+        }
+    );
+
+    /// Krate's window, for a system sheet to rise over.
+    fn key_window(mtm: MainThreadMarker) -> objc2::rc::Retained<UIWindow> {
+        let scene = UIApplication::sharedApplication(mtm)
+            .connectedScenes()
+            .allObjects()
+            .into_iter()
+            .find_map(|scene| scene.downcast::<UIWindowScene>().ok());
+        if let Some(scene) = &scene {
+            // SAFETY: UIWindowScene's keyWindow (iOS 15, Krate's oldest) and
+            // windows, read on the main thread.
+            let key: Option<objc2::rc::Retained<UIWindow>> =
+                unsafe { objc2::msg_send![&**scene, keyWindow] };
+            if let Some(key) = key {
+                return key;
+            }
+            let all: objc2::rc::Retained<objc2_foundation::NSArray<UIWindow>> =
+                unsafe { objc2::msg_send![&**scene, windows] };
+            if let Some(first) = all.firstObject() {
+                return first;
+            }
+            return UIWindow::initWithWindowScene(UIWindow::alloc(mtm), scene);
+        }
+        // SAFETY: a plain window, only ever an anchor.
+        unsafe { objc2::msg_send![UIWindow::alloc(mtm), init] }
+    }
+
+    thread_local! {
+        /// The sign-in sheet and its provider, alive until it answers: the
+        /// session holds its provider weakly. Main thread only.
+        static SIGNING_IN: std::cell::RefCell<
+            Option<(objc2::rc::Retained<objc2::runtime::AnyObject>, objc2::rc::Retained<KrateSignInAnchor>)>,
+        > = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Krate's sign-in page in iOS's own sign-in sheet
+    /// (ASWebAuthenticationSession), sharing Safari's sign-ins so a person
+    /// already signed in to GitHub or Google is one tap from done. The sheet
+    /// closes itself the moment the page hands back `krate://signed-in...`,
+    /// and that address is the answer. None when the person cancelled.
+    fn web_sign_in(url: &str) -> Result<Option<String>, String> {
+        let url = url.to_string();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+        dispatch2::DispatchQueue::main().exec_async(move || {
+            if let Err(why) = start_sign_in(&url, tx.clone()) {
+                let _ = tx.send(Err(why));
+            }
+        });
+        // An email sign-in can take a while: a code to fetch from the inbox.
+        rx.recv_timeout(std::time::Duration::from_secs(30 * 60))
+            .unwrap_or(Ok(None))
+    }
+
+    fn start_sign_in(
+        url: &str,
+        tx: std::sync::mpsc::Sender<Result<Option<String>, String>>,
+    ) -> Result<(), String> {
+        let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
+        let class = objc2::runtime::AnyClass::get(c"ASWebAuthenticationSession")
+            .ok_or("this iPhone has no sign-in sheet")?;
+        let link = NSURL::URLWithString(&NSString::from_str(url)).ok_or("a bad sign-in address")?;
+        let tx = Mutex::new(Some(tx));
+        let done = block2::RcBlock::new(
+            move |back: *mut objc2::runtime::AnyObject, error: *mut objc2::runtime::AnyObject| {
+                // SAFETY: the session hands an NSURL or an NSError (or
+                // neither), valid for the call; read on the main thread.
+                let answer = unsafe {
+                    if let Some(back) = back.as_ref() {
+                        let text: Option<objc2::rc::Retained<NSString>> =
+                            objc2::msg_send![back, absoluteString];
+                        Ok(text.map(|t| t.to_string()))
+                    } else if let Some(error) = error.as_ref() {
+                        // ASWebAuthenticationSessionErrorCodeCanceledLogin.
+                        let code: isize = objc2::msg_send![error, code];
+                        if code == 1 {
+                            Ok(None)
+                        } else {
+                            let words: Option<objc2::rc::Retained<NSString>> =
+                                objc2::msg_send![error, localizedDescription];
+                            Err(words
+                                .map(|w| w.to_string())
+                                .unwrap_or_else(|| "the sign-in sheet stopped".to_string()))
+                        }
+                    } else {
+                        Ok(None)
+                    }
+                };
+                if let Some(tx) = tx.lock().expect("sign-in lock").take() {
+                    let _ = tx.send(answer);
+                }
+                // Let the session go, once it has finished calling us.
+                dispatch2::DispatchQueue::main().exec_async(|| {
+                    SIGNING_IN.with(|slot| slot.borrow_mut().take());
+                });
+            },
+        );
+        let anchor: objc2::rc::Retained<KrateSignInAnchor> = {
+            let this = KrateSignInAnchor::alloc(mtm).set_ivars(());
+            unsafe { objc2::msg_send![super(this), init] }
+        };
+        // SAFETY: -[ASWebAuthenticationSession
+        // initWithURL:callbackURLScheme:completionHandler:] on a fresh
+        // allocation, its provider and Safari-sharing set, then -start, all
+        // on the main thread. The block is copied by the session.
+        unsafe {
+            let made: objc2::rc::Allocated<objc2::runtime::AnyObject> =
+                objc2::msg_send![class, alloc];
+            let session: Option<objc2::rc::Retained<objc2::runtime::AnyObject>> = objc2::msg_send![
+                made,
+                initWithURL: &*link,
+                callbackURLScheme: &*NSString::from_str("krate"),
+                completionHandler: &*done
+            ];
+            let session = session.ok_or("the sign-in sheet would not open")?;
+            let _: () = objc2::msg_send![&*session, setPresentationContextProvider: &*anchor];
+            let _: () = objc2::msg_send![
+                &*session,
+                setPrefersEphemeralWebBrowserSession: objc2::runtime::Bool::NO
+            ];
+            let started: objc2::runtime::Bool = objc2::msg_send![&*session, start];
+            if !started.as_bool() {
+                return Err("the sign-in sheet would not open".to_string());
+            }
+            SIGNING_IN.with(|slot| *slot.borrow_mut() = Some((session, anchor)));
+        }
+        Ok(())
+    }
+
+    /// Sign in to Krate, inside Krate: krate.tech's sign-in page (GitHub,
+    /// Google or email) in iOS's sign-in sheet over Krate. The page hands the
+    /// account back to `krate://signed-in` with the nonce Krate sent, the
+    /// sheet closes itself, and the person is signed in. Cancel says nothing.
+    fn sign_in(data_root: &Path, private: &Path, art_dir: &Path) {
+        let Some(nonce) = crate::account::new_nonce() else {
+            notice(
+                data_root,
+                "Could not start signing in",
+                "This phone did not give Krate a random number. Try again.",
+            );
+            return;
+        };
+        match web_sign_in(&crate::account::web_sign_in_url(&nonce)) {
+            Ok(Some(back)) => match crate::account::keep_web_sign_in(&back, &nonce, private) {
+                Ok(()) => {
+                    krate_adapter_ios::uikit_native::show_loading("Krate", "Signing in");
+                    refresh_account(private, art_dir);
+                }
+                Err(why) => notice(data_root, "Not signed in", &why),
+            },
+            Ok(None) => {}
+            Err(why) => notice(
+                data_root,
+                "Could not start signing in",
+                &format!("{why}. Try again."),
+            ),
+        }
+    }
+
+    /// Discover's rows from the catalogue as it stands, written whole then
+    /// moved into place, so the screen never reads half a list.
+    fn write_discover(ui: &Path, art_dir: &Path) {
+        let rows: Vec<String> = crate::hub::catalogue(ui)
+            .iter()
+            .map(|app| {
+                crate::home::discover_row(
+                    &app.id,
+                    &app.name,
+                    &app.author,
+                    &app.category,
+                    &app.description,
+                    crate::hub::cached_art(app, art_dir).as_deref(),
+                    app.size,
+                )
+            })
+            .collect();
+        let part = ui.join("discover.txt.part");
+        if std::fs::write(&part, rows.join("\n") + "\n").is_ok() {
+            let _ = std::fs::rename(&part, ui.join("discover.txt"));
+        }
+    }
+
+    /// Fetch the hub's catalogue off the guest thread, telling Discover how
+    /// it stands (hub-state.txt): loading, then ready, or offline when there
+    /// is nothing to show. The home screen never waits on the network.
+    fn refresh_hub(ui: &Path, art_dir: &Path) {
+        if crate::hub::catalogue(ui).is_empty() {
+            let _ = std::fs::write(ui.join("hub-state.txt"), "loading\n");
+        }
+        let (ui, art_dir) = (ui.to_path_buf(), art_dir.to_path_buf());
+        std::thread::spawn(move || {
+            crate::hub::refresh(&ui, &art_dir);
+            // discover.txt first: the screen reloads it when the state turns.
+            write_discover(&ui, &art_dir);
+            let now = if crate::hub::catalogue(&ui).is_empty() {
+                "offline"
+            } else {
+                "ready"
+            };
+            let _ = std::fs::write(ui.join("hub-state.txt"), format!("{now}\n"));
+        });
+    }
+
+    /// Krate's own screens: Library, Discover, You, Settings and each app's
+    /// page (apps/krate-home). The player prepares what they show -- the
+    /// library, the hub catalogue, decoded screenshots, the account -- and
+    /// acts on the answer, the same answers as Android's. None when the
+    /// person leaves, which only `home:closed` (or no answer at all) is.
     fn home(library: &Path, data_root: &Path) -> Option<App> {
         let ui = data_root.join("home-ui");
         let art_dir = ui.join("art");
         let _ = std::fs::create_dir_all(&art_dir);
-        let mut start = None;
-        // The hub's catalogue as last fetched, refreshed in the background
-        // for next time -- coming back from an app waited seconds on the
-        // network. Only the very first visit, with nothing cached, waits.
-        if crate::hub::catalogue(&ui).is_empty() {
-            krate_adapter_ios::uikit_native::show_loading("Krate", "Loading apps");
-            crate::hub::refresh(&ui, &art_dir);
-        } else {
-            static REFRESHED: std::sync::Once = std::sync::Once::new();
-            REFRESHED.call_once(|| {
-                let (ui, art_dir) = (ui.clone(), art_dir.clone());
-                std::thread::spawn(move || crate::hub::refresh(&ui, &art_dir));
+        let private = private_root();
+        let mut start: Option<String> = None;
+        // The hub's catalogue as last fetched, refreshed in the background.
+        // Nothing waits on the network: with no catalogue yet, Discover shows
+        // its loading rows (hub-state.txt) and fills in when it arrives.
+        static REFRESHED: std::sync::Once = std::sync::Once::new();
+        REFRESHED.call_once(|| refresh_hub(&ui, &art_dir));
+        if crate::account::token(&private).is_some() {
+            static ACCOUNT_REFRESHED: std::sync::Once = std::sync::Once::new();
+            ACCOUNT_REFRESHED.call_once(|| {
+                let (private, art_dir) = (private.clone(), art_dir.clone());
+                std::thread::spawn(move || refresh_account(&private, &art_dir));
             });
         }
         loop {
@@ -453,60 +715,93 @@ mod player {
                 .filter_map(|app| Some((app.id.clone(), crate::hub::cached_art(app, &art_dir)?)))
                 .collect();
 
+            // The Library, in the order the screen numbers it: each app,
+            // its manifest, the SHA-256 the hub knows it by, and its row.
             let mut apps: Vec<App> = Vec::new();
+            let mut manifests: Vec<Option<krate_manifest::Manifest>> = Vec::new();
+            let mut shas: Vec<Option<String>> = Vec::new();
             let mut rows: Vec<String> = Vec::new();
             #[cfg(krate_native_image)]
             if let Ok(manifest) = krate_manifest::Manifest::parse(native::MANIFEST) {
-                apps.push(App::Carried);
                 let preview = preview_name(&App::Carried);
-                let art = if art_dir.join(&preview).exists() {
-                    preview.as_str()
-                } else {
-                    "-"
-                };
-                rows.push(format!(
-                    "{}\tBuilt in \u{00b7} Runs at full speed\t{art}",
-                    field(&manifest.app.name)
+                let art = art_dir.join(&preview).exists().then_some(preview.as_str());
+                rows.push(crate::screen::carried_row(
+                    &manifest.app.name,
+                    art,
+                    crate::screen::app_data_size(data_root, &manifest.app.id),
+                    &manifest.app.version,
                 ));
+                apps.push(App::Carried);
+                manifests.push(Some(manifest));
+                shas.push(None);
             }
+            // Where the received apps start in the screen's numbering.
+            let first_received = apps.len();
             for (path, name, sha, size) in library_apps(library) {
                 // The app as it really looked the last time it ran on this
                 // phone; else, for an app from the hub, its hub picture (the
                 // hub names apps by the SHA-256 of their bytes).
                 let preview = preview_name(&App::Received(path.clone()));
                 let art = if art_dir.join(&preview).exists() {
-                    preview.as_str()
+                    Some(preview.as_str())
                 } else {
-                    hub_art.get(&sha).map(String::as_str).unwrap_or("-")
+                    hub_art.get(&sha).map(String::as_str)
                 };
-                rows.push(format!(
-                    "{}\tReceived \u{00b7} {}\t{art}",
-                    field(&name),
-                    human_size(size)
+                let manifest = manifest_of(&path);
+                let data = manifest
+                    .as_ref()
+                    .map(|m| crate::screen::app_data_size(data_root, &m.app.id))
+                    .unwrap_or(0);
+                let from_hub = hub_apps.iter().any(|app| app.id == sha);
+                rows.push(crate::home::library_row_full(
+                    &name,
+                    size,
+                    art,
+                    from_hub,
+                    data,
+                    manifest.as_ref().map(|m| m.app.version.as_str()),
                 ));
                 apps.push(App::Received(path));
+                manifests.push(manifest);
+                shas.push(Some(sha));
             }
             let _ = std::fs::write(ui.join("library.txt"), rows.join("\n") + "\n");
-            let discover: Vec<String> = hub_apps
-                .iter()
-                .map(|app| {
-                    format!(
-                        "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        app.id,
-                        field(&app.name),
-                        field(&app.author),
-                        field(if app.category.is_empty() {
-                            "apps"
-                        } else {
-                            &app.category
-                        }),
-                        field(&app.description),
-                        hub_art.get(&app.id).map(String::as_str).unwrap_or("-"),
-                        human_size(app.size),
-                    )
+            // What each Library app can use, for its page.
+            let perms = ui.join("perms");
+            let _ = std::fs::remove_dir_all(&perms);
+            let _ = std::fs::create_dir_all(&perms);
+            for (n, manifest) in manifests.iter().enumerate() {
+                let uses: Vec<(String, bool)> = manifest
+                    .iter()
+                    .flat_map(|m| m.capabilities.iter())
+                    .filter_map(|request| Some((use_in_words(&request.cap)?, request.required)))
+                    .collect();
+                let _ = std::fs::write(
+                    perms.join(format!("{n}.txt")),
+                    crate::home::perms_file(&uses),
+                );
+            }
+            // Who is signed in, for the profile tab.
+            let account = if crate::account::token(&private).is_some() {
+                ACCOUNT.lock().expect("account lock").clone().or_else(|| {
+                    Some(crate::home::Account {
+                        login: "you".to_string(),
+                        ..Default::default()
+                    })
                 })
-                .collect();
-            let _ = std::fs::write(ui.join("discover.txt"), discover.join("\n") + "\n");
+            } else {
+                None
+            };
+            let _ = std::fs::write(
+                ui.join("account.txt"),
+                crate::home::account_file(
+                    account.as_ref(),
+                    &device_name(),
+                    crate::screen::storage_used(data_root),
+                    env!("CARGO_PKG_VERSION"),
+                ),
+            );
+            write_discover(&ui, &art_dir);
             match start.take() {
                 Some(tab) => {
                     let _ = std::fs::write(ui.join("start.txt"), tab);
@@ -516,63 +811,217 @@ mod player {
                 }
             }
 
+            // Only `home:closed`, or no answer at all (a crash, or the
+            // screen closed for a file opened from elsewhere), leaves.
             let answer = run_trusted(HOME_WASM, HOME_MANIFEST, &ui, Vec::new())?;
-            let answer = answer.lines().find(|l| l.starts_with("home:"))?.to_string();
-            if let Some(n) = answer.strip_prefix("home:open:") {
-                let n: usize = n.trim().parse().ok()?;
-                return (n < apps.len()).then(|| apps.swap_remove(n));
-            }
-            if let Some(id) = answer.strip_prefix("home:get:") {
-                let id: String = id.trim().chars().filter(char::is_ascii_hexdigit).collect();
-                let name = hub_apps
-                    .iter()
-                    .find(|app| app.id == id)
-                    .map(|app| app.name.clone())
-                    .unwrap_or_else(|| "The app".to_string());
-                krate_adapter_ios::uikit_native::show_loading(&name, "Getting it from the hub");
-                match crate::hub::download(&id, MAX_BUNDLE_BYTES) {
-                    Ok(bytes) => {
-                        let downloads = data_root.join("Downloads");
-                        let _ = std::fs::create_dir_all(&downloads);
-                        let file = downloads.join(format!("{id}.krate"));
-                        if std::fs::write(&file, bytes).is_ok() {
+            match crate::home::home_answer(&answer) {
+                HomeAnswer::Open(n) => {
+                    return (n < apps.len()).then(|| apps.swap_remove(n));
+                }
+                HomeAnswer::Get(id) => {
+                    let name = crate::hub::catalogue(&ui)
+                        .iter()
+                        .find(|app| app.id == id)
+                        .map(|app| app.name.clone())
+                        .unwrap_or_else(|| "The app".to_string());
+                    krate_adapter_ios::uikit_native::show_loading(&name, "Getting it from the hub");
+                    match fetch_into(&id, data_root) {
+                        Ok(file) => {
                             if let Some(app) = receive(&file, library, data_root) {
                                 return Some(app);
                             }
                         }
+                        Err(why) => notice(
+                            data_root,
+                            "Could not download this app",
+                            &format!("{why}. Check the connection and try again."),
+                        ),
                     }
-                    Err(why) => notice(
-                        data_root,
-                        "Could not download this app",
-                        &format!("{why}. Check the connection and try again."),
-                    ),
+                    start = Some("discover".to_string());
                 }
-                start = Some("discover");
-                continue;
-            }
-            if answer.trim() == "home:files" {
-                if let Some(path) = pick_file() {
-                    if let Some(app) = receive(&path, library, data_root) {
-                        return Some(app);
+                HomeAnswer::Files => {
+                    if let Some(path) = pick_file() {
+                        if let Some(app) = receive(&path, library, data_root) {
+                            return Some(app);
+                        }
                     }
                 }
-                continue;
+                HomeAnswer::SignIn => {
+                    sign_in(data_root, &private, &art_dir);
+                    start = Some("you".to_string());
+                }
+                HomeAnswer::SignOut => {
+                    crate::account::sign_out(&private);
+                    *ACCOUNT.lock().expect("account lock") = None;
+                    let _ = std::fs::remove_file(art_dir.join("avatar.rgba"));
+                    start = Some("you".to_string());
+                }
+                HomeAnswer::Remove(n) => match apps.get(n) {
+                    Some(App::Received(path)) => {
+                        if let Some(Some(manifest)) = manifests.get(n) {
+                            crate::screen::clear_app_data(data_root, &manifest.app.id);
+                        }
+                        let _ = std::fs::remove_file(art_dir.join(preview_name(&apps[n])));
+                        let _ = std::fs::remove_file(path);
+                    }
+                    #[cfg(krate_native_image)]
+                    Some(App::Carried) => {
+                        notice(
+                            data_root,
+                            "This app comes with Krate",
+                            "It stays on this phone with Krate. You can clear what it keeps.",
+                        );
+                        start = Some(format!("app:{n}"));
+                    }
+                    None => {}
+                },
+                HomeAnswer::Clear(n) => {
+                    if let Some(Some(manifest)) = manifests.get(n) {
+                        crate::screen::clear_app_data(data_root, &manifest.app.id);
+                    }
+                    start = Some(format!("app:{n}"));
+                }
+                HomeAnswer::Share(n) => {
+                    match (apps.get(n), manifests.get(n)) {
+                        (Some(App::Received(path)), Some(Some(manifest))) => {
+                            if let Ok(bytes) = std::fs::read(path) {
+                                let name = format!(
+                                    "{}.krate",
+                                    manifest.app.name.replace(['/', '\\'], " ")
+                                );
+                                if let Err(why) = krate_adapter_ios::uikit_native::share(
+                                    None,
+                                    None,
+                                    &[(name, bytes)],
+                                ) {
+                                    notice(data_root, "Could not share this app", &why);
+                                }
+                            }
+                        }
+                        #[cfg(krate_native_image)]
+                        (Some(App::Carried), _) => notice(
+                            data_root,
+                            "This app comes with Krate",
+                            "It is part of Krate itself, so there is no file to send.",
+                        ),
+                        _ => {}
+                    }
+                    start = Some(format!("app:{n}"));
+                }
+                HomeAnswer::Update(n) => {
+                    // The hub lists each app's newest version under the same
+                    // name: a different SHA-256 is a newer one.
+                    // The catalogue as it is now: the one read when this
+                    // screen opened may have been empty, still loading.
+                    let newer = match (manifests.get(n), shas.get(n)) {
+                        (Some(Some(manifest)), Some(Some(sha))) => crate::hub::catalogue(&ui)
+                            .iter()
+                            .find(|app| {
+                                app.name.eq_ignore_ascii_case(&manifest.app.name) && app.id != *sha
+                            })
+                            .map(|app| app.id.clone()),
+                        _ => None,
+                    };
+                    // The app's place after an update: a kept app is listed
+                    // newest first, so the updated one moves to the top.
+                    let mut lands = n;
+                    match newer {
+                        Some(id) => {
+                            krate_adapter_ios::uikit_native::show_loading(
+                                "Krate",
+                                "Getting the newest version",
+                            );
+                            // A name is only a lead: the hub's copy replaces
+                            // this one only when it is the same app (its own
+                            // id), never a stranger's app sharing the name.
+                            let wanted = match manifests.get(n) {
+                                Some(Some(manifest)) => manifest.app.id.clone(),
+                                _ => String::new(),
+                            };
+                            let same_app = |file: &Path| {
+                                krate_bundle::open(file)
+                                    .ok()
+                                    .and_then(|open| {
+                                        std::fs::read_to_string(open.manifest_path()).ok()
+                                    })
+                                    .and_then(|text| krate_manifest::Manifest::parse(&text).ok())
+                                    .is_some_and(|m| !wanted.is_empty() && m.app.id == wanted)
+                            };
+                            match fetch_into(&id, data_root) {
+                                Ok(file) if !same_app(&file) => {
+                                    let _ = std::fs::remove_file(&file);
+                                    notice(
+                                        data_root,
+                                        "Up to date",
+                                        "This is the newest version on the hub.",
+                                    );
+                                }
+                                Ok(file) => {
+                                    if let Some(App::Received(path)) =
+                                        receive(&file, library, data_root)
+                                    {
+                                        if let Some(at) = library_apps(library)
+                                            .iter()
+                                            .position(|(kept, ..)| *kept == path)
+                                        {
+                                            lands = first_received + at;
+                                        }
+                                        notice(
+                                            data_root,
+                                            "Updated",
+                                            "This app is now the newest version on the hub.",
+                                        );
+                                    }
+                                }
+                                Err(why) => notice(
+                                    data_root,
+                                    "Could not update",
+                                    &format!("{why}. Check the connection and try again."),
+                                ),
+                            }
+                        }
+                        None => notice(
+                            data_root,
+                            "Up to date",
+                            "This is the newest version on the hub.",
+                        ),
+                    }
+                    start = Some(format!("app:{lands}"));
+                }
+                HomeAnswer::Refresh => {
+                    refresh_hub(&ui, &art_dir);
+                    start = Some("discover".to_string());
+                }
+                HomeAnswer::Report => {
+                    let link =
+                        crate::screen::report_link(env!("CARGO_PKG_VERSION"), &device_name());
+                    if let Err(why) = krate_adapter_ios::uikit_native::open_url(&link) {
+                        notice(
+                            data_root,
+                            "Could not open Mail",
+                            &format!("{why}. Write to yashraj@krate.tech and say what happened."),
+                        );
+                    }
+                    start = Some("settings".to_string());
+                }
+                // A newer screen's answer: show the home screen again.
+                HomeAnswer::Stay => {
+                    eprintln!("krate: the home screen answered something this Krate does not know; staying");
+                }
+                HomeAnswer::Closed => return None,
             }
-            return None;
         }
     }
 
-    /// A value for one tab-separated field: no tabs or line breaks inside.
-    fn field(text: &str) -> String {
-        text.replace(['\t', '\n', '\r'], " ")
-    }
-
-    fn human_size(bytes: u64) -> String {
-        if bytes >= 1024 * 1024 {
-            format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-        } else {
-            format!("{} KB", bytes.div_ceil(1024).max(1))
-        }
+    /// Download an app from the hub into Documents/Downloads, for `receive`
+    /// to keep (it removes the download once kept).
+    fn fetch_into(id: &str, data_root: &Path) -> Result<PathBuf, String> {
+        let bytes = crate::hub::download(id, MAX_BUNDLE_BYTES)?;
+        let downloads = data_root.join("Downloads");
+        let _ = std::fs::create_dir_all(&downloads);
+        let file = downloads.join(format!("{}.krate", crate::home::hub_id(id)));
+        std::fs::write(&file, bytes).map_err(|e| format!("could not save it ({e})"))?;
+        Ok(file)
     }
 
     /// The iOS Files picker, for a `.krate` saved anywhere Files can see.
@@ -713,49 +1162,6 @@ mod player {
         krate_adapter_ios::uikit_native::set_current_app(None);
         krate_adapter_ios::uikit_native::set_current_name(None);
         krate_adapter_ios::uikit_native::set_current_uses(None);
-    }
-
-    /// A granted capability as the permission sheet words it (apps/krate-wall
-    /// `describe`), or None for what every app has: its window, its output,
-    /// the clock and randomness.
-    fn use_in_words(cap: &str) -> Option<String> {
-        let mut parts = cap.splitn(2, ':');
-        let kind = parts.next().unwrap_or("");
-        let target = parts.next().unwrap_or("");
-        let host = target.split(':').next().unwrap_or("");
-        let own = target.is_empty() || target.starts_with('.');
-        Some(match kind {
-            "ui.window" | "io.stdout" | "io.stderr" | "io.stdin" | "io.args" | "io.env"
-            | "time.clock" | "time.monotonic" | "random.bytes" => return None,
-            "net.fetch" | "net.connect" if !host.is_empty() && host != "*" => {
-                format!("The internet, at {host}")
-            }
-            "net.fetch" | "net.connect" => "The internet".to_string(),
-            "net.listen" => "The local network".to_string(),
-            "net.ws" => "A live connection".to_string(),
-            "hub" | "hub.rooms" => "Krate online".to_string(),
-            "fs.read" | "fs.list" if own => "Read its own files".to_string(),
-            "fs.write" | "fs.remove" if own => "Save its own files".to_string(),
-            "fs.read" | "fs.list" => "Read files".to_string(),
-            "fs.write" | "fs.remove" => "Change files".to_string(),
-            "ui.dialog" => "Files you pick".to_string(),
-            "audio.playback" => "Sound".to_string(),
-            "audio.capture" => "The microphone".to_string(),
-            "speech" | "speech.say" | "speech.listen" => "Speech".to_string(),
-            "camera.capture" | "camera" => "The camera".to_string(),
-            "location.read" => "Where you are".to_string(),
-            "bluetooth.connect" => "Bluetooth devices you pick".to_string(),
-            "photos.add" => "Adding to your Photos".to_string(),
-            "store.kv" | "store.sql" => "Keeping its data".to_string(),
-            "store.shared" => "Sharing data with people you invite".to_string(),
-            "store.secret" => "Keeping secrets safe".to_string(),
-            "ui.clipboard" => "The clipboard".to_string(),
-            "ui.notify" => "Notifications".to_string(),
-            "ui.open-url" => "Opening links".to_string(),
-            "gfx.gpu" => "The graphics chip".to_string(),
-            "memory.budget" => return None,
-            _ => cap.to_string(),
-        })
     }
 
     /// Ask, then run. Every open asks: the answer is never remembered.
@@ -1052,24 +1458,31 @@ mod player {
             .iter()
             .find_map(|c| c.cap.strip_prefix("memory.budget:")?.parse::<u64>().ok())
     }
-
-    /// App ids become directory names; nothing an id says may escape the
-    /// apps folder.
-    fn sanitize(id: &str) -> String {
-        id.chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect()
-    }
 }
 
 #[cfg(target_os = "ios")]
 mod hub;
+
+// Krate's home screen contract -- the Library and Discover rows, the account
+// file, the answers -- and where an app's data lives: the Android player's
+// own code, included rather than copied, so both phones read one contract.
+#[cfg(any(target_os = "ios", test))]
+#[allow(dead_code)]
+#[path = "../../player-android/src/home.rs"]
+mod home;
+#[cfg(any(target_os = "ios", test))]
+#[allow(dead_code)]
+#[path = "../../player-android/src/run_config.rs"]
+mod run_config;
+
+// Signing in to Krate, and the account the profile tab shows (shared too).
+#[cfg(target_os = "ios")]
+#[path = "../../player-android/src/account.rs"]
+mod account;
+
+// What the home screen's answers mean on an iPhone, and each app's data.
+#[cfg(any(target_os = "ios", test))]
+mod screen;
 
 #[cfg(target_os = "ios")]
 fn main() {
