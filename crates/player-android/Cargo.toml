@@ -24,12 +24,17 @@ krate-accountsync = { path = "../accountsync" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
+serde_json.workspace = true
 # The host tests hold the output card to the runtime's own argument rule.
 krate-runtime = { path = "../runtime", default-features = false, features = [
     "phase2-bindings",
 ] }
 
 [target.'cfg(target_os = "android")'.dependencies]
+# Sync on Krate's home (IC-981 S2): asking the hub how this phone stands,
+# approving a device, the recovery code.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 # Speech stays off: whisper.cpp on Android is its own project, and the
 # player degrades the capability honestly, the same as arm64 Linux did.
 krate-runtime = { path = "../runtime", default-features = false, features = [

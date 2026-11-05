@@ -781,6 +781,24 @@ mod player {
                     crate::home::perms_file(&uses),
                 );
             }
+            // Sync across the person's devices: what sync.txt says, from
+            // this iPhone's files; the hub asked on a thread of its own. The
+            // same folder, name and (no) machine key a run's sync uses.
+            let phone = crate::sync_home::Phone {
+                data_root: data_root.to_path_buf(),
+                device_dir: private.join("account-sync"),
+                token: crate::account::token(&private),
+                machine_key: Vec::new(),
+                name: device_name(),
+                hub: crate::run_config::SHARED_HUB.to_string(),
+            };
+            let sync_apps = crate::sync_home::lib_apps(&manifests);
+            let (sync_view, asked) = crate::sync_home::view(&phone, &sync_apps);
+            crate::sync_home::write(&ui, &sync_view);
+            crate::sync_home::check_in_background(&phone, &sync_apps, &ui, false);
+            let args = crate::sync_home::recovery_code(&phone)
+                .map(|code| vec!["sync-code".to_string(), code])
+                .unwrap_or_default();
             // Who is signed in, for the profile tab.
             let account = if crate::account::token(&private).is_some() {
                 ACCOUNT.lock().expect("account lock").clone().or_else(|| {
@@ -813,7 +831,7 @@ mod player {
 
             // Only `home:closed`, or no answer at all (a crash, or the
             // screen closed for a file opened from elsewhere), leaves.
-            let answer = run_trusted(HOME_WASM, HOME_MANIFEST, &ui, Vec::new())?;
+            let answer = run_trusted(HOME_WASM, HOME_MANIFEST, &ui, args)?;
             match crate::home::home_answer(&answer) {
                 HomeAnswer::Open(n) => {
                     return (n < apps.len()).then(|| apps.swap_remove(n));
@@ -1003,6 +1021,25 @@ mod player {
                         );
                     }
                     start = Some("settings".to_string());
+                }
+                HomeAnswer::Sync(answer) => {
+                    if matches!(
+                        answer,
+                        crate::home::SyncAnswer::Approve(_) | crate::home::SyncAnswer::Recover(_)
+                    ) {
+                        krate_adapter_ios::uikit_native::show_loading(
+                            "Krate",
+                            "Asking your account",
+                        );
+                    }
+                    let acted = crate::sync_home::act(&phone, &sync_apps, &asked, &answer);
+                    if let Some((title, words)) = &acted.notice {
+                        notice(data_root, title, words);
+                    }
+                    if acted.recheck {
+                        crate::sync_home::check_in_background(&phone, &sync_apps, &ui, true);
+                    }
+                    start = Some(acted.start);
                 }
                 // A newer screen's answer: show the home screen again.
                 HomeAnswer::Stay => {
@@ -1505,6 +1542,12 @@ mod run_config;
 #[cfg(target_os = "ios")]
 #[path = "../../player-android/src/account.rs"]
 mod account;
+
+// Sync on Krate's home (IC-981 S2): the same file both phones read.
+#[cfg(any(target_os = "ios", test))]
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+#[path = "../../player-android/src/sync_home.rs"]
+mod sync_home;
 
 // What the home screen's answers mean on an iPhone, and each app's data.
 #[cfg(any(target_os = "ios", test))]

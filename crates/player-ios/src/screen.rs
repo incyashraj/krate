@@ -71,6 +71,7 @@ pub fn clear_app_data(data_root: &Path, app_id: &str) {
     for file in [&stores.kv, &stores.sql, &stores.secrets, &stores.shared] {
         let _ = std::fs::remove_file(file);
     }
+    crate::sync_home::forget_after_clear(data_root, app_id);
 }
 
 /// The Library row for the app this build carries as native code: the

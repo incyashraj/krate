@@ -164,11 +164,82 @@ pub enum HomeAnswer {
     Refresh,
     /// Report a problem with Krate.
     Report,
+    /// Something about keeping apps the same on every device (IC-981).
+    Sync(SyncAnswer),
     /// An answer this Krate does not know (a newer screen): stay home. Only
     /// `home:closed`, or no answer at all, leaves.
     Stay,
     /// Leave Krate (or no answer at all: a crashed screen).
     Closed,
+}
+
+/// What the person did about sync, on the home screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncAnswer {
+    /// The switch for every app on this phone: on or off.
+    All(bool),
+    /// The n-th Library app's own switch.
+    App(usize, bool),
+    /// Yes to the waiting device with this id (hex only).
+    Approve(String),
+    /// The recovery code, as typed (letters, digits and dashes only).
+    Recover(String),
+    /// The person wrote the recovery code down: forget it here.
+    CodeKept,
+    /// The n-th `conflict` line of sync.txt, answered.
+    Resolve(usize, Choice),
+    /// Ask the hub again how this phone stands.
+    Check,
+}
+
+/// An answer to a change made on two devices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Choice {
+    /// Keep this phone's.
+    This,
+    /// Keep the other device's.
+    Other,
+    /// Keep both: the other's beside this one, under its device's name.
+    Both,
+    /// Put two lists or records together.
+    Merge,
+}
+
+fn sync_answer(rest: &str) -> Option<SyncAnswer> {
+    match rest {
+        "on" => return Some(SyncAnswer::All(true)),
+        "off" => return Some(SyncAnswer::All(false)),
+        "code-kept" => return Some(SyncAnswer::CodeKept),
+        "check" => return Some(SyncAnswer::Check),
+        _ => {}
+    }
+    if let Some(n) = rest.strip_prefix("app-on:") {
+        return n.trim().parse().ok().map(|n| SyncAnswer::App(n, true));
+    }
+    if let Some(n) = rest.strip_prefix("app-off:") {
+        return n.trim().parse().ok().map(|n| SyncAnswer::App(n, false));
+    }
+    if let Some(id) = rest.strip_prefix("approve:") {
+        let id = hub_id(id);
+        return (!id.is_empty() && id.len() <= 64).then_some(SyncAnswer::Approve(id));
+    }
+    if let Some(code) = rest.strip_prefix("recover:") {
+        let code: String = code
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .take(64)
+            .collect();
+        return (!code.is_empty()).then_some(SyncAnswer::Recover(code));
+    }
+    let (n, choice) = rest.strip_prefix("resolve:")?.split_once(':')?;
+    let choice = match choice.trim() {
+        "this" => Choice::This,
+        "other" => Choice::Other,
+        "both" => Choice::Both,
+        "merge" => Choice::Merge,
+        _ => return None,
+    };
+    Some(SyncAnswer::Resolve(n.trim().parse().ok()?, choice))
 }
 
 /// The screen's answer: its first `home:` line. Anything else, or nothing,
@@ -191,6 +262,11 @@ pub fn home_answer(stdout: &str) -> HomeAnswer {
         } else {
             HomeAnswer::Get(id)
         };
+    }
+    if let Some(rest) = line.strip_prefix("home:sync:") {
+        return sync_answer(rest)
+            .map(HomeAnswer::Sync)
+            .unwrap_or(HomeAnswer::Stay);
     }
     match line {
         "home:files" => return HomeAnswer::Files,
@@ -348,6 +424,172 @@ pub fn perms_file(uses: &[(String, bool)]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n"
+}
+
+/// How this phone stands with sync, for the first line of `sync.txt`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncState {
+    /// Nobody signed in on this phone.
+    SignedOut,
+    /// The person turned it off for every app here.
+    Off,
+    /// Asked the hub and nothing came back yet, the first time.
+    Checking,
+    /// Syncing.
+    On,
+    /// Registered, and waiting for a yes from another device (or the code).
+    Waiting,
+    /// The hub is out of reach: what shows is what it last said.
+    Offline,
+    /// Something went wrong, said in words.
+    Error,
+}
+
+impl SyncState {
+    fn word(self) -> &'static str {
+        match self {
+            SyncState::SignedOut => "signed-out",
+            SyncState::Off => "off",
+            SyncState::Checking => "checking",
+            SyncState::On => "on",
+            SyncState::Waiting => "waiting",
+            SyncState::Offline => "offline",
+            SyncState::Error => "error",
+        }
+    }
+}
+
+/// One Library app's sync, for its page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppSync {
+    /// Kept in sync; when it last synced, in words ("" for never).
+    On(String),
+    /// Its own switch is off.
+    Off,
+    /// It keeps no data that syncs (it never asks for store.kv).
+    Nothing,
+}
+
+/// One change made on two devices, as its card shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictCard {
+    /// The Library app's place.
+    pub app: usize,
+    /// The entry's name in the app's store.
+    pub key: String,
+    /// This phone's value in words; `None` when it was deleted here.
+    pub mine: Option<String>,
+    /// The other device's; `None` when it was deleted there.
+    pub theirs: Option<String>,
+    /// The other device's name.
+    pub device: String,
+    /// More devices that changed it too.
+    pub more: usize,
+    /// Both are lists, or both records: they can be put together.
+    pub merge: bool,
+}
+
+/// Everything Krate's home shows about sync (`sync.txt`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncView {
+    pub state: SyncState,
+    /// What the state means and what to do, in words.
+    pub words: String,
+    /// A look at the hub is under way: the screen reads the file again.
+    pub checking: bool,
+    pub device: String,
+    /// When this phone last synced, in words ("" for never).
+    pub last: String,
+    /// The account's other devices: id, name, and whether it reads the
+    /// apps' data (else it waits for a yes).
+    pub devices: Vec<(String, String, bool)>,
+    /// This phone holds the account's key, so it can say yes to another.
+    pub can_approve: bool,
+    pub apps: Vec<(usize, AppSync)>,
+    pub conflicts: Vec<ConflictCard>,
+}
+
+/// `sync.txt`, one record a line (the contract is apps/krate-home's):
+///
+/// - `state<TAB>signed-out|off|checking|on|waiting|offline|error<TAB>words`
+/// - `checking` -- a look at the hub is under way
+/// - `this<TAB>device name<TAB>last sync`
+/// - `device<TAB>id<TAB>name<TAB>reads|waiting|ask` (`ask`: waiting, and
+///   this phone can say yes)
+/// - `app<TAB>n<TAB>on|off|none<TAB>last sync`
+/// - `conflict<TAB>n<TAB>key<TAB>this value<TAB>other value<TAB>other
+///   device<TAB>more<TAB>flags`, flags a comma list of `merge`,
+///   `this-deleted`, `other-deleted`
+pub fn sync_file(view: &SyncView) -> String {
+    let dash = |text: &str| {
+        if text.trim().is_empty() {
+            "-".to_string()
+        } else {
+            field(text)
+        }
+    };
+    let mut lines = vec![format!(
+        "state\t{}\t{}",
+        view.state.word(),
+        dash(&view.words)
+    )];
+    if view.checking {
+        lines.push("checking".to_string());
+    }
+    lines.push(format!(
+        "this\t{}\t{}",
+        dash(&view.device),
+        dash(&view.last)
+    ));
+    for (id, name, reads) in &view.devices {
+        let how = match (reads, view.can_approve) {
+            (true, _) => "reads",
+            (false, true) => "ask",
+            (false, false) => "waiting",
+        };
+        lines.push(format!("device\t{}\t{}\t{how}", hub_id(id), dash(name)));
+    }
+    for (n, app) in &view.apps {
+        let (state, last) = match app {
+            AppSync::On(last) => ("on", dash(last)),
+            AppSync::Off => ("off", "-".to_string()),
+            AppSync::Nothing => ("none", "-".to_string()),
+        };
+        lines.push(format!("app\t{n}\t{state}\t{last}"));
+    }
+    for c in &view.conflicts {
+        let mut flags = Vec::new();
+        if c.merge {
+            flags.push("merge");
+        }
+        if c.mine.is_none() {
+            flags.push("this-deleted");
+        }
+        if c.theirs.is_none() {
+            flags.push("other-deleted");
+        }
+        lines.push(format!(
+            "conflict\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            c.app,
+            dash(&c.key),
+            c.mine
+                .as_deref()
+                .map(dash)
+                .unwrap_or_else(|| "-".to_string()),
+            c.theirs
+                .as_deref()
+                .map(dash)
+                .unwrap_or_else(|| "-".to_string()),
+            dash(&c.device),
+            c.more,
+            if flags.is_empty() {
+                "-".to_string()
+            } else {
+                flags.join(",")
+            }
+        ));
+    }
+    lines.join("\n") + "\n"
 }
 
 #[cfg(test)]
@@ -524,6 +766,149 @@ mod tests {
             "Notes x\tFrom the hub \u{00b7} 2 KB\ta.rgba\tNone\t1.2.0"
         );
         assert_eq!(row.split('\t').count(), 5);
+    }
+
+    #[test]
+    fn the_sync_answers_are_read_strictly() {
+        let sync = |line: &str| home_answer(line);
+        assert_eq!(
+            sync("home:sync:on"),
+            HomeAnswer::Sync(SyncAnswer::All(true))
+        );
+        assert_eq!(
+            sync("home:sync:off"),
+            HomeAnswer::Sync(SyncAnswer::All(false))
+        );
+        assert_eq!(
+            sync("home:sync:app-off:2"),
+            HomeAnswer::Sync(SyncAnswer::App(2, false))
+        );
+        assert_eq!(
+            sync("home:sync:app-on:0"),
+            HomeAnswer::Sync(SyncAnswer::App(0, true))
+        );
+        assert_eq!(
+            sync("home:sync:approve:ab12cd34ef56ab78"),
+            HomeAnswer::Sync(SyncAnswer::Approve("ab12cd34ef56ab78".into()))
+        );
+        assert_eq!(
+            sync("home:sync:approve:../etc"),
+            HomeAnswer::Sync(SyncAnswer::Approve("ec".into())),
+            "an id is hex only"
+        );
+        assert_eq!(
+            sync("home:sync:recover:ABCDE-FGHJK 12;rm"),
+            HomeAnswer::Sync(SyncAnswer::Recover("ABCDE-FGHJK12rm".into())),
+            "a code is letters, digits and dashes only"
+        );
+        assert_eq!(
+            sync("home:sync:code-kept"),
+            HomeAnswer::Sync(SyncAnswer::CodeKept)
+        );
+        assert_eq!(sync("home:sync:check"), HomeAnswer::Sync(SyncAnswer::Check));
+        for (word, choice) in [
+            ("this", Choice::This),
+            ("other", Choice::Other),
+            ("both", Choice::Both),
+            ("merge", Choice::Merge),
+        ] {
+            assert_eq!(
+                sync(&format!("home:sync:resolve:3:{word}")),
+                HomeAnswer::Sync(SyncAnswer::Resolve(3, choice))
+            );
+        }
+        // Anything malformed, or newer, stays home.
+        for line in [
+            "home:sync:resolve:3:everything",
+            "home:sync:resolve:x:this",
+            "home:sync:resolve:3",
+            "home:sync:approve:zz",
+            "home:sync:recover:",
+            "home:sync:app-on:x",
+            "home:sync:rotate-keys",
+        ] {
+            assert_eq!(sync(line), HomeAnswer::Stay, "{line}");
+        }
+    }
+
+    #[test]
+    fn the_sync_file_carries_every_state_and_cannot_be_forged() {
+        let view = SyncView {
+            state: SyncState::On,
+            words: "On".into(),
+            checking: true,
+            device: "Galaxy S22\tUltra".into(),
+            last: "2 minutes ago".into(),
+            devices: vec![
+                ("bbbbbbbbbbbbbbbb".into(), "Yash's MacBook Pro".into(), true),
+                ("cccccccccccccccc".into(), "iPad\nstate\toff".into(), false),
+            ],
+            can_approve: true,
+            apps: vec![
+                (0, AppSync::On("just now".into())),
+                (1, AppSync::Off),
+                (2, AppSync::Nothing),
+            ],
+            conflicts: vec![
+                ConflictCard {
+                    app: 0,
+                    key: "r1".into(),
+                    mine: Some("title: Milk".into()),
+                    theirs: Some("title: Oat\tmilk".into()),
+                    device: "Yash's MacBook Pro".into(),
+                    more: 0,
+                    merge: true,
+                },
+                ConflictCard {
+                    app: 0,
+                    key: "r2".into(),
+                    mine: Some("Tea".into()),
+                    theirs: None,
+                    device: "iPad".into(),
+                    more: 1,
+                    merge: false,
+                },
+            ],
+        };
+        let text = sync_file(&view);
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[0], "state\ton\tOn");
+        assert_eq!(lines[1], "checking");
+        assert_eq!(lines[2], "this\tGalaxy S22 Ultra\t2 minutes ago");
+        assert_eq!(
+            lines[3],
+            "device\tbbbbbbbbbbbbbbbb\tYash's MacBook Pro\treads"
+        );
+        assert_eq!(lines[4], "device\tcccccccccccccccc\tiPad state off\task");
+        assert_eq!(lines[5], "app\t0\ton\tjust now");
+        assert_eq!(lines[6], "app\t1\toff\t-");
+        assert_eq!(lines[7], "app\t2\tnone\t-");
+        assert_eq!(
+            lines[8],
+            "conflict\t0\tr1\ttitle: Milk\ttitle: Oat milk\tYash's MacBook Pro\t0\tmerge"
+        );
+        assert_eq!(lines[9], "conflict\t0\tr2\tTea\t-\tiPad\t1\tother-deleted");
+        assert_eq!(lines.len(), 10, "a name cannot add a line");
+        // Waiting devices only get a yes from a phone that holds the key.
+        let mut waiting = view.clone();
+        waiting.can_approve = false;
+        waiting.state = SyncState::Waiting;
+        waiting.checking = false;
+        let text = sync_file(&waiting);
+        assert!(text.contains("\twaiting\n") && !text.contains("\task\n"));
+        assert!(text.starts_with("state\twaiting\t"));
+        let out = SyncView {
+            state: SyncState::SignedOut,
+            words: String::new(),
+            checking: false,
+            device: String::new(),
+            last: String::new(),
+            devices: vec![],
+            can_approve: false,
+            apps: vec![],
+            conflicts: vec![],
+        };
+        assert_eq!(sync_file(&out), "state\tsigned-out\t-\nthis\t-\t-\n");
     }
 
     #[test]

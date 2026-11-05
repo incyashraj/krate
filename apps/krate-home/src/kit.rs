@@ -743,6 +743,8 @@ pub(crate) enum Icon {
     Sun,
     /// This device: a phone.
     Phone,
+    /// Sync across devices: two arrows chasing round a circle.
+    Sync,
 }
 
 impl Icon {
@@ -870,6 +872,36 @@ impl Icon {
                 outline.push((6.5, 5.0));
                 (
                     alloc::vec![outline, alloc::vec![(10.5, 18.5), (13.5, 18.5)]],
+                    Vec::new(),
+                )
+            }
+            Icon::Sync => {
+                // Each arrow's head points the way its arc runs (clockwise
+                // on a screen, where y grows downward).
+                let head = |deg: f32| -> Vec<(f32, f32)> {
+                    let a = deg.to_radians();
+                    let (ex, ey) = (12.0 + 7.5 * a.cos(), 12.0 + 7.5 * a.sin());
+                    let back = a + core::f32::consts::FRAC_PI_2 + core::f32::consts::PI;
+                    let spread = 0.7;
+                    alloc::vec![
+                        (
+                            ex + 3.6 * (back - spread).cos(),
+                            ey + 3.6 * (back - spread).sin()
+                        ),
+                        (ex, ey),
+                        (
+                            ex + 3.6 * (back + spread).cos(),
+                            ey + 3.6 * (back + spread).sin()
+                        ),
+                    ]
+                };
+                (
+                    alloc::vec![
+                        arc(12.0, 12.0, 7.5, 200.0, 335.0),
+                        head(335.0),
+                        arc(12.0, 12.0, 7.5, 20.0, 155.0),
+                        head(155.0),
+                    ],
                     Vec::new(),
                 )
             }

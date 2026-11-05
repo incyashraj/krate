@@ -51,6 +51,16 @@ rationale = "Show who is signed in, their organisations and published apps"
 required = false
 
 [[capabilities]]
+cap = "fs.read:./sync.txt"
+rationale = "Show whether your apps' data is the same on your other devices"
+required = false
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Show the recovery code once, without it ever touching a file"
+required = false
+
+[[capabilities]]
 cap = "fs.read:./perms/**"
 rationale = "Show what each of your apps may use"
 required = false

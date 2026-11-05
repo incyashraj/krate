@@ -24,6 +24,8 @@ krate-accountsync = { path = "../accountsync" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
+serde_json.workspace = true
 # run_config.rs (shared from player-android) tests the output card against
 # the runtime's own argument rule.
 krate-runtime = { path = "../runtime", default-features = false, features = [
@@ -31,6 +33,9 @@ krate-runtime = { path = "../runtime", default-features = false, features = [
 ] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
+# Sync on Krate's home (IC-981 S2): asking the hub how this phone stands,
+# approving a device, the recovery code.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 # Speech stays off, same as Android: whisper.cpp on phones is its own
 # project and the capability degrades honestly.
 krate-runtime = { path = "../runtime", default-features = false, features = [

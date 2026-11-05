@@ -12,8 +12,8 @@ use krate::math::F32Ext as _;
 
 use crate::kit::*;
 use crate::{
-    progress, Ask, Hit, Home, HubState, Metrics, Tab, Target, MS, PAGE_NS, ROWS_NS, ROW_STEP_NS,
-    SHEET_NS, TABS, TAB_NS,
+    progress, AppSync, Ask, Choice, Hit, Home, HubState, Metrics, SyncState, Tab, Target, CODE_LEN,
+    MS, PAGE_NS, ROWS_NS, ROW_STEP_NS, SHEET_NS, TABS, TAB_NS,
 };
 
 type Drawn<T = ()> = Result<T, gfx::GfxError>;
@@ -24,6 +24,10 @@ const EMPTY_BODY: &str =
 
 /// The floating bar's height, and its gap above the home bar.
 const NAV_H: f32 = 68.0;
+
+/// An on/off switch's track.
+const SWITCH_W: f32 = 51.0;
+const SWITCH_H: f32 = 31.0;
 
 /// What leads a row in a group.
 #[derive(Clone)]
@@ -48,6 +52,10 @@ enum Trail {
     Nav,
     /// Muted words, and more behind.
     ValueNav(String),
+    /// An on/off switch; the row's tap flips it.
+    Switch(bool),
+    /// A soft pill with a word on it; the row's tap does what it says.
+    Button(String),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -107,6 +115,18 @@ impl Row {
 
     fn quiet(mut self) -> Self {
         self.tone = Tone::Quiet;
+        self
+    }
+
+    fn switch(mut self, on: bool, hit: Hit) -> Self {
+        self.trail = Trail::Switch(on);
+        self.hit = Some(hit);
+        self
+    }
+
+    fn button(mut self, word: &str, hit: Hit) -> Self {
+        self.trail = Trail::Button(word.to_string());
+        self.hit = Some(hit);
         self
     }
 
@@ -646,6 +666,9 @@ impl Home {
                 Tab::You => Icon::Person,
             };
             let cy = slot.y + slot.height / 2.0;
+            // Something waits for the person (a change to choose, a device
+            // to say yes to): a dot on You.
+            let badge = tab == Tab::You && (self.sync.waiting() > 0 || self.code.is_some());
             if on {
                 // The icon and its name, the name fading in as the pill
                 // arrives.
@@ -653,6 +676,10 @@ impl Home {
                 let group = 22.0 + 8.0 + lw;
                 let gx = pill.x + (pill.width - group) / 2.0;
                 self.draw_icon(icon, look.on, gx + 11.0, cy, 22.0, 1.8)?;
+                if badge {
+                    canvas2d::fill_circle(canvas, pt(gx + 20.0, cy - 8.5), 6.0, look.pill)?;
+                    canvas2d::fill_circle(canvas, pt(gx + 20.0, cy - 8.5), 4.5, t.danger)?;
+                }
                 canvas2d::set_clip(canvas, pill.x, pill.y, pill.width, pill.height)?;
                 self.text.draw(
                     tab.name(),
@@ -664,12 +691,24 @@ impl Home {
                 )?;
                 canvas2d::clear_clip(canvas)?;
             } else {
-                self.draw_icon(icon, look.off, slot.x + slot.width / 2.0, cy, 22.0, 1.6)?;
+                let cx = slot.x + slot.width / 2.0;
+                self.draw_icon(icon, look.off, cx, cy, 22.0, 1.6)?;
+                if badge {
+                    canvas2d::fill_circle(canvas, pt(cx + 9.0, cy - 8.5), 6.0, look.capsule)?;
+                    canvas2d::fill_circle(canvas, pt(cx + 9.0, cy - 8.5), 4.5, t.danger)?;
+                }
             }
             // A generous target: the whole height of the bar.
             let target = rect(to.slots[k].x, bar.y, to.slots[k].width, bar.height);
             self.hits.push((target, Hit::Tab(tab)));
-            self.said.button(lay(target), tab.name());
+            if badge {
+                self.said.button(
+                    lay(target),
+                    &format!("{}, something waits for you", tab.name()),
+                );
+            } else {
+                self.said.button(lay(target), tab.name());
+            }
         }
 
         // Open a file: the round button at the end.
@@ -1023,8 +1062,11 @@ impl Home {
             };
             let tx = x + 16.0 + lead;
             let mut right = x + col - 16.0;
-            if matches!(row.trail, Trail::Nav | Trail::ValueNav(_)) {
-                right -= 18.0;
+            match &row.trail {
+                Trail::Nav | Trail::ValueNav(_) => right -= 18.0,
+                Trail::Switch(_) => right -= SWITCH_W + 12.0,
+                Trail::Button(word) => right -= self.button_w(m, word) + 12.0,
+                _ => {}
             }
             let room = right - tx;
             let weight = if row.tone == Tone::Ink || row.tone == Tone::Quiet {
@@ -1138,6 +1180,16 @@ impl Home {
                 }
                 right -= 18.0;
             }
+            match &row.trail {
+                Trail::Switch(on) => {
+                    self.draw_switch(t, right - SWITCH_W, ry + rh / 2.0, *on)?;
+                }
+                Trail::Button(word) => {
+                    let held = row.hit.is_some() && self.pressed == row.hit;
+                    self.pill(m, right, ry + rh / 2.0, word, t, held, false, None)?;
+                }
+                _ => {}
+            }
             if let Some(value) = &l.value {
                 let vw = self.text.width(value, m.body, 400);
                 self.text
@@ -1179,11 +1231,17 @@ impl Home {
                 said.push_str(", ");
                 said.push_str(&row.sub);
             }
-            if let Trail::Value(v) | Trail::ValueNav(v) = &row.trail {
-                if !v.is_empty() {
+            match &row.trail {
+                Trail::Value(v) | Trail::ValueNav(v) if !v.is_empty() => {
                     said.push_str(", ");
                     said.push_str(v);
                 }
+                Trail::Switch(on) => said.push_str(if *on { ", on" } else { ", off" }),
+                Trail::Button(word) => {
+                    said.push_str(", ");
+                    said.push_str(word);
+                }
+                _ => {}
             }
             match row.hit {
                 Some(hit) => {
@@ -1724,6 +1782,7 @@ impl Home {
                 );
             }
             y += card_h + 24.0;
+            y = self.draw_waiting(m, t, y)?;
 
             let published: Vec<Row> = if self.account.published.is_empty() {
                 alloc::vec![Row::new("Apps you publish show up here").quiet()]
@@ -1813,9 +1872,20 @@ impl Home {
             y += card_h + 24.0;
         }
 
-        let more = [Row::new("Settings")
-            .icon(Icon::Cog)
-            .nav(Hit::Show(Target::Settings))];
+        let mut more = Vec::new();
+        if self.sync.known {
+            more.push(
+                Row::new("Sync across your devices")
+                    .icon(Icon::Sync)
+                    .value(&self.sync_word())
+                    .nav(Hit::Show(Target::Sync)),
+            );
+        }
+        more.push(
+            Row::new("Settings")
+                .icon(Icon::Cog)
+                .nav(Hit::Show(Target::Settings)),
+        );
         y = self.group(m, t, y, "", "", &more, "")?;
         if self.account.signed_in {
             let out = [Row::new("Sign out").action(Tone::Danger, Hit::SignOut)];
@@ -1828,6 +1898,13 @@ impl Home {
 
     fn draw_settings(&mut self, m: &Metrics, t: &Theme, y: f32) -> Drawn<f32> {
         let mut y = self.page_title(m, t, y, "Settings")?;
+        if self.sync.known {
+            let rows = [Row::new("Sync across your devices")
+                .icon(Icon::Sync)
+                .value(&self.sync_word())
+                .nav(Hit::Show(Target::Sync))];
+            y = self.group(m, t, y, "Your devices", "", &rows, "")?;
+        }
         let mut phone = Vec::new();
         if !self.account.device.is_empty() {
             phone.push(
@@ -2089,6 +2166,8 @@ impl Home {
             }
             Target::Settings => self.draw_settings(m, t, y),
             Target::Storage => self.draw_storage(m, t, y),
+            Target::Sync => self.draw_sync(m, t, y),
+            Target::Recover => self.draw_recover(m, t, y),
             Target::Safety => self.draw_words(
                 m,
                 t,
@@ -2179,6 +2258,7 @@ impl Home {
         }
         data_rows.push(Row::new("Clear data").action(Tone::Accent, Hit::Clear(n)));
         y = self.group(m, t, y, "Data", "", &data_rows, "")?;
+        y = self.draw_app_sync(m, t, y, n)?;
 
         let mut version_rows = Vec::new();
         if !version.is_empty() {
@@ -2299,6 +2379,756 @@ impl Home {
         Ok(y)
     }
 
+    // -- Sync across your devices ----------------------------------------
+
+    /// How sync stands, in a word or two, beside its row.
+    fn sync_word(&self) -> String {
+        let choose = self.sync.conflicts.len();
+        if choose > 0 && self.sync.state != SyncState::SignedOut {
+            return format!("{choose} to choose");
+        }
+        match self.sync.state {
+            SyncState::SignedOut => "Sign in",
+            SyncState::Off => "Off",
+            SyncState::Checking => "Checking",
+            SyncState::On => "On",
+            SyncState::Waiting => "Needs a yes",
+            SyncState::Offline => "Offline",
+            SyncState::Error => "Needs a look",
+        }
+        .to_string()
+    }
+
+    /// The width of a soft pill with `word` on it.
+    fn button_w(&mut self, m: &Metrics, word: &str) -> f32 {
+        (self.text.width(word, m.button, 650) + 30.0).max(68.0)
+    }
+
+    /// An on/off switch, its track's left edge at `x`, centred on `cy`.
+    fn draw_switch(&mut self, t: &Theme, x: f32, cy: f32, on: bool) -> Drawn {
+        let canvas = self.canvas;
+        let track = rect(x, cy - SWITCH_H / 2.0, SWITCH_W, SWITCH_H);
+        let off = if t.dark { hex(0x39393d) } else { hex(0xe3e3e8) };
+        canvas2d::fill_round_rect(
+            canvas,
+            track,
+            radii(SWITCH_H / 2.0),
+            if on { t.accent } else { off },
+        )?;
+        let r = SWITCH_H / 2.0 - 2.0;
+        let kx = if on {
+            x + SWITCH_W - SWITCH_H / 2.0
+        } else {
+            x + SWITCH_H / 2.0
+        };
+        canvas2d::fill_circle(canvas, pt(kx, cy), r, WHITE)?;
+        if !t.dark {
+            canvas2d::stroke_circle(canvas, pt(kx, cy), r, 0.5, t.hair)?;
+        }
+        Ok(())
+    }
+
+    /// On You: what waits for the person -- the recovery code to write
+    /// down, changes to choose between, devices to say yes to.
+    fn draw_waiting(&mut self, m: &Metrics, t: &Theme, y: f32) -> Drawn<f32> {
+        if !self.sync.known || self.sync.state == SyncState::SignedOut {
+            return Ok(y);
+        }
+        let mut rows = Vec::new();
+        if self.code.is_some() {
+            rows.push(
+                Row::new("Write down your recovery code")
+                    .sub("Shown once. It lets a new device in when no other can.")
+                    .icon(Icon::Shield)
+                    .nav(Hit::Show(Target::Sync)),
+            );
+        }
+        let choose = self.sync.conflicts.len();
+        if choose > 0 {
+            let mut apps: Vec<String> = Vec::new();
+            for c in &self.sync.conflicts {
+                if let Some(app) = self.library.get(c.app) {
+                    if !apps.contains(&app.name) {
+                        apps.push(app.name.clone());
+                    }
+                }
+            }
+            rows.push(
+                Row::new(if choose == 1 {
+                    "A change made on two devices"
+                } else {
+                    "Changes made on two devices"
+                })
+                .sub(&apps.join(", "))
+                .icon(Icon::Sync)
+                .value(&format!("{choose}"))
+                .nav(Hit::Show(Target::Sync)),
+            );
+        }
+        for d in self.sync.devices.iter().filter(|d| d.ask) {
+            let name = if d.name.is_empty() {
+                "A device"
+            } else {
+                d.name.as_str()
+            };
+            rows.push(
+                Row::new(&format!("{name} wants to read your apps' data"))
+                    .icon(Icon::Phone)
+                    .nav(Hit::Show(Target::Sync)),
+            );
+        }
+        if rows.is_empty() {
+            return Ok(y);
+        }
+        self.group(m, t, y, "Waiting for you", "", &rows, "")
+    }
+
+    /// An app's page: its own switch and when it last synced.
+    fn draw_app_sync(&mut self, m: &Metrics, t: &Theme, y: f32, n: usize) -> Drawn<f32> {
+        if !self.sync.known {
+            return Ok(y);
+        }
+        let state = self.sync.state;
+        let mut rows = Vec::new();
+        match self.sync.app(n).cloned() {
+            _ if state == SyncState::SignedOut => rows.push(
+                Row::new("Keep in sync")
+                    .sub("Sign in to keep it the same on every device you use.")
+                    .nav(Hit::Show(Target::Sync)),
+            ),
+            None | Some(AppSync::Nothing) => rows.push(
+                Row::new("Nothing to sync")
+                    .quiet()
+                    .sub("This app keeps no data of its own."),
+            ),
+            Some(_) if state == SyncState::Off => rows.push(
+                Row::new("Keep in sync")
+                    .value("Off")
+                    .sub("Sync is off for every app on this phone.")
+                    .nav(Hit::Show(Target::Sync)),
+            ),
+            Some(AppSync::On(last)) => rows.push(
+                Row::new("Keep in sync")
+                    .sub(&if last.is_empty() {
+                        "On. It syncs the next time you open it.".to_string()
+                    } else {
+                        format!("Last synced {last}")
+                    })
+                    .switch(true, Hit::SyncApp(n, false)),
+            ),
+            Some(AppSync::Off) => rows.push(
+                Row::new("Keep in sync")
+                    .sub("Its data stays on this phone.")
+                    .switch(false, Hit::SyncApp(n, true)),
+            ),
+        }
+        let choose = self.sync.conflicts.iter().filter(|c| c.app == n).count();
+        if choose > 0 {
+            rows.push(
+                Row::new("Changed on two devices")
+                    .action(Tone::Accent, Hit::Show(Target::Sync))
+                    .value(&format!("{choose}"))
+                    .nav(Hit::Show(Target::Sync)),
+            );
+        }
+        self.group(m, t, y, "Sync", "", &rows, "")
+    }
+
+    /// A card that says how things stand, with the one thing to do.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_notice(
+        &mut self,
+        m: &Metrics,
+        t: &Theme,
+        y: f32,
+        icon: Icon,
+        title: &str,
+        body: &str,
+        action: Option<(&str, Hit)>,
+    ) -> Drawn<f32> {
+        let canvas = self.canvas;
+        let (x, col) = (m.x, m.col);
+        let pad = 16.0;
+        let lead = 30.0 + 12.0;
+        let tx = x + pad + lead;
+        let room = col - pad * 2.0 - lead;
+        let head = m.name * 0.96;
+        let titles = self.text.wrap(title, head, 600, room, 3);
+        let bodies = self.text.wrap(body, m.body, 400, room, 10);
+        let ph = (m.button + 15.0).max(30.0);
+        let words_h = titles.len() as f32 * head * 1.3 + 4.0 + bodies.len() as f32 * m.body * 1.45;
+        let h = pad + words_h + if action.is_some() { 14.0 + ph } else { 0.0 } + pad;
+        if Self::visible(m, y, h) {
+            canvas2d::fill_round_rect(canvas, rect(x, y, col, h), radii(14.0), t.group)?;
+            let sq = rect(x + pad, y + pad, 30.0, 30.0);
+            canvas2d::fill_round_rect(canvas, sq, radii(8.0), t.accent_soft)?;
+            self.draw_icon(icon, t.accent, sq.x + 15.0, sq.y + 15.0, 19.0, 1.7)?;
+            let mut ty = y + pad;
+            for line in &titles {
+                ty += head * 1.3;
+                self.text
+                    .draw(line, tx, ty - head * 0.27, head, t.ink, 600)?;
+            }
+            ty += 4.0;
+            for line in &bodies {
+                ty += m.body * 1.45;
+                self.text
+                    .draw(line, tx, ty - m.body * 0.35, m.body, t.ink2, 400)?;
+            }
+            self.said
+                .text(lay(rect(x, y, col, h)), &format!("{title}. {body}"));
+        }
+        if let Some((word, hit)) = action {
+            let pw = self.button_w(m, word);
+            let held = self.pressed == Some(hit);
+            let area = self.pill(
+                m,
+                tx + pw,
+                y + h - pad - ph / 2.0,
+                word,
+                t,
+                held,
+                false,
+                None,
+            )?;
+            self.content_hit(m, area, hit);
+            self.said.button(lay(area), word);
+        }
+        Ok(y + h + 24.0)
+    }
+
+    /// The recovery code, shown once, until the person says they have it.
+    fn draw_code(&mut self, m: &Metrics, t: &Theme, y: f32, code: &str) -> Drawn<f32> {
+        let canvas = self.canvas;
+        let (x, col) = (m.x, m.col);
+        let pad = 18.0;
+        let inner = col - pad * 2.0;
+        let head = 18.0 * m.scale.min(1.35);
+        let body = "Write it down and keep it somewhere safe. If none of your devices can let a new one in, this code is the only way to your apps' data. Krate shows it only this once.";
+        let bodies = self.text.wrap(body, m.body, 400, inner, 8);
+        let groups: Vec<&str> = code.split('-').filter(|g| !g.is_empty()).collect();
+        let size = 21.0 * m.scale.min(1.3);
+        let mut lines: Vec<String> = Vec::new();
+        for chunk in groups.chunks(3) {
+            lines.push(chunk.join("  "));
+        }
+        let code_h = lines.len() as f32 * size * 1.5 + 24.0;
+        let bh = (m.button + 25.0).max(48.0);
+        let h = pad
+            + head * 1.3
+            + 6.0
+            + bodies.len() as f32 * m.body * 1.45
+            + 16.0
+            + code_h
+            + 18.0
+            + bh
+            + pad;
+        if Self::visible(m, y, h) {
+            canvas2d::fill_round_rect(canvas, rect(x, y, col, h), radii(16.0), t.group)?;
+            let mut ty = y + pad + head;
+            self.text
+                .draw("Your recovery code", x + pad, ty, head, t.ink, 700)?;
+            ty += 6.0;
+            for line in &bodies {
+                ty += m.body * 1.45;
+                self.text
+                    .draw(line, x + pad, ty - m.body * 0.3, m.body, t.ink2, 400)?;
+            }
+            let box_y = ty + 16.0;
+            let well = if t.dark { t.surface } else { t.grouped };
+            canvas2d::fill_round_rect(
+                canvas,
+                rect(x + pad, box_y, inner, code_h),
+                radii(12.0),
+                well,
+            )?;
+            let mut cy = box_y + 12.0;
+            for line in &lines {
+                let lw = self.text.width(line, size, 650);
+                cy += size * 1.5;
+                self.text.draw(
+                    line,
+                    x + col / 2.0 - lw / 2.0,
+                    cy - size * 0.4,
+                    size,
+                    t.ink,
+                    650,
+                )?;
+            }
+            self.said.text(
+                lay(rect(x, y, col, box_y - y + code_h)),
+                &format!("Your recovery code: {code}. {body}"),
+            );
+        }
+        let by = y + h - pad - bh;
+        self.big_button(
+            m,
+            t,
+            x + col / 2.0,
+            by,
+            inner.min(320.0),
+            "I've written it down",
+            Hit::CodeKept,
+        )?;
+        Ok(y + h + 24.0)
+    }
+
+    /// One change made on two devices: both sides, and the choices.
+    fn draw_conflict(&mut self, m: &Metrics, t: &Theme, y: f32, i: usize) -> Drawn<f32> {
+        let canvas = self.canvas;
+        let c = self.sync.conflicts[i].clone();
+        let (app, face) = match self.library.get(c.app) {
+            Some(app) => (app.name.clone(), app.face),
+            None => ("An app".to_string(), Face::KRATE),
+        };
+        let (x, col) = (m.x, m.col);
+        let pad = 16.0;
+        let inner = col - pad * 2.0;
+        let tile = 36.0;
+        let head = m.name * 0.98;
+        let title = match (c.mine.is_some(), c.theirs.is_some()) {
+            (true, true) => format!("{app} changed on two devices"),
+            (false, _) => format!("{app}: deleted here, changed on {}", c.device),
+            (true, false) => format!("{app}: deleted on {}, changed here", c.device),
+        };
+        let room = inner - tile - 12.0;
+        let titles = self.text.wrap(&title, head, 600, room, 3);
+        let key = format!("\u{201c}{}\u{201d}", c.key);
+        let keys = self.text.wrap(&key, m.small, 400, room, 2);
+        let top_h =
+            (titles.len() as f32 * head * 1.28 + keys.len() as f32 * m.small * 1.4).max(tile);
+
+        // Both sides, in words.
+        let sides = [
+            ("This phone".to_string(), c.mine.clone()),
+            (c.device.clone(), c.theirs.clone()),
+        ];
+        let mut laid = Vec::new();
+        let mut sides_h = 0.0;
+        for (label, value) in &sides {
+            let labels = self.text.wrap(label, m.small, 600, inner - 24.0, 2);
+            let values = match value {
+                Some(v) => self.text.wrap(v, m.body, 400, inner - 24.0, 5),
+                None => alloc::vec!["Deleted".to_string()],
+            };
+            let h = 12.0
+                + labels.len() as f32 * m.small * 1.35
+                + 4.0
+                + values.len() as f32 * m.body * 1.42
+                + 12.0;
+            sides_h += h + 8.0;
+            laid.push((labels, values, value.is_none(), h));
+        }
+
+        // The choices, two to a line.
+        let mut choices: Vec<(String, Choice)> = Vec::new();
+        let short = |name: &str, text: &mut Text| -> String {
+            let label = format!("Keep {name}'s");
+            if text.width(&label, m.button * 0.95, 600) <= inner / 2.0 - 4.0 - 16.0 {
+                label
+            } else {
+                "Keep the other".to_string()
+            }
+        };
+        match (c.mine.is_some(), c.theirs.is_some()) {
+            (true, true) => {
+                choices.push(("Keep this phone's".to_string(), Choice::This));
+                choices.push((short(&c.device, &mut self.text), Choice::Other));
+                choices.push(("Keep both".to_string(), Choice::Both));
+                if c.merge {
+                    choices.push(("Merge into one".to_string(), Choice::Merge));
+                }
+            }
+            (false, _) => {
+                choices.push(("Keep it deleted".to_string(), Choice::This));
+                choices.push(("Keep the change".to_string(), Choice::Other));
+            }
+            (true, false) => {
+                choices.push(("Keep the change".to_string(), Choice::This));
+                choices.push(("Delete it".to_string(), Choice::Other));
+            }
+        }
+        let bh = (m.button + 19.0).max(38.0);
+        let rows_of = choices.len().div_ceil(2);
+        let buttons_h = rows_of as f32 * (bh + 8.0) - 8.0;
+        let more = if c.more > 0 {
+            format!(
+                "{} more {} changed it too.",
+                c.more,
+                if c.more == 1 { "device" } else { "devices" }
+            )
+        } else {
+            String::new()
+        };
+        let more_h = if more.is_empty() {
+            0.0
+        } else {
+            m.small * 1.6 + 4.0
+        };
+        let h = pad + top_h + 14.0 + sides_h + 6.0 + buttons_h + more_h + pad;
+
+        if Self::visible(m, y, h) {
+            canvas2d::fill_round_rect(canvas, rect(x, y, col, h), radii(16.0), t.group)?;
+            self.draw_tile(rect(x + pad, y + pad, tile, tile), &face, &app, t, false)?;
+            let tx = x + pad + tile + 12.0;
+            let mut ty = y + pad;
+            for line in &titles {
+                ty += head * 1.28;
+                self.text
+                    .draw(line, tx, ty - head * 0.26, head, t.ink, 600)?;
+            }
+            for line in &keys {
+                ty += m.small * 1.4;
+                self.text
+                    .draw(line, tx, ty - m.small * 0.3, m.small, t.ink3, 400)?;
+            }
+            self.said.heading(lay(rect(x, y, col, top_h + pad)), &title);
+            let well = if t.dark { t.surface } else { t.grouped };
+            let mut sy = y + pad + top_h + 14.0;
+            for (k, (labels, values, deleted, sh)) in laid.iter().enumerate() {
+                canvas2d::fill_round_rect(
+                    canvas,
+                    rect(x + pad, sy, inner, *sh),
+                    radii(12.0),
+                    well,
+                )?;
+                let mut ly = sy + 12.0;
+                for line in labels {
+                    ly += m.small * 1.35;
+                    self.text.draw(
+                        line,
+                        x + pad + 12.0,
+                        ly - m.small * 0.3,
+                        m.small,
+                        t.ink3,
+                        600,
+                    )?;
+                }
+                ly += 4.0;
+                for line in values {
+                    ly += m.body * 1.42;
+                    self.text.draw(
+                        line,
+                        x + pad + 12.0,
+                        ly - m.body * 0.32,
+                        m.body,
+                        if *deleted { t.ink3 } else { t.ink },
+                        if *deleted { 500 } else { 400 },
+                    )?;
+                }
+                let (label, value) = &sides[k];
+                self.said.text(
+                    lay(rect(x + pad, sy, inner, *sh)),
+                    &format!("{label}: {}", value.as_deref().unwrap_or("deleted")),
+                );
+                sy += sh + 8.0;
+            }
+            if !more.is_empty() {
+                let my = y + h - pad - m.small * 0.4;
+                self.text.draw(&more, x + pad, my, m.small, t.ink3, 400)?;
+            }
+        }
+
+        let by0 = y + pad + top_h + 14.0 + sides_h + 6.0;
+        let half = (inner - 8.0) / 2.0;
+        for (k, (word, choice)) in choices.iter().enumerate() {
+            let row = k / 2;
+            let alone = k + 1 == choices.len() && k % 2 == 0;
+            let (bx, bw) = if alone {
+                (x + pad, inner)
+            } else {
+                (x + pad + (k % 2) as f32 * (half + 8.0), half)
+            };
+            let area = rect(bx, by0 + row as f32 * (bh + 8.0), bw, bh);
+            let hit = Hit::Resolve(i, *choice);
+            if Self::visible(m, area.y, bh) {
+                let held = self.pressed == Some(hit);
+                let shown = if held { shrink(area, 0.97) } else { area };
+                canvas2d::fill_round_rect(canvas, shown, radii(bh / 2.0), t.accent_soft)?;
+                if held {
+                    canvas2d::fill_round_rect(canvas, shown, radii(bh / 2.0), t.press)?;
+                }
+                let size = m.button * 0.95;
+                let label = self.text.fit(word, size, 600, bw - 16.0);
+                let lw = self.text.width(&label, size, 600);
+                self.text.draw(
+                    &label,
+                    shown.x + (shown.width - lw) / 2.0,
+                    mid(shown.y, shown.height, size),
+                    size,
+                    t.accent,
+                    600,
+                )?;
+                self.said.button(lay(area), word);
+            }
+            self.content_hit(m, area, hit);
+        }
+        Ok(y + h + 12.0)
+    }
+
+    /// Settings -> Sync across your devices.
+    fn draw_sync(&mut self, m: &Metrics, t: &Theme, y: f32) -> Drawn<f32> {
+        let mut y = self.page_title(m, t, y, "Sync across your devices")?;
+        let state = self.sync.state;
+        if state == SyncState::SignedOut {
+            y = self.badge(m, t, y + 8.0, Icon::Sync, 64.0)?;
+            let words = if self.sync.words.is_empty() {
+                "Sign in to keep your apps the same on every device you use.".to_string()
+            } else {
+                self.sync.words.clone()
+            };
+            y = self.centred_words(m, t, y, "The same apps, everywhere", &words)?;
+            y += 22.0;
+            let bw = (m.col - 48.0).min(260.0);
+            y = self.big_button(m, t, m.x + m.col / 2.0, y, bw, "Sign in", Hit::SignIn)?;
+            return Ok(y + 24.0);
+        }
+        if let Some(code) = self.code.clone() {
+            y = self.draw_code(m, t, y, &code)?;
+        }
+        let choose = self.sync.conflicts.len();
+        if choose > 0 {
+            y = self.caption(m, t, y, "Changed on two devices", &format!("{choose}"))?;
+            for i in 0..choose {
+                y = self.draw_conflict(m, t, y, i)?;
+            }
+            for line in self.text.wrap(
+                "Until you choose, both are kept and each device goes on using its own.",
+                m.small,
+                400,
+                m.col - 8.0,
+                3,
+            ) {
+                if Self::visible(m, y, m.small * 1.4) {
+                    self.text
+                        .draw(&line, m.x + 4.0, y + m.small, m.small, t.ink3, 400)?;
+                    self.said
+                        .text(layout::Rect::new(m.x, y, m.col, m.small * 1.4), &line);
+                }
+                y += m.small * 1.4;
+            }
+            y += 24.0;
+        }
+
+        let on = state != SyncState::Off;
+        let switch = [Row::new("Sync your apps' data")
+            .icon(Icon::Sync)
+            .switch(on, Hit::SyncAll(!on))];
+        let note = match state {
+            SyncState::On | SyncState::Off => self.sync.words.clone(),
+            _ => String::new(),
+        };
+        y = self.group(m, t, y, "", "", &switch, &note)?;
+        let words = self.sync.words.clone();
+        y = match state {
+            SyncState::Waiting => self.draw_notice(
+                m,
+                t,
+                y,
+                Icon::Shield,
+                "Waiting for a yes",
+                &words,
+                Some(("Use a recovery code", Hit::Show(Target::Recover))),
+            )?,
+            SyncState::Offline => self.draw_notice(
+                m,
+                t,
+                y,
+                Icon::Sync,
+                "Out of reach for now",
+                &words,
+                Some(("Try again", Hit::SyncCheck)),
+            )?,
+            SyncState::Error => self.draw_notice(
+                m,
+                t,
+                y,
+                Icon::Bubble,
+                "Sync needs a look",
+                &words,
+                Some(("Try again", Hit::SyncCheck)),
+            )?,
+            SyncState::Checking => {
+                self.draw_notice(m, t, y, Icon::Sync, "Checking", &words, None)?
+            }
+            _ => y,
+        };
+        if state == SyncState::Off {
+            return Ok(y);
+        }
+
+        let last = if self.sync.checking && self.sync.last.is_empty() {
+            "Checking\u{2026}".to_string()
+        } else if self.sync.last.is_empty() {
+            "Not yet".to_string()
+        } else {
+            title_case(&self.sync.last)
+        };
+        let phone = [
+            Row::new("Name").icon(Icon::Phone).value(&self.sync.device),
+            Row::new("Last synced").icon(Icon::Sync).value(&last),
+        ];
+        y = self.group(m, t, y, "This phone", "", &phone, "")?;
+
+        let devices: Vec<Row> = if self.sync.devices.is_empty() {
+            alloc::vec![Row::new("No other devices yet").quiet()]
+        } else {
+            self.sync
+                .devices
+                .iter()
+                .enumerate()
+                .map(|(i, d)| {
+                    let name = if d.name.is_empty() {
+                        "A device".to_string()
+                    } else {
+                        d.name.clone()
+                    };
+                    let row = Row::new(&name).icon(Icon::Phone);
+                    if d.ask {
+                        row.sub("Waiting for your yes")
+                            .button("Approve", Hit::Approve(i))
+                    } else if d.reads {
+                        row.sub("Reads your apps' data")
+                    } else {
+                        row.sub("Waiting for a yes from one of your devices")
+                    }
+                })
+                .collect()
+        };
+        y = self.group(
+            m,
+            t,
+            y,
+            "Your other devices",
+            "",
+            &devices,
+            "Sign in to Krate on your other phones and computers. Each new one waits for a yes from a device that already syncs.",
+        )?;
+
+        let apps: Vec<Row> = self
+            .sync
+            .apps
+            .clone()
+            .into_iter()
+            .filter_map(|(n, app)| {
+                let lib = self.library.get(n)?;
+                let (sub, on) = match app {
+                    AppSync::On(last) if last.is_empty() => ("Not synced yet".to_string(), true),
+                    AppSync::On(last) => (format!("Last synced {last}"), true),
+                    AppSync::Off => ("Stays on this phone".to_string(), false),
+                    AppSync::Nothing => return None,
+                };
+                Some(
+                    Row::new(&lib.name)
+                        .tile(lib.face, &lib.name, 30.0, false)
+                        .sub(&sub)
+                        .switch(on, Hit::SyncApp(n, !on)),
+                )
+            })
+            .collect();
+        if !apps.is_empty() {
+            y = self.group(
+                m,
+                t,
+                y,
+                "Apps",
+                "",
+                &apps,
+                "Apps that keep no data of their own have nothing to sync.",
+            )?;
+        }
+        Ok(y)
+    }
+
+    /// Typing the recovery code, when no other device can let this one in.
+    fn draw_recover(&mut self, m: &Metrics, t: &Theme, y: f32) -> Drawn<f32> {
+        let canvas = self.canvas;
+        let mut y = self.badge(m, t, y + 8.0, Icon::Shield, 64.0)?;
+        y = self.centred_words(
+            m,
+            t,
+            y,
+            "Use a recovery code",
+            "Krate showed it once, on the first device you set up. Type it here and this phone can read your apps' data.",
+        )?;
+        y += 22.0;
+        let (x, col) = (m.x, m.col);
+        let size = m.body * 1.12;
+        let h = (size + 32.0).max(52.0);
+        let field_r = rect(x, y, col, h);
+        if Self::visible(m, y, h) {
+            canvas2d::fill_round_rect(canvas, field_r, radii(14.0), t.group)?;
+            let (edge, width) = if self.typing {
+                (t.accent, 1.5)
+            } else {
+                (t.hair, 1.0)
+            };
+            canvas2d::stroke_round_rect(canvas, field_r, radii(14.0), width, edge)?;
+            let shown: String = {
+                let chars: Vec<char> = self.typed.chars().collect();
+                chars
+                    .chunks(5)
+                    .map(|c| c.iter().collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join("-")
+            };
+            let tx = x + 16.0;
+            let base = mid(y, h, size);
+            let end = if shown.is_empty() {
+                self.text
+                    .draw("26 letters and numbers", tx, base, size, t.ink3, 400)?;
+                tx
+            } else {
+                let fitted = self.text.fit(&shown, size, 600, col - 40.0);
+                self.text.draw(&fitted, tx, base, size, t.ink, 600)?;
+                tx + self.text.width(&fitted, size, 600)
+            };
+            if self.typing {
+                canvas2d::fill_rect(
+                    canvas,
+                    rect(end + 1.5, y + (h - size * 1.25) / 2.0, 2.0, size * 1.25),
+                    t.accent,
+                )?;
+            }
+        }
+        self.content_hit(m, field_r, Hit::CodeField);
+        self.said.button(
+            lay(field_r),
+            &format!(
+                "Recovery code, {} of {CODE_LEN} letters and numbers typed",
+                self.typed.len()
+            ),
+        );
+        y += h + 10.0;
+        let count = self.typed.len();
+        let (line, ink) = if self.code_short {
+            (
+                format!("That is {count} of {CODE_LEN}. A recovery code is {CODE_LEN} letters and numbers."),
+                t.danger,
+            )
+        } else if count > 0 {
+            (format!("{count} of {CODE_LEN}"), t.ink3)
+        } else {
+            (
+                "Dashes and spaces do not matter, and neither do capitals.".to_string(),
+                t.ink3,
+            )
+        };
+        for l in self.text.wrap(&line, m.small, 400, col - 8.0, 3) {
+            if Self::visible(m, y, m.small * 1.4) {
+                self.text
+                    .draw(&l, x + 4.0, y + m.small, m.small, ink, 400)?;
+                self.said
+                    .text(layout::Rect::new(x, y, col, m.small * 1.4), &l);
+            }
+            y += m.small * 1.4;
+        }
+        y += 18.0;
+        let bw = col.min(320.0);
+        y = self.big_button(m, t, x + col / 2.0, y, bw, "Use this code", Hit::CodeSubmit)?;
+        Ok(y + 24.0)
+    }
+
     // -- The sheet that asks --------------------------------------------------
 
     fn draw_ask(&mut self, m: &Metrics, t: &Theme, ask: Ask) -> Drawn {
@@ -2327,10 +3157,30 @@ impl Home {
             ),
             Ask::Clear(n) => (
                 format!("Clear {}'s data?", self.library[n].name),
-                "Everything it saved on this phone is deleted. The app stays.",
+                if matches!(self.sync.app(n), Some(AppSync::On(_)))
+                    && matches!(self.sync.state, SyncState::On | SyncState::Offline)
+                {
+                    "Everything it saved on this phone is deleted. The app stays, and your other devices keep their copy, which comes back here the next time it syncs."
+                } else {
+                    "Everything it saved on this phone is deleted. The app stays."
+                },
                 "Clear data",
             ),
+            Ask::Approve(i) => (
+                format!(
+                    "Let {} read your apps' data?",
+                    self.sync
+                        .devices
+                        .get(i)
+                        .map(|d| d.name.as_str())
+                        .filter(|n| !n.is_empty())
+                        .unwrap_or("this device")
+                ),
+                "It will see everything your apps keep, the same as this phone does. Say yes only if it is yours and you signed in on it just now.",
+                "Let it read",
+            ),
         };
+        let danger = !matches!(ask, Ask::Approve(_));
         let pad = 24.0;
         let compact = m.w < 600.0;
         let sw = if compact {
@@ -2385,9 +3235,14 @@ impl Home {
         let yes = rect(sx + pad, y, inner, bh);
         let held = self.pressed == Some(Hit::Yes);
         let shown = if held { shrink(yes, 0.97) } else { yes };
-        canvas2d::fill_round_rect(canvas, shown, radii(15.0), hex(0xe5484d))?;
+        let (fill, ink) = if danger {
+            (hex(0xe5484d), WHITE)
+        } else {
+            (t.btn, t.btn_ink)
+        };
+        canvas2d::fill_round_rect(canvas, shown, radii(15.0), fill)?;
         if held {
-            canvas2d::fill_round_rect(canvas, shown, radii(15.0), rgba(0.0, 0.0, 0.0, 0.12))?;
+            canvas2d::fill_round_rect(canvas, shown, radii(15.0), rgba(0.5, 0.5, 0.5, 0.18))?;
         }
         let lw = self.text.width(word, m.button, 650);
         self.text.draw(
@@ -2395,7 +3250,7 @@ impl Home {
             cx - lw / 2.0,
             mid(y, bh, m.button),
             m.button,
-            WHITE,
+            ink,
             650,
         )?;
         self.hits.push((yes, Hit::Yes));
@@ -2410,9 +3265,10 @@ impl Home {
             radii(15.0),
             if t.dark { t.surface } else { t.soft },
         )?;
-        let lw = self.text.width("Cancel", m.button, 600);
+        let cancel = if danger { "Cancel" } else { "Not now" };
+        let lw = self.text.width(cancel, m.button, 600);
         self.text.draw(
-            "Cancel",
+            cancel,
             cx - lw / 2.0,
             mid(y, bh, m.button),
             m.button,
@@ -2420,7 +3276,7 @@ impl Home {
             600,
         )?;
         self.hits.push((no, Hit::No));
-        self.said.button(lay(no), "Cancel");
+        self.said.button(lay(no), cancel);
         Ok(())
     }
 }

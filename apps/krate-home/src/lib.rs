@@ -46,9 +46,33 @@
 //! - `art/*.rgba`: pictures, an 8-byte header (width, height, little-endian
 //!   u32) then straight RGBA. `-` names no picture: the app wears Krate's
 //!   one app icon. Names are plain file names, no folders.
+//! - `sync.txt` (optional; missing hides sync, for an older player): the
+//!   same app data on every device the person signs in on (IC-981). One
+//!   record a line:
+//!   - `state<TAB>signed-out|off|checking|on|waiting|offline|error<TAB>words`
+//!     first: how this phone stands, and `words` saying what that means
+//!     and what to do. `waiting` is a phone that needs a yes from another
+//!     device (or the recovery code); `offline` keeps working and syncs
+//!     later.
+//!   - `checking`: a look at the hub is under way; the screen reads the
+//!     files again every 0.6 s until it goes.
+//!   - `this<TAB>device name<TAB>last sync` ("2 minutes ago").
+//!   - `device<TAB>id<TAB>name<TAB>reads|waiting|ask`: another of the
+//!     person's devices. `reads` reads the apps' data; `waiting` waits for
+//!     a yes; `ask` waits and this phone can give it (Approve).
+//!   - `app<TAB>n<TAB>on|off|none<TAB>last sync`: the n-th Library app's own
+//!     switch; `none` is an app that keeps no data to sync.
+//!   - `conflict<TAB>n<TAB>key<TAB>this value<TAB>other value<TAB>other
+//!     device<TAB>more<TAB>flags`: something the n-th app keeps changed on
+//!     two devices. Values are in words; `more` counts further devices
+//!     that changed it; `flags` is a comma list of `merge` (both are lists
+//!     or records), `this-deleted`, `other-deleted`.
+//!
+//!   The arguments may carry `sync-code` and the recovery code: shown once,
+//!   until the person says they wrote it down. Never in a file.
 //! - `start.txt` (optional): where to open. `library` (the default),
 //!   `discover`, `you`, `settings` (or one of its pages: `storage`,
-//!   `safety`, `links`), `app:<n>` (the n-th Library app's page) or
+//!   `safety`, `links`, `sync`, `recover`), `app:<n>` (the n-th Library app's page) or
 //!   `hub:<hub id>` (a hub app's page). A player that comes back after
 //!   an answer about one app (clear, update, share) writes `app:<n>` so
 //!   the person lands where they were.
@@ -68,6 +92,16 @@
 //! - `home:report` -- the person wants to report a problem with Krate.
 //! - `home:refresh` -- try the hub again (Discover's offline and error
 //!   states offer it).
+//! - `home:sync:on` / `home:sync:off` -- sync for every app on this phone.
+//! - `home:sync:app-on:<n>` / `home:sync:app-off:<n>` -- the n-th app's own.
+//! - `home:sync:approve:<device id>` -- yes to a waiting device (confirmed
+//!   here first: "Let Galaxy S22 Ultra read your apps' data?").
+//! - `home:sync:recover:<code>` -- the recovery code, as typed here.
+//! - `home:sync:code-kept` -- the person wrote the recovery code down.
+//! - `home:sync:resolve:<c>:<this|other|both|merge>` -- the c-th
+//!   `conflict` line, answered: keep this phone's, the other device's,
+//!   both, or put the two together.
+//! - `home:sync:check` -- ask the hub again.
 //! - `home:closed` -- the person left Krate.
 //!
 //! Going into a page and back, switching places and confirming are drawn
@@ -90,7 +124,7 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use krate::bindings::krate::io::stdio;
+use krate::bindings::krate::io::{args, stdio};
 use krate::bindings::krate::time::clock;
 use krate::gfx::{canvas2d, canvas_images, types as gfx};
 use krate::layout::{Look, Said};
@@ -200,6 +234,180 @@ enum HubState {
     Error(String),
 }
 
+/// How this phone stands with sync (`sync.txt`'s first line).
+#[derive(Clone, Copy, PartialEq, Default)]
+enum SyncState {
+    #[default]
+    SignedOut,
+    Off,
+    Checking,
+    On,
+    Waiting,
+    Offline,
+    Error,
+}
+
+/// Another of the person's devices.
+#[derive(Clone, PartialEq)]
+struct SyncDevice {
+    id: String,
+    name: String,
+    /// It reads the apps' data.
+    reads: bool,
+    /// It waits, and this phone can say yes.
+    ask: bool,
+}
+
+/// One Library app's own switch.
+#[derive(Clone, PartialEq)]
+enum AppSync {
+    /// On, with when it last synced ("" for never).
+    On(String),
+    Off,
+    /// It keeps no data to sync.
+    Nothing,
+}
+
+/// Something one app keeps that changed on two devices.
+#[derive(Clone, PartialEq)]
+struct Conflict {
+    app: usize,
+    key: String,
+    /// This phone's value in words; `None` when deleted here.
+    mine: Option<String>,
+    theirs: Option<String>,
+    device: String,
+    more: usize,
+    merge: bool,
+}
+
+/// Everything `sync.txt` says.
+#[derive(Clone, PartialEq, Default)]
+struct Sync {
+    /// The player wrote one: sync shows at all.
+    known: bool,
+    state: SyncState,
+    words: String,
+    checking: bool,
+    device: String,
+    last: String,
+    devices: Vec<SyncDevice>,
+    apps: Vec<(usize, AppSync)>,
+    conflicts: Vec<Conflict>,
+}
+
+impl Sync {
+    fn app(&self, n: usize) -> Option<&AppSync> {
+        self.apps.iter().find(|(k, _)| *k == n).map(|(_, a)| a)
+    }
+
+    /// Things waiting for the person: changes to choose between and
+    /// devices to say yes to.
+    fn waiting(&self) -> usize {
+        if matches!(self.state, SyncState::Off | SyncState::SignedOut) {
+            return 0;
+        }
+        self.conflicts.len() + self.devices.iter().filter(|d| d.ask).count()
+    }
+}
+
+fn read_sync() -> Sync {
+    let records = lines("sync.txt");
+    let mut sync = Sync {
+        known: !records.is_empty(),
+        ..Sync::default()
+    };
+    for f in records {
+        match f[0].as_str() {
+            "state" => {
+                sync.state = match field(&f, 1).as_str() {
+                    "off" => SyncState::Off,
+                    "checking" => SyncState::Checking,
+                    "on" => SyncState::On,
+                    "waiting" => SyncState::Waiting,
+                    "offline" => SyncState::Offline,
+                    "error" => SyncState::Error,
+                    _ => SyncState::SignedOut,
+                };
+                sync.words = field(&f, 2);
+            }
+            "checking" => sync.checking = true,
+            "this" => {
+                sync.device = field(&f, 1);
+                sync.last = field(&f, 2);
+            }
+            "device" if f.len() >= 4 => {
+                let how = field(&f, 3);
+                sync.devices.push(SyncDevice {
+                    id: f[1].chars().filter(char::is_ascii_hexdigit).collect(),
+                    name: field(&f, 2),
+                    reads: how == "reads",
+                    ask: how == "ask",
+                });
+            }
+            "app" if f.len() >= 3 => {
+                let Ok(n) = f[1].parse::<usize>() else {
+                    continue;
+                };
+                let app = match field(&f, 2).as_str() {
+                    "on" => AppSync::On(field(&f, 3)),
+                    "off" => AppSync::Off,
+                    _ => AppSync::Nothing,
+                };
+                sync.apps.push((n, app));
+            }
+            "conflict" if f.len() >= 7 => {
+                let Ok(app) = f[1].parse::<usize>() else {
+                    continue;
+                };
+                let flags = field(&f, 7);
+                let has = |flag: &str| flags.split(',').any(|x| x.trim() == flag);
+                sync.conflicts.push(Conflict {
+                    app,
+                    key: field(&f, 2),
+                    mine: (!has("this-deleted")).then(|| field(&f, 3)),
+                    theirs: (!has("other-deleted")).then(|| field(&f, 4)),
+                    device: {
+                        let d = field(&f, 5);
+                        if d.is_empty() {
+                            "another device".to_string()
+                        } else {
+                            d
+                        }
+                    },
+                    more: f[6].parse().unwrap_or(0),
+                    merge: has("merge"),
+                });
+            }
+            _ => {}
+        }
+    }
+    sync
+}
+
+/// An answer to a change made on two devices.
+#[derive(Clone, Copy, PartialEq)]
+enum Choice {
+    This,
+    Other,
+    Both,
+    Merge,
+}
+
+impl Choice {
+    fn word(self) -> &'static str {
+        match self {
+            Choice::This => "this",
+            Choice::Other => "other",
+            Choice::Both => "both",
+            Choice::Merge => "merge",
+        }
+    }
+}
+
+/// A recovery code is 26 letters and digits.
+const CODE_LEN: usize = 26;
+
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Library,
@@ -243,6 +451,10 @@ enum Target {
     Safety,
     /// How apps open from links and files.
     Links,
+    /// The same app data on every device.
+    Sync,
+    /// Typing the recovery code.
+    Recover,
 }
 
 impl Target {
@@ -255,6 +467,8 @@ impl Target {
             Target::Storage => "Storage".to_string(),
             Target::Safety => "Safety".to_string(),
             Target::Links => "Links".to_string(),
+            Target::Sync => "Sync".to_string(),
+            Target::Recover => "Recovery code".to_string(),
         }
     }
 }
@@ -271,6 +485,8 @@ struct Page {
 enum Ask {
     Remove(usize),
     Clear(usize),
+    /// Yes to the i-th device of `sync.devices`.
+    Approve(usize),
 }
 
 /// Something tappable drawn this frame.
@@ -291,6 +507,22 @@ enum Hit {
     Remove(usize),
     Report,
     Refresh,
+    /// Sync for every app: turn it to this.
+    SyncAll(bool),
+    /// The n-th app's own switch: turn it to this.
+    SyncApp(usize, bool),
+    /// Ask before saying yes to the i-th device.
+    Approve(usize),
+    /// The c-th conflict, answered.
+    Resolve(usize, Choice),
+    /// The recovery code is written down.
+    CodeKept,
+    /// Ask the hub again.
+    SyncCheck,
+    /// The recovery code's field: type into it.
+    CodeField,
+    /// Use the code typed.
+    CodeSubmit,
     /// Confirm what was asked.
     Yes,
     /// Do not.
@@ -313,9 +545,24 @@ impl Hit {
             Hit::Share(n) => format!("home:share:{n}"),
             Hit::Report => "home:report".to_string(),
             Hit::Refresh => "home:refresh".to_string(),
+            Hit::SyncAll(on) => format!("home:sync:{}", if *on { "on" } else { "off" }),
+            Hit::SyncApp(n, on) => {
+                format!("home:sync:app-{}:{n}", if *on { "on" } else { "off" })
+            }
+            Hit::Resolve(c, choice) => format!("home:sync:resolve:{c}:{}", choice.word()),
+            Hit::CodeKept => "home:sync:code-kept".to_string(),
+            Hit::SyncCheck => "home:sync:check".to_string(),
+            Hit::CodeSubmit => {
+                let code = home.typed_code();
+                if code.len() < CODE_LEN {
+                    return None;
+                }
+                format!("home:sync:recover:{code}")
+            }
             Hit::Yes => match home.ask? {
                 Ask::Remove(n) => format!("home:remove:{n}"),
                 Ask::Clear(n) => format!("home:clear:{n}"),
+                Ask::Approve(i) => format!("home:sync:approve:{}", home.sync.devices.get(i)?.id),
             },
             _ => return None,
         })
@@ -362,6 +609,16 @@ struct Home {
     hub_state: HubState,
     /// Downloads under way: hub id and percent.
     progress: Vec<(String, u32)>,
+    /// What sync.txt says.
+    sync: Sync,
+    /// The recovery code to show once, from the player's arguments.
+    code: Option<String>,
+    /// The recovery code typed so far (letters and digits).
+    typed: String,
+    /// The keyboard is up for it.
+    typing: bool,
+    /// Use was tapped with too few letters.
+    code_short: bool,
     next_poll: u64,
     mark: Option<u64>,
     fades: Vec<((u32, u32), u64)>,
@@ -587,6 +844,11 @@ impl Home {
             .collect();
         let mut changed = progress != self.progress;
         self.progress = progress;
+        let sync = read_sync();
+        if sync != self.sync {
+            self.sync = sync;
+            changed = true;
+        }
         if state != self.hub_state {
             if self.hub_state == HubState::Loading {
                 self.load_hub();
@@ -598,7 +860,20 @@ impl Home {
     }
 
     fn polling(&self) -> bool {
-        self.hub_state == HubState::Loading || !self.progress.is_empty()
+        self.hub_state == HubState::Loading || !self.progress.is_empty() || self.sync.checking
+    }
+
+    /// The recovery code typed so far, letters and digits only.
+    fn typed_code(&self) -> String {
+        self.typed.clone()
+    }
+
+    /// Put the keyboard away, if it is up.
+    fn stop_typing(&mut self) {
+        if self.typing {
+            krate::ui::text_entry::stop(self.win);
+            self.typing = false;
+        }
     }
 
     /// Open a page over what is showing.
@@ -651,6 +926,7 @@ impl Home {
         if self.stack.is_empty() {
             return false;
         }
+        self.stop_typing();
         if self.page_anim.is_none() {
             self.page_anim = Some((false, self.now));
         }
@@ -664,6 +940,7 @@ impl Home {
     }
 
     fn switch(&mut self, tab: Tab) {
+        self.stop_typing();
         if tab != self.tab {
             self.tab_from = self.tab;
             self.tab_since = self.now;
@@ -688,7 +965,16 @@ impl Home {
             }
             Hit::Clear(n) => self.ask_for(Ask::Clear(n)),
             Hit::Remove(n) => self.ask_for(Ask::Remove(n)),
+            Hit::Approve(i) => self.ask_for(Ask::Approve(i)),
             Hit::No => self.close_sheet(),
+            Hit::CodeField => {
+                // A phone shows its keyboard; a computer's is always there.
+                let _ = krate::ui::text_entry::start(self.win);
+                self.typing = true;
+                self.code_short = false;
+            }
+            // Too few letters: say so under the field, and stay.
+            Hit::CodeSubmit => self.code_short = true,
             _ => {}
         }
     }
@@ -895,6 +1181,24 @@ impl krate::Guest for Component {
             sections: Vec::new(),
             hub_state: HubState::Ready,
             progress: Vec::new(),
+            sync: read_sync(),
+            code: {
+                // `sync-code` and the code: shown once, never in a file.
+                let raw = args::raw();
+                let mut parts = raw.split('\n');
+                (parts.next() == Some("sync-code"))
+                    .then(|| parts.next())
+                    .flatten()
+                    .map(|c| {
+                        c.chars()
+                            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                            .collect::<String>()
+                    })
+                    .filter(|c| !c.is_empty())
+            },
+            typed: String::new(),
+            typing: false,
+            code_short: false,
             next_poll: 0,
             mark: canvas_images::keep(canvas, MARK_SIZE, MARK_SIZE, MARK).ok(),
             fades: Vec::new(),
@@ -932,7 +1236,7 @@ impl krate::Guest for Component {
             .unwrap_or_default();
         let tab = match start.split_once(':').map(|(a, _)| a).unwrap_or(&start) {
             "discover" | "hub" => Tab::Discover,
-            "you" | "settings" | "storage" | "safety" | "links" => Tab::You,
+            "you" | "settings" | "storage" | "safety" | "links" | "sync" | "recover" => Tab::You,
             _ => Tab::Library,
         };
         home.switch(tab);
@@ -963,6 +1267,14 @@ impl krate::Guest for Component {
                 }
                 if let Some(page) = under {
                     home.push(page);
+                }
+                // Sync opens from You, and the code page over it.
+                if (start == "sync" || start == "recover") && home.sync.known {
+                    home.push(Target::Sync);
+                    home.page_anim = None;
+                    if start == "recover" {
+                        home.push(Target::Recover);
+                    }
                 }
             }
         }
@@ -1128,6 +1440,42 @@ fn handle(
                 (Next::Stay, true)
             } else {
                 (Next::Leave("home:closed".to_string()), false)
+            }
+        }
+        // The recovery code, typed: letters and digits only, at most 26.
+        types::Event::TextInput(text) if home.typing => {
+            for c in text.chars().filter(char::is_ascii_alphanumeric) {
+                if home.typed.len() < CODE_LEN {
+                    home.typed.push(c.to_ascii_uppercase());
+                }
+            }
+            home.code_short = false;
+            (Next::Stay, true)
+        }
+        types::Event::TextChanged(change) if home.typing => {
+            home.typed = change
+                .text
+                .chars()
+                .filter(char::is_ascii_alphanumeric)
+                .map(|c| c.to_ascii_uppercase())
+                .take(CODE_LEN)
+                .collect();
+            (Next::Stay, true)
+        }
+        types::Event::Key(key) if key.pressed && home.typing && key.key == "Backspace" => {
+            home.typed.pop();
+            (Next::Stay, true)
+        }
+        types::Event::Key(key) if key.pressed && home.typing && key.key == "Enter" => {
+            match Hit::CodeSubmit.answer(home) {
+                Some(answer) => {
+                    home.stop_typing();
+                    (Next::Leave(answer), false)
+                }
+                None => {
+                    home.code_short = true;
+                    (Next::Stay, true)
+                }
             }
         }
         types::Event::Key(key)

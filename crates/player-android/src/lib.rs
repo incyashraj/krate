@@ -26,6 +26,10 @@ pub mod home;
 #[cfg(target_os = "android")]
 mod intent;
 pub mod run_config;
+// Sync on Krate's home (IC-981 S2), shared with the iPhone player.
+#[cfg(any(target_os = "android", test))]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub mod sync_home;
 
 // The hub's catalogue, screenshots and downloads: the iPhone player's own
 // code, included rather than copied, so both phones show one Discover.
@@ -382,6 +386,20 @@ mod player {
         for file in [&stores.kv, &stores.sql, &stores.secrets, &stores.shared] {
             let _ = std::fs::remove_file(file);
         }
+        crate::sync_home::forget_after_clear(data_root, app_id);
+    }
+
+    /// This phone, as sync on the home screen needs it (IC-981 S2): the same
+    /// folder, name and key a run's sync uses.
+    fn sync_phone(data_root: &Path) -> crate::sync_home::Phone {
+        crate::sync_home::Phone {
+            data_root: data_root.to_path_buf(),
+            device_dir: data_root.join("account-sync"),
+            token: crate::account::token(data_root),
+            machine_key: machine_key(data_root),
+            name: phone_name(),
+            hub: crate::run_config::SHARED_HUB.to_string(),
+        }
     }
 
     /// Sign in to Krate without leaving it and without a code: krate.tech's
@@ -526,6 +544,16 @@ mod player {
                     crate::home::perms_file(&uses),
                 );
             }
+            // Sync across the person's devices: what sync.txt says, from
+            // this phone's files; the hub asked on a thread of its own.
+            let phone = sync_phone(data_root);
+            let sync_apps = crate::sync_home::lib_apps(&manifests);
+            let (sync_view, asked) = crate::sync_home::view(&phone, &sync_apps);
+            crate::sync_home::write(&ui, &sync_view);
+            crate::sync_home::check_in_background(&phone, &sync_apps, &ui, false);
+            let args = crate::sync_home::recovery_code(&phone)
+                .map(|code| vec!["sync-code".to_string(), code])
+                .unwrap_or_default();
             // Who is signed in, for the profile tab.
             let signed_in = crate::account::token(data_root).is_some();
             let account = if signed_in {
@@ -557,7 +585,7 @@ mod player {
                 }
             }
 
-            let answer = run_trusted(HOME_WASM, HOME_MANIFEST, &ui, Vec::new())?;
+            let answer = run_trusted(HOME_WASM, HOME_MANIFEST, &ui, args)?;
             match crate::home::home_answer(&answer) {
                 HomeAnswer::Open(n) => {
                     return (n < apps.len()).then(|| apps.swap_remove(n));
@@ -730,6 +758,16 @@ mod player {
                     );
                     let _ = krate_adapter_android::phone::open_url(&link);
                     start = Some("settings".to_string());
+                }
+                HomeAnswer::Sync(answer) => {
+                    let acted = crate::sync_home::act(&phone, &sync_apps, &asked, &answer);
+                    if let Some((title, words)) = &acted.notice {
+                        notice(data_root, title, words);
+                    }
+                    if acted.recheck {
+                        crate::sync_home::check_in_background(&phone, &sync_apps, &ui, true);
+                    }
+                    start = Some(acted.start);
                 }
                 HomeAnswer::Stay => {}
                 HomeAnswer::Closed => return None,
