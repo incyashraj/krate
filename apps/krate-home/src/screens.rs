@@ -2983,7 +2983,7 @@ impl Home {
                     } else {
                         d.name.clone()
                     };
-                    let row = Row::new(&name).icon(Icon::Phone);
+                    let row = Row::new(&name).icon(Icon::for_device(&name));
                     if d.ask {
                         row.sub("Waiting for your yes")
                             .button("Approve", Hit::Approve(i))

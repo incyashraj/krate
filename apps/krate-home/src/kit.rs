@@ -743,11 +743,30 @@ pub(crate) enum Icon {
     Sun,
     /// This device: a phone.
     Phone,
+    /// A computer among a person's devices: a laptop.
+    Laptop,
     /// Sync across devices: two arrows chasing round a circle.
     Sync,
 }
 
 impl Icon {
+    /// The picture for one of a person's devices, from the only thing the
+    /// hub knows of it: its name ("Yashraj's MacBook Pro", "Galaxy S22 Ultra").
+    pub(crate) fn for_device(name: &str) -> Icon {
+        let name = name.to_lowercase();
+        let computer = [
+            "mac", "pc", "windows", "linux", "laptop", "desktop", "computer", "thinkpad", "surface",
+        ];
+        if name.contains("iphone") || name.contains("ipad") {
+            return Icon::Phone;
+        }
+        if computer.iter().any(|word| name.contains(word)) {
+            Icon::Laptop
+        } else {
+            Icon::Phone
+        }
+    }
+
     /// The icon's strokes, as polylines and rings in 24-unit space.
     fn shape(self) -> (Vec<Polyline>, Vec<Ring>) {
         let arc = |cx: f32, cy: f32, r: f32, from: f32, to: f32| -> Vec<(f32, f32)> {
@@ -872,6 +891,18 @@ impl Icon {
                 outline.push((6.5, 5.0));
                 (
                     alloc::vec![outline, alloc::vec![(10.5, 18.5), (13.5, 18.5)]],
+                    Vec::new(),
+                )
+            }
+            Icon::Laptop => {
+                // A screen with rounded top corners, and the base it sits on.
+                let mut screen = arc(6.5, 7.5, 1.5, 180.0, 270.0);
+                screen.extend(arc(17.5, 7.5, 1.5, 270.0, 360.0));
+                screen.push((19.0, 16.0));
+                screen.push((5.0, 16.0));
+                screen.push((5.0, 7.5));
+                (
+                    alloc::vec![screen, alloc::vec![(3.0, 18.5), (21.0, 18.5)]],
                     Vec::new(),
                 )
             }
