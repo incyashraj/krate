@@ -1,0 +1,13 @@
+# Krate Notes' job: keep several notes and show the one picked. Picking a
+# note in the list opens it, title and body.
+name = "open a note from the list"
+[[step]]
+expect_text = "Ship the demo"
+[[step]]
+click = "Groceries"
+[[step]]
+expect_text = "Oat milk"
+[[step]]
+click = "Ideas"
+[[step]]
+expect_text = "Voice memos"
