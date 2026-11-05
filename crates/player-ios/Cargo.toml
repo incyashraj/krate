@@ -24,6 +24,11 @@ krate-accountsync = { path = "../accountsync" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# run_config.rs (shared from player-android) tests the output card against
+# the runtime's own argument rule.
+krate-runtime = { path = "../runtime", default-features = false, features = [
+    "phase2-bindings",
+] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # Speech stays off, same as Android: whisper.cpp on phones is its own
