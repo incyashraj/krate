@@ -139,6 +139,26 @@ fn bytes_of(size: &str) -> f32 {
     n * unit
 }
 
+/// The app's own size from its line ("Received · 489 KB"): the part after
+/// the last middle dot.
+fn line_size(line: &str) -> f32 {
+    line.rsplit('\u{00b7}')
+        .next()
+        .map(|s| bytes_of(s.trim()))
+        .unwrap_or(0.0)
+}
+
+/// Bytes as a person reads them, the way the Player writes sizes.
+fn human_bytes(bytes: f32) -> String {
+    if bytes >= 1024.0 * 1024.0 {
+        format!("{:.1} MB", bytes / (1024.0 * 1024.0))
+    } else if bytes > 0.0 {
+        format!("{} KB", ((bytes / 1024.0) as u32).max(1))
+    } else {
+        String::from("None")
+    }
+}
+
 fn mix(a: gfx::Color, b: gfx::Color, t: f32) -> gfx::Color {
     gfx::Color {
         r: a.r + (b.r - a.r) * t,
@@ -1903,10 +1923,14 @@ impl Home {
             }
             y += card_h + 24.0;
         }
+        // Each app as it counts toward the total above: the app itself and
+        // what it keeps. Its data alone made a 12 MB total read as a list
+        // of "None" and a few KB.
+        let takes = |app: &crate::LibraryApp| line_size(&app.line) + bytes_of(&app.data);
         let mut order: Vec<usize> = (0..self.library.len()).collect();
         order.sort_by(|&a, &b| {
-            bytes_of(&self.library[b].data)
-                .partial_cmp(&bytes_of(&self.library[a].data))
+            takes(&self.library[b])
+                .partial_cmp(&takes(&self.library[a]))
                 .unwrap_or(core::cmp::Ordering::Equal)
         });
         let rows: Vec<Row> = if order.is_empty() {
@@ -1918,7 +1942,7 @@ impl Home {
                     let app = &self.library[n];
                     Row::new(&app.name)
                         .tile(app.face, &app.name, 34.0, false)
-                        .value(&app.data)
+                        .value(&human_bytes(takes(app)))
                         .nav(Hit::Show(Target::Lib(n)))
                 })
                 .collect()
@@ -1930,7 +1954,7 @@ impl Home {
             "Apps, largest first",
             "",
             &rows,
-            "Clear what an app keeps, or remove it, from its page.",
+            "Each app with what it keeps. Clear its data, or remove it, from its page.",
         )
     }
 

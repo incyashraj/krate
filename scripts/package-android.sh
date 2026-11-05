@@ -61,9 +61,13 @@ for so in "$SO" "$SO32"; do
   [ -f "$so" ] && echo "  $(date -r "$so" '+%Y-%m-%d %H:%M') $so"
 done
 
+# Krate's icon (android/res: the adaptive icon and its sizes), compiled
+# for the link. Without it every launcher showed Android's own robot.
+"$BT/aapt2" compile --dir crates/player-android/android/res -o "$OUT/stage/res.zip"
 "$BT/aapt2" link -o "$OUT/stage/base.apk" \
   --manifest crates/player-android/android/AndroidManifest.xml \
-  -I "$SDK/platforms/android-34/android.jar"
+  -I "$SDK/platforms/android-34/android.jar" \
+  "$OUT/stage/res.zip"
 
 mkdir -p "$OUT/stage/classes"
 javac -source 8 -target 8 -Xlint:-options \
