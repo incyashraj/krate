@@ -30,6 +30,7 @@ mod lineedit;
 mod mcp;
 mod org;
 mod player;
+mod port_oracle;
 mod port_report;
 mod progress;
 mod sdk;
@@ -1208,6 +1209,23 @@ enum Command {
         /// Do not offer to install missing build tools.
         #[arg(long)]
         no_install: bool,
+
+        /// Recorded cases the port must reproduce: a `krate.port.oracle.v1`
+        /// JSON file of inputs and the exact output the original gave for
+        /// each. With it a port can end verified; without it a port that
+        /// builds and runs ends "not verified" (exit 7), because nothing
+        /// compared it with the original. The cases are copied into the
+        /// workspace as `oracle.json`, shown to the agent, and guarded like
+        /// the other criteria.
+        #[arg(long, value_name = "FILE")]
+        oracle: Option<PathBuf>,
+
+        /// Print how the port ended as one JSON object on the last line of
+        /// stdout (`krate.port.outcome.v1`): the same verdict, requirement
+        /// and workspace the closing line names. The plain line goes to
+        /// stderr instead.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show the organisation policy in force on this computer, or check
@@ -2385,6 +2403,8 @@ fn run() -> Result<u8> {
             repair_attempts,
             yes,
             no_install,
+            oracle,
+            json,
         } => {
             if author_cmd.is_some() {
                 fleet::ai_build(Some("author-cmd"))?;
@@ -2403,6 +2423,8 @@ fn run() -> Result<u8> {
                 repair_attempts,
                 yes,
                 no_install,
+                oracle,
+                json,
             })
         }
         Command::Mcp => mcp::serve().map(|()| 0),
@@ -2533,6 +2555,8 @@ struct PortRequest {
     repair_attempts: u8,
     yes: bool,
     no_install: bool,
+    oracle: Option<PathBuf>,
+    json: bool,
 }
 
 fn port_project(req: PortRequest) -> Result<u8> {
@@ -2561,22 +2585,52 @@ fn port_project(req: PortRequest) -> Result<u8> {
     if req.yes && req.no_install {
         anyhow::bail!("--yes and --no-install cannot be used together");
     }
-
-    let held_temp = if req.prepare.is_none() && wants_transform {
-        Some(tempfile::tempdir().context("create port work dir")?)
-    } else {
-        None
+    // Which author, settled before anything is written: an agent Krate
+    // cannot port with is the person's to change, and finding that out after
+    // a workspace exists leaves a folder behind for nothing.
+    let author = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
+        (None, None) => None,
+        (Some(name), None) => Some(if let Some(vendor) = api_key::ApiVendor::parse(name) {
+            PortAuthor::Api(vendor)
+        } else {
+            let provider = resolve_agent(name)?;
+            match provider.name() {
+                "claude" => PortAuthor::Claude,
+                // Porting drives the agent with its own prompts and repair
+                // loop, which have only been built for Claude so far. Say
+                // that plainly rather than silently doing something else.
+                other => anyhow::bail!(
+                    "--agent {other} cannot port yet; porting supports `claude`, `anthropic` \
+                     and `openai` today. Use --author-cmd <command> to drive {other} yourself."
+                ),
+            }
+        }),
+        (None, Some(command)) => Some(PortAuthor::Command(command)),
+        _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
     };
-    let workspace_path = req.prepare.clone().unwrap_or_else(|| {
-        held_temp
-            .as_ref()
-            .map(|temp| temp.path().join("workspace"))
-            .unwrap_or_default()
-    });
+    // The recorded cases, read and checked before anything runs: a typo in
+    // the file is the person's to fix, and finding it after an agent has
+    // spent its time is the most expensive way to find it.
+    let oracle = req.oracle.as_deref().map(port_oracle::load).transpose()?;
+
+    // Every ending names this directory, so it has to outlive the run
+    // (IC-120). Without --prepare it used to be a temporary directory that
+    // was deleted on the way out -- so a port that failed took its
+    // candidate, its repair logs and its failure report with it, and the
+    // person was left with an error and nothing to look at. The path is
+    // absolute because the author command runs inside it: a relative
+    // --prepare handed it KRATE_PORT_CANDIDATE=work/candidate, which from
+    // inside `work/` names a folder that does not exist (K-1233).
+    let workspace_path = match req.prepare.as_deref() {
+        Some(dir) => std::path::absolute(dir)
+            .with_context(|| format!("resolve the workspace path {}", dir.display()))?,
+        None if wants_transform => fresh_port_workspace(Path::new(&report.source)),
+        None => PathBuf::new(),
+    };
     let workspace = workspace_path.as_path();
 
     if req.prepare.is_some() || wants_transform {
-        prepare_port_workspace(&report, workspace)?;
+        prepare_port_workspace(&report, workspace, oracle.as_ref())?;
     }
 
     match req.plan_format {
@@ -2590,47 +2644,285 @@ fn port_project(req: PortRequest) -> Result<u8> {
         println!("  review: {}", workspace.join("PORTING.md").display());
         println!("  AI task: {}", workspace.join("AGENT_TASK.md").display());
         println!("  candidate: {}", workspace.join("candidate").display());
+        if oracle.is_some() {
+            println!(
+                "  recorded cases: {}",
+                workspace.join("oracle.json").display()
+            );
+        }
         println!();
         println!("The original source was not changed.");
     }
 
-    if let Some(output) = req.to.as_deref() {
-        preflight_toolchain(req.yes, req.no_install)?;
-        let command = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
-            (Some(name), None) => {
-                if let Some(vendor) = api_key::ApiVendor::parse(name) {
-                    PortAuthor::Api(vendor)
-                } else {
-                    let provider = resolve_agent(name)?;
-                    match provider.name() {
-                        "claude" => PortAuthor::Claude,
-                        // Porting drives the agent with its own prompts and repair
-                        // loop, which have only been built for Claude so far. Say
-                        // that plainly rather than silently doing something else.
-                        other => anyhow::bail!(
-                        "--agent {other} cannot port yet; porting supports `claude`, `anthropic` \
-                         and `openai` today. Use --author-cmd <command> to drive {other} yourself."
-                    ),
-                    }
-                }
-            }
-            (None, Some(command)) => PortAuthor::Command(command),
-            _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
+    if let (Some(output), Some(author)) = (req.to.as_deref(), author) {
+        let mut progress = PortProgress::default();
+        let ran = preflight_toolchain(req.yes, req.no_install)
+            .map_err(|err| port_blocker("toolchain", format!("{err:#}")))
+            .and_then(|()| {
+                complete_port(
+                    PortRun {
+                        plan: &report,
+                        workspace,
+                        output,
+                        author,
+                        transcript: req.transcript.as_deref(),
+                        repair_attempts: req.repair_attempts,
+                        oracle: oracle.as_ref(),
+                    },
+                    &mut progress,
+                )
+            });
+        // One ending per initiation, whatever happened inside it: the port's
+        // own exit code, a closing line that names the verdict and the
+        // workspace, and the same thing as JSON. A bundle that was never
+        // compared against the original is not a finished port, and saying
+        // so in the exit status is what stops a script shipping it.
+        let ending = match ran {
+            Ok(ending) => ending,
+            Err(err) => PortEnding::blocked(err, &progress),
         };
-        // The port's own exit code, not a blanket 0: a bundle that was never
-        // compared against the original is not a finished port, and saying so
-        // in the exit status is what stops a script shipping it.
-        return complete_port(
-            &report,
-            workspace,
-            output,
-            command,
-            req.transcript.as_deref(),
-            req.repair_attempts,
-        );
+        return Ok(finish_port(ending, workspace, &report.source, req.json));
     }
 
     Ok(0)
+}
+
+/// A durable workspace for a port started without `--prepare`, under
+/// `~/.krate/ports/`. Named for the source and the moment, so two ports of
+/// the same project never share one and the newest sorts last.
+fn fresh_port_workspace(source: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    krate_home().join("ports").join(format!(
+        "{}-{stamp}-{}",
+        port_candidate_name(source),
+        std::process::id()
+    ))
+}
+
+/// How one port initiation ended (IC-120). Every run ends in exactly one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PortVerdict {
+    /// A `.krate` at the requested path that matched the original on every
+    /// recorded case, plus the evidence it was judged on.
+    Ported,
+    /// A `.krate` that builds, runs and keeps its permission wall, and that
+    /// nothing compared with the original. Exit 7.
+    Unverified,
+    /// No `.krate` at the requested path: a named requirement failed.
+    Blocked,
+}
+
+impl PortVerdict {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ported => "ported",
+            Self::Unverified => "unverified",
+            Self::Blocked => "blocked",
+        }
+    }
+
+    /// 0 ported, 7 unverified (Studio reads it as "a file with a note on
+    /// it"), 8 blocked. Blocked is its own code rather than 1 so a script can
+    /// tell "this port stopped on a named requirement" from "Krate itself
+    /// could not run".
+    fn exit_code(self) -> u8 {
+        match self {
+            Self::Ported => 0,
+            Self::Unverified => 7,
+            Self::Blocked => 8,
+        }
+    }
+}
+
+/// What the closing line, the outcome file and `--json` all report.
+struct PortEnding {
+    verdict: PortVerdict,
+    /// The requirement that decided the ending: the journey that failed or
+    /// was never checked, or the stage that stopped the run.
+    requirement: Option<String>,
+    /// One plain sentence.
+    reason: String,
+    /// The full error behind a blocker, for the terminal and the report.
+    detail: Option<String>,
+    bundle: Option<PathBuf>,
+    repairs_used: u8,
+    journey_results: Option<PathBuf>,
+}
+
+impl PortEnding {
+    fn blocked(err: anyhow::Error, progress: &PortProgress) -> Self {
+        let (requirement, reason, detail) = match err.downcast_ref::<PortBlocker>() {
+            Some(blocker) => (
+                blocker.requirement.clone(),
+                blocker.summary.clone(),
+                blocker.detail.clone(),
+            ),
+            None => {
+                let detail = format!("{err:#}");
+                (
+                    "port".to_string(),
+                    first_error_line(&detail).to_string(),
+                    detail,
+                )
+            }
+        };
+        Self {
+            verdict: PortVerdict::Blocked,
+            requirement: Some(requirement),
+            reason,
+            detail: Some(detail),
+            bundle: None,
+            repairs_used: progress.repairs_used,
+            journey_results: progress.journey_results.clone(),
+        }
+    }
+}
+
+/// What a run has done so far, kept outside the run so a blocker can still
+/// report it.
+#[derive(Default)]
+struct PortProgress {
+    repairs_used: u8,
+    journey_results: Option<PathBuf>,
+}
+
+/// A port that stopped on a named requirement. Carried as an error so `?`
+/// still works inside the run; the ending reads the requirement back out.
+#[derive(Debug)]
+struct PortBlocker {
+    requirement: String,
+    summary: String,
+    detail: String,
+}
+
+impl std::fmt::Display for PortBlocker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+impl std::error::Error for PortBlocker {}
+
+fn port_blocker(requirement: &str, detail: impl Into<String>) -> anyhow::Error {
+    let detail = detail.into();
+    PortBlocker {
+        requirement: requirement.to_string(),
+        summary: first_error_line(&detail).to_string(),
+        detail,
+    }
+    .into()
+}
+
+/// Any failure of the author itself -- it crashed, ran out of time, could not
+/// start -- is the `agent` requirement, whatever it printed.
+fn agent_failed(err: anyhow::Error) -> anyhow::Error {
+    if err.downcast_ref::<PortBlocker>().is_some() {
+        return err;
+    }
+    port_blocker("agent", format!("{err:#}"))
+}
+
+/// Print the ending and return the exit code. The last line a person sees
+/// names the verdict, what decided it, and the preserved workspace; the same
+/// classification is written to `port-outcome.json` and, under `--json`,
+/// printed as the last line of stdout.
+fn finish_port(ending: PortEnding, workspace: &Path, source: &str, json: bool) -> u8 {
+    let mut failure_report = None;
+    if ending.verdict == PortVerdict::Blocked {
+        let requirement = ending.requirement.as_deref().unwrap_or("port");
+        let detail = ending.detail.as_deref().unwrap_or(&ending.reason);
+        // Before the error goes to the terminal and is lost, say what kind of
+        // failure it was and write the report the person can choose to send.
+        // Nothing leaves this machine here. Not for an ending that already
+        // said exactly what to do -- a missing compiler, a path that exists,
+        // a criterion or source that changed -- where "send us the report"
+        // would ask for something that tells us nothing.
+        let reportable = !matches!(
+            requirement,
+            "toolchain"
+                | "output-path"
+                | "supported-source"
+                | "criteria-unchanged"
+                | "source-unchanged"
+        );
+        if reportable && workspace.is_dir() {
+            let failure = port_report::classify_for(requirement, detail);
+            failure_report =
+                write_port_failure_report(workspace, &failure, detail, Path::new(source));
+            print_port_failure_guidance(&failure, failure_report.as_deref());
+        }
+        eprintln!("error: {detail}");
+        let staged = workspace.join("candidate.krate");
+        if staged.is_file() {
+            // The failed candidate stays in the workspace as diagnostics.
+            // Nothing was written to the requested path (IC-785).
+            eprintln!(
+                "  the failed candidate is kept at {} -- the requested path was not touched",
+                staged.display()
+            );
+        }
+    }
+
+    let workspace_text = workspace.display().to_string();
+    let bundle = ending
+        .bundle
+        .as_deref()
+        .map(|b| std::path::absolute(b).unwrap_or_else(|_| b.to_path_buf()));
+    let line = match ending.verdict {
+        PortVerdict::Ported => format!(
+            "Ported: {} -- {}. Workspace: {workspace_text}",
+            bundle
+                .as_deref()
+                .map(|b| b.display().to_string())
+                .unwrap_or_default(),
+            ending.reason.trim_end_matches('.')
+        ),
+        PortVerdict::Unverified => format!(
+            "Not verified: {} -- {}. Workspace: {workspace_text}",
+            bundle
+                .as_deref()
+                .map(|b| b.display().to_string())
+                .unwrap_or_default(),
+            ending.reason.trim_end_matches('.')
+        ),
+        PortVerdict::Blocked => format!(
+            "Blocked on {}: {}. Workspace: {workspace_text}",
+            ending.requirement.as_deref().unwrap_or("port"),
+            ending.reason.trim_end_matches('.')
+        ),
+    };
+
+    let outcome = serde_json::json!({
+        "schema": "krate.port.outcome.v1",
+        "verdict": ending.verdict.as_str(),
+        "exit_code": ending.verdict.exit_code(),
+        "requirement": ending.requirement,
+        "reason": ending.reason,
+        "workspace": workspace_text,
+        "bundle": bundle.as_deref().map(|b| b.display().to_string()),
+        "repair_attempts_used": ending.repairs_used,
+        "journey_results": ending.journey_results.as_deref().map(|p| p.display().to_string()),
+        "failure_report": failure_report.as_deref().map(|p| p.display().to_string()),
+    });
+    let outcome_text = serde_json::to_string(&outcome).unwrap_or_default();
+    if workspace.is_dir() {
+        let _ = fs::write(
+            workspace.join("port-outcome.json"),
+            format!("{outcome_text}\n"),
+        );
+    }
+
+    if json {
+        eprintln!("{line}");
+        println!("{outcome_text}");
+    } else {
+        println!();
+        println!("{line}");
+    }
+    ending.verdict.exit_code()
 }
 
 #[derive(Clone, Copy)]
@@ -2650,7 +2942,11 @@ enum PortAuthor<'a> {
 /// Krate's strict component rules, and a task that forbids silent feature
 /// deletion. A later agent run edits only `candidate/`; the original project
 /// remains outside the workspace and untouched.
-fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Result<()> {
+fn prepare_port_workspace(
+    plan: &krate_port::PortPlan,
+    workspace: &Path,
+    oracle: Option<&port_oracle::PortOracle>,
+) -> Result<()> {
     use krate_author::{generate, AppKind, AppRequest};
 
     if workspace.exists() {
@@ -2723,11 +3019,19 @@ fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Resu
         serde_json::to_string_pretty(&snapshot)? + "\n",
     )?;
     fs::write(workspace.join("PORTING.md"), porting_readme(plan, &name))?;
-    fs::write(
-        workspace.join("AGENT_TASK.md"),
-        port_agent_task(&workspace_plan, &name),
-    )?;
-    let journeys = port_behavior_journeys(&workspace_plan);
+    let mut task = port_agent_task(&workspace_plan, &name);
+    if let Some(oracle) = oracle {
+        fs::write(
+            workspace.join("oracle.json"),
+            serde_json::to_string_pretty(oracle)? + "\n",
+        )?;
+        task.push_str(&port_oracle::task_section(oracle));
+    }
+    fs::write(workspace.join("AGENT_TASK.md"), task)?;
+    let mut journeys = port_behavior_journeys(&workspace_plan);
+    if let Some(oracle) = oracle {
+        port_oracle::mark_journeys(&mut journeys, oracle);
+    }
     fs::write(
         workspace.join("journeys.json"),
         serde_json::to_string_pretty(&journeys)? + "\n",
@@ -3057,25 +3361,49 @@ capability. Do not try to run or embed the original.\n",
     )
 }
 
-fn complete_port(
-    original_plan: &krate_port::PortPlan,
-    workspace: &Path,
-    output: &Path,
-    author: PortAuthor<'_>,
-    transcript_path: Option<&Path>,
+/// Everything one port run is handed.
+struct PortRun<'a> {
+    plan: &'a krate_port::PortPlan,
+    workspace: &'a Path,
+    output: &'a Path,
+    author: PortAuthor<'a>,
+    transcript: Option<&'a Path>,
     repair_attempts: u8,
-) -> Result<u8> {
+    oracle: Option<&'a port_oracle::PortOracle>,
+}
+
+/// Carry one accepted port request from transformation to a verdict.
+///
+/// Returns the ending for a bundle that exists (ported or unverified); every
+/// other way out is an error the caller turns into a blocked ending, and a
+/// [`PortBlocker`] among them names the requirement that stopped it.
+fn complete_port(run: PortRun<'_>, progress: &mut PortProgress) -> Result<PortEnding> {
+    let PortRun {
+        plan: original_plan,
+        workspace,
+        output,
+        author,
+        transcript: transcript_path,
+        repair_attempts,
+        oracle,
+    } = run;
     if original_plan.verdict == krate_port::Verdict::Unsupported {
-        anyhow::bail!(
-            "this source has blocking behavior; review {} before attempting a port",
-            workspace.join("PORTING.md").display()
-        );
+        return Err(port_blocker(
+            "supported-source",
+            format!(
+                "this source has blocking behavior; review {} before attempting a port",
+                workspace.join("PORTING.md").display()
+            ),
+        ));
     }
     if output.exists() {
-        anyhow::bail!(
-            "{} already exists; choose another --to path",
-            output.display()
-        );
+        return Err(port_blocker(
+            "output-path",
+            format!(
+                "{} already exists; choose another --to path",
+                output.display()
+            ),
+        ));
     }
 
     let candidate = workspace.join("candidate");
@@ -3100,11 +3428,13 @@ fn complete_port(
     let criteria = AcceptanceCriteria::capture(workspace)?;
     let author_name = match author {
         PortAuthor::Claude => {
-            run_claude_port(workspace, &source_snapshot, &candidate, &task_path)?;
+            run_claude_port(workspace, &source_snapshot, &candidate, &task_path)
+                .map_err(agent_failed)?;
             "claude"
         }
         PortAuthor::Api(vendor) => {
-            run_api_port(vendor, &source_snapshot, &candidate, &task_path, None)?;
+            run_api_port(vendor, &source_snapshot, &candidate, &task_path, None)
+                .map_err(agent_failed)?;
             match vendor {
                 api_key::ApiVendor::Anthropic => "anthropic",
                 api_key::ApiVendor::OpenAi => "openai",
@@ -3119,7 +3449,8 @@ fn complete_port(
                 &plan_path,
                 &task_path,
                 None,
-            )?;
+            )
+            .map_err(agent_failed)?;
             "external-command"
         }
     };
@@ -3132,175 +3463,171 @@ fn complete_port(
     // The agent receives read access to the source in order to understand it,
     // but it must edit only the isolated candidate. Re-analyze the source and
     // compare the complete deterministic plan before building anything.
-    let after_plan = krate_port::analyze(original_source)
-        .with_context(|| format!("re-check original source {}", original_source.display()))?;
-    if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
-        anyhow::bail!(
-            "the original source changed while the port agent was running; \
-             Krate stopped before packaging. Review the source and workspace."
-        );
-    }
+    ensure_original_source_unchanged(original_plan, original_source)?;
 
-    let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
-    if lib_after == scaffold_lib {
-        anyhow::bail!(
-            "the port agent finished without changing the candidate: src/lib.rs is \
-             byte-identical to the starter, so this would package the scaffold as if \
-             it were the app. The agent's transcript is at {} -- it usually means the \
-             agent explained the port instead of performing it.",
-            workspace.join(".agent-transcript.txt").display()
-        );
-    }
-    if lib_after.contains("This is a starting point, not the ported app") {
-        anyhow::bail!(
-            "the candidate still carries the starter's own header, so the app body \
-             was not replaced. See the transcript at {}.",
-            workspace.join(".agent-transcript.txt").display()
-        );
-    }
-
-    let mut repairs_used = 0_u8;
-    let validated = loop {
-        println!("==> validating the port candidate");
-        match validate_port_candidate(&candidate) {
-            Ok(validated) => break validated,
-            Err(error) if repairs_used < repair_attempts => {
-                repairs_used += 1;
-                let repair_dir = workspace.join("repair");
-                fs::create_dir_all(&repair_dir)?;
-                let error_path = repair_dir.join(format!("attempt-{repairs_used}.txt"));
-                fs::write(&error_path, format!("{error}\n"))?;
-                println!(
-                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
-                    first_error_line(&error)
-                );
-                run_port_repair(
-                    author,
-                    workspace,
-                    &source_snapshot,
-                    &candidate,
-                    &plan_path,
-                    &task_path,
-                    PortRepair {
-                        attempt: repairs_used,
-                        error_path: &error_path,
-                    },
-                )?;
-                ensure_original_source_unchanged(original_plan, original_source)?;
-                // A repair is the place the register names: a test edit
-                // hidden inside a code fix. Re-check after every attempt.
-                criteria.ensure_unchanged(workspace)?;
-            }
-            Err(error) => {
-                // The port is over. Before the error goes to the terminal and
-                // is lost, say what kind of failure it was and what that means
-                // for the person waiting -- and write the report they can
-                // choose to send us. Nothing leaves this machine here.
-                let report_path = write_port_failure_report(workspace, &error, original_source);
-                print_port_failure_guidance(&error, report_path.as_deref());
-                anyhow::bail!(
-                    "the port candidate did not pass validation after {} repair attempt(s):\n{}",
-                    repairs_used,
-                    error
-                )
-            }
+    let transcript_note = {
+        let transcript = workspace.join(".agent-transcript.txt");
+        if transcript.is_file() {
+            format!(" The agent's transcript is at {}.", transcript.display())
+        } else {
+            String::new()
         }
     };
-    let wasm = validated.wasm;
-    let manifest = validated.manifest;
+    let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
+    if lib_after == scaffold_lib {
+        return Err(port_blocker(
+            "agent",
+            format!(
+                "the port agent finished without changing the candidate: src/lib.rs is \
+                 byte-identical to the starter, so this would package the scaffold as if \
+                 it were the app. It usually means the agent explained the port instead \
+                 of performing it.{transcript_note}"
+            ),
+        ));
+    }
+    if lib_after.contains("This is a starting point, not the ported app") {
+        return Err(port_blocker(
+            "agent",
+            format!(
+                "the candidate still carries the starter's own header, so the app body \
+                 was not replaced.{transcript_note}"
+            ),
+        ));
+    }
 
-    println!("==> packing {}", output.display());
+    // One loop from build to behavior, with one repair budget across it.
+    //
+    // Verification used to sit outside the budget, so a candidate that
+    // compiled cleanly and computed the wrong answer got zero attempts while
+    // a build error got two -- backwards, because a failing check names the
+    // problem in one line and is the most repairable failure there is. A
+    // ported RSS reader stripped tags before decoding entities, said so in
+    // its own output, and was never asked to try again. And a repair that
+    // broke the build ended the port outright, with budget left.
     let manifest_src = candidate.join("manifest.toml");
     let pack_dir = tempfile::tempdir().context("create port pack dir")?;
     let code = pack_dir.path().join("code.wasm");
-    fs::copy(&wasm, &code)?;
     let packed_manifest = pack_dir.path().join("manifest.toml");
-    write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
     let assets = candidate.join("assets");
     // Packed into the run's own workspace, not the requested path (IC-785).
     // This used to pack straight to `output` and verify afterwards, so a
     // candidate that then failed verification left a plausible .krate at the
     // success path -- and had already replaced whatever the person kept
-    // there. The staged bundle is promoted only after the wall verdict.
+    // there. The staged bundle is promoted only after every check passed.
     let staged = workspace.join("candidate.krate");
-    let size = krate_bundle::pack_with_assets(
-        &packed_manifest,
-        &code,
-        assets.is_dir().then_some(assets.as_path()),
-        &staged,
-    )
-    .with_context(|| format!("pack {}", staged.display()))?;
-
-    println!("==> verifying the permission wall");
-    // Verification is inside the repair budget too. It used to sit outside it,
-    // so a candidate that compiled cleanly and computed the wrong answer got
-    // zero attempts while a build error got two -- backwards, because a failing
-    // self-check names the problem in one line and is the most repairable
-    // failure there is. A ported RSS reader stripped tags before decoding
-    // entities, said so in its own output, and was never asked to try again.
-    let gating = loop {
-        match verify_packed_app(&staged, &manifest) {
-            Ok(gating) => break gating,
-            Err(error) if repairs_used < repair_attempts => {
-                repairs_used += 1;
-                let repair_dir = workspace.join("repair");
-                fs::create_dir_all(&repair_dir)?;
-                let error_path = repair_dir.join(format!("verify-{repairs_used}.txt"));
-                fs::write(&error_path, format!("{error}\n"))?;
-                println!(
-                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
-                    first_error_line(&error.to_string())
-                );
-                run_port_repair(
-                    author,
-                    workspace,
-                    &source_snapshot,
-                    &candidate,
-                    &plan_path,
-                    &task_path,
-                    PortRepair {
-                        attempt: repairs_used,
-                        error_path: &error_path,
-                    },
-                )?;
-                ensure_original_source_unchanged(original_plan, original_source)?;
-                // A repair is the place the register names: a test edit
-                // hidden inside a code fix. Re-check after every attempt.
-                criteria.ensure_unchanged(workspace)?;
-                // The repair changed the source, so rebuild and repack before
-                // asking again -- otherwise the next attempt verifies the same
-                // bundle and fails identically.
-                let revalidated = validate_port_candidate(&candidate).map_err(|err| {
-                    anyhow::anyhow!("the repaired candidate no longer builds:\n{err}")
-                })?;
-                fs::copy(&revalidated.wasm, &code)?;
+    let (manifest, size, gating, behavior) = loop {
+        println!("==> validating the port candidate");
+        // (requirement, the exact error a repair is handed, repair log name)
+        let failed: (String, String, &str) = match validate_port_candidate(&candidate) {
+            Err(error) => ("build".to_string(), error, "attempt"),
+            Ok(validated) => {
+                println!("==> packing {}", staged.display());
+                fs::copy(&validated.wasm, &code)?;
                 write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
-                krate_bundle::pack_with_assets(
+                let size = krate_bundle::pack_with_assets(
                     &packed_manifest,
                     &code,
                     assets.is_dir().then_some(assets.as_path()),
                     &staged,
                 )
-                .with_context(|| format!("repack {}", staged.display()))?;
+                .with_context(|| format!("pack {}", staged.display()))?;
+                println!("==> verifying the permission wall");
+                match verify_packed_app(&staged, &validated.manifest) {
+                    Err(error) => ("permission-wall".to_string(), error.to_string(), "verify"),
+                    Ok(gating) => match oracle {
+                        None => break (validated.manifest, size, gating, None),
+                        Some(oracle) => {
+                            println!(
+                                "==> comparing with the original on {} recorded case(s)",
+                                oracle.cases.len()
+                            );
+                            let checked =
+                                check_port_behavior(&staged, &validated.manifest, oracle)?;
+                            let failures = checked.failures();
+                            match failures.first() {
+                                None => break (validated.manifest, size, gating, Some(checked)),
+                                Some(first) => {
+                                    let requirement = first.case.journey.clone();
+                                    let summary = first.summary();
+                                    // The evidence of what failed outlives the run,
+                                    // whether a repair fixes it or not.
+                                    progress.journey_results = Some(write_journey_results(
+                                        workspace,
+                                        &sha256_file(&staged)?,
+                                        &gating,
+                                        Some(&checked),
+                                    )?);
+                                    if progress.repairs_used >= repair_attempts {
+                                        return Err(PortBlocker {
+                                            requirement,
+                                            summary: format!(
+                                                "{summary} ({} repair attempt(s) used)",
+                                                progress.repairs_used
+                                            ),
+                                            detail: checked.report(),
+                                        }
+                                        .into());
+                                    }
+                                    (requirement, checked.report(), "behavior")
+                                }
+                            }
+                        }
+                    },
+                }
             }
-            Err(error) => {
-                let report_path =
-                    write_port_failure_report(workspace, &error.to_string(), original_source);
-                print_port_failure_guidance(&error.to_string(), report_path.as_deref());
-                // The failed candidate stays in the workspace as diagnostics.
-                // Nothing was written to the requested path: whatever the
-                // person kept there is exactly as it was (IC-785).
-                println!(
-                    "  the failed candidate is kept at {} -- {} was not touched",
-                    staged.display(),
-                    output.display()
-                );
-                return Err(error);
+        };
+        let (requirement, error, log_name) = failed;
+        if progress.repairs_used >= repair_attempts {
+            let what = if requirement == "build" {
+                "the port candidate did not pass validation"
+            } else {
+                "the packed candidate did not pass the permission wall"
+            };
+            return Err(PortBlocker {
+                summary: format!(
+                    "{} ({} repair attempt(s) used)",
+                    first_error_line(&error),
+                    progress.repairs_used
+                ),
+                detail: format!(
+                    "{what} after {} repair attempt(s):\n{error}",
+                    progress.repairs_used
+                ),
+                requirement,
             }
+            .into());
         }
+        progress.repairs_used += 1;
+        let attempt = progress.repairs_used;
+        let repair_dir = workspace.join("repair");
+        fs::create_dir_all(&repair_dir)?;
+        let error_path = repair_dir.join(format!("{log_name}-{attempt}.txt"));
+        fs::write(&error_path, format!("{error}\n"))?;
+        println!(
+            "==> repair attempt {attempt}/{repair_attempts} ({requirement}): {}",
+            first_error_line(&error)
+        );
+        run_port_repair(
+            author,
+            workspace,
+            &source_snapshot,
+            &candidate,
+            &plan_path,
+            &task_path,
+            PortRepair {
+                attempt,
+                error_path: &error_path,
+            },
+        )
+        .map_err(agent_failed)?;
+        ensure_original_source_unchanged(original_plan, original_source)?;
+        // A repair is the place the register names: a test edit hidden
+        // inside a code fix. Re-check after every attempt.
+        criteria.ensure_unchanged(workspace)?;
     };
+    let repairs_used = progress.repairs_used;
 
-    // Verification passed on the staged bytes; only now do they take the
+    // Every check passed on the staged bytes; only now do they take the
     // requested path, through a sibling-and-rename so an interruption leaves
     // the old file or the complete new one, never a torn half (IC-861's
     // discipline, applied to promotion).
@@ -3335,36 +3662,11 @@ fn complete_port(
     } else {
         None
     };
-    let journey_results = serde_json::json!({
-        "schema": "krate.port.journey-results.v1",
-        "bundle_sha256": bundle_sha256,
-        "results": [
-            {
-                "id": "launch",
-                "status": "passed",
-                "evidence": "bounded quick path exited with code 0"
-            },
-            {
-                "id": "permission-denial",
-                "status": "passed",
-                "evidence": format!("withholding {gating} exited with code 5")
-            },
-            {
-                "id": "primary-task",
-                "status": "not-verified",
-                "evidence": "manual comparison with the source application is required"
-            },
-            {
-                "id": "same-bundle-three-systems",
-                "status": "not-verified",
-                "evidence": "the exact bundle must run on macOS, Windows, and Linux"
-            }
-        ]
-    });
-    fs::write(
-        workspace.join("journey-results.json"),
-        serde_json::to_string_pretty(&journey_results)? + "\n",
-    )?;
+    let journey_results_path =
+        write_journey_results(workspace, &bundle_sha256, &gating, behavior.as_ref())?;
+    progress.journey_results = Some(journey_results_path.clone());
+    let journey_results: serde_json::Value =
+        serde_json::from_slice(&fs::read(&journey_results_path)?)?;
     let artifact = serde_json::json!({
         "schema": "krate.port.artifact.v1",
         "bundle": output.to_string_lossy(),
@@ -3379,8 +3681,47 @@ fn complete_port(
         workspace.join("artifact.json"),
         serde_json::to_string_pretty(&artifact)? + "\n",
     )?;
+
+    // The journeys this run did not settle. They are written down in the
+    // journey record, honestly, as `not-verified` -- what was missing was the
+    // pipeline reading its own record before declaring the port done.
+    //
+    // E5: an invoice application printing `total=100` was ported into an app
+    // printing a word-frequency table. It built, imported only krate:*, ran,
+    // refused without its capability, and was reported as a finished port with
+    // four passed checks, while `primary-task` sat at `not-verified` in the
+    // same output. A permission-denial pass is not a primary-task pass, and
+    // treating four green mechanical checks as a port is how the wrong app
+    // gets shipped under the right name.
+    let statuses: Vec<(String, String)> = journey_results["results"]
+        .as_array()
+        .map(|results| {
+            results
+                .iter()
+                .filter_map(|r| {
+                    Some((
+                        r["id"].as_str()?.to_string(),
+                        r["status"].as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let unverified: Vec<&str> = statuses
+        .iter()
+        .filter(|(_, status)| status == "not-verified")
+        .map(|(id, _)| id.as_str())
+        .collect();
+    let not_run: Vec<&str> = statuses
+        .iter()
+        .filter(|(_, status)| status == "not-run")
+        .map(|(id, _)| id.as_str())
+        .collect();
+    let cases_passed = behavior.as_ref().map(|b| b.results.len()).unwrap_or(0);
+
     let transcript = serde_json::json!({
         "schema": "krate.port.result.v1",
+        "verdict": if unverified.is_empty() { "ported" } else { "unverified" },
         "source": original_plan.source,
         "profile": original_plan.profile,
         "plan_verdict": original_plan.verdict,
@@ -3395,20 +3736,12 @@ fn complete_port(
         "requested_permissions": permissions,
         "gating_permission": gating,
         "agent_result": result_note,
-        "checks": [
-            "candidate built as a WebAssembly component",
-            "component imports only krate:* interfaces",
-            "bundle runs with all declared grants",
-            "bundle refuses when its required gating permission is withheld"
-        ],
+        "checks": port_checks(cases_passed),
         "behavior_journeys": workspace.join("journeys.json").to_string_lossy(),
-        "journey_results": workspace.join("journey-results.json").to_string_lossy(),
+        "journey_results": journey_results_path.to_string_lossy(),
         "artifact_evidence": workspace.join("artifact.json").to_string_lossy(),
-        "remaining_verification": [
-            "compare the original and ported user journeys",
-            "test interactive behavior and persistence",
-            "run the same bundle on Mac, Windows, and Linux"
-        ]
+        "recorded_cases": behavior.as_ref().map(|_| workspace.join("oracle.json").to_string_lossy().into_owned()),
+        "remaining_verification": unverified.iter().chain(not_run.iter()).collect::<Vec<_>>()
     });
     let transcript_json = serde_json::to_string_pretty(&transcript)? + "\n";
     fs::write(workspace.join("port-result.json"), &transcript_json)?;
@@ -3422,28 +3755,6 @@ fn complete_port(
         fs::write(path, &transcript_json).with_context(|| format!("write {}", path.display()))?;
     }
 
-    // The journeys this run did not settle. They are already written down
-    // above, honestly, as `not-verified` -- what was missing is the pipeline
-    // reading its own record before declaring the port done.
-    //
-    // E5: an invoice application printing `total=100` was ported into an app
-    // printing a word-frequency table. It built, imported only krate:*, ran,
-    // refused without its capability, and was reported as a finished port with
-    // four passed checks, while `primary-task` sat at `not-verified` in the
-    // same output. A permission-denial pass is not a primary-task pass, and
-    // treating four green mechanical checks as a port is how the wrong app
-    // gets shipped under the right name.
-    let unverified: Vec<&str> = journey_results["results"]
-        .as_array()
-        .map(|results| {
-            results
-                .iter()
-                .filter(|r| r["status"] == "not-verified")
-                .filter_map(|r| r["id"].as_str())
-                .collect()
-        })
-        .unwrap_or_default();
-
     println!();
     println!("Created {}", output.display());
     println!("  source unchanged: yes");
@@ -3456,8 +3767,22 @@ fn complete_port(
     println!();
 
     if unverified.is_empty() {
-        println!("Every journey passed. This is a port.");
-        return Ok(0);
+        println!(
+            "  checked:      the app builds, runs, refuses without its access, and \
+             printed what the original printed on {cases_passed} recorded case(s)"
+        );
+        for id in &not_run {
+            print_unchecked_journey(id, "not run here");
+        }
+        return Ok(PortEnding {
+            verdict: PortVerdict::Ported,
+            requirement: None,
+            reason: format!("it matched the original on all {cases_passed} recorded case(s)"),
+            detail: None,
+            bundle: Some(output.to_path_buf()),
+            repairs_used,
+            journey_results: progress.journey_results.clone(),
+        });
     }
 
     println!("This is not a finished port yet.");
@@ -3466,30 +3791,217 @@ fn complete_port(
     println!("  NOT checked:  whether it does what the original did");
     println!();
     println!("  still to check:");
-    for id in &unverified {
-        // Name them, so this is a list of work rather than a warning to skim.
-        match *id {
-            "primary-task" => println!(
-                "    - primary-task: run the original and the port on the same \
-                 input and compare what they print"
-            ),
-            "same-bundle-three-systems" => println!(
-                "    - same-bundle-three-systems: open this exact .krate on \
-                 macOS, Windows and Linux"
-            ),
-            other => println!("    - {other}"),
-        }
+    for id in unverified.iter().chain(not_run.iter()) {
+        print_unchecked_journey(id, "");
     }
     println!();
     println!(
-        "  Record what you find with `krate accept {}`.",
+        "  Record what you find with `krate accept {}`, or give the inputs and the",
         output.display()
     );
+    println!("  original's exact output with --oracle so the next port can check it.");
     // Exit 7: the bundle exists and is real, and the port is not established.
     // Not an error -- nothing went wrong and the file is on disk -- but not a
     // success either, so a script that treated the old exit 0 as "ported"
     // stops here instead of shipping it.
-    Ok(7)
+    let first = unverified.first().copied().unwrap_or("primary-task");
+    let why = match behavior.as_ref().and_then(|b| b.not_run_because.clone()) {
+        Some(why) => format!("{first} was not compared with the original: {why}"),
+        None => format!("{first} was never compared with the original"),
+    };
+    Ok(PortEnding {
+        verdict: PortVerdict::Unverified,
+        requirement: Some(first.to_string()),
+        reason: format!("it builds and runs, but {why}"),
+        detail: None,
+        bundle: Some(output.to_path_buf()),
+        repairs_used,
+        journey_results: progress.journey_results.clone(),
+    })
+}
+
+/// One line per journey a run did not settle, saying what settles it.
+fn print_unchecked_journey(id: &str, label: &str) {
+    let label = if label.is_empty() {
+        String::new()
+    } else {
+        format!("{label}: ")
+    };
+    match id {
+        "primary-task" => println!(
+            "    - {label}primary-task: run the original and the port on the same \
+             input and compare what they print"
+        ),
+        "same-bundle-three-systems" => println!(
+            "    - {label}same-bundle-three-systems: this run had only {}; open this \
+             exact .krate on macOS, Windows and Linux",
+            host_os_name()
+        ),
+        other => println!("    - {label}{other}"),
+    }
+}
+
+fn host_os_name() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        other => other,
+    }
+}
+
+/// What a finished port was judged on, in the transcript's words.
+fn port_checks(cases: usize) -> Vec<String> {
+    let mut checks = vec![
+        "candidate built as a WebAssembly component".to_string(),
+        "component imports only krate:* interfaces".to_string(),
+        "bundle runs with all declared grants".to_string(),
+        "bundle refuses when its required gating permission is withheld".to_string(),
+    ];
+    if cases > 0 {
+        checks.push(format!(
+            "bundle printed exactly what the original printed on {cases} recorded case(s)"
+        ));
+    }
+    checks
+}
+
+/// Write `journey-results.json`: every journey, what settled it, and the
+/// evidence. Written for a blocked behavior check too, so the record of what
+/// differed survives the run.
+fn write_journey_results(
+    workspace: &Path,
+    bundle_sha256: &str,
+    gating: &str,
+    behavior: Option<&port_oracle::BehaviorCheck>,
+) -> Result<PathBuf> {
+    let mut results = vec![
+        serde_json::json!({
+            "id": "launch",
+            "status": "passed",
+            "evidence": "bounded quick path exited with code 0"
+        }),
+        serde_json::json!({
+            "id": "permission-denial",
+            "status": "passed",
+            "evidence": format!("withholding {gating} exited with code 5")
+        }),
+    ];
+    let mut journeys = behavior.map(|b| b.journeys()).unwrap_or_default();
+    if !journeys.iter().any(|j| j == port_oracle::PRIMARY_TASK) {
+        journeys.insert(0, port_oracle::PRIMARY_TASK.to_string());
+    }
+    for journey in journeys {
+        let cases: Vec<&port_oracle::CaseResult> = behavior
+            .map(|b| {
+                b.results
+                    .iter()
+                    .filter(|r| r.case.journey == journey)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let entry = if cases.is_empty() {
+            let evidence = match behavior.and_then(|b| b.not_run_because.as_deref()) {
+                Some(why) => format!("the recorded cases were not run: {why}"),
+                None => "no recorded case covers it; compare it with the original by hand, \
+                         or give one with --oracle"
+                    .to_string(),
+            };
+            serde_json::json!({"id": journey, "status": "not-verified", "evidence": evidence})
+        } else {
+            let passed = cases.iter().all(|r| r.passed());
+            serde_json::json!({
+                "id": journey,
+                "status": if passed { "passed" } else { "failed" },
+                "evidence": format!(
+                    "{} of {} recorded case(s) printed exactly what the original printed",
+                    cases.iter().filter(|r| r.passed()).count(),
+                    cases.len()
+                ),
+                "cases": cases.iter().map(|r| r.evidence()).collect::<Vec<_>>()
+            })
+        };
+        results.push(entry);
+    }
+    results.push(serde_json::json!({
+        "id": "same-bundle-three-systems",
+        "status": "not-run",
+        "evidence": format!(
+            "this run had only {}; the exact bundle must run on macOS, Windows, and Linux",
+            host_os_name()
+        )
+    }));
+    let record = serde_json::json!({
+        "schema": "krate.port.journey-results.v1",
+        "bundle_sha256": bundle_sha256,
+        "results": results
+    });
+    let path = workspace.join("journey-results.json");
+    fs::write(&path, serde_json::to_string_pretty(&record)? + "\n")?;
+    Ok(path)
+}
+
+/// Run the packed candidate on every recorded case and keep what it did.
+///
+/// Each case runs in its own empty folder with its files written in, with the
+/// same grants the permission wall's allow half used: everything that stays
+/// inside the run. A case whose app needs access an automated run may not
+/// grant is not run at all, because a refusal is not the app's behavior.
+fn check_port_behavior(
+    staged: &Path,
+    manifest: &krate_manifest::Manifest,
+    oracle: &port_oracle::PortOracle,
+) -> Result<port_oracle::BehaviorCheck> {
+    let (granted, required_withheld) = grants_inside_the_run(manifest)?;
+    if !required_withheld.is_empty() {
+        return Ok(port_oracle::BehaviorCheck {
+            results: Vec::new(),
+            not_run_because: Some(format!(
+                "the app requires {}, which an automated run may not grant",
+                required_withheld.join(", ")
+            )),
+        });
+    }
+    let bundle = absolute_output_path(staged)?;
+    let bundle_str = bundle.to_str().context("bundle path is not valid UTF-8")?;
+    let mut results = Vec::new();
+    for case in &oracle.cases {
+        let dir = tempfile::tempdir().context("create a folder for a recorded case")?;
+        for (name, contents) in &case.files {
+            let path = dir.path().join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, contents).with_context(|| format!("write {}", path.display()))?;
+        }
+        let mut args: Vec<String> = vec![
+            "run".into(),
+            // Krate is checking the app, not a person using it (IC-245).
+            "--profile".into(),
+            "analysis".into(),
+            bundle_str.into(),
+            "--untrusted".into(),
+            "--headless".into(),
+        ];
+        for cap in &granted {
+            args.push("--grant".into());
+            args.push(cap.clone());
+        }
+        args.push("--".into());
+        args.extend(case.args.iter().cloned());
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (exit, stdout, stderr) = run_self_captured(dir.path(), &refs)?;
+        results.push(port_oracle::CaseResult {
+            case: case.clone(),
+            stdout,
+            stderr,
+            exit,
+        });
+    }
+    Ok(port_oracle::BehaviorCheck {
+        results,
+        not_run_because: None,
+    })
 }
 
 /// Record a person's verdict on a built app.
@@ -3852,10 +4364,10 @@ fn requestable_capability_list() -> String {
 /// returns `None` rather than compounding one error with another.
 fn write_port_failure_report(
     workspace: &Path,
+    failure: &port_report::PortFailure,
     error: &str,
     source: &Path,
 ) -> Option<std::path::PathBuf> {
-    let failure = port_report::classify(error);
     let path = workspace.join("FAILURE-REPORT.md");
 
     let mut text = String::new();
@@ -3902,9 +4414,7 @@ fn write_port_failure_report(
 ///
 /// Printed before the error itself, because the error is long and the part they
 /// need -- is this our gap or their code, and how long -- is one line.
-fn print_port_failure_guidance(error: &str, report_path: Option<&Path>) {
-    let failure = port_report::classify(error);
-
+fn print_port_failure_guidance(failure: &port_report::PortFailure, report_path: Option<&Path>) {
     eprintln!();
     eprintln!("This port failed: {}.", failure.kind.label());
     eprintln!("{}", failure.kind.promise());
@@ -3957,11 +4467,14 @@ impl AcceptanceCriteria {
     /// A file that is not there is recorded as absent, so deleting one is a
     /// change like any other -- deletion is the simplest way to weaken a test.
     fn capture(workspace: &Path) -> Result<Self> {
-        const CRITERIA: [&str; 4] = [
+        const CRITERIA: [&str; 5] = [
             "journeys.json",
             "JOURNEYS.md",
             "port-plan.json",
             "AGENT_TASK.md",
+            // The recorded cases, when the person gave them. Absent is
+            // recorded too, so an agent that writes one of its own is caught.
+            "oracle.json",
         ];
         let mut digests = Vec::new();
         for name in CRITERIA {
@@ -3993,16 +4506,19 @@ impl AcceptanceCriteria {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                anyhow::bail!(
-                    "{name} changed while the port agent was running. That file \
-                     says what this port has to do, so an agent editing it is \
-                     an agent marking its own exam -- Krate stopped before \
-                     packaging.\n\n\
-                     If the requirement really is wrong, change it in {}, then \
-                     start the port again. A criterion is changed in the open, \
-                     before the run, never inside a repair.",
-                    workspace.display()
-                );
+                return Err(port_blocker(
+                    "criteria-unchanged",
+                    format!(
+                        "{name} changed while the port agent was running. That file \
+                         says what this port has to do, so an agent editing it is \
+                         an agent marking its own exam -- Krate stopped before \
+                         packaging.\n\n\
+                         If the requirement really is wrong, change it in {}, then \
+                         start the port again. A criterion is changed in the open, \
+                         before the run, never inside a repair.",
+                        workspace.display()
+                    ),
+                ));
             }
         }
         Ok(())
@@ -4016,10 +4532,11 @@ fn ensure_original_source_unchanged(
     let after_plan = krate_port::analyze(original_source)
         .with_context(|| format!("re-check original source {}", original_source.display()))?;
     if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
-        anyhow::bail!(
+        return Err(port_blocker(
+            "source-unchanged",
             "the original source changed while the port agent was running; \
-             Krate stopped before packaging. Review the source and workspace."
-        );
+             Krate stopped before packaging. Review the source and workspace.",
+        ));
     }
     Ok(())
 }
@@ -4093,11 +4610,74 @@ fn run_port_author_command(
             .env("KRATE_PORT_REPAIR_ATTEMPT", attempt.to_string())
             .env("KRATE_PORT_REPAIR_LOG", error_path);
     }
-    let status = child.status().context("run --author-cmd")?;
+    let mut child = child.spawn().context("start the --author-cmd command")?;
+    let status = wait_for_port_author(&mut child, "the port author command")?;
     if !status.success() {
-        anyhow::bail!("port author command failed");
+        let how = match status.code() {
+            // The shell's own "not found", which reads as the tool failing.
+            // The command runs inside the workspace, so a relative path to a
+            // script beside the person's project is the usual cause.
+            Some(127) => "it exited with code 127, which means the shell could not find \
+                          the command. It runs inside the port workspace, so give a script \
+                          by its absolute path"
+                .to_string(),
+            Some(code) => format!("it exited with code {code}"),
+            None => "it was ended by a signal".to_string(),
+        };
+        anyhow::bail!("the port author command failed: {how}");
     }
     Ok(())
+}
+
+/// How long a port's author may run before it is stopped. The same budget
+/// and override as `krate create`'s agent: generous, because a real port is
+/// many build cycles, and finite, because an author that never returns used
+/// to hold the port -- and the person's terminal -- for ever.
+fn port_author_timeout() -> std::time::Duration {
+    std::time::Duration::from_secs(
+        std::env::var("KRATE_AUTHOR_TIMEOUT_SECS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(AGENT_AUTHOR_TIMEOUT_SECS),
+    )
+}
+
+/// Wait for a port author, stopping it at the deadline.
+///
+/// Only the author process itself is stopped. Something it started and left
+/// running can outlive it, the same as for `krate create`'s agent; an author
+/// run as one command (`sh -c "tool ..."`) is the tool itself, so this ends
+/// it.
+fn wait_for_port_author(
+    child: &mut std::process::Child,
+    what: &str,
+) -> Result<std::process::ExitStatus> {
+    let budget = port_author_timeout();
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .with_context(|| format!("wait for {what}"))?
+        {
+            return Ok(status);
+        }
+        if start.elapsed() >= budget {
+            let _ = child.kill();
+            let _ = child.wait();
+            let secs = budget.as_secs();
+            let said = if secs >= 120 {
+                format!("{} minutes", secs / 60)
+            } else {
+                format!("{secs} seconds")
+            };
+            anyhow::bail!(
+                "{what} did not finish within {said} and was stopped. A large port can \
+                 need longer: set KRATE_AUTHOR_TIMEOUT_SECS to more seconds and start it \
+                 again."
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 /// This binary's path, for a prompt that tells the agent what to run.
@@ -4216,9 +4796,10 @@ port.",
             command.stderr(std::process::Stdio::from(clone));
         }
     }
-    let status = command
-        .status()
+    let mut child = command
+        .spawn()
         .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+    let status = wait_for_port_author(&mut child, "the Claude port agent")?;
     if !status.success() {
         anyhow::bail!(
             "the Claude port agent did not finish successfully: {}; see {}",
@@ -4296,9 +4877,10 @@ explain in chat. Make the smallest complete repair.",
             command.stderr(std::process::Stdio::from(clone));
         }
     }
-    let status = command
-        .status()
+    let mut child = command
+        .spawn()
         .context("run the `claude` CLI for a port repair")?;
+    let status = wait_for_port_author(&mut child, "the Claude repair attempt")?;
     if !status.success() {
         anyhow::bail!(
             "the Claude repair attempt did not finish successfully; see {}",
@@ -15837,6 +16419,95 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
     Ok(read_arg)
 }
 
+/// A manifest's declared capabilities, split into the ones an automated run
+/// may grant (their effects stay inside the run) and the ones only a person
+/// can (they reach the person or the world).
+fn split_grants(manifest: &krate_manifest::Manifest) -> Result<(Vec<String>, Vec<String>)> {
+    let mut granted: Vec<String> = Vec::new();
+    let mut withheld: Vec<String> = Vec::new();
+    for request in &manifest.capabilities {
+        let parsed: krate_manifest::Capability = request
+            .cap
+            .parse()
+            .with_context(|| format!("parse declared capability {}", request.cap))?;
+        if krate_policy::reaches_outside_the_run(&parsed) {
+            withheld.push(request.cap.clone());
+        } else {
+            granted.push(request.cap.clone());
+        }
+    }
+    Ok((granted, withheld))
+}
+
+/// The grants an automated run may give, and the required capabilities it
+/// may not (so the app cannot run here at all).
+fn grants_inside_the_run(
+    manifest: &krate_manifest::Manifest,
+) -> Result<(Vec<String>, Vec<String>)> {
+    let (granted, withheld) = split_grants(manifest)?;
+    let required_withheld = withheld
+        .into_iter()
+        .filter(|cap| {
+            manifest
+                .capabilities
+                .iter()
+                .any(|request| request.required && &request.cap == cap)
+        })
+        .collect();
+    Ok((granted, required_withheld))
+}
+
+/// Re-invoke this binary and keep what the app printed: (exit, stdout,
+/// stderr). Bounded by the verification timeout: a run that waits for ever
+/// is stopped and comes back as exit -1, so it is a failed case, not a hung
+/// port.
+fn run_self_captured(dir: &Path, args: &[&str]) -> Result<(i32, String, String)> {
+    use std::io::Read as _;
+    let exe = std::env::current_exe().context("locate self")?;
+    let mut child = std::process::Command::new(exe)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(dir)
+        .spawn()
+        .context("re-invoke krate for a recorded case")?;
+    let mut out_pipe = child.stdout.take().context("capture the app's stdout")?;
+    let mut err_pipe = child.stderr.take().context("capture the app's stderr")?;
+    let out_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = out_pipe.read_to_end(&mut bytes);
+        bytes
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = err_pipe.read_to_end(&mut bytes);
+        bytes
+    });
+    let start = std::time::Instant::now();
+    let code = loop {
+        if let Some(status) = child.try_wait().context("wait for a recorded case")? {
+            break status.code().unwrap_or(-1);
+        }
+        if start.elapsed() >= VERIFY_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            break -1;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let stdout = out_reader.join().unwrap_or_default();
+    let mut stderr = String::from_utf8_lossy(&err_reader.join().unwrap_or_default()).into_owned();
+    if code == -1 && start.elapsed() >= VERIFY_TIMEOUT {
+        // A case that never ends is a case the port failed, said as such.
+        stderr.push_str(&format!(
+            "\n[krate: stopped after {} seconds without finishing]",
+            VERIFY_TIMEOUT.as_secs()
+        ));
+    }
+    Ok((code, String::from_utf8_lossy(&stdout).into_owned(), stderr))
+}
+
 /// Re-invoke this same `krate` binary in `dir` with `args`, returning its exit
 /// code. Used to verify a packed bundle in isolation.
 /// How long the verification run may take before it is treated as hung and
@@ -15978,19 +16649,7 @@ fn verify_permission_wall(
     manifest: &krate_manifest::Manifest,
     verify_arg: &str,
 ) -> Result<WallEvidence> {
-    let mut granted: Vec<String> = Vec::new();
-    let mut withheld: Vec<String> = Vec::new();
-    for request in &manifest.capabilities {
-        let parsed: krate_manifest::Capability = request
-            .cap
-            .parse()
-            .with_context(|| format!("parse declared capability {}", request.cap))?;
-        if krate_policy::reaches_outside_the_run(&parsed) {
-            withheld.push(request.cap.clone());
-        } else {
-            granted.push(request.cap.clone());
-        }
-    }
+    let (granted, withheld) = split_grants(manifest)?;
     let required_withheld: Vec<&String> = withheld
         .iter()
         .filter(|cap| {

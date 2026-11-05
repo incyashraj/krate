@@ -31,6 +31,13 @@ pub enum FailureKind {
     /// A plain compile error in the ported code: a type mismatch, a borrow, a
     /// typo. The agent has everything it needs and simply got it wrong.
     CodeError,
+    /// The port built and ran, and on a recorded case it printed something
+    /// other than what the original did (IC-120). Not a build problem at all,
+    /// so none of the build promises fit it.
+    BehaviorDiffers,
+    /// The AI tool itself stopped -- it crashed, ran out of time, or changed
+    /// nothing -- so nothing it made was judged.
+    AgentFailed,
     /// Nothing matched. Reported as itself rather than guessed at, because a
     /// wrong classification produces a wrong promise.
     Unknown,
@@ -66,6 +73,17 @@ impl FailureKind {
                  Re-running the port often succeeds. If it keeps failing the same \
                  way, that is worth telling us about."
             }
+            Self::BehaviorDiffers => {
+                "The port builds and runs, but on a recorded case it did not do what \
+                 the original did. The case, what was expected and what came out are \
+                 below. Re-running the port often fixes it; if Krate cannot do what \
+                 the original does, that is worth telling us about."
+            }
+            Self::AgentFailed => {
+                "The AI tool stopped before the port was finished, so nothing it made \
+                 was judged. The workspace is kept as it was. Check that the tool runs \
+                 on its own, then start the port again."
+            }
             Self::Unknown => {
                 "We could not tell from the error what went wrong. Sending the report \
                  is the only way we find out."
@@ -80,6 +98,8 @@ impl FailureKind {
             Self::ImportViolation => "import violation",
             Self::MissingCapability => "missing capability",
             Self::CodeError => "code error",
+            Self::BehaviorDiffers => "different behavior",
+            Self::AgentFailed => "the AI tool stopped",
             Self::Unknown => "unclassified",
         }
     }
@@ -104,6 +124,32 @@ pub struct PortFailure {
     pub foreign_imports: Vec<String>,
     /// The first line of the compiler error, kept for the report.
     pub headline: String,
+}
+
+/// The failure for a port that stopped on a named requirement.
+///
+/// The requirement is the pipeline's own knowledge of where it stopped, and it
+/// beats guessing from text: a behavior mismatch's report quotes the app's
+/// output, which can contain anything, and an agent that crashed printed
+/// whatever it printed. Only a build-stage failure is read for its kind.
+pub fn classify_for(requirement: &str, error_text: &str) -> PortFailure {
+    let kind = match requirement {
+        "agent" => Some(FailureKind::AgentFailed),
+        "build" | "permission-wall" => None,
+        _ if error_text.contains("did not do what the original did") => {
+            Some(FailureKind::BehaviorDiffers)
+        }
+        _ => None,
+    };
+    match kind {
+        Some(kind) => PortFailure {
+            kind,
+            unknown_names: Vec::new(),
+            foreign_imports: Vec::new(),
+            headline: headline(error_text),
+        },
+        None => classify(error_text),
+    }
 }
 
 /// Read a failed build's output and work out what kind of failure it was.
@@ -331,12 +377,34 @@ error: could not compile `hexyl` (lib) due to 1 previous error
     }
 
     #[test]
+    fn the_pipeline_knows_better_than_the_text_where_a_port_stopped() {
+        // An agent that crashed while printing a compiler error is still an
+        // agent that crashed.
+        let agent = classify_for("agent", "error[E0425]: cannot find function `x`");
+        assert_eq!(agent.kind, FailureKind::AgentFailed);
+        assert!(agent.unknown_names.is_empty());
+        // A behavior mismatch quotes the app's output; nothing in it is read
+        // as a build failure.
+        let differs = classify_for(
+            "primary-task",
+            "the port did not do what the original did: case total printed \
+             `error[E0425]: cannot find function` where the original printed `total=100`",
+        );
+        assert_eq!(differs.kind, FailureKind::BehaviorDiffers);
+        // A build failure is still read for its kind.
+        let build = classify_for("build", HEXYL_ERROR);
+        assert_eq!(build.kind, FailureKind::UnknownApi);
+    }
+
+    #[test]
     fn every_kind_has_a_promise_we_can_keep() {
         for kind in [
             FailureKind::UnknownApi,
             FailureKind::ImportViolation,
             FailureKind::MissingCapability,
             FailureKind::CodeError,
+            FailureKind::BehaviorDiffers,
+            FailureKind::AgentFailed,
             FailureKind::Unknown,
         ] {
             let promise = kind.promise();

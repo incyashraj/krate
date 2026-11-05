@@ -679,16 +679,20 @@ fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
     std::fs::write(source.join("src/main.rs"), "fn main() {}\n").expect("write source");
     let bundle = root.path().join("must-not-exist.krate");
 
-    let output = krate()
+    // No --prepare, so the kept workspace goes under a temporary HOME.
+    let home = root.path().join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let mut command = krate();
+    command
         .arg("port")
         .arg(&source)
         .arg("--author-cmd")
         .arg("printf 'fn changed() {}\\n' > \"$KRATE_PORT_SOURCE/src/main.rs\"")
         .arg("--to")
         .arg(&bundle)
-        .arg("--no-install")
-        .output()
-        .expect("run source integrity test");
+        .arg("--no-install");
+    with_temp_home(&mut command, &home);
+    let output = command.output().expect("run source integrity test");
 
     assert!(!output.status.success());
     assert!(!bundle.exists());
@@ -702,6 +706,736 @@ fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
         "unexpected stderr:\n{stderr}\nstdout:\n{}",
         String::from_utf8_lossy(&output.stdout)
     );
+}
+
+/// IC-120's stand-in authors. Each test below drives a full port with a
+/// deterministic author command -- no AI is involved -- and checks how the
+/// one initiation ends: ported with evidence, not verified, or blocked on a
+/// named requirement, always with the workspace kept and named.
+///
+/// The original is the E5 invoice: 2 + 3 + 5 at a unit price of 10 prints
+/// `total=100`. The authors copy one of these into the candidate from the
+/// source snapshot, so the command holds no host path (a Windows temp path
+/// is full of backslashes a shell reads as escapes).
+const INVOICE_PORT: &str = r#"//! Invoice: sums the quantities in a file at a unit price of 10.
+#![no_std]
+extern crate alloc;
+
+use krate::{
+    fs::{self, OpenMode},
+    io::{args, stdio},
+    Guest,
+};
+
+const UNIT_PRICE: i64 = 10;
+
+struct Component;
+
+impl Guest for Component {
+    fn run() -> i32 {
+        let raw = args::raw();
+        let Some(path) = raw.split('\n').find(|arg| !arg.is_empty()) else {
+            let _ = stdio::eprintln("usage: invoice <file>");
+            return 2;
+        };
+        if path == "quick" {
+            let _ = stdio::println("total=0");
+            return 0;
+        }
+        let Ok(file) = fs::open(path, OpenMode::Read) else {
+            let _ = stdio::eprintln("invoice: could not read the file");
+            return 5;
+        };
+        let mut sum: i64 = 0;
+        let mut current: i64 = 0;
+        loop {
+            let Ok(chunk) = file.read(8192) else { return 22 };
+            if chunk.is_empty() {
+                break;
+            }
+            for byte in &chunk {
+                if byte.is_ascii_digit() {
+                    current = current.saturating_mul(10).saturating_add(i64::from(*byte - b'0'));
+                } else {
+                    sum = sum.saturating_add(current);
+                    current = 0;
+                }
+            }
+        }
+        sum = sum.saturating_add(current);
+        let mut line = [0u8; 32];
+        let mut len = 0usize;
+        for b in b"total=" {
+            if let Some(slot) = line.get_mut(len) {
+                *slot = *b;
+                len += 1;
+            }
+        }
+        let mut digits = [0u8; 20];
+        let mut n = 0usize;
+        let mut value = sum.saturating_mul(UNIT_PRICE).unsigned_abs();
+        loop {
+            if let Some(slot) = digits.get_mut(n) {
+                *slot = b'0' + (value % 10) as u8;
+                n += 1;
+            }
+            value /= 10;
+            if value == 0 {
+                break;
+            }
+        }
+        for i in (0..n).rev() {
+            if let (Some(src), Some(dst)) = (digits.get(i), line.get_mut(len)) {
+                *dst = *src;
+                len += 1;
+            }
+        }
+        if let Ok(text) = core::str::from_utf8(line.get(..len).unwrap_or(&[])) {
+            let _ = stdio::println(text);
+        }
+        0
+    }
+}
+
+krate::export!(Component);
+"#;
+
+/// The invoice source, the port variants inside it (read by the author from
+/// the snapshot), and the recorded cases beside it. Returns (source, oracle).
+fn invoice_port_fixture(root: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let source = root.join("invoice");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::create_dir_all(source.join("port-fixtures")).expect("create fixtures");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"invoice\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(
+        source.join("src/main.rs"),
+        r#"use std::{env, fs};
+fn main() {
+    let path = env::args().nth(1).unwrap_or_else(|| "qty.txt".to_string());
+    let text = fs::read_to_string(&path).expect("read quantities");
+    let sum: i64 = text.split_whitespace().filter_map(|w| w.parse::<i64>().ok()).sum();
+    println!("total={}", sum * 10);
+}
+"#,
+    )
+    .expect("write source");
+    std::fs::write(source.join("qty.txt"), "2\n3\n5\n").expect("write input");
+    // The right port, and one that opens, runs and charges 9 a unit.
+    std::fs::write(source.join("port-fixtures/good.rs.txt"), INVOICE_PORT).expect("good");
+    let wrong = INVOICE_PORT.replace("UNIT_PRICE: i64 = 10", "UNIT_PRICE: i64 = 9");
+    assert_ne!(wrong, INVOICE_PORT, "the wrong port must really differ");
+    std::fs::write(source.join("port-fixtures/wrong.rs.txt"), wrong).expect("wrong");
+    let oracle = root.join("cases.json");
+    std::fs::write(
+        &oracle,
+        r#"{
+  "schema": "krate.port.oracle.v1",
+  "cases": [
+    {"id": "invoice-total", "args": ["input/qty.txt"],
+     "files": {"input/qty.txt": "2\n3\n5\n"}, "stdout": "total=100\n"},
+    {"id": "empty-invoice", "args": ["input/empty.txt"],
+     "files": {"input/empty.txt": ""}, "stdout": "total=0\n"}
+  ]
+}
+"#,
+    )
+    .expect("write oracle");
+    (source, oracle)
+}
+
+/// Copy one port variant from the snapshot into the candidate.
+fn copy_port(variant: &str) -> String {
+    format!(
+        "cp \"$KRATE_PORT_SOURCE/port-fixtures/{variant}.rs.txt\" \"$KRATE_PORT_CANDIDATE/src/lib.rs\""
+    )
+}
+
+fn last_line(text: &str) -> &str {
+    text.lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+}
+
+fn port_outcome(workspace: &std::path::Path) -> serde_json::Value {
+    serde_json::from_slice(
+        &std::fs::read(workspace.join("port-outcome.json")).expect("read port-outcome.json"),
+    )
+    .expect("parse port-outcome.json")
+}
+
+/// A port is run against a temporary HOME when it gets no --prepare, so the
+/// workspace it keeps lands there and not in the person's own ~/.krate. The
+/// toolchain stays the real one.
+fn with_temp_home(command: &mut Command, home: &std::path::Path) {
+    let real_home = std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .expect("a home directory");
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".cargo"));
+    let rustup_home = std::env::var_os("RUSTUP_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".rustup"));
+    command
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("CARGO_HOME", cargo_home)
+        .env("RUSTUP_HOME", rustup_home);
+}
+
+/// IC-120: a port that prints what the original printed on every recorded
+/// case ends ported -- the .krate at the requested path, the evidence it was
+/// judged on in the workspace, one closing line, and the same verdict as
+/// JSON. Run from a relative --prepare, which used to hand the author a
+/// candidate path that did not exist from inside the workspace (K-1233).
+#[test]
+fn a_port_that_matches_the_recorded_cases_ends_ported_with_its_evidence() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+
+    let output = krate()
+        .current_dir(root.path())
+        .arg("port")
+        .arg(&source)
+        .args(["--prepare", "port-work"])
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && printf 'Ported the invoice total.\\n' > PORT_RESULT.md",
+            copy_port("good")
+        ))
+        .args(["--to", "invoice.krate", "--no-install", "--json"])
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a port that matches every recorded case is ported\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    assert!(
+        bundle.is_file(),
+        "the verified .krate is at the requested path"
+    );
+
+    // --json: the last line of stdout is the ending.
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    assert_eq!(outcome["schema"], "krate.port.outcome.v1");
+    assert_eq!(outcome["verdict"], "ported");
+    assert_eq!(outcome["exit_code"], 0);
+    assert!(outcome["requirement"].is_null());
+    let named = std::path::PathBuf::from(outcome["workspace"].as_str().expect("workspace"));
+    assert!(named.is_absolute() && named.join("candidate").is_dir());
+    assert_eq!(
+        port_outcome(&workspace),
+        outcome,
+        "the file and the JSON agree"
+    );
+    // And the plain line, on stderr under --json.
+    let line = last_line(&stderr);
+    assert!(line.starts_with("Ported: "), "closing line: {line}");
+    assert!(line.contains("Workspace: "), "closing line: {line}");
+
+    // The evidence the verdict rests on.
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("journey results"),
+    )
+    .expect("parse");
+    let primary = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "primary-task")
+        .expect("primary-task");
+    assert_eq!(primary["status"], "passed");
+    assert_eq!(primary["cases"].as_array().map(Vec::len), Some(2));
+    assert_eq!(primary["cases"][0]["stdout"], "total=100\n");
+    let journeys: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(workspace.join("journeys.json")).expect("journeys"))
+            .expect("parse");
+    assert!(journeys["journeys"]
+        .as_array()
+        .expect("journeys")
+        .iter()
+        .any(|j| j["id"] == "primary-task" && j["kind"] == "recorded-io"));
+    assert!(workspace.join("oracle.json").is_file());
+    let task = std::fs::read_to_string(workspace.join("AGENT_TASK.md")).expect("task");
+    assert!(
+        task.contains("invoice-total"),
+        "the agent is shown the cases"
+    );
+    let result: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("port-result.json")).expect("port result"),
+    )
+    .expect("parse");
+    assert_eq!(result["verdict"], "ported");
+    assert_eq!(result["bundle_sha256"], results["bundle_sha256"]);
+}
+
+/// IC-120's build-only false positive: a candidate that compiles, packs,
+/// imports only krate:*, runs and keeps its permission wall -- and is a
+/// different program. With recorded cases it is blocked on the journey it
+/// fails, never ported, and nothing is written to the requested path.
+#[test]
+fn a_port_that_builds_but_does_something_else_is_blocked_on_its_journey() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    // A working line counter, as in E5.
+    let author = "printf '//! A line counter.\\n#![no_std]\\nextern crate alloc;\\n\
+                  use krate::{io::stdio, Guest};\\nstruct Component;\\n\
+                  impl Guest for Component {\\n    fn run() -> i32 {\\n        \
+                  let _ = stdio::print(\"lines=3\\\\n\");\\n        0\\n    }\\n}\\n\
+                  krate::export!(Component);\\n' > \"$KRATE_PORT_CANDIDATE/src/lib.rs\"";
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(author)
+        .args(["--repair-attempts", "0", "--no-install", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "a line counter is not a port of an invoice app\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!bundle.exists(), "nothing at the requested path");
+    assert!(
+        workspace.join("candidate.krate").is_file(),
+        "the candidate that was judged is kept in the workspace"
+    );
+    let line = last_line(&stdout);
+    assert!(
+        line.starts_with("Blocked on primary-task: ") && line.contains("\"lines=3\""),
+        "the closing line names the journey and what came out: {line}"
+    );
+    assert!(line.contains(&format!("Workspace: {}", workspace.display())));
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "blocked");
+    assert_eq!(outcome["requirement"], "primary-task");
+    assert!(outcome["bundle"].is_null());
+    assert!(
+        stderr.contains("This port failed: different behavior"),
+        "{stderr}"
+    );
+    let report =
+        std::fs::read_to_string(workspace.join("FAILURE-REPORT.md")).expect("failure report");
+    assert!(
+        report.contains("total=100") && report.contains("lines=3"),
+        "{report}"
+    );
+}
+
+/// IC-120's opens-but-wrong behavior and repair exhaustion: an author whose
+/// port opens and prints the wrong total, and whose repairs never fix it,
+/// gets exactly its repair budget -- each attempt handed the difference --
+/// and then ends blocked on the failed journey.
+#[test]
+fn a_port_that_never_prints_the_right_answer_stops_after_its_repair_budget() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(copy_port("wrong"))
+        .args(["--repair-attempts", "2", "--no-install", "--json", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!bundle.exists());
+    for attempt in 1..=2 {
+        let log = std::fs::read_to_string(workspace.join(format!("repair/behavior-{attempt}.txt")))
+            .expect("each repair is handed the difference");
+        assert!(
+            log.contains("total=100") && log.contains("total=90"),
+            "attempt {attempt}: {log}"
+        );
+    }
+    assert!(
+        !workspace.join("repair/behavior-3.txt").exists(),
+        "no third attempt"
+    );
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    assert_eq!(outcome["verdict"], "blocked");
+    assert_eq!(outcome["exit_code"], 8);
+    assert_eq!(outcome["requirement"], "primary-task");
+    assert_eq!(outcome["repair_attempts_used"], 2);
+    assert!(outcome["reason"]
+        .as_str()
+        .expect("reason")
+        .contains("\"total=90\" where the original printed \"total=100\""));
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("journey results"),
+    )
+    .expect("parse");
+    let primary = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "primary-task")
+        .expect("primary-task");
+    assert_eq!(primary["status"], "failed");
+    assert!(last_line(&stderr).starts_with("Blocked on primary-task: "));
+}
+
+/// IC-120's repair success: the first port prints the wrong total, the
+/// repair attempt is handed the difference and fixes it, and the port ends
+/// verified.
+#[test]
+fn a_repair_that_fixes_the_behavior_ends_ported() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    // The repair copies the right port only when the log it was handed names
+    // the wrong total -- proof the difference reached it.
+    let author = format!(
+        "if [ -n \"$KRATE_PORT_REPAIR_LOG\" ]; then \
+         grep -q 'total=90' \"$KRATE_PORT_REPAIR_LOG\" && {good}; \
+         else {wrong}; fi",
+        good = copy_port("good"),
+        wrong = copy_port("wrong")
+    );
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(author)
+        .args(["--repair-attempts", "2", "--no-install", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(bundle.is_file());
+    assert!(workspace.join("repair/behavior-1.txt").is_file());
+    assert!(!workspace.join("repair/behavior-2.txt").exists());
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "ported");
+    assert_eq!(outcome["repair_attempts_used"], 1);
+    assert!(last_line(&stdout).starts_with("Ported: "));
+}
+
+/// IC-120's agent failure: an author that crashes, one that never returns,
+/// and one that changes nothing each end blocked on `agent`, in words, with
+/// the workspace kept and named -- including a port started without
+/// --prepare, whose workspace used to be a temporary directory deleted on
+/// the way out.
+#[test]
+fn an_author_that_crashes_hangs_or_does_nothing_is_a_named_blocker() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, _oracle) = invoice_port_fixture(root.path());
+
+    for (name, author, says) in [
+        (
+            "crash",
+            "echo 'agent crashed' >&2; exit 3",
+            "exited with code 3",
+        ),
+        // One command, so the shell is the sleep itself and stopping it
+        // stops the whole author.
+        ("hang", "sleep 120", "did not finish within 2 seconds"),
+        ("nothing", "true", "without changing the candidate"),
+    ] {
+        let workspace = root.path().join(format!("ws-{name}"));
+        let bundle = root.path().join(format!("{name}.krate"));
+        let started = std::time::Instant::now();
+        let output = krate()
+            .arg("port")
+            .arg(&source)
+            .arg("--prepare")
+            .arg(&workspace)
+            .arg("--author-cmd")
+            .arg(author)
+            .args(["--no-install", "--to"])
+            .arg(&bundle)
+            .env("KRATE_AUTHOR_TIMEOUT_SECS", "2")
+            .output()
+            .expect("run port");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.code(),
+            Some(8),
+            "{name}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "{name}: the author must be stopped at its deadline, not waited on"
+        );
+        assert!(!bundle.exists(), "{name}: no bundle");
+        let line = last_line(&stdout);
+        assert!(
+            line.starts_with("Blocked on agent: ") && line.contains(says),
+            "{name}: closing line: {line}"
+        );
+        assert!(line.contains(&format!("Workspace: {}", workspace.display())));
+        assert!(
+            workspace.join("candidate/src/lib.rs").is_file(),
+            "{name}: kept"
+        );
+        let outcome = port_outcome(&workspace);
+        assert_eq!(outcome["requirement"], "agent", "{name}");
+        assert!(
+            stderr.contains("This port failed: the AI tool stopped"),
+            "{name}: {stderr}"
+        );
+    }
+
+    // No --prepare: the workspace is kept under ~/.krate/ports and named.
+    let home = root.path().join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let mut command = krate();
+    command
+        .arg("port")
+        .arg(&source)
+        .args(["--author-cmd", "exit 3", "--no-install", "--json", "--to"])
+        .arg(root.path().join("unprepared.krate"));
+    with_temp_home(&mut command, &home);
+    let output = command.output().expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    let workspace = std::path::PathBuf::from(outcome["workspace"].as_str().expect("workspace"));
+    assert!(
+        workspace.starts_with(home.join(".krate").join("ports")),
+        "kept under ~/.krate/ports: {}",
+        workspace.display()
+    );
+    assert!(workspace.join("candidate/src/lib.rs").is_file());
+    assert!(workspace.join("FAILURE-REPORT.md").is_file());
+    assert_eq!(port_outcome(&workspace), outcome);
+}
+
+/// The recorded cases are criteria like the journeys: an agent that rewrites
+/// `oracle.json` to match what its port prints is marking its own exam, and
+/// the port stops before anything is built.
+#[test]
+fn an_agent_cannot_rewrite_the_recorded_cases() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && sed -i.bak 's/total=100/total=90/' oracle.json",
+            copy_port("wrong")
+        ))
+        .args(["--no-install", "--to"])
+        .arg(&bundle)
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.contains("marking its own exam"), "{stderr}");
+    assert!(!bundle.exists());
+    assert!(
+        !workspace.join("candidate.krate").exists(),
+        "stopped before packaging"
+    );
+    assert_eq!(
+        port_outcome(&workspace)["requirement"],
+        "criteria-unchanged"
+    );
+}
+
+/// IC-120's original-source drift: the person's own project changing while
+/// the agent runs ends the port blocked on `source-unchanged`, before
+/// anything is built, so a port never silently races their edits.
+#[test]
+fn the_original_changing_during_a_port_is_a_named_blocker() {
+    if cfg!(windows) {
+        // The author names the original by its host path, and a Windows temp
+        // path is full of backslashes the shell reads as escapes.
+        eprintln!("skipping the source-drift check on Windows: the author names a host path");
+        return;
+    }
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && printf '// edited by the person\\n' >> '{}'",
+            copy_port("good"),
+            source.join("src/main.rs").display()
+        ))
+        .args(["--no-install", "--to"])
+        .arg(&bundle)
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        std::fs::read_to_string(source.join("src/main.rs"))
+            .expect("read original")
+            .contains("edited by the person"),
+        "the fixture really changed the original"
+    );
+    assert!(stderr.contains("original source changed"), "{stderr}");
+    assert!(last_line(&stdout).starts_with("Blocked on source-unchanged: "));
+    assert!(!bundle.exists());
+    assert!(
+        !workspace.join("candidate.krate").exists(),
+        "stopped before packaging"
+    );
+    assert_eq!(port_outcome(&workspace)["requirement"], "source-unchanged");
+}
+
+/// A case file Krate cannot use is refused before anything is prepared or
+/// any author runs: finding a typo after the agent's time is spent is the
+/// most expensive way to find it.
+#[test]
+fn a_case_file_krate_cannot_use_is_refused_before_the_port_starts() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, _oracle) = invoice_port_fixture(root.path());
+    for (name, text) in [
+        (
+            "misspelt",
+            r#"{"schema":"krate.port.oracle.v1","cases":[{"id":"a","expected_stdout":"x"}]}"#,
+        ),
+        ("empty", r#"{"schema":"krate.port.oracle.v1","cases":[]}"#),
+        (
+            "escapes",
+            r#"{"schema":"krate.port.oracle.v1","cases":[{"id":"a","stdout":"x","files":{"../x":""}}]}"#,
+        ),
+    ] {
+        let oracle = root.path().join(format!("{name}.json"));
+        std::fs::write(&oracle, text).expect("write oracle");
+        let workspace = root.path().join(format!("ws-{name}"));
+        let output = krate()
+            .arg("port")
+            .arg(&source)
+            .arg("--prepare")
+            .arg(&workspace)
+            .arg("--oracle")
+            .arg(&oracle)
+            .args(["--author-cmd", "touch ran-anyway", "--no-install", "--to"])
+            .arg(root.path().join(format!("{name}.krate")))
+            .output()
+            .expect("run port");
+        assert!(!output.status.success(), "{name} was accepted");
+        assert!(!workspace.exists(), "{name}: nothing is prepared");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(&format!("{name}.json")),
+            "{name}: the refusal names the file: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[test]
@@ -12230,6 +12964,17 @@ fn main() {
         stdout.contains("primary-task"),
         "the unfinished journey must be named: {stdout}"
     );
+    // One closing line and one recorded ending, naming the unchecked journey
+    // and the kept workspace (IC-120).
+    let line = last_line(&stdout);
+    assert!(
+        line.starts_with("Not verified: ") && line.contains("primary-task"),
+        "closing line: {line}"
+    );
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "unverified");
+    assert_eq!(outcome["exit_code"], 7);
+    assert_eq!(outcome["requirement"], "primary-task");
     assert!(
         bundle.is_file(),
         "the bundle is still written: it built and runs, it is just not proven \
