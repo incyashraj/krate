@@ -1543,6 +1543,27 @@ enum AccountAction {
     Adopt,
     /// Forget the stored sign-in on this machine.
     Logout,
+    /// Your apps' data, the same on every device you sign in on: this
+    /// device, the devices waiting for your yes, the recovery code.
+    Sync {
+        #[command(subcommand)]
+        action: Option<SyncAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SyncAction {
+    /// Let a waiting device read your apps' data.
+    Approve {
+        /// The device's id, as `krate account sync` lists it.
+        device: String,
+    },
+    /// No other device at hand: type the recovery code (read from stdin).
+    Recover,
+    /// Stop syncing on this computer: every app, or the one with this id.
+    Off { app: Option<String> },
+    /// Sync again: every app, or the one with this id.
+    On { app: Option<String> },
 }
 
 #[derive(Debug, Subcommand)]
@@ -5283,6 +5304,182 @@ fn account_command(action: Option<AccountAction>, json: bool) -> Result<u8> {
                 println!("signed out");
             } else {
                 println!("nobody was signed in");
+            }
+            Ok(0)
+        }
+        Some(AccountAction::Sync { action }) => account_sync_command(action, json),
+    }
+}
+
+/// The stores on this computer of the app with id `app_id`, whoever
+/// published it: `<id>.kv`, `<id>@<publisher>.kv`, `<id>+<machine>.kv`.
+fn stores_of_app(app_id: &str) -> Vec<PathBuf> {
+    let legacy = app_store_path(app_id);
+    let Some(dir) = legacy.parent() else {
+        return Vec::new();
+    };
+    let stem = sanitize_storage_name(app_id);
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            name.ends_with(".kv")
+                && (name == format!("{stem}.kv")
+                    || name.starts_with(&format!("{stem}@"))
+                    || name.starts_with(&format!("{stem}+")))
+        })
+        .collect();
+    if found.is_empty() {
+        found.push(legacy);
+    }
+    found
+}
+
+/// `krate account sync`: this computer and the account's data key, the
+/// devices waiting for a yes, the recovery code once, and the toggles
+/// (IC-981). Krate's home does the same with buttons (S2).
+fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
+    use krate_accountsync::device::{account_of, Account, KeyStatus};
+    use krate_runtime::account_sync_host::{global_toggle_path, set_app_sync};
+
+    let device_dir = account_sync_dir();
+    match &action {
+        Some(SyncAction::Off { app }) | Some(SyncAction::On { app }) => {
+            let on = matches!(action, Some(SyncAction::On { .. }));
+            match app {
+                None => {
+                    let path = global_toggle_path(&device_dir);
+                    if on {
+                        let _ = fs::remove_file(&path);
+                    } else {
+                        fs::create_dir_all(&device_dir)?;
+                        fs::write(&path, b"sync is off for every app on this computer\n")?;
+                    }
+                    println!(
+                        "{}",
+                        if on {
+                            "your apps' data syncs across your devices again"
+                        } else {
+                            "your apps' data stays on this computer: it keeps its copy and stops syncing"
+                        }
+                    );
+                }
+                Some(id) => {
+                    for store in stores_of_app(id) {
+                        set_app_sync(&store, on)?;
+                    }
+                    println!(
+                        "{id}: {}",
+                        if on {
+                            "syncs across your devices again"
+                        } else {
+                            "keeps its copy here and stops syncing"
+                        }
+                    );
+                }
+            }
+            return Ok(0);
+        }
+        _ => {}
+    }
+
+    let Some(identity) = github_auth::current() else {
+        eprintln!("not signed in -- `krate account login` first, and your apps' data follows you");
+        return Ok(1);
+    };
+    let hub = krate_accountsync::hub::Hub::new(&shared_hub_url(), &identity.token);
+    let id = account_of(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let account = Account::load(
+        &device_dir,
+        &id,
+        &machine_key(),
+        &this_computers_name(identity.display_name()),
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let status = account.refresh(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+    match action {
+        Some(SyncAction::Approve { device }) => {
+            let KeyStatus::Holds(ring) = status else {
+                anyhow::bail!(
+                    "this computer cannot pass the key on: it is waiting for one of your devices \
+                     to approve it, or for `krate account sync recover`"
+                );
+            };
+            account
+                .approve(&hub, &ring, device.trim())
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("done: that device can now read your apps' data");
+            Ok(0)
+        }
+        Some(SyncAction::Recover) => {
+            eprint!("recovery code: ");
+            let mut code = String::new();
+            std::io::stdin().read_line(&mut code)?;
+            account
+                .recover(&hub, &code)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("this computer holds your apps' data key now");
+            Ok(0)
+        }
+        _ => {
+            let pending = account.pending(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let code = account.take_recovery_code();
+            let on = !global_toggle_path(&device_dir).exists();
+            let holds = matches!(status, KeyStatus::Holds(_));
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "on": on,
+                        "device": { "id": account.device.id(), "name": account.name, "holds_key": holds },
+                        "waiting": pending.iter().map(|d| serde_json::json!({ "id": d.device_id, "name": d.name })).collect::<Vec<_>>(),
+                        "recovery_code": code,
+                    })
+                );
+                return Ok(0);
+            }
+            println!(
+                "Sync across your devices: {}",
+                if on { "on" } else { "off on this computer" }
+            );
+            if holds {
+                println!(
+                    "This computer ({}) holds your apps' data key.",
+                    account.name
+                );
+            } else {
+                println!(
+                    "This computer ({}) is waiting: approve it on a device that syncs already \
+                     (`krate account sync approve {}`), or type your recovery code \
+                     (`krate account sync recover`).",
+                    account.name,
+                    account.device.id()
+                );
+            }
+            if let Some(code) = code {
+                println!();
+                println!("Your recovery code -- shown this once, so write it down:");
+                println!("  {code}");
+                println!(
+                    "With it, a new device reads your apps' data when none of your others is at hand."
+                );
+            }
+            for device in pending {
+                println!(
+                    "Waiting for your yes: {} -- `krate account sync approve {}`",
+                    if device.name.is_empty() {
+                        "a device"
+                    } else {
+                        &device.name
+                    },
+                    device.device_id
+                );
             }
             Ok(0)
         }
@@ -16793,7 +16990,27 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             })
         })
     };
+    // The person's own data on every device they sign in on (IC-981):
+    // only a person's run of the default profile, never a picture, a
+    // usability check or a scripted task.
+    let account_sync = if profile == "default"
+        && !request.for_screenshot
+        && request.usability_report.is_none()
+        && request.task.is_none()
+    {
+        storage.as_ref().and_then(|principal| {
+            account_sync_context(
+                manifest.map(|m| m.app.id.as_str()).unwrap_or_default(),
+                principal,
+                &principal_store_path_in(&store_home, principal),
+                &policy,
+            )
+        })
+    } else {
+        None
+    };
     let config = Config {
+        account_sync,
         fuel: request.fuel,
         memory_bytes: memory_mib
             .checked_mul(1024 * 1024)
@@ -24790,6 +25007,71 @@ fn take_agent_session(files: &[PathBuf], provider: &str) -> Option<String> {
 fn shared_hub_url() -> String {
     org::hub_url(None)
         .unwrap_or_else(|_| fleet::pinned_hub().unwrap_or(DEFAULT_HUB_URL).to_string())
+}
+
+/// Where this machine keeps its account-sync files: device keys, the key
+/// it holds, the toggle for every app (IC-981).
+pub(crate) fn account_sync_dir() -> PathBuf {
+    krate_home().join("account-sync")
+}
+
+/// What a run needs to keep an app's store.kv on every device of the
+/// signed-in person (IC-981), or `None`: nobody signed in, the app not
+/// granted store.kv, or `KRATE_NO_ACCOUNT_SYNC` set. A toggle that is off
+/// rides along as `enabled: false`.
+fn account_sync_context(
+    app_id: &str,
+    principal: &StoragePrincipal,
+    store: &Path,
+    policy: &krate_policy::SessionPolicy,
+) -> Option<krate_runtime::account_sync_host::AccountSyncContext> {
+    if std::env::var_os("KRATE_NO_ACCOUNT_SYNC").is_some() || app_id.is_empty() {
+        return None;
+    }
+    if !policy.allows(&krate_manifest::Capability::new("store", "kv", None).ok()?) {
+        return None;
+    }
+    let identity = github_auth::current()?;
+    let device_dir = account_sync_dir();
+    // The publisher every device reads from the bundle: a verified root, or
+    // `unsigned` (this machine's development identity is not something
+    // another device can check).
+    let publisher = match principal {
+        StoragePrincipal::Verified { publisher, .. } => {
+            krate_accountsync::publisher_label(Some(publisher))
+        }
+        _ => krate_accountsync::publisher_label(None),
+    };
+    Some(krate_runtime::account_sync_host::AccountSyncContext {
+        hub: shared_hub_url(),
+        token: identity.token.clone(),
+        enabled: krate_runtime::account_sync_host::sync_wanted(store, &device_dir),
+        device_dir,
+        device_name: this_computers_name(identity.display_name()),
+        machine_key: machine_key(),
+        app_id: app_id.to_string(),
+        publisher,
+        background: true,
+    })
+}
+
+/// What the person's device list calls this computer: its own name where
+/// the system has one ("Yashraj's MacBook Pro"), else who and which system.
+pub(crate) fn this_computers_name(who: &str) -> String {
+    let asked = if cfg!(target_os = "macos") {
+        std::process::Command::new("scutil")
+            .args(["--get", "ComputerName"])
+            .output()
+            .ok()
+    } else {
+        std::process::Command::new("hostname").output().ok()
+    };
+    asked
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("{who}'s {} computer", std::env::consts::OS))
 }
 
 /// The env var a debug build reads to move the clock an app's organisation

@@ -18,8 +18,12 @@ crate-type = ["cdylib", "rlib"]
 krate-manifest = { path = "../manifest" }
 krate-policy = { path = "../policy" }
 krate-bundle = { path = "../bundle" }
+# Which publisher an app's synced data is kept under, and the sync toggles
+# (IC-981): the same rules on a phone as on a computer.
+krate-accountsync = { path = "../accountsync" }
 
 [dev-dependencies]
+tempfile = "3.27.0"
 # The host tests hold the output card to the runtime's own argument rule.
 krate-runtime = { path = "../runtime", default-features = false, features = [
     "phase2-bindings",

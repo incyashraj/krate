@@ -60,6 +60,9 @@ krate-lease = { path = "../lease" }
 # The machine key from the OS generator on every system, Windows included.
 getrandom = "0.3"
 krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
+# A signed-in person's app data on every device (IC-981): `krate account
+# sync` approves devices and shows the recovery code.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 krate-http = { path = "../http" }
 # A threaded app's build folds std's leftover WASI imports into the app (IC-938).
 krate-wasi-fold = { path = "../wasi-fold" }

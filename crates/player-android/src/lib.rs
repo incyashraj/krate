@@ -833,6 +833,28 @@ mod player {
             phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
             ..Default::default()
         };
+        // The same data on every device the person signs in on (IC-981):
+        // signed in on this phone, the app's store.kv syncs by their account.
+        let verified = crate::run_config::verified_publisher(&opened);
+        config.account_sync = crate::run_config::sync_plan(
+            data_root,
+            verified.as_deref(),
+            &stores.kv,
+            crate::account::token(data_root),
+        )
+        .map(
+            |plan| krate_runtime::account_sync_host::AccountSyncContext {
+                hub: plan.hub.to_string(),
+                token: plan.token,
+                device_dir: plan.device_dir,
+                device_name: phone_name(),
+                machine_key: machine_key(data_root),
+                app_id: manifest.app.id.clone(),
+                publisher: plan.publisher,
+                enabled: plan.enabled,
+                background: true,
+            },
+        );
         if let Some(bytes) = memory_bytes {
             config.memory_bytes = bytes;
         }
@@ -1114,5 +1136,31 @@ mod player {
             let _ = std::fs::write(&path, &key);
         }
         key
+    }
+
+    /// What the person's device list calls this phone: its model, as the
+    /// system says it ("SM-S908B"), else "Android phone".
+    fn phone_name() -> String {
+        static NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        NAME.get_or_init(|| {
+            let ask = |prop: &str| {
+                std::process::Command::new("getprop")
+                    .arg(prop)
+                    .output()
+                    .ok()
+                    .and_then(|out| String::from_utf8(out.stdout).ok())
+                    .map(|text| text.trim().to_string())
+                    .filter(|text| !text.is_empty())
+            };
+            let maker = ask("ro.product.manufacturer");
+            match (maker, ask("ro.product.model")) {
+                (Some(maker), Some(model)) if !model.starts_with(&maker) => {
+                    format!("{maker} {model}")
+                }
+                (_, Some(model)) => model,
+                _ => "Android phone".to_string(),
+            }
+        })
+        .clone()
     }
 }

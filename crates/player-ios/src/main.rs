@@ -1288,6 +1288,34 @@ mod player {
             phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
             ..Default::default()
         };
+        // The same data on every device the person signs in on (IC-981):
+        // signed in on this iPhone, the app's store.kv syncs by their account.
+        // The device key rests beside the sign-in, in Application Support,
+        // which no other app reads and the Files app never shows (no machine
+        // key on the iPhone yet).
+        let verified = _opened_bundle
+            .as_ref()
+            .and_then(crate::run_config::verified_publisher);
+        let private = private_root();
+        config.account_sync = crate::run_config::sync_plan(
+            &private,
+            verified.as_deref(),
+            &store,
+            crate::account::token(&private),
+        )
+        .map(
+            |plan| krate_runtime::account_sync_host::AccountSyncContext {
+                hub: plan.hub.to_string(),
+                token: plan.token,
+                device_dir: plan.device_dir,
+                device_name: device_name(),
+                machine_key: Vec::new(),
+                app_id: manifest.app.id.clone(),
+                publisher: plan.publisher,
+                enabled: plan.enabled,
+                background: true,
+            },
+        );
         if let Some(mib) = memory_budget_mib(&manifest) {
             config.memory_bytes = mib * 1024 * 1024;
         }

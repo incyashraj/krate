@@ -209,9 +209,85 @@ pub fn sanitize(id: &str) -> String {
         .collect()
 }
 
+/// The publisher an app's signature vouches for -- the signing root -- or
+/// `None` for an unsigned app or a signature that does not hold. The same
+/// rule the desktop keys its storage by (IC-736), so a phone and a computer
+/// put one app's synced data in the same place (IC-981).
+pub fn verified_publisher(open: &krate_bundle::OpenBundle) -> Option<String> {
+    let verdict = open
+        .full_verdict(&krate_bundle::delegation::RevocationState::Unknown {
+            last_known: Vec::new(),
+        })
+        .ok()
+        .flatten()?;
+    if !verdict.is_trustworthy() {
+        return None;
+    }
+    open.signing_authority().ok().flatten()
+}
+
+/// What a phone's run of one app needs to keep its store.kv the same on
+/// every device the person signs in on (IC-981). The player turns it into
+/// the runtime's `AccountSyncContext` with its device name and machine key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncPlan {
+    pub hub: &'static str,
+    pub token: String,
+    /// The phone's account-sync folder: device keys, the key it holds.
+    pub device_dir: PathBuf,
+    pub publisher: String,
+    /// The toggles: `<store>.sync/off` for this app, `account-sync/off`
+    /// for everything (S2 puts both on screen).
+    pub enabled: bool,
+}
+
+/// [`SyncPlan`] for a run, or `None` when nobody is signed in on this phone
+/// -- then the store is exactly what it always was.
+pub fn sync_plan(
+    data_root: &Path,
+    verified_root: Option<&str>,
+    store: &Path,
+    token: Option<String>,
+) -> Option<SyncPlan> {
+    let token = token.filter(|t| !t.trim().is_empty())?;
+    let device_dir = data_root.join("account-sync");
+    Some(SyncPlan {
+        hub: SHARED_HUB,
+        token,
+        enabled: krate_accountsync::toggles::sync_wanted(store, &device_dir),
+        device_dir,
+        publisher: krate_accountsync::publisher_label(verified_root),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sync_follows_the_sign_in_and_the_toggles() {
+        let dir = tempfile::tempdir().expect("dir");
+        let store = stores(dir.path(), "dev.krate.reminders").kv;
+        assert_eq!(
+            sync_plan(dir.path(), None, &store, None),
+            None,
+            "nobody signed in: the store as it always was"
+        );
+        assert_eq!(sync_plan(dir.path(), None, &store, Some(" ".into())), None);
+        let on = sync_plan(dir.path(), None, &store, Some("krs_x".into())).expect("signed in");
+        assert!(on.enabled);
+        assert_eq!(on.publisher, "unsigned");
+        assert_eq!(on.hub, SHARED_HUB);
+        assert_eq!(on.device_dir, dir.path().join("account-sync"));
+        krate_accountsync::toggles::set_app_sync(&store, false).expect("off");
+        let off =
+            sync_plan(dir.path(), Some("AB12"), &store, Some("krs_x".into())).expect("signed in");
+        assert!(!off.enabled, "the toggle stops it");
+        assert_eq!(
+            off.publisher, "ab12",
+            "the publisher the bundle vouches for"
+        );
+    }
 
     fn manifest(caps: &str) -> Manifest {
         Manifest::parse(&format!(
