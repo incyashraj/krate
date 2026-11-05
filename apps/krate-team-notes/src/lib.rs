@@ -156,7 +156,7 @@ impl Team {
             }
             OrgError::Invalid(words) => self.problem = Some(words),
             OrgError::Io(words) => {
-                self.problem = Some(format!("This computer could not save that: {words}"))
+                self.problem = Some(format!("This device could not save that: {words}"))
             }
         }
     }
@@ -1151,10 +1151,10 @@ impl App {
                 ),
             ),
             Access::Unsupported => (
-                String::from("Open Team Notes on your computer"),
+                String::from("Open Team Notes in the Krate app"),
                 String::from(
                     "Your team's notes are not available in a browser tab yet. Open Team Notes \
-                     with Krate on your computer and they are all there.",
+                     with Krate on your computer or phone and they are all there.",
                 ),
             ),
             Access::Open => (String::new(), String::new()),

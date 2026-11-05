@@ -189,7 +189,7 @@ impl Team {
             }
             OrgError::Invalid(words) => self.problem = Some(words),
             OrgError::Io(words) => {
-                self.problem = Some(format!("This computer could not save that: {words}"))
+                self.problem = Some(format!("This device could not save that: {words}"))
             }
         }
     }
@@ -309,14 +309,14 @@ impl Team {
         }
         if self.trying() && !self.told {
             return Some(format!(
-                "You are trying {APP_NAME} on this computer: nothing you add is kept or shared. \
+                "You are trying {APP_NAME} on this device: nothing you add is kept or shared. \
                  Release it to your organisation on Krate to keep your team's {THINGS}."
             ));
         }
         if self.waiting_to_be_let_in() {
             return Some(format!(
-                "This computer is new to your team. The team's {THINGS} appear here once a \
-                 teammate's computer is online and lets this one in, which happens by itself. \
+                "This device is new to your team. The team's {THINGS} appear here once a \
+                 teammate's device is online and lets this one in, which happens by itself. \
                  Anything you add now is kept and shared then."
             ));
         }
@@ -2312,10 +2312,10 @@ impl App {
                 ),
             ),
             Access::Unsupported => (
-                format!("Open {APP_NAME} on your computer"),
+                format!("Open {APP_NAME} in the Krate app"),
                 format!(
                     "Your team's {THINGS} are not available in a browser tab yet. Open \
-                     {APP_NAME} with Krate on your computer and they are all there."
+                     {APP_NAME} with Krate on your computer or phone and they are all there."
                 ),
             ),
             Access::Open => (String::new(), String::new()),
@@ -2406,8 +2406,8 @@ impl App {
             (
                 format!("Your team's {THINGS} are on their way"),
                 format!(
-                    "This computer is new to your team. The {THINGS} appear here once a \
-                     teammate's computer is online and lets this one in, which happens by \
+                    "This device is new to your team. The {THINGS} appear here once a \
+                     teammate's device is online and lets this one in, which happens by \
                      itself. You can add one now; it is shared then."
                 ),
                 NEW_LABEL,
