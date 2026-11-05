@@ -43,6 +43,8 @@
 #![no_std]
 
 extern crate alloc;
+mod theme;
+
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -51,8 +53,11 @@ use krate::bindings::krate::fs::files;
 use krate::bindings::krate::io::{args, stdio};
 use krate::bindings::krate::time::clock;
 use krate::gfx::{canvas2d, canvas_images, types as gfx};
+use krate::layout::Look;
 use krate::motion::Spring;
 use krate::ui::{events, tree, types, window};
+
+use theme::{look_now, theme, Theme};
 
 /// The screen the person came from, as the player left it: a small picture
 /// (an 8-byte header of width and height, little-endian, then RGBA),
@@ -195,8 +200,15 @@ fn parse_input(raw: &str) -> (String, String, Vec<Ask>) {
     (name, detail, asks)
 }
 
-/// Word-wrap for the rationale lines: measure-based, honest at any width.
-fn wrap_lines(canvas: u64, text: &str, size: f32, max_w: f32) -> Vec<String> {
+/// Word-wrap measured in the style it is drawn in, honest at any width. A
+/// word wider than the whole line (a long name at a large text size) is
+/// broken by characters rather than left running off the card.
+fn wrap_lines(canvas: u64, text: &str, size: f32, st: gfx::TextStyle, max_w: f32) -> Vec<String> {
+    let fits = |t: &str| {
+        canvas2d::measure_text_styled(canvas, t, size, st)
+            .map(|m| m.width <= max_w)
+            .unwrap_or(true)
+    };
     let mut lines = Vec::new();
     let mut current = String::new();
     for word in text.split_whitespace() {
@@ -205,16 +217,33 @@ fn wrap_lines(canvas: u64, text: &str, size: f32, max_w: f32) -> Vec<String> {
         } else {
             format!("{current} {word}")
         };
-        let fits = canvas2d::measure_text(canvas, &candidate, size)
-            .map(|m| m.width <= max_w)
-            .unwrap_or(true);
-        if fits {
+        if fits(&candidate) {
             current = candidate;
-        } else {
-            if !current.is_empty() {
-                lines.push(current);
-            }
+            continue;
+        }
+        if !current.is_empty() {
+            lines.push(core::mem::take(&mut current));
+        }
+        if fits(word) {
             current = word.to_string();
+            continue;
+        }
+        // Too wide on its own: as many characters a line as fit, at least
+        // one, so the loop always moves on.
+        let chars: Vec<char> = word.chars().collect();
+        let mut start = 0;
+        while start < chars.len() {
+            let mut end = chars.len();
+            while end > start + 1 && !fits(&chars[start..end].iter().collect::<String>()) {
+                end -= 1;
+            }
+            let piece: String = chars[start..end].iter().collect();
+            if end == chars.len() {
+                current = piece;
+            } else {
+                lines.push(piece);
+            }
+            start = end;
         }
     }
     if !current.is_empty() {
@@ -226,6 +255,7 @@ fn wrap_lines(canvas: u64, text: &str, size: f32, max_w: f32) -> Vec<String> {
     lines
 }
 
+#[derive(Clone, Copy)]
 struct Layout {
     w: f32,
     h: f32,
@@ -234,18 +264,58 @@ struct Layout {
     /// Points at each edge something else covers (top, right, bottom,
     /// left): a phone's notch, home bar and rounded corners.
     safe: (f32, f32, f32, f32),
+    /// How the person asked things to look: dark mode, contrast, text size.
+    look: Look,
+    /// Krate's colours for that look.
+    t: Theme,
+    /// The window, to describe each frame to a screen reader.
+    win: u64,
 }
 
 impl Layout {
-    fn from_canvas(w: f32, h: f32) -> Self {
+    /// The canvas as it is this frame, with the phone's look read afresh,
+    /// so a sheet left open follows the phone into dark mode.
+    fn now(canvas: u64, win: u64) -> Self {
+        let (w, h) = match canvas2d::canvas_size(canvas) {
+            Ok(size) => (size.width.max(1.0), size.height.max(1.0)),
+            Err(_) => (390.0, 720.0),
+        };
         let col_w = w.min(480.0);
+        let look = look_now();
         Layout {
             w,
             h,
             col_x: (w - col_w) / 2.0,
             col_w,
-            safe: (0.0, 0.0, 0.0, 0.0),
+            safe: krate::layout::Screen::of(win).safe,
+            look,
+            t: theme(&look),
+            win,
         }
+    }
+
+    /// A font size, or a distance between lines of text, at the person's
+    /// text size.
+    fn f(&self, points: f32) -> f32 {
+        self.look.text(points)
+    }
+
+    /// Whether the person's text is large enough that text gets more lines
+    /// before it is cut short.
+    fn large(&self) -> bool {
+        self.look.text_scale > 1.15
+    }
+
+    /// The same, with the text a step smaller, while it is still larger
+    /// than the default: for a screen too small to hold a card at the size
+    /// the person asked for. Smaller words beat an Open button off the
+    /// screen or a message cut short.
+    fn smaller(&self) -> Option<Layout> {
+        (self.look.text_scale > 1.0).then(|| {
+            let mut l = *self;
+            l.look.text_scale = (l.look.text_scale * 0.9).max(1.0);
+            l
+        })
     }
 }
 
@@ -296,8 +366,11 @@ struct Sheet {
     entrance: Spring,
     press: Option<Press>,
     rows: Vec<RowHit>,
-    /// Where the rows are shown (they scroll inside it).
+    /// Where the rows are shown: a tap here lands on one.
     rows_area: gfx::Rect,
+    /// What a finger drags to scroll: the rows, or the whole of the
+    /// details when they are taller than the screen.
+    scroll_area: gfx::Rect,
     sheet_area: gfx::Rect,
     open_button: gfx::Rect,
     cancel_button: gfx::Rect,
@@ -544,22 +617,148 @@ fn fit_line(canvas: u64, text: &str, size: f32, st: gfx::TextStyle, max_w: f32) 
 
 /// At most `max` lines of wrapped text, the last ending in an ellipsis when
 /// there was more.
-fn wrap_at_most(canvas: u64, text: &str, size: f32, max_w: f32, max: usize) -> Vec<String> {
-    let mut lines = wrap_lines(canvas, text, size, max_w);
+fn wrap_at_most(
+    canvas: u64,
+    text: &str,
+    size: f32,
+    st: gfx::TextStyle,
+    max_w: f32,
+    max: usize,
+) -> Vec<String> {
+    let mut lines = wrap_lines(canvas, text, size, st, max_w);
+    let max = max.max(1);
     if lines.len() > max {
         let rest = lines[max - 1..].join(" ");
         lines.truncate(max - 1);
-        lines.push(fit_line(canvas, &rest, size, style(450, 0.0), max_w));
+        lines.push(fit_line(canvas, &rest, size, st, max_w));
     }
     lines
 }
 
-fn inside(r: gfx::Rect, x: f32, y: f32) -> bool {
-    x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height
+/// Where to put a line's baseline so the text sits in the middle of a box
+/// `h` high starting at `y`.
+fn centred_baseline(y: f32, h: f32, size: f32) -> f32 {
+    y + h / 2.0 + size * 0.35
 }
 
-fn shade(c: gfx::Color, k: f32) -> gfx::Color {
-    color(c.r * k, c.g * k, c.b * k, c.a)
+/// Behind the sheet: the screen the person came from, blurred and dimmed a
+/// little as the sheet arrives; without one, Krate's backdrop with the
+/// app's colour washing in from the top.
+fn draw_backdrop(
+    canvas: u64,
+    l: &Layout,
+    behind: Option<u64>,
+    hue: gfx::Color,
+    e: f32,
+) -> Result<(), gfx::GfxError> {
+    let t = &l.t;
+    match behind {
+        Some(behind) => {
+            canvas2d::clear(canvas, color(0.0, 0.0, 0.0, 1.0))?;
+            canvas_images::draw(canvas, behind, rect(0.0, 0.0, l.w, l.h))?;
+            canvas2d::fill_rect(
+                canvas,
+                rect(0.0, 0.0, l.w, l.h),
+                color(0.0, 0.0, 0.0, t.dim * e.min(1.0)),
+            )?;
+        }
+        None => {
+            // A wash of the app's colour from the top, fading by the
+            // middle. It was a radial glow across the whole screen: on a
+            // phone's CPU painter that one call was most of every frame
+            // (164 ms of 236 on a Galaxy S22 Ultra), so the sheet rose in
+            // three or four steps. A vertical wash paints by rows and
+            // costs a few milliseconds (K-1212).
+            canvas2d::clear(canvas, t.backdrop)?;
+            canvas2d::linear_gradient(
+                canvas,
+                rect(0.0, 0.0, l.w, l.h * 0.62),
+                color(hue.r, hue.g, hue.b, t.wash * e.min(1.0)),
+                color(hue.r, hue.g, hue.b, 0.0),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// A card: a modest shadow (a wide blur is slow on a phone's CPU painter),
+/// its fill, and a hairline where the shadow alone would not show it.
+fn draw_card(
+    canvas: u64,
+    t: &Theme,
+    area: gfx::Rect,
+    corners: gfx::CornerRadii,
+) -> Result<(), gfx::GfxError> {
+    canvas2d::drop_shadow_round_rect(canvas, area, corners, 20.0, t.shadow)?;
+    canvas2d::fill_round_rect(canvas, area, corners, t.card)?;
+    if t.edge.a > 0.0 {
+        canvas2d::stroke_round_rect(canvas, area, corners, 1.0, t.edge)?;
+    }
+    Ok(())
+}
+
+/// The close cross in a soft circle of radius `r`, centred at (x, y).
+fn draw_close(
+    canvas: u64,
+    t: &Theme,
+    x: f32,
+    y: f32,
+    r: f32,
+    pressed: bool,
+) -> Result<(), gfx::GfxError> {
+    let fill = if pressed { t.soft_press } else { t.soft };
+    canvas2d::fill_circle(canvas, gfx::Point { x, y }, r, fill)?;
+    let arm = (r * 0.62 / 0.9) as i32 / 2;
+    for k in -arm..=arm {
+        let d = k as f32 * 0.9;
+        for (dx, dy) in [(d, d), (d, -d)] {
+            canvas2d::fill_circle(
+                canvas,
+                gfx::Point {
+                    x: x + dx,
+                    y: y + dy,
+                },
+                1.05,
+                t.ink2,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// A filled, rounded button with its label centred.
+fn draw_button(
+    canvas: u64,
+    l: &Layout,
+    area: gfx::Rect,
+    label: &str,
+    fill: gfx::Color,
+    ink: gfx::Color,
+) -> Result<(), gfx::GfxError> {
+    let size = l.f(17.0);
+    canvas2d::fill_round_rect(canvas, area, radii(area.height.min(52.0) / 2.0), fill)?;
+    let label = fit_line(canvas, label, size, style(600, 0.0), area.width - 16.0);
+    let m = canvas2d::measure_text_styled(canvas, &label, size, style(600, 0.0))?;
+    canvas2d::draw_text_styled(
+        canvas,
+        &label,
+        gfx::Point {
+            x: area.x + (area.width - m.width) / 2.0,
+            y: centred_baseline(area.y, area.height, size),
+        },
+        size,
+        ink,
+        style(600, 0.0),
+    )
+}
+
+/// How tall a button is for the person's text size.
+fn button_h(l: &Layout) -> f32 {
+    52.0f32.max(l.f(17.0) + 30.0)
+}
+
+fn inside(r: gfx::Rect, x: f32, y: f32) -> bool {
+    x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height
 }
 
 /// The app's own colour, picked from its name: the same name always gets
@@ -580,7 +779,7 @@ fn name_hue(name: &str) -> gfx::Color {
 
 /// Measured rows: each request's title, its reason's lines, its height.
 struct RowText {
-    title: String,
+    titles: Vec<String>,
     tint: gfx::Color,
     lines: Vec<String>,
     h: f32,
@@ -604,6 +803,7 @@ impl Sheet {
             press: None,
             rows: Vec::new(),
             rows_area: zero,
+            scroll_area: zero,
             sheet_area: zero,
             open_button: zero,
             cancel_button: zero,
@@ -678,47 +878,18 @@ impl Sheet {
     /// request with its reason and the switches for what is optional -- are
     /// one tap away.
     fn draw_compact(&mut self, canvas: u64, l: &Layout) -> Result<(), gfx::GfxError> {
-        let ink = color(0.07, 0.07, 0.09, 1.0);
-        let muted = color(0.45, 0.46, 0.50, 1.0);
-        let accent = color(0.23, 0.30, 0.95, 1.0);
+        let t = l.t;
         let hue = name_hue(&self.name);
         let e = self.entrance.value.clamp(0.0, 1.2);
-
-        // Behind the card: the screen the person came from, blurred, dimmed
-        // a little as the card arrives; without one, light lit faintly in
-        // the app's colour.
-        match self.behind {
-            Some(behind) => {
-                canvas2d::clear(canvas, color(0.0, 0.0, 0.0, 1.0))?;
-                canvas_images::draw(canvas, behind, rect(0.0, 0.0, l.w, l.h))?;
-                canvas2d::fill_rect(
-                    canvas,
-                    rect(0.0, 0.0, l.w, l.h),
-                    color(0.0, 0.0, 0.0, 0.22 * e.min(1.0)),
-                )?;
-            }
-            None => {
-                // A wash of the app's colour from the top, fading by the
-                // middle. It was a radial glow across the whole screen: on a
-                // phone's CPU painter that one call was most of every frame
-                // (164 ms of 236 on a Galaxy S22 Ultra), so the sheet rose in
-                // three or four steps. A vertical wash paints by rows and
-                // costs a few milliseconds (K-1212).
-                canvas2d::clear(canvas, color(0.90, 0.905, 0.92, 1.0))?;
-                canvas2d::linear_gradient(
-                    canvas,
-                    rect(0.0, 0.0, l.w, l.h * 0.62),
-                    color(hue.r, hue.g, hue.b, 0.26 * e.min(1.0)),
-                    color(hue.r, hue.g, hue.b, 0.0),
-                )?;
-            }
-        }
 
         let (top, right, bottom, left) = l.safe;
         let pad = 24.0;
         let cw = (l.w - left - right - 24.0).min(420.0);
         let cx = left + (l.w - left - right - cw) / 2.0;
         let inner = cw - pad * 2.0;
+        let (title_size, detail_size, summary_size, link_size) =
+            (l.f(22.0), l.f(14.0), l.f(15.0), l.f(14.0));
+        let more_lines = if l.large() { 3 } else { 2 };
 
         // What it uses, said plainly.
         let shown: Vec<usize> = (0..self.asks.len())
@@ -744,176 +915,186 @@ impl Sheet {
                 (_, k) => format!("Uses {} and {} more.", names[..k].join(", "), n - k),
             }
         };
+        let one_line = |text: &str| {
+            canvas2d::measure_text_styled(canvas, text, summary_size, style(500, 0.0))
+                .map(|m| m.width <= inner)
+                .unwrap_or(true)
+        };
         let mut summary = said(names.len());
         for named in (1..=names.len().min(3)).rev() {
             summary = said(named);
-            let fits = canvas2d::measure_text_styled(canvas, &summary, 15.0, style(500, 0.0))
-                .map(|m| m.width <= inner)
-                .unwrap_or(true);
-            if fits {
+            if one_line(&summary) {
                 break;
             }
         }
-        if names.len() <= 3 {
-            let all = said(names.len());
-            if canvas2d::measure_text_styled(canvas, &all, 15.0, style(500, 0.0))
-                .map(|m| m.width <= inner)
-                .unwrap_or(true)
-            {
-                summary = all;
-            }
+        if names.len() <= 3 && one_line(&said(names.len())) {
+            summary = said(names.len());
         }
-        let summary_lines = wrap_at_most(canvas, &summary, 15.0, inner, 2);
-        let title = format!("Open {}?", self.name);
-        let title_lines = wrap_at_most(canvas, &title, 22.0, inner - 40.0, 2);
-        let tiles = shown.len().min(6) + usize::from(shown.len() > 6);
-
-        // Measure, then place the card at the bottom (centred on a wide or
-        // turned screen).
-        let tile = 36.0;
-        let mut h = pad + 60.0 + 16.0 + title_lines.len() as f32 * 28.0 + 22.0;
-        if tiles > 0 {
-            h += 18.0 + tile;
-        }
-        h += 14.0 + summary_lines.len() as f32 * 21.0 + 10.0 + 20.0 + 22.0 + 52.0 + pad;
-        let upright = l.h >= l.w || l.h >= 520.0;
-        let foot = bottom.max(10.0) + 8.0;
-        let slide = (1.0 - e) * (h + foot + 40.0);
-        let cy = if upright && l.w < 600.0 {
-            l.h - foot - h + slide
-        } else {
-            (top + (l.h - top - bottom - h) / 2.0).max(top + 8.0) + slide * 0.35
-        };
-        let card = rect(cx, cy, cw, h);
-        self.sheet_area = card;
-        canvas2d::drop_shadow_round_rect(
+        let summary_lines = wrap_at_most(
             canvas,
-            card,
-            radii(30.0),
-            36.0,
-            color(0.0, 0.0, 0.0, 0.18),
-        )?;
-        canvas2d::fill_round_rect(canvas, card, radii(30.0), color(1.0, 1.0, 1.0, 1.0))?;
-
-        // Close, top right: a cross in a soft circle; it means Not now.
-        let (xx, xy) = (cx + cw - 20.0 - 14.0, cy + 20.0 + 14.0);
-        let close_fill = if self.pressed(Target::Close) {
-            color(0.86, 0.86, 0.89, 1.0)
-        } else {
-            color(0.94, 0.94, 0.96, 1.0)
-        };
-        canvas2d::fill_circle(canvas, gfx::Point { x: xx, y: xy }, 14.0, close_fill)?;
-        for k in 0..9 {
-            let d = (k as f32 - 4.0) * 0.9;
-            canvas2d::fill_circle(
-                canvas,
-                gfx::Point {
-                    x: xx + d,
-                    y: xy + d,
-                },
-                1.0,
-                muted,
-            )?;
-            canvas2d::fill_circle(
-                canvas,
-                gfx::Point {
-                    x: xx + d,
-                    y: xy - d,
-                },
-                1.0,
-                muted,
-            )?;
-        }
-        self.close_button = rect(xx - 22.0, xy - 22.0, 44.0, 44.0);
-
-        // The app's mark, centred.
-        let mid = cx + cw / 2.0;
-        let mut y = cy + pad;
-        let mark = rect(mid - 30.0, y, 60.0, 60.0);
-        if let Some(icon) = self.file_icon {
-            canvas_images::draw(canvas, icon, mark)?;
-        } else {
-            canvas2d::drop_shadow_round_rect(
-                canvas,
-                mark,
-                radii(15.0),
-                10.0,
-                color(hue.r, hue.g, hue.b, 0.35),
-            )?;
-            canvas2d::fill_round_rect(canvas, mark, radii(15.0), hue)?;
-            let initial: String = self.name.chars().take(1).collect::<String>().to_uppercase();
-            let im = canvas2d::measure_text_styled(canvas, &initial, 28.0, style(800, 0.0))?;
-            canvas2d::draw_text_styled(
-                canvas,
-                &initial,
-                gfx::Point {
-                    x: mid - im.width / 2.0,
-                    y: y + 40.0,
-                },
-                28.0,
-                color(1.0, 1.0, 1.0, 1.0),
-                style(800, 0.0),
-            )?;
-        }
-        y += 60.0 + 16.0;
-
-        // "Open Phone Check?", and its version and size.
-        for line in &title_lines {
-            let m = canvas2d::measure_text_styled(canvas, line, 22.0, style(750, -0.4))?;
-            canvas2d::draw_text_styled(
-                canvas,
-                line,
-                gfx::Point {
-                    x: mid - m.width / 2.0,
-                    y: y + 22.0,
-                },
-                22.0,
-                ink,
-                style(750, -0.4),
-            )?;
-            y += 28.0;
-        }
+            &summary,
+            summary_size,
+            style(500, 0.0),
+            inner,
+            more_lines,
+        );
+        let title = format!("Open {}?", self.name);
+        let title_lines = wrap_at_most(
+            canvas,
+            &title,
+            title_size,
+            style(750, -0.4),
+            inner - 40.0,
+            more_lines,
+        );
         let detail = if self.detail.is_empty() {
             String::from("Krate app")
         } else {
             self.detail.clone()
         };
-        let detail = fit_line(canvas, &detail, 14.0, style(500, 0.0), inner);
-        let dm = canvas2d::measure_text_styled(canvas, &detail, 14.0, style(500, 0.0))?;
-        canvas2d::draw_text_styled(
-            canvas,
-            &detail,
-            gfx::Point {
-                x: mid - dm.width / 2.0,
-                y: y + 14.0,
-            },
-            14.0,
-            muted,
-            style(500, 0.0),
-        )?;
-        y += 22.0;
+        let detail_lines = wrap_at_most(canvas, &detail, detail_size, style(500, 0.0), inner, 2);
+        let tiles = shown.len().min(6) + usize::from(shown.len() > 6);
+
+        // Not now and Open side by side, or one over the other when the
+        // person's text is too large for both on one line.
+        let gap = 12.0;
+        let bh = button_h(l);
+        let half = (inner - gap) / 2.0;
+        let widest = ["Not now", "Open"]
+            .iter()
+            .filter_map(|text| {
+                canvas2d::measure_text_styled(canvas, text, l.f(17.0), style(600, 0.0)).ok()
+            })
+            .fold(0.0f32, |w, m| w.max(m.width));
+        let stacked = widest > half - 28.0;
+        let buttons_h = if stacked { bh * 2.0 + 10.0 } else { bh };
+
+        // Measure, then place the card at the bottom (centred on a wide or
+        // turned screen). When it is taller than the screen -- a small
+        // phone at a large text size -- the tiles go first, then the mark:
+        // the words and the buttons always stay.
+        let tile = 36.0;
+        let upright = l.h >= l.w || l.h >= 520.0;
+        let foot = bottom.max(10.0) + 8.0;
+        let room = l.h - top.max(8.0) - foot;
+        let height = |mark: bool, tiles: bool| {
+            let mut h = pad;
+            if mark {
+                h += 60.0 + 16.0;
+            }
+            h += title_lines.len() as f32 * l.f(28.0) + detail_lines.len() as f32 * l.f(20.0);
+            if tiles {
+                h += 18.0 + tile;
+            }
+            h + 14.0
+                + summary_lines.len() as f32 * l.f(21.0)
+                + 10.0
+                + l.f(20.0)
+                + 22.0
+                + buttons_h
+                + pad
+        };
+        let (show_mark, show_tiles) = if height(true, tiles > 0) <= room {
+            (true, tiles > 0)
+        } else if height(true, false) <= room {
+            (true, false)
+        } else {
+            (false, false)
+        };
+        let h = height(show_mark, show_tiles);
+        if h > room {
+            if let Some(smaller) = l.smaller() {
+                return self.draw_compact(canvas, &smaller);
+            }
+        }
+        draw_backdrop(canvas, l, self.behind, hue, e)?;
+        let slide = (1.0 - e) * (h + foot + 40.0);
+        let cy = if upright && l.w < 600.0 {
+            (l.h - foot - h).max(top.max(8.0)) + slide
+        } else {
+            (top + (l.h - top - bottom - h) / 2.0).max(top + 8.0) + slide * 0.35
+        };
+        let card = rect(cx, cy, cw, h);
+        self.sheet_area = card;
+        draw_card(canvas, &t, card, radii(30.0))?;
+
+        // Close, top right: a cross in a soft circle; it means Not now.
+        let (xx, xy) = (cx + cw - 20.0 - 14.0, cy + 20.0 + 14.0);
+        draw_close(canvas, &t, xx, xy, 14.0, self.pressed(Target::Close))?;
+        self.close_button = rect(xx - 22.0, xy - 22.0, 44.0, 44.0);
+
+        // The app's mark, centred.
+        let mid = cx + cw / 2.0;
+        let mut y = cy + pad;
+        if show_mark {
+            let mark = rect(mid - 30.0, y, 60.0, 60.0);
+            if let Some(icon) = self.file_icon {
+                canvas_images::draw(canvas, icon, mark)?;
+            } else {
+                canvas2d::drop_shadow_round_rect(
+                    canvas,
+                    mark,
+                    radii(15.0),
+                    10.0,
+                    color(hue.r, hue.g, hue.b, 0.35),
+                )?;
+                canvas2d::fill_round_rect(canvas, mark, radii(15.0), hue)?;
+                let initial: String = self.name.chars().take(1).collect::<String>().to_uppercase();
+                let im = canvas2d::measure_text_styled(canvas, &initial, 28.0, style(800, 0.0))?;
+                canvas2d::draw_text_styled(
+                    canvas,
+                    &initial,
+                    gfx::Point {
+                        x: mid - im.width / 2.0,
+                        y: y + 40.0,
+                    },
+                    28.0,
+                    theme::WHITE,
+                    style(800, 0.0),
+                )?;
+            }
+            y += 60.0 + 16.0;
+        }
+
+        // "Open Phone Check?", and its version and size.
+        let centred = |text: &str, y: f32, size: f32, ink: gfx::Color, st: gfx::TextStyle| {
+            let m = canvas2d::measure_text_styled(canvas, text, size, st)?;
+            canvas2d::draw_text_styled(
+                canvas,
+                text,
+                gfx::Point {
+                    x: mid - m.width / 2.0,
+                    y,
+                },
+                size,
+                ink,
+                st,
+            )
+        };
+        for line in &title_lines {
+            centred(line, y + title_size, title_size, t.ink, style(750, -0.4))?;
+            y += l.f(28.0);
+        }
+        for line in &detail_lines {
+            centred(line, y + detail_size, detail_size, t.ink2, style(500, 0.0))?;
+            y += l.f(20.0);
+        }
 
         // One row of tiles for what it uses.
-        if tiles > 0 {
+        if show_tiles {
             y += 18.0;
             let gap = 8.0;
             let row_w = tiles as f32 * tile + (tiles - 1) as f32 * gap;
             let mut tx = mid - row_w / 2.0;
-            for (n, &i) in shown.iter().take(6).enumerate() {
+            for &i in shown.iter().take(6) {
                 let cap = &self.asks[i].cap;
                 let (_, tint) = describe(cap);
                 canvas2d::fill_round_rect(canvas, rect(tx, y, tile, tile), radii(10.0), tint)?;
                 ask_icon(canvas, cap, tx + tile / 2.0, y + tile / 2.0)?;
                 tx += tile + gap;
-                let _ = n;
             }
             if shown.len() > 6 {
-                canvas2d::fill_round_rect(
-                    canvas,
-                    rect(tx, y, tile, tile),
-                    radii(10.0),
-                    color(0.93, 0.93, 0.95, 1.0),
-                )?;
+                canvas2d::fill_round_rect(canvas, rect(tx, y, tile, tile), radii(10.0), t.soft)?;
                 let more = format!("+{}", shown.len() - 6);
                 let mm = canvas2d::measure_text_styled(canvas, &more, 13.0, style(700, 0.0))?;
                 canvas2d::draw_text_styled(
@@ -924,7 +1105,7 @@ impl Sheet {
                         y: y + 23.0,
                     },
                     13.0,
-                    muted,
+                    t.ink2,
                     style(700, 0.0),
                 )?;
             }
@@ -934,88 +1115,69 @@ impl Sheet {
         // The same, in words.
         y += 14.0;
         for line in &summary_lines {
-            let m = canvas2d::measure_text_styled(canvas, line, 15.0, style(500, 0.0))?;
-            canvas2d::draw_text_styled(
-                canvas,
+            centred(
                 line,
-                gfx::Point {
-                    x: mid - m.width / 2.0,
-                    y: y + 15.0,
-                },
-                15.0,
-                muted,
+                y + summary_size,
+                summary_size,
+                t.ink2,
                 style(500, 0.0),
             )?;
-            y += 21.0;
+            y += l.f(21.0);
         }
 
         // See details.
         y += 10.0;
         let link = "See details";
-        let lm = canvas2d::measure_text_styled(canvas, link, 14.0, style(600, 0.0))?;
+        let lm = canvas2d::measure_text_styled(canvas, link, link_size, style(600, 0.0))?;
         let link_ink = if self.pressed(Target::Details) {
-            color(0.15, 0.20, 0.70, 1.0)
+            t.accent_press
         } else {
-            accent
+            t.accent
         };
-        canvas2d::draw_text_styled(
-            canvas,
-            link,
-            gfx::Point {
-                x: mid - lm.width / 2.0,
-                y: y + 14.0,
-            },
-            14.0,
-            link_ink,
-            style(600, 0.0),
-        )?;
-        self.details_button = rect(mid - lm.width / 2.0 - 16.0, y - 10.0, lm.width + 32.0, 40.0);
-        y += 20.0 + 22.0;
+        centred(link, y + link_size, link_size, link_ink, style(600, 0.0))?;
+        self.details_button = rect(
+            mid - lm.width / 2.0 - 16.0,
+            y - 10.0,
+            lm.width + 32.0,
+            l.f(20.0) + 20.0,
+        );
+        y += l.f(20.0) + 22.0;
 
-        // Not now and Open, side by side.
-        let gap = 12.0;
-        let bw = (inner - gap) / 2.0;
-        let not_now = rect(cx + pad, y, bw, 52.0);
-        let open = rect(cx + pad + bw + gap, y, bw, 52.0);
-        let nn_fill = if self.pressed(Target::Cancel) {
-            color(0.94, 0.94, 0.96, 1.0)
+        // Not now and Open.
+        let (open, not_now) = if stacked {
+            (
+                rect(cx + pad, y, inner, bh),
+                rect(cx + pad, y + bh + 10.0, inner, bh),
+            )
         } else {
-            color(1.0, 1.0, 1.0, 1.0)
+            (
+                rect(cx + pad + half + gap, y, half, bh),
+                rect(cx + pad, y, half, bh),
+            )
         };
-        canvas2d::fill_round_rect(canvas, not_now, radii(26.0), nn_fill)?;
+        let nn_fill = if self.pressed(Target::Cancel) {
+            t.soft
+        } else {
+            t.card
+        };
+        draw_button(canvas, l, not_now, "Not now", nn_fill, t.ink)?;
         canvas2d::stroke_round_rect(
             canvas,
             not_now,
-            radii(26.0),
+            radii(not_now.height.min(52.0) / 2.0),
             1.2,
-            color(0.85, 0.86, 0.89, 1.0),
+            t.stroke,
         )?;
         let open_fill = if self.pressed(Target::Open) {
-            color(0.22, 0.22, 0.26, 1.0)
+            t.btn_press
         } else {
-            ink
+            t.btn
         };
-        canvas2d::fill_round_rect(canvas, open, radii(26.0), open_fill)?;
-        for (r, text, fill) in [
-            (not_now, "Not now", ink),
-            (open, "Open", color(1.0, 1.0, 1.0, 1.0)),
-        ] {
-            let m = canvas2d::measure_text_styled(canvas, text, 17.0, style(600, 0.0))?;
-            canvas2d::draw_text_styled(
-                canvas,
-                text,
-                gfx::Point {
-                    x: r.x + (r.width - m.width) / 2.0,
-                    y: r.y + 32.0,
-                },
-                17.0,
-                fill,
-                style(600, 0.0),
-            )?;
-        }
+        draw_button(canvas, l, open, "Open", open_fill, t.btn_ink)?;
         self.cancel_button = not_now;
         self.open_button = open;
         self.rows_area = rect(0.0, 0.0, 0.0, 0.0);
+        self.scroll_area = rect(0.0, 0.0, 0.0, 0.0);
         self.rows.clear();
 
         // What a screen reader says (IC-926).
@@ -1045,28 +1207,17 @@ impl Sheet {
     }
 
     fn draw_details(&mut self, canvas: u64, l: &Layout) -> Result<(), gfx::GfxError> {
-        let ink = color(0.07, 0.07, 0.09, 1.0);
-        let muted = color(0.43, 0.44, 0.48, 1.0);
-        let faint = color(0.60, 0.61, 0.65, 1.0);
-        let accent = color(0.23, 0.30, 0.95, 1.0);
-        let group = color(0.955, 0.957, 0.965, 1.0);
+        let t = l.t;
         let hue = name_hue(&self.name);
         let e = self.entrance.value.clamp(0.0, 1.2);
-
-        // The screen behind: dark, lit faintly in the app's colour.
-        canvas2d::clear(canvas, color(0.05, 0.055, 0.075, 1.0))?;
-        // A wash, not a full-screen radial glow: see the sheet's backdrop.
-        canvas2d::linear_gradient(
-            canvas,
-            rect(0.0, 0.0, l.w, l.h * 0.55),
-            color(hue.r, hue.g, hue.b, 0.36 * e.min(1.0)),
-            color(hue.r, hue.g, hue.b, 0.0),
-        )?;
 
         let (top, right, bottom, left) = l.safe;
         let sideways = l.w > l.h && l.h < 520.0;
         let phone_upright = !sideways && l.w < 600.0;
         let pad = 24.0;
+        let (name_size, detail_size, promise_size, label_size) =
+            (l.f(21.0), l.f(14.0), l.f(15.0), l.f(12.0));
+        let (row_title_size, reason_size, required_size) = (l.f(16.0), l.f(13.5), l.f(13.0));
 
         // The sheet's frame.
         let (sx, sw) = if phone_upright {
@@ -1087,36 +1238,85 @@ impl Sheet {
         } else {
             (sx + pad, sw - pad * 2.0, sx + pad, sw - pad * 2.0)
         };
+        let grabber_h = if phone_upright { 20.0 } else { pad };
+        // The close cross, top right (not sideways: there the list fills
+        // that corner and Not Now sits right by the thumb).
+        let (close_x, close_y) = (sx + sw - pad - 15.0 + 4.0, 0.0);
 
         // Measure first, so the sheet is exactly as tall as what it says.
+        let beside_w = if sideways {
+            head_w - 78.0
+        } else {
+            (close_x - 22.0) - (head_x + 78.0)
+        };
+        // The name sits beside the mark while it fits there on one line;
+        // at a large text size it goes under the mark, across the sheet.
+        let beside = !l.large()
+            || canvas2d::measure_text_styled(canvas, &self.name, name_size, style(750, -0.4))
+                .map(|m| m.width <= beside_w)
+                .unwrap_or(true);
+        let (name_x, name_w) = if beside {
+            (head_x + 78.0, beside_w)
+        } else {
+            (head_x, head_w)
+        };
+        let name_lines = wrap_at_most(canvas, &self.name, name_size, style(750, -0.4), name_w, 2);
+        let detail = if self.detail.is_empty() {
+            "Krate app".to_string()
+        } else {
+            self.detail.clone()
+        };
+        let detail_lines = wrap_at_most(canvas, &detail, detail_size, style(500, 0.0), name_w, 2);
+        let name_block =
+            name_lines.len() as f32 * l.f(26.0) + 4.0 + detail_lines.len() as f32 * l.f(18.0);
+        let head_block = if beside {
+            name_block.max(64.0)
+        } else {
+            64.0 + 10.0 + name_block
+        };
         let promise =
             format!(
             "{} runs sealed off from the rest of this device. It can use only what you allow here.",
             if self.name.chars().count() <= 24 { self.name.as_str() } else { "This app" }
         );
-        let promise_lines = wrap_lines(canvas, &promise, 15.0, head_w);
+        let promise_lines = wrap_lines(canvas, &promise, promise_size, style(450, 0.0), head_w);
         let tile = 32.0;
         let row_pad = 14.0;
         let text_x_off = row_pad + tile + 12.0;
+        let required_w =
+            canvas2d::measure_text_styled(canvas, "Required", required_size, style(600, 0.0))?
+                .width;
+        let reason_lines = if l.large() { 6 } else { 3 };
         let mut texts = Vec::new();
         for ask in &self.asks {
             let (title, tint) = describe(&ask.cap);
             let right_w = if ask.required {
-                canvas2d::measure_text_styled(canvas, "Required", 13.0, style(600, 0.0))?.width
-                    + 8.0
+                required_w + 8.0
             } else {
                 51.0 + 8.0
             };
             let text_w = list_w - text_x_off - row_pad - right_w;
-            let title = fit_line(canvas, &title, 16.0, style(600, -0.2), text_w);
+            let titles = wrap_at_most(canvas, &title, row_title_size, style(600, -0.2), text_w, 2);
             let lines = if ask.rationale.is_empty() {
                 Vec::new()
             } else {
-                wrap_at_most(canvas, &ask.rationale, 13.5, text_w, 3)
+                wrap_at_most(
+                    canvas,
+                    &ask.rationale,
+                    reason_size,
+                    style(450, 0.0),
+                    text_w,
+                    reason_lines,
+                )
             };
-            let h = (row_pad + 20.0 + lines.len() as f32 * 18.0 + row_pad - 2.0).max(60.0);
+            let h = (row_pad
+                + titles.len() as f32 * l.f(20.0)
+                + lines.len() as f32 * l.f(18.0)
+                + row_pad
+                - 2.0)
+                .max(60.0);
             texts.push(RowText {
-                title,
+                titles,
                 tint,
                 lines,
                 h,
@@ -1124,10 +1324,13 @@ impl Sheet {
         }
         let rows_h: f32 = texts.iter().map(|t| t.h).sum();
 
-        let head_h = 64.0 + 18.0 + promise_lines.len() as f32 * 21.0;
-        let label_h = 30.0;
-        let buttons_h = 54.0 + 6.0 + 44.0;
-        let grabber_h = if phone_upright { 20.0 } else { pad };
+        // From the top of the app's name to the top of the rows.
+        let promise_h = 12.0 + promise_lines.len() as f32 * l.f(21.0);
+        let label_h = 10.0 + label_size + 10.0;
+        let head_h = head_block + promise_h;
+        let open_h = 54.0f32.max(l.f(17.0) + 32.0);
+        let cancel_h = 44.0f32.max(l.f(16.0) + 26.0);
+        let buttons_h = open_h + 6.0 + cancel_h;
         let foot = if phone_upright {
             bottom.max(12.0) + 4.0
         } else {
@@ -1140,22 +1343,48 @@ impl Sheet {
         } else {
             l.h - top.max(12.0) - bottom.max(12.0)
         };
+        // Sideways the rows scroll in their own column. Otherwise the whole
+        // of it -- the app, the promise and the rows -- scrolls above
+        // buttons that stay put, so a small phone at a large text size
+        // still shows a whole request at a time.
+        let content = head_h + label_h + rows_h;
+        // Sideways, the app and its buttons share a short column: a step
+        // smaller when they do not fit it.
+        if sideways && grabber_h + head_h + 18.0 + buttons_h + foot > room {
+            if let Some(smaller) = l.smaller() {
+                return self.draw_details(canvas, &smaller);
+            }
+        }
         let (sheet_h, rows_shown) = if sideways {
             let left_h = grabber_h + head_h + 18.0 + buttons_h + foot;
             let right_needed = grabber_h + label_h + rows_h + foot;
             let sheet_h = left_h.max(right_needed).min(room);
-            (
-                sheet_h,
-                (sheet_h - grabber_h - label_h - foot).max(60.0).min(rows_h),
-            )
+            let shown = (sheet_h - grabber_h - label_h - foot).max(60.0).min(rows_h);
+            self.max_scroll = (rows_h - shown).max(0.0);
+            (sheet_h, shown)
         } else {
-            let fixed = grabber_h + head_h + 20.0 + label_h + 18.0 + buttons_h + foot;
-            let shown = rows_h.min((room - fixed).max(60.0));
-            ((fixed + shown).min(room.max(fixed + 60.0)), shown)
+            let fixed = grabber_h + 18.0 + buttons_h + foot;
+            let sheet_h = (fixed + content).min(room.max(fixed + 120.0));
+            self.max_scroll = (content - (sheet_h - fixed)).max(0.0);
+            (sheet_h, rows_h)
         };
-        self.max_scroll = (rows_h - rows_shown).max(0.0);
         self.scroll = self.scroll.clamp(0.0, self.max_scroll);
+        // What scrolls the rows only, and what scrolls everything.
+        let (rows_scroll, all_scroll) = if sideways {
+            (self.scroll, 0.0)
+        } else {
+            (0.0, self.scroll)
+        };
 
+        // Too little of it in view at once on a small screen at a large
+        // text size: a step smaller, while still larger than the default.
+        let view_h = sheet_h - grabber_h - 18.0 - buttons_h - foot;
+        if !sideways && view_h < content.min(l.h * 0.55) {
+            if let Some(smaller) = l.smaller() {
+                return self.draw_details(canvas, &smaller);
+            }
+        }
+        draw_backdrop(canvas, l, self.behind, hue, e)?;
         let slide = (1.0 - e) * (sheet_h + 40.0);
         let sy = if phone_upright {
             l.h - sheet_h + slide
@@ -1183,14 +1412,7 @@ impl Sheet {
             },
         );
         self.sheet_area = frame;
-        canvas2d::drop_shadow_round_rect(
-            canvas,
-            frame,
-            sheet_radii,
-            40.0,
-            color(0.0, 0.0, 0.0, 0.35),
-        )?;
-        canvas2d::fill_round_rect(canvas, frame, sheet_radii, color(1.0, 1.0, 1.0, 1.0))?;
+        draw_card(canvas, &t, frame, sheet_radii)?;
 
         if phone_upright {
             // The grabber: this is a sheet over the screen, not the screen.
@@ -1198,47 +1420,25 @@ impl Sheet {
                 canvas,
                 rect(sx + sw / 2.0 - 18.0, sy + 8.0, 36.0, 5.0),
                 radii(2.5),
-                color(0.84, 0.84, 0.87, 1.0),
+                t.grabber,
             )?;
         }
 
-        // Close, top right: a cross in a soft circle. Not sideways, where
-        // the list fills that corner and Not Now sits right by the thumb.
-        let (cx, cy) = (sx + sw - pad - 15.0 + 4.0, sy + grabber_h + 15.0);
-        self.close_button = rect(0.0, 0.0, 0.0, 0.0);
-        if !sideways {
-            let close_fill = if self.pressed(Target::Close) {
-                color(0.86, 0.86, 0.89, 1.0)
-            } else {
-                color(0.94, 0.94, 0.96, 1.0)
-            };
-            canvas2d::fill_circle(canvas, gfx::Point { x: cx, y: cy }, 15.0, close_fill)?;
-            for k in 0..11 {
-                let d = (k as f32 - 5.0) * 0.9;
-                canvas2d::fill_circle(
-                    canvas,
-                    gfx::Point {
-                        x: cx + d,
-                        y: cy + d,
-                    },
-                    1.05,
-                    muted,
-                )?;
-                canvas2d::fill_circle(
-                    canvas,
-                    gfx::Point {
-                        x: cx + d,
-                        y: cy - d,
-                    },
-                    1.05,
-                    muted,
-                )?;
-            }
-            self.close_button = rect(cx - 24.0, cy - 24.0, 48.0, 48.0);
-        }
+        // Where the scrolling part is shown: under the grabber, above the
+        // buttons.
+        let buttons_y = sy + sheet_h - foot - buttons_h;
+        let view = if sideways {
+            // The left column stops above the buttons; the rows set
+            // their own clip.
+            rect(sx, sy, sw, (buttons_y - 10.0 - sy).max(0.0))
+        } else {
+            let view_top = sy + if phone_upright { 18.0 } else { 8.0 };
+            rect(sx, view_top, sw, buttons_y - 10.0 - view_top)
+        };
+        canvas2d::set_clip(canvas, view.x, view.y, view.width, view.height)?;
 
         // The app: its mark, its name, what it is.
-        let hy = sy + grabber_h;
+        let hy = sy + grabber_h - all_scroll;
         let mark = rect(head_x, hy, 64.0, 64.0);
         if let Some(icon) = self.file_icon {
             canvas_images::draw(canvas, icon, mark)?;
@@ -1272,110 +1472,117 @@ impl Sheet {
                     y: mark.y + 43.0,
                 },
                 30.0,
-                color(1.0, 1.0, 1.0, 1.0),
+                theme::WHITE,
                 style(800, 0.0),
             )?;
         }
 
-        let name_x = head_x + 64.0 + 14.0;
-        let name_w = if sideways {
-            head_w - 78.0
+        // The name and the line about it, in the middle of the mark's
+        // height beside it, or under it.
+        let mut ny = if beside {
+            hy + ((64.0 - name_block) / 2.0).max(0.0)
         } else {
-            (cx - 22.0) - name_x
+            hy + 64.0 + 10.0
         };
-        let name = fit_line(canvas, &self.name, 21.0, style(750, -0.4), name_w);
-        canvas2d::draw_text_styled(
-            canvas,
-            &name,
-            gfx::Point {
-                x: name_x,
-                y: hy + 28.0,
-            },
-            21.0,
-            ink,
-            style(750, -0.4),
-        )?;
-        let detail = if self.detail.is_empty() {
-            "Krate app".to_string()
-        } else {
-            self.detail.clone()
-        };
-        let detail = fit_line(canvas, &detail, 14.0, style(500, 0.0), name_w);
-        canvas2d::draw_text_styled(
-            canvas,
-            &detail,
-            gfx::Point {
-                x: name_x,
-                y: hy + 50.0,
-            },
-            14.0,
-            muted,
-            style(500, 0.0),
-        )?;
-
-        let mut y = hy + 64.0 + 26.0;
-        for line in &promise_lines {
+        for line in &name_lines {
+            ny += l.f(26.0);
             canvas2d::draw_text_styled(
                 canvas,
                 line,
-                gfx::Point { x: head_x, y },
-                15.0,
-                muted,
+                gfx::Point {
+                    x: name_x,
+                    y: ny - l.f(5.0),
+                },
+                name_size,
+                t.ink,
+                style(750, -0.4),
+            )?;
+        }
+        ny += 4.0;
+        for line in &detail_lines {
+            ny += l.f(18.0);
+            canvas2d::draw_text_styled(
+                canvas,
+                line,
+                gfx::Point {
+                    x: name_x,
+                    y: ny - l.f(4.0),
+                },
+                detail_size,
+                t.ink2,
+                style(500, 0.0),
+            )?;
+        }
+
+        let mut y = hy + head_block + 12.0;
+        for line in &promise_lines {
+            y += l.f(21.0);
+            canvas2d::draw_text_styled(
+                canvas,
+                line,
+                gfx::Point {
+                    x: head_x,
+                    y: y - l.f(6.0),
+                },
+                promise_size,
+                t.ink2,
                 style(450, 0.0),
             )?;
-            y += 21.0;
         }
 
         // What it asks to use: one grouped card, scrolling inside itself
         // when there is more than fits.
-        let (label_y, rows_x) = if sideways {
-            (hy + 12.0, list_x)
-        } else {
-            (y + 14.0, list_x)
-        };
+        let label_top = if sideways { hy } else { y };
+        let rows_x = list_x;
         let count = self.asks.len();
         let label = if count == 1 {
             "IT ASKS FOR 1 THING".to_string()
         } else {
             format!("IT ASKS FOR {count} THINGS")
         };
+        let label = fit_line(canvas, &label, label_size, style(650, 0.8), list_w - 8.0);
         canvas2d::draw_text_styled(
             canvas,
             &label,
             gfx::Point {
                 x: rows_x + 4.0,
-                y: label_y,
+                y: label_top + 10.0 + label_size,
             },
-            12.0,
-            faint,
+            label_size,
+            t.ink3,
             style(650, 0.8),
         )?;
-        let rows_top = label_y + 12.0;
+        let rows_top = label_top + label_h;
         let area = rect(rows_x, rows_top, list_w, rows_shown);
-        self.rows_area = area;
-        canvas2d::fill_round_rect(canvas, area, radii(16.0), group)?;
-        canvas2d::set_clip(canvas, area.x, area.y, area.width, area.height)?;
+        canvas2d::fill_round_rect(canvas, area, radii(16.0), t.group)?;
+        // The part of the rows in view: where a tap lands on a row.
+        let rows_view = if sideways { area } else { view };
+        let shown_top = area.y.max(rows_view.y);
+        let shown_bottom = (area.y + area.height).min(rows_view.y + rows_view.height);
+        self.rows_area = rect(
+            area.x,
+            shown_top,
+            area.width,
+            (shown_bottom - shown_top).max(0.0),
+        );
+        self.scroll_area = if sideways { area } else { view };
+        if sideways {
+            canvas2d::set_clip(canvas, area.x, area.y, area.width, area.height)?;
+        }
+        let visible = self.rows_area;
         self.rows.clear();
-        let mut ry = rows_top - self.scroll;
-        for (index, t) in texts.iter().enumerate() {
+        let mut ry = rows_top - rows_scroll;
+        for (index, row) in texts.iter().enumerate() {
             let ask = &self.asks[index];
-            let y1 = ry + t.h;
+            let y1 = ry + row.h;
             self.rows.push(RowHit { index, y0: ry, y1 });
-            if ry < area.y + area.height && y1 > area.y {
+            if ry < visible.y + visible.height && y1 > visible.y {
                 if self.pressed(Target::Row(index)) && !ask.required {
-                    canvas2d::fill_rect(
-                        canvas,
-                        rect(area.x, ry, area.width, t.h),
-                        color(0.90, 0.90, 0.92, 1.0),
-                    )?;
+                    canvas2d::fill_rect(canvas, rect(area.x, ry, area.width, row.h), t.row_press)?;
                 }
                 let tile_y = ry + row_pad;
                 let tile_r = rect(rows_x + row_pad, tile_y, tile, tile);
-                let tint = if ask.granted {
-                    t.tint
-                } else {
-                    color(0.74, 0.75, 0.78, 1.0)
-                };
+                let tint = if ask.granted { row.tint } else { t.denied };
                 canvas2d::fill_round_rect(canvas, tile_r, radii(8.0), tint)?;
                 ask_icon(
                     canvas,
@@ -1384,51 +1591,48 @@ impl Sheet {
                     tile_r.y + tile / 2.0,
                 )?;
                 let tx = rows_x + text_x_off;
-                canvas2d::draw_text_styled(
-                    canvas,
-                    &t.title,
-                    gfx::Point {
-                        x: tx,
-                        y: ry + row_pad + 15.0,
-                    },
-                    16.0,
-                    if ask.granted { ink } else { muted },
-                    style(600, -0.2),
-                )?;
-                let mut ly = ry + row_pad + 15.0 + 19.0;
-                for line in &t.lines {
+                let mut ly = ry + row_pad - l.f(5.0);
+                for title in &row.titles {
+                    ly += l.f(20.0);
+                    canvas2d::draw_text_styled(
+                        canvas,
+                        title,
+                        gfx::Point { x: tx, y: ly },
+                        row_title_size,
+                        if ask.granted { t.ink } else { t.ink2 },
+                        style(600, -0.2),
+                    )?;
+                }
+                for line in &row.lines {
+                    ly += l.f(18.0);
                     canvas2d::draw_text_styled(
                         canvas,
                         line,
                         gfx::Point { x: tx, y: ly },
-                        13.5,
-                        muted,
+                        reason_size,
+                        t.ink2,
                         style(450, 0.0),
                     )?;
-                    ly += 18.0;
                 }
                 let mid = ry + row_pad + tile / 2.0;
                 if ask.required {
                     // Required: the app cannot run without it, so no switch.
-                    let tm =
-                        canvas2d::measure_text_styled(canvas, "Required", 13.0, style(600, 0.0))?;
                     canvas2d::draw_text_styled(
                         canvas,
                         "Required",
                         gfx::Point {
-                            x: rows_x + list_w - row_pad - tm.width,
-                            y: mid + 4.5,
+                            x: rows_x + list_w - row_pad - required_w,
+                            y: mid + required_size * 0.35,
                         },
-                        13.0,
-                        faint,
+                        required_size,
+                        t.ink3,
                         style(600, 0.0),
                     )?;
                 } else {
                     // An iOS-shaped switch, its knob sprung between ends.
                     let k = self.knobs[index].value.clamp(0.0, 1.0);
                     let pill = rect(rows_x + list_w - row_pad - 51.0, mid - 15.5, 51.0, 31.0);
-                    let off = color(0.86, 0.86, 0.88, 1.0);
-                    let on = color(0.20, 0.78, 0.35, 1.0);
+                    let (off, on) = (t.switch_off, t.switch_on);
                     let fill = color(
                         off.r + (on.r - off.r) * k,
                         off.g + (on.g - off.g) * k,
@@ -1444,102 +1648,161 @@ impl Sheet {
                             y: mid + 1.0,
                         },
                         13.5,
-                        color(0.0, 0.0, 0.0, 0.10),
+                        t.knob_shadow,
                     )?;
                     canvas2d::fill_circle(
                         canvas,
                         gfx::Point { x: knob_x, y: mid },
                         13.5,
-                        color(1.0, 1.0, 1.0, 1.0),
+                        theme::WHITE,
                     )?;
                 }
                 if index + 1 < count {
                     canvas2d::fill_rect(
                         canvas,
                         rect(tx, y1 - 0.5, rows_x + list_w - tx, 0.5),
-                        color(0.0, 0.0, 0.0, 0.10),
+                        t.line,
                     )?;
                 }
             }
             ry = y1;
         }
         canvas2d::clear_clip(canvas)?;
-        if self.max_scroll > 0.0 {
-            // More below (or above): a short fade at the cut edge.
-            if self.scroll < self.max_scroll - 1.0 {
-                canvas2d::fill_round_rect(
-                    canvas,
-                    rect(area.x, area.y + area.height - 22.0, area.width, 22.0),
+        // Close stays where it is while the rest scrolls under it.
+        let close_y = close_y + sy + grabber_h + 15.0;
+        self.close_button = rect(0.0, 0.0, 0.0, 0.0);
+        if !sideways {
+            draw_close(
+                canvas,
+                &t,
+                close_x,
+                close_y,
+                15.0,
+                self.pressed(Target::Close),
+            )?;
+            self.close_button = rect(close_x - 24.0, close_y - 24.0, 48.0, 48.0);
+        }
+
+        if self.max_scroll > 0.0 && self.scroll < self.max_scroll - 1.0 {
+            // More below: a short band at the cut edge, in the colour of
+            // what it covers.
+            let more_size = l.f(12.0);
+            let fade_h = 22.0f32.max(more_size + 12.0);
+            let (band, under, corners) = if sideways {
+                (
+                    rect(area.x, area.y + area.height - fade_h, area.width, fade_h),
+                    t.group,
                     gfx::CornerRadii {
                         top_left: 0.0,
                         top_right: 0.0,
                         bottom_right: 16.0,
                         bottom_left: 16.0,
                     },
-                    color(group.r, group.g, group.b, 0.85),
-                )?;
-                let more = "More below";
-                let mm = canvas2d::measure_text_styled(canvas, more, 12.0, style(600, 0.0))?;
-                canvas2d::draw_text_styled(
-                    canvas,
-                    more,
-                    gfx::Point {
-                        x: area.x + (area.width - mm.width) / 2.0,
-                        y: area.y + area.height - 7.0,
-                    },
-                    12.0,
-                    faint,
-                    style(600, 0.0),
-                )?;
-            }
+                )
+            } else {
+                (
+                    rect(view.x, view.y + view.height - fade_h, view.width, fade_h),
+                    t.card,
+                    radii(0.0),
+                )
+            };
+            // A short fade into a solid band, so the words under it go
+            // out of sight rather than through "More below". Small, so
+            // cheap on a phone's CPU painter.
+            canvas2d::linear_gradient(
+                canvas,
+                rect(band.x, band.y - fade_h, band.width, fade_h),
+                color(under.r, under.g, under.b, 0.0),
+                under,
+            )?;
+            canvas2d::fill_round_rect(canvas, band, corners, under)?;
+            let more = "More below";
+            let mm = canvas2d::measure_text_styled(canvas, more, more_size, style(600, 0.0))?;
+            canvas2d::draw_text_styled(
+                canvas,
+                more,
+                gfx::Point {
+                    x: band.x + (band.width - mm.width) / 2.0,
+                    y: centred_baseline(band.y, band.height, more_size),
+                },
+                more_size,
+                t.ink3,
+                style(600, 0.0),
+            )?;
         }
 
         // The choice.
-        let buttons_y = if sideways {
-            sy + sheet_h - foot - buttons_h
-        } else {
-            area.y + area.height + 18.0
-        };
-        let open = rect(head_x, buttons_y, head_w, 54.0);
+        let open = rect(head_x, buttons_y, head_w, open_h);
         let open_fill = if self.pressed(Target::Open) {
-            shade(accent, 0.82)
+            t.btn_press
         } else {
-            accent
+            t.btn
         };
-        canvas2d::fill_round_rect(canvas, open, radii(16.0), open_fill)?;
-        let om = canvas2d::measure_text_styled(canvas, "Open", 17.0, style(650, 0.0))?;
-        canvas2d::draw_text_styled(
-            canvas,
-            "Open",
-            gfx::Point {
-                x: open.x + (open.width - om.width) / 2.0,
-                y: open.y + 33.0,
-            },
-            17.0,
-            color(1.0, 1.0, 1.0, 1.0),
-            style(650, 0.0),
-        )?;
+        draw_button(canvas, l, open, "Open", open_fill, t.btn_ink)?;
         self.open_button = open;
-        let cancel = rect(head_x, open.y + 54.0 + 6.0, head_w, 44.0);
+        let cancel = rect(head_x, open.y + open_h + 6.0, head_w, cancel_h);
         let not_now = "Not Now";
-        let nm = canvas2d::measure_text_styled(canvas, not_now, 16.0, style(600, 0.0))?;
+        let nn_size = l.f(16.0);
+        let nm = canvas2d::measure_text_styled(canvas, not_now, nn_size, style(600, 0.0))?;
         let nn_ink = if self.pressed(Target::Cancel) {
-            color(accent.r, accent.g, accent.b, 0.45)
+            t.accent_press
         } else {
-            accent
+            t.accent
         };
         canvas2d::draw_text_styled(
             canvas,
             not_now,
             gfx::Point {
                 x: cancel.x + (cancel.width - nm.width) / 2.0,
-                y: cancel.y + 27.0,
+                y: centred_baseline(cancel.y, cancel.height, nn_size),
             },
-            16.0,
+            nn_size,
             nn_ink,
             style(600, 0.0),
         )?;
         self.cancel_button = cancel;
+
+        // What a screen reader says (IC-926): the app, each request and
+        // whether it is on, and the two buttons.
+        let mut said = krate::layout::Said::new();
+        said.heading(
+            krate::layout::Rect::new(head_x, hy, head_w, head_block),
+            &self.name,
+        );
+        said.text(
+            krate::layout::Rect::new(head_x, hy + head_block, head_w, promise_h),
+            &promise,
+        );
+        for (hit, row) in self.rows.iter().zip(&texts) {
+            // Only the rows in view: the rest are scrolled out of the card.
+            if hit.y1 <= area.y || hit.y0 >= area.y + area.height {
+                continue;
+            }
+            let ask = &self.asks[hit.index];
+            let state = if ask.required {
+                "required"
+            } else if ask.granted {
+                "on"
+            } else {
+                "off"
+            };
+            let words = format!("{}, {}. {}", row.titles.join(" "), state, ask.rationale);
+            let r = krate::layout::Rect::new(area.x, hit.y0, area.width, hit.y1 - hit.y0);
+            if ask.required {
+                said.text(r, &words);
+            } else {
+                said.button(r, &words);
+            }
+        }
+        said.button(
+            krate::layout::Rect::new(open.x, open.y, open.width, open.height),
+            "Open",
+        );
+        said.button(
+            krate::layout::Rect::new(cancel.x, cancel.y, cancel.width, cancel.height),
+            not_now,
+        );
+        said.send(self.window);
 
         canvas2d::present(canvas)
     }
@@ -1644,7 +1907,7 @@ impl Sheet {
             types::Event::Pointer(p) => {
                 // A finger moving: past the slop it is a scroll, and the rows
                 // follow it.
-                let in_rows = inside(self.rows_area, p.x, p.y);
+                let in_rows = inside(self.scroll_area, p.x, p.y);
                 if let Some(press) = self.press.as_mut() {
                     let (dx, dy) = (p.x - press.x, p.y - press.y);
                     if !press.moved && dx * dx + dy * dy > TAP_SLOP * TAP_SLOP {
@@ -1663,11 +1926,11 @@ impl Sheet {
     }
 }
 
-/// The home screen: every app the person has, in the order given. Returns
-/// the index tapped, or None when the window is dismissed.
-fn home(apps: &[(&str, &str)]) -> Option<usize> {
+/// The window and canvas every mode draws on, or None when the player gave
+/// no window.
+fn open_canvas(title: &str) -> Option<(u64, u64)> {
     let win = window::create(
-        "Krate",
+        title,
         types::WindowSize {
             width: 390,
             height: 720,
@@ -1680,12 +1943,16 @@ fn home(apps: &[(&str, &str)]) -> Option<usize> {
         &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
     );
     let canvas = canvas2d::bind(win, CANVAS_ID).ok()?;
+    Some((win, canvas))
+}
+
+/// The home screen: every app the person has, in the order given. Returns
+/// the index tapped, or None when the window is dismissed.
+fn home(apps: &[(&str, &str)]) -> Option<usize> {
+    let (win, canvas) = open_canvas("Krate")?;
     let mut scroll = 0.0f32;
     loop {
-        let l = match canvas2d::canvas_size(canvas) {
-            Ok(size) => Layout::from_canvas(size.width.max(1.0), size.height.max(1.0)),
-            Err(_) => Layout::from_canvas(390.0, 720.0),
-        };
+        let l = Layout::now(canvas, win);
         let rows = draw_home(canvas, &l, apps, scroll).ok()?;
         let _ = window::request_redraw(win);
         match events::wait(None) {
@@ -1713,38 +1980,41 @@ fn draw_home(
     apps: &[(&str, &str)],
     scroll: f32,
 ) -> Result<Vec<RowHit>, gfx::GfxError> {
-    canvas2d::clear(canvas, color(0.02, 0.024, 0.038, 1.0))?;
+    let t = l.t;
+    canvas2d::clear(canvas, t.page)?;
     let x = l.col_x + 20.0;
     let w = l.col_w - 40.0;
-    let top = 96.0 - scroll;
+    let top = l.safe.0 + 24.0 + l.f(40.0) - scroll;
     canvas2d::draw_text_styled(
         canvas,
         "Krate",
         gfx::Point { x, y: top },
-        34.0,
-        color(1.0, 1.0, 1.0, 1.0),
+        l.f(34.0),
+        t.ink,
         style(750, -0.6),
     )?;
-    canvas2d::draw_text(
+    canvas2d::draw_text_styled(
         canvas,
         "Your apps",
-        gfx::Point { x, y: top + 28.0 },
-        15.0,
-        color(1.0, 1.0, 1.0, 0.5),
+        gfx::Point {
+            x,
+            y: top + l.f(28.0),
+        },
+        l.f(15.0),
+        t.ink2,
+        style(450, 0.0),
     )?;
     let mut rows = Vec::new();
-    let mut y = top + 52.0;
+    let mut y = top + l.f(52.0);
+    let (name_size, line_size) = (l.f(17.0), l.f(13.0));
+    let text_x = x + 72.0;
+    let text_w = w - 72.0 - 14.0;
     for (index, (name, line)) in apps.iter().enumerate() {
-        let h = 72.0;
-        canvas2d::fill_round_rect(
-            canvas,
-            rect(x, y, w, h),
-            radii(18.0),
-            color(0.086, 0.096, 0.13, 1.0),
-        )?;
+        let h = 72.0f32.max(name_size + line_size + 34.0);
+        draw_card(canvas, &t, rect(x, y, w, h), radii(18.0))?;
         // The app's initial on a tile, until apps carry icons.
-        let tile = rect(x + 14.0, y + 14.0, 44.0, 44.0);
-        canvas2d::fill_round_rect(canvas, tile, radii(11.0), color(0.24, 0.45, 0.98, 1.0))?;
+        let tile = rect(x + 14.0, y + (h - 44.0) / 2.0, 44.0, 44.0);
+        canvas2d::fill_round_rect(canvas, tile, radii(11.0), t.accent)?;
         let initial: String = name
             .chars()
             .next()
@@ -1759,29 +2029,33 @@ fn draw_home(
                 y: tile.y + 30.0,
             },
             22.0,
-            color(1.0, 1.0, 1.0, 1.0),
+            theme::WHITE,
             style(700, 0.0),
+        )?;
+        let gap = 4.0;
+        let block = name_size + gap + line_size;
+        let name_y = y + (h - block) / 2.0 + name_size * 0.85;
+        canvas2d::draw_text_styled(
+            canvas,
+            &fit_line(canvas, name, name_size, style(600, 0.0), text_w),
+            gfx::Point {
+                x: text_x,
+                y: name_y,
+            },
+            name_size,
+            t.ink,
+            style(600, 0.0),
         )?;
         canvas2d::draw_text_styled(
             canvas,
-            name,
+            &fit_line(canvas, line, line_size, style(450, 0.0), text_w),
             gfx::Point {
-                x: x + 72.0,
-                y: y + 32.0,
+                x: text_x,
+                y: name_y + gap + line_size * 1.15,
             },
-            17.0,
-            color(1.0, 1.0, 1.0, 0.95),
-            style(600, 0.0),
-        )?;
-        canvas2d::draw_text(
-            canvas,
-            line,
-            gfx::Point {
-                x: x + 72.0,
-                y: y + 52.0,
-            },
-            13.0,
-            color(1.0, 1.0, 1.0, 0.5),
+            line_size,
+            t.ink2,
+            style(450, 0.0),
         )?;
         rows.push(RowHit {
             index,
@@ -1792,16 +2066,18 @@ fn draw_home(
     }
     // How apps arrive, always at the foot of the list.
     let hint = "Open a .krate from Messages, Mail or Files and it appears here.";
-    let mut hy = y + 26.0;
-    for line in wrap_lines(canvas, hint, 14.0, w) {
-        canvas2d::draw_text(
+    let hint_size = l.f(14.0);
+    let mut hy = y + 8.0;
+    for line in wrap_lines(canvas, hint, hint_size, style(450, 0.0), w) {
+        hy += l.f(19.0);
+        canvas2d::draw_text_styled(
             canvas,
             &line,
             gfx::Point { x, y: hy },
-            14.0,
-            color(1.0, 1.0, 1.0, 0.45),
+            hint_size,
+            t.ink3,
+            style(450, 0.0),
         )?;
-        hy += 19.0;
     }
     canvas2d::present(canvas)?;
     Ok(rows)
@@ -1810,30 +2086,11 @@ fn draw_home(
 /// Show why something did not open, until Close is tapped or the window is
 /// dismissed.
 fn notice(title: &str, message: &str) {
-    let Ok(win) = window::create(
-        "Krate",
-        types::WindowSize {
-            width: 390,
-            height: 720,
-        },
-    ) else {
-        return;
-    };
-    if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
-        return;
-    }
-    let _ = tree::upsert_node(
-        win,
-        &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
-    );
-    let Ok(canvas) = canvas2d::bind(win, CANVAS_ID) else {
+    let Some((win, canvas)) = open_canvas("Krate") else {
         return;
     };
     loop {
-        let l = match canvas2d::canvas_size(canvas) {
-            Ok(size) => Layout::from_canvas(size.width.max(1.0), size.height.max(1.0)),
-            Err(_) => Layout::from_canvas(390.0, 720.0),
-        };
+        let l = Layout::now(canvas, win);
         let close = match draw_notice(canvas, &l, title, message) {
             Ok(close) => close,
             Err(_) => return,
@@ -1842,8 +2099,7 @@ fn notice(title: &str, message: &str) {
         match events::wait(None) {
             Some(types::Event::CloseRequested(_)) => return,
             Some(types::Event::Pointer(p)) if p.pressed && p.button.is_some() => {
-                let (bx, by, bw, bh) = close;
-                if p.x >= bx && p.x <= bx + bw && p.y >= by && p.y <= by + bh {
+                if inside(close, p.x, p.y) {
                     return;
                 }
             }
@@ -1858,92 +2114,97 @@ fn draw_notice(
     l: &Layout,
     title: &str,
     message: &str,
-) -> Result<(f32, f32, f32, f32), gfx::GfxError> {
-    canvas2d::clear(canvas, color(0.02, 0.024, 0.038, 1.0))?;
-    let x = l.col_x + 24.0;
-    let text_w = l.col_w - 48.0;
-    let lines = wrap_lines(canvas, message, 15.5, text_w);
-    let card_h = 72.0 + lines.len() as f32 * 21.0 + 92.0;
-    let top = ((l.h - card_h) / 2.0).max(16.0);
-    canvas2d::fill_round_rect(
+) -> Result<gfx::Rect, gfx::GfxError> {
+    let t = l.t;
+    let (top, _, bottom, _) = l.safe;
+    let x = l.col_x + 40.0;
+    let text_w = l.col_w - 80.0;
+    let (title_size, message_size) = (l.f(22.0), l.f(15.5));
+    let title_lines = wrap_at_most(canvas, title, title_size, style(700, -0.3), text_w, 3);
+    let bh = button_h(l);
+    // Everything but the message, then as much of the message as the
+    // screen has room for: the Close button never leaves it.
+    let fixed = 28.0 + title_lines.len() as f32 * l.f(28.0) + 8.0 + 20.0 + bh + 24.0;
+    let room = l.h - top - bottom - 32.0;
+    let most = (((room - fixed) / l.f(21.0)).max(0.0) as usize).max(2);
+    if wrap_lines(canvas, message, message_size, style(450, 0.0), text_w).len() > most {
+        if let Some(smaller) = l.smaller() {
+            return draw_notice(canvas, &smaller, title, message);
+        }
+    }
+    canvas2d::clear(canvas, t.page)?;
+    let lines = wrap_at_most(canvas, message, message_size, style(450, 0.0), text_w, most);
+    let card_h = fixed + lines.len() as f32 * l.f(21.0);
+    let card_top = (top + (l.h - top - bottom - card_h) / 2.0).max(top + 16.0);
+    draw_card(
         canvas,
-        rect(l.col_x + 8.0, top, l.col_w - 16.0, card_h),
+        &t,
+        rect(l.col_x + 16.0, card_top, l.col_w - 32.0, card_h),
         radii(24.0),
-        color(0.075, 0.086, 0.125, 1.0),
     )?;
-    canvas2d::draw_text_styled(
-        canvas,
-        title,
-        gfx::Point { x, y: top + 48.0 },
-        22.0,
-        color(1.0, 1.0, 1.0, 1.0),
-        style(700, -0.3),
-    )?;
-    let mut y = top + 80.0;
-    for line in &lines {
-        canvas2d::draw_text(
+    let mut y = card_top + 28.0;
+    for line in &title_lines {
+        y += l.f(28.0);
+        canvas2d::draw_text_styled(
             canvas,
             line,
-            gfx::Point { x, y },
-            15.5,
-            color(1.0, 1.0, 1.0, 0.75),
+            gfx::Point { x, y: y - l.f(6.0) },
+            title_size,
+            t.ink,
+            style(700, -0.3),
         )?;
-        y += 21.0;
     }
-    let close = rect(x, y + 14.0, text_w, 50.0);
-    canvas2d::fill_round_rect(canvas, close, radii(25.0), color(0.42, 0.55, 1.0, 1.0))?;
-    let m = canvas2d::measure_text_styled(canvas, "Close", 17.0, style(650, 0.2))?;
-    canvas2d::draw_text_styled(
-        canvas,
+    y += 8.0;
+    for line in &lines {
+        y += l.f(21.0);
+        canvas2d::draw_text_styled(
+            canvas,
+            line,
+            gfx::Point { x, y: y - l.f(5.0) },
+            message_size,
+            t.ink2,
+            style(450, 0.0),
+        )?;
+    }
+    let close = rect(x, y + 20.0, text_w, bh);
+    draw_button(canvas, l, close, "Close", t.btn, t.btn_ink)?;
+
+    let mut said = krate::layout::Said::new();
+    said.heading(
+        krate::layout::Rect::new(x, card_top, text_w, 28.0 + l.f(28.0)),
+        title,
+    );
+    said.text(
+        krate::layout::Rect::new(x, card_top + 40.0, text_w, close.y - card_top - 40.0),
+        message,
+    );
+    said.button(
+        krate::layout::Rect::new(close.x, close.y, close.width, close.height),
         "Close",
-        gfx::Point {
-            x: close.x + close.width / 2.0 - m.width / 2.0,
-            y: close.y + 32.0,
-        },
-        17.0,
-        color(1.0, 1.0, 1.0, 1.0),
-        style(650, 0.2),
-    )?;
+    );
+    said.send(l.win);
     canvas2d::present(canvas)?;
-    Ok((close.x, close.y, close.width, close.height))
+    Ok(close)
 }
 
 /// Show what a command-line app printed, until Close is tapped or the window
 /// is dismissed. A finger or a wheel scrolls it.
 fn output(name: &str, ended: &str, lines: &[&str]) {
-    let Ok(win) = window::create(
-        "Krate",
-        types::WindowSize {
-            width: 390,
-            height: 720,
-        },
-    ) else {
-        return;
-    };
-    if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
-        return;
-    }
-    let _ = tree::upsert_node(
-        win,
-        &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
-    );
-    let Ok(canvas) = canvas2d::bind(win, CANVAS_ID) else {
+    let Some((win, canvas)) = open_canvas("Krate") else {
         return;
     };
     let mut scroll = 0.0f32;
-    // Wrapped once per width, not on every frame.
-    let mut wrapped: (f32, Vec<String>) = (0.0, Vec::new());
+    // Sized and wrapped once per width and text size, not on every frame.
+    let mut wrapped: ((f32, f32), f32, Vec<String>) = ((0.0, 0.0), 0.0, Vec::new());
     loop {
-        let l = match canvas2d::canvas_size(canvas) {
-            Ok(size) => Layout::from_canvas(size.width.max(1.0), size.height.max(1.0)),
-            Err(_) => Layout::from_canvas(390.0, 720.0),
-        };
-        let mut l = l;
-        l.safe = krate::layout::Screen::of(win).safe;
-        if wrapped.0 != l.col_w {
-            wrapped = (l.col_w, wrap_output(canvas, lines, l.col_w - 48.0));
+        let l = Layout::now(canvas, win);
+        let key = (l.col_w, l.look.text_scale);
+        if wrapped.0 != key {
+            let max_w = l.col_w - 48.0;
+            let size = output_size(canvas, lines, l.f(OUTPUT_SIZE), max_w);
+            wrapped = (key, size, wrap_output(canvas, lines, size, max_w));
         }
-        let drawn = match draw_output(canvas, &l, name, ended, &wrapped.1, scroll) {
+        let drawn = match draw_output(canvas, &l, name, ended, &wrapped.2, wrapped.1, scroll) {
             Ok(drawn) => drawn,
             Err(_) => return,
         };
@@ -1964,23 +2225,55 @@ fn output(name: &str, ended: &str, lines: &[&str]) {
     }
 }
 
-/// The size of the fixed-width text, and the room between its lines.
+/// The size of the fixed-width text, and the room between its lines, at
+/// the default text size.
 const OUTPUT_SIZE: f32 = 13.0;
 const OUTPUT_LINE: f32 = 18.0;
 
-/// Break every printed line to the card's width, by characters: output
-/// is laid out in columns (a hex dump, a table), so words are not the unit.
+/// The fixed-width face output is drawn in.
+fn mono() -> gfx::TextStyle {
+    gfx::TextStyle {
+        family: gfx::FontFamily::Mono,
+        ..style(400, 0.0)
+    }
+}
+
+/// Lines measured when choosing the output's size: enough for any screen
+/// of output, bounded so thousands of printed lines do not each cost a
+/// measurement on a phone.
+const OUTPUT_MEASURED: usize = 2000;
+
+/// The size to draw what an app printed at, the way a terminal fits its
+/// columns: `base` (the person's text size) when the widest line fits,
+/// else small enough that it does -- but never under 0.7 of `base`, nor
+/// under 9 points, so it stays readable. Lines still too wide then wrap.
+fn output_size(canvas: u64, lines: &[&str], base: f32, max_w: f32) -> f32 {
+    let widest = lines
+        .iter()
+        .take(OUTPUT_MEASURED)
+        .filter_map(|line| {
+            canvas2d::measure_text_styled(canvas, &line.replace('\t', "    "), base, mono()).ok()
+        })
+        .fold(0.0f32, |w, m| w.max(m.width));
+    if widest <= max_w || widest <= 0.0 {
+        return base;
+    }
+    let floor = (base * 0.7).max(9.0).min(base);
+    // A hair under the exact ratio: widths do not scale perfectly with size.
+    (base * max_w / widest * 0.995).max(floor)
+}
+
+/// Break every line still too wide for the card. A break goes at the last
+/// space that fits, the boundary between two columns of a hex dump or a
+/// table, and mid-token only when a token alone is wider than the card.
 /// Each piece is measured as drawn -- box-drawing and other symbols come
 /// from fallback faces of other widths, so no one character's width holds
 /// for a whole line.
-fn wrap_output(canvas: u64, lines: &[&str], max_w: f32) -> Vec<String> {
-    let mono = gfx::TextStyle {
-        family: gfx::FontFamily::Mono,
-        ..style(400, 0.0)
-    };
+fn wrap_output(canvas: u64, lines: &[&str], size: f32, max_w: f32) -> Vec<String> {
+    let mono = mono();
     let fits = |chars: &[char]| {
         let text: String = chars.iter().collect();
-        canvas2d::measure_text_styled(canvas, &text, OUTPUT_SIZE, mono)
+        canvas2d::measure_text_styled(canvas, &text, size, mono)
             .map(|m| m.width <= max_w)
             .unwrap_or(true)
     };
@@ -2005,8 +2298,23 @@ fn wrap_output(canvas: u64, lines: &[&str], max_w: f32) -> Vec<String> {
                     hi = mid - 1;
                 }
             }
-            out.push(rest[..lo].iter().collect());
+            if lo < rest.len() {
+                // Back to the last space that fits, if there is one past
+                // the first character.
+                if let Some(space) = (1..=lo).rev().find(|&i| rest[i] == ' ') {
+                    let piece: String = rest[..space].iter().collect();
+                    if !piece.trim().is_empty() {
+                        lo = space;
+                    }
+                }
+            }
+            let piece: String = rest[..lo].iter().collect();
+            out.push(piece.trim_end().to_string());
             rest.drain(..lo);
+            // The spaces at a break are the break.
+            while rest.first() == Some(&' ') {
+                rest.remove(0);
+            }
         }
     }
     out
@@ -2019,83 +2327,101 @@ fn draw_output(
     name: &str,
     ended: &str,
     lines: &[String],
+    mono_size: f32,
     scroll: f32,
 ) -> Result<(gfx::Rect, f32), gfx::GfxError> {
-    canvas2d::clear(canvas, color(0.02, 0.024, 0.038, 1.0))?;
+    let t = l.t;
+    canvas2d::clear(canvas, t.page)?;
     let x = l.col_x + 24.0;
     let text_w = l.col_w - 48.0;
-    let top = l.safe.0 + 24.0;
-    canvas2d::draw_text_styled(
-        canvas,
-        &fit_line(canvas, name, 22.0, style(700, -0.3), text_w),
-        gfx::Point { x, y: top + 26.0 },
-        22.0,
-        color(1.0, 1.0, 1.0, 1.0),
-        style(700, -0.3),
-    )?;
-    canvas2d::draw_text(
-        canvas,
-        ended,
-        gfx::Point { x, y: top + 52.0 },
-        14.5,
-        color(1.0, 1.0, 1.0, 0.6),
-    )?;
-    let close = rect(x, l.h - l.safe.2 - 24.0 - 50.0, text_w, 50.0);
+    let (name_size, ended_size) = (l.f(22.0), l.f(14.5));
+    let mono_line = mono_size * OUTPUT_LINE / OUTPUT_SIZE;
+    let mut y = l.safe.0 + 24.0;
+    let name_lines = wrap_at_most(canvas, name, name_size, style(700, -0.3), text_w, 2);
+    for line in &name_lines {
+        y += l.f(28.0);
+        canvas2d::draw_text_styled(
+            canvas,
+            line,
+            gfx::Point { x, y: y - l.f(4.0) },
+            name_size,
+            t.ink,
+            style(700, -0.3),
+        )?;
+    }
+    let ended_lines = wrap_at_most(canvas, ended, ended_size, style(450, 0.0), text_w, 2);
+    for line in &ended_lines {
+        y += l.f(20.0);
+        canvas2d::draw_text_styled(
+            canvas,
+            line,
+            gfx::Point { x, y: y - l.f(2.0) },
+            ended_size,
+            t.ink2,
+            style(450, 0.0),
+        )?;
+    }
+    let heading_h = y - l.safe.0;
+    let bh = button_h(l);
+    let close = rect(x, l.h - l.safe.2 - 24.0 - bh, text_w, bh);
+    let area_top = y + 16.0;
     let area = rect(
         l.col_x + 8.0,
-        top + 72.0,
+        area_top,
         l.col_w - 16.0,
-        (close.y - 16.0 - (top + 72.0)).max(40.0),
+        (close.y - 16.0 - area_top).max(40.0),
     );
-    canvas2d::fill_round_rect(canvas, area, radii(18.0), color(0.075, 0.086, 0.125, 1.0))?;
-    let mono = gfx::TextStyle {
-        family: gfx::FontFamily::Mono,
-        ..style(400, 0.0)
-    };
-    let content = 16.0 + lines.len() as f32 * OUTPUT_LINE + 8.0;
+    draw_card(canvas, &t, area, radii(18.0))?;
+    let mono = mono();
+    let content = 16.0 + lines.len() as f32 * mono_line + 8.0;
     let room = (content - area.height).max(0.0);
     let scroll = scroll.min(room);
     canvas2d::set_clip(canvas, area.x, area.y, area.width, area.height)?;
     if lines.is_empty() {
-        canvas2d::draw_text(
+        canvas2d::draw_text_styled(
             canvas,
             "It printed nothing.",
             gfx::Point {
                 x,
-                y: area.y + 30.0,
+                y: area.y + 16.0 + l.f(14.5),
             },
-            14.5,
-            color(1.0, 1.0, 1.0, 0.5),
+            l.f(14.5),
+            t.ink3,
+            style(450, 0.0),
         )?;
     }
     // Only the lines in view are drawn: an app may print thousands.
-    let first = ((scroll - 16.0) / OUTPUT_LINE).max(0.0) as usize;
-    let shown = (area.height / OUTPUT_LINE) as usize + 2;
+    let first = ((scroll - 16.0) / mono_line).max(0.0) as usize;
+    let shown = (area.height / mono_line) as usize + 2;
     for (i, line) in lines.iter().enumerate().skip(first).take(shown) {
-        let y = area.y + 16.0 + (i as f32 + 1.0) * OUTPUT_LINE - 4.0 - scroll;
-        canvas2d::draw_text_styled(
-            canvas,
-            line,
-            gfx::Point { x, y },
-            OUTPUT_SIZE,
-            color(0.86, 0.9, 1.0, 0.92),
-            mono,
-        )?;
+        let y = area.y + 16.0 + (i as f32 + 1.0) * mono_line - mono_line * 0.25 - scroll;
+        canvas2d::draw_text_styled(canvas, line, gfx::Point { x, y }, mono_size, t.ink, mono)?;
     }
     canvas2d::clear_clip(canvas)?;
-    canvas2d::fill_round_rect(canvas, close, radii(25.0), color(0.42, 0.55, 1.0, 1.0))?;
-    let m = canvas2d::measure_text_styled(canvas, "Close", 17.0, style(650, 0.2))?;
-    canvas2d::draw_text_styled(
-        canvas,
+    draw_button(canvas, l, close, "Close", t.btn, t.btn_ink)?;
+
+    let mut said = krate::layout::Said::new();
+    said.heading(
+        krate::layout::Rect::new(x, l.safe.0, text_w, heading_h),
+        name,
+    );
+    if !lines.is_empty() {
+        let in_view: Vec<&str> = lines
+            .iter()
+            .skip(first)
+            .take(shown)
+            .map(String::as_str)
+            .collect();
+        said.text(
+            krate::layout::Rect::new(area.x, area.y, area.width, area.height),
+            &in_view.join("\n"),
+        );
+    }
+    said.button(
+        krate::layout::Rect::new(close.x, close.y, close.width, close.height),
         "Close",
-        gfx::Point {
-            x: close.x + close.width / 2.0 - m.width / 2.0,
-            y: close.y + 32.0,
-        },
-        17.0,
-        color(1.0, 1.0, 1.0, 1.0),
-        style(650, 0.2),
-    )?;
+    );
+    said.send(l.win);
     canvas2d::present(canvas)?;
     Ok((close, room))
 }
@@ -2213,19 +2539,17 @@ impl krate::Guest for Component {
         sheet.behind = behind(canvas);
         if quick {
             // The sample is drawn at rest, as a person sees it once it has
-            // slid in.
+            // slid in. `quick details` draws it with the details open, so
+            // that view can be looked at headless too.
             sheet.entrance = Spring::rest_at(1.0, 18.0);
+            sheet.details = raw.split(ARG_SEP).any(|a| a.trim() == "details");
         }
         let mut last = clock::monotonic_nanos();
         let mut frames: u32 = 0;
         let mut decision: Option<bool> = None;
 
         loop {
-            let mut l = match canvas2d::canvas_size(canvas) {
-                Ok(size) => Layout::from_canvas(size.width.max(1.0), size.height.max(1.0)),
-                Err(_) => Layout::from_canvas(390.0, 720.0),
-            };
-            l.safe = krate::layout::Screen::of(win).safe;
+            let l = Layout::now(canvas, win);
             let now = clock::monotonic_nanos();
             let dt = if quick {
                 1.0 / 60.0
