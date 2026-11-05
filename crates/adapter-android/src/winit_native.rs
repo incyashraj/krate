@@ -55,54 +55,70 @@ pub fn orientation_for(width: u32, height: u32, adapts: bool) -> i32 {
     }
 }
 
-/// The picture of a placement that covers the whole window and draws
+/// The picture of a placement that spans the window's width and draws
 /// nothing else -- no label, box, clip or selection -- so the picture alone
-/// is the frame. A canvas laid out in whole points is up to a few pixels
-/// short of the screen (411 points of 411.43 is 1079 pixels of 1080), so a
-/// picture that much smaller still counts: `copy_opaque` repeats its last
-/// column and row into the gap.
+/// is the frame, and the row it starts on. It need not start at the top: a
+/// widget-tree app is laid out below the status bar, and its canvas there
+/// was repainted through the vector painter every frame (9.5 ms of a 20 ms
+/// frame for Krate's home on a Galaxy S22 Ultra). A canvas laid out in whole
+/// points is a pixel or few narrower than the screen (411 points of 411.43
+/// is 1079 pixels of 1080); `copy_opaque` fills what it does not cover with
+/// its own edge rows and column.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub(crate) fn full_window_pixels(
     placement: &WidgetPlacement,
     width: u32,
     height: u32,
     scale: f32,
-) -> Option<&std::sync::Arc<krate_adapter_common::ui::ImagePixels>> {
+) -> Option<(
+    &std::sync::Arc<krate_adapter_common::ui::ImagePixels>,
+    usize,
+)> {
     let pixels = placement.pixels.as_ref()?;
     let slack = scale.ceil().max(1.0) as u32;
     let near = |have: u32, want: u32| have > 0 && have <= want && want - have <= slack;
+    let top = (placement.y * scale).round();
     let fits = near(pixels.width, width)
-        && near(pixels.height, height)
         && placement.x == 0.0
-        && placement.y == 0.0
+        && placement.y >= 0.0
+        && top + pixels.height as f32 <= height as f32 + slack as f32
         && near((placement.width * scale).floor() as u32, width)
-        && near((placement.height * scale).floor() as u32, height)
         && placement.clip.is_none()
         && placement.r#box.is_none()
         && placement.label.is_none()
         && placement.selection.is_none()
         && pixels.rgba.len() == pixels.width as usize * pixels.height as usize * 4;
-    fits.then_some(pixels)
+    fits.then_some((pixels, top as usize))
 }
 
 /// Write a straight-RGBA picture `width` pixels wide into a screen buffer
-/// `out_width` wide (0x00RRGGBB), in one pass, repeating the picture's last
-/// column and row into any pixels it falls short. False, leaving the rest
-/// for the full painter to overwrite, at the first pixel that is not
-/// opaque: it would need blending over the background.
+/// `out_width` wide (0x00RRGGBB), its first row at row `top`, in one pass:
+/// the rows above take the picture's first row, the rows below its last,
+/// and the columns past it its last column -- the app's own edge colours,
+/// under the status bar too. False, leaving the rest for the full painter,
+/// at the first pixel that is not opaque: it would need blending.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-pub(crate) fn copy_opaque(rgba: &[u8], width: usize, out: &mut [u32], out_width: usize) -> bool {
+pub(crate) fn copy_opaque(
+    rgba: &[u8],
+    width: usize,
+    out: &mut [u32],
+    out_width: usize,
+    top: usize,
+) -> bool {
     if width == 0 || out_width < width || !rgba.len().is_multiple_of(width * 4) {
         return false;
     }
     let rows = rgba.len() / (width * 4);
     let out_rows = out.len() / out_width;
-    if rows == 0 || out_rows < rows || out.len() != out_rows * out_width {
+    if rows == 0 || out.len() != out_rows * out_width || top >= out_rows {
         return false;
     }
+    let shown = rows.min(out_rows - top);
+    let (above, rest) = out.split_at_mut(top * out_width);
+    let (body, below) = rest.split_at_mut(shown * out_width);
     for (src, dst) in rgba
         .chunks_exact(width * 4)
-        .zip(out.chunks_exact_mut(out_width))
+        .zip(body.chunks_exact_mut(out_width))
     {
         for (px, slot) in src.chunks_exact(4).zip(dst.iter_mut()) {
             if px[3] != 255 {
@@ -113,9 +129,12 @@ pub(crate) fn copy_opaque(rgba: &[u8], width: usize, out: &mut [u32], out_width:
         let last = dst[width - 1];
         dst[width..].fill(last);
     }
-    let (filled, rest) = out.split_at_mut(rows * out_width);
-    let last_row = &filled[(rows - 1) * out_width..];
-    for row in rest.chunks_exact_mut(out_width) {
+    let first_row = &body[..out_width];
+    for row in above.chunks_exact_mut(out_width) {
+        row.copy_from_slice(first_row);
+    }
+    let last_row = &body[(shown - 1) * out_width..];
+    for row in below.chunks_exact_mut(out_width) {
         row.copy_from_slice(last_row);
     }
     true
@@ -905,7 +924,7 @@ mod real {
         // 17 ms of a 26 ms frame on a Galaxy S22 Ultra, holding Nova at 38
         // frames a second (K-1211).
         if let [only] = tracked.placements.as_slice() {
-            if let Some(pixels) = super::full_window_pixels(
+            if let Some((pixels, top)) = super::full_window_pixels(
                 only,
                 width.get(),
                 height.get(),
@@ -919,6 +938,7 @@ mod real {
                     pixels.width as usize,
                     &mut buffer,
                     width.get() as usize,
+                    top,
                 ) {
                     colour_bars(&buffer, width.get() as usize, height.get() as usize);
                     let _ = buffer.present();
@@ -1576,24 +1596,33 @@ mod full_window_tests {
             .map(|i| if i % 4 == 3 { 255 } else { i as u8 })
             .collect();
         let p = canvas(3, 2, 1.5, rgba.clone());
-        let pixels = full_window_pixels(&p, 3, 2, 1.5).expect("covers the window");
+        let (pixels, top) = full_window_pixels(&p, 3, 2, 1.5).expect("covers the window");
+        assert_eq!(top, 0);
         let mut out = vec![0u32; 6];
-        assert!(copy_opaque(&pixels.rgba, 3, &mut out, 3));
+        assert!(copy_opaque(&pixels.rgba, 3, &mut out, 3, 0));
         assert_eq!(out[1], (4 << 16) | (5 << 8) | 6);
-        // A canvas a pixel short of the screen each way (whole points at a
-        // fractional scale) still goes straight there, its edges repeated.
+        // A pixel short each way (whole points at a fractional scale).
         assert!(
             full_window_pixels(&p, 4, 3, 1.5).is_some(),
             "one pixel short counts"
         );
         let mut wide = vec![0u32; 12];
-        assert!(copy_opaque(&pixels.rgba, 3, &mut wide, 4));
+        assert!(copy_opaque(&pixels.rgba, 3, &mut wide, 4, 0));
         assert_eq!(wide[3], wide[2], "the last column is repeated");
         assert_eq!(wide[8..12], wide[4..8], "the last row is repeated");
         assert!(
             full_window_pixels(&p, 9, 2, 1.5).is_none(),
-            "far smaller is painted"
+            "far narrower is painted"
         );
+        // Below the status bar: the rows above take the canvas's first row.
+        let mut below_bar = p.clone();
+        below_bar.y = 2.0;
+        let (_, top) = full_window_pixels(&below_bar, 3, 5, 1.5).expect("a canvas under the bar");
+        assert_eq!(top, 3);
+        let mut tall = vec![0u32; 15];
+        assert!(copy_opaque(&pixels.rgba, 3, &mut tall, 3, top));
+        assert_eq!(tall[0..3], tall[9..12], "above the canvas is its first row");
+        assert_eq!(tall[9], (0 << 16) | (1 << 8) | 2);
         let mut labelled = p.clone();
         labelled.label = Some("x".into());
         assert!(
@@ -1603,7 +1632,7 @@ mod full_window_tests {
         let mut see_through = rgba;
         see_through[7] = 128;
         assert!(
-            !copy_opaque(&see_through, 3, &mut out, 3),
+            !copy_opaque(&see_through, 3, &mut out, 3, 0),
             "a clear pixel needs blending"
         );
     }

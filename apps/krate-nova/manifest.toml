@@ -1,7 +1,7 @@
 [app]
 id = "dev.krate.nova"
 name = "Krate Nova"
-version = "0.1.0-dev"
+version = "0.2.0"
 entry = "target/wasm32-wasip1/release/krate_nova.wasm"
 world = "krate:app/gui@0.2.0"
 
