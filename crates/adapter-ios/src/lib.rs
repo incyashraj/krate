@@ -495,9 +495,10 @@ impl WindowAdapter for IosUikitPrototypeUiAdapter {
 
 impl UiAdapter for IosUikitPrototypeUiAdapter {
     fn supports_canvas_lists(&self) -> bool {
-        // The GPU consumer. When its lazy init fails at first present, it
-        // returns false per frame and the CPU raster keeps the screen.
-        cfg!(target_os = "ios")
+        // The GPU consumer, until it fails to start: then the runtime paints
+        // on the CPU from the next frame (K-1214) -- recording frames for a
+        // GPU that never draws them left a blank white screen.
+        cfg!(target_os = "ios") && uikit_native::gpu_usable()
     }
 
     fn present_canvas_list(

@@ -4093,7 +4093,11 @@ impl Phase3GuiHost {
             {
                 return Ok(());
             }
-            // The adapter declined this frame; fall through to pixels.
+            // The adapter declined this frame; fall through to pixels, and
+            // ask again before the next frame: a GPU that failed to start
+            // says so, and the next frame is painted on the CPU rather than
+            // recorded for nothing (K-1214).
+            self.lists_enabled.set(None);
         }
         let stats = std::env::var("KRATE_FRAME_STATS").as_deref() == Ok("1");
         let copy_started = std::time::Instant::now();

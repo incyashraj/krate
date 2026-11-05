@@ -4791,6 +4791,17 @@ mod real {
     /// is pure heat.
     static GPU_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+    /// The GPU would not start on this device (the simulator's Metal lacks
+    /// indirect execution; any device can fail): from then on Krate says it
+    /// has no GPU, so the runtime paints frames on the CPU instead of
+    /// recording them for a GPU that will not draw them (K-1214).
+    static GPU_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// Whether frames should be recorded for the GPU: on iOS, until it fails.
+    pub fn gpu_usable() -> bool {
+        !GPU_FAILED.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Render one recorded canvas frame on the GPU. True when claimed;
     /// false hands the frame back to the CPU path (init failed, wrong
     /// window, not a list this consumer knows).
@@ -4858,6 +4869,7 @@ mod real {
                     }
                     Err(why) => {
                         eprintln!("krate-ios: gpu canvas unavailable: {why}");
+                        GPU_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
                         return false;
                     }
                 }
@@ -5003,6 +5015,10 @@ mod stub {
     }
 
     pub fn set_adapts(_adapts: bool) {}
+
+    pub fn gpu_usable() -> bool {
+        false
+    }
 
     pub fn set_canvas_presses(
         _window: WindowId,
