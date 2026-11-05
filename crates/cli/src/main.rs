@@ -23,7 +23,6 @@ mod api_author;
 mod api_key;
 mod audit;
 mod authoring_context;
-mod connections;
 mod fleet;
 mod github_auth;
 mod krate_mode;
@@ -25470,30 +25469,13 @@ pub(crate) fn org_run_access(
     manifest: Option<&krate_manifest::Manifest>,
 ) -> Result<krate_runtime::org_store::OrgAccess> {
     Ok(match (opened, manifest) {
-        (Some(opened), Some(manifest)) => krate_runtime::org_store::OrgAccess::Granted(Box::new(
-            krate_runtime::org_store::OrgGrant {
-                slug: opened.slug.clone(),
-                hub: opened.hub.clone(),
-                digest: opened.digest.clone(),
-                authorization: opened.authorization.clone(),
-                me: opened
-                    .principal
-                    .as_deref()
-                    .map(|p| p.split_once(':').map_or(p, |(_, v)| v).to_string()),
-                mirror: access::org_data_path(
-                    &opened.slug,
-                    &manifest.app.id.to_ascii_lowercase(),
-                    opened.principal.as_deref(),
-                ),
-                clock_skew_ms: org_clock_skew_ms(),
-                app_id: manifest.app.id.to_ascii_lowercase(),
-                device_secret: krate_runtime::org_store::DeviceSecret(
-                    *access::org_device_key()?.secret(),
-                ),
-                device_name: access::device_name(opened.principal.as_deref()),
-                org_name: opened.org_name.clone(),
-            },
-        )),
+        (Some(opened), Some(manifest)) => krate_orgaccess::org_access(
+            &access::HERE,
+            opened,
+            &manifest.app.id,
+            org_clock_skew_ms(),
+        )
+        .map_err(|words| anyhow::anyhow!(words))?,
         _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
     })
 }
@@ -25502,19 +25484,14 @@ pub(crate) fn org_run_access(
 /// granted `net.connection:<name>` gets that connection's credential, from
 /// the hub, into memory only. `digest` is the opened bytes' sha256, worked
 /// out only when the app asks for a connection. One place for every door
-/// (K-1102).
+/// (K-1102), and the phones' too (K-1171).
 pub(crate) fn run_connections(
     manifest: Option<&krate_manifest::Manifest>,
     policy: &krate_policy::SessionPolicy,
     bundle: Option<&krate_bundle::OpenBundle>,
     digest: impl FnOnce() -> Option<String>,
 ) -> krate_runtime::connections::Connections {
-    connections::resolve(manifest, policy, || {
-        let access::Mark::Signed(slug) = access::mark_of(bundle?) else {
-            return None;
-        };
-        Some((slug, digest()?))
-    })
+    krate_orgaccess::connections::for_run(&access::HERE, manifest, policy, bundle, digest)
 }
 
 /// How far a test moves this device's clock for `store.org`. Zero in a

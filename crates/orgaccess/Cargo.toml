@@ -1,0 +1,22 @@
+[package]
+name = "krate-orgaccess"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Opening an organisation's private app on one device (IC-948, IC-951, IC-952): the check-in, the offline lease, this device's organisation key, where the team data lives, and the company connections. The same code on a computer (crates/cli) and a phone (crates/player-android, crates/player-ios)."
+
+[dependencies]
+krate-bundle = { path = "../bundle" }
+krate-lease = { path = "../lease" }
+krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
+krate-http = { path = "../http" }
+krate-manifest = { path = "../manifest" }
+krate-policy = { path = "../policy" }
+# The run's side: OrgAccess for store.org, Connections for net.connection.
+krate-runtime = { path = "../runtime", default-features = false, features = ["phase2-bindings"] }
+serde_json.workspace = true
+ureq.workspace = true
+

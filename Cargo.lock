@@ -2549,6 +2549,7 @@ dependencies = [
  "krate-lease",
  "krate-manifest",
  "krate-mcp",
+ "krate-orgaccess",
  "krate-orgkeys",
  "krate-policy",
  "krate-port",
@@ -2645,6 +2646,21 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "krate-orgaccess"
+version = "0.5.5"
+dependencies = [
+ "krate-bundle",
+ "krate-http",
+ "krate-lease",
+ "krate-manifest",
+ "krate-orgkeys",
+ "krate-policy",
+ "krate-runtime",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]
