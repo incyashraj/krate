@@ -140,9 +140,19 @@ pub fn art(app: &HubApp, art_dir: &Path) -> Option<String> {
     Some(name)
 }
 
-/// The app's `.krate`, from its hub link.
-pub fn download(id: &str, limit: u64) -> Result<Vec<u8>, String> {
-    get(&format!("{HUB}/a/{id}"), limit)
+/// The app's `.krate`, from its hub link, with the sign-in kept in
+/// `private` when someone is signed in: an organisation's private release
+/// downloads for its members, as on a computer (K-1171).
+pub fn download(id: &str, limit: u64, private: &Path, name: &str) -> Result<Vec<u8>, String> {
+    let phone = crate::run_config::Phone::here(private, name);
+    krate_orgaccess::download(&phone, &format!("{HUB}/a/{id}"), limit, USER_AGENT).map_err(|err| {
+        let words = err.to_string();
+        let mut chars = words.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().chain(chars).collect(),
+            None => words,
+        }
+    })
 }
 
 fn decode_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {

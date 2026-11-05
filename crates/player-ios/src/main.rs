@@ -1053,7 +1053,7 @@ mod player {
     /// Download an app from the hub into Documents/Downloads, for `receive`
     /// to keep (it removes the download once kept).
     fn fetch_into(id: &str, data_root: &Path) -> Result<PathBuf, String> {
-        let bytes = crate::hub::download(id, MAX_BUNDLE_BYTES)?;
+        let bytes = crate::hub::download(id, MAX_BUNDLE_BYTES, &private_root(), &device_name())?;
         let downloads = data_root.join("Downloads");
         let _ = std::fs::create_dir_all(&downloads);
         let file = downloads.join(format!("{}.krate", crate::home::hub_id(id)));
@@ -1358,6 +1358,33 @@ mod player {
         );
         if let Some(mib) = memory_budget_mib(&manifest) {
             config.memory_bytes = mib * 1024 * 1024;
+        }
+        // An organisation's private app (K-1171): it checks in as the
+        // person signed in on this iPhone and gets its team data and company
+        // connections, as on a computer; refused, it does not open. Its
+        // organisation key rests beside the sign-in, in Application Support.
+        if let (App::Received(path), Some(open)) = (&app, _opened_bundle.as_ref()) {
+            let phone = crate::run_config::Phone::here(&private, &device_name());
+            match crate::run_config::org_run(&phone, path, open, &manifest, &config.session_policy)
+            {
+                Ok(run) => {
+                    for (title, words) in &run.notices {
+                        notice(data_root, title, words);
+                    }
+                    config.app_org = run.app_org;
+                    config.connections = run.connections;
+                }
+                Err(words) => {
+                    leave_app();
+                    let mut chars = words.chars();
+                    let words: String = match chars.next() {
+                        Some(first) => first.to_uppercase().chain(chars).collect(),
+                        None => words,
+                    };
+                    notice(data_root, "This app did not open", &words);
+                    return;
+                }
+            }
         }
 
         // The carried native code runs when the app is the carried one --

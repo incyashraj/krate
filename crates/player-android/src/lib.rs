@@ -175,11 +175,26 @@ mod player {
     ) -> Option<PathBuf> {
         let bytes = if uri.starts_with("https://") || uri.starts_with("http://") {
             log::info!("fetching {uri}");
-            match fetch(uri) {
+            // With the sign-in when the link is on Krate's hub, so an
+            // organisation's private app downloads for its members (K-1171).
+            let phone = crate::run_config::Phone::here(data_root, &phone_name());
+            match krate_orgaccess::download(&phone, uri, MAX_BUNDLE_BYTES as u64, USER_AGENT) {
                 Ok(bytes) => bytes,
+                Err(krate_orgaccess::GateError::Refused(refusal)) => {
+                    log::info!("the hub refused the app: {}", refusal.reason);
+                    notice(
+                        data_root,
+                        "This app did not open",
+                        &capitalised(&refusal.words),
+                    );
+                    return None;
+                }
                 Err(why) => {
                     log::error!("could not fetch the app: {why}");
-                    let why = format!("{why}. Check the connection and open the link again.");
+                    let why = format!(
+                        "{}. Check the connection and open the link again.",
+                        capitalised(&why.to_string())
+                    );
                     notice(data_root, "Could not download this app", &why);
                     return None;
                 }
@@ -592,7 +607,12 @@ mod player {
                 }
                 HomeAnswer::Get(id) => {
                     log::info!("getting {id} from the hub");
-                    match crate::hub::download(&id, MAX_BUNDLE_BYTES as u64) {
+                    match crate::hub::download(
+                        &id,
+                        MAX_BUNDLE_BYTES as u64,
+                        data_root,
+                        &phone_name(),
+                    ) {
                         Ok(bytes) => {
                             if let Some(app) = keep(&bytes, library, data_root) {
                                 return Some(app);
@@ -700,7 +720,12 @@ mod player {
                                 })
                                 .take(3)
                             {
-                                match crate::hub::download(&app.id, MAX_BUNDLE_BYTES as u64) {
+                                match crate::hub::download(
+                                    &app.id,
+                                    MAX_BUNDLE_BYTES as u64,
+                                    data_root,
+                                    &phone_name(),
+                                ) {
                                     Ok(bytes)
                                         if bundle_app_id(&bytes).as_deref()
                                             == Some(manifest.app.id.as_str()) =>
@@ -898,6 +923,23 @@ mod player {
         );
         if let Some(bytes) = memory_bytes {
             config.memory_bytes = bytes;
+        }
+        // An organisation's private app (K-1171): it checks in as the
+        // person signed in on this phone and gets its team data and company
+        // connections, as on a computer; refused, it does not open.
+        let phone = crate::run_config::Phone::here(data_root, &phone_name());
+        match crate::run_config::org_run(&phone, path, &opened, &manifest, &config.session_policy) {
+            Ok(run) => {
+                for (title, words) in &run.notices {
+                    notice(data_root, title, words);
+                }
+                config.app_org = run.app_org;
+                config.connections = run.connections;
+            }
+            Err(words) => {
+                log::info!("an organisation's app was refused: {words}");
+                return notice(data_root, "This app did not open", &capitalised(&words));
+            }
         }
         // Which app runs, for its reminders: their ids carry its id, and a
         // tapped one opens the copy kept in the library.
@@ -1143,40 +1185,25 @@ mod player {
         Some(String::from_utf8_lossy(&stdout).into_owned())
     }
 
-    fn fetch(url: &str) -> Result<Vec<u8>, String> {
-        let response = ureq::get(url).call().map_err(|e| e.to_string())?;
-        let mut bytes = Vec::new();
-        use std::io::Read;
-        response
-            .into_reader()
-            .take(MAX_BUNDLE_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        if bytes.len() > MAX_BUNDLE_BYTES {
-            return Err("that download is larger than any Krate app".to_string());
-        }
-        Ok(bytes)
+    /// What Krate calls itself to the hub, whose edge refuses requests
+    /// without a real user agent.
+    const USER_AGENT: &str = concat!("Krate/", env!("CARGO_PKG_VERSION"), " (Android)");
+
+    /// This phone's key for apps' secrets and its organisation key: 32
+    /// random bytes made once and kept in Krate's own data, which no other
+    /// app can read. Copying an app's secrets file elsewhere carries nothing
+    /// usable.
+    fn machine_key(data_root: &Path) -> Vec<u8> {
+        crate::run_config::machine_key(data_root)
     }
 
-    /// This phone's key for apps' secrets: 32 random bytes made once and
-    /// kept in Krate's own data, which no other app can read. Copying an
-    /// app's secrets file elsewhere carries nothing usable.
-    fn machine_key(data_root: &Path) -> Vec<u8> {
-        let path = data_root.join("machine.key");
-        if let Ok(existing) = std::fs::read(&path) {
-            if existing.len() >= 32 {
-                return existing;
-            }
+    /// A sentence's first letter in capitals, for a notice's words.
+    fn capitalised(words: &str) -> String {
+        let mut chars = words.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().chain(chars).collect(),
+            None => String::new(),
         }
-        let mut key = vec![0u8; 32];
-        let made = std::fs::File::open("/dev/urandom").and_then(|mut f| {
-            use std::io::Read;
-            f.read_exact(&mut key)
-        });
-        if made.is_ok() {
-            let _ = std::fs::write(&path, &key);
-        }
-        key
     }
 
     /// What the person's device list calls this phone: its model, as the

@@ -270,6 +270,185 @@ pub fn writes_files(manifest: &Manifest) -> bool {
     })
 }
 
+/// The person signed in on this phone, as Krate's sign-in kept them
+/// (`account.json` in the Player's private storage): their login and the
+/// hub session. `None` when nobody is signed in.
+pub fn signed_in(private: &Path) -> Option<krate_orgaccess::SignedIn> {
+    let text = std::fs::read_to_string(private.join("account.json")).ok()?;
+    let kept: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let field = |key: &str| kept[key].as_str().unwrap_or("").trim().to_string();
+    let (login, token) = (field("login"), field("token"));
+    (!token.is_empty() && !login.is_empty()).then_some(krate_orgaccess::SignedIn { login, token })
+}
+
+/// This phone's machine key: 32 random bytes made once and kept in the
+/// Player's private storage, which no other app reads. It seals what Krate
+/// keeps for apps (their secrets, this phone's organisation key), so a
+/// copied file carries nothing usable. An app-private file, not the
+/// Android Keystore or the iPhone's keychain: the phone's own sandbox is
+/// what protects it.
+pub fn machine_key(private: &Path) -> Vec<u8> {
+    let path = private.join("machine.key");
+    if let Ok(existing) = std::fs::read(&path) {
+        if existing.len() >= 32 {
+            return existing;
+        }
+    }
+    let mut key = vec![0u8; 32];
+    let made = std::fs::File::open("/dev/urandom").and_then(|mut f| {
+        use std::io::Read;
+        f.read_exact(&mut key)
+    });
+    if made.is_ok() {
+        let _ = std::fs::create_dir_all(private);
+        let _ = std::fs::write(&path, &key);
+    }
+    key
+}
+
+/// This phone, as an organisation's rules see it (K-1171): the same rules a
+/// computer runs (crates/orgaccess), over the Player's private storage and
+/// the person signed in on Krate's Profile tab. A new phone is a new device
+/// of the person's: it registers and waits until a teammate's device lets
+/// it in, exactly as a new computer does.
+pub struct Phone {
+    /// The Player's private storage: `leases/`, `org-data/` and `org-keys/`
+    /// live under it, beside the sign-in.
+    pub private: PathBuf,
+    pub machine_key: Vec<u8>,
+    pub signed_in: Option<krate_orgaccess::SignedIn>,
+    /// The hub: Krate's own, or a local one in a test.
+    pub hub: String,
+    /// What an organisation's device list calls this phone ("Pixel 8").
+    pub name: String,
+    /// What the run should show the person before the app opens: the
+    /// offline terms the first time, and that this phone is waiting.
+    pub told: std::cell::RefCell<Vec<(String, String)>>,
+}
+
+impl Phone {
+    /// This phone as it is: its private storage, its sign-in, Krate's hub.
+    pub fn here(private: &Path, name: &str) -> Phone {
+        Phone {
+            private: private.to_path_buf(),
+            machine_key: machine_key(private),
+            signed_in: signed_in(private),
+            hub: SHARED_HUB.to_string(),
+            name: name.to_string(),
+            told: Default::default(),
+        }
+    }
+}
+
+impl krate_orgaccess::Device for Phone {
+    fn home(&self) -> PathBuf {
+        self.private.clone()
+    }
+    fn machine_key(&self) -> Vec<u8> {
+        self.machine_key.clone()
+    }
+    fn signed_in(&self) -> Option<krate_orgaccess::SignedIn> {
+        self.signed_in.clone()
+    }
+    fn hub(&self) -> Result<String, krate_orgaccess::GateError> {
+        Ok(self.hub.clone())
+    }
+    fn kind(&self) -> &str {
+        "phone"
+    }
+    fn name(&self, _principal: Option<&str>) -> String {
+        self.name.clone()
+    }
+    fn sign_in_words(&self) -> String {
+        "sign in on Krate's Profile tab".to_string()
+    }
+    fn tell(&self, title: &str, words: &str) {
+        self.told
+            .borrow_mut()
+            .push((title.to_string(), words.to_string()));
+    }
+}
+
+/// The words a phone shows while it waits for its team's key.
+pub const WAITING_TITLE: &str = "Waiting for someone on your team to let this phone in";
+
+/// What one run of an organisation's app on a phone is given: its team
+/// data and company connections, and what to tell the person first.
+pub struct OrgRun {
+    /// `store.org` for the run; `None` for an app that is not an
+    /// organisation's private app.
+    pub app_org: Option<krate_runtime::org_store::OrgAccess>,
+    pub connections: krate_runtime::connections::Connections,
+    /// Where this phone stands with the team's key, when it was asked.
+    pub standing: Option<krate_orgaccess::KeyStanding>,
+    /// (title, words) to show before the app opens, in order.
+    pub notices: Vec<(String, String)>,
+}
+
+/// Decide a phone's run of the app at `path` (its kept bytes, opened as
+/// `open`): an organisation's private app checks in with its hub as the
+/// person signed in here and gets its team data and connections, as on a
+/// computer; any other app gets neither and nothing is asked of a hub.
+/// `Err` is the words of a refusal: the app does not open.
+pub fn org_run(
+    phone: &Phone,
+    path: &Path,
+    open: &krate_bundle::OpenBundle,
+    manifest: &Manifest,
+    policy: &SessionPolicy,
+) -> Result<OrgRun, String> {
+    let mark = krate_orgaccess::mark_of(open);
+    if matches!(mark, krate_orgaccess::Mark::None) {
+        return Ok(OrgRun {
+            app_org: None,
+            connections: Default::default(),
+            standing: None,
+            notices: Vec::new(),
+        });
+    }
+    let opened = krate_orgaccess::gate_opened(phone, krate_orgaccess::Bytes::File(path), mark)
+        .map_err(|err| err.to_string())?;
+    let Some(opened) = opened else {
+        return Ok(OrgRun {
+            app_org: None,
+            connections: Default::default(),
+            standing: None,
+            notices: phone.told.take(),
+        });
+    };
+    let app_org = krate_orgaccess::org_access(phone, &opened, &manifest.app.id, 0)?;
+    let digest = opened.digest.clone();
+    let connections =
+        krate_orgaccess::connections::for_run(phone, Some(manifest), policy, Some(open), || {
+            Some(digest)
+        });
+    // A phone new to the team says so before the app opens, so its first
+    // screen is not read as an empty team.
+    let standing = opened
+        .principal
+        .is_some()
+        .then(|| krate_orgaccess::key_standing(phone, &opened));
+    let mut notices = phone.told.take();
+    if standing == Some(krate_orgaccess::KeyStanding::Waiting) {
+        notices.push((WAITING_TITLE.to_string(), waiting_words(&opened.org_name)));
+    }
+    Ok(OrgRun {
+        app_org: Some(app_org),
+        connections,
+        standing,
+        notices,
+    })
+}
+
+/// What a phone waiting for its team's key tells the person.
+pub fn waiting_words(org_name: &str) -> String {
+    format!(
+        "This phone is new to {org_name}. The team's data appears once someone on the team opens \
+         one of {org_name}'s apps on a device that already has it, which lets this phone in by \
+         itself. Anything you add now is kept here and shared then."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

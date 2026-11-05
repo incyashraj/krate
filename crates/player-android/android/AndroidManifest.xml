@@ -95,14 +95,17 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
       <!-- A shared app link: https://hub.krate.tech/a/<hash> runs the app
-           directly. Without assetlinks verification Android offers a
-           chooser next to the browser; that is the honest default until a
-           release signing certificate exists to pin. -->
+           directly, and so does the link an organisation shares for its
+           app, /run/org/<slug>/<app> (K-1171), fetched with the sign-in.
+           Without assetlinks verification Android offers a chooser next to
+           the browser; that is the honest default until a release signing
+           certificate exists to pin. -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="https" android:host="hub.krate.tech" android:pathPrefix="/a/" />
+        <data android:scheme="https" android:host="hub.krate.tech" android:pathPrefix="/run/" />
       </intent-filter>
       <!-- krate:ui/sign-in: the one redirect scheme any app may use
            (krate-signin://<app id>/...). Android returns a sign-in only to

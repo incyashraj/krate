@@ -21,6 +21,14 @@ krate-bundle = { path = "../bundle" }
 # Which publisher an app's synced data is kept under, and the sync toggles
 # (IC-981): the same rules on a phone as on a computer.
 krate-accountsync = { path = "../accountsync" }
+# An organisation's private apps (K-1171): the check-in, the lease, this
+# phone's organisation key, its team data and connections -- the computer's
+# own code, over the Player's private storage.
+krate-orgaccess = { path = "../orgaccess" }
+krate-runtime = { path = "../runtime", default-features = false, features = [
+    "phase2-bindings",
+] }
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile = "3.27.0"
