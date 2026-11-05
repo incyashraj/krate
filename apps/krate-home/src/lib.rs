@@ -62,11 +62,16 @@
 //!     a yes; `ask` waits and this phone can give it (Approve).
 //!   - `app<TAB>n<TAB>on|off|none<TAB>last sync`: the n-th Library app's own
 //!     switch; `none` is an app that keeps no data to sync.
+//!   - `kept<TAB>n<TAB>words`: what the n-th app keeps on this phone only
+//!     (its files too large to follow the person), said under its switch.
 //!   - `conflict<TAB>n<TAB>key<TAB>this value<TAB>other value<TAB>other
 //!     device<TAB>more<TAB>flags`: something the n-th app keeps changed on
 //!     two devices. Values are in words; `more` counts further devices
 //!     that changed it; `flags` is a comma list of `merge` (both are lists
-//!     or records), `this-deleted`, `other-deleted`.
+//!     or records), `this-deleted`, `other-deleted`, `file` (one of the
+//!     app's own files: `key` is its path in the app's folder, and the
+//!     values its size and when it changed, "2.4 MB, changed 5 minutes
+//!     ago").
 //!
 //!   The arguments may carry `sync-code` and the recovery code: shown once,
 //!   until the person says they wrote it down. Never in a file.
@@ -279,6 +284,8 @@ struct Conflict {
     device: String,
     more: usize,
     merge: bool,
+    /// One of the app's own files: `key` is its path.
+    file: bool,
 }
 
 /// Everything `sync.txt` says.
@@ -294,6 +301,8 @@ struct Sync {
     devices: Vec<SyncDevice>,
     apps: Vec<(usize, AppSync)>,
     conflicts: Vec<Conflict>,
+    /// What an app keeps on this phone only, in words.
+    kept: Vec<(usize, String)>,
 }
 
 impl Sync {
@@ -356,6 +365,12 @@ fn read_sync() -> Sync {
                 };
                 sync.apps.push((n, app));
             }
+            "kept" if f.len() >= 3 => {
+                let Ok(n) = f[1].parse::<usize>() else {
+                    continue;
+                };
+                sync.kept.push((n, field(&f, 2)));
+            }
             "conflict" if f.len() >= 7 => {
                 let Ok(app) = f[1].parse::<usize>() else {
                     continue;
@@ -377,6 +392,7 @@ fn read_sync() -> Sync {
                     },
                     more: f[6].parse().unwrap_or(0),
                     merge: has("merge"),
+                    file: has("file"),
                 });
             }
             _ => {}

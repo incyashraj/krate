@@ -487,6 +487,9 @@ pub struct ConflictCard {
     pub more: usize,
     /// Both are lists, or both records: they can be put together.
     pub merge: bool,
+    /// One of the app's own files (S3): `key` is its path in the app's
+    /// folder, and the values say its size and when it changed.
+    pub file: bool,
 }
 
 /// Everything Krate's home shows about sync (`sync.txt`).
@@ -507,6 +510,9 @@ pub struct SyncView {
     pub can_approve: bool,
     pub apps: Vec<(usize, AppSync)>,
     pub conflicts: Vec<ConflictCard>,
+    /// What an app keeps on this phone only, in words: files too large to
+    /// follow the person ("Files over 16 MB stay on this phone ...").
+    pub kept: Vec<(usize, String)>,
 }
 
 /// `sync.txt`, one record a line (the contract is apps/krate-home's):
@@ -517,9 +523,11 @@ pub struct SyncView {
 /// - `device<TAB>id<TAB>name<TAB>reads|waiting|ask` (`ask`: waiting, and
 ///   this phone can say yes)
 /// - `app<TAB>n<TAB>on|off|none<TAB>last sync`
+/// - `kept<TAB>n<TAB>words` -- what the n-th app keeps on this phone only
 /// - `conflict<TAB>n<TAB>key<TAB>this value<TAB>other value<TAB>other
 ///   device<TAB>more<TAB>flags`, flags a comma list of `merge`,
-///   `this-deleted`, `other-deleted`
+///   `this-deleted`, `other-deleted`, `file` (key is a path in the app's
+///   folder; the values are its size and when it changed)
 pub fn sync_file(view: &SyncView) -> String {
     let dash = |text: &str| {
         if text.trim().is_empty() {
@@ -557,6 +565,9 @@ pub fn sync_file(view: &SyncView) -> String {
         };
         lines.push(format!("app\t{n}\t{state}\t{last}"));
     }
+    for (n, words) in &view.kept {
+        lines.push(format!("kept\t{n}\t{}", dash(words)));
+    }
     for c in &view.conflicts {
         let mut flags = Vec::new();
         if c.merge {
@@ -567,6 +578,9 @@ pub fn sync_file(view: &SyncView) -> String {
         }
         if c.theirs.is_none() {
             flags.push("other-deleted");
+        }
+        if c.file {
+            flags.push("file");
         }
         lines.push(format!(
             "conflict\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -858,6 +872,7 @@ mod tests {
                     device: "Yash's MacBook Pro".into(),
                     more: 0,
                     merge: true,
+                    file: false,
                 },
                 ConflictCard {
                     app: 0,
@@ -867,8 +882,20 @@ mod tests {
                     device: "iPad".into(),
                     more: 1,
                     merge: false,
+                    file: false,
+                },
+                ConflictCard {
+                    app: 1,
+                    key: "trips/photo.jpg".into(),
+                    mine: Some("2.4 MB, changed 5 minutes ago".into()),
+                    theirs: Some("1.1 MB, changed\tyesterday".into()),
+                    device: "Mac".into(),
+                    more: 0,
+                    merge: false,
+                    file: true,
                 },
             ],
+            kept: vec![(1, "Files over 16 MB stay on this phone.\nfilm.mov".into())],
         };
         let text = sync_file(&view);
         let lines: Vec<&str> = text.lines().collect();
@@ -885,10 +912,18 @@ mod tests {
         assert_eq!(lines[7], "app\t2\tnone\t-");
         assert_eq!(
             lines[8],
+            "kept\t1\tFiles over 16 MB stay on this phone. film.mov"
+        );
+        assert_eq!(
+            lines[9],
             "conflict\t0\tr1\ttitle: Milk\ttitle: Oat milk\tYash's MacBook Pro\t0\tmerge"
         );
-        assert_eq!(lines[9], "conflict\t0\tr2\tTea\t-\tiPad\t1\tother-deleted");
-        assert_eq!(lines.len(), 10, "a name cannot add a line");
+        assert_eq!(lines[10], "conflict\t0\tr2\tTea\t-\tiPad\t1\tother-deleted");
+        assert_eq!(
+            lines[11],
+            "conflict\t1\ttrips/photo.jpg\t2.4 MB, changed 5 minutes ago\t1.1 MB, changed yesterday\tMac\t0\tfile"
+        );
+        assert_eq!(lines.len(), 12, "a name cannot add a line");
         // Waiting devices only get a yes from a phone that holds the key.
         let mut waiting = view.clone();
         waiting.can_approve = false;
@@ -907,6 +942,7 @@ mod tests {
             can_approve: false,
             apps: vec![],
             conflicts: vec![],
+            kept: vec![],
         };
         assert_eq!(sync_file(&out), "state\tsigned-out\t-\nthis\t-\t-\n");
     }

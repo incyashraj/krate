@@ -6,8 +6,9 @@
 //! The hub is asked on a thread of its own ([`check_in_background`]); the
 //! home screen reads `sync.txt` again while it says a look is under way.
 //! Conflicts are read and answered on disk with the app closed, through
-//! the runtime's `conflicts_at` / `resolve_at`, the same calls `krate
-//! account sync` makes on a computer.
+//! the runtime's `conflicts_at` / `resolve_at` (store.kv) and
+//! `file_conflicts_at` / `resolve_file_at` (the app's own files, S3), the
+//! same calls `krate account sync` makes on a computer.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,7 +16,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 use krate_accountsync::overview::{self, Me, Overview, Reach};
-use krate_accountsync::readable::{ago, preview};
+use krate_accountsync::readable::{ago, preview, size_in_words};
 use krate_accountsync::{toggles, Resolution};
 
 use crate::home::{AppSync, Choice, ConflictCard, SyncAnswer, SyncState, SyncView};
@@ -83,6 +84,8 @@ pub struct LibApp {
     pub id: String,
     /// It asks for store.kv: it has data that syncs.
     pub uses_kv: bool,
+    /// It writes files of its own: its folder syncs too (S3).
+    pub uses_files: bool,
 }
 
 /// The Library apps as sync sees them, from their manifests in the order
@@ -101,14 +104,24 @@ pub fn lib_apps(manifests: &[Option<krate_manifest::Manifest>]) -> Vec<LibApp> {
                 n,
                 id: m.app.id.clone(),
                 uses_kv,
+                uses_files: crate::run_config::writes_files(m),
             })
         })
         .collect()
 }
 
-/// What each `conflict` line of the last `sync.txt` was about: the store
-/// and the key, so an answer by number is never misread.
-pub type Asked = Vec<(PathBuf, String)>;
+/// What each `conflict` line of the last `sync.txt` was about: the store,
+/// the key (or the file's path), and whether it is a file, so an answer by
+/// number is never misread.
+pub type Asked = Vec<(PathBuf, String, bool)>;
+
+/// One side of a file conflict in words: "2.4 MB, changed 5 minutes ago".
+fn file_words(side: &krate_runtime::account_sync_files::FileSide, at: u64) -> String {
+    match side.at {
+        Some(then) => format!("{}, changed {}", size_in_words(side.size), ago(at, then)),
+        None => size_in_words(side.size),
+    }
+}
 
 fn now() -> u64 {
     SystemTime::now()
@@ -150,6 +163,7 @@ pub fn view(phone: &Phone, apps: &[LibApp]) -> (SyncView, Asked) {
         can_approve: false,
         apps: Vec::new(),
         conflicts: Vec::new(),
+        kept: Vec::new(),
     };
     if phone.me().is_none() {
         return (view, Vec::new());
@@ -168,21 +182,60 @@ pub fn view(phone: &Phone, apps: &[LibApp]) -> (SyncView, Asked) {
     let mut newest: Option<u64> = None;
     for app in apps {
         let store = phone.store(&app.id);
-        let state = if !app.uses_kv {
+        let state = if !app.uses_kv && !app.uses_files {
             AppSync::Nothing
         } else if toggles::app_toggle_path(&store).exists() {
             AppSync::Off
         } else {
-            let last = account
-                .as_deref()
-                .and_then(|a| krate_runtime::account_sync_host::last_sync_at(&store, a));
+            let last = account.as_deref().and_then(|a| {
+                krate_runtime::account_sync_host::last_sync_at(&store, a).max(
+                    krate_runtime::account_sync_files::files_last_sync_at(&store, a),
+                )
+            });
             newest = newest.max(last);
             AppSync::On(last.map(|t| ago(at, t)).unwrap_or_default())
         };
         view.apps.push((app.n, state));
-        let Some(account) = account.as_deref().filter(|_| app.uses_kv) else {
+        let Some(account) = account.as_deref().filter(|_| app.uses_kv || app.uses_files) else {
             continue;
         };
+        let kept = krate_runtime::account_sync_files::files_kept_here_at(&store, account);
+        if !kept.is_empty() {
+            let names: Vec<&str> = kept
+                .iter()
+                .map(|p| p.rsplit('/').next().unwrap_or(p))
+                .collect();
+            let list = if names.len() > 3 {
+                format!("{} and {} more", names[..3].join(", "), names.len() - 3)
+            } else {
+                names.join(", ")
+            };
+            view.kept.push((
+                app.n,
+                format!(
+                    "{} Kept here: {list}.",
+                    krate_accountsync::files::too_big_words().replace("this device", "this phone"),
+                ),
+            ));
+        }
+        for c in krate_runtime::account_sync_files::file_conflicts_at(&store, account, &names) {
+            let (theirs, device) = c
+                .others
+                .first()
+                .cloned()
+                .unwrap_or((None, "another device".to_string()));
+            view.conflicts.push(ConflictCard {
+                app: app.n,
+                key: c.path.clone(),
+                mine: c.mine.as_ref().map(|s| file_words(s, at)),
+                theirs: theirs.as_ref().map(|s| file_words(s, at)),
+                device,
+                more: c.others.len().saturating_sub(1),
+                merge: c.mergeable,
+                file: true,
+            });
+            asked.push((store.clone(), c.path, true));
+        }
         for c in krate_runtime::account_sync_host::conflicts_at(&store, account, &names) {
             let (theirs, device) = c
                 .others
@@ -197,8 +250,9 @@ pub fn view(phone: &Phone, apps: &[LibApp]) -> (SyncView, Asked) {
                 device,
                 more: c.others.len().saturating_sub(1),
                 merge: c.mergeable,
+                file: false,
             });
-            asked.push((store.clone(), c.key));
+            asked.push((store.clone(), c.key, false));
         }
     }
     view.last = newest.map(|t| ago(at, t)).unwrap_or_default();
@@ -397,7 +451,7 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
             acted("sync")
         }
         SyncAnswer::Resolve(c, choice) => {
-            let Some((store, key)) = asked.get(*c) else {
+            let Some((store, key, file)) = asked.get(*c) else {
                 return acted("sync");
             };
             let Some(seen) = overview::cached(&phone.device_dir) else {
@@ -412,13 +466,24 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
                 Choice::Both => Resolution::KeepBoth,
                 Choice::Merge => Resolution::Merge,
             };
-            match krate_runtime::account_sync_host::resolve_at(
-                store,
-                &account,
-                &seen.names(),
-                key,
-                &resolution,
-            ) {
+            let answered = if *file {
+                krate_runtime::account_sync_files::resolve_file_at(
+                    store,
+                    &account,
+                    &seen.names(),
+                    key,
+                    &resolution,
+                )
+            } else {
+                krate_runtime::account_sync_host::resolve_at(
+                    store,
+                    &account,
+                    &seen.names(),
+                    key,
+                    &resolution,
+                )
+            };
+            match answered {
                 Ok(()) => {
                     // Sent now, so the other devices settle without this
                     // app opening again -- unless the hub was out of reach
@@ -430,8 +495,13 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
                         .and_then(|r| r.clone())
                         .is_some_and(|r| r == Reach::Offline);
                     if let Some(context) = phone.context().filter(|_| !away) {
-                        let _ =
-                            krate_runtime::account_sync_host::sync_closed(store, &account, context);
+                        let _ = if *file {
+                            krate_runtime::account_sync_files::sync_files_closed(
+                                store, &account, context,
+                            )
+                        } else {
+                            krate_runtime::account_sync_host::sync_closed(store, &account, context)
+                        };
                     }
                     acted("sync")
                 }
@@ -490,11 +560,13 @@ mod tests {
                 n: 0,
                 id: "dev.krate.reminders".into(),
                 uses_kv: true,
+                uses_files: false,
             },
             LibApp {
                 n: 1,
                 id: "dev.krate.clock".into(),
                 uses_kv: false,
+                uses_files: false,
             },
         ]
     }
@@ -623,6 +695,104 @@ mod tests {
             !apps[1].uses_kv && apps[1].n == 2,
             "numbered as the home numbers it"
         );
+    }
+
+    /// A file changed here and on the Mac, as the files' sync leaves it on
+    /// disk: the card says so in words, and an answer puts the file in place.
+    #[test]
+    fn a_file_changed_on_two_devices_is_a_card_with_sizes_and_its_answer_lands() {
+        use krate_accountsync::files::FileValue;
+        use krate_accountsync::{Replica, Version, VersionVector};
+        let dir = tempfile::tempdir().unwrap();
+        let p = phone(dir.path(), Some("krs_x"));
+        let app = LibApp {
+            n: 2,
+            id: "dev.krate.journal".into(),
+            uses_kv: false,
+            uses_files: true,
+        };
+        let store = p.store(&app.id);
+        let folder = dir.path().join("apps").join("dev.krate.journal");
+        std::fs::create_dir_all(&folder).unwrap();
+        let mine = vec![7u8; 3000];
+        let theirs = vec![9u8; 2_500_000];
+        std::fs::write(folder.join("photo.jpg"), &mine).unwrap();
+        let (me, mac) = ("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb");
+        let mut replica = Replica::new(me);
+        replica.local_write("photo.jpg", Some(&FileValue::of(&mine).encode()));
+        let mut vv = VersionVector::new();
+        vv.bump(mac);
+        replica.merge_remote(
+            "photo.jpg",
+            &[Version {
+                value: Some(FileValue::of(&theirs).encode()),
+                vv,
+                by: mac.into(),
+            }],
+        );
+        let theirs_hash = FileValue::of(&theirs).hash;
+        let state = serde_json::json!({
+            "replica": replica,
+            "folder": folder,
+            "bodies": { "photo.jpg": { &theirs_hash: { "blob": "c".repeat(64), "k": 1, "at": now() - 3600 } } },
+            "kept_here": ["trips/film.mov"],
+        });
+        std::fs::create_dir_all(toggles::sync_dir(&store)).unwrap();
+        std::fs::write(toggles::files_state_path(&store, "u1"), state.to_string()).unwrap();
+        let held = toggles::held_dir(&store, "u1");
+        std::fs::create_dir_all(&held).unwrap();
+        std::fs::write(held.join(&theirs_hash), &theirs).unwrap();
+        let seen = Overview {
+            account: Some("u1".into()),
+            device_id: me.into(),
+            device_name: "Galaxy S22 Ultra".into(),
+            holds_key: true,
+            devices: vec![krate_accountsync::overview::Known {
+                id: mac.into(),
+                name: "Mac".into(),
+                holds: true,
+            }],
+            checked_at: 1,
+            reach: Reach::Answered,
+        };
+        std::fs::create_dir_all(&p.device_dir).unwrap();
+        std::fs::write(
+            overview::cache_path(&p.device_dir),
+            serde_json::to_string(&seen).unwrap(),
+        )
+        .unwrap();
+
+        let (v, asked) = view(&p, std::slice::from_ref(&app));
+        assert!(matches!(v.apps[0].1, AppSync::On(_)), "files alone sync");
+        assert_eq!(
+            v.kept,
+            vec![(
+                2,
+                "Files over 16 MB stay on this phone. Kept here: film.mov.".to_string()
+            )]
+        );
+        assert_eq!(v.conflicts.len(), 1, "{:?}", v.conflicts);
+        let card = &v.conflicts[0];
+        assert!(card.file && card.key == "photo.jpg" && card.device == "Mac");
+        assert!(card.mine.as_deref().unwrap().starts_with("3 KB, changed "));
+        assert_eq!(card.theirs.as_deref(), Some("2.4 MB, changed 1 hour ago"));
+        assert!(!card.merge, "a picture is not merged");
+        assert_eq!(asked, vec![(store.clone(), "photo.jpg".to_string(), true)]);
+
+        // Keep both: the Mac's copy lands beside it under the Mac's name.
+        let acted = act(
+            &p,
+            std::slice::from_ref(&app),
+            &asked,
+            &SyncAnswer::Resolve(0, Choice::Both),
+        );
+        assert_eq!(acted, super::acted("sync"));
+        assert_eq!(std::fs::read(folder.join("photo.jpg")).unwrap(), mine);
+        assert_eq!(
+            std::fs::read(folder.join("photo (Mac).jpg")).unwrap(),
+            theirs
+        );
+        assert!(view(&p, &[app]).0.conflicts.is_empty(), "answered");
     }
 
     #[test]

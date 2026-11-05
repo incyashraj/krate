@@ -2499,7 +2499,7 @@ impl Home {
             None | Some(AppSync::Nothing) => rows.push(
                 Row::new("Nothing to sync")
                     .quiet()
-                    .sub("This app keeps no data of its own."),
+                    .sub("This app keeps no data or files of its own."),
             ),
             Some(_) if state == SyncState::Off => rows.push(
                 Row::new("Keep in sync")
@@ -2531,7 +2531,15 @@ impl Home {
                     .nav(Hit::Show(Target::Sync)),
             );
         }
-        self.group(m, t, y, "Sync", "", &rows, "")
+        // What stays here: files too large to follow the person.
+        let kept = self
+            .sync
+            .kept
+            .iter()
+            .find(|(k, _)| *k == n)
+            .map(|(_, words)| words.clone())
+            .unwrap_or_default();
+        self.group(m, t, y, "Sync", "", &rows, &kept)
     }
 
     /// A card that says how things stand, with the one thing to do.
@@ -2686,14 +2694,27 @@ impl Home {
         let inner = col - pad * 2.0;
         let tile = 36.0;
         let head = m.name * 0.98;
+        // A file says its own name; anything else the app keeps, the app's.
+        let (what, folder) = if c.file {
+            match c.key.rsplit_once('/') {
+                Some((folder, name)) => (name.to_string(), Some(folder.to_string())),
+                None => (c.key.clone(), None),
+            }
+        } else {
+            (app.clone(), None)
+        };
         let title = match (c.mine.is_some(), c.theirs.is_some()) {
-            (true, true) => format!("{app} changed on two devices"),
-            (false, _) => format!("{app}: deleted here, changed on {}", c.device),
-            (true, false) => format!("{app}: deleted on {}, changed here", c.device),
+            (true, true) => format!("{what} changed on two devices"),
+            (false, _) => format!("{what}: deleted here, changed on {}", c.device),
+            (true, false) => format!("{what}: deleted on {}, changed here", c.device),
         };
         let room = inner - tile - 12.0;
         let titles = self.text.wrap(&title, head, 600, room, 3);
-        let key = format!("\u{201c}{}\u{201d}", c.key);
+        let key = match (c.file, folder) {
+            (true, Some(folder)) => format!("In {app}, {folder}"),
+            (true, None) => format!("In {app}"),
+            (false, _) => format!("\u{201c}{}\u{201d}", c.key),
+        };
         let keys = self.text.wrap(&key, m.small, 400, room, 2);
         let top_h =
             (titles.len() as f32 * head * 1.28 + keys.len() as f32 * m.small * 1.4).max(tile);

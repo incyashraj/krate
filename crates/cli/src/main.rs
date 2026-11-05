@@ -1573,7 +1573,8 @@ enum SyncAction {
     Resolve {
         /// The app's id, as `krate account sync conflicts` lists it.
         app: String,
-        /// The entry that changed on two devices.
+        /// The entry -- or the app's file, by its path in the app's
+        /// folder -- that changed on two devices.
         key: String,
         /// this: keep this computer's. other: keep the other device's.
         /// both: keep both, the other's under its device's name. merge: put
@@ -5348,7 +5349,9 @@ fn stores_of_app(app_id: &str) -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .flatten()
-        .map(|entry| entry.path())
+        .filter_map(|entry| store_of_entry(&entry.path()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
         .filter(|path| {
             let name = path
                 .file_name()
@@ -5514,6 +5517,17 @@ fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
     }
 }
 
+/// The store a file in the stores folder belongs to: the `.kv` itself, or
+/// the `.kv.sync` folder beside it -- an app that keeps only files syncs
+/// with no `.kv` written (S3).
+fn store_of_entry(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    if let Some(store) = name.strip_suffix(".sync").filter(|s| s.ends_with(".kv")) {
+        return path.is_dir().then(|| path.with_file_name(store));
+    }
+    name.ends_with(".kv").then(|| path.to_path_buf())
+}
+
 /// Every store on this computer that syncs, with the id of the app it
 /// belongs to: `<id>.kv`, `<id>@<publisher>.kv`, `<id>+<machine>.kv` with a
 /// `.sync` folder beside it.
@@ -5526,11 +5540,10 @@ fn synced_stores() -> Vec<(String, PathBuf)> {
         .into_iter()
         .flatten()
         .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension().is_some_and(|e| e == "kv")
-                && krate_runtime::account_sync_host::sync_dir(path).is_dir()
-        })
+        .filter_map(|entry| store_of_entry(&entry.path()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| krate_runtime::account_sync_host::sync_dir(path).is_dir())
         .filter_map(|path| {
             let name = path.file_stem()?.to_string_lossy().into_owned();
             let id = name.split(['@', '+']).next().unwrap_or(&name).to_string();
@@ -5553,7 +5566,9 @@ fn sync_conflicts_command(
 ) -> Result<u8> {
     use krate_accountsync::overview::{look, Me};
     use krate_accountsync::readable::preview;
+    use krate_accountsync::readable::{ago, size_in_words};
     use krate_accountsync::Resolution;
+    use krate_runtime::account_sync_files::{file_conflicts_at, resolve_file_at, FileSide};
     use krate_runtime::account_sync_host::{conflicts_at, resolve_at};
 
     let name = this_computers_name(identity.display_name());
@@ -5589,16 +5604,24 @@ fn sync_conflicts_command(
                 SyncChoice::Merge => Resolution::Merge,
             };
             let mut answered = false;
+            let mut files = false;
             for store in stores_of_app(&app) {
-                if !conflicts_at(&store, &account, &names)
+                if conflicts_at(&store, &account, &names)
                     .iter()
                     .any(|c| c.key == key)
                 {
-                    continue;
+                    resolve_at(&store, &account, &names, &key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                } else if file_conflicts_at(&store, &account, &names)
+                    .iter()
+                    .any(|c| c.path == key)
+                {
+                    resolve_file_at(&store, &account, &names, &key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                    files = true;
                 }
-                resolve_at(&store, &account, &names, &key, &choice)
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
-                answered = true;
             }
             if !answered {
                 anyhow::bail!(
@@ -5607,24 +5630,30 @@ fn sync_conflicts_command(
             }
             // Sent now, the app closed, so the other devices settle without
             // it opening again; offline, it goes with the app's next run.
+            let context = krate_runtime::account_sync_host::AccountSyncContext {
+                hub: hub.clone(),
+                token: identity.token.clone(),
+                device_dir: device_dir.to_path_buf(),
+                device_name: name.clone(),
+                machine_key: machine.clone(),
+                app_id: String::new(),
+                publisher: String::new(),
+                enabled: true,
+                background: false,
+                files: None,
+            };
             let sent = stores_of_app(&app).into_iter().any(|store| {
-                krate_runtime::account_sync_host::sync_closed(
-                    &store,
-                    &account,
-                    krate_runtime::account_sync_host::AccountSyncContext {
-                        hub: hub.clone(),
-                        token: identity.token.clone(),
-                        device_dir: device_dir.to_path_buf(),
-                        device_name: name.clone(),
-                        machine_key: machine.clone(),
-                        app_id: String::new(),
-                        publisher: String::new(),
-                        enabled: true,
-                        background: false,
-                        files: None,
-                    },
-                )
-                .is_ok()
+                if files {
+                    krate_runtime::account_sync_files::sync_files_closed(
+                        &store,
+                        &account,
+                        context.clone(),
+                    )
+                    .is_ok()
+                } else {
+                    krate_runtime::account_sync_host::sync_closed(&store, &account, context.clone())
+                        .is_ok()
+                }
             });
             println!(
                 "done: {app} keeps {} -- {}",
@@ -5644,11 +5673,22 @@ fn sync_conflicts_command(
         }
         _ => {
             let mut listed = Vec::new();
+            let mut files = Vec::new();
             for (app, store) in synced_stores() {
                 for conflict in conflicts_at(&store, &account, &names) {
                     listed.push((app.clone(), conflict));
                 }
+                for conflict in file_conflicts_at(&store, &account, &names) {
+                    files.push((app.clone(), conflict));
+                }
             }
+            let side = |side: &Option<FileSide>| match side {
+                None => "deleted".to_string(),
+                Some(side) => match side.at {
+                    Some(at) => format!("{}, changed {}", size_in_words(side.size), ago(now, at)),
+                    None => size_in_words(side.size),
+                },
+            };
             if json {
                 let rows: Vec<serde_json::Value> = listed
                     .iter()
@@ -5665,10 +5705,28 @@ fn sync_conflicts_command(
                         })
                     })
                     .collect();
-                println!("{}", serde_json::json!({ "conflicts": rows }));
+                let file_rows: Vec<serde_json::Value> = files
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "file": c.path,
+                            "here": c.mine.as_ref().map(|s| serde_json::json!({ "size": s.size, "at": s.at })),
+                            "others": c.others.iter().map(|(s, device)| serde_json::json!({
+                                "device": device,
+                                "file": s.as_ref().map(|s| serde_json::json!({ "size": s.size, "at": s.at })),
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                        })
+                    })
+                    .collect();
+                println!(
+                    "{}",
+                    serde_json::json!({ "conflicts": rows, "files": file_rows })
+                );
                 return Ok(0);
             }
-            if listed.is_empty() {
+            if listed.is_empty() && files.is_empty() {
                 println!("Nothing waits for your choice: every app agrees on all your devices.");
                 return Ok(0);
             }
@@ -5693,6 +5751,37 @@ fn sync_conflicts_command(
                     "  choose: krate account sync resolve {app} {:?} this|other{}{}",
                     c.key,
                     if here.is_some() && there.is_some() {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            for (app, c) in &files {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .cloned()
+                    .unwrap_or((None, "another device".to_string()));
+                let name = c.path.rsplit('/').next().unwrap_or(&c.path);
+                match (&c.mine, &other) {
+                    (Some(_), Some(_)) => println!("{app}: {name} changed on two devices"),
+                    (None, _) => println!("{app}: {name} was deleted here and changed on {device}"),
+                    (Some(_), None) => {
+                        println!("{app}: {name} was deleted on {device} and changed here")
+                    }
+                }
+                println!("  on this computer: {}", side(&c.mine));
+                println!("  on {device}: {}", side(&other));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.path,
+                    if c.mine.is_some() && other.is_some() {
                         "|both"
                     } else {
                         ""
