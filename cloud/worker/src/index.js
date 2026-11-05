@@ -97,8 +97,11 @@ import { orgChatRoute, chatSweep } from "./org-chat.js";
 import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
 import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
-// A signed-in person's own app data on every device (IC-981).
-import { accountSyncRoute } from "./account-sync.js";
+// A signed-in person's own app data on every device (IC-981), kept in one
+// SQLite-backed Durable Object per account; wrangler.toml binds it as
+// SYNC_ACCOUNTS.
+import { accountSyncRoute, SyncAccount } from "./account-sync.js";
+export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };

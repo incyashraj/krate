@@ -2,11 +2,18 @@
  * proof (crates/runtime/tests/account_sync_two_devices.rs, IC-981).
  *
  * cloud/worker/src/index.js itself over an in-memory KV and R2 (the R2
- * stand-in the other worker tests use), signed in through the GitHub stub
- * (a token gho_<login> is that GitHub user). One thing is added beside the
- * worker, never inside it: GET /__kv answers every value the KV holds and
- * every object R2 holds (base64), so the proof can read exactly the bytes
- * the hub keeps and find no plaintext in them.
+ * stand-in the other worker tests use) and the real SyncAccount object per
+ * account over SQLite (sync-account-tools.mjs), signed in through the
+ * GitHub stub (a token gho_<login> is that GitHub user). One thing is added
+ * beside the worker, never inside it: GET /__kv answers what the hub keeps
+ * -- every value the KV holds, every row each account's object holds
+ * (under "acsync:<object name>" in `kv`), and every object R2 holds
+ * (base64) -- so the proof can read exactly the bytes the hub keeps and
+ * find no plaintext in them.
+ *
+ * `writes` is every write the hub made that is not a file body: KV puts
+ * plus the object calls that wrote a row (a sync that changed something
+ * is one). `kv_writes`, `object_commits` and `object_rows` part it.
  *
  *   node --experimental-wasm-modules account-sync-hub.mjs [port]
  *
@@ -16,6 +23,7 @@ import http from "node:http";
 import "./github-stub.mjs";
 import worker from "../src/index.js";
 import { r2Mock } from "./r2-mock.mjs";
+import { syncNamespace } from "./sync-account-tools.mjs";
 
 const KV = new Map();
 let writes = 0;
@@ -42,13 +50,28 @@ const env = {
     list: async ({ prefix = "" } = {}) => ({ keys: [...KV.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })), list_complete: true }),
   },
 };
+const SYNC = syncNamespace(env);
+env.SYNC_ACCOUNTS = SYNC;
 
 const server = http.createServer(async (req, res) => {
   if (req.url === "/__kv") {
     res.writeHead(200, { "content-type": "application/json" });
     const r2 = {};
     for (const [k, v] of R2._blobs) if (!k.includes("\u0000")) r2[k] = Buffer.from(v).toString("base64");
-    res.end(JSON.stringify({ writes, kv: Object.fromEntries(KV), r2_writes: r2Writes, r2 }));
+    console.error(`MEASURE hub: ${writes} KV writes, ${SYNC.commits} object calls that wrote (${SYNC.rows} rows), ${r2Writes} R2 writes`);
+    const kv = Object.fromEntries(KV);
+    for (const [name, tables] of Object.entries(SYNC.dump())) kv[`acsync:${name}`] = tables;
+    res.end(
+      JSON.stringify({
+        writes: writes + SYNC.commits,
+        kv_writes: writes,
+        object_commits: SYNC.commits,
+        object_rows: SYNC.rows,
+        kv,
+        r2_writes: r2Writes,
+        r2,
+      }),
+    );
     return;
   }
   const chunks = [];

@@ -157,3 +157,17 @@ class_name = "Org"
 tag = "v3-orgs"
 new_sqlite_classes = ["Org"]
 
+# A person's own app data on every device (IC-981): one SQLite-backed
+# object per account, named "acct:<account id>", holding the account's
+# device keys, sealed key envelopes, recovery envelope and every app's
+# sealed buckets. Every sync is one transaction in it and nothing in KV:
+# an open app syncs every 30 s, which in KV would spend the free plan's
+# 1,000 daily writes the way the rate counter once did (K-912). The file
+# bodies it names stay in R2 (BUNDLES).
+[[durable_objects.bindings]]
+name = "SYNC_ACCOUNTS"
+class_name = "SyncAccount"
+
+[[migrations]]
+tag = "v4-sync-accounts"
+new_sqlite_classes = ["SyncAccount"]
