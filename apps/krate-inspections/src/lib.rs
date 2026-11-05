@@ -62,7 +62,8 @@ const NOTE_HINT: &str = "Add a note, like what failed and why";
 
 /// How often the app asks the store whether anything changed (local).
 const LOOK_EVERY_MS: u64 = 1_000;
-/// How often the app asks for a sync of its own, to know online/pending.
+/// How often the app asks for a sync of its own. It never waits: where this
+/// computer stands is asked every LOOK_EVERY_MS, from `org::status`.
 const SYNC_EVERY_MS: u64 = 20_000;
 /// How long Undo is offered after a delete.
 const UNDO_FOR_MS: u64 = 8_000;
@@ -111,8 +112,13 @@ struct Team {
     pending: u32,
     reached_at: Option<u64>,
     answered: bool,
-    /// The organisation has let this computer in (it holds the team's key).
+    /// The organisation has named this person: `who` answered once this
+    /// computer held the team's key and exchanged data.
     admitted: bool,
+    /// This computer is new to the team and its key has not arrived yet
+    /// (`org::status` says `WaitingForKey`); a teammate's computer passes it
+    /// on by itself.
+    waiting_for_key: bool,
     saved_since: bool,
     problem: Option<String>,
     /// A run on this computer only, when the person chose to try the app.
@@ -133,6 +139,7 @@ impl Team {
             reached_at: None,
             answered: false,
             admitted: false,
+            waiting_for_key: false,
             saved_since: false,
             problem: None,
             mem: None,
@@ -187,22 +194,17 @@ impl Team {
         }
     }
 
-    /// Ask for a sync now. It can wait on the network: call it when nobody
-    /// is typing. True when the team changed something.
+    /// Ask the runtime for a sync now. It never waits: the sync runs in the
+    /// background, and a later call says so when the team changed
+    /// something. True when it did.
     fn sync(&mut self) -> bool {
         if self.trying() {
             return false;
         }
         match org::sync() {
             Ok(state) => {
-                self.online = state.online;
-                self.pending = state.pending;
-                self.answered = true;
                 self.saved_since = false;
-                if state.online {
-                    self.reached_at = Some(krate::time::now_millis());
-                }
-                self.learn_who();
+                self.look();
                 state.changed
             }
             Err(error) => {
@@ -210,6 +212,48 @@ impl Team {
                 false
             }
         }
+    }
+
+    /// Where this computer stands, from `org::status`: local and instant, so
+    /// it is asked every second. True when the line in the corner changed.
+    fn look(&mut self) -> bool {
+        if self.trying() {
+            return false;
+        }
+        let before = (
+            self.online,
+            self.pending,
+            self.waiting_for_key,
+            self.admitted,
+            self.answered,
+        );
+        match org::status() {
+            Ok(standing) => {
+                self.online = standing.link != org::Link::Offline;
+                self.pending = standing.pending;
+                self.waiting_for_key = standing.link == org::Link::WaitingForKey;
+                self.answered |=
+                    standing.reached_at.is_some() || standing.link == org::Link::Offline;
+                if standing.reached_at.is_some() {
+                    self.reached_at = standing.reached_at;
+                }
+                if self.org.is_empty() && !standing.org.is_empty() {
+                    self.org = standing.org;
+                }
+                if !self.admitted {
+                    self.learn_who();
+                }
+            }
+            Err(error) => self.fail(error),
+        }
+        before
+            != (
+                self.online,
+                self.pending,
+                self.waiting_for_key,
+                self.admitted,
+                self.answered,
+            )
     }
 
     /// Who this is, once the organisation has said.
@@ -227,8 +271,9 @@ impl Team {
         }
     }
 
+    /// Waiting for the team's key, which a teammate's computer passes on.
     fn waiting_to_be_let_in(&self) -> bool {
-        self.answered && self.online && !self.admitted
+        self.waiting_for_key && !self.trying()
     }
 
     /// One short line for the corner, and the colour of its dot.
@@ -242,8 +287,8 @@ impl Team {
         if !self.online {
             return (String::from("Offline, saved here"), ink.warn);
         }
-        if !self.admitted {
-            return (String::from("Waiting to be let in"), ink.warn);
+        if self.waiting_to_be_let_in() {
+            return (String::from("Waiting for your team's key"), ink.warn);
         }
         if self.saved_since {
             return (String::from("Saved"), ink.good);
@@ -3498,10 +3543,6 @@ impl App {
         false
     }
 
-    fn typing(&self) -> bool {
-        self.form.is_some() || matches!(self.focus, Focus::Note)
-    }
-
     fn name_window(&mut self) {
         if !self.titled && !self.team.org.is_empty() {
             self.titled = true;
@@ -3790,11 +3831,14 @@ impl krate::Guest for Component {
                 if now >= looked + LOOK_EVERY_MS {
                     looked = now;
                     dirty |= app.look_for_changes();
+                    // Where this computer stands: local, never waits.
+                    dirty |= app.team.look();
                     // The status words ("synced 2 min ago") age too.
                     dirty |= app.undo.is_some();
                 }
-                // Not while someone is typing: a sync can wait on the network.
-                if now >= synced + SYNC_EVERY_MS && !app.typing() {
+                // A sync never waits on the network, so it runs while
+                // someone types too.
+                if now >= synced + SYNC_EVERY_MS {
                     synced = now;
                     if app.team.sync() {
                         app.reload();
