@@ -76,6 +76,12 @@ public class KrateActivity extends NativeActivity {
 
     @Override
     protected void onCreate(android.os.Bundle saved) {
+        // Before the player asks what it was opened on (krateTakeOpen).
+        Intent opened = asOpen(getIntent());
+        if (opened != null && opened.getComponent() == null) {
+            opened.setComponent(new android.content.ComponentName(this, KrateActivity.class));
+        }
+        setIntent(opened);
         super.onCreate(saved);
         // What covers the window's edges, kept as Android says, so an app
         // keeps its text out from under the clock and the gesture bar (K-1039).
@@ -936,12 +942,46 @@ public class KrateActivity extends NativeActivity {
             return;
         }
         Log.i(TAG, "opened again while running: " + intent.getAction());
+        intent = asOpen(intent);
         if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
             synchronized (this) {
                 setIntent(intent);
                 openedMeanwhile = true;
             }
         }
+    }
+
+    /**
+     * A file shared to Krate from another app's share sheet (Files, Gmail,
+     * Drive, a chat's "Share") opens exactly as if it had been tapped: the
+     * shared stream becomes the file to open. Krate keeps the read grant the
+     * sender gave this activity, so the player reads it the same way.
+     * Anything else is left as it came.
+     */
+    @SuppressWarnings("deprecation")
+    static Intent asOpen(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) {
+            return intent;
+        }
+        Uri stream = null;
+        Object extra = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (extra instanceof Uri) {
+            stream = (Uri) extra;
+        }
+        ClipData clip = intent.getClipData();
+        if (stream == null && clip != null && clip.getItemCount() > 0) {
+            stream = clip.getItemAt(0).getUri();
+        }
+        if (stream == null) {
+            return intent;
+        }
+        Intent view = new Intent(Intent.ACTION_VIEW, stream);
+        // NativeActivity finds its library through the intent's component
+        // in onCreate: without it, Krate crashed on every share.
+        view.setComponent(intent.getComponent());
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Log.i(TAG, "shared to Krate: " + stream.getScheme());
+        return view;
     }
 
     /** The link or file Krate was opened on, once: null when there is none. */
