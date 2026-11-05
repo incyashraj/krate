@@ -2495,6 +2495,21 @@ fn bounded_write_len(n: usize) -> std::result::Result<u32, AdapterError> {
     u32::try_from(n).map_err(|_| AdapterError::Io("write length overflow".to_string()))
 }
 
+/// Whether an app could read these arguments: the same rule `args_raw` holds
+/// them to (at most 1,024, 64 KB in all, none empty, no newline or NUL). A
+/// launcher that builds arguments from data it does not control -- a phone
+/// handing Krate's wall what a program printed -- checks them here first.
+#[cfg(feature = "phase2-bindings")]
+pub fn app_args_fit(app_args: &[String]) -> std::result::Result<(), String> {
+    encode_args_raw(app_args)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// The most arguments, and the most bytes of them, an app can be given.
+#[cfg(feature = "phase2-bindings")]
+pub const APP_ARGS_LIMITS: (usize, usize) = (MAX_PHASE2_ARG_COUNT, MAX_PHASE2_ARGS_RAW_BYTES);
+
 #[cfg(feature = "phase2-bindings")]
 fn encode_args_raw(app_args: &[String]) -> std::result::Result<String, AdapterError> {
     if app_args.len() > MAX_PHASE2_ARG_COUNT {

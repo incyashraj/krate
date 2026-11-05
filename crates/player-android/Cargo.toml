@@ -19,6 +19,12 @@ krate-manifest = { path = "../manifest" }
 krate-policy = { path = "../policy" }
 krate-bundle = { path = "../bundle" }
 
+[dev-dependencies]
+# The host tests hold the output card to the runtime's own argument rule.
+krate-runtime = { path = "../runtime", default-features = false, features = [
+    "phase2-bindings",
+] }
+
 [target.'cfg(target_os = "android")'.dependencies]
 # Speech stays off: whisper.cpp on Android is its own project, and the
 # player degrades the capability honestly, the same as arm64 Linux did.

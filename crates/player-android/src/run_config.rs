@@ -27,16 +27,26 @@ pub fn prints_only(manifest: &Manifest) -> bool {
     world.starts_with("krate:app/cli") || world.starts_with("krate:phase1")
 }
 
-/// The most of a program's output the card keeps: its last lines, as a
-/// terminal's scrollback would.
-pub const OUTPUT_LINES: usize = 5_000;
-/// And the most characters of any one line.
+/// The most characters of any one line of a program's output the card keeps.
 pub const OUTPUT_LINE_CHARS: usize = 2_000;
 
+/// The most arguments, and the most bytes of them, an app can be handed: the
+/// runtime's `APP_ARGS_LIMITS`, held equal below wherever the runtime is
+/// linked (the phones), and tested against its own rule on the host.
+pub const APP_ARGS_LIMITS: (usize, usize) = (1024, 64 * 1024);
+#[cfg(any(target_os = "android", target_os = "ios"))]
+const _: () = assert!(
+    APP_ARGS_LIMITS.0 == krate_runtime::APP_ARGS_LIMITS.0
+        && APP_ARGS_LIMITS.1 == krate_runtime::APP_ARGS_LIMITS.1
+);
+
 /// The wall's `wall:output` arguments for a program that ended: its name, how
-/// it ended in plain words, then each printed line. Arguments may not carry a
-/// newline or a NUL (the runtime refuses them), so lines are split on the
-/// first and cleaned of the second and of carriage returns.
+/// it ended in plain words, then each printed line -- the last ones, as a
+/// terminal's scrollback keeps, as many as an app can be handed
+/// (`APP_ARGS_LIMITS`: past them the wall could read none of
+/// its arguments and the card would never show). Arguments may not be empty
+/// or carry a newline or a NUL, so lines are split on the newline, cleaned of
+/// NULs and carriage returns, and a blank line is one space.
 pub fn output_args(name: &str, exit_code: Option<i32>, transcript: &[u8]) -> Vec<String> {
     let ended = match exit_code {
         Some(0) => "Finished".to_string(),
@@ -47,22 +57,40 @@ pub fn output_args(name: &str, exit_code: Option<i32>, transcript: &[u8]) -> Vec
     let mut lines: Vec<String> = text
         .split('\n')
         .map(|line| {
-            line.chars()
+            let kept: String = line
+                .chars()
                 .filter(|c| *c != '\r' && *c != '\0')
                 .take(OUTPUT_LINE_CHARS)
-                .collect()
+                .collect();
+            if kept.is_empty() {
+                " ".to_string()
+            } else {
+                kept
+            }
         })
         .collect();
     // The newline that ends the last line is not one more, empty, line.
-    if lines.last().is_some_and(|line: &String| line.is_empty()) {
+    if text.ends_with('\n') || text.is_empty() {
         lines.pop();
     }
-    let skip = lines.len().saturating_sub(OUTPUT_LINES);
     let mut args = vec![
         "wall:output".to_string(),
         name.replace(['\n', '\0'], " "),
         ended,
     ];
+    let (most_args, most_bytes) = APP_ARGS_LIMITS;
+    // Room for the header, the "earlier lines" note, and each line's newline.
+    let header: usize = args.iter().map(|a| a.len() + 1).sum::<usize>() + 64;
+    let mut room = most_bytes.saturating_sub(header);
+    let mut kept = 0;
+    for line in lines.iter().rev() {
+        if args.len() + 1 + kept + 1 > most_args || line.len() + 1 > room {
+            break;
+        }
+        room -= line.len() + 1;
+        kept += 1;
+    }
+    let skip = lines.len() - kept;
     if skip > 0 {
         args.push(format!("({skip} earlier lines not kept)"));
     }
@@ -282,37 +310,46 @@ mod tests {
                 "grex",
                 "Ended with code 2",
                 "error: missing <INPUT>",
-                "",
+                " ",
                 "Usage: grex [OPTIONS]",
             ]
         );
-        assert!(args.iter().all(|a| !a.contains('\n') && !a.contains('\0')));
+        krate_runtime::app_args_fit(&args).expect("the wall can read a blank line");
         assert_eq!(output_args("x", Some(0), b"")[2], "Finished");
         assert_eq!(
             output_args("x", Some(0), b"").len(),
             3,
             "nothing printed, no lines"
         );
+        assert_eq!(output_args("x", Some(0), b"\n").len(), 4, "one blank line");
         assert!(output_args("x", None, b"")[2].starts_with("Stopped"));
     }
 
     #[test]
-    fn a_long_output_keeps_its_last_lines() {
-        let text: String = (0..OUTPUT_LINES + 7)
-            .map(|i| format!("line {i}\n"))
-            .collect();
-        let args = output_args("x", Some(0), text.as_bytes());
-        assert_eq!(args[3], "(7 earlier lines not kept)");
-        assert_eq!(
-            args.last().map(String::as_str),
-            Some(format!("line {}", OUTPUT_LINES + 6).as_str())
+    fn a_long_output_keeps_the_last_lines_the_wall_can_read() {
+        let (most_args, most_bytes) = APP_ARGS_LIMITS;
+        // Many short lines: the count is the limit.
+        let many: String = (0..5_000).map(|i| format!("line {i}\n")).collect();
+        let args = output_args("x", Some(0), many.as_bytes());
+        krate_runtime::app_args_fit(&args).expect("many lines still open");
+        assert!(args.len() > most_args - 8, "kept as many as fit");
+        assert_eq!(args.last().map(String::as_str), Some("line 4999"));
+        let skipped = 5_000 - (args.len() - 4);
+        assert_eq!(args[3], format!("({skipped} earlier lines not kept)"));
+        // A few huge lines: the bytes are the limit.
+        let wide = format!("{}\n", "x".repeat(OUTPUT_LINE_CHARS * 2)).repeat(100);
+        let args = output_args("x", Some(0), wide.as_bytes());
+        krate_runtime::app_args_fit(&args).expect("wide lines still open");
+        assert_eq!(args[4].len(), OUTPUT_LINE_CHARS);
+        let bytes: usize = args.iter().map(|a| a.len() + 1).sum();
+        assert!(
+            bytes > most_bytes - OUTPUT_LINE_CHARS * 2,
+            "kept as many as fit"
         );
-        assert_eq!(args.len(), 3 + 1 + OUTPUT_LINES);
-        let wide = "x".repeat(OUTPUT_LINE_CHARS * 2);
-        assert_eq!(
-            output_args("x", Some(0), wide.as_bytes())[3].len(),
-            OUTPUT_LINE_CHARS
-        );
+        // Multi-byte text counts in bytes, not characters.
+        let wide_chars = format!("{}\n", "\u{1F600}".repeat(OUTPUT_LINE_CHARS)).repeat(40);
+        let args = output_args("x", Some(0), wide_chars.as_bytes());
+        krate_runtime::app_args_fit(&args).expect("emoji lines still open");
     }
 
     #[test]
