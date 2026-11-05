@@ -41,6 +41,9 @@ pub mod toast;
 /// Windows Hello for `krate:ui/unlock` (IC-982).
 pub mod unlock;
 
+/// Where the computer is, for `krate:ui/location` (IC-982).
+pub mod location;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
@@ -526,6 +529,17 @@ impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for WindowsWinitPrototypeUiAdapter {
+    #[cfg(windows)]
+    /// Where the computer is: Windows' Geolocator (IC-982).
+    fn location_available(&self) -> bool {
+        location::available()
+    }
+
+    #[cfg(windows)]
+    fn location(&self) -> krate_adapter_common::ui::LocationAnswer {
+        location::read()
+    }
+
     /// Physical pixels per logical pixel, from the live winit window. The
     /// trait default of 1.0 stood in here for months, so every canvas
     /// rasterized at logical resolution and was stretched across a HiDPI
