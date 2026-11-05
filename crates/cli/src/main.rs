@@ -19107,6 +19107,12 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <string>{name} asked to turn speech into text. Apple's recognizer does it, on this Mac where it can.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>{name} asked to add a picture to your Photos, and you allowed it in Krate's permission window.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>{name} asked to reach a Bluetooth device, and you allowed it in Krate's permission window. It reaches only the device you pick.</string>
 {icon_entry}</dict>
 </plist>
 "#,
@@ -19502,6 +19508,22 @@ fn open_studio() -> bool {
         .unwrap_or(false)
 }
 
+/// The Info.plist keys macOS reads before an app may reach a piece of
+/// hardware (IC-982). Every bundle Krate writes for an app to run in carries
+/// all of them; the runtime and the macOS adapter check the one they need
+/// before touching the framework, and answer unavailable without it. The
+/// tests below hold every bundle writer to this list.
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) const HARDWARE_USAGE_KEYS: [&str; 7] = [
+    "NSCameraUsageDescription",
+    "NSMicrophoneUsageDescription",
+    "NSSpeechRecognitionUsageDescription",
+    "NSPhotoLibraryAddUsageDescription",
+    "NSLocationWhenInUseUsageDescription",
+    "NSLocationUsageDescription",
+    "NSBluetoothAlwaysUsageDescription",
+];
+
 /// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
 /// us to open, then run it through the ordinary consent + native-window flow.
 /// The sandbox root is the folder the `.krate` sits in, so an app that writes
@@ -19566,6 +19588,18 @@ fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Resu
          \u{20}   <key>NSSpeechRecognitionUsageDescription</key>\n\
          \u{20}   <string>{name} asked to turn speech into text. Apple's recognizer does \
          it, on this Mac where it can.</string>\n\
+         \u{20}   <key>NSPhotoLibraryAddUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to add a picture to your Photos, and you allowed it \
+         in Krate's permission window.</string>\n\
+         \u{20}   <key>NSLocationWhenInUseUsageDescription</key>\n\
+         \u{20}   <string>{name} asked where you are, and you allowed it in Krate's \
+         permission window. It is told only while it is open.</string>\n\
+         \u{20}   <key>NSLocationUsageDescription</key>\n\
+         \u{20}   <string>{name} asked where you are, and you allowed it in Krate's \
+         permission window. It is told only while it is open.</string>\n\
+         \u{20}   <key>NSBluetoothAlwaysUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to reach a Bluetooth device, and you allowed it \
+         in Krate's permission window. It reaches only the device you pick.</string>\n\
          </dict>\n</plist>\n"
     );
     fs::write(app.join("Contents/Info.plist"), plist)?;
@@ -30414,5 +30448,28 @@ mod publish_staged_tests {
             "version 1"
         );
         assert!(!previous.exists());
+    }
+}
+
+/// The bundle an opened app runs in says why for every piece of hardware
+/// (IC-982): without the location sentence macOS drops the prompt and the
+/// app waits for ever; without the Bluetooth one it ends the process.
+#[cfg(all(test, target_os = "macos"))]
+mod launcher_plist_tests {
+    #[test]
+    fn an_opened_app_s_bundle_says_why_for_every_piece_of_hardware() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let engine = dir.path().join("engine");
+        std::fs::write(&engine, b"not a program").expect("engine");
+        super::macos_launcher_bundle(dir.path(), "Heart Rate", &engine).expect("bundle");
+        let plist = std::fs::read_to_string(dir.path().join("Heart Rate.app/Contents/Info.plist"))
+            .expect("Info.plist");
+        for key in super::HARDWARE_USAGE_KEYS {
+            assert!(
+                plist.contains(&format!("<key>{key}</key>")),
+                "missing {key}"
+            );
+        }
+        assert!(plist.contains("Heart Rate asked to reach a Bluetooth device"));
     }
 }
