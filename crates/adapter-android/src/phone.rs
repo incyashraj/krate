@@ -90,7 +90,10 @@ mod real {
                 activity,
                 "krateLightBars",
                 "(ZZ)V",
-                &[jni::objects::JValue::Bool(top.into()), jni::objects::JValue::Bool(bottom.into())],
+                &[
+                    jni::objects::JValue::Bool(top.into()),
+                    jni::objects::JValue::Bool(bottom.into()),
+                ],
             )?
             .v()
         });
