@@ -34,6 +34,31 @@ impl std::fmt::Display for HubError {
 
 impl std::error::Error for HubError {}
 
+/// The most of one hub answer the device reads: a whole bucket (the hub
+/// keeps at most 24 MiB in one, cloud/worker/src/account-sync.js
+/// BUCKET_MAX) and its JSON around it. ureq's `into_string` stops at
+/// 10 MiB, so an app keeping a few MB synced once and then read every
+/// later answer as "offline", for good (K-1221).
+pub const ANSWER_MAX: u64 = 26 * 1024 * 1024;
+
+/// An answer's text, up to `ANSWER_MAX`; longer is not a hub's answer.
+fn answer_text(url: &str, response: ureq::Response) -> Result<String, HubError> {
+    use std::io::Read;
+    let mut text = String::new();
+    response
+        .into_reader()
+        .take(ANSWER_MAX + 1)
+        .read_to_string(&mut text)
+        .map_err(|_| HubError::Offline)?;
+    if text.len() as u64 > ANSWER_MAX {
+        return Err(HubError::Hub(format!(
+            "{url} answered more than {} MB",
+            ANSWER_MAX / (1024 * 1024)
+        )));
+    }
+    Ok(text)
+}
+
 /// One signed-in person's connection to the hub.
 pub struct Hub {
     base: String,
@@ -186,7 +211,7 @@ impl Hub {
     fn answered(url: &str, sent: Result<ureq::Response, ureq::Error>) -> Result<Value, HubError> {
         match sent {
             Ok(response) => {
-                let text = response.into_string().map_err(|_| HubError::Offline)?;
+                let text = answer_text(url, response)?;
                 if text.trim().is_empty() {
                     return Ok(Value::Null);
                 }
@@ -194,8 +219,9 @@ impl Hub {
                     .map_err(|_| HubError::Hub(format!("{url} did not answer as a Krate hub")))
             }
             Err(ureq::Error::Status(status, response)) if status < 500 && status != 429 => {
-                let body: Value = serde_json::from_str(&response.into_string().unwrap_or_default())
-                    .unwrap_or_default();
+                let body: Value =
+                    serde_json::from_str(&answer_text(url, response).unwrap_or_default())
+                        .unwrap_or_default();
                 Err(HubError::Refused {
                     status,
                     reason: body["error"].as_str().unwrap_or("refused").to_string(),
@@ -214,5 +240,52 @@ impl Hub {
             &format!("/buckets/{bucket}"),
             Some(&serde_json::json!({ "writes": writes })),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    /// A one-request hub on localhost answering `body` with 200.
+    fn serve(body: Vec<u8>) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = listener.local_addr().expect("address");
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&body);
+        });
+        format!("http://{address}")
+    }
+
+    #[test]
+    fn a_bucket_over_ten_megabytes_is_read_not_called_offline() {
+        // A bucket the hub would keep (under its 24 MiB), past ureq's
+        // 10 MiB string cap: the answer the device read as "offline".
+        let filler = "x".repeat(12 * 1024 * 1024);
+        let body = serde_json::json!({ "entries": [], "pad": filler }).to_string();
+        let hub = Hub::new(&serve(body.into_bytes()), "token");
+        let answer = hub
+            .call("GET", "/buckets/b", None)
+            .expect("a 12 MB answer is read");
+        assert_eq!(answer["pad"].as_str().map(str::len), Some(12 * 1024 * 1024));
+    }
+
+    #[test]
+    fn an_answer_past_the_ceiling_is_named_not_called_offline() {
+        let body = vec![b' '; (ANSWER_MAX + 16) as usize];
+        let hub = Hub::new(&serve(body), "token");
+        match hub.call("GET", "/buckets/b", None) {
+            Err(HubError::Hub(words)) => assert!(words.contains("more than"), "{words}"),
+            other => panic!("expected a named refusal, got {other:?}"),
+        }
     }
 }
