@@ -97,6 +97,8 @@ import { orgChatRoute, chatSweep } from "./org-chat.js";
 import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
 import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+// A signed-in person's own app data on every device (IC-981).
+import { accountSyncRoute } from "./account-sync.js";
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -883,6 +885,12 @@ export default {
       // Signed-in sessions: list them, sign one out, sign out the others.
       if (pathname.startsWith("/account/sessions")) {
         const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
+        if (res) return cors(res);
+      }
+      // An app's own data on every device a person signs in on (IC-981,
+      // account-sync.js): end-to-end sealed, the hub holds ciphertext only.
+      if (pathname === "/account/sync" || pathname.startsWith("/account/sync/")) {
+        const res = await accountSyncRoute(request, url, env, { authedUser });
         if (res) return cors(res);
       }
       // A live team-data socket (org-data-live.js): handed to the
