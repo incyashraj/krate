@@ -2619,7 +2619,7 @@ fn curated_shape(name: &str) -> Option<&'static str> {
         "krate-checklist" => "GUI checkbox list that saves; the simplest GUI+store shape",
         "krate-contacts" => "GUI over a real SQL database (no_std)",
         "krate-keyvault" => "GUI key-value store over store.kv (persistence)",
-        "krate-notes-clip" | "krate-clip" => "GUI using the clipboard",
+        "krate-clip" => "GUI using the clipboard",
         "krate-paint" => "GUI freehand canvas drawing",
         "krate-chart" => "GUI drawing a chart on a canvas",
         "krate-nova" => "GUI canvas game: fills, circles, gradients (no sprites)",
