@@ -413,9 +413,9 @@ fn describe(cap: &str) -> (String, gfx::Color) {
         "net.ws" => ("Live connection".to_string(), blue),
         "hub" | "hub.rooms" => ("Krate online".to_string(), blue),
         "fs.read" | "fs.list" if own => ("Read its own files".to_string(), orange),
-        "fs.write" | "fs.remove" if own => ("Save its own files".to_string(), orange),
+        "fs.write" | "fs.remove" | "fs.mkdir" if own => ("Save its own files".to_string(), orange),
         "fs.read" | "fs.list" => ("Read files".to_string(), orange),
-        "fs.write" | "fs.remove" => ("Change files".to_string(), orange),
+        "fs.write" | "fs.remove" | "fs.mkdir" => ("Change files".to_string(), orange),
         "ui.dialog" if target.contains("save") => ("Save files you pick".to_string(), orange),
         "ui.dialog" => ("Files you pick".to_string(), orange),
         "audio.playback" => ("Sound".to_string(), pink),
@@ -428,6 +428,17 @@ fn describe(cap: &str) -> (String, gfx::Color) {
         "store.kv" | "store.sql" => ("Keep its data".to_string(), green),
         "store.shared" => ("Share data with people you invite".to_string(), green),
         "store.secret" => ("Keep secrets safe".to_string(), green),
+        "store.org" => ("Your organisation's data".to_string(), green),
+        "store.group" => ("Share data with its maker's other apps".to_string(), green),
+        "ui.dropzone" => ("Files you drop on it".to_string(), orange),
+        "ui.menu" => ("A menu".to_string(), gray),
+        "ui.print" => ("Print".to_string(), gray),
+        "ui.screen-capture" => ("See your screen".to_string(), red),
+        "net.connection" => ("Whether you are online".to_string(), blue),
+        "speech.transcribe" => ("Speech".to_string(), pink),
+        "random.bytes" => ("Random numbers".to_string(), gray),
+        "process.run" => ("Run programs".to_string(), red),
+        "process.terminal" => ("A terminal".to_string(), red),
         "ui.clipboard" => ("Clipboard".to_string(), indigo),
         "ui.notify" => ("Notifications".to_string(), red),
         "ui.open-url" => ("Open links".to_string(), indigo),
@@ -436,6 +447,39 @@ fn describe(cap: &str) -> (String, gfx::Color) {
         _ => (String::from(cap), gray),
     };
     (title, tint)
+}
+
+/// A request's title as it reads after "Uses" in the sheet's one sentence:
+/// "Uses the internet, its own files and 2 more", never "Uses Internet, Keep
+/// its data".
+fn in_a_sentence(title: &str) -> String {
+    let said = match title {
+        "Internet" => "the internet",
+        "Keep its data" => "its own storage",
+        "Read its own files" | "Save its own files" => "its own files",
+        "Read files" => "your files",
+        "Change files" => "changes to your files",
+        "Save files you pick" => "files you pick",
+        "Share data with people you invite" => "data shared by invite",
+        "Keep secrets safe" => "safe storage for secrets",
+        "Share data with its maker's other apps" => "data shared with its maker's apps",
+        "Add to your Photos" => "your Photos",
+        "Open links" => "opening links",
+        "Run programs" => "running programs",
+        "Print" => "printing",
+        "Its own window" => "its own window",
+        other => {
+            // Nouns already ("Sound", "Where you are"): lower-case the first
+            // letter, except names (Krate, Bluetooth).
+            let keep = other.starts_with("Krate") || other.starts_with("Bluetooth");
+            let mut chars = other.chars();
+            return match chars.next() {
+                Some(first) if !keep => first.to_lowercase().chain(chars).collect(),
+                _ => other.to_string(),
+            };
+        }
+    };
+    said.to_string()
 }
 
 /// A small white drawing for a kind of request, centred at (x, y), for its
@@ -898,7 +942,7 @@ impl Sheet {
         let mut names: Vec<String> = Vec::new();
         for &i in &shown {
             let (title, _) = describe(&self.asks[i].cap);
-            let title = title.split(" \u{00b7} ").next().unwrap_or("").to_string();
+            let title = in_a_sentence(title.split(" \u{00b7} ").next().unwrap_or(""));
             if !names.contains(&title) {
                 names.push(title);
             }
