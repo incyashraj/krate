@@ -43,6 +43,34 @@ pub fn set_app_sync(store: &Path, on: bool) -> std::io::Result<()> {
     }
 }
 
+/// Turn sync on or off for every app on this device.
+pub fn set_all_sync(device_dir: &Path, on: bool) -> std::io::Result<()> {
+    let path = global_toggle_path(device_dir);
+    if on {
+        match std::fs::remove_file(&path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        }
+    } else {
+        std::fs::create_dir_all(device_dir)?;
+        std::fs::write(path, b"sync is off for every app on this device\n")
+    }
+}
+
+/// The app's data was cleared on this device: what sync remembered about it
+/// goes too, so the next sync reads the account's copy back instead of
+/// sending the emptied store on as this device deleting everything. Its
+/// toggle stays as the person set it.
+pub fn forget_replicas(store: &Path) {
+    let dir = sync_dir(store);
+    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "json") {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 /// Where the replica for `store` and one account lives: named by a hash of
 /// the account id, so an id is never a path.
 pub fn replica_path(store: &Path, account: &str) -> PathBuf {
@@ -77,6 +105,16 @@ mod tests {
             dir.path().join("notes@ab12.kv.sync")
         );
         assert_ne!(slot("u1"), slot("u2"));
+        set_all_sync(&devices, true).unwrap();
+        assert!(sync_wanted(&store, &devices));
+        set_all_sync(&devices, false).unwrap();
+        assert!(!sync_wanted(&store, &devices));
+        // Clearing an app's data forgets the replica, not the toggle.
+        set_app_sync(&store, false).unwrap();
+        std::fs::write(replica_path(&store, "u1"), b"{}").unwrap();
+        forget_replicas(&store);
+        assert!(!replica_path(&store, "u1").exists());
+        assert!(app_toggle_path(&store).exists());
         assert!(slot("../../etc").chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

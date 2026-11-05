@@ -150,6 +150,11 @@ pub struct Replica {
     /// exchange with nothing new costs the hub one read and no bytes.
     #[serde(default)]
     pub rev: Option<u64>,
+    /// When this device last exchanged with the hub, in seconds since 1970:
+    /// what Krate's home shows as an app's last sync. Set by the runtime,
+    /// which has the clock; the replica itself never reads one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synced_at: Option<u64>,
 }
 
 /// One write to send: the key, its vector, its writer, and the hash of the
@@ -175,6 +180,7 @@ impl Replica {
             device: device.to_string(),
             keys: BTreeMap::new(),
             rev: None,
+            synced_at: None,
         }
     }
 

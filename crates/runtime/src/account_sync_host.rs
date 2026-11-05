@@ -75,7 +75,8 @@ impl std::fmt::Debug for AccountSyncContext {
 pub use krate_accountsync::publisher_label;
 #[cfg(not(target_arch = "wasm32"))]
 pub use krate_accountsync::toggles::{
-    app_toggle_path, global_toggle_path, replica_path, set_app_sync, sync_wanted,
+    app_toggle_path, forget_replicas, global_toggle_path, replica_path, set_all_sync, set_app_sync,
+    sync_dir, sync_wanted,
 };
 
 /// The app's key-value store for one run: as it always was, or kept in sync
@@ -540,17 +541,26 @@ mod synced {
     }
 
     /// The conflicts in an app's store while it is not running: for
-    /// Krate's home (S2), which reads the store and its replica directly.
-    pub fn conflicts_at(store: &Path, account: &str) -> Vec<KvConflict> {
+    /// Krate's home and `krate account sync conflicts`, which read the store
+    /// and its replica directly. `names` are the account's device names
+    /// (crates/accountsync `Overview::names`), for saying where the other
+    /// side came from.
+    pub fn conflicts_at(
+        store: &Path,
+        account: &str,
+        names: &BTreeMap<String, String>,
+    ) -> Vec<KvConflict> {
         let path = replica_path(store, account);
         let Some(replica) = read_replica(&path) else {
             return Vec::new();
         };
-        conflicts_of(
-            &AppStore::open(store.to_path_buf(), true),
-            &replica,
-            &BTreeMap::new(),
-        )
+        conflicts_of(&AppStore::open(store.to_path_buf(), true), &replica, names)
+    }
+
+    /// When this device last synced an app's store with the hub, in seconds
+    /// since 1970; `None` for never.
+    pub fn last_sync_at(store: &Path, account: &str) -> Option<u64> {
+        read_replica(&replica_path(store, account))?.synced_at
     }
 
     /// Answer a conflict while the app is not running. `names` are the
@@ -568,7 +578,9 @@ mod synced {
         let mut app_store = AppStore::open(store.to_path_buf(), true);
         resolve_in(&mut app_store, &mut replica, names, key, choice)?;
         let text = serde_json::to_string(&replica).map_err(|_| ResolveError::NoConflict)?;
-        std::fs::write(&path, text).map_err(|_| ResolveError::NoConflict)?;
+        let temp = path.with_extension(format!("{}.tmp", std::process::id()));
+        std::fs::write(&temp, text).map_err(|_| ResolveError::NoConflict)?;
+        std::fs::rename(&temp, &path).map_err(|_| ResolveError::NoConflict)?;
         Ok(())
     }
 
@@ -721,6 +733,10 @@ mod synced {
         let core = &mut *core;
         let loaded = core.loaded.as_mut().expect("loaded above");
         loaded.replica.mark_sent(&sent);
+        loaded.replica.synced_at = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs());
         if answer["unchanged"].as_bool() == Some(true) {
             loaded.save()?;
             return Ok(if loaded.replica.outgoing().is_empty() {

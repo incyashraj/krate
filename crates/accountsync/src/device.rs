@@ -207,11 +207,24 @@ impl Account {
     /// device after this answers it. Krate shows it and asks the person to
     /// write it down.
     pub fn take_recovery_code(&self) -> Option<String> {
-        let path = self.dir().join("recovery-code");
-        let kept = read_json(&path)?;
+        let code = self.recovery_code()?;
+        self.forget_recovery_code();
+        Some(code)
+    }
+
+    /// The recovery code waiting to be shown, left in place: Krate's home
+    /// shows it until the person says they wrote it down
+    /// ([`Account::forget_recovery_code`]), so a screen closed by accident
+    /// does not lose it.
+    pub fn recovery_code(&self) -> Option<String> {
+        let kept = read_json(&self.dir().join("recovery-code"))?;
         let code = open_at_rest(&self.machine_key, CODE_CONTEXT, &kept).ok()?;
-        let _ = std::fs::remove_file(&path);
         String::from_utf8(code).ok()
+    }
+
+    /// The person has the code: it is gone from this device.
+    pub fn forget_recovery_code(&self) {
+        let _ = std::fs::remove_file(self.dir().join("recovery-code"));
     }
 
     /// Register this device if the hub does not know it, take the key if a
@@ -418,6 +431,8 @@ mod tests {
         let code = RecoveryCode::generate().unwrap();
         account.keep_code(&code).unwrap();
         assert!(account.recovery_code_waiting());
+        assert_eq!(account.recovery_code(), Some(code.display()), "a look");
+        assert_eq!(account.recovery_code(), Some(code.display()), "keeps it");
         assert_eq!(account.take_recovery_code(), Some(code.display()));
         assert_eq!(account.take_recovery_code(), None);
         assert!(!account.recovery_code_waiting());

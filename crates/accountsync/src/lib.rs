@@ -19,6 +19,9 @@
 //!   `/account/sync` routes (cloud/worker/src/account-sync.js) and its files
 //!   on disk -- its key pair, the data key it holds, the recovery code to
 //!   show once -- and approving a new device or recovering with the code.
+//! - `overview` (feature `agent`): what Krate's home and `krate account
+//!   sync` show -- this device, the others, who waits for a yes -- kept for
+//!   when the hub is out of reach.
 //!
 //! The hub keeps, per (account, app), every version no other version has
 //! replaced (cloud/worker/src/account-sync.js, the same "a newer vector
@@ -27,6 +30,7 @@
 //! hub, and nothing is lost there while a person decides.
 
 pub mod json_merge;
+pub mod readable;
 pub mod replica;
 pub mod seal;
 pub mod toggles;
@@ -36,6 +40,8 @@ pub mod vv;
 pub mod device;
 #[cfg(feature = "agent")]
 pub mod hub;
+#[cfg(feature = "agent")]
+pub mod overview;
 
 pub use replica::{Conflict, Replica, Resolution, ResolveError, Version};
 pub use vv::{Order, VersionVector};
