@@ -4175,6 +4175,27 @@ function plainWords(err) {
   // Already plain words (the build service's own sentence for a build it
   // stopped or let expire): said as they are, not as "the build failed".
   if (err && err.plain) return raw;
+  // A port that stopped names what stopped it on its last line ("Blocked on
+  // primary-task: case `total` printed ... Workspace: ..."), and exits 8
+  // (IC-120). Every such ending read "The build failed. Press Details" --
+  // the engine had said exactly what was wrong and the card hid it
+  // (K-1237). Said in words here, the raw line stays under Details.
+  const blocked = /^Blocked on ([a-z-]+): (.*?)\.? Workspace: .*$/m.exec(raw);
+  if (blocked) {
+    const [, need, reason] = blocked;
+    // Try again starts the port from its plan again (studio/src/main.rs
+    // port_project): the stopped attempt stays on disk, it is not resumed.
+    const kept = "Your project was not changed.";
+    if (need === "primary-task")
+      return `The port runs, but it did not do what your original does: ${reason}. ${kept}`;
+    if (need === "build")
+      return `The port would not build, even after it tried to repair itself. ${kept} Press Details for the compiler output.`;
+    if (need === "agent")
+      return `The AI tool stopped before the port was finished. Check it is signed in and working, then try again. ${kept}`;
+    if (need === "source-unchanged")
+      return "Your project changed while it was being ported. Let it settle, then try again.";
+    return `The port stopped: ${reason}. ${kept}`;
+  }
   // Classify on what the PROVIDER said, never on what Krate said about it.
   const text = providerWords(raw);
   // The engine's summary when it gave one, else everything. The keyword

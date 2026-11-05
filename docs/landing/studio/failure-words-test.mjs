@@ -42,6 +42,21 @@ assert.doesNotMatch(says(compile), /Reinstall|build tools/);
 const cargoLog = "Updating crates.io index\n  Locking 3 packages to latest compatible versions\n  (Cargo.lock)\nerror: the app could not be built";
 assert.doesNotMatch(says(cargoLog), /build tools/, says(cargoLog));
 
+// A port that stopped says what stopped it (IC-120, K-1237): exit 8 and a
+// last line "Blocked on <requirement>: <what>. Workspace: <path>". It used
+// to read "The build failed. Press Details", hiding a sentence the engine
+// had already got right.
+const portBlocked = (need, what) =>
+  `This port failed: different behavior.\nerror: ${what}\nBlocked on ${need}: ${what}. Workspace: /Users/x/.krate/ports/inv-1`;
+const wrong = says(portBlocked("primary-task", "case `invoice-total` printed \"lines=3\" where the original printed \"total=100\""));
+assert.match(wrong, /did not do what your original does: case `invoice-total` printed "lines=3"/, wrong);
+assert.doesNotMatch(wrong, /build failed|Workspace:/, wrong);
+assert.match(says(portBlocked("agent", "the author command exited with code 3")), /AI tool stopped before the port/);
+assert.doesNotMatch(says(portBlocked("agent", "the author command exited with code 3")), /code 3/);
+assert.match(says(portBlocked("build", "the candidate did not compile after 2 repair attempt(s)")), /would not build/);
+assert.match(says(portBlocked("source-unchanged", "the original source changed during the port")), /project changed while/);
+assert.match(says(portBlocked("wall", "the permission wall refused it")), /^The port stopped: the permission wall refused it\./);
+
 // What must still be recognised.
 assert.match(says("error: could not run the Krate engine at /x"), /engine is missing/);
 assert.match(says("...lots of log...\nerror: Failed to authenticate: OAuth session expired and could not be refreshed"),
