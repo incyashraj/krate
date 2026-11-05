@@ -1144,6 +1144,27 @@ impl Phase3GuiHost {
         let id = self
             .window_id(window)
             .map_err(|_| (false, "no such window".to_string()))?;
+        // Windows and Linux have no share sheet Krate reaches: the files are
+        // saved where the person picks and the text copied on their OK
+        // (IC-982), so Share works on every computer.
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
+            let _ = id;
+            let dispatcher = self.dispatcher();
+            return crate::share_fallback::share(
+                &self.attribution(),
+                text.as_deref(),
+                url.as_deref(),
+                &files,
+                |offered| {
+                    dispatcher
+                        .write_clipboard_for_person(offered)
+                        .map_err(|e| format!("could not copy it: {e}"))
+                },
+            )
+            .map_err(|why| (true, why));
+        }
+        #[allow(unreachable_code)]
         self.dispatcher()
             .share(id, text.as_deref(), url.as_deref(), &files)
             .map_err(|why| (true, why))

@@ -62,6 +62,9 @@ pub(crate) use krate_lowering::canvas_raster;
 mod core_app;
 #[cfg(target_os = "macos")]
 mod gamepad_macos;
+/// Sharing where a computer has no share sheet (IC-982).
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+mod share_fallback;
 mod sign_in;
 mod unlock;
 mod video;
