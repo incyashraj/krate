@@ -49,12 +49,34 @@ fn HEIGHT() -> f32 {
     f32::from_bits(WORLD_H.load(core::sync::atomic::Ordering::Relaxed))
 }
 
+/// The person's text size against the default (`Look::text_scale`), as
+/// f32 bits. `fit_world` reads it from the same `Screen::of` it already asks
+/// every frame, so following it costs the frame nothing.
+static TEXT_K: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0x3F80_0000); // 1.0
+
+/// A font size for this person: `points` at their text size, which is what
+/// `krate::layout::Look::text` computes. The HUD reads its sizes through
+/// this so a person who asked for larger text gets a larger score.
+fn text(points: f32) -> f32 {
+    points * f32::from_bits(TEXT_K.load(core::sync::atomic::Ordering::Relaxed))
+}
+
+/// How wide `text` draws at `size`, for centring and right-aligning.
+fn text_w(canvas: u64, text: &str, size: f32) -> f32 {
+    canvas2d::measure_text(canvas, text, size)
+        .map(|m| m.width)
+        .unwrap_or(text.len() as f32 * size * 0.55)
+}
+
 /// Make the world as tall as the screen's free space is, relative to its
 /// width -- between a 3:4 window and a 9:20 phone -- and tell the host the
 /// design size it now draws in. Returns how far the world grew this frame,
 /// so what sits on the bottom (the ship) can move with it.
 fn fit_world(win: u64, canvas: u64) -> f32 {
     let screen = krate::layout::Screen::of(win);
+    // Larger text, up to where the HUD still fits the 480-wide world.
+    let k = screen.look.text(1.0).clamp(0.8, 1.6);
+    TEXT_K.store(k.to_bits(), core::sync::atomic::Ordering::Relaxed);
     let (top, right, bottom, left) = screen.safe;
     let (w, h) = (screen.width - left - right, screen.height - top - bottom);
     if w <= 1.0 || h <= 1.0 {
@@ -1067,7 +1089,7 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
                     txt,
                     p.x - 12.0,
                     p.y,
-                    15.0,
+                    text(15.0),
                     color(1.0, 0.95, 0.5, a),
                 )?;
             }
@@ -1090,14 +1112,18 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
             HEIGHT(),
             color(0.02, 0.02, 0.05, 0.55),
         )?;
+        // Centred by measuring, so the lines stay centred at any text size.
+        let (big, mid, small) = (text(40.0), text(20.0), text(14.0));
+        let cy = HEIGHT() * 0.5;
+        let title = "GAME OVER";
         draw_text(
             canvas,
             0.0,
             0.0,
-            "GAME OVER",
-            WIDTH * 0.5 - 96.0,
-            HEIGHT() * 0.5 - 10.0,
-            40.0,
+            title,
+            (WIDTH - text_w(canvas, title, big)) * 0.5,
+            cy - big * 0.25,
+            big,
             color(1.0, 0.35, 0.5, 1.0),
         )?;
         let mut buf = [0u8; 20];
@@ -1108,20 +1134,21 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
                 0.0,
                 0.0,
                 txt,
-                WIDTH * 0.5 - 70.0,
-                HEIGHT() * 0.5 + 30.0,
-                20.0,
+                (WIDTH - text_w(canvas, txt, mid)) * 0.5,
+                cy - big * 0.25 + mid * 2.0,
+                mid,
                 color(0.9, 0.95, 1.0, 1.0),
             )?;
         }
+        let again = "TAP OR PRESS SPACE TO PLAY AGAIN";
         draw_text(
             canvas,
             0.0,
             0.0,
-            "TAP OR PRESS SPACE TO PLAY AGAIN",
-            WIDTH * 0.5 - 150.0,
-            HEIGHT() * 0.5 + 70.0,
-            14.0,
+            again,
+            (WIDTH - text_w(canvas, again, small)) * 0.5,
+            cy - big * 0.25 + mid * 2.0 + small * 2.9,
+            small,
             color(0.75, 0.8, 0.95, 0.9),
         )?;
     }
@@ -1251,6 +1278,10 @@ fn draw_enemy(canvas: u64, sx: f32, sy: f32, e: &Enemy) -> Result<(), gfx::GfxEr
 }
 
 fn draw_hud(canvas: u64, w: &World) -> Result<(), gfx::GfxError> {
+    // Sizes at the person's text size; the rows move down as they grow.
+    let (big, label) = (text(30.0), text(12.0));
+    let score_y = 11.0 + big * 0.76;
+    let label_y = score_y + 4.0 + label;
     // Score top-left, big.
     let mut buf = [0u8; 20];
     let s = num_to_bytes(w.score, &mut buf);
@@ -1261,8 +1292,8 @@ fn draw_hud(canvas: u64, w: &World) -> Result<(), gfx::GfxError> {
             0.0,
             txt,
             16.0,
-            34.0,
-            30.0,
+            score_y,
+            big,
             color(0.85, 0.95, 1.0, 1.0),
         )?;
     }
@@ -1272,8 +1303,8 @@ fn draw_hud(canvas: u64, w: &World) -> Result<(), gfx::GfxError> {
         0.0,
         "SCORE",
         16.0,
-        50.0,
-        12.0,
+        label_y,
+        label,
         color(0.45, 0.6, 0.8, 1.0),
     )?;
 
@@ -1281,7 +1312,7 @@ fn draw_hud(canvas: u64, w: &World) -> Result<(), gfx::GfxError> {
     let mut i = 0i32;
     while i < w.lives {
         let x = WIDTH - 28.0 - (i as f32) * 24.0;
-        let y = 24.0;
+        let y = score_y - 10.0;
         fill(
             canvas,
             0.0,
@@ -1319,9 +1350,9 @@ fn draw_hud(canvas: u64, w: &World) -> Result<(), gfx::GfxError> {
         0.0,
         0.0,
         "LIVES",
-        WIDTH - 92.0,
-        50.0,
-        12.0,
+        WIDTH - 20.0 - text_w(canvas, "LIVES", label),
+        label_y,
+        label,
         color(0.45, 0.6, 0.8, 1.0),
     )?;
     Ok(())
