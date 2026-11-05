@@ -119,6 +119,58 @@ public class KrateActivity extends NativeActivity {
                 });
     }
 
+    /**
+     * Dark status-bar and navigation icons over a light app, light ones over
+     * a dark app: Krate looks at what the app drew under each bar and says.
+     * White icons over Krate's own light home could not be read.
+     */
+    public void krateLightBars(final boolean lightTop, final boolean lightBottom) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        android.view.WindowInsetsController bars = getWindow().getInsetsController();
+                        if (bars == null) {
+                            return;
+                        }
+                        int status = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS;
+                        int nav = android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                        bars.setSystemBarsAppearance((lightTop ? status : 0) | (lightBottom ? nav : 0), status | nav);
+                    } else {
+                        android.view.View decor = getWindow().getDecorView();
+                        int flags = decor.getSystemUiVisibility()
+                                & ~(android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                                        | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+                        if (lightTop) {
+                            flags |= android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                        }
+                        if (lightBottom) {
+                            flags |= android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                        }
+                        decor.setSystemUiVisibility(flags);
+                    }
+                } catch (RuntimeException failed) {
+                    Log.w(TAG, "bar colours: " + failed);
+                }
+            }
+        });
+    }
+
+    /** The phone's name as its owner sees it ("Galaxy S22 Ultra"), else its model. */
+    public String krateDeviceName() {
+        try {
+            String named = android.provider.Settings.Global.getString(getContentResolver(), "device_name");
+            if (named != null && !named.trim().isEmpty()) {
+                return named.trim();
+            }
+        } catch (RuntimeException ignored) {
+            // Some phones keep no name; the model is the next best thing.
+        }
+        String model = android.os.Build.MODEL;
+        return model == null || model.isEmpty() ? "This phone" : model;
+    }
+
     /** Pixels covered at the top, right, bottom and left edges. */
     public int[] krateCovered() {
         return covered;

@@ -121,6 +121,29 @@ pub(crate) fn copy_opaque(rgba: &[u8], width: usize, out: &mut [u32], out_width:
     true
 }
 
+/// Whether rows `y0..y1` of a screen buffer (0x00RRGGBB, `width` wide) are
+/// light enough that the bar over them needs dark icons. Sampled sparsely:
+/// it runs every frame.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn light_band(buffer: &[u32], width: usize, y0: usize, y1: usize) -> bool {
+    let (mut sum, mut n) = (0.0f32, 0u32);
+    let mut y = y0;
+    while y < y1 {
+        let row = y * width;
+        let mut x = width / 64;
+        while x < width {
+            if let Some(px) = buffer.get(row + x) {
+                let (r, g, b) = ((px >> 16) & 0xFF, (px >> 8) & 0xFF, px & 0xFF);
+                sum += 0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32;
+                n += 1;
+            }
+            x += (width / 32).max(1);
+        }
+        y += ((y1 - y0) / 6).max(1);
+    }
+    n > 0 && sum / n as f32 > 0.6 * 255.0
+}
+
 #[cfg(target_os = "android")]
 mod real {
     use super::*;
@@ -897,6 +920,7 @@ mod real {
                     &mut buffer,
                     width.get() as usize,
                 ) {
+                    colour_bars(&buffer, width.get() as usize, height.get() as usize);
                     let _ = buffer.present();
                     tracked.dirty = false;
                     return;
@@ -921,8 +945,26 @@ mod real {
             return;
         };
         buffer.copy_from_slice(&tracked.staging);
+        colour_bars(&buffer, width.get() as usize, height.get() as usize);
         let _ = buffer.present();
         tracked.dirty = false;
+    }
+
+    /// Dark bar icons over a light top or bottom, light over dark: what the
+    /// app drew under the status bar and the navigation bar decides, each
+    /// frame, and Android is told only when it changes.
+    fn colour_bars(buffer: &[u32], width: usize, height: usize) {
+        static SAID: std::sync::Mutex<Option<(bool, bool)>> = std::sync::Mutex::new(None);
+        let (top, _, bottom, _) = crate::phone::covered_edges();
+        let band = |covered: f32| (covered.max(24.0) as usize).min(height / 4).max(1);
+        let light_top = super::light_band(buffer, width, 0, band(top));
+        let light_bottom =
+            super::light_band(buffer, width, height.saturating_sub(band(bottom)), height);
+        let mut said = SAID.lock().expect("bars lock");
+        if *said != Some((light_top, light_bottom)) {
+            *said = Some((light_top, light_bottom));
+            crate::phone::light_bars(light_top, light_bottom);
+        }
     }
 
     /// Store drawn-widget placements for a window and repaint it.
@@ -1486,6 +1528,23 @@ mod stub {
     /// Winit windows are only available in Linux builds.
     pub fn drain_wheel_samples() -> Vec<RawWheelSample> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod bar_tests {
+    use super::light_band;
+
+    #[test]
+    fn a_light_top_wants_dark_icons_and_a_dark_one_light() {
+        let (w, h) = (90usize, 40usize);
+        let mut buf = vec![0x00F5_F5F7u32; w * h];
+        assert!(light_band(&buf, w, 0, 10), "Krate's own light home");
+        for px in &mut buf[..w * 10] {
+            *px = 0x0008_080A;
+        }
+        assert!(!light_band(&buf, w, 0, 10), "a dark game");
+        assert!(light_band(&buf, w, 30, 40), "the bottom is still light");
     }
 }
 

@@ -345,6 +345,29 @@ mod player {
             .sum()
     }
 
+    /// What an app keeps on this phone: its files and its stores.
+    fn app_data_size(data_root: &Path, app_id: &str) -> u64 {
+        fn walk(dir: &Path) -> u64 {
+            std::fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| match entry.metadata() {
+                    Ok(m) if m.is_dir() => walk(&entry.path()),
+                    Ok(m) => m.len(),
+                    Err(_) => 0,
+                })
+                .sum()
+        }
+        let stores = crate::run_config::stores(data_root, app_id);
+        walk(&data_root.join("apps").join(sanitize(app_id)))
+            + [&stores.kv, &stores.sql, &stores.secrets, &stores.shared]
+                .iter()
+                .filter_map(|f| std::fs::metadata(f).ok())
+                .map(|m| m.len())
+                .sum::<u64>()
+    }
+
     /// Forget what an app keeps on this phone: its files and its stores.
     fn clear_app_data(data_root: &Path, app_id: &str) {
         let _ = std::fs::remove_dir_all(data_root.join("apps").join(sanitize(app_id)));
@@ -395,7 +418,7 @@ mod player {
         let ui = data_root.join("home-ui");
         let art_dir = ui.join("art");
         let _ = std::fs::create_dir_all(&art_dir);
-        let mut start = None;
+        let mut start: Option<String> = None;
         // The hub's catalogue as last fetched, refreshed in the background
         // for next time, so coming back from an app never waits on the
         // network. Only the very first visit, with nothing cached, waits.
@@ -427,22 +450,33 @@ mod player {
                 .filter_map(|app| Some((app.id.clone(), crate::hub::cached_art(app, &art_dir)?)))
                 .collect();
 
-            let mut apps: Vec<PathBuf> = Vec::new();
-            let mut rows: Vec<String> = Vec::new();
-            for (path, kept) in library_apps(library) {
-                // An app from the hub wears its hub picture: the hub names
-                // apps by the SHA-256 of their bytes.
-                let art = hub_art.get(&kept.sha).map(String::as_str);
-                rows.push(crate::home::library_row(&kept.name, kept.size, art));
-                apps.push(path);
-            }
+            let kept_apps = library_apps(library);
+            let mut apps: Vec<PathBuf> = kept_apps.iter().map(|(path, _)| path.clone()).collect();
+            let manifests: Vec<Option<krate_manifest::Manifest>> =
+                apps.iter().map(|path| manifest_of(path)).collect();
+            let rows: Vec<String> = kept_apps
+                .iter()
+                .zip(&manifests)
+                .map(|((_, kept), manifest)| {
+                    // An app from the hub wears its hub picture: the hub
+                    // names apps by the SHA-256 of their bytes.
+                    let art = hub_art.get(&kept.sha).map(String::as_str);
+                    let from_hub = hub_apps.iter().any(|app| app.id == kept.sha);
+                    let data = manifest
+                        .as_ref()
+                        .map(|m| app_data_size(data_root, &m.app.id))
+                        .unwrap_or(0);
+                    let version = manifest.as_ref().map(|m| m.app.version.as_str());
+                    crate::home::library_row_full(
+                        &kept.name, kept.size, art, from_hub, data, version,
+                    )
+                })
+                .collect();
             let _ = std::fs::write(ui.join("library.txt"), rows.join("\n") + "\n");
             // What each Library app can use, for its detail screen.
             let perms = ui.join("perms");
             let _ = std::fs::remove_dir_all(&perms);
             let _ = std::fs::create_dir_all(&perms);
-            let manifests: Vec<Option<krate_manifest::Manifest>> =
-                apps.iter().map(|path| manifest_of(path)).collect();
             for (n, manifest) in manifests.iter().enumerate() {
                 let uses: Vec<(String, bool)> = manifest
                     .iter()
@@ -470,7 +504,7 @@ mod player {
                 ui.join("account.txt"),
                 crate::home::account_file(
                     account.as_ref(),
-                    "This phone",
+                    &krate_adapter_android::phone::device_name(),
                     storage_used(data_root),
                     env!("CARGO_PKG_VERSION"),
                 ),
@@ -518,7 +552,7 @@ mod player {
                             &format!("{why}. Check the connection and try again."),
                         ),
                     }
-                    start = Some("discover");
+                    start = Some("discover".to_string());
                 }
                 HomeAnswer::Files => {
                     // The phone's own document picker, the one an app's
@@ -546,13 +580,13 @@ mod player {
                 }
                 HomeAnswer::SignIn => {
                     sign_in(data_root, &art_dir);
-                    start = Some("you");
+                    start = Some("you".to_string());
                 }
                 HomeAnswer::SignOut => {
                     crate::account::sign_out(data_root);
                     *ACCOUNT.lock().expect("account lock") = None;
                     let _ = std::fs::remove_file(art_dir.join("avatar.rgba"));
-                    start = Some("you");
+                    start = Some("you".to_string());
                 }
                 HomeAnswer::Remove(n) => {
                     if let Some(path) = apps.get(n) {
@@ -566,6 +600,7 @@ mod player {
                     if let Some(Some(manifest)) = manifests.get(n) {
                         clear_app_data(data_root, &manifest.app.id);
                     }
+                    start = Some(format!("app:{n}"));
                 }
                 HomeAnswer::Share(n) => {
                     if let (Some(path), Some(Some(manifest))) = (apps.get(n), manifests.get(n)) {
@@ -576,6 +611,7 @@ mod player {
                                 krate_adapter_android::share::share(None, None, &[(name, bytes)]);
                         }
                     }
+                    start = Some(format!("app:{n}"));
                 }
                 HomeAnswer::Update(n) => {
                     // The hub lists each app's newest version under the same
@@ -617,6 +653,7 @@ mod player {
                             "This is the newest version on the hub.",
                         ),
                     }
+                    start = Some(format!("app:{n}"));
                 }
                 HomeAnswer::Closed => return None,
             }

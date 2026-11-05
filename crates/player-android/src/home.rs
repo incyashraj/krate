@@ -75,13 +75,29 @@ pub fn index_with(text: &str, file: &str, kept: &Indexed) -> String {
     lines.join("\n") + "\n"
 }
 
-/// A Library row: `name<TAB>line<TAB>art`, `-` for no picture.
-pub fn library_row(name: &str, size: u64, art: Option<&str>) -> String {
+/// A Library row with what the app page shows too:
+/// `name<TAB>line<TAB>art<TAB>data<TAB>version` -- `data` what the app keeps
+/// on this phone, `version` its own.
+pub fn library_row_full(
+    name: &str,
+    size: u64,
+    art: Option<&str>,
+    from_hub: bool,
+    data: u64,
+    version: Option<&str>,
+) -> String {
     format!(
-        "{}\tReceived \u{00b7} {}\t{}",
+        "{}\t{} \u{00b7} {}\t{}\t{}\t{}",
         field(name),
+        if from_hub { "From the hub" } else { "Received" },
         human_size(size),
-        art.map(field).unwrap_or_else(|| "-".to_string())
+        art.map(field).unwrap_or_else(|| "-".to_string()),
+        if data == 0 {
+            "None".to_string()
+        } else {
+            human_size(data)
+        },
+        version.map(field).unwrap_or_default()
     )
 }
 
@@ -271,9 +287,9 @@ mod tests {
     #[test]
     fn a_field_cannot_add_columns_or_rows() {
         assert_eq!(field("a\tb\nc\rd"), "a b c d");
-        let row = library_row("Evil\t-\nNext", 2048, None);
+        let row = library_row_full("Evil\t-\nNext", 2048, None, false, 0, None);
         assert_eq!(row.lines().count(), 1);
-        assert_eq!(row.split('\t').count(), 3);
+        assert_eq!(row.split('\t').count(), 5);
     }
 
     #[test]
@@ -414,5 +430,15 @@ mod tests {
             perms_file(&[("Use the camera".into(), false)]),
             "Use the camera\tasked\n"
         );
+    }
+
+    #[test]
+    fn a_full_library_row_carries_data_and_version() {
+        let row = library_row_full("Notes\tx", 2048, Some("a.rgba"), true, 0, Some("1.2.0"));
+        assert_eq!(
+            row,
+            "Notes x\tFrom the hub \u{00b7} 2 KB\ta.rgba\tNone\t1.2.0"
+        );
+        assert_eq!(row.split('\t').count(), 5);
     }
 }
