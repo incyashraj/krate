@@ -47,8 +47,8 @@ mod real {
     use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_core_foundation::{CGPoint, CGRect};
     use objc2_core_graphics::{
-        CGBitmapContextCreate, CGBitmapContextCreateImage, CGColorSpaceCreateDeviceRGB,
-        CGImageAlphaInfo, CGImageByteOrderInfo,
+        CGBitmapContextCreate, CGBitmapContextCreateImage, CGColorSpace, CGImageAlphaInfo,
+        CGImageByteOrderInfo,
     };
     use objc2_foundation::NSObjectProtocol;
     use objc2_ui_kit::UIDocumentPickerDelegate;
@@ -2398,10 +2398,11 @@ mod real {
     unsafe extern "C" {}
 
     /// Where the photos picked are copied, and who waits for them.
+    /// Where the picked photos' copies go (or why there are none).
+    type PhotoReply = std::sync::mpsc::Sender<Result<Vec<std::path::PathBuf>, String>>;
+
     struct PhotoPick {
-        tx: std::cell::RefCell<
-            Option<std::sync::mpsc::Sender<Result<Vec<std::path::PathBuf>, String>>>,
-        >,
+        tx: std::cell::RefCell<Option<PhotoReply>>,
     }
 
     define_class!(
@@ -3494,6 +3495,9 @@ mod real {
         HAPTICS.with(|cell| {
             let h = cell.get_or_init(|| {
                 let impact = |style| {
+                    // initWithStyle:view: needs a view, and haptics are
+                    // asked for from the guest's side with none to hand.
+                    #[allow(deprecated)]
                     UIImpactFeedbackGenerator::initWithStyle(
                         UIImpactFeedbackGenerator::alloc(mtm),
                         style,
@@ -3827,6 +3831,8 @@ mod real {
             // The capsule: top right, inside the safe area (clear of the
             // notch and the status bar), above the app.
             if let Some(scene) = main_side.window.windowScene() {
+                // effectiveGeometry is iOS 16; Krate runs from iOS 15.
+                #[allow(deprecated)]
                 let turn = scene.interfaceOrientation().0;
                 INTERFACE_TURN.store(turn.clamp(0, 4) as u8, std::sync::atomic::Ordering::Relaxed);
             }
@@ -3890,10 +3896,10 @@ mod real {
         let uiview: &UIView = view;
         let mut shared = SHARED.lock().expect("shared state lock");
         for touch in touches.allObjects() {
-            let location: CGPoint = unsafe { touch.locationInView(Some(uiview)) };
+            let location: CGPoint = touch.locationInView(Some(uiview));
             let finger = Retained::as_ptr(&touch) as usize;
             shared.touches.push(RawTouch {
-                phase: unsafe { touch.phase() },
+                phase: touch.phase(),
                 x: location.x as f32,
                 y: location.y as f32,
                 finger,
@@ -3924,6 +3930,9 @@ mod real {
                         "main-queue closure ran off the main thread".to_string(),
                     )
                 })?;
+                // The app-delegate lifecycle (no scene manifest) has no
+                // view or trait collection yet to ask: this is the screen.
+                #[allow(deprecated)]
                 let screen = UIScreen::mainScreen(mtm);
                 let bounds: CGRect = screen.bounds();
                 // Capped at 2x deliberately: CPU-rasterizing full 3x spent
@@ -3931,19 +3940,20 @@ mod real {
                 // the final stretch free (K-089).
                 let scale = (screen.scale() as f32).min(2.0);
 
-                let window = unsafe { UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds) };
+                // Joined to the connected scene just below; init(windowScene:)
+                // would need that scene before the window exists.
+                #[allow(deprecated)]
+                let window = UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds);
                 // The window MUST join the connected UIWindowScene: since
                 // iOS 13 an unattached window still renders but rides a
                 // legacy event path that starves continuous touch delivery
                 // -- a real 120 Hz phone produced 116 touch callouts in an
                 // entire scrolling session before this line existed.
-                unsafe {
-                    let scenes = UIApplication::sharedApplication(mtm).connectedScenes();
-                    for scene in scenes.allObjects() {
-                        if let Ok(window_scene) = scene.downcast::<UIWindowScene>() {
-                            window.setWindowScene(Some(&window_scene));
-                            break;
-                        }
+                let scenes = UIApplication::sharedApplication(mtm).connectedScenes();
+                for scene in scenes.allObjects() {
+                    if let Ok(window_scene) = scene.downcast::<UIWindowScene>() {
+                        window.setWindowScene(Some(&window_scene));
+                        break;
                     }
                 }
                 let controller: Retained<KrateViewController> = {
@@ -3956,18 +3966,16 @@ mod real {
                     // initializer.
                     unsafe { msg_send![super(this), initWithFrame: bounds] }
                 };
-                unsafe {
-                    view.setUserInteractionEnabled(true);
-                    // Every finger, not only the first: a game moves with one
-                    // thumb and aims with the other (krate:ui/touch). UIKit
-                    // delivers one touch per view unless told otherwise.
-                    view.setMultipleTouchEnabled(true);
-                    let as_uiview: &UIView = &view;
-                    controller.setView(Some(as_uiview));
-                    let as_controller: &UIViewController = &controller;
-                    window.setRootViewController(Some(as_controller));
-                    window.makeKeyAndVisible();
-                }
+                view.setUserInteractionEnabled(true);
+                // Every finger, not only the first: a game moves with one
+                // thumb and aims with the other (krate:ui/touch). UIKit
+                // delivers one touch per view unless told otherwise.
+                view.setMultipleTouchEnabled(true);
+                let as_uiview: &UIView = &view;
+                controller.setView(Some(as_uiview));
+                let as_controller: &UIViewController = &controller;
+                window.setRootViewController(Some(as_controller));
+                window.makeKeyAndVisible();
                 let logical = WindowSize::new(
                     (bounds.size.width as u32).max(1),
                     (bounds.size.height as u32).max(1),
@@ -3985,13 +3993,11 @@ mod real {
                 // contentsScale still presents it sharp on a 3x panel.
                 let native_scale = (screen.scale() as f32).min(2.0);
                 let metal: objc2::rc::Retained<objc2_quartz_core::CAMetalLayer> =
-                    unsafe { objc2_quartz_core::CAMetalLayer::new() };
-                unsafe {
-                    metal.setFrame(bounds);
-                    metal.setContentsScale(native_scale as f64);
-                    let as_uiview: &UIView = &view;
-                    as_uiview.layer().addSublayer(&metal);
-                }
+                    objc2_quartz_core::CAMetalLayer::new();
+                metal.setFrame(bounds);
+                metal.setContentsScale(native_scale as f64);
+                let as_uiview: &UIView = &view;
+                as_uiview.layer().addSublayer(&metal);
                 // The display link: the panel tells us when a frame is due.
                 // Scheduled on the main run loop in the common modes so it
                 // keeps firing during tracking (a finger on the screen is
@@ -4184,34 +4190,32 @@ mod real {
                 _ => guest.fingers.touch(touch.finger as u64, touch.x, touch.y),
             }
             match touch.phase {
-                UITouchPhase::Began => {
-                    if guest.gesture.is_none() {
-                        let drags = drags_at(krate, &guest.placements, touch.x, touch.y);
-                        guest.gesture = Some(TouchGesture {
-                            finger: touch.finger,
-                            start: (touch.x, touch.y),
-                            last: (touch.x, touch.y),
-                            scrolling: false,
-                            began: std::time::Instant::now(),
-                            pressed: drags,
-                            drags,
+                UITouchPhase::Began if guest.gesture.is_none() => {
+                    let drags = drags_at(krate, &guest.placements, touch.x, touch.y);
+                    guest.gesture = Some(TouchGesture {
+                        finger: touch.finger,
+                        start: (touch.x, touch.y),
+                        last: (touch.x, touch.y),
+                        scrolling: false,
+                        began: std::time::Instant::now(),
+                        pressed: drags,
+                        drags,
+                    });
+                    // Something that drags is pressed at once, so the
+                    // first movement already moves it.
+                    if drags {
+                        guest.pointer_samples.push(RawPointerSample {
+                            window: krate,
+                            x: touch.x,
+                            y: touch.y,
+                            pressed: true,
                         });
-                        // Something that drags is pressed at once, so the
-                        // first movement already moves it.
-                        if drags {
-                            guest.pointer_samples.push(RawPointerSample {
-                                window: krate,
-                                x: touch.x,
-                                y: touch.y,
-                                pressed: true,
-                            });
-                        }
-                        guest.hovered = krate_adapter_common::painter::topmost_interactive_at(
-                            &guest.placements,
-                            touch.x,
-                            touch.y,
-                        );
                     }
+                    guest.hovered = krate_adapter_common::painter::topmost_interactive_at(
+                        &guest.placements,
+                        touch.x,
+                        touch.y,
+                    );
                 }
                 UITouchPhase::Moved => {
                     let same = guest
@@ -4361,7 +4365,7 @@ mod real {
                 let Some(main_side) = MAIN_SIDE.0.get() else {
                     return;
                 };
-                let color_space = CGColorSpaceCreateDeviceRGB();
+                let color_space = CGColorSpace::new_device_rgb();
                 // 0xAARRGGBB u32s are BGRA in little-endian memory:
                 // premultiplied-first + 32-little describes them exactly,
                 // and alpha is always 0xFF.

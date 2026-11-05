@@ -1622,7 +1622,7 @@ mod full_window_tests {
         let mut tall = vec![0u32; 15];
         assert!(copy_opaque(&pixels.rgba, 3, &mut tall, 3, top));
         assert_eq!(tall[0..3], tall[9..12], "above the canvas is its first row");
-        assert_eq!(tall[9], (0 << 16) | (1 << 8) | 2);
+        assert_eq!(tall[9], (1 << 8) | 2, "red 0, green 1, blue 2");
         let mut labelled = p.clone();
         labelled.label = Some("x".into());
         assert!(

@@ -383,7 +383,7 @@ mod player {
                 (at, path)
             })
             .collect();
-        files.sort_by(|a, b| b.0.cmp(&a.0));
+        files.sort_by_key(|f| std::cmp::Reverse(f.0));
         let mut out = Vec::new();
         for (_, path) in files {
             let name = path
@@ -391,7 +391,7 @@ mod player {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            if !known.get(&name).is_some_and(|k| k.2 == size) {
+            if known.get(&name).is_none_or(|k| k.2 != size) {
                 let app_name = krate_bundle::open(&path)
                     .ok()
                     .and_then(|open| std::fs::read_to_string(open.manifest_path()).ok())
@@ -1251,9 +1251,7 @@ mod player {
             .capabilities
             .iter()
             .zip(declared)
-            .filter(|(request, _)| {
-                request.required || granted.iter().any(|cap| *cap == request.cap)
-            })
+            .filter(|(request, _)| request.required || granted.contains(&request.cap))
             .map(|(_, capability)| capability)
             .collect();
         // For Krate's menu (IC-934): the app's name, and what it may use this

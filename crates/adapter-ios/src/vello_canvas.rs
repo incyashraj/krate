@@ -31,7 +31,6 @@ pub struct GpuCanvas {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
-    surface_format: wgpu::TextureFormat,
     surface_config: wgpu::SurfaceConfiguration,
     /// The layer's contents scale: the 2x cap, or the panel's full scale
     /// while the frames are whole pictures.
@@ -161,7 +160,6 @@ impl GpuCanvas {
             device,
             queue,
             surface,
-            surface_format,
             surface_config,
             layer_scale: scale,
             renderer,
@@ -859,7 +857,7 @@ impl GpuCanvas {
                         .glyphs()
                         .map(|g| {
                             let glyph = vello::Glyph {
-                                id: g.id as u32,
+                                id: g.id,
                                 x: x + g.x,
                                 y: baseline - shift + g.y,
                             };
