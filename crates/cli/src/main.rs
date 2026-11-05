@@ -1564,6 +1564,31 @@ enum SyncAction {
     Off { app: Option<String> },
     /// Sync again: every app, or the one with this id.
     On { app: Option<String> },
+    /// What changed on two of your devices and waits for your choice.
+    Conflicts,
+    /// Answer one: keep this computer's, the other device's, both, or a merge.
+    ///
+    /// Close the app first: an app that is open keeps its own copy of what
+    /// waits, and answers its own way.
+    Resolve {
+        /// The app's id, as `krate account sync conflicts` lists it.
+        app: String,
+        /// The entry that changed on two devices.
+        key: String,
+        /// this: keep this computer's. other: keep the other device's.
+        /// both: keep both, the other's under its device's name. merge: put
+        /// two lists or records together.
+        choice: SyncChoice,
+    },
+}
+
+/// An answer to a change made on two devices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SyncChoice {
+    This,
+    Other,
+    Both,
+    Merge,
 }
 
 #[derive(Debug, Subcommand)]
@@ -5393,6 +5418,9 @@ fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
         eprintln!("not signed in -- `krate account login` first, and your apps' data follows you");
         return Ok(1);
     };
+    if let Some(SyncAction::Conflicts) | Some(SyncAction::Resolve { .. }) = &action {
+        return sync_conflicts_command(action, &identity, &device_dir, json);
+    }
     let hub = krate_accountsync::hub::Hub::new(&shared_hub_url(), &identity.token);
     let id = account_of(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
     let account = Account::load(
@@ -5481,6 +5509,198 @@ fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
                     device.device_id
                 );
             }
+            Ok(0)
+        }
+    }
+}
+
+/// Every store on this computer that syncs, with the id of the app it
+/// belongs to: `<id>.kv`, `<id>@<publisher>.kv`, `<id>+<machine>.kv` with a
+/// `.sync` folder beside it.
+fn synced_stores() -> Vec<(String, PathBuf)> {
+    let legacy = app_store_path("x");
+    let Some(dir) = legacy.parent() else {
+        return Vec::new();
+    };
+    let mut found: Vec<(String, PathBuf)> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|e| e == "kv")
+                && krate_runtime::account_sync_host::sync_dir(path).is_dir()
+        })
+        .filter_map(|path| {
+            let name = path.file_stem()?.to_string_lossy().into_owned();
+            let id = name.split(['@', '+']).next().unwrap_or(&name).to_string();
+            Some((id, path))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// `krate account sync conflicts` and `resolve`: the same calls Krate's
+/// home makes on a phone (IC-981 S2), read from this computer's stores with
+/// no network needed -- the account and device names are the last ones the
+/// hub gave, refreshed when it answers.
+fn sync_conflicts_command(
+    action: Option<SyncAction>,
+    identity: &github_auth::Identity,
+    device_dir: &Path,
+    json: bool,
+) -> Result<u8> {
+    use krate_accountsync::overview::{look, Me};
+    use krate_accountsync::readable::preview;
+    use krate_accountsync::Resolution;
+    use krate_runtime::account_sync_host::{conflicts_at, resolve_at};
+
+    let name = this_computers_name(identity.display_name());
+    let machine = machine_key();
+    let hub = shared_hub_url();
+    let me = Me {
+        device_dir,
+        hub: &hub,
+        token: &identity.token,
+        machine_key: &machine,
+        name: &name,
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let overview = look(&me, now);
+    let Some(account) = overview.account.clone() else {
+        if json {
+            println!("{}", serde_json::json!({ "conflicts": [] }));
+        } else {
+            println!("Nothing has synced on this computer yet, so nothing waits for your choice.");
+        }
+        return Ok(0);
+    };
+    let names = overview.names();
+    match action {
+        Some(SyncAction::Resolve { app, key, choice }) => {
+            let choice = match choice {
+                SyncChoice::This => Resolution::KeepMine,
+                SyncChoice::Other => Resolution::KeepOther(0),
+                SyncChoice::Both => Resolution::KeepBoth,
+                SyncChoice::Merge => Resolution::Merge,
+            };
+            let mut answered = false;
+            for store in stores_of_app(&app) {
+                if !conflicts_at(&store, &account, &names)
+                    .iter()
+                    .any(|c| c.key == key)
+                {
+                    continue;
+                }
+                resolve_at(&store, &account, &names, &key, &choice)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                answered = true;
+            }
+            if !answered {
+                anyhow::bail!(
+                    "nothing waits for a choice on {key:?} in {app} -- `krate account sync conflicts` lists what does"
+                );
+            }
+            // Sent now, the app closed, so the other devices settle without
+            // it opening again; offline, it goes with the app's next run.
+            let sent = stores_of_app(&app).into_iter().any(|store| {
+                krate_runtime::account_sync_host::sync_closed(
+                    &store,
+                    &account,
+                    krate_runtime::account_sync_host::AccountSyncContext {
+                        hub: hub.clone(),
+                        token: identity.token.clone(),
+                        device_dir: device_dir.to_path_buf(),
+                        device_name: name.clone(),
+                        machine_key: machine.clone(),
+                        app_id: String::new(),
+                        publisher: String::new(),
+                        enabled: true,
+                        background: false,
+                    },
+                )
+                .is_ok()
+            });
+            println!(
+                "done: {app} keeps {} -- {}",
+                match choice {
+                    Resolution::KeepMine => "this computer's",
+                    Resolution::KeepOther(_) => "the other device's",
+                    Resolution::KeepBoth => "both",
+                    Resolution::Merge => "the two put together",
+                },
+                if sent {
+                    "sent to your other devices"
+                } else {
+                    "your other devices take it the next time this app syncs here"
+                }
+            );
+            Ok(0)
+        }
+        _ => {
+            let mut listed = Vec::new();
+            for (app, store) in synced_stores() {
+                for conflict in conflicts_at(&store, &account, &names) {
+                    listed.push((app.clone(), conflict));
+                }
+            }
+            if json {
+                let rows: Vec<serde_json::Value> = listed
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "key": c.key,
+                            "here": c.mine.as_deref().map(|v| preview(v, 120)),
+                            "others": c.others.iter().map(|(v, device)| serde_json::json!({
+                                "device": device,
+                                "value": v.as_deref().map(|v| preview(v, 120)),
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::json!({ "conflicts": rows }));
+                return Ok(0);
+            }
+            if listed.is_empty() {
+                println!("Nothing waits for your choice: every app agrees on all your devices.");
+                return Ok(0);
+            }
+            for (app, c) in &listed {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .map(|(v, d)| (v.clone(), d.clone()))
+                    .unwrap_or((None, "another device".to_string()));
+                let here = c.mine.as_deref().map(|v| preview(v, 100));
+                let there = other.as_deref().map(|v| preview(v, 100));
+                println!("{app}: {:?} changed on two devices", c.key);
+                println!(
+                    "  on this computer: {}",
+                    here.as_deref().unwrap_or("deleted")
+                );
+                println!("  on {device}: {}", there.as_deref().unwrap_or("deleted"));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.key,
+                    if here.is_some() && there.is_some() {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            println!("Until you choose, both are kept and each device goes on reading its own.");
             Ok(0)
         }
     }

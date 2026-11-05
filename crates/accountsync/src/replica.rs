@@ -155,6 +155,11 @@ pub struct Replica {
     /// which has the clock; the replica itself never reads one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub synced_at: Option<u64>,
+    /// The app's id and publisher, as the run that synced it last knew
+    /// them: so an answer given with the app closed can be sent at once,
+    /// without opening the app's bundle again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<(String, String)>,
 }
 
 /// One write to send: the key, its vector, its writer, and the hash of the
@@ -181,6 +186,7 @@ impl Replica {
             keys: BTreeMap::new(),
             rev: None,
             synced_at: None,
+            app: None,
         }
     }
 

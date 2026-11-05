@@ -32,7 +32,7 @@ use std::process::{Child, Command, Stdio};
 use krate_accountsync::overview::{self, Me, Overview};
 use krate_accountsync::Resolution;
 use krate_runtime::account_sync_host::{
-    conflicts_at, last_sync_at, resolve_at, AccountSyncContext, Step, SyncedKv,
+    conflicts_at, last_sync_at, resolve_at, sync_closed, AccountSyncContext, Step, SyncedKv,
 };
 
 const APP: &str = "dev.krate.reminders";
@@ -118,20 +118,21 @@ impl Device {
 
     /// The app, running.
     fn open(&self) -> SyncedKv {
-        SyncedKv::open(
-            self.store(),
-            AccountSyncContext {
-                hub: self.hub.clone(),
-                token: "gho_ada".to_string(),
-                device_dir: self.device_dir(),
-                device_name: self.name.to_string(),
-                machine_key: self.key.clone(),
-                app_id: APP.to_string(),
-                publisher: "unsigned".to_string(),
-                enabled: true,
-                background: false,
-            },
-        )
+        SyncedKv::open(self.store(), self.context())
+    }
+
+    fn context(&self) -> AccountSyncContext {
+        AccountSyncContext {
+            hub: self.hub.clone(),
+            token: "gho_ada".to_string(),
+            device_dir: self.device_dir(),
+            device_name: self.name.to_string(),
+            machine_key: self.key.clone(),
+            app_id: APP.to_string(),
+            publisher: "unsigned".to_string(),
+            enabled: true,
+            background: false,
+        }
     }
 
     /// Krate's home on this device, the app closed.
@@ -244,6 +245,23 @@ fn answer_on_phone(
         "named for the device it came from"
     );
     resolve_at(&phone.store(), &account, &names, key, &choice).expect("answered");
+    // Sent at once, the app still closed: the Mac settles without the
+    // phone's app opening again.
+    // This device's context alone: the app's id and publisher are the
+    // replica's own.
+    let mut context = phone.context();
+    context.app_id.clear();
+    context.publisher.clear();
+    let sent = sync_closed(&phone.store(), &account, context).expect("sent");
+    assert_ne!(sent, Step::Waiting);
+    {
+        let m = mac.open();
+        m.sync_now().unwrap();
+        assert!(
+            m.conflicts().iter().all(|c| c.key != key),
+            "the Mac settled from the phone's answer alone"
+        );
+    }
     assert!(
         conflicts_at(&phone.store(), &account, &names)
             .iter()

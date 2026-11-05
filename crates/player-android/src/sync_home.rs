@@ -51,6 +51,21 @@ impl Phone {
         })
     }
 
+    /// A run's context for this phone, the app left to the replica.
+    fn context(&self) -> Option<krate_runtime::account_sync_host::AccountSyncContext> {
+        Some(krate_runtime::account_sync_host::AccountSyncContext {
+            hub: self.hub.clone(),
+            token: self.token.clone().filter(|t| !t.trim().is_empty())?,
+            device_dir: self.device_dir.clone(),
+            device_name: self.name.clone(),
+            machine_key: self.machine_key.clone(),
+            app_id: String::new(),
+            publisher: String::new(),
+            enabled: true,
+            background: false,
+        })
+    }
+
     fn all_on(&self) -> bool {
         !toggles::global_toggle_path(&self.device_dir).exists()
     }
@@ -403,7 +418,22 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
                 key,
                 &resolution,
             ) {
-                Ok(()) => acted("sync"),
+                Ok(()) => {
+                    // Sent now, so the other devices settle without this
+                    // app opening again -- unless the hub was out of reach
+                    // a moment ago: then it goes with the app's next run,
+                    // and the home does not sit waiting on the network.
+                    let away = REACH
+                        .lock()
+                        .ok()
+                        .and_then(|r| r.clone())
+                        .is_some_and(|r| r == Reach::Offline);
+                    if let Some(context) = phone.context().filter(|_| !away) {
+                        let _ =
+                            krate_runtime::account_sync_host::sync_closed(store, &account, context);
+                    }
+                    acted("sync")
+                }
                 // Settled elsewhere meanwhile, or a merge that cannot work:
                 // nothing changed, both are still kept.
                 Err(why) => say(

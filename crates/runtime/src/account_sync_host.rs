@@ -584,6 +584,32 @@ mod synced {
         Ok(())
     }
 
+    /// Send an answer given with the app closed now, rather than at the
+    /// app's next run: one exchange of the store, the way its run makes
+    /// them. `context` is this device's (the app's id and publisher are the
+    /// replica's own, from the run that last synced it). Offline is no
+    /// failure the person sees: the answer stays on disk and goes next time.
+    pub fn sync_closed(
+        store: &Path,
+        account: &str,
+        mut context: AccountSyncContext,
+    ) -> Result<Step, String> {
+        let replica = read_replica(&replica_path(store, account))
+            .ok_or_else(|| "this app has not synced on this device yet".to_string())?;
+        let (app_id, publisher) = replica.app.ok_or_else(|| {
+            "this app has not synced since Krate learned to send answers at once".to_string()
+        })?;
+        if !sync_wanted(store, &context.device_dir) {
+            return Err("sync is off for this app on this device".to_string());
+        }
+        context.app_id = app_id;
+        context.publisher = publisher;
+        context.enabled = true;
+        context.background = false;
+        let kv = SyncedKv::open(store.to_path_buf(), context);
+        kv.sync_now()
+    }
+
     fn read_replica(path: &Path) -> Option<Replica> {
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
     }
@@ -733,6 +759,7 @@ mod synced {
         let core = &mut *core;
         let loaded = core.loaded.as_mut().expect("loaded above");
         loaded.replica.mark_sent(&sent);
+        loaded.replica.app = Some((context.app_id.clone(), context.publisher.clone()));
         loaded.replica.synced_at = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
