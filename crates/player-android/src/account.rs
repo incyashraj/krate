@@ -6,7 +6,7 @@
 //! The sign-in is kept in Krate's own private storage (no other app can read
 //! it) and is only ever sent to the hub, as a bearer token.
 
-#![cfg(target_os = "android")]
+#![cfg(any(target_os = "android", target_os = "ios"))]
 
 use crate::home::Account;
 use std::io::Read;
@@ -15,11 +15,17 @@ use std::time::Duration;
 
 const HUB: &str = "https://hub.krate.tech";
 
+// The iPhone player includes this same file (crates/player-ios).
+#[cfg(target_os = "android")]
+const USER_AGENT: &str = concat!("Krate/", env!("CARGO_PKG_VERSION"), " (Android)");
+#[cfg(target_os = "ios")]
+const USER_AGENT: &str = concat!("Krate/", env!("CARGO_PKG_VERSION"), " (iPhone)");
+
 fn agent() -> ureq::Agent {
     // The hub's edge refuses requests without a real user agent.
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(10))
-        .user_agent(concat!("Krate/", env!("CARGO_PKG_VERSION"), " (Android)"))
+        .user_agent(USER_AGENT)
         .build()
 }
 
@@ -87,46 +93,39 @@ pub fn start() -> Result<Started, String> {
     Ok(started)
 }
 
-/// Ask whether the person approved, for up to `wait`: keeps the sign-in and
-/// answers true once they have.
-pub fn finish(started: &Started, data_root: &Path, wait: Duration) -> Result<bool, String> {
-    let until = std::time::Instant::now() + wait;
-    loop {
-        let response = agent()
-            .post(&format!("{HUB}/auth/poll"))
-            .set("content-type", "application/json")
-            .send_string(&serde_json::json!({ "device_code": started.device_code }).to_string())
-            .map_err(|e| format!("the hub did not answer ({e})"))?;
-        let v = body(response)?;
-        if let Some(identity) = v.get("identity") {
-            let kept_json = serde_json::json!({
-                "login": text_of(identity, "login"),
-                "name": text_of(identity, "name"),
-                "avatar_url": text_of(identity, "avatar_url"),
-                "token": text_of(identity, "token"),
-            });
-            let path = kept(data_root);
-            let part = path.with_extension("part");
-            std::fs::write(&part, kept_json.to_string()).map_err(|e| e.to_string())?;
-            std::fs::rename(&part, &path).map_err(|e| e.to_string())?;
-            return Ok(true);
-        }
-        let error = text_of(&v, "error");
-        if !matches!(
-            error.as_str(),
-            "pending" | "authorization_pending" | "slow_down" | ""
-        ) {
-            return Err(match error.as_str() {
-                "expired_token" => "The code expired. Start again.".to_string(),
-                "access_denied" => "GitHub said no.".to_string(),
-                other => format!("GitHub said {other}"),
-            });
-        }
-        if std::time::Instant::now() >= until {
-            return Ok(false);
-        }
-        std::thread::sleep(Duration::from_secs(started.interval));
+/// Ask once whether the person approved: true once they have (the
+/// sign-in is then kept), false while GitHub still waits.
+pub fn poll(started: &Started, data_root: &Path) -> Result<bool, String> {
+    let response = agent()
+        .post(&format!("{HUB}/auth/poll"))
+        .set("content-type", "application/json")
+        .send_string(&serde_json::json!({ "device_code": started.device_code }).to_string())
+        .map_err(|e| format!("the hub did not answer ({e})"))?;
+    let v = body(response)?;
+    if let Some(identity) = v.get("identity") {
+        let kept_json = serde_json::json!({
+            "login": text_of(identity, "login"),
+            "name": text_of(identity, "name"),
+            "avatar_url": text_of(identity, "avatar_url"),
+            "token": text_of(identity, "token"),
+        });
+        let path = kept(data_root);
+        let part = path.with_extension("part");
+        std::fs::write(&part, kept_json.to_string()).map_err(|e| e.to_string())?;
+        std::fs::rename(&part, &path).map_err(|e| e.to_string())?;
+        return Ok(true);
     }
+    match text_of(&v, "error").as_str() {
+        "pending" | "authorization_pending" | "slow_down" | "" => Ok(false),
+        "expired_token" => Err("The code expired. Tap Sign in to start again.".to_string()),
+        "access_denied" => Err("GitHub said no.".to_string()),
+        other => Err(format!("GitHub said {other}")),
+    }
+}
+
+/// Seconds between asks, as GitHub asked.
+pub fn interval(started: &Started) -> u64 {
+    started.interval
 }
 
 fn get(path: &str, token: &str) -> Result<serde_json::Value, String> {

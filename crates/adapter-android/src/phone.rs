@@ -71,6 +71,38 @@ mod real {
         .unwrap_or((0.0, 0.0, 0.0, 0.0))
     }
 
+    /// Open a page in the in-app browser, a note shown first; false when the
+    /// phone has no browser.
+    pub fn open_tab(url: &str, note: &str) -> bool {
+        with_activity("opening an in-app tab", |env, activity| {
+            let url = env.new_string(url)?;
+            let note = env.new_string(note)?;
+            env.call_method(
+                activity,
+                "krateOpenTab",
+                "(Ljava/lang/String;Ljava/lang/String;)Z",
+                &[JValue::Object(&url), JValue::Object(&note)],
+            )?
+            .z()
+        })
+        .unwrap_or(false)
+    }
+
+    /// Whether the in-app tab is still over Krate.
+    pub fn tab_open() -> bool {
+        with_activity("asking about the in-app tab", |env, activity| {
+            env.call_method(activity, "krateTabOpen", "()Z", &[])?.z()
+        })
+        .unwrap_or(false)
+    }
+
+    /// Close the in-app tab: Krate comes back to the front.
+    pub fn close_tab() {
+        let _ = with_activity("closing the in-app tab", |env, activity| {
+            env.call_method(activity, "krateCloseTab", "()V", &[])?.v()
+        });
+    }
+
     /// The phone's name as its owner sees it, for Krate's profile screen.
     pub fn device_name() -> String {
         with_activity("reading the phone's name", |env, activity| {
@@ -255,6 +287,16 @@ mod stub {
 
     /// No bars off a phone.
     pub fn light_bars(_top: bool, _bottom: bool) {}
+
+    pub fn open_tab(_url: &str, _note: &str) -> bool {
+        false
+    }
+
+    pub fn tab_open() -> bool {
+        false
+    }
+
+    pub fn close_tab() {}
 
     /// No phone, no name.
     pub fn device_name() -> String {

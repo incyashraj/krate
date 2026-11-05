@@ -62,6 +62,11 @@ final class SignIn {
         return found.activityInfo.packageName;
     }
 
+    /** The browser that would open a web page, for Krate's own in-app tab. */
+    static String browserPackage(Context context) {
+        return browser(context);
+    }
+
     /** Whether the browser package offers Chrome's Auth Tab. */
     static boolean authTabSupported(Context context, String pkg) {
         if (pkg == null) {

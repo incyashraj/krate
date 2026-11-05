@@ -21,11 +21,41 @@ rationale = "Tell the player which app to open"
 required = true
 
 [[capabilities]]
-cap = "fs.read:./**"
-rationale = "Read the lists and pictures the player prepared"
+cap = "fs.read:./library.txt"
+rationale = "Read the list of your apps the player prepared"
 required = true
 
 [[capabilities]]
-cap = "fs.list:./**"
-rationale = "Find the pictures the player prepared"
+cap = "fs.read:./discover.txt"
+rationale = "Read the list of apps on the hub the player prepared"
+required = true
+
+[[capabilities]]
+cap = "fs.read:./start.txt"
+rationale = "Open on the screen the player asked for"
 required = false
+
+[[capabilities]]
+cap = "fs.read:./hub-state.txt"
+rationale = "Show whether the hub is loading, offline or failed"
+required = false
+
+[[capabilities]]
+cap = "fs.read:./progress.txt"
+rationale = "Show how far a download has got"
+required = false
+
+[[capabilities]]
+cap = "fs.read:./account.txt"
+rationale = "Show who is signed in, their organisations and published apps"
+required = false
+
+[[capabilities]]
+cap = "fs.read:./perms/**"
+rationale = "Show what each of your apps may use"
+required = false
+
+[[capabilities]]
+cap = "fs.read:./art/**"
+rationale = "Show the pictures of the apps the player prepared"
+required = true

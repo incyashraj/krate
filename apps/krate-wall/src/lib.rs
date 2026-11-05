@@ -96,6 +96,10 @@ const ARG_SEP: char = '\n';
 const NOTICE: &str = "wall:notice";
 /// The first argument for what a command-line app printed.
 const OUTPUT: &str = "wall:output";
+/// The first argument for a wait the player ends: a title, a line, and a
+/// Cancel button, closed by the player writing `wait-done` in this card's
+/// folder (a sign-in waiting for the person to approve it elsewhere).
+const WAIT: &str = "wall:wait";
 /// The first argument for the phone player's home screen.
 const HOME: &str = "wall:home";
 /// First argument of a permission question that carries a line about the
@@ -1809,6 +1813,131 @@ fn draw_home(
 
 /// Show why something did not open, until Close is tapped or the window is
 /// dismissed.
+/// Show a wait the player ends: until `wait-done` appears in this card's
+/// folder (answered `wall:done`) or the person taps Cancel or leaves
+/// (`wall:cancel`). Dots breathe under the line so it never looks stuck.
+fn wait_card(title: &str, message: &str) -> bool {
+    let Ok(win) = window::create(
+        "Krate",
+        types::WindowSize {
+            width: 390,
+            height: 720,
+        },
+    ) else {
+        return false;
+    };
+    if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
+        return false;
+    }
+    let _ = tree::upsert_node(
+        win,
+        &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
+    );
+    let Ok(canvas) = canvas2d::bind(win, CANVAS_ID) else {
+        return false;
+    };
+    let started = clock::monotonic_nanos();
+    loop {
+        if files::stat("wait-done").is_ok() {
+            return true;
+        }
+        let l = match canvas2d::canvas_size(canvas) {
+            Ok(size) => Layout::from_canvas(size.width.max(1.0), size.height.max(1.0)),
+            Err(_) => Layout::from_canvas(390.0, 720.0),
+        };
+        let t = (clock::monotonic_nanos().saturating_sub(started) / 1_000_000) as f32 / 1000.0;
+        let cancel = match draw_wait(canvas, &l, title, message, t) {
+            Ok(cancel) => cancel,
+            Err(_) => return false,
+        };
+        let _ = window::request_redraw(win);
+        // A few times a second: the dots move and the done file is seen.
+        match events::wait(Some(250)) {
+            Some(types::Event::CloseRequested(_)) => return false,
+            Some(types::Event::Pointer(p)) if p.pressed && p.button.is_some() => {
+                if inside(cancel, p.x, p.y) {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Draw the wait card; returns where Cancel is.
+fn draw_wait(
+    canvas: u64,
+    l: &Layout,
+    title: &str,
+    message: &str,
+    t: f32,
+) -> Result<gfx::Rect, gfx::GfxError> {
+    canvas2d::clear(canvas, color(0.02, 0.024, 0.038, 1.0))?;
+    let x = l.col_x + 24.0;
+    let text_w = l.col_w - 48.0;
+    let lines = wrap_lines(canvas, message, 15.5, text_w);
+    let card_h = 72.0 + lines.len() as f32 * 21.0 + 40.0 + 92.0;
+    let top = ((l.h - card_h) / 2.0).max(16.0);
+    canvas2d::fill_round_rect(
+        canvas,
+        rect(l.col_x + 8.0, top, l.col_w - 16.0, card_h),
+        radii(24.0),
+        color(0.075, 0.086, 0.125, 1.0),
+    )?;
+    canvas2d::draw_text_styled(
+        canvas,
+        title,
+        gfx::Point { x, y: top + 48.0 },
+        22.0,
+        color(1.0, 1.0, 1.0, 1.0),
+        style(700, -0.3),
+    )?;
+    let mut y = top + 80.0;
+    for line in &lines {
+        canvas2d::draw_text(
+            canvas,
+            line,
+            gfx::Point { x, y },
+            15.5,
+            color(1.0, 1.0, 1.0, 0.75),
+        )?;
+        y += 21.0;
+    }
+    // Three dots that brighten in turn.
+    for i in 0..3 {
+        // no_std: the fractional part by hand (the value is never negative
+        // for long: t grows from zero).
+        let raw = t * 2.2 - i as f32 * 0.33 + 1.0;
+        let phase = raw - (raw as u32) as f32;
+        let a = 0.25 + 0.75 * (1.0 - (phase * 2.0 - 1.0).abs());
+        canvas2d::fill_circle(
+            canvas,
+            gfx::Point {
+                x: x + 6.0 + i as f32 * 18.0,
+                y: y + 14.0,
+            },
+            5.0,
+            color(0.42, 0.55, 1.0, a),
+        )?;
+    }
+    let cancel = rect(x, y + 40.0, text_w, 50.0);
+    canvas2d::fill_round_rect(canvas, cancel, radii(25.0), color(1.0, 1.0, 1.0, 0.10))?;
+    let m = canvas2d::measure_text_styled(canvas, "Cancel", 17.0, style(650, 0.2))?;
+    canvas2d::draw_text_styled(
+        canvas,
+        "Cancel",
+        gfx::Point {
+            x: cancel.x + cancel.width / 2.0 - m.width / 2.0,
+            y: cancel.y + 32.0,
+        },
+        17.0,
+        color(1.0, 1.0, 1.0, 1.0),
+        style(650, 0.2),
+    )?;
+    canvas2d::present(canvas)?;
+    Ok(cancel)
+}
+
 fn notice(title: &str, message: &str) {
     let Ok(win) = window::create(
         "Krate",
@@ -2139,6 +2268,17 @@ impl krate::Guest for Component {
                 Some(index) => out(&format!("wall:pick:{index}")),
                 None => out("wall:closed"),
             }
+            return 0;
+        }
+        if raw.split(ARG_SEP).next() == Some(WAIT) {
+            let mut parts = raw.split(ARG_SEP).skip(1);
+            let title = parts.next().unwrap_or("").trim();
+            let message = parts.next().unwrap_or("").trim();
+            out(if wait_card(title, message) {
+                "wall:done"
+            } else {
+                "wall:cancel"
+            });
             return 0;
         }
         if raw.split(ARG_SEP).next() == Some(OUTPUT) {

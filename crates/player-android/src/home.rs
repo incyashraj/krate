@@ -160,6 +160,13 @@ pub enum HomeAnswer {
     Update(usize),
     /// Share the n-th Library app.
     Share(usize),
+    /// Try the hub again (Discover's offline and error states).
+    Refresh,
+    /// Report a problem with Krate.
+    Report,
+    /// An answer this Krate does not know (a newer screen): stay home. Only
+    /// `home:closed`, or no answer at all, leaves.
+    Stay,
     /// Leave Krate (or no answer at all: a crashed screen).
     Closed,
 }
@@ -175,15 +182,12 @@ pub fn home_answer(stdout: &str) -> HomeAnswer {
         return HomeAnswer::Closed;
     };
     if let Some(n) = line.strip_prefix("home:open:") {
-        return n
-            .parse()
-            .map(HomeAnswer::Open)
-            .unwrap_or(HomeAnswer::Closed);
+        return n.parse().map(HomeAnswer::Open).unwrap_or(HomeAnswer::Stay);
     }
     if let Some(id) = line.strip_prefix("home:get:") {
         let id = hub_id(id);
         return if id.is_empty() {
-            HomeAnswer::Closed
+            HomeAnswer::Stay
         } else {
             HomeAnswer::Get(id)
         };
@@ -192,6 +196,8 @@ pub fn home_answer(stdout: &str) -> HomeAnswer {
         "home:files" => return HomeAnswer::Files,
         "home:signin" => return HomeAnswer::SignIn,
         "home:signout" => return HomeAnswer::SignOut,
+        "home:refresh" => return HomeAnswer::Refresh,
+        "home:report" => return HomeAnswer::Report,
         _ => {}
     }
     let numbered = |prefix: &str, make: fn(usize) -> HomeAnswer| {
@@ -203,7 +209,11 @@ pub fn home_answer(stdout: &str) -> HomeAnswer {
         .or_else(|| numbered("home:clear:", HomeAnswer::Clear))
         .or_else(|| numbered("home:update:", HomeAnswer::Update))
         .or_else(|| numbered("home:share:", HomeAnswer::Share))
-        .unwrap_or(HomeAnswer::Closed)
+        .unwrap_or(if line == "home:closed" {
+            HomeAnswer::Closed
+        } else {
+            HomeAnswer::Stay
+        })
 }
 
 /// A signed-in person, as Krate keeps them on this phone.
@@ -389,10 +399,11 @@ mod tests {
             home_answer("home:get:ab/../x?y=1"),
             HomeAnswer::Get("ab1".into())
         );
-        assert_eq!(home_answer("home:get:zz"), HomeAnswer::Closed);
+        // A malformed answer stays home: leaving looked like a crash.
+        assert_eq!(home_answer("home:get:zz"), HomeAnswer::Stay);
         assert_eq!(home_answer("home:files"), HomeAnswer::Files);
         assert_eq!(home_answer("home:closed"), HomeAnswer::Closed);
-        assert_eq!(home_answer("home:open:x"), HomeAnswer::Closed);
+        assert_eq!(home_answer("home:open:x"), HomeAnswer::Stay);
         assert_eq!(home_answer(""), HomeAnswer::Closed);
     }
 
@@ -400,11 +411,24 @@ mod tests {
     fn the_profile_and_app_answers_are_read() {
         assert_eq!(home_answer("home:signin\n"), HomeAnswer::SignIn);
         assert_eq!(home_answer("home:signout"), HomeAnswer::SignOut);
+        assert_eq!(home_answer("home:refresh"), HomeAnswer::Refresh);
+        assert_eq!(home_answer("home:report"), HomeAnswer::Report);
         assert_eq!(home_answer("home:remove:2"), HomeAnswer::Remove(2));
         assert_eq!(home_answer("home:clear:0"), HomeAnswer::Clear(0));
         assert_eq!(home_answer("home:update:1"), HomeAnswer::Update(1));
         assert_eq!(home_answer("home:share:3"), HomeAnswer::Share(3));
-        assert_eq!(home_answer("home:remove:x"), HomeAnswer::Closed);
+        assert_eq!(home_answer("home:remove:x"), HomeAnswer::Stay);
+        assert_eq!(
+            home_answer("home:something-newer"),
+            HomeAnswer::Stay,
+            "a newer screen's answer keeps Krate open"
+        );
+        assert_eq!(home_answer("home:closed"), HomeAnswer::Closed);
+        assert_eq!(
+            home_answer(""),
+            HomeAnswer::Closed,
+            "a screen that crashed leaves"
+        );
     }
 
     #[test]

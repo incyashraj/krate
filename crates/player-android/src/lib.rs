@@ -377,10 +377,43 @@ mod player {
         }
     }
 
-    /// Sign in with GitHub through the hub: the code is copied and GitHub's
-    /// page opened; once the person comes back, Krate asks whether they
-    /// approved.
+    /// Run the wall sheet with these arguments and return what it said.
+    fn run_wall(data_root: &Path, args: Vec<String>) -> String {
+        let Some(wall_manifest) = krate_manifest::Manifest::parse(WALL_MANIFEST).ok() else {
+            return String::new();
+        };
+        let Ok(policy) = krate_policy::SessionPolicy::allow_all_declared(&wall_manifest) else {
+            return String::new();
+        };
+        let config = krate_runtime::Config {
+            session_policy: policy,
+            sandbox_root: data_root.join("wall"),
+            app_args: args,
+            phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
+            ..Default::default()
+        };
+        match krate_runtime::Runtime::new(&config).and_then(|runtime| {
+            runtime.run_bytes_captured_for_world(
+                WALL_WASM,
+                &config,
+                krate_runtime::RuntimeWorld::Gui,
+            )
+        }) {
+            Ok((_, stdout)) => String::from_utf8_lossy(&stdout).into_owned(),
+            Err(err) => {
+                log::error!("the wall failed: {err:#}");
+                String::new()
+            }
+        }
+    }
+
+    /// Sign in with GitHub through the hub, inside Krate: the phone's
+    /// in-app browser opens GitHub's page over Krate with the code copied,
+    /// Krate's waiting card sits behind it while the hub is asked in the
+    /// background, and the moment the person approves, the page and the card
+    /// close and they are signed in. Cancel on the card stops it.
     fn sign_in(data_root: &Path, art_dir: &Path) {
+        use krate_adapter_android::phone;
         let started = match crate::account::start() {
             Ok(started) => started,
             Err(why) => {
@@ -392,26 +425,110 @@ mod player {
                 return;
             }
         };
-        let _ = krate_adapter_android::phone::write_clipboard(&started.user_code);
-        let opened = krate_adapter_android::phone::open_url(&started.verification_uri).is_ok();
-        notice(
-            data_root,
-            &format!("Your code is {}", started.user_code),
-            &if opened {
-                "It is copied. Paste it on the GitHub page that just opened, approve Krate, then come back here and tap Close.".to_string()
-            } else {
-                format!("It is copied. Open {} in your browser, paste it there and approve Krate, then come back here and tap Close.", started.verification_uri)
-            },
-        );
-        match crate::account::finish(&started, data_root, std::time::Duration::from_secs(20)) {
-            Ok(true) => refresh_account(data_root, art_dir),
-            Ok(false) => notice(
-                data_root,
-                "Not signed in yet",
-                "GitHub has not said yes. Approve Krate on the GitHub page, then tap Sign in again.",
-            ),
-            Err(why) => notice(data_root, "Not signed in", &why),
+        let code = started.user_code.clone();
+        let _ = phone::write_clipboard(&code);
+        let note =
+            format!("Your code {code} is copied. Paste it on GitHub's page, then approve Krate.");
+        if !phone::open_tab(&started.verification_uri, &note) {
+            let _ = phone::open_url(&started.verification_uri);
         }
+        let done = data_root.join("wall").join("wait-done");
+        let _ = std::fs::create_dir_all(data_root.join("wall"));
+        let _ = std::fs::remove_file(&done);
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        {
+            let (data_root, done, cancelled) =
+                (data_root.to_path_buf(), done.clone(), cancelled.clone());
+            std::thread::spawn(move || {
+                let every = std::time::Duration::from_secs(crate::account::interval(&started));
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15 * 60);
+                let result = loop {
+                    std::thread::sleep(every);
+                    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                        return;
+                    }
+                    match crate::account::poll(&started, &data_root) {
+                        Ok(true) => break Ok(()),
+                        Ok(false) if std::time::Instant::now() > deadline => {
+                            break Err("The code expired. Tap Sign in to start again.".to_string())
+                        }
+                        Ok(false) => {}
+                        Err(why) => break Err(why),
+                    }
+                };
+                let _ = tx.send(result);
+                let _ = std::fs::write(&done, b"");
+            });
+        }
+        let answer = run_wall(
+            data_root,
+            vec![
+                "wall:wait".to_string(),
+                "Waiting for GitHub".to_string(),
+                format!("Your code {code} is copied. Paste it on GitHub's page and approve Krate. This closes by itself."),
+            ],
+        );
+        let _ = std::fs::remove_file(&done);
+        phone::close_tab();
+        if !answer.lines().any(|l| l.trim() == "wall:done") {
+            cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+        match rx.recv() {
+            Ok(Ok(())) => refresh_account(data_root, art_dir),
+            Ok(Err(why)) => notice(data_root, "Not signed in", &why),
+            Err(_) => {}
+        }
+    }
+
+    /// Discover's rows from the catalogue as it stands.
+    fn write_discover(ui: &Path, art_dir: &Path) {
+        let rows: Vec<String> = crate::hub::catalogue(ui)
+            .iter()
+            .map(|app| {
+                crate::home::discover_row(
+                    &app.id,
+                    &app.name,
+                    &app.author,
+                    &app.category,
+                    &app.description,
+                    crate::hub::cached_art(app, art_dir).as_deref(),
+                    app.size,
+                )
+            })
+            .collect();
+        let part = ui.join("discover.txt.part");
+        if std::fs::write(&part, rows.join("\n") + "\n").is_ok() {
+            let _ = std::fs::rename(&part, ui.join("discover.txt"));
+        }
+    }
+
+    /// Fetch the hub's catalogue off the main thread, telling Discover how
+    /// it stands (hub-state.txt): loading, then ready, or offline when there
+    /// is nothing to show.
+    fn refresh_hub(ui: &Path, art_dir: &Path) {
+        let state = ui.join("hub-state.txt");
+        if crate::hub::catalogue(ui).is_empty() {
+            let _ = std::fs::write(&state, "loading\n");
+        }
+        let (ui, art_dir) = (ui.to_path_buf(), art_dir.to_path_buf());
+        std::thread::spawn(move || {
+            let at = std::time::Instant::now();
+            crate::hub::refresh(&ui, &art_dir);
+            log::info!(
+                "hub catalogue fetched in {:.1} s",
+                at.elapsed().as_secs_f32()
+            );
+            // discover.txt first: the screen reloads it when the state turns.
+            write_discover(&ui, &art_dir);
+            let now = if crate::hub::catalogue(&ui).is_empty() {
+                "offline"
+            } else {
+                "ready"
+            };
+            let _ = std::fs::write(ui.join("hub-state.txt"), format!("{now}\n"));
+        });
     }
 
     fn home(library: &Path, data_root: &Path) -> Option<PathBuf> {
@@ -419,23 +536,12 @@ mod player {
         let art_dir = ui.join("art");
         let _ = std::fs::create_dir_all(&art_dir);
         let mut start: Option<String> = None;
-        // The hub's catalogue as last fetched, refreshed in the background
-        // for next time, so coming back from an app never waits on the
-        // network. Only the very first visit, with nothing cached, waits.
-        if crate::hub::catalogue(&ui).is_empty() {
-            let at = std::time::Instant::now();
-            crate::hub::refresh(&ui, &art_dir);
-            log::info!(
-                "hub catalogue fetched in {:.1} s",
-                at.elapsed().as_secs_f32()
-            );
-        } else {
-            static REFRESHED: std::sync::Once = std::sync::Once::new();
-            REFRESHED.call_once(|| {
-                let (ui, art_dir) = (ui.clone(), art_dir.clone());
-                std::thread::spawn(move || crate::hub::refresh(&ui, &art_dir));
-            });
-        }
+        // The hub's catalogue as last fetched, refreshed in the background.
+        // Nothing waits on the network: with no catalogue yet, Discover shows
+        // its loading rows (hub-state.txt) and fills in when it arrives -- the
+        // first open sat on a blank screen for 5.6 s.
+        static REFRESHED: std::sync::Once = std::sync::Once::new();
+        REFRESHED.call_once(|| refresh_hub(&ui, &art_dir));
         if crate::account::token(data_root).is_some() {
             static ACCOUNT_REFRESHED: std::sync::Once = std::sync::Once::new();
             ACCOUNT_REFRESHED.call_once(|| {
@@ -509,21 +615,7 @@ mod player {
                     env!("CARGO_PKG_VERSION"),
                 ),
             );
-            let discover: Vec<String> = hub_apps
-                .iter()
-                .map(|app| {
-                    crate::home::discover_row(
-                        &app.id,
-                        &app.name,
-                        &app.author,
-                        &app.category,
-                        &app.description,
-                        hub_art.get(&app.id).map(String::as_str),
-                        app.size,
-                    )
-                })
-                .collect();
-            let _ = std::fs::write(ui.join("discover.txt"), discover.join("\n") + "\n");
+            write_discover(&ui, &art_dir);
             match start.take() {
                 Some(tab) => {
                     let _ = std::fs::write(ui.join("start.txt"), tab);
@@ -655,6 +747,19 @@ mod player {
                     }
                     start = Some(format!("app:{n}"));
                 }
+                HomeAnswer::Refresh => {
+                    refresh_hub(&ui, &art_dir);
+                    start = Some("discover".to_string());
+                }
+                HomeAnswer::Report => {
+                    let link = format!(
+                        "mailto:yashraj@krate.tech?subject=A%20problem%20with%20Krate%20on%20Android&body=Krate%20{}%0A%0AWhat%20happened%3A%0A",
+                        env!("CARGO_PKG_VERSION")
+                    );
+                    let _ = krate_adapter_android::phone::open_url(&link);
+                    start = Some("settings".to_string());
+                }
+                HomeAnswer::Stay => {}
                 HomeAnswer::Closed => return None,
             }
         }
