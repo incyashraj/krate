@@ -2384,6 +2384,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-accountsync"
+version = "0.5.5"
+dependencies = [
+ "krate-http",
+ "krate-orgkeys",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
 name = "krate-adapter-android"
 version = "0.5.5"
 dependencies = [

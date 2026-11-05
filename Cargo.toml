@@ -21,6 +21,7 @@ members = [
     "crates/lease",
     "crates/orgkeys",
     "crates/orgdata",
+    "crates/accountsync",
     "crates/http",
     "crates/validator-wasm",
     "crates/manifest",

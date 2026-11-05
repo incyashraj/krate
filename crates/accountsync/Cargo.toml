@@ -1,0 +1,30 @@
+[package]
+name = "krate-accountsync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "A signed-in person's own app data on every device they have (IC-981, F-321): the version-vector merge, conflicts and their resolutions, the account's data key sealed per device, and the device's side of the hub protocol."
+
+# No new cryptography: the account's keyring, the device keys, the recovery
+# code and the sealing of each entry are crates/orgkeys's (HPKE, XChaCha20-
+# Poly1305, HMAC-SHA256, Argon2id), already in the tree for organisation
+# data (F-316).
+[dependencies]
+krate-orgkeys = { path = "../orgkeys" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10.9"
+# The device's side of the protocol with the hub and its files on disk
+# (`agent`): only for hosts with a network stack.
+ureq = { workspace = true, optional = true }
+krate-http = { path = "../http", optional = true }
+
+[features]
+default = []
+agent = ["dep:ureq", "dep:krate-http"]
+
+[dev-dependencies]
+tempfile = "3.27.0"
