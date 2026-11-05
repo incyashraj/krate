@@ -71,6 +71,8 @@ public class KrateActivity extends NativeActivity {
     private volatile int[] covered = new int[4];
     /** The invisible text editor the on-screen keyboard talks to (K-1024). */
     private volatile Typing typing;
+    /** A link or file came while Krate ran, and Krate's own screen has not closed for it yet. */
+    private boolean openedMeanwhile;
 
     @Override
     protected void onCreate(android.os.Bundle saved) {
@@ -870,7 +872,10 @@ public class KrateActivity extends NativeActivity {
     /**
      * Krate runs one app at a time in one activity (singleTask): a link, a
      * file or a reminder tapped while it runs comes here rather than starting
-     * a second player beside the first.
+     * a second player beside the first. Krate stays running on its home
+     * screen, so what was tapped waits as the activity's intent for the
+     * player to take (krateTakeOpen): Krate's own screens close for it at
+     * once (krateOpenedMeanwhile), and an app that is running finishes first.
      */
     @Override
     protected void onNewIntent(Intent intent) {
@@ -879,6 +884,38 @@ public class KrateActivity extends NativeActivity {
             return;
         }
         Log.i(TAG, "opened again while running: " + intent.getAction());
+        if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
+            synchronized (this) {
+                setIntent(intent);
+                openedMeanwhile = true;
+            }
+        }
+    }
+
+    /** The link or file Krate was opened on, once: null when there is none. */
+    public synchronized String krateTakeOpen() {
+        Intent intent = getIntent();
+        String open = null;
+        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
+            open = intent.getDataString();
+        }
+        setIntent(new Intent(Intent.ACTION_MAIN));
+        openedMeanwhile = false;
+        return open;
+    }
+
+    /** Whether a link or file is waiting for krateTakeOpen. */
+    public synchronized boolean krateOpenWaiting() {
+        Intent intent = getIntent();
+        return intent != null && Intent.ACTION_VIEW.equals(intent.getAction())
+                && intent.getData() != null;
+    }
+
+    /** Whether a link or file came since last asked: Krate's own screen closes for it. */
+    public synchronized boolean krateOpenedMeanwhile() {
+        boolean came = openedMeanwhile;
+        openedMeanwhile = false;
+        return came;
     }
 
     /** Write the file at path into the document at uri; true when it all went. */

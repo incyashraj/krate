@@ -38,7 +38,7 @@ mod bluetooth;
 pub mod camera;
 mod clipboard;
 pub mod dialog;
-mod documents;
+pub mod documents;
 mod haptics;
 #[cfg(target_os = "android")]
 mod java;
@@ -48,7 +48,7 @@ mod motion;
 pub mod phone;
 mod photos;
 pub mod reminders;
-mod share;
+pub mod share;
 mod sign_in;
 mod typing;
 pub mod unlock;

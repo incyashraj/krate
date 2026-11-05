@@ -62,20 +62,49 @@ pub struct CanvasSurface {
 // milliseconds spent inside the hot canvas ops between two presents, taken
 // and printed with the publish stats when KRATE_FRAME_STATS=1.
 thread_local! {
-    static OP_MS: std::cell::Cell<(f32, f32, f32)> = const { std::cell::Cell::new((0.0, 0.0, 0.0)) };
+    static OP_MS: std::cell::Cell<(f32, f32, f32, f32)> = const { std::cell::Cell::new((0.0, 0.0, 0.0, 0.0)) };
 }
 
 fn add_op_ms(slot: u8, started: std::time::Instant) {
     let ms = started.elapsed().as_secs_f32() * 1000.0;
     OP_MS.with(|cell| {
-        let (mut fills, mut text, mut measure) = cell.get();
+        let (mut fills, mut text, mut measure, mut effects) = cell.get();
         match slot {
             0 => fills += ms,
             1 => text += ms,
-            _ => measure += ms,
+            2 => measure += ms,
+            _ => effects += ms,
         }
-        cell.set((fills, text, measure));
+        cell.set((fills, text, measure, effects));
     });
+    if slot >= 10 {
+        EFFECT_MS.with(|cell| {
+            let mut each = cell.get();
+            each[(slot - 10) as usize % 7] += ms;
+            cell.set(each);
+        });
+    }
+}
+
+thread_local! {
+    /// The effects' milliseconds one by one: shadow, gradient, radial,
+    /// vertical gradient, pixels, sprite, owned pixels.
+    static EFFECT_MS: std::cell::Cell<[f32; 7]> = const { std::cell::Cell::new([0.0; 7]) };
+}
+
+/// Take and reset the effects' milliseconds one by one, named.
+pub fn take_effect_millis() -> [(&'static str, f32); 7] {
+    let each = EFFECT_MS.with(|cell| cell.replace([0.0; 7]));
+    let names = [
+        "shadow",
+        "gradient",
+        "radial",
+        "vgradient",
+        "pixels",
+        "sprite",
+        "owned",
+    ];
+    core::array::from_fn(|i| (names[i], each[i]))
 }
 
 /// A hot op's timer. A browser's wasm32 has no clock `Instant` can read
@@ -102,9 +131,11 @@ impl Drop for OpTimer {
     }
 }
 
-/// Take and reset the accumulated (fills, text, measure) milliseconds.
-pub fn take_op_millis() -> (f32, f32, f32) {
-    OP_MS.with(|cell| cell.replace((0.0, 0.0, 0.0)))
+/// Take and reset the accumulated (fills, text, measure, effects)
+/// milliseconds. Effects are what cost by area: shadows, gradients and
+/// pictures drawn into the canvas.
+pub fn take_op_millis() -> (f32, f32, f32, f32) {
+    OP_MS.with(|cell| cell.replace((0.0, 0.0, 0.0, 0.0)))
 }
 
 /// A color in linear floats, packed to the painter's `0xAARRGGBB`.
@@ -189,6 +220,45 @@ fn lerp_color(a: u32, b: u32, t: f32) -> u32 {
 /// bands ("looks pixely, not HD" -- caught by eye on a purple-to-amber
 /// band and confirmed by 3-row color steps in the capture); a half-LSB
 /// Bayer offset trades the bands for noise the eye cannot see.
+/// Smoothstep of the distance, by squared distance (0 at the centre, 1 at
+/// the rim), as a 12-bit fraction: built once.
+fn radial_falloff() -> &'static [u16; 4097] {
+    static TABLE: std::sync::OnceLock<[u16; 4097]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut table = [0u16; 4097];
+        for (i, slot) in table.iter_mut().enumerate() {
+            let t = (i as f32 / 4096.0).sqrt();
+            let t = t * t * (3.0 - 2.0 * t);
+            *slot = (t * 4096.0).round().clamp(0.0, 4096.0) as u16;
+        }
+        table
+    })
+}
+
+/// `lerp_color_dithered` in fixed point: `t` a 12-bit fraction (0..=4096),
+/// the same ordered dither, the same rounding, for loops that mix millions of
+/// pixels a frame.
+fn channel_mixer(a: u32, b: u32) -> impl Fn(u16, u32, u32) -> u32 {
+    // Bayer thresholds, already in twelfths of a level: d = cell/16 - 0.5.
+    const BAYER: [[i32; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+    let channels = [24u32, 16, 8, 0].map(|shift| {
+        let ca = ((a >> shift) & 0xFF) as i32;
+        let cb = ((b >> shift) & 0xFF) as i32;
+        (shift, ca, cb - ca)
+    });
+    move |t: u16, px: u32, py: u32| {
+        let t = i32::from(t);
+        // (cell / 16 - 0.5) + 0.5, in 1/4096 of a level.
+        let offset = BAYER[(py & 3) as usize][(px & 3) as usize] * 256;
+        let mut out = 0u32;
+        for (shift, ca, delta) in channels {
+            let v = ((ca << 12) + delta * t + offset) >> 12;
+            out |= (v.clamp(0, 255) as u32) << shift;
+        }
+        out
+    }
+}
+
 fn lerp_color_dithered(a: u32, b: u32, t: f32, px: u32, py: u32) -> u32 {
     const BAYER: [[f32; 4]; 4] = [
         [0.0, 8.0, 2.0, 10.0],
@@ -905,6 +975,7 @@ impl CanvasSurface {
         blur: f32,
         color: u32,
     ) {
+        let _effects_timer = OpTimer::start(10);
         self.materialize();
         if w <= 0.0 || h <= 0.0 {
             return;
@@ -933,7 +1004,18 @@ impl CanvasSurface {
                     px = end.max(a + 1);
                     continue;
                 }
-                let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
+                let (fx, fy) = (px as f32 + 0.5, py as f32 + 0.5);
+                // Beside a straight edge -- away from the corners' squares --
+                // the distance to a rounded rectangle is the distance to that
+                // edge: one subtraction, not the corner maths. Most of a big
+                // card's soft edge is there (K-1212).
+                let d = if (fy >= y + rmax && fy <= y + h - rmax)
+                    || (fx >= x + rmax && fx <= x + w - rmax)
+                {
+                    (x - fx).max(fx - (x + w)).max(y - fy).max(fy - (y + h))
+                } else {
+                    Self::round_rect_sdf(fx, fy, x, y, w, h, radii)
+                };
                 let t = ((blur - d) / (2.0 * blur)).clamp(0.0, 1.0);
                 self.blend_coverage(px, py, color, t * t * (3.0 - 2.0 * t));
                 px += 1;
@@ -954,6 +1036,7 @@ impl CanvasSurface {
         angle_degrees: f32,
         stops: &[(f32, u32)],
     ) {
+        let _effects_timer = OpTimer::start(11);
         self.materialize();
         if stops.is_empty() {
             return;
@@ -1065,40 +1148,59 @@ impl CanvasSurface {
     /// primitive -- a soft light falloff instead of a flat disc, which is the
     /// single biggest difference between a modern look and a flat one.
     pub fn radial_gradient(&mut self, cx: f32, cy: f32, radius: f32, inner: u32, outer: u32) {
+        let _effects_timer = OpTimer::start(12);
         self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let radius = self.map_len(radius);
         let k = self.scale;
         let (cx, cy, radius) = (cx * k, cy * k, radius * k);
-        if radius <= 0.0 {
+        if radius <= 0.0 || !radius.is_finite() || !cx.is_finite() || !cy.is_finite() {
             return;
         }
         let (w, h) = (self.width, self.height);
-        let x0 = ((cx - radius).floor().max(0.0) as u32).min(w);
-        let x1 = (((cx + radius).ceil()).max(0.0) as u32).min(w);
-        let y0 = ((cy - radius).floor().max(0.0) as u32).min(h);
-        let y1 = (((cy + radius).ceil()).max(0.0) as u32).min(h);
+        let mut x0 = ((cx - radius).floor().max(0.0) as u32).min(w);
+        let mut x1 = (((cx + radius).ceil()).max(0.0) as u32).min(w);
+        let mut y0 = ((cy - radius).floor().max(0.0) as u32).min(h);
+        let mut y1 = (((cy + radius).ceil()).max(0.0) as u32).min(h);
+        // The clip once, as a range, rather than asked of every pixel.
+        if let Some((clx, cly, clw, clh)) = self.clip {
+            x0 = x0.max(clx.ceil().max(0.0) as u32);
+            y0 = y0.max(cly.ceil().max(0.0) as u32);
+            x1 = x1.min((clx + clw).ceil().max(0.0) as u32);
+            y1 = y1.min((cly + clh).ceil().max(0.0) as u32);
+        }
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        // Across a phone screen this is millions of pixels a frame: a full-
+        // screen glow behind Krate's permission sheet took 264 ms of every
+        // frame on a Galaxy S22 Ultra (K-1212). So the falloff -- smoothstep
+        // of the distance -- is read from a table indexed by the squared
+        // distance (no square root per pixel), and the colour is mixed in
+        // fixed point. Within one level of the float version per channel.
+        let falloff = radial_falloff();
+        let inv_r2 = 1.0 / (radius * radius);
+        let steps = (falloff.len() - 1) as f32;
+        let mix = channel_mixer(inner, outer);
         for py in y0..y1 {
+            let dy = py as f32 + 0.5 - cy;
+            let dy2 = dy * dy * inv_r2;
+            if dy2 > 1.0 {
+                continue;
+            }
+            let row = (py * w) as usize;
             for px in x0..x1 {
                 let dx = px as f32 + 0.5 - cx;
-                let dy = py as f32 + 0.5 - cy;
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist > radius {
+                let s2 = dx * dx * inv_r2 + dy2;
+                if s2 > 1.0 {
                     continue;
                 }
-                // Smoothstep the interpolation so the falloff looks like light,
-                // not a linear ramp.
-                let t = dist / radius;
-                let t = t * t * (3.0 - 2.0 * t);
-                let c = lerp_color_dithered(inner, outer, t, px, py);
+                let t = falloff[(s2 * steps) as usize];
+                let c = mix(t, px, py);
                 if (c >> 24) == 0 {
                     continue;
                 }
-                let idx = (py * w + px) as usize;
-                if !self.allowed(px, py) {
-                    continue;
-                }
-                if let Some(slot) = self.buffer.get_mut(idx) {
+                if let Some(slot) = self.buffer.get_mut(row + px as usize) {
                     *slot = krate_adapter_common::painter::blend_over(c, *slot);
                 }
             }
@@ -1108,6 +1210,7 @@ impl CanvasSurface {
     /// A vertical linear gradient filling a rectangle: `top` color at `y`
     /// easing to `bottom` at `y + h`. For skies, panels, backdrops.
     pub fn linear_gradient_v(&mut self, x: f32, y: f32, w: f32, h: f32, top: u32, bottom: u32) {
+        let _effects_timer = OpTimer::start(13);
         self.materialize();
         // One band per device row, each handed to `fill_rect` in the app's
         // OWN coordinates, because `fill_rect` maps and scales itself. This
@@ -1340,6 +1443,7 @@ impl CanvasSurface {
     /// and alpha blending on all three systems, and there is one place where
     /// that behaviour can ever drift.
     pub fn draw_pixels(&mut self, x: f32, y: f32, w: f32, h: f32, image: &ImagePixels) {
+        let _effects_timer = OpTimer::start(14);
         self.materialize();
         let (x, y) = self.map_point(x, y);
         let (w, h) = (self.map_len(w), self.map_len(h));
@@ -1449,6 +1553,7 @@ impl CanvasSurface {
         angle: f32,
         image: &ImagePixels,
     ) {
+        let _effects_timer = OpTimer::start(15);
         self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let (dst_w, dst_h) = (self.map_len(dst_w), self.map_len(dst_h));
@@ -1539,6 +1644,7 @@ impl CanvasSurface {
     /// every pixel opaque (nothing beneath it can show through). Otherwise
     /// it is an ordinary `draw_pixels`.
     pub fn draw_pixels_owned(&mut self, x: f32, y: f32, w: f32, h: f32, image: ImagePixels) {
+        let _effects_timer = OpTimer::start(16);
         // Same proportions as the area, too: drawn, a picture keeps its
         // shape and letterboxes inside the area, while a display stretches a
         // frame to fit -- so only a picture that already fits may skip it.
@@ -1618,6 +1724,53 @@ impl CanvasSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K-1212: the table-driven radial gradient paints what the per-pixel
+    /// float version painted, within a couple of levels per channel, at
+    /// any clip, and draws nothing outside its circle.
+    #[test]
+    fn the_fast_radial_gradient_matches_the_float_one() {
+        let (w, h) = (97u32, 61u32);
+        let (cx, cy, r) = (40.3f32, 22.7f32, 37.5f32);
+        let (inner, outer) = (0xB0_3A_4D_F2u32, 0x00_3A_4D_F2u32);
+        let mut surface = CanvasSurface::new(w, h).expect("surface");
+        surface.clear(0xFF_F0_F1_F4);
+        surface.radial_gradient(cx, cy, r, inner, outer);
+        let fast = surface.to_image().expect("image").rgba;
+        // The float version, as it was.
+        let mut want = vec![0xFF_F0_F1_F4u32; (w * h) as usize];
+        for py in 0..h {
+            for px in 0..w {
+                let (dx, dy) = (px as f32 + 0.5 - cx, py as f32 + 0.5 - cy);
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist > r {
+                    continue;
+                }
+                let t = dist / r;
+                let t = t * t * (3.0 - 2.0 * t);
+                let c = lerp_color_dithered(inner, outer, t, px, py);
+                if (c >> 24) == 0 {
+                    continue;
+                }
+                let slot = &mut want[(py * w + px) as usize];
+                *slot = krate_adapter_common::painter::blend_over(c, *slot);
+            }
+        }
+        let mut worst = 0i32;
+        for (i, px) in want.iter().enumerate() {
+            for (c, shift) in [16u32, 8, 0].iter().enumerate() {
+                let a = ((px >> shift) & 0xFF) as i32;
+                let b = i32::from(fast[i * 4 + c]);
+                worst = worst.max((a - b).abs());
+            }
+        }
+        assert!(worst <= 2, "worst channel difference {worst}");
+        assert_ne!(
+            fast[(22 * w + 40) as usize * 4 + 2],
+            0xF4,
+            "the fixture must paint the centre"
+        );
+    }
 
     /// A stroked rectangle is closed, and stays inside the canvas at 2x.
     ///

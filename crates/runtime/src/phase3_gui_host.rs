@@ -4119,19 +4119,26 @@ impl Phase3GuiHost {
             let sync_ms = sync_started.elapsed().as_secs_f32() * 1000.0;
             let mut times = self.publish_times.borrow_mut();
             times.push((copy_ms, sync_ms));
-            if times.len() >= 60 {
+            if times.len() >= frame_stats_every() {
                 let p = |values: &mut Vec<f32>, q: f32| -> f32 {
                     values.sort_by(|a, b| a.total_cmp(b));
                     values[((values.len() - 1) as f32 * q) as usize]
                 };
                 let mut copies: Vec<f32> = times.iter().map(|(c, _)| *c).collect();
                 let mut syncs: Vec<f32> = times.iter().map(|(_, s)| *s).collect();
-                let (fills, text, measure) = crate::canvas_raster::take_op_millis();
+                let (fills, text, measure, effects) = crate::canvas_raster::take_op_millis();
+                let each: Vec<String> = crate::canvas_raster::take_effect_millis()
+                    .iter()
+                    .filter(|(_, ms)| *ms > 0.05)
+                    .map(|(name, ms)| format!("{name} {ms:.1}ms"))
+                    .collect();
+                eprintln!("krate-effects: {}", each.join(" | "));
                 eprintln!(
-                    "krate-ops: fills {:.1}ms text {:.1}ms measure {:.1}ms over the last {} frames",
+                    "krate-ops: fills {:.1}ms text {:.1}ms measure {:.1}ms effects {:.1}ms over the last {} frames",
                     fills,
                     text,
                     measure,
+                    effects,
                     times.len(),
                 );
                 eprintln!(
@@ -4795,7 +4802,7 @@ impl Phase3GuiHost {
         if std::env::var("KRATE_FRAME_STATS").as_deref() == Ok("1") {
             let mut times = self.present_times.borrow_mut();
             times.push((gap_ms, slept_ms, self.last_publish_ms.get()));
-            if times.len() >= 60 {
+            if times.len() >= frame_stats_every() {
                 let p = |values: &mut Vec<f32>, q: f32| -> f32 {
                     values.sort_by(|a, b| a.total_cmp(b));
                     values[((values.len() - 1) as f32 * q) as usize]
@@ -6321,6 +6328,17 @@ impl ui::dialog::Host for Phase3GuiHost {
             Ok(Ok(answer == rfd::MessageDialogResult::Yes))
         }
     }
+}
+
+/// How many frames KRATE_FRAME_STATS sums before it prints: 60, or
+/// KRATE_FRAME_STATS_EVERY -- a short animation (a sheet sliding up) is
+/// over before 60 frames.
+fn frame_stats_every() -> usize {
+    std::env::var("KRATE_FRAME_STATS_EVERY")
+        .ok()
+        .and_then(|n| n.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(60)
 }
 
 impl ui::image::Host for Phase3GuiHost {

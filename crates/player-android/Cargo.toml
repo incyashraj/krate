@@ -34,3 +34,7 @@ jni = "0.21"
 # Fetching a tapped krate.tech link from the hub. rustls underneath, so
 # no OpenSSL cross-compilation.
 ureq.workspace = true
+# Krate's home screen: the hub's catalogue, and its screenshots decoded
+# (the iPhone's hub code, shared).
+serde_json.workspace = true
+png = "0.17"

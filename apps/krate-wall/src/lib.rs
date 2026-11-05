@@ -698,15 +698,17 @@ impl Sheet {
                 )?;
             }
             None => {
+                // A wash of the app's colour from the top, fading by the
+                // middle. It was a radial glow across the whole screen: on a
+                // phone's CPU painter that one call was most of every frame
+                // (164 ms of 236 on a Galaxy S22 Ultra), so the sheet rose in
+                // three or four steps. A vertical wash paints by rows and
+                // costs a few milliseconds (K-1212).
                 canvas2d::clear(canvas, color(0.90, 0.905, 0.92, 1.0))?;
-                canvas2d::radial_gradient(
+                canvas2d::linear_gradient(
                     canvas,
-                    gfx::Point {
-                        x: l.w * 0.5,
-                        y: l.h * 0.25,
-                    },
-                    l.w.max(l.h) * 0.8,
-                    color(hue.r, hue.g, hue.b, 0.30 * e.min(1.0)),
+                    rect(0.0, 0.0, l.w, l.h * 0.62),
+                    color(hue.r, hue.g, hue.b, 0.26 * e.min(1.0)),
                     color(hue.r, hue.g, hue.b, 0.0),
                 )?;
             }
@@ -1053,14 +1055,11 @@ impl Sheet {
 
         // The screen behind: dark, lit faintly in the app's colour.
         canvas2d::clear(canvas, color(0.05, 0.055, 0.075, 1.0))?;
-        canvas2d::radial_gradient(
+        // A wash, not a full-screen radial glow: see the sheet's backdrop.
+        canvas2d::linear_gradient(
             canvas,
-            gfx::Point {
-                x: l.w * 0.5,
-                y: l.h * 0.18,
-            },
-            l.w.max(l.h) * 0.75,
-            color(hue.r, hue.g, hue.b, 0.42 * e.min(1.0)),
+            rect(0.0, 0.0, l.w, l.h * 0.55),
+            color(hue.r, hue.g, hue.b, 0.36 * e.min(1.0)),
             color(hue.r, hue.g, hue.b, 0.0),
         )?;
 

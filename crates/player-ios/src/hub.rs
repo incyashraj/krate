@@ -4,8 +4,11 @@
 //! Everything is cached in the app's own folder, so Discover still shows
 //! the last catalogue when the phone is offline, and a screenshot is
 //! fetched and decoded once.
+//!
+//! The Android player includes this same file (crates/player-android), so
+//! both phones show one Discover.
 
-#![cfg(target_os = "ios")]
+#![cfg(any(target_os = "ios", target_os = "android"))]
 
 use std::io::Read;
 use std::path::Path;
@@ -26,11 +29,16 @@ pub struct HubApp {
     pub size: u64,
 }
 
+#[cfg(target_os = "ios")]
+const USER_AGENT: &str = concat!("Krate/", env!("CARGO_PKG_VERSION"), " (iPhone)");
+#[cfg(target_os = "android")]
+const USER_AGENT: &str = concat!("Krate/", env!("CARGO_PKG_VERSION"), " (Android)");
+
 fn agent() -> ureq::Agent {
     // The hub's edge refuses requests without a real user agent.
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(8))
-        .user_agent(concat!("Krate/", env!("CARGO_PKG_VERSION"), " (iPhone)"))
+        .user_agent(USER_AGENT)
         .build()
 }
 
@@ -62,9 +70,14 @@ pub fn refresh(cache: &Path, art_dir: &Path) {
         }
         Err(why) => eprintln!("hub catalogue: {why}; keeping the last one"),
     }
-    for app in catalogue(cache) {
-        let _ = art(&app, art_dir);
-    }
+    // Every screenshot at once: one after another, a first visit waited
+    // on a dozen round trips in a row.
+    let apps = catalogue(cache);
+    std::thread::scope(|scope| {
+        for app in &apps {
+            scope.spawn(move || art(app, art_dir));
+        }
+    });
 }
 
 /// The listed apps, as last fetched; empty before the first fetch.

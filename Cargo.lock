@@ -2671,6 +2671,8 @@ dependencies = [
  "krate-policy",
  "krate-runtime",
  "log",
+ "png 0.17.16",
+ "serde_json",
  "ureq",
 ]
 

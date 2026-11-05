@@ -55,6 +55,72 @@ pub fn orientation_for(width: u32, height: u32, adapts: bool) -> i32 {
     }
 }
 
+/// The picture of a placement that covers the whole window and draws
+/// nothing else -- no label, box, clip or selection -- so the picture alone
+/// is the frame. A canvas laid out in whole points is up to a few pixels
+/// short of the screen (411 points of 411.43 is 1079 pixels of 1080), so a
+/// picture that much smaller still counts: `copy_opaque` repeats its last
+/// column and row into the gap.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn full_window_pixels(
+    placement: &WidgetPlacement,
+    width: u32,
+    height: u32,
+    scale: f32,
+) -> Option<&std::sync::Arc<krate_adapter_common::ui::ImagePixels>> {
+    let pixels = placement.pixels.as_ref()?;
+    let slack = scale.ceil().max(1.0) as u32;
+    let near = |have: u32, want: u32| have > 0 && have <= want && want - have <= slack;
+    let fits = near(pixels.width, width)
+        && near(pixels.height, height)
+        && placement.x == 0.0
+        && placement.y == 0.0
+        && near((placement.width * scale).floor() as u32, width)
+        && near((placement.height * scale).floor() as u32, height)
+        && placement.clip.is_none()
+        && placement.r#box.is_none()
+        && placement.label.is_none()
+        && placement.selection.is_none()
+        && pixels.rgba.len() == pixels.width as usize * pixels.height as usize * 4;
+    fits.then_some(pixels)
+}
+
+/// Write a straight-RGBA picture `width` pixels wide into a screen buffer
+/// `out_width` wide (0x00RRGGBB), in one pass, repeating the picture's last
+/// column and row into any pixels it falls short. False, leaving the rest
+/// for the full painter to overwrite, at the first pixel that is not
+/// opaque: it would need blending over the background.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn copy_opaque(rgba: &[u8], width: usize, out: &mut [u32], out_width: usize) -> bool {
+    if width == 0 || out_width < width || !rgba.len().is_multiple_of(width * 4) {
+        return false;
+    }
+    let rows = rgba.len() / (width * 4);
+    let out_rows = out.len() / out_width;
+    if rows == 0 || out_rows < rows || out.len() != out_rows * out_width {
+        return false;
+    }
+    for (src, dst) in rgba
+        .chunks_exact(width * 4)
+        .zip(out.chunks_exact_mut(out_width))
+    {
+        for (px, slot) in src.chunks_exact(4).zip(dst.iter_mut()) {
+            if px[3] != 255 {
+                return false;
+            }
+            *slot = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
+        }
+        let last = dst[width - 1];
+        dst[width..].fill(last);
+    }
+    let (filled, rest) = out.split_at_mut(rows * out_width);
+    let last_row = &filled[(rows - 1) * out_width..];
+    for row in rest.chunks_exact_mut(out_width) {
+        row.copy_from_slice(last_row);
+    }
+    true
+}
+
 #[cfg(target_os = "android")]
 mod real {
     use super::*;
@@ -809,6 +875,34 @@ mod real {
         if surface.resize(width, height).is_err() {
             return;
         }
+        // A window that is one opaque canvas the size of the screen -- a
+        // game, any app that draws itself -- needs no painting: its pixels
+        // go to the screen buffer in one pass. Repainting it through the
+        // vector painter as a full-screen picture, then copying that, cost
+        // 17 ms of a 26 ms frame on a Galaxy S22 Ultra, holding Nova at 38
+        // frames a second (K-1211).
+        if let [only] = tracked.placements.as_slice() {
+            if let Some(pixels) = super::full_window_pixels(
+                only,
+                width.get(),
+                height.get(),
+                tracked.window.scale_factor() as f32,
+            ) {
+                let Ok(mut buffer) = surface.buffer_mut() else {
+                    return;
+                };
+                if super::copy_opaque(
+                    &pixels.rgba,
+                    pixels.width as usize,
+                    &mut buffer,
+                    width.get() as usize,
+                ) {
+                    let _ = buffer.present();
+                    tracked.dirty = false;
+                    return;
+                }
+            }
+        }
         let pixel_count = width.get() as usize * height.get() as usize;
         tracked.staging.clear();
         tracked.staging.resize(pixel_count, 0);
@@ -946,7 +1040,15 @@ mod real {
         }
         // Close (or Restart) in the menu: the app hears it as a desktop
         // close button, and Krate closes it anyway if it does not answer.
-        if crate::menu::chrome_on() && crate::menu::take_close() {
+        // Krate's own screen closes the same way for a link or file tapped
+        // while it shows, so the player can open that instead; a running
+        // app is never closed for one.
+        let close = if crate::menu::chrome_on() {
+            crate::menu::take_close()
+        } else {
+            crate::menu::take_opened_meanwhile()
+        };
+        if close {
             for tracked in app.windows.values() {
                 app.events
                     .push((tracked.krate, WinitWindowNativeEvent::CloseRequested));
@@ -1384,6 +1486,67 @@ mod stub {
     /// Winit windows are only available in Linux builds.
     pub fn drain_wheel_samples() -> Vec<RawWheelSample> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod full_window_tests {
+    use super::*;
+    use krate_adapter_common::ui::{ImagePixels, WidgetId, WidgetKind};
+
+    fn canvas(w: u32, h: u32, scale: f32, rgba: Vec<u8>) -> WidgetPlacement {
+        WidgetPlacement {
+            widget: WidgetId::new(2).expect("id"),
+            kind: WidgetKind::Canvas,
+            width: w as f32 / scale,
+            height: h as f32 / scale,
+            pixels: Some(std::sync::Arc::new(ImagePixels {
+                width: w,
+                height: h,
+                rgba,
+            })),
+            ..Default::default()
+        }
+    }
+
+    /// K-1211: a full-window opaque canvas is copied straight to the screen
+    /// buffer, byte for byte as 0x00RRGGBB; anything else is painted.
+    #[test]
+    fn a_full_window_canvas_goes_straight_to_the_screen() {
+        let rgba: Vec<u8> = (0..4 * 6)
+            .map(|i| if i % 4 == 3 { 255 } else { i as u8 })
+            .collect();
+        let p = canvas(3, 2, 1.5, rgba.clone());
+        let pixels = full_window_pixels(&p, 3, 2, 1.5).expect("covers the window");
+        let mut out = vec![0u32; 6];
+        assert!(copy_opaque(&pixels.rgba, 3, &mut out, 3));
+        assert_eq!(out[1], (4 << 16) | (5 << 8) | 6);
+        // A canvas a pixel short of the screen each way (whole points at a
+        // fractional scale) still goes straight there, its edges repeated.
+        assert!(
+            full_window_pixels(&p, 4, 3, 1.5).is_some(),
+            "one pixel short counts"
+        );
+        let mut wide = vec![0u32; 12];
+        assert!(copy_opaque(&pixels.rgba, 3, &mut wide, 4));
+        assert_eq!(wide[3], wide[2], "the last column is repeated");
+        assert_eq!(wide[8..12], wide[4..8], "the last row is repeated");
+        assert!(
+            full_window_pixels(&p, 9, 2, 1.5).is_none(),
+            "far smaller is painted"
+        );
+        let mut labelled = p.clone();
+        labelled.label = Some("x".into());
+        assert!(
+            full_window_pixels(&labelled, 3, 2, 1.5).is_none(),
+            "a label is painted"
+        );
+        let mut see_through = rgba;
+        see_through[7] = 128;
+        assert!(
+            !copy_opaque(&see_through, 3, &mut out, 3),
+            "a clear pixel needs blending"
+        );
     }
 }
 
