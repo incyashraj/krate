@@ -10,6 +10,8 @@ mod appearance;
 mod appkit;
 mod clipboard;
 mod consent;
+#[cfg(target_os = "macos")]
+mod location;
 mod open_document;
 #[cfg(target_os = "macos")]
 mod reminders;
@@ -579,6 +581,17 @@ impl UiAdapter for MacosUiAdapter {
     fn reminder_pending(&self) -> Vec<String> {
         reminders::pending()
     }
+
+    #[cfg(target_os = "macos")]
+    /// Where the Mac is: CoreLocation, as on the iPhone (IC-982).
+    fn location_available(&self) -> bool {
+        location::available()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn location(&self) -> krate_adapter_common::ui::LocationAnswer {
+        location::read()
+    }
 }
 
 impl UiAdapter for MacosAppKitPrototypeUiAdapter {
@@ -751,6 +764,14 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
 
     fn appearance(&self) -> krate_adapter_common::ui::Appearance {
         self.headless.appearance()
+    }
+
+    fn location_available(&self) -> bool {
+        self.headless.location_available()
+    }
+
+    fn location(&self) -> krate_adapter_common::ui::LocationAnswer {
+        self.headless.location()
     }
 
     #[cfg(target_os = "macos")]
