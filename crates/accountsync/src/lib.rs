@@ -29,6 +29,7 @@
 pub mod json_merge;
 pub mod replica;
 pub mod seal;
+pub mod toggles;
 pub mod vv;
 
 #[cfg(feature = "agent")]

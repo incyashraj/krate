@@ -2539,6 +2539,7 @@ dependencies = [
  "calamine",
  "clap",
  "getrandom 0.3.4",
+ "krate-accountsync",
  "krate-adapter-common",
  "krate-adapter-macos",
  "krate-author",
@@ -2678,6 +2679,7 @@ version = "0.5.5"
 dependencies = [
  "android_logger",
  "jni 0.21.1",
+ "krate-accountsync",
  "krate-adapter-android",
  "krate-bundle",
  "krate-manifest",
@@ -2686,6 +2688,7 @@ dependencies = [
  "log",
  "png 0.17.16",
  "serde_json",
+ "tempfile",
  "ureq",
 ]
 
@@ -2695,6 +2698,7 @@ version = "0.5.5"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
+ "krate-accountsync",
  "krate-adapter-ios",
  "krate-bundle",
  "krate-manifest",
@@ -2708,6 +2712,7 @@ dependencies = [
  "png 0.17.16",
  "serde_json",
  "sha2",
+ "tempfile",
  "ureq",
 ]
 
@@ -2752,6 +2757,7 @@ dependencies = [
  "dispatch2",
  "gilrs",
  "heck",
+ "krate-accountsync",
  "krate-adapter-android",
  "krate-adapter-common",
  "krate-adapter-ios",

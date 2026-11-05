@@ -103,9 +103,7 @@ pub struct PendingDevice {
 
 /// The folder one account's files live in: a hash of its id, so an id is
 /// never a path.
-pub fn slot(account: &str) -> String {
-    crate::value_hash(format!("krate account {account}").as_bytes())[..32].to_string()
-}
+pub use crate::toggles::slot;
 
 fn read_json(path: &Path) -> Option<Value> {
     serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
@@ -221,6 +219,12 @@ impl Account {
     /// none -- this is then the first device, and a recovery code waits to
     /// be shown.
     pub fn refresh(&self, hub: &Hub) -> Result<KeyStatus, SyncError> {
+        self.refresh_with_view(hub).map(|(status, _)| status)
+    }
+
+    /// [`Account::refresh`], with the hub's view it ended on: the device
+    /// list, for the names "keep both" puts on a key.
+    pub fn refresh_with_view(&self, hub: &Hub) -> Result<(KeyStatus, Value), SyncError> {
         let id = self.device.id();
         let mut view = hub.view(Some(&id))?;
         if view["device"].is_null() {
@@ -229,7 +233,7 @@ impl Account {
         }
         if view["key"].is_null() {
             match self.first_key(hub) {
-                Ok(ring) => return Ok(KeyStatus::Holds(ring)),
+                Ok(ring) => return Ok((KeyStatus::Holds(ring), view)),
                 // Another device made it a moment ago: take the answer.
                 Err(SyncError::Hub(HubError::Refused { reason, .. })) if reason == "key-exists" => {
                     view = hub.view(Some(&id))?;
@@ -238,12 +242,12 @@ impl Account {
             }
         }
         let Some(blob) = view["envelope"]["blob"].as_str() else {
-            return Ok(KeyStatus::Waiting);
+            return Ok((KeyStatus::Waiting, view));
         };
         let ring = Keyring::open(blob, &self.device, &keyring_label(&self.id))?;
         check_public(&ring, &view)?;
         self.keep_held(blob)?;
-        Ok(KeyStatus::Holds(ring))
+        Ok((KeyStatus::Holds(ring), view))
     }
 
     fn first_key(&self, hub: &Hub) -> Result<Keyring, SyncError> {

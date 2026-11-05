@@ -202,6 +202,57 @@ impl AppStore {
         self.entries.values().map(|v| v.len()).sum()
     }
 
+    /// Every key and value this handle sees, for account sync to compare
+    /// with what it last knew (IC-981). Empty when refused or unreadable.
+    pub(crate) fn snapshot(&self) -> BTreeMap<String, Vec<u8>> {
+        if !self.granted || self.unreadable.is_some() {
+            return BTreeMap::new();
+        }
+        self.entries.clone()
+    }
+
+    /// What another device of the person's wrote, in one flush: `Some` sets,
+    /// `None` deletes. A key or value the store's own rules refuse is left
+    /// out (answered by name), so nothing from elsewhere can grow the store
+    /// past what the app itself may write.
+    pub(crate) fn apply_synced(
+        &mut self,
+        writes: &[(String, Option<Vec<u8>>)],
+    ) -> Result<Vec<String>, StoreError> {
+        self.require_grant()?;
+        self.require_readable()?;
+        let mut refused = Vec::new();
+        for (key, value) in writes {
+            if validate_key(key).is_err() {
+                refused.push(key.clone());
+                continue;
+            }
+            match value {
+                Some(value) => {
+                    let existing = self.entries.get(key).map(|v| v.len()).unwrap_or(0);
+                    if value.len() > MAX_VALUE_BYTES
+                        || self.total_bytes() - existing + value.len() > MAX_TOTAL_BYTES
+                    {
+                        refused.push(key.clone());
+                        continue;
+                    }
+                    self.entries.insert(key.clone(), value.clone());
+                    self.deleted.remove(key);
+                    self.changed.insert(key.clone());
+                }
+                None => {
+                    self.entries.remove(key);
+                    self.changed.remove(key);
+                    self.deleted.insert(key.clone());
+                }
+            }
+        }
+        if !writes.is_empty() {
+            self.flush()?;
+        }
+        Ok(refused)
+    }
+
     /// Write the whole store, atomically.
     ///
     /// Via a temporary file and a rename, so a crash midway leaves the previous

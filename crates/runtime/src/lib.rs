@@ -28,6 +28,7 @@ use wasmtime::{
     Engine, ResourceLimiter, Store, Trap,
 };
 
+pub mod account_sync_host;
 pub mod connections;
 pub mod phase3_ui;
 pub mod uapi;
@@ -204,6 +205,11 @@ pub struct Config {
     /// the app: an app names keys, not locations, so storage cannot widen into
     /// reading the user's files.
     pub app_store_path: Option<PathBuf>,
+    /// When the person is signed in and has not turned it off: keep this
+    /// app's key-value store the same on every device they sign in on
+    /// (IC-981). `None` -- nobody signed in, a test, a picture -- leaves the
+    /// store exactly as it always was.
+    pub account_sync: Option<account_sync_host::AccountSyncContext>,
     /// Where this app's database lives, chosen by the runtime on the same
     /// terms as the key-value store.
     pub app_database_path: Option<PathBuf>,
@@ -274,6 +280,7 @@ impl Default for Config {
             sandbox_root: PathBuf::from("."),
             bundle_assets_root: None,
             app_store_path: None,
+            account_sync: None,
             app_groups: std::collections::BTreeMap::new(),
             connections: connections::Connections::default(),
             app_org: None,
@@ -1923,6 +1930,7 @@ impl HostState {
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "kv", None).expect("store.kv"),
                 ),
+                config.account_sync.as_ref(),
             )
             .with_database(
                 config.app_database_path.clone(),

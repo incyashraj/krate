@@ -52,6 +52,9 @@ krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
 # The device's copy of the team data, with sealing (the wasm32 build below
 # takes it without: a tab's runtime never syncs).
 krate-orgdata = { path = "../orgdata" }
+# A signed-in person's store.kv on every device they have (IC-981): the
+# merge, the sealing and the hub protocol.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 # SQLite itself, for store.sql (crates/appsql's `engine`).
 krate-appsql = { path = "../appsql" }
 cpal = "0.18.1"
