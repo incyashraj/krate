@@ -63,6 +63,7 @@ impl Phone {
             publisher: String::new(),
             enabled: true,
             background: false,
+            files: None,
         })
     }
 

@@ -15,11 +15,14 @@ import test from "node:test";
 import "./github-stub.mjs";
 import worker from "../src/index.js";
 import { covers, keepVersion } from "../src/account-sync.js";
+import { r2Mock, sha256Hex } from "./r2-mock.mjs";
 
 const KV = new Map();
 const writes = [];
+const R2 = r2Mock();
 const env = {
   PUBLIC_BASE: "https://hub.test",
+  BUNDLES: R2,
   APPS: {
     __standIn: true,
     get: async (k) => KV.get(k) ?? null,
@@ -38,11 +41,17 @@ async function call(who, method, path, payload) {
   const headers = {};
   if (who) headers.authorization = `Bearer gho_${who}`;
   let body;
-  if (payload !== undefined) {
+  if (payload instanceof Uint8Array) {
+    headers["content-type"] = "application/octet-stream";
+    body = payload;
+  } else if (payload !== undefined) {
     headers["content-type"] = "application/json";
     body = JSON.stringify(payload);
   }
   const res = await worker.fetch(new Request(`https://hub.test${path}`, { method, headers, body }), env, { waitUntil() {} });
+  if ((res.headers.get("content-type") || "").startsWith("application/octet-stream")) {
+    return { status: res.status, body: new Uint8Array(await res.arrayBuffer()) };
+  }
   const text = await res.text();
   let parsed = null;
   try {
@@ -214,4 +223,67 @@ test("the version rule", () => {
   assert.equal(keepVersion(versions, { vv: { [A]: 1 } }), false, "already held");
   assert.equal(keepVersion(versions, { vv: { [A]: 1, [B]: 1 } }), true);
   assert.deepEqual(versions, [{ vv: { [A]: 1, [B]: 1 } }], "it replaced both");
+});
+
+test("a file's body waits in R2 under its own digest, and goes when no version names it", async () => {
+  const FILES = "fb".repeat(32);
+  const body1 = new Uint8Array([9, 8, 7, 6, 5, 4, 3, 2, 1]);
+  const id1 = await sha256Hex(body1);
+  const fw = (vv, c, b) => ({ ...w(vv, c), blob: b });
+
+  // A version naming a body the hub does not have is refused, and names it.
+  let r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 1 }, "photo 1", id1)] });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.error, "blob-missing");
+  assert.deepEqual(r.body.missing, [id1]);
+
+  // A body goes by the SHA-256 of its bytes, and is kept once.
+  assert.equal((await call("ada", "PUT", `/account/sync/blobs/${FILES}/${"00".repeat(32)}`, body1)).status, 400);
+  writes.length = 0;
+  r = await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id1}`, body1);
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  r = await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id1}`, body1);
+  assert.equal(r.body.stored, false, "already there: not written again");
+  assert.equal(writes.length, 0, "a body is no KV write");
+
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 1 }, "photo 1", id1)] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.entries[NAME][0].blob, id1);
+  assert.equal(r.body.entries[NAME][0].bn, body1.length, "the size the hub measured");
+  assert.equal(writes.length, 1, "one KV write for the sync");
+  r = await call("ada", "GET", `/account/sync/blobs/${FILES}/${id1}`);
+  assert.deepEqual([...r.body], [...body1]);
+
+  // Another account reaches none of it.
+  assert.equal((await call("bob", "GET", `/account/sync/blobs/${FILES}/${id1}`)).status, 404);
+
+  // A deletion names no body; a version made knowing the first replaces
+  // it, and the body nothing names any more is gone.
+  assert.equal((await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [{ ...w({ [A]: 2 }, "gone", A, "t"), blob: id1 }] })).status, 400);
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [w({ [A]: 2 }, "deleted", A, "t")] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id1}`)).status, 404);
+  assert.ok(![...R2._blobs.keys()].some((k) => k.endsWith(id1)), "R2 holds it no more");
+
+  // Two made apart each keep their body.
+  const body2 = new TextEncoder().encode("mac copy");
+  const body3 = new TextEncoder().encode("phone copy");
+  const [id2, id3] = [await sha256Hex(body2), await sha256Hex(body3)];
+  await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id2}`, body2);
+  await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id3}`, body3);
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 3 }, "mac", id2), fw({ [A]: 2, [B]: 1 }, "phone", id3)] });
+  assert.equal(r.body.entries[NAME].length, 2);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id2}`)).status, 200);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id3}`)).status, 200);
+  // Settled on the Mac's: the phone's body goes, the Mac's stays named.
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 4, [B]: 1 }, "settled", id2)] });
+  assert.equal(r.body.entries[NAME].length, 1);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id2}`)).status, 200);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id3}`)).status, 404);
+
+  // A body over the bound is refused before it is read whole.
+  const big = new Uint8Array(16 * 1024 * 1024 + 65);
+  r = await call("ada", "PUT", `/account/sync/blobs/${FILES}/${await sha256Hex(big)}`, big);
+  assert.equal(r.status, 413);
+  assert.equal(r.body.error, "file-too-large");
 });

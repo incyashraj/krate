@@ -845,6 +845,7 @@ mod player {
         // desktop: the app names keys, never files.
         let stores = crate::run_config::stores(data_root, &manifest.app.id);
         let _ = std::fs::create_dir_all(data_root.join("stores"));
+        let files = crate::run_config::writes_files(&manifest).then(|| sandbox.clone());
         let mut config = krate_runtime::Config {
             session_policy: policy,
             sandbox_root: sandbox,
@@ -891,6 +892,8 @@ mod player {
                 publisher: plan.publisher,
                 enabled: plan.enabled,
                 background: true,
+                // Its own folder: its files follow the person too (S3).
+                files,
             },
         );
         if let Some(bytes) = memory_bytes {

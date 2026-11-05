@@ -32,6 +32,10 @@ pub struct Phase2Host<'a> {
     /// in which case every store call refuses -- an app cannot conjure storage
     /// the runtime did not give it.
     store: Option<crate::account_sync_host::KvStore>,
+    /// The app's own files kept the same on the person's devices (IC-981
+    /// S3): a thread of its own, closed with the run.
+    #[cfg(not(target_arch = "wasm32"))]
+    files_sync: Option<crate::account_sync_files::SyncedFiles>,
     /// The app's own database, on the same terms as the store above.
     database: Option<crate::sql_host::AppDatabase>,
     /// The app's own secrets, encrypted at rest.
@@ -98,6 +102,8 @@ impl<'a> Phase2Host<'a> {
             resources: Phase2ResourceTable::default(),
             asset_root: None,
             store: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            files_sync: None,
             database: None,
             secrets: None,
             shared: None,
@@ -173,6 +179,19 @@ impl<'a> Phase2Host<'a> {
         granted: bool,
         sync: Option<&crate::account_sync_host::AccountSyncContext>,
     ) -> Self {
+        // The app's own folder, when the player names one for it alone:
+        // its files follow the person by the same rule (S3). Whatever the
+        // store.kv grant, an app's files are its files.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(store), Some(context)) = (path.as_ref(), sync.filter(|c| c.enabled)) {
+            if let Some(folder) = context.files.clone() {
+                self.files_sync = Some(crate::account_sync_files::SyncedFiles::open(
+                    folder,
+                    store.clone(),
+                    context.clone(),
+                ));
+            }
+        }
         self.store = path.map(|path| crate::account_sync_host::KvStore::open(path, granted, sync));
         self
     }

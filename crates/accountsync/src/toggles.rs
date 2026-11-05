@@ -67,6 +67,9 @@ pub fn forget_replicas(store: &Path) {
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "json") {
             let _ = std::fs::remove_file(path);
+        } else if path.extension().is_some_and(|e| e == "held") {
+            // The other devices' copies of files held for a choice (S3).
+            let _ = std::fs::remove_dir_all(path);
         }
     }
 }
@@ -75,6 +78,19 @@ pub fn forget_replicas(store: &Path) {
 /// the account id, so an id is never a path.
 pub fn replica_path(store: &Path, account: &str) -> PathBuf {
     sync_dir(store).join(format!("{}.json", slot(account)))
+}
+
+/// Where sync keeps what it knows of an app's own files (S3) for one
+/// account, beside the replica: `<store>.sync/<slot>.files.json`.
+pub fn files_state_path(store: &Path, account: &str) -> PathBuf {
+    sync_dir(store).join(format!("{}.files.json", slot(account)))
+}
+
+/// Where the other devices' copies of files wait while the person chooses
+/// between them: `<store>.sync/<slot>.held/<sha256>`. Never in the app's
+/// folder, so the app never reads a copy it did not choose.
+pub fn held_dir(store: &Path, account: &str) -> PathBuf {
+    sync_dir(store).join(format!("{}.held", slot(account)))
 }
 
 /// The folder (or file stem) one account's files go by.
@@ -112,8 +128,13 @@ mod tests {
         // Clearing an app's data forgets the replica, not the toggle.
         set_app_sync(&store, false).unwrap();
         std::fs::write(replica_path(&store, "u1"), b"{}").unwrap();
+        std::fs::write(files_state_path(&store, "u1"), b"{}").unwrap();
+        std::fs::create_dir_all(held_dir(&store, "u1")).unwrap();
+        std::fs::write(held_dir(&store, "u1").join("x"), b"theirs").unwrap();
         forget_replicas(&store);
         assert!(!replica_path(&store, "u1").exists());
+        assert!(!files_state_path(&store, "u1").exists(), "and the files'");
+        assert!(!held_dir(&store, "u1").exists());
         assert!(app_toggle_path(&store).exists());
         assert!(slot("../../etc").chars().all(|c| c.is_ascii_hexdigit()));
     }

@@ -28,6 +28,8 @@ use wasmtime::{
     Engine, ResourceLimiter, Store, Trap,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod account_sync_files;
 pub mod account_sync_host;
 pub mod connections;
 pub mod phase3_ui;

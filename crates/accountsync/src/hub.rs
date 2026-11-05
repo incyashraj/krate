@@ -76,26 +76,7 @@ impl Hub {
                 .send_string(&body.to_string()),
             None => request.call(),
         };
-        match sent {
-            Ok(response) => {
-                let text = response.into_string().map_err(|_| HubError::Offline)?;
-                if text.trim().is_empty() {
-                    return Ok(Value::Null);
-                }
-                serde_json::from_str(&text)
-                    .map_err(|_| HubError::Hub(format!("{url} did not answer as a Krate hub")))
-            }
-            Err(ureq::Error::Status(status, response)) if status < 500 && status != 429 => {
-                let body: Value = serde_json::from_str(&response.into_string().unwrap_or_default())
-                    .unwrap_or_default();
-                Err(HubError::Refused {
-                    status,
-                    reason: body["error"].as_str().unwrap_or("refused").to_string(),
-                    message: body["message"].as_str().unwrap_or("").to_string(),
-                })
-            }
-            Err(_) => Err(HubError::Offline),
-        }
+        Self::answered(&url, sent)
     }
 
     /// The account's keys as the hub holds them, for `device` (when given):
@@ -159,6 +140,69 @@ impl Hub {
         match since {
             Some(rev) => self.call("GET", &format!("/buckets/{bucket}?since={rev}"), None),
             None => self.call("GET", &format!("/buckets/{bucket}"), None),
+        }
+    }
+
+    /// Put one sealed file body (S3) under `id`, the SHA-256 of its bytes,
+    /// in the app's `bucket`. The hub keeps it once: a body it already
+    /// holds costs no write.
+    pub fn put_blob(&self, bucket: &str, id: &str, sealed: &[u8]) -> Result<(), HubError> {
+        let url = format!("{}/account/sync/blobs/{bucket}/{id}", self.base);
+        let sent = self
+            .agent
+            .put(&url)
+            .set("accept", "application/json")
+            .set("authorization", &self.authorization)
+            .set("content-type", "application/octet-stream")
+            .send_bytes(sealed);
+        Self::answered(&url, sent).map(|_| ())
+    }
+
+    /// One sealed file body, at most `max` bytes.
+    pub fn blob(&self, bucket: &str, id: &str, max: u64) -> Result<Vec<u8>, HubError> {
+        use std::io::Read;
+        let url = format!("{}/account/sync/blobs/{bucket}/{id}", self.base);
+        let sent = self
+            .agent
+            .get(&url)
+            .set("authorization", &self.authorization)
+            .call();
+        let response = match sent {
+            Ok(response) => response,
+            Err(error) => return Self::answered(&url, Err(error)).map(|_| Vec::new()),
+        };
+        let mut bytes = Vec::new();
+        response
+            .into_reader()
+            .take(max.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|_| HubError::Offline)?;
+        if bytes.len() as u64 > max {
+            return Err(HubError::Hub(format!("{url} sent more than a file body")));
+        }
+        Ok(bytes)
+    }
+
+    fn answered(url: &str, sent: Result<ureq::Response, ureq::Error>) -> Result<Value, HubError> {
+        match sent {
+            Ok(response) => {
+                let text = response.into_string().map_err(|_| HubError::Offline)?;
+                if text.trim().is_empty() {
+                    return Ok(Value::Null);
+                }
+                serde_json::from_str(&text)
+                    .map_err(|_| HubError::Hub(format!("{url} did not answer as a Krate hub")))
+            }
+            Err(ureq::Error::Status(status, response)) if status < 500 && status != 429 => {
+                let body: Value = serde_json::from_str(&response.into_string().unwrap_or_default())
+                    .unwrap_or_default();
+                Err(HubError::Refused {
+                    status,
+                    reason: body["error"].as_str().unwrap_or("refused").to_string(),
+                    message: body["message"].as_str().unwrap_or("").to_string(),
+                })
+            }
+            Err(_) => Err(HubError::Offline),
         }
     }
 

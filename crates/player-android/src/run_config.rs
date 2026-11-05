@@ -260,9 +260,32 @@ pub fn sync_plan(
     })
 }
 
+/// Whether an app keeps files of its own: it asks to write, make folders
+/// in or remove from its folder. Its folder then follows the person to
+/// their other devices with its store (IC-981 S3).
+pub fn writes_files(manifest: &Manifest) -> bool {
+    manifest.declared_capabilities().is_ok_and(|caps| {
+        caps.iter()
+            .any(|c| c.module() == "fs" && matches!(c.action(), "write" | "mkdir" | "remove"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_app_keeps_files_when_it_asks_to_write_them() {
+        let writes = manifest(
+            "[[capabilities]]\ncap = \"fs.write:notes/**\"\nrationale = \"x\"\nrequired = true\n",
+        );
+        assert!(writes_files(&writes));
+        let reads = manifest(
+            "[[capabilities]]\ncap = \"fs.read:notes/**\"\nrationale = \"x\"\nrequired = true\n",
+        );
+        assert!(!writes_files(&reads), "reading writes nothing to sync");
+        assert!(!writes_files(&manifest("")));
+    }
 
     #[test]
     fn sync_follows_the_sign_in_and_the_toggles() {

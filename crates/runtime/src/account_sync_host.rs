@@ -52,6 +52,11 @@ pub struct AccountSyncContext {
     /// A person's run exchanges on its own thread. A test turns this off
     /// and drives [`SyncedKv::sync_now`] itself.
     pub background: bool,
+    /// The app's own folder (its sandbox), when the player keeps one for
+    /// this app alone: its files follow the person too (S3,
+    /// account_sync_files.rs). `None` -- a folder the person chose, the
+    /// one beside a `.krate`, an app that writes no files -- syncs none.
+    pub files: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for AccountSyncContext {
@@ -65,6 +70,7 @@ impl std::fmt::Debug for AccountSyncContext {
             .field("publisher", &self.publisher)
             .field("enabled", &self.enabled)
             .field("background", &self.background)
+            .field("files", &self.files)
             .finish()
     }
 }
@@ -240,18 +246,143 @@ mod synced {
     /// The account and key this run holds, serialised across exchanges
     /// (the background thread's and [`SyncedKv::sync_now`]'s), and held
     /// across the network -- never the store's lock.
-    struct Session {
-        hub: Hub,
-        account: Option<Account>,
-        ring: Option<Keyring>,
-        view: serde_json::Value,
+    pub(crate) struct Session {
+        pub(crate) hub: Hub,
+        pub(crate) account: Option<Account>,
+        pub(crate) ring: Option<Keyring>,
+        pub(crate) view: serde_json::Value,
         /// A version came from a device not in `view`'s list.
-        names_stale: bool,
+        pub(crate) names_stale: bool,
     }
 
-    struct Wake {
+    impl Session {
+        pub(crate) fn new(context: &AccountSyncContext) -> Session {
+            Session {
+                hub: Hub::new(&context.hub, &context.token),
+                account: None,
+                ring: None,
+                view: serde_json::Value::Null,
+                names_stale: false,
+            }
+        }
+
+        /// The account and its key: once a run, then from memory. `false`
+        /// while this device waits for one of the person's devices (or the
+        /// recovery code) to let it in.
+        pub(crate) fn hold(&mut self, context: &AccountSyncContext) -> Result<bool, String> {
+            if self.account.is_none() {
+                let id =
+                    krate_accountsync::device::account_of(&self.hub).map_err(|e| e.to_string())?;
+                let account = Account::load(
+                    &context.device_dir,
+                    &id,
+                    &context.machine_key,
+                    &context.device_name,
+                )
+                .map_err(|e| e.to_string())?;
+                self.account = Some(account);
+            }
+            let account = self.account.as_ref().expect("set above");
+            if self.ring.is_none() {
+                let (status, view) = account
+                    .refresh_with_view(&self.hub)
+                    .map_err(|e| e.to_string())?;
+                self.view = view;
+                match status {
+                    KeyStatus::Holds(ring) => self.ring = Some(ring),
+                    KeyStatus::Waiting => return Ok(false),
+                }
+            }
+            Ok(true)
+        }
+    }
+
+    /// What wakes a sync thread early -- an answer to send -- or stops it,
+    /// at close.
+    pub(crate) struct Wake {
         flags: Mutex<(bool, bool)>, // (stop, kick)
         cv: Condvar,
+    }
+
+    impl Wake {
+        pub(crate) fn new() -> Arc<Wake> {
+            Arc::new(Wake {
+                flags: Mutex::new((false, false)),
+                cv: Condvar::new(),
+            })
+        }
+
+        pub(crate) fn kick(&self) {
+            if let Ok(mut flags) = self.flags.lock() {
+                flags.1 = true;
+                self.cv.notify_all();
+            }
+        }
+
+        pub(crate) fn stop(&self) {
+            if let Ok(mut flags) = self.flags.lock() {
+                flags.0 = true;
+                self.cv.notify_all();
+            }
+        }
+    }
+
+    /// The loop a synced store runs on a thread of its own: an exchange at
+    /// open, every [`PERIOD`] after, sooner ([`FLOOR`]) when one left
+    /// something to send, backing off while the hub is away -- and at
+    /// close, `at_close`, which sends only what is still to go up. Answers
+    /// what says the thread has ended, for a close to wait on.
+    pub(crate) fn spawn_loop(
+        name: &str,
+        wake: Arc<Wake>,
+        mut exchange: impl FnMut() -> Result<Step, String> + Send + 'static,
+        mut at_close: impl FnMut() + Send + 'static,
+    ) -> Option<std::sync::mpsc::Receiver<()>> {
+        let (tell, done) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name(name.into())
+            .spawn(move || {
+                let mut wait = Duration::ZERO;
+                let mut failures = 0u32;
+                let mut last = None::<Instant>;
+                loop {
+                    let stop = {
+                        let flags = wake.flags.lock().unwrap_or_else(|p| p.into_inner());
+                        let (mut flags, _) = wake
+                            .cv
+                            .wait_timeout_while(flags, wait, |(stop, kick)| !*stop && !*kick)
+                            .unwrap_or_else(|p| p.into_inner());
+                        flags.1 = false;
+                        flags.0
+                    };
+                    if stop {
+                        at_close();
+                        break;
+                    }
+                    if last.is_some_and(|at: Instant| at.elapsed() < FLOOR) {
+                        wait = FLOOR;
+                        continue;
+                    }
+                    last = Some(Instant::now());
+                    wait = match exchange() {
+                        Ok(Step::More) => FLOOR,
+                        Ok(Step::Done) | Ok(Step::Waiting) => {
+                            failures = 0;
+                            PERIOD
+                        }
+                        Err(_) => {
+                            failures = failures.saturating_add(1);
+                            // 30 s, 60 s, 2 min, 4 min, then every 5.
+                            PERIOD
+                                .saturating_mul(1 << failures.min(4).saturating_sub(1))
+                                .min(Duration::from_secs(300))
+                        }
+                    };
+                }
+                let _ = tell.send(());
+            })
+            .ok()
+            .map(|_| done)
     }
 
     /// One app's store, kept in sync across the person's devices.
@@ -277,17 +408,8 @@ mod synced {
                 loaded: None,
                 status: SyncStatus::default(),
             }));
-            let session = Arc::new(Mutex::new(Session {
-                hub: Hub::new(&context.hub, &context.token),
-                account: None,
-                ring: None,
-                view: serde_json::Value::Null,
-                names_stale: false,
-            }));
-            let wake = Arc::new(Wake {
-                flags: Mutex::new((false, false)),
-                cv: Condvar::new(),
-            });
+            let session = Arc::new(Mutex::new(Session::new(&context)));
+            let wake = Wake::new();
             let mut kv = SyncedKv {
                 core,
                 session,
@@ -302,66 +424,29 @@ mod synced {
         }
 
         fn start(&mut self) {
-            let (core, session, context, wake) = (
+            let (core, session, context) = (
                 self.core.clone(),
                 self.session.clone(),
                 self.context.clone(),
-                self.wake.clone(),
             );
-            let (tell, done) = std::sync::mpsc::channel();
-            let started = std::thread::Builder::new()
-                .name("krate-account-sync".into())
-                .spawn(move || {
-                    let mut wait = Duration::ZERO;
-                    let mut failures = 0u32;
-                    let mut last = None::<Instant>;
-                    loop {
-                        let stop = {
-                            let flags = wake.flags.lock().unwrap_or_else(|p| p.into_inner());
-                            let (mut flags, _) = wake
-                                .cv
-                                .wait_timeout_while(flags, wait, |(stop, kick)| !*stop && !*kick)
-                                .unwrap_or_else(|p| p.into_inner());
-                            flags.1 = false;
-                            flags.0
-                        };
-                        if stop {
-                            // At close: only what is still to go up matters.
-                            let dirty = core.lock().ok().is_some_and(|c| {
-                                c.loaded
-                                    .as_ref()
-                                    .is_some_and(|l| !l.replica.outgoing().is_empty())
-                            });
-                            if dirty {
-                                let _ = exchange(&core, &session, &context);
-                            }
-                            break;
-                        }
-                        if last.is_some_and(|at: Instant| at.elapsed() < FLOOR) {
-                            wait = FLOOR;
-                            continue;
-                        }
-                        last = Some(Instant::now());
-                        wait = match exchange(&core, &session, &context) {
-                            Ok(Step::More) => FLOOR,
-                            Ok(Step::Done) | Ok(Step::Waiting) => {
-                                failures = 0;
-                                PERIOD
-                            }
-                            Err(_) => {
-                                failures = failures.saturating_add(1);
-                                // 30 s, 60 s, 2 min, 4 min, then every 5.
-                                PERIOD
-                                    .saturating_mul(1 << failures.min(4).saturating_sub(1))
-                                    .min(Duration::from_secs(300))
-                            }
-                        };
+            let (close_core, close_session, close_context) =
+                (core.clone(), session.clone(), context.clone());
+            self.done = spawn_loop(
+                "krate-account-sync",
+                self.wake.clone(),
+                move || exchange(&core, &session, &context),
+                move || {
+                    // At close: only what is still to go up matters.
+                    let dirty = close_core.lock().ok().is_some_and(|c| {
+                        c.loaded
+                            .as_ref()
+                            .is_some_and(|l| !l.replica.outgoing().is_empty())
+                    });
+                    if dirty {
+                        let _ = exchange(&close_core, &close_session, &close_context);
                     }
-                    let _ = tell.send(());
-                });
-            if started.is_ok() {
-                self.done = Some(done);
-            }
+                },
+            );
         }
 
         /// One exchange now, on this thread: what a test, or a person
@@ -457,10 +542,7 @@ mod synced {
         }
 
         fn kick(&self) {
-            if let Ok(mut flags) = self.wake.flags.lock() {
-                flags.1 = true;
-                self.wake.cv.notify_all();
-            }
+            self.wake.kick();
         }
     }
 
@@ -470,10 +552,7 @@ mod synced {
         /// own thread, and whatever it did not send goes next time -- the
         /// replica on disk still says so.
         fn drop(&mut self) {
-            if let Ok(mut flags) = self.wake.flags.lock() {
-                flags.0 = true;
-                self.wake.cv.notify_all();
-            }
+            self.wake.stop();
             if let Some(done) = self.done.take() {
                 let _ = done.recv_timeout(CLOSE_WAIT);
             }
@@ -606,6 +685,7 @@ mod synced {
         context.publisher = publisher;
         context.enabled = true;
         context.background = false;
+        context.files = None;
         let kv = SyncedKv::open(store.to_path_buf(), context);
         kv.sync_now()
     }
@@ -647,34 +727,13 @@ mod synced {
         let session = &mut *session;
 
         // 1. The account and its key: once a run, then from memory.
-        if session.account.is_none() {
-            let id =
-                krate_accountsync::device::account_of(&session.hub).map_err(|e| e.to_string())?;
-            let account = Account::load(
-                &context.device_dir,
-                &id,
-                &context.machine_key,
-                &context.device_name,
-            )
-            .map_err(|e| e.to_string())?;
-            session.account = Some(account);
-        }
-        let account = session.account.as_ref().expect("set above");
-        if session.ring.is_none() {
-            let (status, view) = account
-                .refresh_with_view(&session.hub)
-                .map_err(|e| e.to_string())?;
-            session.view = view;
-            match status {
-                KeyStatus::Holds(ring) => session.ring = Some(ring),
-                KeyStatus::Waiting => {
-                    if let Ok(mut core) = core.lock() {
-                        core.status.waiting_for_approval = true;
-                    }
-                    return Ok(Step::Waiting);
-                }
+        if !session.hold(context)? {
+            if let Ok(mut core) = core.lock() {
+                core.status.waiting_for_approval = true;
             }
+            return Ok(Step::Waiting);
         }
+        let account = session.account.as_ref().expect("held");
         // A version from a device this run has not heard of: its name, for
         // "keep both", from the account's device list.
         if session.names_stale {
@@ -851,6 +910,7 @@ mod synced {
                 publisher: "unsigned".into(),
                 enabled: true,
                 background: true,
+                files: None,
             }
         }
 

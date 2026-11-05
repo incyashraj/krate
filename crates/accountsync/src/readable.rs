@@ -83,6 +83,11 @@ fn cut(text: &str, max: usize) -> String {
     out
 }
 
+/// A size in words: "340 KB", "2.4 MB".
+pub fn size_in_words(bytes: u64) -> String {
+    size(usize::try_from(bytes).unwrap_or(usize::MAX))
+}
+
 fn size(bytes: usize) -> String {
     if bytes >= 1024 * 1024 {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))

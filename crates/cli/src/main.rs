@@ -5621,6 +5621,7 @@ fn sync_conflicts_command(
                         publisher: String::new(),
                         enabled: true,
                         background: false,
+                        files: None,
                     },
                 )
                 .is_ok()
@@ -17224,6 +17225,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 principal,
                 &principal_store_path_in(&store_home, principal),
                 &policy,
+                &request.sandbox_root,
             )
         })
     } else {
@@ -25235,20 +25237,25 @@ pub(crate) fn account_sync_dir() -> PathBuf {
     krate_home().join("account-sync")
 }
 
-/// What a run needs to keep an app's store.kv on every device of the
-/// signed-in person (IC-981), or `None`: nobody signed in, the app not
-/// granted store.kv, or `KRATE_NO_ACCOUNT_SYNC` set. A toggle that is off
-/// rides along as `enabled: false`.
+/// What a run needs to keep an app's store.kv -- and, for an installed
+/// app, its own files -- on every device of the signed-in person (IC-981),
+/// or `None`: nobody signed in, the app granted neither, or
+/// `KRATE_NO_ACCOUNT_SYNC` set. A toggle that is off rides along as
+/// `enabled: false`.
 fn account_sync_context(
     app_id: &str,
     principal: &StoragePrincipal,
     store: &Path,
     policy: &krate_policy::SessionPolicy,
+    sandbox: &Path,
 ) -> Option<krate_runtime::account_sync_host::AccountSyncContext> {
     if std::env::var_os("KRATE_NO_ACCOUNT_SYNC").is_some() || app_id.is_empty() {
         return None;
     }
-    if !policy.allows(&krate_manifest::Capability::new("store", "kv", None).ok()?) {
+    let files = own_files_folder(app_id, sandbox);
+    if !policy.allows(&krate_manifest::Capability::new("store", "kv", None).ok()?)
+        && files.is_none()
+    {
         return None;
     }
     let identity = github_auth::current()?;
@@ -25272,7 +25279,29 @@ fn account_sync_context(
         app_id: app_id.to_string(),
         publisher,
         background: true,
+        files,
     })
+}
+
+/// The app's files sync (S3) only from a folder Krate keeps for that app
+/// alone -- an installed app's data folder (IC-943). The folder beside a
+/// `.krate` someone opened, or one named with `--sandbox-root`, holds the
+/// person's other things too, and is never sent anywhere.
+fn own_files_folder(app_id: &str, sandbox: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let own = installed_app_data_dir(&home_dir()?, app_id);
+        let same = match (own.canonicalize(), sandbox.canonicalize()) {
+            (Ok(own), Ok(sandbox)) => own == sandbox,
+            _ => false,
+        };
+        same.then_some(own)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app_id, sandbox);
+        None
+    }
 }
 
 /// What the person's device list calls this computer: its own name where

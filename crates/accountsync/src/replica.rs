@@ -114,6 +114,9 @@ pub enum ResolveError {
     NoSuchVersion,
     /// `Merge` on values that are not all JSON objects or all lists.
     NotMergeable,
+    /// The other device's copy of a file has not reached this device yet,
+    /// so it cannot be put in place (S3).
+    NotHereYet,
 }
 
 impl std::fmt::Display for ResolveError {
@@ -123,6 +126,9 @@ impl std::fmt::Display for ResolveError {
             ResolveError::NoSuchVersion => "that version is not one of the two",
             ResolveError::NotMergeable => {
                 "these two cannot be merged: merging is for lists and records"
+            }
+            ResolveError::NotHereYet => {
+                "the other device's copy has not reached this device yet -- let it sync, then choose"
             }
         })
     }
@@ -174,6 +180,10 @@ pub struct Outgoing {
 
 /// One change the store must make: set `key` to the value, or delete it.
 pub type StoreWrite = (String, Option<Vec<u8>>);
+
+/// What "keep both" calls the other copy: `(key, the other device's name,
+/// whether a name is taken)` to the new key ([`both_name`]).
+pub type BothName = dyn Fn(&str, &str, &dyn Fn(&str) -> bool) -> String;
 
 fn hash_of(value: Option<&[u8]>) -> Option<String> {
     value.map(crate::value_hash)
@@ -394,6 +404,21 @@ impl Replica {
         name_of: &dyn Fn(&str) -> String,
         taken: &dyn Fn(&str) -> bool,
     ) -> Result<Vec<StoreWrite>, ResolveError> {
+        self.resolve_named(key, choice, mine, name_of, taken, &both_name)
+    }
+
+    /// [`Replica::resolve`], with "keep both" naming the other copy by
+    /// `both(key, device name, taken)`: a file keeps its extension last
+    /// (crates/accountsync `files::both_file_name`).
+    pub fn resolve_named(
+        &mut self,
+        key: &str,
+        choice: &Resolution,
+        mine: Option<&[u8]>,
+        name_of: &dyn Fn(&str) -> String,
+        taken: &dyn Fn(&str) -> bool,
+        both: &BothName,
+    ) -> Result<Vec<StoreWrite>, ResolveError> {
         let device = self.device.clone();
         let state = self.keys.get(key).ok_or(ResolveError::NoConflict)?;
         if state.others.is_empty() {
@@ -422,7 +447,7 @@ impl Replica {
                         // keeping this device's.
                         continue;
                     };
-                    let name = both_name(key, &name_of(&other.by), &|k| {
+                    let name = both(key, &name_of(&other.by), &|k| {
                         taken(k) || used.iter().any(|u| u == k) || k == key
                     });
                     used.push(name.clone());
@@ -455,6 +480,32 @@ impl Replica {
             writes.insert(0, (key.to_string(), value));
         }
         Ok(writes)
+    }
+}
+
+impl Replica {
+    /// Settle a conflict on `value`, worked out by the caller -- a merge of
+    /// two files' contents, which only the caller holds. The settled
+    /// version has seen every side. Answers whether `value` differs from
+    /// what this device held.
+    pub fn settle(&mut self, key: &str, value: Option<&[u8]>) -> Result<bool, ResolveError> {
+        let device = self.device.clone();
+        let state = self.keys.get_mut(key).ok_or(ResolveError::NoConflict)?;
+        if state.others.is_empty() {
+            return Err(ResolveError::NoConflict);
+        }
+        let mut settled = state.vv.clone();
+        for other in &state.others {
+            settled.join(&other.vv);
+        }
+        settled.bump(&device);
+        let changed = hash_of(value) != state.hash;
+        state.vv = settled;
+        state.by = device;
+        state.hash = hash_of(value);
+        state.dirty = true;
+        state.others.clear();
+        Ok(changed)
     }
 }
 

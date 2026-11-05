@@ -1,11 +1,12 @@
 /* The real hub Worker on this machine, for the two-device account sync
  * proof (crates/runtime/tests/account_sync_two_devices.rs, IC-981).
  *
- * cloud/worker/src/index.js itself over an in-memory KV, signed in through
- * the GitHub stub (a token gho_<login> is that GitHub user). One thing is
- * added beside the worker, never inside it: GET /__kv answers every value
- * the KV holds, so the proof can read exactly the bytes the hub keeps and
- * find no plaintext in them.
+ * cloud/worker/src/index.js itself over an in-memory KV and R2 (the R2
+ * stand-in the other worker tests use), signed in through the GitHub stub
+ * (a token gho_<login> is that GitHub user). One thing is added beside the
+ * worker, never inside it: GET /__kv answers every value the KV holds and
+ * every object R2 holds (base64), so the proof can read exactly the bytes
+ * the hub keeps and find no plaintext in them.
  *
  *   node --experimental-wasm-modules account-sync-hub.mjs [port]
  *
@@ -14,11 +15,20 @@
 import http from "node:http";
 import "./github-stub.mjs";
 import worker from "../src/index.js";
+import { r2Mock } from "./r2-mock.mjs";
 
 const KV = new Map();
 let writes = 0;
+const R2 = r2Mock();
+let r2Writes = 0;
+const r2Put = R2.put;
+R2.put = async (...args) => {
+  r2Writes += 1;
+  return r2Put(...args);
+};
 const env = {
   PUBLIC_BASE: "http://127.0.0.1",
+  BUNDLES: R2,
   APPS: {
     __standIn: true,
     get: async (k) => KV.get(k) ?? null,
@@ -36,7 +46,9 @@ const env = {
 const server = http.createServer(async (req, res) => {
   if (req.url === "/__kv") {
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ writes, kv: Object.fromEntries(KV) }));
+    const r2 = {};
+    for (const [k, v] of R2._blobs) if (!k.includes("\u0000")) r2[k] = Buffer.from(v).toString("base64");
+    res.end(JSON.stringify({ writes, kv: Object.fromEntries(KV), r2_writes: r2Writes, r2 }));
     return;
   }
   const chunks = [];

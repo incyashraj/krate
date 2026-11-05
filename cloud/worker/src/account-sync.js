@@ -9,6 +9,8 @@
 //   GET    /account/sync/recovery               the recovery envelope and its parameters
 //   GET    /account/sync/buckets/<id>[?since=n] one app's entries
 //   PUT    /account/sync/buckets/<id>[?since=n] {writes} -- one app's changes, then its entries
+//   PUT    /account/sync/blobs/<bucket>/<id>    one sealed file body (S3), named by its SHA-256
+//   GET    /account/sync/blobs/<bucket>/<id>    that body back
 //
 // The hub never holds a key that opens anything. It keeps, per account:
 //
@@ -25,6 +27,14 @@
 //   ciphertext. Two versions made apart are both kept; a version made
 //   knowing another replaces it. The hub never decides a conflict, and a
 //   person deciding one sends a version that has seen both.
+// - per app, its files (S3): a second bucket of the same shape whose
+//   entries each name a body -- the file's contents, sealed on the device
+//   -- kept in R2 (BUNDLES) at acsync/<account>/<bucket>/<sha256 of the
+//   sealed bytes>. A version names its body in the clear (`blob`) so the
+//   hub can refuse an entry whose body never arrived and delete a body no
+//   version names any more; the name is a digest of ciphertext and says
+//   nothing about the file. What the hub learns is how many files and
+//   roughly how large.
 //
 // Whose account it is comes from the sign-in only (authedUser): every key
 // below starts with the account's id, so one account can never name
@@ -33,7 +43,9 @@
 // KV writes (the free plan's ~1,000 a day are shared with sign-in, K-952):
 // one per device registered, one per key made or passed on, and one per
 // bucket PUT that changed something -- a sync's writes go up together.
-// A read with nothing new costs no write and no bytes (`since`).
+// A read with nothing new costs no write and no bytes (`since`). A file's
+// body is one R2 write the first time it is sent and none after; R2's
+// writes are not KV's, and its free tier is a million a month.
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const DEVICE = /^[0-9a-f]{16}$/;
@@ -49,6 +61,11 @@ const BUCKET_MAX = 24 * 1024 * 1024;
 const VERSIONS_MAX = 16;
 const VV_MAX = 64;
 const WRITES_MAX = 4096;
+// A file follows the person up to 16 MiB (crates/accountsync files.rs
+// FILE_MAX); sealed, a body is that plus its nonce and tag. One app's
+// bodies together are held to FILES_MAX, every version kept counted.
+const BLOB_MAX = 16 * 1024 * 1024 + 64;
+const FILES_MAX = 256 * 1024 * 1024;
 
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -102,6 +119,7 @@ export function keepVersion(versions, w) {
 
 const keysKey = (uid) => `acsync:${uid}:keys`;
 const bucketKey = (uid, bucket) => `acsync:${uid}:b:${bucket}`;
+const blobKey = (uid, bucket, id) => `acsync/${uid}/${bucket}/${id}`;
 
 async function readKeys(env, uid) {
   const raw = await env.APPS.get(keysKey(uid));
@@ -225,8 +243,43 @@ async function recovery(env, uid) {
 function goodWrite(w) {
   return (
     w && typeof w === "object" && HEX64.test(String(w.name || "")) && goodVector(w.vv) && DEVICE.test(String(w.by || "")) &&
-    (w.kind === "v" || w.kind === "t") && Number.isSafeInteger(w.k) && w.k >= 1 && goodBlob(w.c, SEALED_MAX)
+    (w.kind === "v" || w.kind === "t") && Number.isSafeInteger(w.k) && w.k >= 1 && goodBlob(w.c, SEALED_MAX) &&
+    // A file's version names its body; a deletion names none.
+    (w.blob === undefined || (w.kind === "v" && HEX64.test(String(w.blob))))
   );
+}
+
+/// Every body the bucket's versions name, with the size the hub measured.
+function blobsOf(b) {
+  const out = new Map();
+  for (const versions of Object.values(b.entries)) for (const v of versions) if (v.blob) out.set(v.blob, v.bn || 0);
+  return out;
+}
+
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+async function blobPut(request, env, uid, bucket, id) {
+  const declared = Number(request.headers.get("content-length") || "0");
+  if (declared > BLOB_MAX) return refuse(413, "file-too-large", `a file body is at most ${BLOB_MAX} bytes`);
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.byteLength === 0 || bytes.byteLength > BLOB_MAX) return refuse(413, "file-too-large", `a file body is at most ${BLOB_MAX} bytes`);
+  if ((await sha256Hex(bytes)) !== id) return refuse(400, "bad-request", "a body goes by the SHA-256 of its bytes");
+  const key = blobKey(uid, bucket, id);
+  const had = await env.BUNDLES.head(key);
+  if (had && had.size === bytes.byteLength) return json({ id, size: had.size, stored: false });
+  await env.BUNDLES.put(key, bytes, { sha256: id, httpMetadata: { contentType: "application/octet-stream" } });
+  return json({ id, size: bytes.byteLength, stored: true }, 201);
+}
+
+async function blobGet(env, uid, bucket, id) {
+  const object = await env.BUNDLES.get(blobKey(uid, bucket, id));
+  if (!object) return refuse(404, "blob-missing", "that file body is not on the hub");
+  return new Response(object.body, {
+    headers: { "content-type": "application/octet-stream", "content-length": String(object.size), "cache-control": "no-store" },
+  });
 }
 
 async function bucketRead(env, uid, bucket) {
@@ -253,18 +306,48 @@ async function bucketPut(request, url, env, uid, bucket) {
   const bad = writes.findIndex((w) => !goodWrite(w));
   if (bad >= 0) return refuse(400, "bad-request", `write ${bad} is not a sealed entry: {name, vv, by, kind, k, c}`);
   const b = await bucketRead(env, uid, bucket);
+  const before = blobsOf(b);
+  // A file's body must be on the hub before a version may name it: a
+  // device that lost it on the way sends it again.
+  const missing = [];
+  const sizes = new Map(before);
+  for (const w of writes) {
+    if (!w.blob || sizes.has(w.blob)) continue;
+    if ((b.entries[w.name] || []).some((v) => covers(v.vv, w.vv))) continue;
+    const head = await env.BUNDLES.head(blobKey(uid, bucket, w.blob));
+    if (head) sizes.set(w.blob, head.size);
+    else missing.push(w.blob);
+  }
+  if (missing.length) return json({ error: "blob-missing", message: "a file's body is not on the hub yet -- send it first", missing }, 409);
   let changed = false;
   for (const w of writes) {
     const versions = b.entries[w.name] || [];
-    if (keepVersion(versions, { vv: w.vv, by: w.by, kind: w.kind, k: w.k, c: w.c })) changed = true;
+    const v = { vv: w.vv, by: w.by, kind: w.kind, k: w.k, c: w.c };
+    if (w.blob) Object.assign(v, { blob: w.blob, bn: sizes.get(w.blob) || 0 });
+    if (keepVersion(versions, v)) changed = true;
     if (versions.length > VERSIONS_MAX) return refuse(413, "too-many-versions", "one entry holds too many versions nobody has decided between");
     b.entries[w.name] = versions;
   }
+  const after = blobsOf(b);
   if (changed) {
+    let held = 0;
+    for (const n of after.values()) held += n;
+    if (held > FILES_MAX) return refuse(413, "files-too-large", `this app's files are larger than sync carries (${Math.round(FILES_MAX / 1048576)} MB)`);
     b.rev += 1;
     const out = JSON.stringify(b);
     if (out.length > BUCKET_MAX) return refuse(413, "bucket-too-large", "this app's data is larger than sync carries");
     await env.APPS.put(bucketKey(uid, bucket), out);
+    // Only once the bucket no longer names them: a body no version names.
+    // A delete that fails leaves a body nothing names, which costs storage
+    // and never data; the answer still goes back.
+    for (const id of before.keys()) {
+      if (after.has(id)) continue;
+      try {
+        await env.BUNDLES.delete(blobKey(uid, bucket, id));
+      } catch {
+        /* left for a later scrub */
+      }
+    }
   }
   const since = sinceOf(url);
   if (!changed && since !== null && since === b.rev) return json({ rev: b.rev, unchanged: true });
@@ -289,6 +372,11 @@ export async function accountSyncRoute(request, url, env, { authedUser }) {
   if (rest.length === 1 && rest[0] === "init" && m === "POST") return init(request, env, uid);
   if (rest.length === 1 && rest[0] === "grants" && m === "POST") return grant(request, env, uid);
   if (rest.length === 1 && rest[0] === "recovery" && m === "GET") return recovery(env, uid);
+  if (rest.length === 3 && rest[0] === "blobs" && HEX64.test(rest[1]) && HEX64.test(rest[2])) {
+    if (!env.BUNDLES) return refuse(503, "no-store", "this hub keeps no files");
+    if (m === "PUT") return blobPut(request, env, uid, rest[1], rest[2]);
+    if (m === "GET") return blobGet(env, uid, rest[1], rest[2]);
+  }
   if (rest.length === 2 && rest[0] === "buckets" && HEX64.test(rest[1])) {
     if (m === "GET") return bucketGet(url, env, uid, rest[1]);
     if (m === "PUT") return bucketPut(request, url, env, uid, rest[1]);

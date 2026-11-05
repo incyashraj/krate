@@ -1,7 +1,9 @@
 //! A signed-in person's own app data on every device they have (IC-981,
 //! founder decision F-321): the same reminders on the Mac and the phone.
 //!
-//! Stage S1 is `store.kv`. The parts:
+//! Stage S1 is `store.kv`; stage S3 the app's own files ([`files`]: whole
+//! files under the same rule, their bodies apart in the hub's object
+//! store). The parts:
 //!
 //! - [`vv`]: version vectors -- one counter per device -- which say whether
 //!   two writes are one after the other or were made apart. Never a wall
@@ -29,6 +31,7 @@
 //! [`vv::VersionVector::covers`]), so a conflict is never decided on the
 //! hub, and nothing is lost there while a person decides.
 
+pub mod files;
 pub mod json_merge;
 pub mod readable;
 pub mod replica;

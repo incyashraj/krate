@@ -1316,6 +1316,7 @@ mod player {
         let stores = data_root.join("stores");
         let _ = std::fs::create_dir_all(&stores);
         let store = stores.join(format!("{}.kv", sanitize(&manifest.app.id)));
+        let files = crate::run_config::writes_files(&manifest).then(|| sandbox.clone());
         let mut config = krate_runtime::Config {
             session_policy: krate_policy::SessionPolicy::from_grants(kept),
             sandbox_root: sandbox,
@@ -1351,6 +1352,8 @@ mod player {
                 publisher: plan.publisher,
                 enabled: plan.enabled,
                 background: true,
+                // Its own folder: its files follow the person too (S3).
+                files,
             },
         );
         if let Some(mib) = memory_budget_mib(&manifest) {

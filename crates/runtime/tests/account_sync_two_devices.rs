@@ -96,6 +96,7 @@ fn context(hub: &str, who: &str, dir: &Path, name: &str) -> AccountSyncContext {
         publisher: "unsigned".to_string(),
         enabled: true,
         background: false,
+        files: None,
     }
 }
 

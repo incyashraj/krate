@@ -132,6 +132,7 @@ impl Device {
             publisher: "unsigned".to_string(),
             enabled: true,
             background: false,
+            files: None,
         }
     }
 
