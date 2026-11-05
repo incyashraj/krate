@@ -114,6 +114,15 @@
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="krate-signin" />
       </intent-filter>
+      <!-- Krate's own sign-in: krate.tech/login/done hands it back as
+           krate://signed-in?token=...&app_nonce=..., and the Player takes it
+           only while it is waiting for one it started (the nonce is its own). -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="krate" android:host="signed-in" />
+      </intent-filter>
       <!-- A .krate file from Files, a share sheet, or a download. Content
            resolvers usually report octet-stream and often drop the
            extension, so both shapes are claimed. -->

@@ -157,63 +157,6 @@ public class KrateActivity extends NativeActivity {
         });
     }
 
-    /** Whether an in-app browser tab Krate opened is still over it. */
-    private volatile boolean tabOpen;
-
-    /**
-     * Open a page in the phone's in-app browser (a Custom Tab: the browser's
-     * own page over Krate, its address bar showing where the person really
-     * is, their sign-ins there), with a short note on screen first. False
-     * when the phone has no browser.
-     */
-    public boolean krateOpenTab(final String url, final String note) {
-        final Intent open = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-        String pkg = SignIn.browserPackage(this);
-        if (pkg == null) {
-            return false;
-        }
-        open.setPackage(pkg);
-        android.os.Bundle session = new android.os.Bundle();
-        session.putBinder("android.support.customtabs.extra.SESSION", null);
-        open.putExtras(session);
-        tabOpen = true;
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (note != null && !note.isEmpty()) {
-                        android.widget.Toast.makeText(KrateActivity.this, note,
-                                android.widget.Toast.LENGTH_LONG).show();
-                    }
-                    startActivity(open);
-                } catch (ActivityNotFoundException e) {
-                    tabOpen = false;
-                }
-            }
-        });
-        return true;
-    }
-
-    /** Whether the in-app tab is still open (the person has not come back). */
-    public boolean krateTabOpen() {
-        return tabOpen;
-    }
-
-    /** Close the in-app tab by bringing Krate back to the front. */
-    public void krateCloseTab() {
-        if (!tabOpen) {
-            return;
-        }
-        final Intent back = new Intent(this, KrateActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                startActivity(back);
-            }
-        });
-    }
-
     /** The phone's name as its owner sees it ("Galaxy S22 Ultra"), else its model. */
     public String krateDeviceName() {
         try {
@@ -726,8 +669,6 @@ public class KrateActivity extends NativeActivity {
     protected void onResume() {
         super.onResume();
         SignIn.resumed();
-        // Krate is in front again: an in-app tab it opened has closed.
-        tabOpen = false;
         synchronized (lock) {
             if (exactStep == 2) {
                 exactStep = 3;

@@ -49,7 +49,7 @@ pub mod phone;
 mod photos;
 pub mod reminders;
 pub mod share;
-mod sign_in;
+pub mod sign_in;
 mod typing;
 pub mod unlock;
 pub mod video;

@@ -1,7 +1,7 @@
-//! Signing in to Krate on the phone: the same GitHub device flow the command
-//! line uses, through the hub (`/auth/start`, `/auth/poll`), then the
-//! account's profile (`/me`), organisations (`/orgs`) and published apps
-//! (`/my/apps`) for the home screen's profile tab.
+//! Signing in to Krate on the phone: krate.tech's own sign-in page (GitHub,
+//! Google or email) in the phone's in-app sign-in tab, handed back as
+//! krate://signed-in, then the account's profile (`/me`), organisations
+//! (`/orgs`) and published apps (`/my/apps`) for the home's profile tab.
 //!
 //! The sign-in is kept in Krate's own private storage (no other app can read
 //! it) and is only ever sent to the hub, as a bearer token.
@@ -62,70 +62,45 @@ pub fn sign_out(data_root: &Path) {
     let _ = std::fs::remove_file(kept(data_root));
 }
 
-/// A started sign-in: the code the person types on GitHub, and where.
-pub struct Started {
-    pub user_code: String,
-    pub verification_uri: String,
-    device_code: String,
-    interval: u64,
+/// krate.tech's sign-in page for Krate on this phone: GitHub, Google or
+/// email, as the person likes, handed back as krate://signed-in with this
+/// `nonce` -- the proof Krate asked for it (K-909).
+pub fn web_sign_in_url(nonce: &str) -> String {
+    format!("https://krate.tech/login/?app_nonce={nonce}")
 }
 
-/// Ask the hub to start a GitHub device sign-in.
-pub fn start() -> Result<Started, String> {
-    let response = agent()
-        .post(&format!("{HUB}/auth/start"))
-        .call()
-        .map_err(|e| format!("the hub did not answer ({e})"))?;
-    let v = body(response)?;
-    let started = Started {
-        user_code: text_of(&v, "user_code"),
-        verification_uri: text_of(&v, "verification_uri"),
-        device_code: text_of(&v, "device_code"),
-        interval: v
-            .get("interval")
-            .and_then(|i| i.as_u64())
-            .unwrap_or(5)
-            .clamp(1, 30),
-    };
-    if started.user_code.is_empty() || started.device_code.is_empty() {
-        return Err("GitHub did not give a sign-in code".to_string());
-    }
-    Ok(started)
+/// A fresh nonce: 32 hex digits from the system's randomness.
+pub fn new_nonce() -> Option<String> {
+    use std::io::Read as _;
+    let mut bytes = [0u8; 16];
+    std::fs::File::open("/dev/urandom")
+        .ok()?
+        .read_exact(&mut bytes)
+        .ok()?;
+    Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Ask once whether the person approved: true once they have (the
-/// sign-in is then kept), false while GitHub still waits.
-pub fn poll(started: &Started, data_root: &Path) -> Result<bool, String> {
-    let response = agent()
-        .post(&format!("{HUB}/auth/poll"))
-        .set("content-type", "application/json")
-        .send_string(&serde_json::json!({ "device_code": started.device_code }).to_string())
-        .map_err(|e| format!("the hub did not answer ({e})"))?;
-    let v = body(response)?;
-    if let Some(identity) = v.get("identity") {
-        let kept_json = serde_json::json!({
-            "login": text_of(identity, "login"),
-            "name": text_of(identity, "name"),
-            "avatar_url": text_of(identity, "avatar_url"),
-            "token": text_of(identity, "token"),
-        });
-        let path = kept(data_root);
-        let part = path.with_extension("part");
-        std::fs::write(&part, kept_json.to_string()).map_err(|e| e.to_string())?;
-        std::fs::rename(&part, &path).map_err(|e| e.to_string())?;
-        return Ok(true);
+/// Keep a krate://signed-in hand-back, once its nonce is the one this phone
+/// sent: anyone can open such an address, and only the sign-in Krate started
+/// counts.
+pub fn keep_web_sign_in(back: &str, nonce: &str, data_root: &Path) -> Result<(), String> {
+    let fields = crate::home::signed_in_fields(back).ok_or("That was not a Krate sign-in.")?;
+    if nonce.is_empty() || fields.app_nonce != nonce {
+        return Err("That sign-in was not the one Krate started. Try again.".to_string());
     }
-    match text_of(&v, "error").as_str() {
-        "pending" | "authorization_pending" | "slow_down" | "" => Ok(false),
-        "expired_token" => Err("The code expired. Tap Sign in to start again.".to_string()),
-        "access_denied" => Err("GitHub said no.".to_string()),
-        other => Err(format!("GitHub said {other}")),
+    if fields.token.is_empty() {
+        return Err("The sign-in came back without an account. Try again.".to_string());
     }
-}
-
-/// Seconds between asks, as GitHub asked.
-pub fn interval(started: &Started) -> u64 {
-    started.interval
+    let kept_json = serde_json::json!({
+        "login": fields.login,
+        "name": fields.name,
+        "avatar_url": fields.avatar_url,
+        "token": fields.token,
+    });
+    let path = kept(data_root);
+    let part = path.with_extension("part");
+    std::fs::write(&part, kept_json.to_string()).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, &path).map_err(|e| e.to_string())
 }
 
 fn get(path: &str, token: &str) -> Result<serde_json::Value, String> {

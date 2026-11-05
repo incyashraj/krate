@@ -377,108 +377,33 @@ mod player {
         }
     }
 
-    /// Run the wall sheet with these arguments and return what it said.
-    fn run_wall(data_root: &Path, args: Vec<String>) -> String {
-        let Some(wall_manifest) = krate_manifest::Manifest::parse(WALL_MANIFEST).ok() else {
-            return String::new();
-        };
-        let Ok(policy) = krate_policy::SessionPolicy::allow_all_declared(&wall_manifest) else {
-            return String::new();
-        };
-        let config = krate_runtime::Config {
-            session_policy: policy,
-            sandbox_root: data_root.join("wall"),
-            app_args: args,
-            phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
-            ..Default::default()
-        };
-        match krate_runtime::Runtime::new(&config).and_then(|runtime| {
-            runtime.run_bytes_captured_for_world(
-                WALL_WASM,
-                &config,
-                krate_runtime::RuntimeWorld::Gui,
-            )
-        }) {
-            Ok((_, stdout)) => String::from_utf8_lossy(&stdout).into_owned(),
-            Err(err) => {
-                log::error!("the wall failed: {err:#}");
-                String::new()
-            }
-        }
-    }
-
-    /// Sign in with GitHub through the hub, inside Krate: the phone's
-    /// in-app browser opens GitHub's page over Krate with the code copied,
-    /// Krate's waiting card sits behind it while the hub is asked in the
-    /// background, and the moment the person approves, the page and the card
-    /// close and they are signed in. Cancel on the card stops it.
+    /// Sign in to Krate without leaving it and without a code: krate.tech's
+    /// sign-in page (GitHub, Google or email) opens in the phone's in-app
+    /// sign-in tab over Krate, and the moment the person approves, the page
+    /// hands the sign-in back as krate://signed-in, the tab closes itself and
+    /// Krate is signed in. The hand-back counts only with the nonce this
+    /// phone sent (K-909). Closing the page is a cancel, and says nothing.
     fn sign_in(data_root: &Path, art_dir: &Path) {
-        use krate_adapter_android::phone;
-        let started = match crate::account::start() {
-            Ok(started) => started,
-            Err(why) => {
-                notice(
-                    data_root,
-                    "Could not start signing in",
-                    &format!("{why}. Check the connection and try again."),
-                );
-                return;
-            }
-        };
-        let code = started.user_code.clone();
-        let _ = phone::write_clipboard(&code);
-        let note =
-            format!("Your code {code} is copied. Paste it on GitHub's page, then approve Krate.");
-        if !phone::open_tab(&started.verification_uri, &note) {
-            let _ = phone::open_url(&started.verification_uri);
-        }
-        let done = data_root.join("wall").join("wait-done");
-        let _ = std::fs::create_dir_all(data_root.join("wall"));
-        let _ = std::fs::remove_file(&done);
-        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
-        {
-            let (data_root, done, cancelled) =
-                (data_root.to_path_buf(), done.clone(), cancelled.clone());
-            std::thread::spawn(move || {
-                let every = std::time::Duration::from_secs(crate::account::interval(&started));
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15 * 60);
-                let result = loop {
-                    std::thread::sleep(every);
-                    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                        return;
-                    }
-                    match crate::account::poll(&started, &data_root) {
-                        Ok(true) => break Ok(()),
-                        Ok(false) if std::time::Instant::now() > deadline => {
-                            break Err("The code expired. Tap Sign in to start again.".to_string())
-                        }
-                        Ok(false) => {}
-                        Err(why) => break Err(why),
-                    }
-                };
-                let _ = tx.send(result);
-                let _ = std::fs::write(&done, b"");
-            });
-        }
-        let answer = run_wall(
-            data_root,
-            vec![
-                "wall:wait".to_string(),
-                "Waiting for GitHub".to_string(),
-                format!("Your code {code} is copied. Paste it on GitHub's page and approve Krate. This closes by itself."),
-            ],
-        );
-        let _ = std::fs::remove_file(&done);
-        phone::close_tab();
-        if !answer.lines().any(|l| l.trim() == "wall:done") {
-            cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+        let Some(nonce) = crate::account::new_nonce() else {
+            notice(
+                data_root,
+                "Could not start signing in",
+                "This phone gave no randomness to sign in with.",
+            );
             return;
-        }
-        match rx.recv() {
-            Ok(Ok(())) => refresh_account(data_root, art_dir),
-            Ok(Err(why)) => notice(data_root, "Not signed in", &why),
-            Err(_) => {}
+        };
+        let url = crate::account::web_sign_in_url(&nonce);
+        match krate_adapter_android::sign_in::sign_in(&url, "krate") {
+            Ok(Some(back)) => match crate::account::keep_web_sign_in(&back, &nonce, data_root) {
+                Ok(()) => refresh_account(data_root, art_dir),
+                Err(why) => notice(data_root, "Not signed in", &why),
+            },
+            Ok(None) => {}
+            Err(why) => notice(
+                data_root,
+                "Could not start signing in",
+                &format!("{why}. Check the connection and try again."),
+            ),
         }
     }
 

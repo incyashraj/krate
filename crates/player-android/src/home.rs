@@ -274,6 +274,66 @@ pub fn account_file(
     lines.join("\n") + "\n"
 }
 
+/// What a krate://signed-in hand-back carries.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SignedIn {
+    pub token: String,
+    pub login: String,
+    pub name: String,
+    pub avatar_url: String,
+    pub app_nonce: String,
+}
+
+/// Read `krate://signed-in?token=...&app_nonce=...` (query or fragment, the
+/// way krate.tech/login/done writes it). None for any other address.
+pub fn signed_in_fields(back: &str) -> Option<SignedIn> {
+    let rest = back.strip_prefix("krate://signed-in")?;
+    let query = rest.trim_start_matches('/').trim_start_matches(['?', '#']);
+    let mut out = SignedIn::default();
+    for pair in query.split(['&', '#']) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let value = percent_decode(value);
+        match key {
+            "token" => out.token = value,
+            "login" => out.login = value,
+            "name" => out.name = value,
+            "avatar_url" => out.avatar_url = value,
+            "app_nonce" => out.app_nonce = value,
+            _ => {}
+        }
+    }
+    Some(out)
+}
+
+/// `%XX` and `+` as a query writes them; a `%` not followed by two hex
+/// digits stays as it is.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = (bytes[i] == b'%' && i + 2 < bytes.len())
+            .then(|| std::str::from_utf8(&bytes[i + 1..i + 3]).ok())
+            .flatten()
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (bytes[i], hex) {
+            (b'%', Some(b)) => {
+                out.push(b);
+                i += 3;
+            }
+            (b'+', _) => {
+                out.push(b' ');
+                i += 1;
+            }
+            (b, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// One app's `perms/<n>.txt`: each thing it can use in plain words, and
 /// whether it is `needed` (always given) or `asked` (asked at every open).
 pub fn perms_file(uses: &[(String, bool)]) -> String {
@@ -464,5 +524,19 @@ mod tests {
             "Notes x\tFrom the hub \u{00b7} 2 KB\ta.rgba\tNone\t1.2.0"
         );
         assert_eq!(row.split('\t').count(), 5);
+    }
+
+    #[test]
+    fn a_sign_in_hand_back_is_read_and_only_with_its_fields() {
+        let back = "krate://signed-in?token=abc%2B1&login=yash&name=Yash+Pardeshi&avatar_url=https%3A%2F%2Fa.b%2Fc.png&app_nonce=0123456789abcdef0123456789abcdef";
+        let got = signed_in_fields(back).expect("a hand-back");
+        assert_eq!(got.token, "abc+1");
+        assert_eq!(got.name, "Yash Pardeshi");
+        assert_eq!(got.avatar_url, "https://a.b/c.png");
+        assert_eq!(got.app_nonce, "0123456789abcdef0123456789abcdef");
+        assert!(signed_in_fields("https://evil.example/?token=x").is_none());
+        assert!(signed_in_fields("krate://signed-in#token=t&app_nonce=n")
+            .is_some_and(|f| f.token == "t"));
+        assert_eq!(percent_decode("100%"), "100%");
     }
 }
