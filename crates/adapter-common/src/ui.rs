@@ -2229,7 +2229,10 @@ pub trait UiAdapter: WindowAdapter {
         _after_seconds: u64,
         _daily: bool,
     ) -> Result<(), String> {
-        Err("reminders that arrive with the app closed are on phones only, for now".to_string())
+        Err(
+            "this computer cannot deliver a reminder with the app closed: keep a timer in the app"
+                .to_string(),
+        )
     }
 
     /// Cancel one of the running app's reminders.

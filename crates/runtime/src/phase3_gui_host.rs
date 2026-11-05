@@ -1001,6 +1001,21 @@ impl Phase3GuiHost {
             ));
         }
         let sender = self.attribution();
+        // Windows: scheduled toasts under the app's own sender, the one its
+        // notifications use (IC-982).
+        #[cfg(target_os = "windows")]
+        {
+            return krate_adapter_windows::toast::schedule(
+                &sender,
+                id,
+                title,
+                body,
+                after_seconds,
+                daily,
+            )
+            .map_err(NotifyError::Unavailable);
+        }
+        #[allow(unreachable_code)]
         self.dispatcher()
             .reminders()
             .reminder_schedule(id, &sender, title, body, after_seconds, daily)
@@ -1014,6 +1029,12 @@ impl Phase3GuiHost {
             .check(&UapiCall::Ui(UiCall::Notify))
             .is_ok();
         if granted && valid_reminder_id(id) && !self.headless {
+            #[cfg(target_os = "windows")]
+            {
+                krate_adapter_windows::toast::cancel(&self.attribution(), id);
+                return;
+            }
+            #[allow(unreachable_code)]
             self.dispatcher().reminders().reminder_cancel(id);
         }
     }
@@ -1027,6 +1048,11 @@ impl Phase3GuiHost {
         if !granted || self.headless {
             return Vec::new();
         }
+        #[cfg(target_os = "windows")]
+        {
+            return krate_adapter_windows::toast::pending(&self.attribution());
+        }
+        #[allow(unreachable_code)]
         self.dispatcher().reminders().reminder_pending()
     }
 

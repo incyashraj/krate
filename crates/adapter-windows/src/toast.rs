@@ -108,6 +108,147 @@ pub fn show(app_name: &str, title: &str, body: &str) -> Result<(), String> {
     notifier.Show(&toast).map_err(failed("show"))
 }
 
+/// Days a daily reminder is set ahead on Windows, which has no repeating
+/// toast for a desktop program: a year, the longest any reminder may wait,
+/// renewed each time the app sets it again.
+pub const DAILY_DAYS: u64 = 365;
+
+/// When each toast of a reminder comes, in seconds from now: once, or once
+/// a day from the first for [`DAILY_DAYS`].
+pub fn deliveries(after_seconds: u64, daily: bool) -> Vec<u64> {
+    if !daily {
+        return vec![after_seconds];
+    }
+    (0..DAILY_DAYS)
+        .map(|day| after_seconds + day * 24 * 3600)
+        .collect()
+}
+
+/// A WinRT DateTime (100 ns since 1601) `after_seconds` past `now_unix_ms`.
+pub fn ticks_after(now_unix_ms: u64, after_seconds: u64) -> i64 {
+    const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+    UNIX_EPOCH_TICKS + (now_unix_ms as i64 + after_seconds as i64 * 1000) * 10_000
+}
+
+#[cfg(windows)]
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// The group every Krate reminder is filed under, beside its id as tag.
+#[cfg(windows)]
+const REMINDER_GROUP: &str = "krate-reminders";
+
+/// Set reminder `id` for `app_name`, delivered by Windows with the app
+/// closed (IC-921, IC-982): one scheduled toast, or one a day for a year,
+/// replacing any it had under that id.
+#[cfg(windows)]
+pub fn schedule(
+    app_name: &str,
+    id: &str,
+    title: &str,
+    body: &str,
+    after_seconds: u64,
+    daily: bool,
+) -> Result<(), String> {
+    use windows::core::HSTRING;
+    use windows::Data::Xml::Dom::XmlDocument;
+    use windows::Foundation::DateTime;
+    use windows::UI::Notifications::{ScheduledToastNotification, ToastNotificationManager};
+
+    let aumid = app_user_model_id(app_name);
+    register_sender(&aumid, app_name)?;
+    fn failed(step: &'static str) -> impl Fn(windows::core::Error) -> String {
+        move |err| format!("Windows could not set the reminder ({step}: {err})")
+    }
+    let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(&aumid))
+        .map_err(failed("notifier"))?;
+    if let Ok(setting) = notifier.Setting() {
+        if let Some(why) = setting_refusal(setting.0) {
+            return Err(why.to_string());
+        }
+    }
+    cancel(app_name, id);
+    let now = now_unix_ms();
+    for after in deliveries(after_seconds, daily) {
+        let doc = XmlDocument::new().map_err(failed("document"))?;
+        doc.LoadXml(&HSTRING::from(toast_xml(title, body)))
+            .map_err(failed("content"))?;
+        let toast = ScheduledToastNotification::CreateScheduledToastNotification(
+            &doc,
+            DateTime {
+                UniversalTime: ticks_after(now, after),
+            },
+        )
+        .map_err(failed("toast"))?;
+        toast.SetTag(&HSTRING::from(id)).map_err(failed("id"))?;
+        toast
+            .SetGroup(&HSTRING::from(REMINDER_GROUP))
+            .map_err(failed("group"))?;
+        notifier.AddToSchedule(&toast).map_err(failed("schedule"))?;
+    }
+    Ok(())
+}
+
+/// Every scheduled toast of `app_name`'s reminders, with its tag.
+#[cfg(windows)]
+fn scheduled(
+    app_name: &str,
+) -> Vec<(
+    windows::UI::Notifications::ToastNotifier,
+    windows::UI::Notifications::ScheduledToastNotification,
+    String,
+)> {
+    use windows::core::HSTRING;
+    use windows::UI::Notifications::ToastNotificationManager;
+    let Ok(notifier) = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
+        app_user_model_id(app_name),
+    )) else {
+        return Vec::new();
+    };
+    let Ok(list) = notifier.GetScheduledToastNotifications() else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for i in 0..list.Size().unwrap_or(0) {
+        let Ok(toast) = list.GetAt(i) else {
+            continue;
+        };
+        let group = toast.Group().map(|g| g.to_string()).unwrap_or_default();
+        if group != REMINDER_GROUP {
+            continue;
+        }
+        let tag = toast.Tag().map(|t| t.to_string()).unwrap_or_default();
+        found.push((notifier.clone(), toast, tag));
+    }
+    found
+}
+
+/// Take back every toast still to come of reminder `id`.
+#[cfg(windows)]
+pub fn cancel(app_name: &str, id: &str) {
+    for (notifier, toast, tag) in scheduled(app_name) {
+        if tag == id {
+            let _ = notifier.RemoveFromSchedule(&toast);
+        }
+    }
+}
+
+/// The ids of `app_name`'s reminders still to come, each once.
+#[cfg(windows)]
+pub fn pending(app_name: &str) -> Vec<String> {
+    let mut ids: Vec<String> = scheduled(app_name)
+        .into_iter()
+        .map(|(_, _, tag)| tag)
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
 /// Register the sender Windows shows for `id`: the app's name.
 ///
 /// Per user, so no administrator is needed, and rewritten on every toast so
@@ -251,6 +392,31 @@ mod tests {
         assert!(read.is_ok(), "the sender was not registered: {read:?}");
         let chars = (len as usize / 2).saturating_sub(1);
         assert_eq!(String::from_utf16_lossy(&buf[..chars]), app);
+    }
+
+    #[test]
+    fn a_reminder_comes_once_or_every_day_for_a_year() {
+        assert_eq!(deliveries(240, false), [240]);
+        let daily = deliveries(60, true);
+        assert_eq!(daily.len() as u64, DAILY_DAYS);
+        assert_eq!(daily[0], 60);
+        assert_eq!(daily[1] - daily[0], 24 * 3600);
+        // The last is within the year a reminder may wait.
+        assert!(*daily.last().unwrap() <= 366 * 24 * 3600);
+    }
+
+    #[test]
+    fn a_reminder_s_time_is_counted_from_1601_as_windows_counts() {
+        // 1970-01-01 plus four minutes.
+        assert_eq!(
+            ticks_after(0, 240),
+            116_444_736_000_000_000 + 240 * 10_000_000
+        );
+        assert_eq!(
+            ticks_after(1_500, 0) - ticks_after(0, 0),
+            1_500 * 10_000,
+            "milliseconds are 10,000 ticks"
+        );
     }
 
     #[test]
