@@ -13355,6 +13355,78 @@ fn a_widget_app_is_drawn_in_the_persons_look() {
     assert!(dark < 0.3, "the same app goes dark in dark mode: {dark:.2}");
 }
 
+/// A game drawn at a design size fits inside the edges a phone covers from
+/// its very first frame (K-1217).
+///
+/// `nova.wasm` is apps/krate-nova built: it sets its design size from the
+/// screen and draws a dark starfield to every edge of it. The covered edges
+/// used to reach the canvas only at present, after the first frame was
+/// drawn, so that frame landed centred on the whole phone; the bands filled
+/// at publish, from the fit with the edges, then painted over its top (the
+/// score) and copied a blank white row across the bottom 62 points. Every
+/// check-app phone picture is a first frame, and showed exactly that.
+#[test]
+fn a_design_size_game_fits_the_phone_from_its_first_frame() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/nova.wasm")).expect("nova");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../apps/krate-nova/manifest.toml"
+        ),
+        &manifest,
+    )
+    .expect("manifest");
+    let text = std::fs::read_to_string(&manifest).expect("read manifest");
+    let entry = text
+        .lines()
+        .find(|l| l.starts_with("entry"))
+        .expect("entry line")
+        .to_string();
+    std::fs::write(&manifest, text.replace(&entry, "entry = \"code.wasm\"")).expect("manifest");
+    let png = dir.path().join("phone.png");
+    let out = krate()
+        .arg("run")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .args(["--auto-grant", "--shoot"])
+        .arg(&png)
+        .args(["--shoot-scale", "1", "--", "quick"])
+        .env("KRATE_SCREEN", "390x844")
+        .output()
+        .expect("run");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let decoder = png::Decoder::new(std::io::BufReader::new(
+        std::fs::File::open(&png).expect("shot"),
+    ));
+    let mut reader = decoder.read_info().expect("png");
+    let mut buf = vec![0; reader.output_buffer_size().expect("size")];
+    let info = reader.next_frame(&mut buf).expect("frame");
+    let channels = info.color_type.samples();
+    let (w, h) = (info.width as usize, info.height as usize);
+    assert_eq!((w, h), (390, 844));
+    let bright_rows: Vec<usize> = (0..h)
+        .filter(|&y| {
+            let row = &buf[y * w * channels..(y + 1) * w * channels];
+            row.chunks_exact(channels)
+                .all(|p| p[0] > 240 && p[1] > 240 && p[2] > 240)
+        })
+        .collect();
+    assert!(
+        bright_rows.is_empty(),
+        "rows {:?}..={:?} of the phone are blank white: the first frame was not fitted inside the covered edges",
+        bright_rows.first(),
+        bright_rows.last()
+    );
+}
+
 /// An app that draws itself tells the screen reader what it drew
 /// (krate:ui/accessibility, IC-926).
 ///

@@ -6568,8 +6568,16 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
         };
         surface.set_design_size(size.width, size.height);
+        drop(canvases);
         // The app's own design replaces any the host chose for it.
         self.implicit_designs.borrow_mut().remove(&canvas);
+        // Fit it inside the edges a phone covers now, not at the next
+        // present: the CPU raster draws each op as it arrives, so a first
+        // frame drawn before then landed centred on the whole screen, and
+        // the bands filled at publish -- from the fit with the edges --
+        // painted over its top and copied a blank row across its bottom
+        // (K-1217).
+        self.inset_design(canvas);
         Ok(Ok(()))
     }
 
