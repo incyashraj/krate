@@ -1127,6 +1127,13 @@ impl Phase3GuiHost {
         if self.headless {
             return Err((1, "no photo library when nothing is on screen".to_string()));
         }
+        // Windows and Linux keep photos in the Pictures folder their photo
+        // apps show (IC-982).
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
+            return crate::pictures::add(&self.attribution(), data).map_err(|why| (1, why));
+        }
+        #[allow(unreachable_code)]
         self.dispatcher().save_photo(data).map_err(|why| match why {
             None => (0, String::new()),
             Some(why) => (1, why),

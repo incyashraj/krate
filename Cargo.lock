@@ -2755,6 +2755,7 @@ dependencies = [
  "block2 0.6.2",
  "cpal",
  "criterion",
+ "directories-next",
  "dispatch2",
  "gilrs",
  "heck",
