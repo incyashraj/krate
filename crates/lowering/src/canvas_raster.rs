@@ -549,7 +549,8 @@ impl CanvasSurface {
         let k = self.scale;
         self.clip = rect.map(|(x, y, w, h)| {
             let (mx, my) = self.map_point(x, y);
-            (mx * k, my * k, self.map_len(w) * k, self.map_len(h) * k)
+            // To the edge, as fill_rect is (see `to_edges`).
+            self.to_edges(mx * k, my * k, self.map_len(w) * k, self.map_len(h) * k)
         });
     }
 
@@ -616,7 +617,7 @@ impl CanvasSurface {
         let (x, y) = self.map_point(x, y);
         let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
-        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
+        let (x, y, w, h) = self.to_edges(x * k, y * k, w * k, h * k);
         let Some((x, y, w, h)) = self.clipped(x, y, w, h) else {
             return;
         };
@@ -627,6 +628,32 @@ impl CanvasSurface {
             (x, y, w, h),
             color,
         );
+    }
+
+    /// A rectangle (device pixels) that ends within a pixel of the canvas's
+    /// right or bottom edge ends at it. A canvas is a whole number of points
+    /// on a screen that is not: 411 points at 2.625 is 1078.875 pixels of a
+    /// 1079-pixel canvas, so a background filled "to the edge" left its last
+    /// column part-painted each frame, keeping blends of earlier frames -- a
+    /// speckled sliver down the right of every app that lays out from the
+    /// screen. Only without a design size: a design is letterboxed on
+    /// purpose, and its edges are not the canvas's.
+    fn to_edges(&self, x: f32, y: f32, w: f32, h: f32) -> (f32, f32, f32, f32) {
+        if self.design.is_some() {
+            return (x, y, w, h);
+        }
+        let (cw, ch) = (self.width as f32, self.height as f32);
+        let w = if x + w >= cw - 1.0 && x + w < cw {
+            cw - x
+        } else {
+            w
+        };
+        let h = if y + h >= ch - 1.0 && y + h < ch {
+            ch - y
+        } else {
+            h
+        };
+        (x, y, w, h)
     }
 
     /// A filled circle with an anti-aliased edge, alpha-blended over the
@@ -1724,6 +1751,28 @@ impl CanvasSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A background filled to the canvas's edge reaches its last pixel
+    /// column and row, though the canvas is a fraction of a point wider than
+    /// the whole points it was laid out in (2.625 pixels a point).
+    #[test]
+    fn a_fill_to_the_edge_reaches_the_last_pixel() {
+        let mut surface = CanvasSurface::new_scaled(411, 20, 2.625).expect("surface");
+        let (pw, ph) = (surface.width, surface.height);
+        surface.clear(0xFF_00_00_FF);
+        surface.fill_rect(0.0, 0.0, 411.0, 20.0, 0xFF_FF_FF_FF);
+        let image = surface.to_image().expect("image");
+        let last = ((ph as usize - 1) * pw as usize + pw as usize - 1) * 4;
+        assert_eq!(
+            &image.rgba[last..last + 4],
+            &[255, 255, 255, 255],
+            "the last pixel is filled"
+        );
+        // A fill well short of the edge stays where it was put.
+        surface.fill_rect(0.0, 0.0, 200.0, 20.0, 0xFF_00_FF_00);
+        let image = surface.to_image().expect("image");
+        assert_eq!(&image.rgba[last..last + 4], &[255, 255, 255, 255]);
+    }
 
     /// K-1212: the table-driven radial gradient paints what the per-pixel
     /// float version painted, within a couple of levels per channel, at
