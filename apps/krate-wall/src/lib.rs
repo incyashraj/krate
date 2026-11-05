@@ -30,6 +30,11 @@
 //! one card and a Close button, answered with `wall:closed`. It never
 //! answers `wall:open`, so an app named "wall:notice" gains nothing.
 //!
+//! `wall:output`, then the app's name, how it ended, and every line it
+//! printed, is what a command-line app showed: a phone has no terminal, so
+//! one that printed and ended used to flash and vanish. A scrolling card in
+//! a fixed-width font and a Close button, answered with `wall:closed`.
+//!
 //! `wall:home`, then a name and a line about it for every app the person
 //! has, is the phone player's home screen: a tap answers `wall:pick:<n>`,
 //! leaving answers `wall:closed`. It too never answers `wall:open` -- the
@@ -89,6 +94,8 @@ const ARG_SEP: char = '\n';
 
 /// The first argument when the player has something to tell, not ask.
 const NOTICE: &str = "wall:notice";
+/// The first argument for what a command-line app printed.
+const OUTPUT: &str = "wall:output";
 /// The first argument for the phone player's home screen.
 const HOME: &str = "wall:home";
 /// First argument of a permission question that carries a line about the
@@ -1902,6 +1909,198 @@ fn draw_notice(
     Ok((close.x, close.y, close.width, close.height))
 }
 
+/// Show what a command-line app printed, until Close is tapped or the window
+/// is dismissed. A finger or a wheel scrolls it.
+fn output(name: &str, ended: &str, lines: &[&str]) {
+    let Ok(win) = window::create(
+        "Krate",
+        types::WindowSize {
+            width: 390,
+            height: 720,
+        },
+    ) else {
+        return;
+    };
+    if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
+        return;
+    }
+    let _ = tree::upsert_node(
+        win,
+        &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
+    );
+    let Ok(canvas) = canvas2d::bind(win, CANVAS_ID) else {
+        return;
+    };
+    let mut scroll = 0.0f32;
+    // Wrapped once per width, not on every frame.
+    let mut wrapped: (f32, Vec<String>) = (0.0, Vec::new());
+    loop {
+        let l = match canvas2d::canvas_size(canvas) {
+            Ok(size) => Layout::from_canvas(size.width.max(1.0), size.height.max(1.0)),
+            Err(_) => Layout::from_canvas(390.0, 720.0),
+        };
+        let mut l = l;
+        l.safe = krate::layout::Screen::of(win).safe;
+        if wrapped.0 != l.col_w {
+            wrapped = (l.col_w, wrap_output(canvas, lines, l.col_w - 48.0));
+        }
+        let drawn = match draw_output(canvas, &l, name, ended, &wrapped.1, scroll) {
+            Ok(drawn) => drawn,
+            Err(_) => return,
+        };
+        let (close, room) = drawn;
+        let _ = window::request_redraw(win);
+        match events::wait(None) {
+            Some(types::Event::CloseRequested(_)) => return,
+            Some(types::Event::Wheel(wheel)) => {
+                scroll = (scroll + wheel.dy).clamp(0.0, room);
+            }
+            Some(types::Event::Pointer(p)) if p.pressed && p.button.is_some() => {
+                if inside(close, p.x, p.y) {
+                    return;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The size of the fixed-width text, and the room between its lines.
+const OUTPUT_SIZE: f32 = 13.0;
+const OUTPUT_LINE: f32 = 18.0;
+
+/// Break every printed line to the card's width, by characters: output
+/// is laid out in columns (a hex dump, a table), so words are not the unit.
+/// Each piece is measured as drawn -- box-drawing and other symbols come
+/// from fallback faces of other widths, so no one character's width holds
+/// for a whole line.
+fn wrap_output(canvas: u64, lines: &[&str], max_w: f32) -> Vec<String> {
+    let mono = gfx::TextStyle {
+        family: gfx::FontFamily::Mono,
+        ..style(400, 0.0)
+    };
+    let fits = |chars: &[char]| {
+        let text: String = chars.iter().collect();
+        canvas2d::measure_text_styled(canvas, &text, OUTPUT_SIZE, mono)
+            .map(|m| m.width <= max_w)
+            .unwrap_or(true)
+    };
+    let mut out = Vec::new();
+    for line in lines {
+        let mut rest: Vec<char> = line.replace('\t', "    ").chars().collect();
+        if rest.is_empty() {
+            out.push(String::new());
+        }
+        while !rest.is_empty() {
+            // The longest start of the rest that fits; at least one
+            // character, so a glyph wider than the card still moves on.
+            let (mut lo, mut hi) = (1, rest.len());
+            if fits(&rest) {
+                lo = hi;
+            }
+            while lo < hi {
+                let mid = (lo + hi).div_ceil(2);
+                if fits(&rest[..mid]) {
+                    lo = mid;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            out.push(rest[..lo].iter().collect());
+            rest.drain(..lo);
+        }
+    }
+    out
+}
+
+/// Draw the output card; returns where Close is and how far it can scroll.
+fn draw_output(
+    canvas: u64,
+    l: &Layout,
+    name: &str,
+    ended: &str,
+    lines: &[String],
+    scroll: f32,
+) -> Result<(gfx::Rect, f32), gfx::GfxError> {
+    canvas2d::clear(canvas, color(0.02, 0.024, 0.038, 1.0))?;
+    let x = l.col_x + 24.0;
+    let text_w = l.col_w - 48.0;
+    let top = l.safe.0 + 24.0;
+    canvas2d::draw_text_styled(
+        canvas,
+        &fit_line(canvas, name, 22.0, style(700, -0.3), text_w),
+        gfx::Point { x, y: top + 26.0 },
+        22.0,
+        color(1.0, 1.0, 1.0, 1.0),
+        style(700, -0.3),
+    )?;
+    canvas2d::draw_text(
+        canvas,
+        ended,
+        gfx::Point { x, y: top + 52.0 },
+        14.5,
+        color(1.0, 1.0, 1.0, 0.6),
+    )?;
+    let close = rect(x, l.h - l.safe.2 - 24.0 - 50.0, text_w, 50.0);
+    let area = rect(
+        l.col_x + 8.0,
+        top + 72.0,
+        l.col_w - 16.0,
+        (close.y - 16.0 - (top + 72.0)).max(40.0),
+    );
+    canvas2d::fill_round_rect(canvas, area, radii(18.0), color(0.075, 0.086, 0.125, 1.0))?;
+    let mono = gfx::TextStyle {
+        family: gfx::FontFamily::Mono,
+        ..style(400, 0.0)
+    };
+    let content = 16.0 + lines.len() as f32 * OUTPUT_LINE + 8.0;
+    let room = (content - area.height).max(0.0);
+    let scroll = scroll.min(room);
+    canvas2d::set_clip(canvas, area.x, area.y, area.width, area.height)?;
+    if lines.is_empty() {
+        canvas2d::draw_text(
+            canvas,
+            "It printed nothing.",
+            gfx::Point {
+                x,
+                y: area.y + 30.0,
+            },
+            14.5,
+            color(1.0, 1.0, 1.0, 0.5),
+        )?;
+    }
+    // Only the lines in view are drawn: an app may print thousands.
+    let first = ((scroll - 16.0) / OUTPUT_LINE).max(0.0) as usize;
+    let shown = (area.height / OUTPUT_LINE) as usize + 2;
+    for (i, line) in lines.iter().enumerate().skip(first).take(shown) {
+        let y = area.y + 16.0 + (i as f32 + 1.0) * OUTPUT_LINE - 4.0 - scroll;
+        canvas2d::draw_text_styled(
+            canvas,
+            line,
+            gfx::Point { x, y },
+            OUTPUT_SIZE,
+            color(0.86, 0.9, 1.0, 0.92),
+            mono,
+        )?;
+    }
+    canvas2d::clear_clip(canvas)?;
+    canvas2d::fill_round_rect(canvas, close, radii(25.0), color(0.42, 0.55, 1.0, 1.0))?;
+    let m = canvas2d::measure_text_styled(canvas, "Close", 17.0, style(650, 0.2))?;
+    canvas2d::draw_text_styled(
+        canvas,
+        "Close",
+        gfx::Point {
+            x: close.x + close.width / 2.0 - m.width / 2.0,
+            y: close.y + 32.0,
+        },
+        17.0,
+        color(1.0, 1.0, 1.0, 1.0),
+        style(650, 0.2),
+    )?;
+    canvas2d::present(canvas)?;
+    Ok((close, room))
+}
+
 fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetNode {
     types::WidgetNode {
         id,
@@ -1941,6 +2140,15 @@ impl krate::Guest for Component {
                 Some(index) => out(&format!("wall:pick:{index}")),
                 None => out("wall:closed"),
             }
+            return 0;
+        }
+        if raw.split(ARG_SEP).next() == Some(OUTPUT) {
+            let mut parts = raw.split(ARG_SEP).skip(1);
+            let name = parts.next().unwrap_or("").trim();
+            let ended = parts.next().unwrap_or("").trim();
+            let lines: Vec<&str> = parts.collect();
+            output(name, ended, &lines);
+            out("wall:closed");
             return 0;
         }
         let mut parts = raw.splitn(3, ARG_SEP);

@@ -24,7 +24,7 @@ pub mod run_config;
 
 #[cfg(target_os = "android")]
 mod player {
-    use crate::run_config::{sanitize, use_in_words};
+    use crate::run_config::{output_args, prints_only, sanitize, use_in_words};
     use krate_adapter_android::winit_native::AndroidApp;
     use std::io::Cursor;
 
@@ -69,6 +69,15 @@ mod player {
         }
         let _ = std::fs::create_dir_all(&cache);
         std::env::set_var("TMPDIR", &cache);
+        // Measuring on a phone, where there is no shell to set a variable: a
+        // file named .frame-stats in the Player's own folder (adb can put one
+        // there) turns on the runtime's frame timings in logcat.
+        if app
+            .external_data_path()
+            .is_some_and(|dir| dir.join(".frame-stats").exists())
+        {
+            std::env::set_var("KRATE_FRAME_STATS", "1");
+        }
         run_player(&data_root, handles);
         // The app is the process: when the flow ends -- back button, close,
         // cancel at the wall -- no blank activity shell may linger. Finish
@@ -286,8 +295,31 @@ mod player {
                 return;
             }
         };
-        let ran =
-            runtime.run_bytes_for_world(&component, &config, krate_runtime::RuntimeWorld::Auto);
+        // A command-line program prints and ends, and a phone has no
+        // terminal: what it printed is kept, and shown once it ends, where
+        // before the app flashed and was gone.
+        let program = prints_only(&manifest);
+        let ran = if program {
+            runtime
+                .run_bytes_transcribed_for_world(
+                    &component,
+                    &config,
+                    krate_runtime::RuntimeWorld::Cli,
+                )
+                .map(|(outcome, transcript)| {
+                    let code = match &outcome {
+                        krate_runtime::RunOutcome::Exited(code) => Some(*code),
+                        krate_runtime::RunOutcome::LimitExceeded(_) => None,
+                    };
+                    show_output(
+                        data_root,
+                        output_args(&manifest.app.name, code, &transcript),
+                    );
+                    outcome
+                })
+        } else {
+            runtime.run_bytes_for_world(&component, &config, krate_runtime::RuntimeWorld::Auto)
+        };
         krate_adapter_android::menu::set_app(None);
         match ran {
             Ok(outcome) => log::info!("app finished: {outcome:?}"),
@@ -355,7 +387,11 @@ mod player {
             phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
             ..Default::default()
         };
-        let runtime = krate_runtime::Runtime::new(&config).ok()?;
+        // Every way the wall cannot run is logged: one that only returned
+        // None read in logcat as the person saying no (K-1207).
+        let runtime = krate_runtime::Runtime::new(&config)
+            .map_err(|err| log::error!("the wall could not start: {err:#}"))
+            .ok()?;
         let (_, stdout) = runtime
             .run_bytes_captured_for_world(WALL_WASM, &config, krate_runtime::RuntimeWorld::Gui)
             .map_err(|err| log::error!("the wall failed: {err:#}"))
@@ -409,6 +445,36 @@ mod player {
                 &config,
                 krate_runtime::RuntimeWorld::Gui,
             );
+        }
+    }
+
+    /// Show what a command-line program printed, on the wall's trusted
+    /// card, until Close.
+    fn show_output(data_root: &std::path::Path, args: Vec<String>) {
+        let Some(wall_manifest) = krate_manifest::Manifest::parse(WALL_MANIFEST).ok() else {
+            return;
+        };
+        let Ok(policy) = krate_policy::SessionPolicy::allow_all_declared(&wall_manifest) else {
+            return;
+        };
+        let config = krate_runtime::Config {
+            session_policy: policy,
+            sandbox_root: data_root.join("wall"),
+            app_args: args,
+            phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
+            ..Default::default()
+        };
+        match krate_runtime::Runtime::new(&config) {
+            Ok(runtime) => {
+                if let Err(err) = runtime.run_bytes_captured_for_world(
+                    WALL_WASM,
+                    &config,
+                    krate_runtime::RuntimeWorld::Gui,
+                ) {
+                    log::error!("the output card failed: {err:#}");
+                }
+            }
+            Err(err) => log::error!("the output card could not start: {err:#}"),
         }
     }
 

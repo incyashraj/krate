@@ -178,6 +178,11 @@ mod real {
         gesture: Option<TouchGesture>,
         /// Every finger, for apps that read them all (krate:ui/touch).
         fingers: krate_adapter_common::ui::FingerTracker,
+        /// Where the pointer is and whether it is held, for apps that ask
+        /// (krate:ui/pointer): fed from the presses as they leave for the
+        /// runtime. Never fed, a game steering by `button-held` could not
+        /// be steered by finger.
+        pointer: krate_adapter_common::ui::PointerTracker,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
         paint_buffer: Vec<u32>,
@@ -198,15 +203,48 @@ mod real {
         drags: bool,
     }
 
+    /// The canvases a finger presses rather than scrolls, by Krate window
+    /// and widget: games drawn at a design size (K-1202).
+    static PRESSING: Mutex<
+        std::collections::BTreeSet<(WindowId, krate_adapter_common::ui::WidgetId)>,
+    > = Mutex::new(std::collections::BTreeSet::new());
+
+    /// Note whether a finger on this canvas presses it (the runtime says).
+    pub fn set_canvas_presses(
+        window: WindowId,
+        widget: krate_adapter_common::ui::WidgetId,
+        presses: bool,
+    ) {
+        let mut pressing = PRESSING.lock().expect("pressing lock");
+        if presses {
+            pressing.insert((window, widget));
+        } else {
+            pressing.remove(&(window, widget));
+        }
+    }
+
     /// Whether a finger landing at (x, y) is on something that drags: a
-    /// slider Krate draws, or an element the app described to the screen
-    /// reader as adjustable.
-    fn drags_at(placements: &[krate_adapter_common::ui::WidgetPlacement], x: f32, y: f32) -> bool {
+    /// slider Krate draws, a game's canvas, or an element the app described
+    /// to the screen reader as adjustable. A canvas that lays itself out
+    /// for the screen is a page, and scrolls.
+    fn drags_at(
+        window: WindowId,
+        placements: &[krate_adapter_common::ui::WidgetPlacement],
+        x: f32,
+        y: f32,
+    ) -> bool {
         let inside =
             |px: f32, py: f32, w: f32, h: f32| x >= px && x < px + w && y >= py && y < py + h;
+        let pressing = PRESSING.lock().expect("pressing lock");
         placements.iter().any(|p| {
-            p.kind == krate_adapter_common::ui::WidgetKind::Slider
-                && inside(p.x, p.y, p.width, p.height)
+            let drags = match p.kind {
+                krate_adapter_common::ui::WidgetKind::Slider => true,
+                krate_adapter_common::ui::WidgetKind::Canvas => {
+                    pressing.contains(&(window, p.widget))
+                }
+                _ => false,
+            };
+            drags && inside(p.x, p.y, p.width, p.height)
         }) || ACCESS_DESCRIBED
             .lock()
             .expect("access lock")
@@ -1489,6 +1527,75 @@ mod real {
             let _: () = msg_send![
                 &*controller,
                 presentViewController: &*sheet,
+                animated: true,
+                completion: Option::<&objc2::runtime::AnyObject>::None
+            ];
+        }
+    }
+
+    /// Show a message with one button (`question` false) or a yes-or-no
+    /// question as the iPhone's own alert, and wait until the person closes
+    /// it (krate:ui/dialog). Yes is the only yes. The alert runs on the
+    /// main thread; the app's thread waits, as it does for the picker.
+    pub fn ask(title: &str, body: &str, question: bool) -> bool {
+        let (title, body) = (title.to_string(), body.to_string());
+        let (tx, rx) = std::sync::mpsc::channel();
+        DispatchQueue::main().exec_async(move || present_ask(&title, &body, question, tx));
+        rx.recv().unwrap_or(false)
+    }
+
+    fn present_ask(title: &str, body: &str, question: bool, tx: std::sync::mpsc::Sender<bool>) {
+        let (Some(controller), Some(alert_class), Some(action_class)) = (
+            main_controller(),
+            objc2::runtime::AnyClass::get(c"UIAlertController"),
+            objc2::runtime::AnyClass::get(c"UIAlertAction"),
+        ) else {
+            let _ = tx.send(false);
+            return;
+        };
+        // SAFETY: a UIAlertController with one or two UIAlertActions,
+        // presented from the topmost controller (a controller already
+        // presenting something shows nothing new, and the app would wait
+        // forever); the handler blocks run on the main thread.
+        unsafe {
+            let mut top: Retained<objc2::runtime::AnyObject> = Retained::cast_unchecked(controller);
+            loop {
+                let next: Option<Retained<objc2::runtime::AnyObject>> =
+                    msg_send![&*top, presentedViewController];
+                match next {
+                    Some(next) => top = next,
+                    None => break,
+                }
+            }
+            let alert: Retained<objc2::runtime::AnyObject> = msg_send![
+                alert_class,
+                alertControllerWithTitle: &*objc2_foundation::NSString::from_str(title),
+                message: &*objc2_foundation::NSString::from_str(body),
+                preferredStyle: 1isize
+            ];
+            let button = |label: &str, style: isize, answer: bool| {
+                let tx = tx.clone();
+                let handler =
+                    block2::RcBlock::new(move |_action: *mut objc2::runtime::AnyObject| {
+                        let _ = tx.send(answer);
+                    });
+                let action: Retained<objc2::runtime::AnyObject> = msg_send![
+                    action_class,
+                    actionWithTitle: &*objc2_foundation::NSString::from_str(label),
+                    style: style,
+                    handler: &*handler
+                ];
+                let _: () = msg_send![&*alert, addAction: &*action];
+            };
+            if question {
+                button("No", 1, false);
+                button("Yes", 0, true);
+            } else {
+                button("OK", 0, false);
+            }
+            let _: () = msg_send![
+                &*top,
+                presentViewController: &*alert,
                 animated: true,
                 completion: Option::<&objc2::runtime::AnyObject>::None
             ];
@@ -4042,6 +4149,7 @@ mod real {
                     pending_scroll: None,
                     gesture: None,
                     fingers: Default::default(),
+                    pointer: Default::default(),
                     hovered: None,
                     pressed_widget: None,
                     paint_buffer: Vec::new(),
@@ -4078,7 +4186,7 @@ mod real {
             match touch.phase {
                 UITouchPhase::Began => {
                     if guest.gesture.is_none() {
-                        let drags = drags_at(&guest.placements, touch.x, touch.y);
+                        let drags = drags_at(krate, &guest.placements, touch.x, touch.y);
                         guest.gesture = Some(TouchGesture {
                             finger: touch.finger,
                             start: (touch.x, touch.y),
@@ -4490,7 +4598,45 @@ mod real {
         with_guest(|guest| {
             digest_touches(guest);
             deliver_due_press(guest);
-            Ok(std::mem::take(&mut guest.pointer_samples))
+            let samples = std::mem::take(&mut guest.pointer_samples);
+            for sample in &samples {
+                guest.pointer.moved_to(sample.x, sample.y);
+                guest.pointer.button(
+                    krate_adapter_common::ui::PointerButton::Primary,
+                    sample.pressed,
+                );
+            }
+            Ok(samples)
+        })
+        .unwrap_or_default()
+    }
+
+    /// The pointer as the presses so far leave it (krate:ui/pointer).
+    pub fn pointer_state(id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        if !guest_initialized() {
+            return Default::default();
+        }
+        with_guest(|guest| {
+            Ok(if guest.krate == Some(id) {
+                guest.pointer
+            } else {
+                Default::default()
+            })
+        })
+        .unwrap_or_default()
+    }
+
+    /// Hand over the pointer's motion since the last call.
+    pub fn take_pointer_motion(id: WindowId) -> (f32, f32) {
+        if !guest_initialized() {
+            return (0.0, 0.0);
+        }
+        with_guest(|guest| {
+            Ok(if guest.krate == Some(id) {
+                guest.pointer.take_motion()
+            } else {
+                (0.0, 0.0)
+            })
         })
         .unwrap_or_default()
     }
@@ -4834,6 +4980,14 @@ mod stub {
         Vec::new()
     }
 
+    pub fn pointer_state(_id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        Default::default()
+    }
+
+    pub fn take_pointer_motion(_id: WindowId) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
     pub fn drain_key_samples() -> Vec<RawKeySample> {
         Vec::new()
     }
@@ -4849,6 +5003,17 @@ mod stub {
     }
 
     pub fn set_adapts(_adapts: bool) {}
+
+    pub fn set_canvas_presses(
+        _window: WindowId,
+        _widget: krate_adapter_common::ui::WidgetId,
+        _presses: bool,
+    ) {
+    }
+
+    pub fn ask(_title: &str, _body: &str, _question: bool) -> bool {
+        false
+    }
 
     pub fn set_background(_on: bool) {}
 

@@ -4,8 +4,10 @@
 #
 # Packaging without Gradle: aapt2 links the manifest against android.jar,
 # javac and d8 turn the player's one small activity (KrateActivity, the
-# NativeActivity that loads libkrate_player.so) into classes.dex, the .so
-# goes in as lib/arm64-v8a/, then zipalign and apksigner.
+# NativeActivity that loads libkrate_player.so) into classes.dex, each built
+# .so goes in under lib/<abi>/ -- arm64-v8a, and armeabi-v7a for 32-bit
+# phones when scripts/build-android.sh built it -- then zipalign and
+# apksigner. Android installs the one the phone can run.
 #
 # d8 comes from build-tools 35 or newer: the 34 one fails with an internal
 # error on classes javac 21 writes.
@@ -25,6 +27,7 @@ BT="$SDK/build-tools/34.0.0"
 D8_BT="${D8_BUILD_TOOLS:-$(ls -d "$SDK"/build-tools/3[5-9].* 2>/dev/null | sort -V | tail -1)}"
 JAVA_SRC=crates/player-android/android/java
 SO=target/aarch64-linux-android/release/libkrate_player.so
+SO32=target/armv7-linux-androideabi/release/libkrate_player.so
 OUT=target/android
 KEYSTORE="$OUT/debug.keystore"
 
@@ -44,6 +47,19 @@ fi
 rm -rf "$OUT/stage"
 mkdir -p "$OUT/stage/lib/arm64-v8a"
 cp "$SO" "$OUT/stage/lib/arm64-v8a/"
+LIBS=lib/arm64-v8a/libkrate_player.so
+# Every ABI that was built goes in. Their build times are printed, as an
+# old library left from an earlier build would put a stale Player on those
+# phones (cargo leaves an up-to-date library untouched, so its age alone
+# says nothing).
+if [ -f "$SO32" ]; then
+  mkdir -p "$OUT/stage/lib/armeabi-v7a"
+  cp "$SO32" "$OUT/stage/lib/armeabi-v7a/"
+  LIBS="$LIBS lib/armeabi-v7a/libkrate_player.so"
+fi
+for so in "$SO" "$SO32"; do
+  [ -f "$so" ] && echo "  $(date -r "$so" '+%Y-%m-%d %H:%M') $so"
+done
 
 "$BT/aapt2" link -o "$OUT/stage/base.apk" \
   --manifest crates/player-android/android/AndroidManifest.xml \
@@ -56,7 +72,7 @@ javac -source 8 -target 8 -Xlint:-options \
 "$D8_BT/d8" --min-api 26 --lib "$SDK/platforms/android-34/android.jar" \
   --output "$OUT/stage" $(find "$OUT/stage/classes" -name '*.class')
 
-(cd "$OUT/stage" && zip -q base.apk classes.dex lib/arm64-v8a/libkrate_player.so)
+(cd "$OUT/stage" && zip -q base.apk classes.dex $LIBS)
 "$BT/zipalign" -f -p 4 "$OUT/stage/base.apk" "$OUT/stage/aligned.apk"
 
 if [ ! -f "$KEYSTORE" ]; then
@@ -68,4 +84,4 @@ fi
 "$BT/apksigner" sign --ks "$KEYSTORE" --ks-pass pass:krate-debug \
   --out "$OUT/krate-player.apk" "$OUT/stage/aligned.apk"
 
-echo "packaged: $OUT/krate-player.apk"
+echo "packaged: $OUT/krate-player.apk ($LIBS)"

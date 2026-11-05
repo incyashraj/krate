@@ -40,6 +40,9 @@ pub struct CanvasSurface {
     /// Draw calls are mapped from here onto the real canvas: scaled
     /// uniformly and centred, so proportions survive any window (K-096).
     design: Option<(f32, f32)>,
+    /// The edges a phone covers, top, right, bottom, left (logical): the
+    /// design is fitted inside them.
+    design_inset: (f32, f32, f32, f32),
     /// `0xAARRGGBB`, row-major from the top — the drawn painter's format.
     buffer: Vec<u32>,
     /// A frame that is one opaque picture covering the whole canvas -- a
@@ -278,6 +281,7 @@ impl CanvasSurface {
             logical_height: height,
             scale,
             design: None,
+            design_inset: (0.0, 0.0, 0.0, 0.0),
             // Made on first draw (see `materialize`): an app that only ever
             // hands over whole pictures never needs a window-sized raster,
             // which on a Retina window is 16 MB written white for nothing.
@@ -318,6 +322,7 @@ impl CanvasSurface {
         // design size, so an app that letterboxes correctly looked, one
         // frame later, exactly like an app that ignores the window (K-096).
         fitted.design = self.design;
+        fitted.design_inset = self.design_inset;
         *self = fitted;
         Ok(true)
     }
@@ -341,13 +346,30 @@ impl CanvasSurface {
     /// centred, letterboxed. `(1.0, 0.0, 0.0)` when no design size is set,
     /// so every draw path can apply it unconditionally.
     fn design_transform(&self) -> (f32, f32, f32) {
-        let Some((dw, dh)) = self.design else {
+        let Some(design) = self.design else {
             return (1.0, 0.0, 0.0);
         };
-        let (cw, ch) = (self.logical_width as f32, self.logical_height as f32);
-        // The smaller ratio is what fits both axes -- the larger would crop.
-        let k = (cw / dw).min(ch / dh);
-        ((k), (cw - dw * k) / 2.0, (ch - dh * k) / 2.0)
+        krate_adapter_common::canvas_list::fit_design(
+            (self.logical_width as f32, self.logical_height as f32),
+            design,
+            self.design_inset,
+        )
+    }
+
+    /// The edges a phone covers, for fitting a design inside them (top,
+    /// right, bottom, left, logical pixels).
+    pub fn set_design_inset(&mut self, inset: (f32, f32, f32, f32)) {
+        self.design_inset = inset;
+    }
+
+    pub fn design_inset(&self) -> (f32, f32, f32, f32) {
+        self.design_inset
+    }
+
+    /// The design's scale and offset onto this canvas, for mapping a point
+    /// back into the design: None without a design size.
+    pub fn design_fit(&self) -> Option<(f32, f32, f32)> {
+        self.design.map(|_| self.design_transform())
     }
 
     /// Paint the spare space around a letterboxed design with the colour
@@ -1848,6 +1870,7 @@ mod tests {
             logical_width: 390,
             logical_height: 844,
             design: Some((320.0, 470.0)),
+            design_inset: (0.0, 0.0, 0.0, 0.0),
             ops: vec![
                 krate_adapter_common::canvas_list::CanvasOp::LinearGradient {
                     rect: (0.0, 0.0, 320.0, 470.0),
@@ -1867,10 +1890,13 @@ mod tests {
         for (canvas, design) in [((390, 844), (360.0, 560.0)), ((844, 390), (360.0, 560.0))] {
             let mut surface = CanvasSurface::new(canvas.0, canvas.1).expect("surface");
             surface.set_design_size(design.0, design.1);
+            // With covered edges too (K-1210): both paths fit inside them.
+            surface.set_design_inset((47.0, 0.0, 34.0, 12.0));
             let list = krate_adapter_common::canvas_list::CanvasList {
                 logical_width: canvas.0,
                 logical_height: canvas.1,
                 design: surface.design_size(),
+                design_inset: surface.design_inset(),
                 ops: Vec::new(),
             };
             assert_eq!(

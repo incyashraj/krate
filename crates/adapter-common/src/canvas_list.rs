@@ -121,7 +121,43 @@ pub struct CanvasList {
     /// ops are in those coordinates; a consumer maps them onto the canvas
     /// with [`CanvasList::design_transform`], as the CPU raster does.
     pub design: Option<(f32, f32)>,
+    /// The edges of the canvas a phone covers (top, right, bottom, left, in
+    /// logical pixels): a design is fitted inside them (see [`fit_design`]).
+    pub design_inset: (f32, f32, f32, f32),
     pub ops: Vec<CanvasOp>,
+}
+
+/// Where a design of size `design` sits on a canvas of size `canvas` (both
+/// logical): the largest uniform scale that fits it inside the canvas less
+/// `inset` -- the edges a phone's status bar, camera cutout and navigation
+/// cover, top, right, bottom, left -- centred in the space left, as
+/// `(scale, x offset, y offset)`.
+///
+/// The one rule for every path -- the CPU raster, a GPU list, and the
+/// mapping of a finger back into the design -- so a fixed-size app looks and
+/// hit-tests the same everywhere. Fitted to the whole canvas, a wide app on
+/// a turned phone ran under the status bar and the home indicator (K-1210).
+/// Insets that would leave less than half the canvas are ignored: no
+/// screen covers that much, and a bad report must not shrink an app away.
+pub fn fit_design(
+    canvas: (f32, f32),
+    design: (f32, f32),
+    inset: (f32, f32, f32, f32),
+) -> (f32, f32, f32) {
+    let (cw, ch) = canvas;
+    let (dw, dh) = design;
+    if dw <= 0.0 || dh <= 0.0 {
+        return (1.0, 0.0, 0.0);
+    }
+    let (top, right, bottom, left) = inset;
+    let clean = |v: f32| if v.is_finite() { v.max(0.0) } else { 0.0 };
+    let (top, right, bottom, left) = (clean(top), clean(right), clean(bottom), clean(left));
+    let (mut x0, mut y0, mut w, mut h) = (left, top, cw - left - right, ch - top - bottom);
+    if w < cw / 2.0 || h < ch / 2.0 {
+        (x0, y0, w, h) = (0.0, 0.0, cw, ch);
+    }
+    let k = (w / dw).min(h / dh);
+    (k, x0 + (w - dw * k) / 2.0, y0 + (h - dh * k) / 2.0)
 }
 
 /// The colours along an app's four edges, for the spare space around a
@@ -237,17 +273,61 @@ impl CanvasList {
     /// design-size app looks and hit-tests the same on every path.
     /// `(1.0, 0.0, 0.0)` without a design size.
     pub fn design_transform(&self) -> (f32, f32, f32) {
-        let Some((dw, dh)) = self.design else {
+        let Some(design) = self.design else {
             return (1.0, 0.0, 0.0);
         };
-        let (cw, ch) = (self.logical_width as f32, self.logical_height as f32);
-        let k = (cw / dw).min(ch / dh);
-        (k, (cw - dw * k) / 2.0, (ch - dh * k) / 2.0)
+        fit_design(
+            (self.logical_width as f32, self.logical_height as f32),
+            design,
+            self.design_inset,
+        )
     }
 
     pub fn clear_for_frame(&mut self, width: u32, height: u32) {
         self.logical_width = width;
         self.logical_height = height;
         self.ops.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// K-1210: a fixed-size design is fitted inside what a phone covers,
+    /// never under its status bar or navigation, and centred in what is
+    /// left; nothing covered fits the whole canvas as before.
+    #[test]
+    fn a_design_fits_inside_the_edges_a_phone_covers() {
+        // World Clock (880x560) on a phone turned landscape: 891x411 points,
+        // a 24-point status bar, a 48-point cutout on the left, a 24-point
+        // gesture bar.
+        let (k, ox, oy) = fit_design((891.0, 411.0), (880.0, 560.0), (24.0, 0.0, 24.0, 48.0));
+        let (x1, y1) = (ox + 880.0 * k, oy + 560.0 * k);
+        assert!(
+            oy >= 24.0 - 1e-3 && y1 <= 411.0 - 24.0 + 1e-3,
+            "top {oy} bottom {y1}"
+        );
+        assert!(
+            ox >= 48.0 - 1e-3 && x1 <= 891.0 + 1e-3,
+            "left {ox} right {x1}"
+        );
+        assert!(
+            (oy - 24.0).abs() < 1e-3 || (ox - 48.0).abs() < 1e-3,
+            "it fills one axis"
+        );
+        assert_eq!(
+            fit_design((400.0, 800.0), (200.0, 400.0), (0.0, 0.0, 0.0, 0.0)),
+            (2.0, 0.0, 0.0)
+        );
+        // A report that would leave less than half the screen is not one.
+        assert_eq!(
+            fit_design((400.0, 800.0), (200.0, 400.0), (500.0, 0.0, 0.0, 0.0)),
+            (2.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            fit_design((400.0, 800.0), (0.0, 400.0), (0.0, 0.0, 0.0, 0.0)),
+            (1.0, 0.0, 0.0)
+        );
     }
 }

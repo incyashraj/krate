@@ -702,6 +702,11 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.set_adapts(adapts)
     }
 
+    /// Whether a finger on a canvas presses it rather than scrolling it.
+    pub fn set_canvas_presses(&self, window: WindowId, widget: WidgetId, presses: bool) {
+        self.adapter.set_canvas_presses(window, widget, presses)
+    }
+
     /// The platform's own file or folder picker (phones); None when cancelled.
     pub fn choose_path(
         &self,
@@ -710,6 +715,12 @@ impl<'a> Phase3UiDispatcher<'a> {
         filter: &str,
     ) -> Option<std::path::PathBuf> {
         self.adapter.choose_path(id, folder, filter)
+    }
+
+    /// The platform's own message or yes-or-no dialog (phones); None where
+    /// the host has none.
+    pub fn ask(&self, id: WindowId, title: &str, body: &str, question: bool) -> Option<bool> {
+        self.adapter.ask(id, title, body, question)
     }
 
     /// Whether the device can tap back (IC-917).

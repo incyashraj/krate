@@ -592,16 +592,28 @@ impl Runtime {
         // without owning one. Not documented for users; measurement only.
         // An organisation's `[runtime] interpreter = true` takes the same
         // road, from configuration rather than the environment (IC-949).
+        //
+        // A 32-bit phone (armeabi-v7a: many low-cost Android phones run a
+        // 32-bit system, even on a 64-bit chip) has no compiler backend at
+        // all -- Cranelift does not emit 32-bit ARM -- so every app there
+        // runs on the interpreter, the 32-bit one (K-1207).
         #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
-        let interpreted = config.interpreter || std::env::var("KRATE_PULLEY").as_deref() == Ok("1");
+        let interpreted = cfg!(target_pointer_width = "32")
+            || config.interpreter
+            || std::env::var("KRATE_PULLEY").as_deref() == Ok("1");
         #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
         if interpreted {
-            if let Err(err) = wt_config.target("pulley64") {
+            let pulley = if cfg!(target_pointer_width = "32") {
+                "pulley32"
+            } else {
+                "pulley64"
+            };
+            if let Err(err) = wt_config.target(pulley) {
                 return Err(RuntimeError::EngineInit(format!(
                     "pulley backend unavailable: {err}"
                 )));
             }
-            stage_mark("runtime: engine is the interpreter (pulley64)");
+            stage_mark(&format!("runtime: engine is the interpreter ({pulley})"));
         }
 
         if config.fuel.is_some() {
@@ -751,6 +763,26 @@ impl Runtime {
             self.run_bytes_with_output(bytes, config, OutputMode::Capture(buffer.clone()), world)?;
         let captured = buffer.borrow().clone();
         Ok((outcome, captured))
+    }
+
+    /// Run and keep everything the app printed, stdout and stderr in the
+    /// order written: a terminal's view, for a host with no terminal (a
+    /// phone shows it when a command-line app ends).
+    pub fn run_bytes_transcribed_for_world(
+        &self,
+        bytes: &[u8],
+        config: &Config,
+        world: RuntimeWorld,
+    ) -> Result<(RunOutcome, Vec<u8>)> {
+        let buffer = Rc::new(RefCell::new(Vec::new()));
+        let outcome = self.run_bytes_with_output(
+            bytes,
+            config,
+            OutputMode::Transcript(buffer.clone()),
+            world,
+        )?;
+        let transcript = buffer.borrow().clone();
+        Ok((outcome, transcript))
     }
 
     /// Run a component file while capturing its stdout. See [`Self::run_bytes_captured`].
@@ -1402,6 +1434,12 @@ impl Runtime {
         .with_chosen_files(store.data().chosen.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
         .with_app_name(config.app_name.clone());
+        // A Phase 3 app cannot ask what screen it is on (krate:ui/screen is
+        // Phase 4), so it never adapts -- and it must say so: the host keeps
+        // the last answer, and one carried over from the permission sheet
+        // (which adapts) held a wide app upright on a phone, shrunk into a
+        // band across the middle (K-1209).
+        gui_host.set_adapts(false);
         store.data_mut().phase3_gui = Some(gui_host);
 
         let linker = self.phase3_gui_linker()?;
@@ -1967,6 +2005,9 @@ enum OutputMode {
     Sink,
     /// Collect app stdout into a shared buffer for embedding callers.
     Capture(Rc<RefCell<Vec<u8>>>),
+    /// Collect stdout and stderr together, in the order written: what a
+    /// terminal would have shown, for a host that has none (a phone).
+    Transcript(Rc<RefCell<Vec<u8>>>),
 }
 
 impl OutputMode {
@@ -1974,7 +2015,7 @@ impl OutputMode {
         match self {
             Self::Stdout => print_stdout_line_on_host(msg),
             Self::Sink => {}
-            Self::Capture(buffer) => {
+            Self::Capture(buffer) | Self::Transcript(buffer) => {
                 let mut buffer = buffer.borrow_mut();
                 buffer.extend_from_slice(msg.as_bytes());
                 buffer.push(b'\n');
@@ -1982,11 +2023,29 @@ impl OutputMode {
         }
     }
 
+    /// The app wrote to stderr: the host's own, except in a transcript.
+    fn write_err(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Transcript(buffer) => {
+                buffer.borrow_mut().extend_from_slice(bytes);
+                Ok(())
+            }
+            _ => write_stderr_on_host(bytes),
+        }
+    }
+
+    fn flush_err(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Transcript(_) => Ok(()),
+            _ => flush_stderr_on_host(),
+        }
+    }
+
     fn write_bytes(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         match self {
             Self::Stdout => write_stdout_on_host(bytes),
             Self::Sink => Ok(()),
-            Self::Capture(buffer) => {
+            Self::Capture(buffer) | Self::Transcript(buffer) => {
                 buffer.borrow_mut().extend_from_slice(bytes);
                 Ok(())
             }
@@ -1997,7 +2056,7 @@ impl OutputMode {
         match self {
             Self::Stdout => flush_stdout_on_host(),
             Self::Sink => Ok(()),
-            Self::Capture(_) => Ok(()),
+            Self::Capture(_) | Self::Transcript(_) => Ok(()),
         }
     }
 }
@@ -2687,7 +2746,7 @@ impl IoAdapter for LocalPhase2Adapter {
         let mut state = self.state.borrow_mut();
         match state.resources.get_mut(&handle.id) {
             Some(LocalResource::Stdout) => self.output.borrow_mut().write_bytes(bytes),
-            Some(LocalResource::Stderr) => write_stderr_on_host(bytes),
+            Some(LocalResource::Stderr) => self.output.borrow_mut().write_err(bytes),
             Some(_) => Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
                 "stream is not writable",
@@ -2704,7 +2763,7 @@ impl IoAdapter for LocalPhase2Adapter {
         let mut state = self.state.borrow_mut();
         match state.resources.get_mut(&handle.id) {
             Some(LocalResource::Stdout) => self.output.borrow_mut().flush(),
-            Some(LocalResource::Stderr) => flush_stderr_on_host(),
+            Some(LocalResource::Stderr) => self.output.borrow_mut().flush_err(),
             Some(_) => Ok(()),
             None => Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -3943,6 +4002,26 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// A transcript keeps what the app wrote to stdout and stderr together,
+    /// in the order written: a phone shows it once a program ends (K-1208).
+    #[test]
+    fn a_transcript_keeps_stdout_and_stderr_in_order() {
+        let buffer = Rc::new(RefCell::new(Vec::new()));
+        let mut mode = OutputMode::Transcript(buffer.clone());
+        mode.write_bytes(b"out 1\n").expect("stdout");
+        mode.write_err(b"err 1\n").expect("stderr");
+        mode.print_line("out 2");
+        mode.flush_err().expect("flush");
+        assert_eq!(buffer.borrow().as_slice(), b"out 1\nerr 1\nout 2\n");
+        // A plain capture keeps stdout only: what the wall reads its
+        // decision from must not take in error lines.
+        let plain = Rc::new(RefCell::new(Vec::new()));
+        let mut mode = OutputMode::Capture(plain.clone());
+        mode.write_bytes(b"wall:open:\n").expect("stdout");
+        let _ = mode.write_err(b"");
+        assert_eq!(plain.borrow().as_slice(), b"wall:open:\n");
+    }
+
     /// What a guest may contain did not widen with the engine. Wasmtime 47
     /// turned GC and typed function references on by default; Krate keeps
     /// them off (K-1127), and keeps exception handling on (IC-908). Each

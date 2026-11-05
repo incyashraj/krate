@@ -1,0 +1,26 @@
+[app]
+id = "com.acme.dialog-probe"
+name = "dialog-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_dialog_probe.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show what each answer was"
+required = true
+
+[[capabilities]]
+cap = "ui.dialog:confirm"
+rationale = "Ask a yes-or-no question"
+required = true
+
+[[capabilities]]
+cap = "ui.dialog:message"
+rationale = "Show a message"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what each dialog answered"
+required = true

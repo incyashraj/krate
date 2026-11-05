@@ -182,15 +182,44 @@ mod real {
         *DESCRIBED.lock().expect("described lock") = elements.to_vec();
     }
 
+    /// The canvases a finger presses rather than scrolls, by Krate window
+    /// and widget: games drawn at a design size (K-1202).
+    static PRESSING: std::sync::Mutex<
+        std::collections::BTreeSet<(WindowId, krate_adapter_common::ui::WidgetId)>,
+    > = std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+    /// Note whether a finger on this canvas presses it (the runtime says).
+    pub fn set_canvas_presses(
+        window: WindowId,
+        widget: krate_adapter_common::ui::WidgetId,
+        presses: bool,
+    ) {
+        let mut pressing = PRESSING.lock().expect("pressing lock");
+        if presses {
+            pressing.insert((window, widget));
+        } else {
+            pressing.remove(&(window, widget));
+        }
+    }
+
     /// Whether a finger landing at (x, y) is on something that drags: a
-    /// slider Krate draws, or an element the app described as adjustable,
-    /// with 8 points to spare above and below -- the iPhone's rule.
-    fn drags_at(placements: &[WidgetPlacement], x: f32, y: f32) -> bool {
+    /// slider Krate draws, a game's canvas, or an element the app described
+    /// as adjustable, with 8 points to spare above and below -- the
+    /// iPhone's rule. A canvas that lays itself out for the screen is a
+    /// page, and scrolls.
+    fn drags_at(window: WindowId, placements: &[WidgetPlacement], x: f32, y: f32) -> bool {
         let inside =
             |px: f32, py: f32, w: f32, h: f32| x >= px && x < px + w && y >= py && y < py + h;
+        let pressing = PRESSING.lock().expect("pressing lock");
         placements.iter().any(|p| {
-            p.kind == krate_adapter_common::ui::WidgetKind::Slider
-                && inside(p.x, p.y, p.width, p.height)
+            let drags = match p.kind {
+                krate_adapter_common::ui::WidgetKind::Slider => true,
+                krate_adapter_common::ui::WidgetKind::Canvas => {
+                    pressing.contains(&(window, p.widget))
+                }
+                _ => false,
+            };
+            drags && inside(p.x, p.y, p.width, p.height)
         }) || DESCRIBED.lock().expect("described lock").iter().any(|e| {
             e.role == krate_adapter_common::ui::AccessRole::Adjustable
                 && inside(e.x, e.y - 8.0, e.width, e.height + 16.0)
@@ -204,6 +233,12 @@ mod real {
         /// Every finger on each window, by Krate window id then finger id,
         /// for apps that ask for all of them (krate:ui/touch).
         fingers: BTreeMap<u64, krate_adapter_common::ui::FingerTracker>,
+        /// Where each window's pointer is and whether it is held, for apps
+        /// that ask rather than wait for events (krate:ui/pointer): a game
+        /// steering by `button-held` and `position`. Fed from the presses
+        /// as they leave for the runtime; never fed, it said "not held"
+        /// forever, and no game could be steered by finger.
+        pointers: BTreeMap<u64, krate_adapter_common::ui::PointerTracker>,
         windows: BTreeMap<NativeWindowId, TrackedWindow>,
         events: CollectedNativeEvents,
         cursor: BTreeMap<NativeWindowId, (f32, f32)>,
@@ -401,6 +436,9 @@ mod real {
                     if !focused {
                         // Lifted fingers never arrive once focus is gone.
                         self.fingers.remove(&krate.get());
+                        if let Some(pointer) = self.pointers.get_mut(&krate.get()) {
+                            pointer.focus_lost();
+                        }
                     }
                     Some(WinitWindowNativeEvent::Focused(focused))
                 }
@@ -466,7 +504,7 @@ mod real {
                                     && self
                                         .windows
                                         .get(&native)
-                                        .is_some_and(|t| drags_at(&t.placements, x, y));
+                                        .is_some_and(|t| drags_at(krate, &t.placements, x, y));
                                 self.touch = Some(TouchGesture {
                                     finger: touch.id,
                                     native,
@@ -1116,7 +1154,45 @@ mod real {
         WINIT_HOST.with(|slot| {
             slot.borrow_mut()
                 .as_mut()
-                .map(|host| std::mem::take(&mut host.app.pointer_samples))
+                .map(|host| {
+                    let samples = std::mem::take(&mut host.app.pointer_samples);
+                    for sample in &samples {
+                        let pointer = host.app.pointers.entry(sample.window.get()).or_default();
+                        pointer.moved_to(sample.x, sample.y);
+                        pointer.button(
+                            krate_adapter_common::ui::PointerButton::Primary,
+                            sample.pressed,
+                        );
+                    }
+                    samples
+                })
+                .unwrap_or_default()
+        })
+    }
+
+    /// A window's pointer as the presses so far leave it (krate:ui/pointer).
+    pub fn pointer_state(id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        if !host_initialized() {
+            return Default::default();
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .and_then(|host| host.app.pointers.get(&id.get()).copied())
+                .unwrap_or_default()
+        })
+    }
+
+    /// Hand over a window's pointer motion since the last call.
+    pub fn take_pointer_motion(id: WindowId) -> (f32, f32) {
+        if !host_initialized() {
+            return (0.0, 0.0);
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow_mut()
+                .as_mut()
+                .and_then(|host| host.app.pointers.get_mut(&id.get()))
+                .map(|pointer| pointer.take_motion())
                 .unwrap_or_default()
         })
     }
@@ -1232,6 +1308,13 @@ mod stub {
     /// No touch screen to drag on off Android.
     pub fn set_described(_elements: &[krate_adapter_common::ui::AccessElement]) {}
 
+    pub fn set_canvas_presses(
+        _window: WindowId,
+        _widget: krate_adapter_common::ui::WidgetId,
+        _presses: bool,
+    ) {
+    }
+
     /// Winit windows are only available in Linux builds.
     pub fn show_native_window(_krate: WindowId) -> Result<bool, UiAdapterError> {
         unsupported()
@@ -1278,6 +1361,14 @@ mod stub {
     /// Winit windows are only available in Linux builds.
     pub fn drain_pointer_samples() -> Vec<RawPointerSample> {
         Vec::new()
+    }
+
+    pub fn pointer_state(_id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        Default::default()
+    }
+
+    pub fn take_pointer_motion(_id: WindowId) -> (f32, f32) {
+        (0.0, 0.0)
     }
 
     /// Winit windows are only available in Android builds.

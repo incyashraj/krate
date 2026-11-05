@@ -19,6 +19,57 @@ pub const MAX_BUNDLE_BYTES: u64 = krate_bundle::HUB_LIMITS.bundle_bytes;
 /// invite code see the same data.
 pub const SHARED_HUB: &str = "https://hub.krate.tech";
 
+/// Whether an app is a command-line program (it prints and ends) rather than
+/// one with a window. A phone has no terminal, so what such an app printed
+/// is shown on Krate's own card once it ends (`output_args`).
+pub fn prints_only(manifest: &Manifest) -> bool {
+    let world = manifest.app.world.as_str();
+    world.starts_with("krate:app/cli") || world.starts_with("krate:phase1")
+}
+
+/// The most of a program's output the card keeps: its last lines, as a
+/// terminal's scrollback would.
+pub const OUTPUT_LINES: usize = 5_000;
+/// And the most characters of any one line.
+pub const OUTPUT_LINE_CHARS: usize = 2_000;
+
+/// The wall's `wall:output` arguments for a program that ended: its name, how
+/// it ended in plain words, then each printed line. Arguments may not carry a
+/// newline or a NUL (the runtime refuses them), so lines are split on the
+/// first and cleaned of the second and of carriage returns.
+pub fn output_args(name: &str, exit_code: Option<i32>, transcript: &[u8]) -> Vec<String> {
+    let ended = match exit_code {
+        Some(0) => "Finished".to_string(),
+        Some(code) => format!("Ended with code {code}"),
+        None => "Stopped: it used more than it was allowed".to_string(),
+    };
+    let text = String::from_utf8_lossy(transcript);
+    let mut lines: Vec<String> = text
+        .split('\n')
+        .map(|line| {
+            line.chars()
+                .filter(|c| *c != '\r' && *c != '\0')
+                .take(OUTPUT_LINE_CHARS)
+                .collect()
+        })
+        .collect();
+    // The newline that ends the last line is not one more, empty, line.
+    if lines.last().is_some_and(|line: &String| line.is_empty()) {
+        lines.pop();
+    }
+    let skip = lines.len().saturating_sub(OUTPUT_LINES);
+    let mut args = vec![
+        "wall:output".to_string(),
+        name.replace(['\n', '\0'], " "),
+        ended,
+    ];
+    if skip > 0 {
+        args.push(format!("({skip} earlier lines not kept)"));
+    }
+    args.extend(lines.into_iter().skip(skip));
+    args
+}
+
 /// Where one app's data lives on the phone, beside its sandbox and never in
 /// it: the app names keys and tables, never files.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,5 +266,64 @@ mod tests {
             use_in_words("fs.mkdir:./notes").as_deref(),
             Some("Save its own files")
         );
+    }
+
+    #[test]
+    fn a_program_s_output_becomes_one_argument_per_line() {
+        let args = output_args(
+            "grex",
+            Some(2),
+            b"error: missing <INPUT>\r\n\nUsage: grex\0 [OPTIONS]\n",
+        );
+        assert_eq!(
+            args,
+            vec![
+                "wall:output",
+                "grex",
+                "Ended with code 2",
+                "error: missing <INPUT>",
+                "",
+                "Usage: grex [OPTIONS]",
+            ]
+        );
+        assert!(args.iter().all(|a| !a.contains('\n') && !a.contains('\0')));
+        assert_eq!(output_args("x", Some(0), b"")[2], "Finished");
+        assert_eq!(
+            output_args("x", Some(0), b"").len(),
+            3,
+            "nothing printed, no lines"
+        );
+        assert!(output_args("x", None, b"")[2].starts_with("Stopped"));
+    }
+
+    #[test]
+    fn a_long_output_keeps_its_last_lines() {
+        let text: String = (0..OUTPUT_LINES + 7)
+            .map(|i| format!("line {i}\n"))
+            .collect();
+        let args = output_args("x", Some(0), text.as_bytes());
+        assert_eq!(args[3], "(7 earlier lines not kept)");
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some(format!("line {}", OUTPUT_LINES + 6).as_str())
+        );
+        assert_eq!(args.len(), 3 + 1 + OUTPUT_LINES);
+        let wide = "x".repeat(OUTPUT_LINE_CHARS * 2);
+        assert_eq!(
+            output_args("x", Some(0), wide.as_bytes())[3].len(),
+            OUTPUT_LINE_CHARS
+        );
+    }
+
+    #[test]
+    fn only_a_command_line_world_prints_only() {
+        let with = |world: &str| {
+            Manifest::parse(&format!(
+                "[app]\nid = \"com.acme.x\"\nname = \"x\"\nversion = \"0.1.0\"\nentry = \"x.wasm\"\nworld = \"{world}\"\n"
+            ))
+            .expect("manifest")
+        };
+        assert!(prints_only(&with("krate:app/cli@0.1.0")));
+        assert!(!prints_only(&with("krate:app/gui@0.2.0")));
     }
 }

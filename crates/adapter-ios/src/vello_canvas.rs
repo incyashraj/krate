@@ -1107,7 +1107,13 @@ pub(crate) fn whole_frame_picture(
         None => (list.logical_width as f32, list.logical_height as f32),
         Some((dw, dh)) => {
             let (sw, sh) = (list.logical_width as f32, list.logical_height as f32);
-            if dw <= 0.0 || dh <= 0.0 || ((dw / dh) / (sw / sh) - 1.0).abs() > 0.01 {
+            // Fitted inside covered edges, a design no longer covers the
+            // whole frame, so its picture cannot stand for the frame.
+            if dw <= 0.0
+                || dh <= 0.0
+                || ((dw / dh) / (sw / sh) - 1.0).abs() > 0.01
+                || list.design_inset != (0.0, 0.0, 0.0, 0.0)
+            {
                 return None;
             }
             (dw, dh)

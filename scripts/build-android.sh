@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 #
-# Build the Krate player for Android (aarch64).
+# Build the Krate player for Android: 64-bit ARM by default, or 32-bit ARM
+# with KRATE_ANDROID_ABI=armeabi-v7a. Many low-cost phones run a 32-bit
+# system even on a 64-bit chip (a Galaxy M11 lists only armeabi-v7a), and a
+# Player without that library cannot even be installed there. The 32-bit
+# one runs apps on wasmtime's interpreter, as iOS does: there is no 32-bit
+# ARM compiler backend. scripts/package-android.sh puts every built ABI in
+# one APK.
 #
 # Everything here exists because two traps already cost time on this repo:
 # Homebrew's rustc shadows rustup's and has no Android std, so RUSTC must
@@ -9,7 +15,7 @@
 # clang and fail.
 #
 # Prereqs, one time:
-#   rustup target add aarch64-linux-android
+#   rustup target add aarch64-linux-android armv7-linux-androideabi
 #   sdkmanager "ndk;27.2.12479018"
 #   Build apps/krate-gram and apps/krate-wall first (krate check-app) --
 #   the player embeds gram as its demo and the wall sheet as its chrome.
@@ -22,6 +28,16 @@ NDK_VERSION="${NDK_VERSION:-27.2.12479018}"
 API_LEVEL="${ANDROID_API_LEVEL:-26}"
 SDK="${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}"
 NDKBIN="$SDK/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+
+case "${KRATE_ANDROID_ABI:-arm64-v8a}" in
+  arm64-v8a) TARGET=aarch64-linux-android CLANG=aarch64-linux-android ;;
+  armeabi-v7a) TARGET=armv7-linux-androideabi CLANG=armv7a-linux-androideabi ;;
+  *) echo "error: KRATE_ANDROID_ABI is arm64-v8a or armeabi-v7a" >&2; exit 2 ;;
+esac
+# Cargo's per-target variables spell the triple in capitals with
+# underscores; the cc crate's, in lower case with underscores.
+UPPER=$(echo "$TARGET" | tr 'a-z-' 'A-Z_')
+LOWER=$(echo "$TARGET" | tr '-' '_')
 
 if [ ! -d "$NDKBIN" ]; then
   echo "error: NDK $NDK_VERSION not found under $SDK/ndk" >&2
@@ -38,10 +54,10 @@ if [ ! -d "$TC" ]; then
 fi
 
 export RUSTC="$TC/bin/rustc"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDKBIN/aarch64-linux-android$API_LEVEL-clang"
-export CC_aarch64_linux_android="$NDKBIN/aarch64-linux-android$API_LEVEL-clang"
-export CXX_aarch64_linux_android="$NDKBIN/aarch64-linux-android$API_LEVEL-clang++"
-export AR_aarch64_linux_android="$NDKBIN/llvm-ar"
+export "CARGO_TARGET_${UPPER}_LINKER=$NDKBIN/$CLANG$API_LEVEL-clang"
+export "CC_$LOWER=$NDKBIN/$CLANG$API_LEVEL-clang"
+export "CXX_$LOWER=$NDKBIN/$CLANG$API_LEVEL-clang++"
+export "AR_$LOWER=$NDKBIN/llvm-ar"
 
 exec "$TC/bin/cargo" build -p krate-player-android \
-  --target aarch64-linux-android --release "$@"
+  --target "$TARGET" --release "$@"

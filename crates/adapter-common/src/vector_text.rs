@@ -496,8 +496,12 @@ impl TextEngine {
             // Prefer the platform's screen-oriented coding faces. The generic
             // mapping can select a typewriter face such as Courier on macOS.
             // Keep a generic fallback for installations without these fonts.
+            // Android names its own: Droid Sans Mono (every release) and
+            // Cutive Mono; none of the others is there, and its generic
+            // monospace did not resolve, so fixed-width text was drawn in
+            // the sans face.
             CanvasFontFamily::Mono => builder.push_default(parley::FontFamily::from(
-                "Menlo, Consolas, 'DejaVu Sans Mono', monospace",
+                "Menlo, Consolas, 'DejaVu Sans Mono', 'Droid Sans Mono', 'Cutive Mono', monospace",
             )),
         };
         builder.push_default(StyleProperty::FontSize(font_size));
