@@ -38,6 +38,9 @@ mod clipboard;
 /// Toasts attributed to the app (IC-271).
 pub mod toast;
 
+/// Windows Hello for `krate:ui/unlock` (IC-982).
+pub mod unlock;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,

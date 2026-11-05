@@ -2,8 +2,9 @@
 //!
 //! On a Mac and an iPhone this is LocalAuthentication's
 //! `deviceOwnerAuthentication` policy: Face ID or Touch ID, falling back to
-//! the passcode or the login password, in the system's own sheet. The app
-//! learns only yes, no, or that the device cannot check.
+//! the passcode or the login password, in the system's own sheet; on Android
+//! BiometricPrompt; on Windows, Windows Hello. The app learns only yes, no,
+//! or that the device cannot check.
 
 /// How the check went; the WIT `unlock-answer`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,14 +152,45 @@ pub(crate) fn check(reason: &str) -> Answer {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
+/// Windows: Windows Hello -- face, fingerprint or PIN -- in the system's
+/// own dialog over the app's window (IC-982).
+#[cfg(target_os = "windows")]
+pub(crate) fn available() -> bool {
+    krate_adapter_windows::unlock::available()
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn check(reason: &str) -> Answer {
+    match krate_adapter_windows::unlock::check(reason) {
+        krate_adapter_windows::unlock::Answer::Yes => Answer::Yes,
+        krate_adapter_windows::unlock::Answer::No => Answer::No,
+        krate_adapter_windows::unlock::Answer::Unavailable(why) => Answer::Unavailable(why),
+    }
+}
+
+/// Linux has no one system check every desktop shares (polkit asks for the
+/// account password to act as administrator, not to say it is the person
+/// in front of an app), so it answers unavailable, and says so.
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "android",
+    target_os = "windows"
+)))]
 pub(crate) fn available() -> bool {
     false
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "android",
+    target_os = "windows"
+)))]
 pub(crate) fn check(_reason: &str) -> Answer {
-    Answer::Unavailable("checking it is you is not on this system yet".to_string())
+    Answer::Unavailable(
+        "this computer has no system check that it is you: use the app's own password".to_string(),
+    )
 }
 
 #[cfg(test)]
