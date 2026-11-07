@@ -7107,7 +7107,15 @@ async function fillFiles(app) {
       run: () => setPane("code"),
     }, prettyBytes(bytes)));
   }
-  host.appendChild(group("Inside the krate", rows));
+  // A file that could not be opened read as a heading with nothing under
+  // it, which looks like an app with nothing inside. Say it instead.
+  if (rows.length) host.appendChild(group("Inside the krate", rows));
+  else {
+    const none = document.createElement("p");
+    none.className = "pane-empty";
+    none.textContent = "Krate could not read what is inside this file here. Press Download to keep it and open it.";
+    host.appendChild(none);
+  }
   if (given.length) host.appendChild(group("You gave the AI", given.map((f) => fileRow(ICON_CLIP, baseName(f)))));
 }
 
