@@ -5,10 +5,11 @@ Krate is a way to build a desktop app and ship it as one file.
 You write Rust. It compiles to a WebAssembly component. Krate packs that
 component, its manifest and its own source into a single `.krate` file.
 A link opens it in any modern browser, phones included, with nothing to
-install and no account. The same application bytes run natively on macOS,
-Windows and Linux once the recipient installs the Krate runtime, so the app
-does not need a separate package for each operating system. Existing desktop
-binaries do not become portable without adapting them to supported Krate APIs.
+install and no account. To run it natively, the
+recipient installs a compatible runtime once; the same application bytes
+then run on macOS, Windows and Linux, and the app does not need a separate
+package for each operating system. Existing desktop binaries do not become
+portable without adapting them to supported Krate APIs.
 
 Apps begin without file or network access. Capabilities are declared in the
 manifest and approved through the runtime, which checks them before many
@@ -77,7 +78,8 @@ or interface. Check `krate version` and the relevant release notes.
 
 The [limits page](limits.md), [interface coverage](reference/interface-parity.md)
 and [widget coverage](reference/widget-parity.md) describe the supported surface.
-Mobile is not a shipping target. Krate is under active development; neither
+No release carries a phone build yet: on phones and tablets an app opens
+from its link in the browser. Krate is under active development; neither
 universal compatibility nor production hardening against hostile code is implied.
 
 The file you share is not just its code payload: source, SDK interfaces and
