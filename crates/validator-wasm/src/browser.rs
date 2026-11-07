@@ -369,6 +369,10 @@ fn keys_op(input: &Value) -> Result<Value, String> {
 ///   "key": <base64 PKCS#8 of a release key>, "delegation": {slip},
 ///   "ring": {"envelope": ..., "device_secret": <hex>}  (sign as the organisation)}`
 ///
+/// or, for a person's own app made on krate.tech (IC-983's option B), no
+/// organisation and no mark: `{"account": "<hub account id>", "signed_at",
+/// and the key as above}`, signed under `krate.tech/<account>/<app id>`.
+///
 /// The answer is the same frame: JSON (`{"ok":true,"digest","namespace",
 /// "public_key","signer"}` or `{"ok":false,"problem"}`), then the signed
 /// bundle's bytes.
@@ -406,6 +410,9 @@ fn frame_of(meta: &Value, bytes: &[u8]) -> Vec<u8> {
 }
 
 fn sign_op(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
+    if input["account"].is_string() {
+        return sign_for_account(input, bundle);
+    }
     let org = org_of(input)?;
     let signed_at = input["signed_at"]
         .as_u64()
@@ -414,18 +421,7 @@ fn sign_op(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
         let (_, key) = open_ring(&input["ring"], org)?;
         (key, None, "organisation")
     } else {
-        // A release key as PKCS#8, or as WebCrypto's JWK gives it (`seed`
-        // and `public`, hex).
-        let pkcs8 = if input["seed"].is_string() {
-            let mut seed = key32(input, "seed")?;
-            let doc = SigningKey::pkcs8_from_seed(&seed, &key32(input, "public")?)
-                .map_err(|_| "that public key is not the seed's".to_string());
-            seed.zeroize();
-            doc?
-        } else {
-            pkcs8_of(input, "key")?
-        };
-        let key = signing_key(&pkcs8)?;
+        let key = given_key(input)?;
         let delegation = match &input["delegation"] {
             Value::Null => None,
             slip => Some(
@@ -449,6 +445,64 @@ fn sign_op(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
         "namespace": signed.envelope.namespace,
         "public_key": signed.envelope.public_key,
         "signer": signer,
+    });
+    Ok((meta, signed.bytes))
+}
+
+/// A release key as PKCS#8 (`key`, base64), or as WebCrypto's JWK gives it
+/// (`seed` and `public`, hex).
+fn given_key(input: &Value) -> Result<SigningKey, String> {
+    let pkcs8 = if input["seed"].is_string() {
+        let mut seed = key32(input, "seed")?;
+        let doc = SigningKey::pkcs8_from_seed(&seed, &key32(input, "public")?)
+            .map_err(|_| "that public key is not the seed's".to_string());
+        seed.zeroize();
+        doc?
+    } else {
+        pkcs8_of(input, "key")?
+    };
+    signing_key(&pkcs8)
+}
+
+/// The namespace a person's web builds are signed under:
+/// `krate.tech/<account>/<app id>`. The account is the hub's id for the
+/// person, so it never changes when their name does.
+pub(crate) fn account_namespace(account: &str, app_id: &str) -> Result<String, String> {
+    let fits = !account.is_empty()
+        && account.len() <= 64
+        && account
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !fits {
+        return Err(format!("{account:?} is not a hub account"));
+    }
+    Ok(format!("krate.tech/{account}/{app_id}"))
+}
+
+/// Sign a person's own app with the key the hub keeps for their account
+/// (IC-983, option B): the app stays theirs across every rebuild, and its
+/// data stays keyed to them, without a key on the build machine. Nothing is
+/// marked; the bundle is signed as it was built.
+fn sign_for_account(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
+    let account = text(input, "account")?;
+    let signed_at = input["signed_at"]
+        .as_u64()
+        .ok_or("signed_at is unix seconds")?;
+    let key = given_key(input)?;
+    let app_id = krate_bundle::judge_bytes(bundle, crate::MAX_EXPANDED_BYTES)
+        .map_err(|e| e.to_string())?
+        .manifest
+        .app
+        .id;
+    let namespace = account_namespace(account, &app_id)?;
+    let signed = krate_bundle::sign_bytes(bundle, &key, Some(&namespace), signed_at, None)
+        .map_err(|e| e.to_string())?;
+    let meta = json!({
+        "ok": true,
+        "digest": krate_bundle::sha256_hex(&signed.bytes),
+        "namespace": signed.envelope.namespace,
+        "public_key": signed.envelope.public_key,
+        "signer": "account",
     });
     Ok((meta, signed.bytes))
 }
@@ -649,6 +703,28 @@ mod tests {
             judged.signature.chain.unwrap().root,
             Some(hex(&root.public_key()))
         );
+
+        // A person's own web build: signed as their account, unmarked.
+        let person_pkcs8 = SigningKey::generate_pkcs8().unwrap();
+        let person = SigningKey::from_pkcs8(&person_pkcs8).unwrap();
+        let header = json!({ "account": "u_42", "signed_at": 1_760_000_100u64,
+            "key": b64_encode(&person_pkcs8) });
+        let mut frame = (header.to_string().len() as u32).to_le_bytes().to_vec();
+        frame.extend_from_slice(header.to_string().as_bytes());
+        frame.extend_from_slice(bounce);
+        let out = sign_frame(&frame);
+        let (meta, bytes) = split_frame(&out).unwrap();
+        let meta: Value = serde_json::from_slice(meta).unwrap();
+        assert_eq!(
+            (meta["signer"].as_str(), meta["namespace"].as_str()),
+            (Some("account"), Some("krate.tech/u_42/dev.krate.bounce")),
+            "{meta}"
+        );
+        assert_eq!(meta["public_key"], hex(&person.public_key()));
+        let judged = krate_bundle::judge_bytes(bytes, MAX).unwrap();
+        assert_eq!(judged.signature.state, "valid");
+        assert_eq!(judged.org_mark, None, "a person's app carries no mark");
+        assert!(account_namespace("../etc", "bounce").is_err());
 
         let refused = sign_frame(b"\x02\x00\x00\x00{}");
         let (meta, _) = split_frame(&refused).unwrap();

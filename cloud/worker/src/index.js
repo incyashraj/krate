@@ -738,6 +738,10 @@ export default {
       if (request.method === "POST" && pathname === "/keys/forget") {
         return cors(await forgetKey(request, env));
       }
+      if (request.method === "POST" && pathname === "/sign/web-build") {
+        // NOT cors(), as /keys/use: the build service's door only.
+        return signWebBuild(request, env);
+      }
       if (request.method === "POST" && pathname === "/keys/use") {
         // NOT cors(): only the build service calls this, server to server.
         // Without the header a browser cannot read the answer, so a script
@@ -6457,6 +6461,104 @@ async function useKey(request, env) {
   const key = await openKey(env, held[vendor]);
   if (!key) return text("that key could not be read", 500);
   return json({ vendor, key });
+}
+
+/* ---- signing a person's web builds (IC-983, option B) -------------------
+ *
+ * An app made on a computer is signed there with the maker's own key. An
+ * app made on krate.tech is built on the Fly builder, which runs an AI
+ * agent and so must never hold a key. It hands the finished bundle here
+ * instead, and the hub signs it with a key it keeps for that account alone:
+ * made on the account's first web build, sealed under KEY_WRAP_SECRET like
+ * a person's API keys, never sent anywhere. Every web build of theirs is
+ * then the same publisher's, so its data stays theirs across rebuilds.
+ */
+
+/// The PKCS#8 wrapper for an Ed25519 seed: a fixed prefix, then the seed.
+const ED25519_PKCS8_PREFIX = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+const WEB_SIGN_MAX_BYTES = 64 * 1024 * 1024;
+
+/// The account's signing seed (32 bytes), made the first time. Null when
+/// the hub cannot seal one (no KEY_WRAP_SECRET) or the one it holds does
+/// not open: a second key would be a second publisher, so it never makes
+/// another over one it cannot read.
+async function accountSigningSeed(env, userId) {
+  const key = `signkey:${userId}`;
+  const held = await env.APPS.get(key);
+  const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const fromHex = (h) => Uint8Array.from(h.match(/../g) || [], (b) => parseInt(b, 16));
+  if (held) {
+    const seed = await openKey(env, JSON.parse(held));
+    return seed && /^[0-9a-f]{64}$/.test(seed) ? fromHex(seed) : null;
+  }
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const sealed = await sealKey(env, toHex(seed));
+  if (!sealed) return null;
+  await env.APPS.put(key, JSON.stringify(sealed));
+  return seed;
+}
+
+/// POST /sign/web-build: the bundle a person's build just made, from the
+/// build service (its secret) for that person (their session), answered
+/// signed as their account. Refused, the builder hands the bundle over
+/// unsigned, as before.
+async function signWebBuild(request, env) {
+  if (!(await fromBuilder(request, env))) {
+    return text("Only the build service may ask for this.", 403);
+  }
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const bundle = new Uint8Array(await request.arrayBuffer());
+  if (!bundle.length || bundle.length > WEB_SIGN_MAX_BYTES) return text("expected a .krate", 400);
+  const seed = await accountSigningSeed(env, user.id);
+  if (!seed) return text("this account's signing key is not available", 503);
+  // The validator takes the seed with its public half (ring checks the
+  // pair); WebCrypto derives that half from the seed.
+  const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const pkcs8 = new Uint8Array([...ED25519_PKCS8_PREFIX, ...seed]);
+  const imported = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, true, ["sign"]);
+  pkcs8.fill(0);
+  const { x } = await crypto.subtle.exportKey("jwk", imported);
+  const publicKey = Uint8Array.from(atob(x.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const header = new TextEncoder().encode(
+    JSON.stringify({
+      account: user.id,
+      signed_at: Math.floor(Date.now() / 1000),
+      seed: toHex(seed),
+      public: toHex(publicKey),
+    }),
+  );
+  seed.fill(0);
+  const frame = new Uint8Array(4 + header.length + bundle.length);
+  new DataView(frame.buffer).setUint32(0, header.length, true);
+  frame.set(header, 4);
+  frame.set(bundle, 4 + header.length);
+  let body;
+  try {
+    const v = validator();
+    const input = v.krate_alloc(frame.length);
+    new Uint8Array(v.memory.buffer, input, frame.length).set(frame);
+    const out = v.krate_sign(input, frame.length);
+    const length = new DataView(v.memory.buffer).getUint32(out, true);
+    body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
+    // The key went into the module's memory: wipe it before freeing.
+    new Uint8Array(v.memory.buffer, input, 4 + header.length).fill(0);
+    v.krate_free(out, 4 + length);
+    v.krate_free(input, frame.length);
+  } catch (err) {
+    return text("the signing code stopped", 500);
+  }
+  frame.fill(0, 0, 4 + header.length);
+  const metaLength = new DataView(body.buffer).getUint32(0, true);
+  const meta = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + metaLength)));
+  if (!meta.ok) return text(meta.problem || "the app could not be signed", 422);
+  return new Response(body.subarray(4 + metaLength), {
+    headers: {
+      "content-type": "application/vnd.krate",
+      "x-krate-publisher": meta.public_key,
+      "x-krate-namespace": meta.namespace,
+    },
+  });
 }
 
 /* ---- what the builds cost ----------------------------------------------

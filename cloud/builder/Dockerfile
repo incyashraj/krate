@@ -177,8 +177,9 @@ RUN useradd --create-home --shell /bin/sh builder \
 #
 # KRATE_MAKER_SIGNING=off: this box makes apps for everybody, and Krate signs
 # what a person makes with their own publisher key (IC-983). One key here
-# would sign every account's apps as one publisher, so it signs nothing;
-# how a web build is signed is the founder's open decision in IC-983.
+# would sign every account's apps as one publisher, so it signs nothing
+# itself: the hub signs each finished build as that person's account
+# (/sign/web-build, IC-983 option B), and the key never comes here.
 ENV HOME=/work \
     TMPDIR=/work/tmp \
     PORT=8080 \
