@@ -4181,6 +4181,11 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 | "desktop.ini"
                 // The verification frame the pack tells agents to shoot.
                 | "frame.png"
+                // check-app's note that these bytes passed a full check: a
+                // cache on the machine that ran it, not the app. Packed, it
+                // put a different file list into every starter repacked
+                // after a check-app run.
+                | ".last-full-check"
             )
     })
 }
@@ -10079,7 +10084,13 @@ required = true
         // so the skip cannot be "every dotfile".
         fs::create_dir_all(dir.path().join(".cargo")).expect(".cargo");
         fs::write(dir.path().join(".cargo/config.toml"), b"[build]\n").expect("config");
-        for junk in [".DS_Store", "src/.DS_Store", "Thumbs.db", "src/desktop.ini"] {
+        for junk in [
+            ".DS_Store",
+            "src/.DS_Store",
+            "Thumbs.db",
+            "src/desktop.ini",
+            ".last-full-check",
+        ] {
             fs::write(dir.path().join(junk), b"os state").expect(junk);
         }
 
@@ -10100,7 +10111,7 @@ required = true
                 })
                 .collect()
         };
-        for junk in ["DS_Store", "Thumbs.db", "desktop.ini"] {
+        for junk in ["DS_Store", "Thumbs.db", "desktop.ini", "last-full-check"] {
             assert!(
                 !names.iter().any(|n| n.contains(junk)),
                 "{junk} was packed as source; the bundle now depends on which \

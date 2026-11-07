@@ -17,6 +17,29 @@ def wbr_path(path):
     return "".join(escape(d) + "/<wbr>" for d in dirs) + f'<span class="fn">{escape(name)}</span>'
 
 
+# The replay CI records committed for the latest release: one TSV per system.
+# The page reads them rather than typing a count, and refuses to build if the
+# three systems disagree or a record names a failure.
+E3_RUN = "evidence/e3/run-36557127592"
+
+
+def e3_record(run):
+    counts, versions = set(), set()
+    for system in ("macos", "windows", "ubuntu"):
+        rows = (ROOT / f"{run}-replay-{system}.tsv").read_text().splitlines()
+        versions.update(line.split("\t", 1)[1].replace("krate ", "Krate ").strip()
+                        for line in rows if line.startswith("# krate\t"))
+        # An app with no replay check defined is recorded as skip; it is not
+        # one of the script's checks, so it is neither a pass nor a failure.
+        results = [line.split("\t")[:2] for line in rows if line and not line.startswith("#")]
+        if any(r not in ("pass", "skip") for _, r in results):
+            raise SystemExit(f"build-progress-page: {run}-replay-{system}.tsv records a failure")
+        counts.add(frozenset(name for name, r in results if r == "pass"))
+    if len(counts) != 1 or len(versions) != 1:
+        raise SystemExit(f"build-progress-page: {run} records disagree: {counts} {versions}")
+    return counts.pop(), versions.pop()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=pathlib.Path, default=ROOT / "docs/landing/progress.html")
@@ -33,6 +56,9 @@ def main():
     replay_names = sorted(set(re.findall(r'^check "([a-z0-9-]+)"',
                                          (ROOT / script_path).read_text(), re.M)))
     replay_list = "".join(f'<span class="tag">{escape(name)}</span>' for name in replay_names)
+    e3_passes, e3_krate = e3_record(E3_RUN)
+    E3_PASSES = (f"all {len(e3_passes)}" if e3_passes == set(replay_names)
+                 else f"{len(e3_passes & set(replay_names))} of them")
     version = published_release()
     release_line = (f'Latest published release at generation: <a href="{facts["latest_release_url"]}">'
                     f'<code>{escape(version)}</code></a>.' if version else
@@ -90,7 +116,7 @@ def main():
 .back .btn svg {{ transform: scaleX(-1); }}
 .tbl .fn {{ white-space: nowrap; }}
 @media (max-width: 680px) {{ .prose .links {{ grid-template-columns: 1fr; }} .stats-sec .stats {{ gap: 10px; }} .stats-sec .stat {{ padding: 18px 16px 16px; }} .stats-sec .stat b {{ font-size: 27px; }} }}
-@media (max-width: 680px) {{ .prose .tbl {{ font-size: 13px; }} .prose .tbl th {{ white-space: normal; padding: 10px 6px; }} .prose .tbl td {{ padding: 12px 6px; }} .prose .tbl th:first-child, .prose .tbl td:first-child {{ padding-left: 14px; }} .prose .tbl td:first-child {{ white-space: normal; }} .prose .tbl code {{ white-space: normal; overflow-wrap: anywhere; font-size: 11.5px; }} }}
+@media (max-width: 680px) {{ .prose .tbl {{ font-size: 14px; }} .prose .tbl th {{ white-space: normal; padding: 10px 6px; }} .prose .tbl td {{ padding: 12px 6px; }} .prose .tbl th:first-child, .prose .tbl td:first-child {{ padding-left: 14px; }} .prose .tbl td:first-child {{ white-space: normal; }} .prose .tbl code {{ white-space: normal; overflow-wrap: anywhere; font-size: 13px; }} }}
 </style>
 </head>
 <body>
@@ -133,10 +159,10 @@ def main():
 
   <section class="prose psec">
     <span class="eye">Tests</span>
-    <h2>Test configuration is not a test result</h2>
+    <h2>What the replay checks</h2>
     <p>The repository's ported-app replay script names {len(replay_names)} checks:</p>
     <div class="checks">{replay_list}</div>
-    <p>This list says what the script is configured to exercise, not whether the latest run passed.</p>
+    <p>At {escape(e3_krate)} {E3_PASSES} pass on macOS, Windows and Linux: the CI records for <a href="{source_url(E3_RUN + "-replay-macos.tsv")}">macOS</a>, <a href="{source_url(E3_RUN + "-replay-windows.tsv")}">Windows</a> and <a href="{source_url(E3_RUN + "-replay-ubuntu.tsv")}">Linux</a>.</p>
     <p>Inspect <a href="{script_url}">the replay script</a>, <a href="{facts["repository"]}/actions/workflows/ci.yml">CI run results</a> and <a href="{facts["latest_release_url"]}">release notes</a> for the revision and host you intend to use. A file existing in this checkout does not prove it works with every published runtime version.</p>
   </section>
 
@@ -156,7 +182,7 @@ def main():
   <section class="prose psec">
     <span class="eye">Speed and size</span>
     <h2>Performance needs its own evidence</h2>
-    <p>The <a href="/reports/">measurement report</a> describes one architecture-matched notes workload and separates full bundle, code payload and shared-runtime costs. This inventory makes no speed, memory or size-ratio claim against unrelated applications.</p>
+    <p>The <a href="/reports/">measurement report</a> describes one architecture-matched notes workload and separates full bundle, code payload and shared-runtime costs.</p>
     <div class="back"><a class="btn link" href="/">{arrow} Back to krate.tech</a></div>
   </section>
 </div>

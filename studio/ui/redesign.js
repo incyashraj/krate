@@ -213,6 +213,10 @@
     const idePane = $("homeIdePane"), ideUnder = $("homeIdeUnder");
     if (idePane) idePane.hidden = mode !== "ide";
     if (ideUnder) ideUnder.hidden = mode !== "ide";
+    // Start from a spreadsheet is a way to Create; under Port or the IDE it
+    // read as part of that door. app.js owns its `hidden`, so a class.
+    const sheetLine = $("homeSheetLine");
+    if (sheetLine) sheetLine.classList.toggle("kr-offmode", mode !== "create");
     const kb = $("homeKb");
     if (kb) {
       kb.hidden = mode === "port";
@@ -754,9 +758,10 @@
       ver.className = "kr-ver"; ver.hidden = true;
       title.insertAdjacentElement("afterend", ver);
       // The newest version, or "draft" before anything is built -- also for
-      // a reopened session, whose transcript has no build rows.
+      // a reopened session, whose transcript has no build rows. Only a build
+      // that made something counts: a first build that failed made no v1.
       const paint = () => {
-        const chips = qa("#thread .vchip b");
+        const chips = qa("#thread .msg.vok .vchip b");
         const last = chips[chips.length - 1];
         const st = app(), sess = st && st.session;
         const word = last ? last.textContent : sess && sess.result ? `v${sess.builds || 1}` : sess ? "draft" : "";
@@ -789,7 +794,8 @@
       (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(place);
     }
     const share = $("barShare");
-    // Run it is relabelled by app.js (textContent), so its icon is drawn in CSS.
+    // Hidden for good (the card under the preview has Run and Share); its
+    // icon is kept so an old door that unhides it still draws it right.
     if (share && !q("svg", share)) share.insertAdjacentHTML("afterbegin", ico("share"));
   })();
 
@@ -1205,7 +1211,7 @@
     const name = appName(), size = res.size || "";
     const words = r.revise
       ? "Done. The change is in, and I opened it again to check it still works."
-      : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Try it with Run it, or send it to someone.`;
+      : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Press Run to try it, or Share to send it to someone.`;
     const el = document.createElement("div"); el.className = "msg krate kr-close";
     el.innerHTML = '<span class="body"></span>'; q(".body", el).textContent = words;
     const tools = q(":scope > .kr-tools", msg);
@@ -1412,7 +1418,7 @@
   function thenPress(id, ms = 6000) {
     const t0 = Date.now();
     const tick = () => {
-      const b = $(id);
+      const b = /^[.#\[]/.test(id) ? q(id) : $(id);
       if (b && !b.classList.contains("hidden") && b.offsetParent) { press(b); return; }
       if (Date.now() - t0 < ms) setTimeout(tick, 100);
     };
@@ -1430,7 +1436,15 @@
       h.className = "kr-hov";
       h.innerHTML = `<span class="kr-hb dark" role="button" tabindex="0" data-a="run">${ico("play")}Run</span>` +
         `<span class="kr-hb" role="button" tabindex="0" data-a="share">${ico("share")}Share</span>`;
-      const go = (b) => { card.click(); thenPress(b.dataset.a === "run" ? "barRun" : "barShare"); };
+      // The app card's own Run and Share, under the preview: the one place
+      // the session has them.
+      // On a phone the session opens on its conversation, so the app side
+      // is shown first or the card's button is never on screen to press.
+      const go = (b) => {
+        card.click();
+        setTimeout(() => { const m = q('.mob-switch [data-mob="app"]'); if (m && m.offsetParent) m.click(); }, 120);
+        thenPress(`.kr-fdone [data-fa="${b.dataset.a === "run" ? "run" : "share"}"]`);
+      };
       h.addEventListener("click", (e) => {
         const b = e.target.closest("[data-a]"); if (!b) return;
         e.stopPropagation(); e.preventDefault();
@@ -1634,7 +1648,14 @@
       e.stopImmediatePropagation(); sheet();
       setTimeout(() => { const t = q('#aiNav [data-ai="keys"]'); if (t) press(t); }, 0);
     }, true);
-    if (!desktopApp()) { const kp = $("setKeyPanel"); if (kp) kp.hidden = true; }
+    // In a tab the key row stays, in the web's own words. It was hidden
+    // here, which left Settings with no way to add a key while the plan
+    // sheet and the free-app wall both say "your own API key keeps you
+    // making here" -- the only door was the wall itself, after the fact.
+    if (!desktopApp()) {
+      const hint = q("#setKeyPanel .hint");
+      if (hint) hint.textContent = "Your own Anthropic or OpenAI key keeps you making here after the free app. It is kept in your account";
+    }
     // Reduce motion: this computer only, on top of the system's own setting.
     const calm = $("setCalm");
     let on = false; try { on = localStorage.getItem("krate-calm") === "1"; } catch (e) {}
@@ -1678,7 +1699,7 @@
   const shareWrap = document.createElement("div");
   shareWrap.className = "sheet-wrap hidden kr-share-wrap"; shareWrap.id = "krShare";
   shareWrap.innerHTML = `<div class="sheet kr-share" role="dialog" aria-modal="true" aria-labelledby="krShareH">
-    <div class="kr-sh-h"><div><h2 id="krShareH">Share <span data-n></span></h2><p class="sheet-sub">One file. Whoever gets it double-clicks, and it opens.</p></div>
+    <div class="kr-sh-h"><div><h2 id="krShareH">Share <span data-n></span></h2><p class="sheet-sub">A link opens in any browser, on a phone too. The file opens with Krate on a computer.</p></div>
       <button type="button" class="kr-x" data-close title="Close" aria-label="Close">${ico("x")}</button></div>
     <div class="kr-shfile"><span class="kr-shic"><img src="krate-logo.png" alt=""></span><span class="kr-sht"><b data-f></b><small data-s></small></span><em data-v hidden></em></div>
     <div class="kr-ways" role="tablist">
@@ -1968,12 +1989,23 @@
     sharePlan = o && o.version ? { update: false, same: true, n: o.version, url: linkOf(), label: "Publish", sub: "" } : null;
     paintWays();
   }
-  // The Publish tile says "Publish update" once the app is out.
+  // Each tile says where the app really is. A link made with Share a link
+  // is "Shared by link", on that tile; only a publish with the gallery
+  // switched on makes it "In the gallery". The Publish tile used to say
+  // "v1 is at your link" after a link was made, which under the word
+  // Publish read as if the app were already listed.
   function paintWays() {
-    const w = q('.kr-way[data-w="pub"]', shareWrap); if (!w) return;
+    const w = q('.kr-way[data-w="pub"]', shareWrap), lw = q('.kr-way[data-w="link"]', shareWrap);
+    if (!w || !lw) return;
     const p = planOf();
+    const res = (() => { const s = app(); return s && s.session && s.session.result; })();
+    const here = isCurrent() && (Boolean(linkOf()) || Boolean(p && p.same));
+    const n = (p && p.same && p.n) || (res && res.published_version) || (lastPublish() && lastPublish().version) || null;
+    const vn = n ? ` · v${n}` : "";
+    const listed = isCurrent() && Boolean(res && res.listed);
     q("b", w).textContent = p && p.update ? "Publish update" : "Publish";
-    q("small", w).textContent = p && p.update ? `v${p.n}, behind the same link` : p && p.same ? `v${p.n} is at your link` : "List it in the public gallery";
+    q("small", w).textContent = p && p.update ? `v${p.n}, behind the same link` : listed && here ? `In the gallery${vn}` : "List it in the public gallery";
+    q("small", lw).textContent = p && p.update ? `Your link opens v${p.current || p.n - 1}` : here ? `Shared by link${vn}` : "Opens in any browser, phone or computer";
   }
   function openShare(which, version) {
     let cur = null; try { cur = currentApp(); } catch (e) {}
@@ -2318,7 +2350,7 @@
       } });
       let label = ""; try { label = agentLabel(); } catch (err) {}
       items.push({ mark: logo(st && st.agent), label: "Change the AI", em: label, run: () => agentPicker(t) });
-      if (a) items.push({ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download", run: () => press($("filesSave")) });
+      if (a) items.push({ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download the file", run: () => press($("filesSave")) });
       items.push("sep", { icon: "trash", label: "Remove this app", danger: true, keep: true, run: (row) => {
         if (!row.dataset.armed) { row.dataset.armed = "1"; q(".kr-pt", row).firstChild.textContent = "Click again to remove it"; return true; }
         try { removeCurrentSession(); } catch (err) {}
@@ -2502,7 +2534,7 @@
         `<div class="kr-fx kr-fnote"><div><p class="kr-fstill">${ast}Still going. Bigger apps take a minute.</p></div></div>` +
       `</div>` +
       `<div class="kr-ffail"><h5><i>!</i><span></span></h5><p></p><div class="kr-facts2"></div></div>` +
-      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Show details</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>`;
+      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Details</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>`;
     stage.insertBefore(f, stage.firstChild);
     stage.classList.add("kr-forged");
     const fst = q(".kr-fst", f), fel = q(".kr-fel", f), img = q(".kr-flive img", f);
@@ -2650,9 +2682,11 @@
       q(".kr-ffail p", f).textContent = why;
       q(".kr-ffail p", f).hidden = !why;
       const acts = q(".kr-facts2", f);
-      // Report an issue rides along: it lived only on the old failure pane,
-      // which this card hides, so a failed build could not be reported.
-      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["makeitBtn", "kr-plain", "Send this to Krate"], ["reportBtn", "kr-plain", "Report an issue"]]
+      // One way to tell us: Report an issue, which sends the evidence and
+      // the request with it. "Send this to Krate" sat beside it and did
+      // nearly the same (the request, no evidence), and a person could not
+      // tell which to press; it stays in the page, out of sight.
+      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["reportBtn", "kr-plain", "Report an issue"]]
         .filter(([id]) => { const b = $(id); return b && !b.classList.contains("hidden") && !b.hidden; });
       const key = want.map(([id]) => id + ":" + ($(id).textContent || "")).join("|") + "|" + stopped;
       if (acts.dataset.k !== key) {
@@ -2666,13 +2700,16 @@
         });
         if (($("buildLog") || {}).textContent) {
           const l = document.createElement("button"); l.type = "button"; l.className = "btn kr-plain"; l.dataset.fa = "log";
-          l.innerHTML = `${ico("term", "kr-ico")}<span>Show details</span>`; acts.appendChild(l);
+          l.innerHTML = `${ico("term", "kr-ico")}<span>Details</span>`; acts.appendChild(l);
         }
       }
       return stopped;
     }
     function paintLogBtn() {
-      qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logOn ? "Hide details" : "Show details"; });
+      qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logOn ? "Hide details" : "Details"; });
+      // "Details", the word every failure sentence uses ("Press Details for the
+      // compiler output"): the button said "Show details", so the sentence
+      // named a button that was not on the card.
       if (f.classList.contains("kr-logon") !== logOn) { f.classList.toggle("kr-logon", logOn); if (logOn) { lgKey = ""; paintLog(); } }
     }
 
@@ -2971,7 +3008,7 @@
           <div class="kd-by">${m.author ? `<span class="kr-av sm">${esc(m.author.charAt(0).toUpperCase())}</span>` : ""}${[m.author ? "@" + esc(m.author) : "", m.category ? esc(catName(m.category)) : "", a.opens > 0 ? `${a.opens} open${a.opens === 1 ? "" : "s"} this month` : ""].filter(Boolean).join(" · ")}</div>
           ${m.description ? `<div class="kd-said"><small>In one sentence</small><p>${esc(m.description)}</p></div>` : ""}
           <div class="kd-file"><img src="krate-doc.png" alt=""><div><b>${esc(fileOf(a))}</b><small>${[kb(a), when ? "published " + when : "", "macOS, Windows and Linux"].filter(Boolean).join(" · ")}</small></div></div>
-          <div class="kd-act">${getBtn(a, true)}<button type="button" class="kr-ghost2" data-kd="run">${ico("play")}Run it</button><button type="button" class="kr-ghost2" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button><button type="button" class="kr-ib" data-kd="link" title="Copy the link" aria-label="Copy the link">${ico("link")}</button></div>
+          <div class="kd-act">${getBtn(a, true)}<button type="button" class="kr-ghost2" data-kd="run">${ico("play")}Run</button><button type="button" class="kr-ghost2" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button><button type="button" class="kr-ib" data-kd="link" title="Copy the link" aria-label="Copy the link">${ico("link")}</button></div>
           <div class="kd-note"></div>
           <div class="kd-sec"><h6>What it asks for</h6><div class="kd-asks"><span class="kd-dim">Reading the file…</span></div><p class="kd-wall">${ico("shield")}Krate enforces this list. The app cannot do anything that is not on it, whatever its code says.</p></div>
         </div></div>${more(a)}`;
@@ -3468,7 +3505,11 @@
     wasOpen = open;
     const nowBuilding = shown("stateBuilding") || shown("statePlanning");
     sw.classList.toggle("live", nowBuilding);
-    if (building && !nowBuilding && shown("stateDone") && open) set("app");
+    // Finished, or failed for a reason the card can act on: the app side
+    // has Run and Share, or Try again, so it is shown. A build the person
+    // stopped stays where they pressed Stop.
+    const failed = shown("stateFailed") && !/stop/i.test((document.getElementById("failTitle") || {}).textContent || "");
+    if (building && !nowBuilding && (shown("stateDone") || failed) && open) set("app");
     else if (!building && nowBuilding && view.dataset.mob === "chat") sw.classList.add("news");
     building = nowBuilding;
   };

@@ -233,6 +233,23 @@ lookalikes:
 Sessions live on your account, so an app you start in the browser opens on
 the desktop with its conversation intact and editable.
 
+## For a team
+
+[krate.tech/orgs](https://krate.tech/orgs/) gives a company its own place
+on Krate. Name the organisation, release its first app (Team Notes,
+Expenses, Stock List, or a `.krate` you made) and invite your team by
+email, all from one page. A developer sends an app, a reviewer approves its
+exact bytes, and only your people can open it: a copied link alone opens
+nothing. The apps' team data and the credentials for your company's APIs
+are encrypted on members' computers, so Krate's hub stores them without
+being able to read them.
+
+For IT: company sign-in with OpenID Connect or SAML 2.0, people and groups
+kept in step by SCIM, a policy that says which apps may open on company
+computers, and an audit of every approval. Read
+[Organisations](https://krate.tech/docs/organisations.html) and
+[Running Krate in an organisation](https://krate.tech/docs/running-in-an-organisation.html).
+
 ## What it costs
 
 Nothing, right now. The player is MIT and Apache licensed and always will
@@ -312,7 +329,7 @@ never work.
 ## `krate check-app`: the oracle behind AI authoring
 
 An AI writing code needs a truthful, fast answer to "is this actually
-correct?" `check-app` runs six stages and prints one verdict; because the
+correct?" `check-app` runs nine stages and prints one verdict; because the
 failure text names the fix, an agent can loop on it without a human in the
 middle.
 
@@ -324,6 +341,9 @@ middle.
 | imports | 13 | It imports only `krate:*`, no `wasi:*` leak |
 | run | 14 | It actually runs, headless |
 | shoot | 15 | A GUI app paints a real frame |
+| usability | 16 | Driven the way a person would: it stays open, follows a resize, answers a press |
+| screens | 17 | It fits a phone, a tablet and a desktop window (from 0.5.5) |
+| phone | 18 | It runs the way a phone runs it, on the interpreter iOS requires, and its first frame and scrolling are timed (from 0.5.5) |
 
 `--json` gives the same verdict as a machine-readable object; `--shoot
 frame.png` writes the app's first frame to a PNG so output can be looked at
@@ -360,7 +380,7 @@ cd krate
 cargo build --workspace && cargo test --workspace
 ```
 
-The workspace has over 1,600 Rust tests. You need the Rust toolchain named in
+The workspace has over 2,300 Rust tests. You need the Rust toolchain named in
 `rust-toolchain.toml` and `cargo-component`; check your machine with
 `krate doctor`. Platform packages, the two Windows traps, and the
 one-package Linux receiver note live in [docs/build.md](docs/build.md).
@@ -369,9 +389,12 @@ one-package Linux receiver note live in [docs/build.md](docs/build.md).
 
 ```text
 apps/       Sample apps and apps used to test Krate
-crates/     Runtime, CLI, policy, adapters, MCP server, authoring, and SDK
+cloud/      The hub (hub.krate.tech) and the build service behind Studio in a browser
+crates/     Runtime, CLI, policy, desktop/browser/phone adapters, MCP server, authoring, SDK
 docs/       Website, book, design records, and technical documentation
+evidence/   Measurements, claim records and release evidence behind the numbers above
 scripts/    Build, install, test, evidence, and release tools
+studio/     Krate Studio, the desktop app
 test/       Integration fixtures and cross-language tests
 wit/        Krate interface definitions
 ```
@@ -384,6 +407,8 @@ wit/        Krate interface definitions
 | The paste-in prompt for any AI chat | [Krate Mode](https://krate.tech/docs/pages/krate-mode.html) |
 | Plain guide for making an app | [Make an app with AI](https://krate.tech/docs/pages/make-an-app-with-ai.html) |
 | Developer quickstart | [Quickstart](https://krate.tech/docs/quickstart.html) |
+| Private apps for a company | [Organisations](https://krate.tech/docs/organisations.html) |
+| Bring an app you already have | [Porting guide](https://krate.tech/docs/porting.html) |
 | Build from source | [docs/build.md](docs/build.md) |
 | Exact current evidence | [Status](STATUS.md) |
 
@@ -400,7 +425,8 @@ Everyone is held to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 A random id made on your machine, the Krate version, the OS name, one of
 `install` / `make` / `open` / `publish`, whether an AI wrote the app, and
-whether it worked. Never: app names, prompts, paths, or anything about you.
+whether it worked; when an app does not open, one word for why from a fixed
+list (`refused`, `not-found`, `bad-bundle` and so on). Never: app names, prompts, paths, or anything about you.
 `krate telemetry off` turns it off (`DO_NOT_TRACK=1` is honoured too), and
 it says so on first run rather than hiding here.
 
@@ -410,7 +436,7 @@ it says so on first run rather than hiding here.
 - Current release: [the latest on the releases page](https://github.com/incyashraj/krate/releases/latest)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
-- License: MIT OR Apache-2.0
+- License: MIT OR Apache-2.0 for the player, format and CLI; BSL 1.1 for Studio and the hub ([details](#license))
 
 
 ## License

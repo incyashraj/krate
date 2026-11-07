@@ -924,14 +924,7 @@ fn spoken_target(target: &str) -> String {
 /// `github:<login>`. Both lower-case. An explicit `github:` or `email:`
 /// prefix is kept.
 pub fn principal_of(name: &str) -> String {
-    let name = name.trim().to_ascii_lowercase();
-    if name.starts_with("github:") || name.starts_with("email:") {
-        name
-    } else if name.contains('@') {
-        format!("email:{name}")
-    } else {
-        format!("github:{name}")
-    }
+    krate_orgaccess::principal_of(name)
 }
 
 /// A principal as a person reads it: `alice (GitHub)`, `bob@corp.com
@@ -1060,32 +1053,7 @@ fn worded<T>(result: Result<T>, org: &str, me: &str, action: Action) -> Result<T
 /// A time the hub gave: an RFC 3339 string is shown as it is; unix seconds
 /// (or milliseconds) become a UTC date.
 pub(crate) fn when(value: &serde_json::Value) -> String {
-    if let Some(text) = value.as_str() {
-        return text.to_string();
-    }
-    let Some(mut secs) = value.as_u64() else {
-        return String::new();
-    };
-    if secs > 100_000_000_000 {
-        secs /= 1000;
-    }
-    let days = (secs / 86_400) as i64;
-    let rest = secs % 86_400;
-    // Howard Hinnant's civil-from-days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02} {:02}:{:02} UTC",
-        rest / 3600,
-        (rest % 3600) / 60
-    )
+    krate_orgaccess::when(value)
 }
 
 fn text<'a>(value: &'a serde_json::Value, key: &str) -> &'a str {
@@ -2154,17 +2122,7 @@ pub fn link_authorization(url: &str) -> Option<String> {
 }
 
 pub(crate) fn origin(url: &str) -> Option<String> {
-    let (scheme, rest) = url.split_once("://")?;
-    let host = rest.split(['/', '?', '#']).next()?;
-    // userinfo@host is not a hub; refuse rather than guess which part counts.
-    if host.contains('@') || host.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "{}://{}",
-        scheme.to_ascii_lowercase(),
-        host.to_ascii_lowercase()
-    ))
+    krate_orgaccess::origin(url)
 }
 
 pub(crate) fn is_hub_link(url: &str) -> bool {
@@ -2188,50 +2146,7 @@ pub(crate) fn is_hub_link(url: &str) -> bool {
 /// `/orgs/<slug>/apps/<app-id>/current`. Only on a Krate hub, and only for
 /// those exact shapes; anything else is returned as it was given.
 pub fn bundle_address(url: &str) -> std::borrow::Cow<'_, str> {
-    use std::borrow::Cow;
-    if !is_hub_link(url) {
-        return Cow::Borrowed(url);
-    }
-    let Some(origin) = origin(url) else {
-        return Cow::Borrowed(url);
-    };
-    let path = url[url.find("://").map_or(0, |i| i + 3)..]
-        .split_once('/')
-        .map_or("", |(_, rest)| rest)
-        .split(['?', '#'])
-        .next()
-        .unwrap_or("");
-    let path = path.strip_suffix('/').unwrap_or(path);
-    let Some(rest) = path.strip_prefix("run/") else {
-        return Cow::Borrowed(url);
-    };
-    let hex = |s: &str, n: usize| {
-        s.len() == n
-            && s.bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    };
-    let parts: Vec<&str> = rest.split('/').collect();
-    match parts.as_slice() {
-        [hash] if hex(hash, 64) => Cow::Owned(format!("{origin}/a/{hash}")),
-        [line] if line.len() == 12 && line.starts_with('v') && hex(&line[1..], 11) => {
-            Cow::Owned(format!("{origin}/a/{line}"))
-        }
-        ["org", slug, app]
-            if crate::fleet::org_slug(slug)
-                && !app.is_empty()
-                && app.len() <= 128
-                && app
-                    .bytes()
-                    .next()
-                    .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-                && app.bytes().all(|b| {
-                    b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b)
-                }) =>
-        {
-            Cow::Owned(format!("{origin}/orgs/{slug}/apps/{app}/current"))
-        }
-        _ => Cow::Borrowed(url),
-    }
+    krate_orgaccess::bundle_address(&crate::access::HERE, url)
 }
 
 /// The words for a refused download of a private release.

@@ -518,7 +518,8 @@ is wanted -- the first call answers `Err(Finding)` while the phone looks \
 and asks the person; keep calling (twice a second is plenty) and draw \
 \"Finding where you are\" meanwhile. `Err(NotAllowed)` means they said no: \
 say so plainly and keep the rest of the app working; `Err(Unavailable)` \
-is a computer or location switched off. A position carries `accuracy` in \
+is location switched off, or a computer with no way to tell (Linux for \
+now) -- a Mac and a Windows PC ask and answer as a phone does. A position carries `accuracy` in \
 metres -- show it, never pretend a fix is exact. \
 Bluetooth LE devices (a heart-rate strap, a sensor, a light): declare \
 `bluetooth.connect`, then `krate::ui::bluetooth::choose(win, \"180D\", \
@@ -528,23 +529,29 @@ answers the one they pick (`None` if they cancel). The app never scans. \
 Then `read`, `write` and `subscribe` by service and characteristic UUID, \
 and drain `notifications(device)` each frame; on `Err(Disconnected)` or \
 `connected()` false, offer to choose again. `Err(NotFound)` from choose \
-means nothing nearby offers the service: say so. A Share button: \
+means nothing nearby offers the service: say so. A Mac shows the same \
+list; Windows and Linux answer `available()` false for now, so keep a way \
+to type the reading in there. A Share button: \
 `krate::ui::share::share(win, Some(text), Some(url), &[SharedFile { name, \
 data }])` opens the system's share sheet (Messages, Mail, AirDrop, Notes) \
 and answers `Ok(true)` when sent, `Ok(false)` when cancelled; no \
-capability. A computer answers `Err(Unavailable)` for now: offer \
-save-file or Copy there instead. Photos: `krate::ui::photos::pick(win, \
+capability. It works on every computer too: a Mac opens its share \
+picker, and Windows and Linux, which have none, save the files where the \
+person picks and copy the text on their OK -- the same answers. Photos: `krate::ui::photos::pick(win, \
 3)` opens the system's photo picker and returns the picks as chosen \
 files (read them with `krate::fs::read_chosen(&f.token)`); empty \
 means cancelled, no capability. To add a picture: declare `photos.add` \
 and call `photos::save(win, &png_or_jpeg_bytes)`. On a computer pick \
-opens the file dialog for pictures. A reminder that comes with the app \
+opens the file dialog for pictures, and save adds to Photos on a Mac and \
+to the Pictures folder on Windows and Linux. A reminder that comes with the app \
 closed (a timer, a habit, a meeting): with `ui.notify`, \
 `krate::ui::reminders::schedule(\"tea\", \"Tea is ready\", \"Four minutes \
 are up.\", 240, false)` -- the same id replaces it, `true` repeats it \
 daily at that time, `cancel(id)` takes it back, `pending()` lists this \
-app's own; tapping it opens the app. A computer answers \
-`Err(Unavailable)` for now: keep an in-app timer there. Signing the \
+app's own; tapping it opens the app. A Mac and Windows deliver them \
+too (Windows sets a daily one a year ahead: schedule it again each time \
+the app opens); Linux answers `Err(Unavailable)`: keep an in-app timer \
+there. Signing the \
 person in to a service (GitHub, Google, your own backend): never draw a \
 password field. `let (verifier, challenge) = krate::ui::sign_in::pkce();` \
 then `sign_in::start(win, &authorize_url, \"krate-signin\")` with the service's \
@@ -567,7 +574,8 @@ refused and said in `problem`), keeps nothing between openings and \
 cannot reach the app. Something private (a vault, a diary, a \
 banking screen): show it only after `krate::ui::unlock::check(\"Unlock your \
 vault\")` answers `UnlockAnswer::Yes` -- Face ID or the passcode on an \
-iPhone, Touch ID or the password on a Mac, in the system's own sheet. \
+iPhone, Touch ID or the password on a Mac, Windows Hello on a PC, in \
+the system's own sheet. \
 `No` keeps it locked; `Unavailable(why)` means this device cannot check: \
 say so rather than opening it. Keep what it guards in `store.secret`, and \
 lock again when the app goes to the background. No capability. A picture that does not change \
@@ -2619,7 +2627,7 @@ fn curated_shape(name: &str) -> Option<&'static str> {
         "krate-checklist" => "GUI checkbox list that saves; the simplest GUI+store shape",
         "krate-contacts" => "GUI over a real SQL database (no_std)",
         "krate-keyvault" => "GUI key-value store over store.kv (persistence)",
-        "krate-notes-clip" | "krate-clip" => "GUI using the clipboard",
+        "krate-clip" => "GUI using the clipboard",
         "krate-paint" => "GUI freehand canvas drawing",
         "krate-chart" => "GUI drawing a chart on a canvas",
         "krate-nova" => "GUI canvas game: fills, circles, gradients (no sprites)",

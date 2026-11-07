@@ -160,6 +160,77 @@ export async function endEverySession(env, userId, clientId) {
   return ended;
 }
 
+/// Ask GitHub to revoke Krate's whole grant for the GitHub user a token
+/// belongs to: every token the OAuth app ever issued them ends, including
+/// ones the hub never indexed (a desktop sign-in made before the account
+/// existed). True once GitHub no longer honours them.
+async function revokeGrantAtGitHub(env, token, clientId) {
+  if (!env.GITHUB_CLIENT_SECRET || !clientId) return false;
+  try {
+    const res = await fetch(`https://api.github.com/applications/${clientId}/grant`, {
+      method: "DELETE",
+      headers: {
+        authorization: `Basic ${btoa(`${clientId}:${env.GITHUB_CLIENT_SECRET}`)}`,
+        accept: "application/vnd.github+json",
+        "content-type": "application/json",
+        "user-agent": "krate-hub",
+      },
+      body: JSON.stringify({ access_token: token }),
+    });
+    // 204: revoked. 404: GitHub does not know the token (revoked already).
+    return res.status === 204 || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
+/// A deleted account's sign-ins, every one, for good (account-delete.js).
+///
+/// Unlike support's sign-out, the index entry goes even when GitHub would
+/// not revoke a token: the account it names is being deleted, so nothing on
+/// the hub may still point at it. A GitHub sign-in is ended by revoking
+/// Krate's whole grant for that GitHub user, so tokens the hub never
+/// indexed end too; `extraGithub` are GitHub tokens known another way (the
+/// one the deletion request itself carried). Answers how many ended and how
+/// many GitHub tokens GitHub would not revoke just then -- those stop
+/// naming any Krate account, and the person can revoke Krate under GitHub
+/// Settings, Applications.
+export async function endForDeletion(env, userId, clientId, extraGithub = []) {
+  const out = { krate: 0, github: 0, github_left: 0 };
+  if (!userId) return out;
+  const prefix = `usess:${userId}:`;
+  const entries = [];
+  let cursor;
+  for (let page = 0; page < 50; page += 1) {
+    const listed = await env.APPS.list({ prefix, limit: 1000, cursor });
+    for (const k of listed.keys || []) entries.push(k.name);
+    if (listed.list_complete || !listed.cursor) break;
+    cursor = listed.cursor;
+  }
+  const github = new Set(extraGithub.filter((t) => t && !String(t).startsWith("krs_")));
+  for (const key of entries) {
+    const token = key.slice(prefix.length);
+    if (!token) continue;
+    if (token.startsWith("krs_")) {
+      await env.APPS.delete(`session:${token}`);
+      await env.APPS.delete(key);
+      out.krate += 1;
+    } else {
+      github.add(token);
+      await env.APPS.delete(key);
+    }
+  }
+  for (const token of github) {
+    const ended = (await revokeGrantAtGitHub(env, token, clientId)) || (await revokeAtGitHub(env, token, clientId));
+    if (ended) out.github += 1;
+    else out.github_left += 1;
+    try {
+      await env.APPS.delete(`token:${await sha256HexOf(token)}`);
+    } catch {}
+  }
+  return out;
+}
+
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
     status,

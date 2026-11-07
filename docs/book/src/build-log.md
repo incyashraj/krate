@@ -1,5 +1,8 @@
 # Build Log
 
+> Written in July and August 2026, while Krate was being built. For Krate today, see the
+> [introduction](introduction.md) and [where Krate is](roadmap.md).
+
 Short public notes on what shipped, written as it happens. One entry per
 milestone -- the long-form detail always lives in `STATUS.md` and the phase
 pages.

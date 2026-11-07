@@ -1,5 +1,8 @@
 # Krate for Everyone
 
+> Written in July 2026, while Krate was being built. For Krate today, see the
+> [introduction](introduction.md) and [where Krate is](roadmap.md).
+
 Updated on July 3, 2026.
 
 This page explains the project in plain language. It is written for people who are not deep in systems programming.

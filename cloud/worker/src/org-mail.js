@@ -14,6 +14,10 @@
 //
 // At most 20 invitation mails a day per organisation (counted in its store)
 // and 100 a day for the whole hub (counted in KV, one write per mail).
+//
+// Both mails here are ESSENTIAL (mail-prefs.js has the whole list): an
+// invitation an admin sent on purpose, and a security notice about who
+// owns a team. The switch for Krate's emails never stops them.
 
 export const MAIL_FROM_ADDRESS = "incyashraj@gmail.com";
 export const MAIL_CC = "yashraj@krate.tech";

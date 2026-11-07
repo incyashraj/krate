@@ -17,12 +17,19 @@ final class Dialog {
     static final int NO = 1;
 
     private static int answer = NO;
+    /** Which dialog the answer is for. A dialog closes after its button's
+     *  click, so a Yes is followed by its own dismissal -- which, once the
+     *  app has asked again, landed on the next dialog and answered it before
+     *  anyone saw it. Each close now only answers its own dialog. */
+    private static int shown = 0;
 
     /** Show title and body: OK alone for a message, Yes and No for a question. */
     static void show(final KrateActivity activity, final String title, final String body,
             final boolean question) {
+        final int mine;
         synchronized (Dialog.class) {
             answer = OPEN;
+            mine = ++shown;
         }
         activity.runOnUiThread(new Runnable() {
             @Override
@@ -36,14 +43,14 @@ final class Dialog {
                         public void onDismiss(DialogInterface dialog) {
                             // Back, a tap outside, or No: whatever closed it
                             // and was not Yes.
-                            finish(NO);
+                            finish(mine, NO);
                         }
                     });
                     if (question) {
                         builder.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
                             @Override
                             public void onClick(DialogInterface dialog, int which) {
-                                finish(YES);
+                                finish(mine, YES);
                             }
                         });
                         builder.setNegativeButton("No", null);
@@ -53,16 +60,17 @@ final class Dialog {
                     builder.show();
                 } catch (RuntimeException failed) {
                     Log.w(KrateActivity.TAG, "dialog: " + failed);
-                    finish(NO);
+                    finish(mine, NO);
                 }
             }
         });
     }
 
-    /** The first answer wins: Yes, then the dismissal that follows it. */
-    private static void finish(int value) {
+    /** The first answer wins: Yes, then the dismissal that follows it. Only
+     *  the dialog on screen may answer. */
+    private static void finish(int dialog, int value) {
         synchronized (Dialog.class) {
-            if (answer == OPEN) {
+            if (dialog == shown && answer == OPEN) {
                 answer = value;
             }
         }

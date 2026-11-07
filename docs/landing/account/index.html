@@ -39,6 +39,13 @@
 .orgrow { flex-wrap: wrap; }
 .orgrow .grow { min-width: 220px; }
 .plan-acts:empty { display: none; }
+/* the email switch */
+.sw { position: relative; flex: none; width: 46px; height: 28px; border: 0; padding: 0; border-radius: 999px; background: var(--s3); box-shadow: inset 0 0 0 1px var(--line-2); cursor: pointer; transition: background .2s; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .25s var(--ease); }
+.sw[aria-checked="true"] { background: var(--accent); box-shadow: none; }
+.sw[aria-checked="true"]::after { transform: translateX(18px); }
+.sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sw[disabled] { opacity: .5; cursor: default; }
 /* invite */
 .refbox { display: flex; gap: 8px; margin-top: 16px; }
 .refbox .inp { flex: 1; min-width: 0; font-size: 14px; color: var(--ink-2); }
@@ -87,7 +94,7 @@
     <div class="drawer" id="drawer" role="menu">
       <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
       <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
-      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
       <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
     </div>
   </nav>
@@ -99,7 +106,7 @@
   </div>
 </header>
 <nav class="mnav" id="mnav" aria-label="Menu">
-  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
   <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
 </nav>
 
@@ -138,6 +145,13 @@
             <p class="sub">Send apps privately to your team. Each release goes out only after a second person approves it.</p></div>
           <a class="btn ghost sm" href="/orgs/">Your organisations</a>
         </div>
+      </div>
+
+      <div class="card" id="mail">
+        <div class="row"><div class="grow"><h2>Emails from Krate</h2>
+          <p class="sub">Tips, welcome and news about your apps. Sign-in links and team invitations always arrive.</p></div>
+          <button class="sw" id="mailSw" type="button" role="switch" aria-checked="true" aria-label="Emails from Krate" disabled></button></div>
+        <p class="note" id="mailNote" aria-live="polite"></p>
       </div>
 
       <div class="card">
@@ -184,11 +198,11 @@
 
 <footer class="foot">
   <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
-  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
   <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
-  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
   <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
@@ -223,6 +237,7 @@
     $("uemail").textContent = m.user.email || ("@" + m.user.login);
     if (m.user.avatar_url) $("avatar").src = m.user.avatar_url;
 
+    mailShow(!m.mail || m.mail.news !== false);
     $("refLink").value = "https://krate.tech/login/?ref=" + m.referral.code;
     $("refNote").textContent =
       m.referral.count === 0 ? "Nobody yet."
@@ -230,6 +245,25 @@
   }).catch(function (e) {
     if (String(e).includes("signin")) { try { localStorage.removeItem("krate_tok"); } catch (x) {} }
     showLogin();
+  });
+
+  // Krate's non-essential emails, on or off. Saved on the account, so the
+  // unsubscribe link in any email and this switch are the same thing.
+  function mailShow(on) {
+    var sw = $("mailSw");
+    sw.setAttribute("aria-checked", on ? "true" : "false");
+    sw.disabled = false;
+  }
+  $("mailSw").addEventListener("click", function () {
+    var sw = $("mailSw"), note = $("mailNote");
+    var want = sw.getAttribute("aria-checked") !== "true";
+    sw.disabled = true;
+    api("/me/mail", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ news: want }) }).then(function (r) {
+      if (r && typeof r.news === "boolean") {
+        mailShow(r.news);
+        note.textContent = r.news ? "On. You'll hear about your apps." : "Off. You won't get these emails. Sign-in links and team invitations still arrive.";
+      } else { mailShow(!want); note.textContent = (r && r.message) || "That did not save. Try again."; }
+    }).catch(function () { mailShow(!want); note.textContent = "That did not save. Try again."; });
   });
 
   $("refCopy").addEventListener("click", function () {

@@ -215,7 +215,12 @@ body:not(.light) .side-row.on { background: var(--surface-2); }
  * one card holding the composer with Create and Port on top of it. */
 #viewHome .home-glow { display: none; }
 #viewHome .home-hail { display: none; }
-#viewHome .home-hero { width: min(720px, calc(100% - 48px)); margin: 0 auto; text-align: center; }
+/* `auto` on every side, not `0 auto`: the room is a column and the hero's
+   vertical auto margins are what push the shelf down to the floor. With
+   them only on wide windows, a phone centred the hero and the shelf
+   together, and the shelf -- drawn to sit on the window's edge, rounded
+   on top only -- floated 100px above it, looking cut off. */
+#viewHome .home-hero { width: min(720px, calc(100% - 48px)); margin: auto; text-align: center; }
 #viewHome .home-title {
   margin: 0; font-family: var(--sans);
   font-size: clamp(30px, 3vw, 38px); line-height: 1.1; font-weight: 500; letter-spacing: -0.04em;
@@ -2147,6 +2152,9 @@ body:not(.light) #viewSession #thread .vchip > b { background: var(--surface-3);
 #viewSession #thread .vchip .vact.vg:hover { background: var(--surface-2); color: var(--ink); }
 #viewSession #thread .vbad .vchip .vact { background: transparent; color: var(--danger); padding: 0 10px; }
 #viewSession #thread .vbad .vchip .vact:hover { background: var(--danger-soft); }
+/* The newest receipt has no buttons: the app's card beside it has Run and
+   Share (or Stop, or Try again). Older receipts keep theirs. */
+#viewSession #thread .msg.vlatest .vchip .vact { display: none; }
 
 /* ---- the card being made: the code streaming in ------------------------- */
 .kr-code { --code-bg: #fdfdfe; position: absolute; inset: 0; z-index: 3; display: none; background: var(--code-bg); }
@@ -2727,8 +2735,7 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 #paneFiles .pane-title, #paneDetails .pane-title { margin: 0; font: 500 15px var(--sans); color: var(--ink); }
 #paneFiles .pane-head .btn, #paneDetails .dt2-head .btn { height: 34px; padding: 0 15px; border-radius: 99px; font: 500 13.5px var(--sans); display: inline-flex; align-items: center; gap: 7px; }
 #filesAttach { background: var(--surface); color: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); }
-#filesSave, #paneDetails .dt2-run:not(.ghost) { background: var(--btn); color: var(--btn-ink); border: 0; box-shadow: none; }
-#paneDetails .dt2-run.ghost { background: var(--surface); color: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); }
+#filesSave { background: var(--btn); color: var(--btn-ink); border: 0; box-shadow: none; }
 #filesList { padding: 14px 24px 24px; }
 #paneFiles .f-label { margin: 6px 0 9px 2px; font-size: 11.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
 #paneFiles .f-group { margin-bottom: 22px; border-radius: 14px; }
@@ -2772,6 +2779,27 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .dt2-path, .dt2-hash { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .dt2-link { flex: none; padding: 0; border: 0; background: none; font: 500 12.5px var(--sans); color: var(--ink-2); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .dt2-link:hover { color: var(--ink); text-decoration-color: currentColor; }
+/* Port's one control is its card: the row under it repeated the card's
+   own action twice (Choose a folder, and an arrow that also chose one). */
+#homePortPane .kr-cmprow { display: none; }
+#homePortPane:not([hidden]) { display: flow-root; padding-bottom: 14px; }
+#homePortPane .kr-portdrop { margin-bottom: 0; align-items: center; }
+#homePortPane .kr-portdrop b { color: var(--ink); }
+#homePortPane .kr-portgo { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; border-radius: 99px; background: var(--btn); color: var(--btn-ink); font: 500 13.5px var(--sans); transition: background .2s; }
+#homePortPane .kr-portdrop:hover .kr-portgo { background: var(--btn-hover); }
+@media (max-width: 560px) {
+  #homePortPane .kr-portdrop { flex-wrap: wrap; align-items: flex-start; }
+  #homePortPane .kr-portgo { order: 3; width: 100%; height: 44px; font-size: 15px; }
+}
+#homeSheetLine.kr-offmode { display: none; }
+/* The terminal commands, folded at the foot of Details (desktop only). */
+#paneDetails .dt2-dev { margin: 0 24px 24px; }
+#paneDetails .dt2-dev > summary { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 2px; list-style: none; cursor: pointer; font: 500 13.5px var(--sans); color: var(--ink-2); border-radius: 10px; }
+#paneDetails .dt2-dev > summary::-webkit-details-marker { display: none; }
+#paneDetails .dt2-dev > summary::before { content: ""; width: 6px; height: 6px; margin-top: -3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease); }
+#paneDetails .dt2-dev[open] > summary::before { margin-top: -4px; transform: rotate(45deg); }
+#paneDetails .dt2-dev > summary:hover { color: var(--ink); }
+#paneDetails .dt2-dev .dt2-rows { margin: 4px 0 0; }
 /* An app's versions (IC-976): newest first, the current one marked, Open and
    Make current as quiet links, and the one line that says what Make current
    does before it does it. Only the publisher sees it. */
@@ -2801,6 +2829,13 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .kr-upd { margin: 10px 0 12px; }
 @media (max-width: 560px) { .vers { margin: 0 16px 20px; } .vers-top { column-gap: 8px; } .vers-meta { order: 9; flex-basis: 100%; margin: -6px 0 0 42px; } }
 @media (max-width: 560px) { .dt2-rows { grid-template-columns: 1fr; } .dt2-rows dt { min-height: 0; padding-bottom: 0; } .dt2-rows dd { border-top: 0; padding-top: 4px; } #paneFiles .pane-head, #paneDetails .dt2-head { flex-wrap: wrap; } }
+/* On a phone, Files and Details read at the phone's type floor. */
+@media (max-width: 560px) {
+  .dt2-rows dt, .dt2-rows dd, .dt2-rows .dt2-link, #paneDetails .dt2-dev > summary { font-size: 14px; }
+  .dt2-rows dd.mono, .dt2-rows .mono { font-size: 13.5px; }
+  #paneFiles .f-row .f-name, #paneFiles .f-row .f-size, #paneFiles .f-row button, #paneFiles .pane-head .btn { font-size: 14px; }
+  #paneFiles .f-label { font-size: 12px; }
+}
 
 /* ---- the IDE's editor (CodeMirror) and its question bar ------------------ */
 #ideEd { position: relative; }
@@ -3196,3 +3231,40 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
 .pop .pop-note input:focus { outline: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, var(--hair)); }
 .pop .pop-note .btn { flex: none; width: auto; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--btn); color: var(--btn-ink); font: 500 13px var(--sans); justify-content: center; }
 .pop .pop-note .btn:hover { background: var(--btn-hover); }
+
+/* ---- a thumb needs 44 (2026-11-07) ------------------------------------
+ * style.css raises Studio's controls to 44 on a touch screen, but this
+ * design layer sets fixed heights of its own later in the cascade, so on a
+ * phone they came back at 28-34: the panel's Preview/Files/Code/Details
+ * tabs 28 tall, the card's Run and Share 30, Chat/App 34, the session
+ * title 32, the gallery's sort chips 30, and the "Details" and "Download
+ * the project" links 16-18. Measured in an emulated phone at 390 x 700.
+ * Last in the file so it wins on order; touch only, so a desktop keeps its
+ * density. Small text links keep their look and grow an invisible hit area
+ * instead, so the lines around them do not move. */
+@media (pointer: coarse) {
+  #viewSession .ptabs button, #viewSession .mob-switch button,
+  #viewSession .sess-title, #viewSession #barRun, #viewSession #barShare,
+  #viewSession .btn.btn-sm, .kr-da .btn, .kr-shtog, .kr-mode { height: 44px; min-height: 44px; }
+  /* The app's Run and Share, the two buttons a thumb is here for: read at
+     the phone's type floor, not the desktop's 13px. */
+  .kr-da .btn { font-size: 14.5px; }
+  /* A message's own buttons (Make this instead, Try again, Build it). */
+  #thread .msg-actions .btn { height: 44px; min-height: 44px; padding: 0 16px; font-size: 14.5px; }
+  /* The card's own buttons when a build fails or runs (Try again, Report
+     an issue, Details, Stop). */
+  #stage .kr-forge .kr-facts2 .btn, #stage .kr-forge .kr-facts .btn { height: 44px; min-height: 44px; font-size: 14.5px; }
+  #viewSession #barRun, #viewSession #barShare, #viewSession .ptabs button { min-width: 44px; }
+  #paneFiles .f-row > button, #setNav button { min-height: 44px; }
+  .kr-fmore { width: 44px; height: 44px; }
+  #viewCloud .link-btn { min-height: 44px; }
+  /* The chips sit in a scrolling row, which would clip a hit area drawn
+     outside them, so they grow for real. */
+  .kr-cats button, .kr-sorts button { height: 44px; min-width: 44px; }
+  .dt2-link, #thread .thought-head, [data-fa="details"] { position: relative; }
+  .dt2-link::after, #thread .thought-head::after, [data-fa="details"]::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    height: 44px; transform: translateY(-50%);
+  }
+  .set-input { min-height: 44px; }
+}

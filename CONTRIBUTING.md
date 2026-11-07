@@ -154,8 +154,7 @@ Contributions use the existing license terms of the code they change:
 Read the applicable license before contributing. This guide does not replace
 or change those terms.
 
-There is no CLA. The `SPDX-License-Identifier` header approach is used for
-any new source files.
+There is no CLA.
 
 ---
 

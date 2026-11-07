@@ -1,24 +1,126 @@
-//! Krate's own screens on a phone: Library (your apps) and Discover (the
-//! apps on the hub).
+//! Krate's own screens on a phone: Library (your apps), Discover (the apps
+//! on the hub), You (your account), Settings, and a page for each app.
 //!
 //! A trusted guest the phone player runs. The player does what a sandboxed
-//! screen should not -- the network, picture decoding -- and writes what to
-//! show into this app's folder:
+//! screen should not -- the network, picture decoding, the account -- and
+//! writes what to show into this app's folder. Every list is UTF-8 text,
+//! one record a line, fields split by a TAB; blank lines are skipped, a
+//! missing field or `-` is "not known", and fields past the ones named
+//! here are ignored, so a newer player can add some.
 //!
-//! - `library.txt`: one app per line, `name<TAB>line<TAB>art`
+//! - `library.txt`: one app per line,
+//!   `name<TAB>line<TAB>art[<TAB>data<TAB>version]`. `line` is the muted
+//!   line under the name ("Received · 471 KB"); `data` is what the app
+//!   keeps on this phone as a person reads it ("2.1 MB", "640 KB"); `version`
+//!   is the app's version ("1.4.0"). `data` and `version` may be left off.
+//!   Settings lists the apps by `data`, largest first.
 //! - `discover.txt`: one app per line,
-//!   `hub id<TAB>name<TAB>author<TAB>category<TAB>description<TAB>art<TAB>size`
-//! - `art/*.rgba`: pictures, an 8-byte header (width, height, little-endian
-//!   u32) then straight RGBA. `-` names no picture.
-//! - `start.txt` (optional): `discover` opens on Discover.
+//!   `hub id<TAB>name<TAB>author<TAB>category<TAB>description<TAB>art<TAB>size`.
+//!   The first app with a picture is featured at the top.
+//! - `hub-state.txt` (optional): how the last look at the hub went, one
+//!   line: `loading` (Discover shows placeholders and this screen reads the
+//!   files again every 0.6 s until it changes), `ready`, `offline`, or
+//!   `error<TAB>words a person can read`. Missing means `ready` when
+//!   discover.txt lists apps and `offline` when it does not. A player that
+//!   writes `loading` writes discover.txt first, then `ready`.
+//! - `progress.txt` (optional): downloads under way, one a line,
+//!   `get<TAB>hub id<TAB>percent` (0 to 100). That app's Get shows how far
+//!   it has got. Read again every 0.6 s while it lists any.
+//! - `account.txt` (optional; missing means signed out). The first line is
+//!   `signed-in<TAB>name<TAB>handle<TAB>avatar art` or `signed-out`. Then,
+//!   in any order and any number:
+//!   - `org<TAB>name<TAB>role` -- an organisation and the person's role in
+//!     it ("Owner", "Member").
+//!   - `published<TAB>hub id<TAB>name<TAB>line` -- an app the person
+//!     published; `line` is muted text under it ("12 opens").
+//!   - `device<TAB>name` -- this phone's name ("Galaxy S22 Ultra").
+//!   - `storage<TAB>size` -- what Krate keeps on this phone ("48 MB").
+//!   - `version<TAB>version` -- the Krate player's version ("0.5.6").
 //!
-//! The answer is one stdout line: `home:open:<n>` (the n-th library app),
-//! `home:get:<hub id>`, `home:files` (open a .krate from Files), or
-//! `home:closed`.
+//!   `device`, `storage` and `version` are read when signed out too.
+//! - `perms/<n>.txt` (optional): what the n-th Library app may use, one
+//!   capability a line, `plain words<TAB>needed` (always given) or
+//!   `plain words<TAB>asked` (asked each time it opens). Missing means not
+//!   known, and the app's page leaves the section out; an empty file means
+//!   it uses nothing beyond its own window.
+//! - `art/*.rgba`: pictures, an 8-byte header (width, height, little-endian
+//!   u32) then straight RGBA. `-` names no picture: the app wears Krate's
+//!   one app icon. Names are plain file names, no folders.
+//! - `sync.txt` (optional; missing hides sync, for an older player): the
+//!   same app data on every device the person signs in on (IC-981). One
+//!   record a line:
+//!   - `state<TAB>signed-out|off|checking|on|waiting|offline|error<TAB>words`
+//!     first: how this phone stands, and `words` saying what that means
+//!     and what to do. `waiting` is a phone that needs a yes from another
+//!     device (or the recovery code); `offline` keeps working and syncs
+//!     later.
+//!   - `checking`: a look at the hub is under way; the screen reads the
+//!     files again every 0.6 s until it goes.
+//!   - `this<TAB>device name<TAB>last sync` ("2 minutes ago").
+//!   - `device<TAB>id<TAB>name<TAB>reads|waiting|ask`: another of the
+//!     person's devices. `reads` reads the apps' data; `waiting` waits for
+//!     a yes; `ask` waits and this phone can give it (Approve).
+//!   - `app<TAB>n<TAB>on|off|none<TAB>last sync`: the n-th Library app's own
+//!     switch; `none` is an app that keeps no data to sync.
+//!   - `kept<TAB>n<TAB>words`: what the n-th app keeps on this phone only
+//!     (its files too large to follow the person), said under its switch.
+//!   - `conflict<TAB>n<TAB>key<TAB>this value<TAB>other value<TAB>other
+//!     device<TAB>more<TAB>flags`: something the n-th app keeps changed on
+//!     two devices. Values are in words; `more` counts further devices
+//!     that changed it; `flags` is a comma list of `merge` (both are lists
+//!     or records), `this-deleted`, `other-deleted`, `file` (one of the
+//!     app's own files: `key` is its path in the app's folder, and the
+//!     values its size and when it changed, "2.4 MB, changed 5 minutes
+//!     ago").
+//!
+//!   The arguments may carry `sync-code` and the recovery code: shown once,
+//!   until the person says they wrote it down. Never in a file.
+//! - `start.txt` (optional): where to open. `library` (the default),
+//!   `discover`, `you`, `settings` (or one of its pages: `storage`,
+//!   `safety`, `links`, `sync`, `recover`), `app:<n>` (the n-th Library app's page) or
+//!   `hub:<hub id>` (a hub app's page). A player that comes back after
+//!   an answer about one app (clear, update, share) writes `app:<n>` so
+//!   the person lands where they were.
+//!
+//! The answer is one stdout line, after which the screen closes:
+//!
+//! - `home:open:<n>` -- open the n-th Library app.
+//! - `home:get:<hub id>` -- get this app from the hub.
+//! - `home:files` -- open a .krate from the phone's files.
+//! - `home:signin` / `home:signout` -- start signing in, or sign out.
+//! - `home:clear:<n>` -- delete what the n-th Library app saved (the
+//!   person has already confirmed it here).
+//! - `home:update:<n>` -- look for a newer version of the n-th app.
+//! - `home:share:<n>` -- share the n-th app.
+//! - `home:remove:<n>` -- remove the n-th app from this phone (confirmed
+//!   here first).
+//! - `home:report` -- the person wants to report a problem with Krate.
+//! - `home:refresh` -- try the hub again (Discover's offline and error
+//!   states offer it).
+//! - `home:sync:on` / `home:sync:off` -- sync for every app on this phone.
+//! - `home:sync:app-on:<n>` / `home:sync:app-off:<n>` -- the n-th app's own.
+//! - `home:sync:approve:<device id>` -- yes to a waiting device (confirmed
+//!   here first: "Let Galaxy S22 Ultra read your apps' data?").
+//! - `home:sync:recover:<code>` -- the recovery code, as typed here.
+//! - `home:sync:code-kept` -- the person wrote the recovery code down.
+//! - `home:sync:resolve:<c>:<this|other|both|merge>` -- the c-th
+//!   `conflict` line, answered: keep this phone's, the other device's,
+//!   both, or put the two together.
+//! - `home:sync:check` -- ask the hub again.
+//! - `home:closed` -- the person left Krate.
+//!
+//! Going into a page and back, switching places and confirming are drawn
+//! here and answer nothing. A close request (the system back gesture) on a
+//! page goes back one step; only on a list does it answer `home:closed`.
 //!
 //! Every picture is kept once (krate:gfx/canvas-images) and drawn by handle,
 //! and only what is on screen is drawn: a scrolling list of screenshots
 //! sent as pixels every frame lagged on an iPhone and broke its pictures.
+//! Every frame is painted on the CPU on a phone, so the look is built from
+//! cheap pieces: flat fills, hairlines, and pictures kept at the size they
+//! are shown -- the one soft shadow too, made once. Text is measured once per
+//! width; the screen moves only while something is moving and otherwise
+//! waits for the next touch.
 
 #![no_std]
 
@@ -27,81 +129,39 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use krate::bindings::krate::fs::files;
-use krate::bindings::krate::io::stdio;
+use krate::bindings::krate::io::{args, stdio};
 use krate::bindings::krate::time::clock;
 use krate::gfx::{canvas2d, canvas_images, types as gfx};
+use krate::layout::{Look, Said};
 use krate::ui::{events, tree, types, window};
+
+mod kit;
+mod screens;
+
+use kit::*;
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
 /// The Krate mark, 120 px square, straight RGBA.
 const MARK: &[u8] = include_bytes!("../assets/mark-120.rgba");
-/// Krate's file icon, 180 pixels square, straight RGBA: what an app with no
-/// picture of its own wears (F-314), in place of its initial.
-const FILE_ICON: &[u8] = include_bytes!("../assets/krate-file-180.rgba");
-const FILE_ICON_SIDE: u32 = 180;
 const MARK_SIZE: u32 = 120;
 
-// A light, quiet surface so the apps' own pictures carry the colour; the
-// accent is the mark's own blue.
-const BG: gfx::Color = rgb(0.949, 0.953, 0.969);
-const CARD: gfx::Color = rgb(1.0, 1.0, 1.0);
-const INK: gfx::Color = rgb(0.043, 0.047, 0.059);
-const MUTED: gfx::Color = rgb(0.43, 0.43, 0.45);
-const HAIRLINE: gfx::Color = rgb(0.88, 0.89, 0.91);
-const ACCENT: gfx::Color = rgb(0.23, 0.30, 0.95);
-const PILL: gfx::Color = rgb(0.92, 0.93, 0.98);
-const BLACK: gfx::Color = rgb(0.043, 0.043, 0.047);
-
-const fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
-    gfx::Color { r, g, b, a: 1.0 }
-}
-
-const fn rgba(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
-    gfx::Color { r, g, b, a }
-}
-
-fn rect(x: f32, y: f32, width: f32, height: f32) -> gfx::Rect {
-    gfx::Rect {
-        x,
-        y,
-        width,
-        height,
-    }
-}
-
-fn radii(all: f32) -> gfx::CornerRadii {
-    gfx::CornerRadii {
-        top_left: all,
-        top_right: all,
-        bottom_right: all,
-        bottom_left: all,
-    }
-}
-
-fn bottom_radii(r: f32) -> gfx::CornerRadii {
-    gfx::CornerRadii {
-        top_left: 0.0,
-        top_right: 0.0,
-        bottom_right: r,
-        bottom_left: r,
-    }
-}
-
-fn style(weight: u16, spacing: f32) -> gfx::TextStyle {
-    gfx::TextStyle {
-        weight,
-        italic: false,
-        letter_spacing: spacing,
-        family: gfx::FontFamily::Sans,
-    }
-}
-
-fn pt(x: f32, y: f32) -> gfx::Point {
-    gfx::Point { x, y }
-}
+const MS: u64 = 1_000_000;
+/// How long a tapped row shows as pressed before the player takes over.
+const FLASH_NS: u64 = 90 * MS;
+/// A page sliding in or out.
+const PAGE_NS: u64 = 300 * MS;
+/// The selected tab's pill moving to its new place.
+const TAB_NS: u64 = 260 * MS;
+/// The sheet rising, or sinking away.
+const SHEET_NS: u64 = 280 * MS;
+/// A list's rows fading in the first time it shows, one after another.
+const ROWS_NS: u64 = 260 * MS;
+const ROW_STEP_NS: u64 = 35 * MS;
+/// How often the files are read again while the hub is loading or an app
+/// is downloading.
+const POLL_NS: u64 = 600 * MS;
 
 fn out(line: &str) {
     let handle = stdio::stdout();
@@ -109,822 +169,945 @@ fn out(line: &str) {
     let _ = handle.write(b"\n");
 }
 
-fn read_all(path: &str) -> Option<Vec<u8>> {
-    let size = files::stat(path).ok()?.size as usize;
-    let file = files::open(path, files::OpenMode::Read).ok()?;
-    let mut bytes = Vec::with_capacity(size);
-    while bytes.len() < size {
-        let chunk = file.read((size - bytes.len()).min(1 << 20) as u32).ok()?;
-        if chunk.is_empty() {
-            break;
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    Some(bytes)
-}
-
-fn lines(path: &str) -> Vec<Vec<String>> {
-    let Some(bytes) = read_all(path) else {
-        return Vec::new();
-    };
-    let text = core::str::from_utf8(&bytes).unwrap_or("");
-    text.lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.split('\t').map(|f| f.trim().to_string()).collect())
-        .collect()
-}
-
-/// A picture kept by the host: its handle, its size, and its overall colour
-/// (for the backdrop a tall picture sits on).
-#[derive(Clone, Copy)]
-struct Kept {
-    handle: u64,
-    width: u32,
-    height: u32,
-    tint: (f32, f32, f32),
-}
-
-/// Read a picture file and keep it for the canvas.
-fn keep_art(canvas: u64, name: &str) -> Option<Kept> {
-    if name == "-" || name.is_empty() {
-        return None;
-    }
-    let bytes = read_all(&format!("art/{name}"))?;
-    if bytes.len() < 8 {
-        return None;
-    }
-    let width = u32::from_le_bytes(bytes[0..4].try_into().ok()?);
-    let height = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    let rgba = &bytes[8..];
-    if rgba.len() != (width * height * 4) as usize {
-        return None;
-    }
-    // A picture of the app as it ran fills its card edge to edge: cut to
-    // the card's shape, keeping the top of a tall screen (what an app
-    // shows first) and the middle of a wide one.
-    let cropped;
-    let (rgba, width, height) = if name.starts_with("screen-") {
-        cropped = crop_to(rgba, width, height, CARD_ASPECT);
-        (cropped.0.as_slice(), cropped.1, cropped.2)
-    } else {
-        (rgba, width, height)
-    };
-    let (mut r, mut g, mut b, mut n) = (0u32, 0u32, 0u32, 0u32);
-    for p in rgba.chunks_exact(4).step_by(97) {
-        r += p[0] as u32;
-        g += p[1] as u32;
-        b += p[2] as u32;
-        n += 1;
-    }
-    let n = n.max(1) as f32 * 255.0;
-    let handle = canvas_images::keep(canvas, width, height, rgba).ok()?;
-    Some(Kept {
-        handle,
-        width,
-        height,
-        tint: (r as f32 / n, g as f32 / n, b as f32 / n),
-    })
-}
-
-/// A Library card's width over its height (see `draw_library`).
-const CARD_ASPECT: f32 = 1.0 / 0.62;
-
-/// Cut `rgba` (`w` by `h`) to `aspect`: a tall picture keeps its top, below
-/// the status bar; a wide one keeps its middle.
-fn crop_to(rgba: &[u8], w: u32, h: u32, aspect: f32) -> (Vec<u8>, u32, u32) {
-    let (fw, fh) = (w as f32, h as f32);
-    let (cw, ch, x0, y0) = if fw / fh > aspect {
-        let cw = (fh * aspect) as u32;
-        (cw, h, (w - cw) / 2, 0)
-    } else {
-        let ch = ((fw / aspect) as u32).min(h);
-        let y0 = ((fh * 0.06) as u32).min(h - ch);
-        (w, ch, 0, y0)
-    };
-    let mut out = Vec::with_capacity((cw * ch * 4) as usize);
-    for y in y0..y0 + ch {
-        let start = ((y * w + x0) * 4) as usize;
-        out.extend_from_slice(&rgba[start..start + (cw * 4) as usize]);
-    }
-    (out, cw, ch)
-}
-
-/// A small diagonal gradient in a colour picked from the name, so an app
-/// with no picture still keeps a face of its own.
-fn keep_gradient(canvas: u64, name: &str) -> Option<Kept> {
-    let seed = name
-        .bytes()
-        .fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
-    let hues: [([f32; 3], [f32; 3]); 5] = [
-        ([0.42, 0.50, 1.0], [0.16, 0.22, 0.86]),
-        ([1.0, 0.55, 0.42], [0.82, 0.22, 0.42]),
-        ([0.30, 0.82, 0.66], [0.06, 0.45, 0.55]),
-        ([0.70, 0.52, 1.0], [0.36, 0.20, 0.78]),
-        ([1.0, 0.78, 0.36], [0.94, 0.44, 0.18]),
-    ];
-    let (a, b) = hues[(seed as usize) % hues.len()];
-    let (w, h) = (48u32, 24u32);
-    let mut px = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h {
-        for x in 0..w {
-            let t =
-                (x as f32 / (w - 1) as f32 * 0.6 + y as f32 / (h - 1) as f32 * 0.4).clamp(0.0, 1.0);
-            for c in 0..3 {
-                px.push(((a[c] * (1.0 - t) + b[c] * t) * 255.0) as u8);
-            }
-            px.push(255);
-        }
-    }
-    let handle = canvas_images::keep(canvas, w, h, &px).ok()?;
-    Some(Kept {
-        handle,
-        width: w,
-        height: h,
-        tint: (b[0], b[1], b[2]),
-    })
-}
-
-/// A dark fade from clear to `alpha`, top to bottom, at the shape it will
-/// be drawn (an eighth of the size): text over a picture. Drawn with
-/// rounded corners it fills its rectangle, so it must be made in that
-/// rectangle's proportions or only its middle shows, as a hard band.
-fn keep_fade(canvas: u64, w: u32, h: u32, alpha: f32) -> Option<u64> {
-    let (w, h) = (w.max(2), h.max(2));
-    let mut px = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h {
-        let t = y as f32 / (h - 1) as f32;
-        let a = (t * t * (3.0 - 2.0 * t) * alpha * 255.0) as u8;
-        for _ in 0..w {
-            px.extend_from_slice(&[0, 0, 0, a]);
-        }
-    }
-    canvas_images::keep(canvas, w, h, &px).ok()
-}
-
 struct LibraryApp {
     name: String,
+    art: String,
     line: String,
-    art: Option<Kept>,
-    initial: bool,
+    data: String,
+    version: String,
+    face: Face,
 }
 
 struct HubApp {
-    /// No picture of its own: a colour tile with its initial.
-    initial: bool,
     id: String,
     name: String,
     author: String,
+    /// The muted line in a list: author and size.
+    by: String,
     category: String,
     description: String,
-    art: Option<Kept>,
     size: String,
+    art: String,
+    face: Face,
 }
+
+struct Published {
+    id: String,
+    name: String,
+    line: String,
+    /// The same app in Discover, when the hub lists it.
+    hub: Option<usize>,
+}
+
+struct Org {
+    name: String,
+    role: String,
+    face: Face,
+}
+
+#[derive(Default)]
+struct Account {
+    signed_in: bool,
+    name: String,
+    handle: String,
+    avatar: Option<Face>,
+    avatar_art: String,
+    orgs: Vec<Org>,
+    published: Vec<Published>,
+    device: String,
+    storage: String,
+    version: String,
+}
+
+/// The featured app's picture, kept in the shape its card has now.
+struct Featured {
+    index: usize,
+    raw: Raw,
+    tint: (f32, f32, f32),
+    /// Cropped to fill the card, and the card shape it was cut for.
+    fill: Option<(u64, f32)>,
+    /// The whole picture, for one too tall to crop (a phone app).
+    whole: Option<u64>,
+    backdrop: Option<u64>,
+}
+
+#[derive(Clone, PartialEq)]
+enum HubState {
+    Ready,
+    Loading,
+    Offline,
+    Error(String),
+}
+
+/// How this phone stands with sync (`sync.txt`'s first line).
+#[derive(Clone, Copy, PartialEq, Default)]
+enum SyncState {
+    #[default]
+    SignedOut,
+    Off,
+    Checking,
+    On,
+    Waiting,
+    Offline,
+    Error,
+}
+
+/// Another of the person's devices.
+#[derive(Clone, PartialEq)]
+struct SyncDevice {
+    id: String,
+    name: String,
+    /// It reads the apps' data.
+    reads: bool,
+    /// It waits, and this phone can say yes.
+    ask: bool,
+}
+
+/// One Library app's own switch.
+#[derive(Clone, PartialEq)]
+enum AppSync {
+    /// On, with when it last synced ("" for never).
+    On(String),
+    Off,
+    /// It keeps no data to sync.
+    Nothing,
+}
+
+/// Something one app keeps that changed on two devices.
+#[derive(Clone, PartialEq)]
+struct Conflict {
+    app: usize,
+    key: String,
+    /// This phone's value in words; `None` when deleted here.
+    mine: Option<String>,
+    theirs: Option<String>,
+    device: String,
+    more: usize,
+    merge: bool,
+    /// One of the app's own files: `key` is its path.
+    file: bool,
+}
+
+/// Everything `sync.txt` says.
+#[derive(Clone, PartialEq, Default)]
+struct Sync {
+    /// The player wrote one: sync shows at all.
+    known: bool,
+    state: SyncState,
+    words: String,
+    checking: bool,
+    device: String,
+    last: String,
+    devices: Vec<SyncDevice>,
+    apps: Vec<(usize, AppSync)>,
+    conflicts: Vec<Conflict>,
+    /// What an app keeps on this phone only, in words.
+    kept: Vec<(usize, String)>,
+}
+
+impl Sync {
+    fn app(&self, n: usize) -> Option<&AppSync> {
+        self.apps.iter().find(|(k, _)| *k == n).map(|(_, a)| a)
+    }
+
+    /// Things waiting for the person: changes to choose between and
+    /// devices to say yes to.
+    fn waiting(&self) -> usize {
+        if matches!(self.state, SyncState::Off | SyncState::SignedOut) {
+            return 0;
+        }
+        self.conflicts.len() + self.devices.iter().filter(|d| d.ask).count()
+    }
+}
+
+fn read_sync() -> Sync {
+    let records = lines("sync.txt");
+    let mut sync = Sync {
+        known: !records.is_empty(),
+        ..Sync::default()
+    };
+    for f in records {
+        match f[0].as_str() {
+            "state" => {
+                sync.state = match field(&f, 1).as_str() {
+                    "off" => SyncState::Off,
+                    "checking" => SyncState::Checking,
+                    "on" => SyncState::On,
+                    "waiting" => SyncState::Waiting,
+                    "offline" => SyncState::Offline,
+                    "error" => SyncState::Error,
+                    _ => SyncState::SignedOut,
+                };
+                sync.words = field(&f, 2);
+            }
+            "checking" => sync.checking = true,
+            "this" => {
+                sync.device = field(&f, 1);
+                sync.last = field(&f, 2);
+            }
+            "device" if f.len() >= 4 => {
+                let how = field(&f, 3);
+                sync.devices.push(SyncDevice {
+                    id: f[1].chars().filter(char::is_ascii_hexdigit).collect(),
+                    name: field(&f, 2),
+                    reads: how == "reads",
+                    ask: how == "ask",
+                });
+            }
+            "app" if f.len() >= 3 => {
+                let Ok(n) = f[1].parse::<usize>() else {
+                    continue;
+                };
+                let app = match field(&f, 2).as_str() {
+                    "on" => AppSync::On(field(&f, 3)),
+                    "off" => AppSync::Off,
+                    _ => AppSync::Nothing,
+                };
+                sync.apps.push((n, app));
+            }
+            "kept" if f.len() >= 3 => {
+                let Ok(n) = f[1].parse::<usize>() else {
+                    continue;
+                };
+                sync.kept.push((n, field(&f, 2)));
+            }
+            "conflict" if f.len() >= 7 => {
+                let Ok(app) = f[1].parse::<usize>() else {
+                    continue;
+                };
+                let flags = field(&f, 7);
+                let has = |flag: &str| flags.split(',').any(|x| x.trim() == flag);
+                sync.conflicts.push(Conflict {
+                    app,
+                    key: field(&f, 2),
+                    mine: (!has("this-deleted")).then(|| field(&f, 3)),
+                    theirs: (!has("other-deleted")).then(|| field(&f, 4)),
+                    device: {
+                        let d = field(&f, 5);
+                        if d.is_empty() {
+                            "another device".to_string()
+                        } else {
+                            d
+                        }
+                    },
+                    more: f[6].parse().unwrap_or(0),
+                    merge: has("merge"),
+                    file: has("file"),
+                });
+            }
+            _ => {}
+        }
+    }
+    sync
+}
+
+/// An answer to a change made on two devices.
+#[derive(Clone, Copy, PartialEq)]
+enum Choice {
+    This,
+    Other,
+    Both,
+    Merge,
+}
+
+impl Choice {
+    fn word(self) -> &'static str {
+        match self {
+            Choice::This => "this",
+            Choice::Other => "other",
+            Choice::Both => "both",
+            Choice::Merge => "merge",
+        }
+    }
+}
+
+/// A recovery code is 26 letters and digits.
+const CODE_LEN: usize = 26;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Library,
     Discover,
+    You,
 }
 
-/// Where something tappable was drawn this frame.
+impl Tab {
+    fn name(self) -> &'static str {
+        match self {
+            Tab::Library => "Library",
+            Tab::Discover => "Discover",
+            Tab::You => "You",
+        }
+    }
+
+    fn slot(self) -> usize {
+        match self {
+            Tab::Library => 0,
+            Tab::Discover => 1,
+            Tab::You => 2,
+        }
+    }
+}
+
+const TABS: [Tab; 3] = [Tab::Library, Tab::Discover, Tab::You];
+
+/// A page over a list.
+#[derive(Clone, Copy, PartialEq)]
+enum Target {
+    /// The n-th Library app.
+    Lib(usize),
+    /// A hub app, by its place in Discover.
+    Hub(usize),
+    /// One of the person's published apps the hub list does not carry.
+    Pub(usize),
+    Settings,
+    /// What each app keeps on this phone.
+    Storage,
+    /// How Krate keeps apps safe.
+    Safety,
+    /// How apps open from links and files.
+    Links,
+    /// The same app data on every device.
+    Sync,
+    /// Typing the recovery code.
+    Recover,
+}
+
+impl Target {
+    fn name(self, home: &Home) -> String {
+        match self {
+            Target::Lib(n) => home.library[n].name.clone(),
+            Target::Hub(i) => home.hub[i].name.clone(),
+            Target::Pub(p) => home.account.published[p].name.clone(),
+            Target::Settings => "Settings".to_string(),
+            Target::Storage => "Storage".to_string(),
+            Target::Safety => "Safety".to_string(),
+            Target::Links => "Links".to_string(),
+            Target::Sync => "Sync".to_string(),
+            Target::Recover => "Recovery code".to_string(),
+        }
+    }
+}
+
+/// An open page and how far down it is scrolled.
+#[derive(Clone, Copy)]
+struct Page {
+    target: Target,
+    scroll: f32,
+}
+
+/// Something asked before it is done.
+#[derive(Clone, Copy, PartialEq)]
+enum Ask {
+    Remove(usize),
+    Clear(usize),
+    /// Yes to the i-th device of `sync.devices`.
+    Approve(usize),
+}
+
+/// Something tappable drawn this frame.
+#[derive(Clone, Copy, PartialEq)]
 enum Hit {
     Open(usize),
     Get(usize),
+    GetPub(usize),
     Tab(Tab),
     Files,
+    Show(Target),
+    Back,
+    SignIn,
+    SignOut,
+    Clear(usize),
+    Update(usize),
+    Share(usize),
+    Remove(usize),
+    Report,
+    Refresh,
+    /// Sync for every app: turn it to this.
+    SyncAll(bool),
+    /// The n-th app's own switch: turn it to this.
+    SyncApp(usize, bool),
+    /// Ask before saying yes to the i-th device.
+    Approve(usize),
+    /// The c-th conflict, answered.
+    Resolve(usize, Choice),
+    /// The recovery code is written down.
+    CodeKept,
+    /// Ask the hub again.
+    SyncCheck,
+    /// The recovery code's field: type into it.
+    CodeField,
+    /// Use the code typed.
+    CodeSubmit,
+    /// Confirm what was asked.
+    Yes,
+    /// Do not.
+    No,
+    /// Inside a sheet, on nothing: swallows the tap.
+    Stay,
 }
 
-struct Screen {
+impl Hit {
+    /// What the player is told, for a hit that leaves the screen.
+    fn answer(&self, home: &Home) -> Option<String> {
+        Some(match self {
+            Hit::Open(n) => format!("home:open:{n}"),
+            Hit::Get(i) => format!("home:get:{}", home.hub[*i].id),
+            Hit::GetPub(p) => format!("home:get:{}", home.account.published[*p].id),
+            Hit::Files => "home:files".to_string(),
+            Hit::SignIn => "home:signin".to_string(),
+            Hit::SignOut => "home:signout".to_string(),
+            Hit::Update(n) => format!("home:update:{n}"),
+            Hit::Share(n) => format!("home:share:{n}"),
+            Hit::Report => "home:report".to_string(),
+            Hit::Refresh => "home:refresh".to_string(),
+            Hit::SyncAll(on) => format!("home:sync:{}", if *on { "on" } else { "off" }),
+            Hit::SyncApp(n, on) => {
+                format!("home:sync:app-{}:{n}", if *on { "on" } else { "off" })
+            }
+            Hit::Resolve(c, choice) => format!("home:sync:resolve:{c}:{}", choice.word()),
+            Hit::CodeKept => "home:sync:code-kept".to_string(),
+            Hit::SyncCheck => "home:sync:check".to_string(),
+            Hit::CodeSubmit => {
+                let code = home.typed_code();
+                if code.len() < CODE_LEN {
+                    return None;
+                }
+                format!("home:sync:recover:{code}")
+            }
+            Hit::Yes => match home.ask? {
+                Ask::Remove(n) => format!("home:remove:{n}"),
+                Ask::Clear(n) => format!("home:clear:{n}"),
+                Ask::Approve(i) => format!("home:sync:approve:{}", home.sync.devices.get(i)?.id),
+            },
+            _ => return None,
+        })
+    }
+}
+
+/// Sizes for this frame, from the screen and the person's text size.
+#[derive(Clone, Copy)]
+struct Metrics {
+    w: f32,
+    h: f32,
+    /// The content column.
+    x: f32,
+    col: f32,
+    /// The band the lists scroll in.
+    top: f32,
+    bottom: f32,
+    /// The header's band.
+    head_y: f32,
+    head_h: f32,
+    /// Where the floating bar's top edge is: content ends above it.
+    nav_top: f32,
+    /// Covered at the bottom (the home bar).
+    safe_bottom: f32,
+    /// Text sizes.
+    title: f32,
+    name: f32,
+    body: f32,
+    small: f32,
+    button: f32,
+    /// The person's text size against the default, held to what fits.
+    scale: f32,
+}
+
+struct Home {
     canvas: u64,
+    win: u64,
     library: Vec<LibraryApp>,
     hub: Vec<HubApp>,
+    account: Account,
+    featured: Option<Featured>,
+    /// Discover's sections: a category and the hub apps in it, in order.
+    sections: Vec<(String, Vec<usize>)>,
+    hub_state: HubState,
+    /// Downloads under way: hub id and percent.
+    progress: Vec<(String, u32)>,
+    /// What sync.txt says.
+    sync: Sync,
+    /// The recovery code to show once, from the player's arguments.
+    code: Option<String>,
+    /// The recovery code typed so far (letters and digits).
+    typed: String,
+    /// The keyboard is up for it.
+    typing: bool,
+    /// Use was tapped with too few letters.
+    code_short: bool,
+    next_poll: u64,
     mark: Option<u64>,
-    /// Krate's file icon, for an app with no picture of its own.
-    file_icon: Option<u64>,
-    /// Fades kept by the size they were made for.
     fades: Vec<((u32, u32), u64)>,
+    /// Kept icons, by shape, colour and size.
+    icons: Vec<(u64, u64)>,
+    /// The floating bar's shadow and the size it was made for.
+    nav_shadow: Option<((u32, u32), u64)>,
+    /// Faces already kept, by picture file: a hub app in the Library too
+    /// is kept once.
+    kept_faces: Vec<(String, Face)>,
+    /// Some face may still be waiting for its picture.
+    faces_left: bool,
+    text: Text,
+    look: Look,
+    /// This frame's time, for everything that moves.
+    now: u64,
     tab: Tab,
-    scroll: [f32; 2],
+    /// The tab the pill is moving from, and since when.
+    tab_from: Tab,
+    tab_since: u64,
+    /// When each list first showed, for its rows fading in; 0 for never.
+    seen: [u64; 3],
+    /// The pages open over the list, the top one last.
+    stack: Vec<Page>,
+    /// A page sliding in (true) or out (false), and since when.
+    page_anim: Option<(bool, u64)>,
+    /// Asked and waiting for an answer.
+    ask: Option<Ask>,
+    /// The sheet rising (true) or sinking (false), and since when.
+    sheet_anim: Option<(bool, u64)>,
+    /// A Library app's permissions: words, and needed (or asked).
+    perms: Option<(usize, Vec<(String, bool)>)>,
+    /// A hub app's screenshot: its place, handle, width, height.
+    shot: Option<(usize, u64, u32, u32)>,
+    scroll: [f32; 3],
+    /// The content's height and the band it scrolls in, as last drawn.
     content: f32,
+    span: f32,
     hits: Vec<(gfx::Rect, Hit)>,
+    /// Held down now (a mouse), or tapped and about to leave (a finger).
+    pressed: Option<Hit>,
+    /// The press was let go over what it pressed.
+    tapped: bool,
+    said: Said,
 }
 
-/// A picture drawn to fill a card: a close fit fills it; a tall one (a
-/// phone-shaped window) sits whole on a backdrop of its own colour, above
-/// the `text_room` (a fraction of the card) kept free for the card's words.
-fn picture(
-    canvas: u64,
-    area: gfx::Rect,
-    art: &Kept,
-    corner: f32,
-    text_room: f32,
-) -> Result<(), gfx::GfxError> {
-    let ratio = (art.width as f32 / art.height as f32) / (area.width / area.height);
-    if ratio > 0.75 && ratio < 1.33 {
-        return canvas_images::draw_round(canvas, art.handle, area, radii(corner));
-    }
-    let (r, g, b) = art.tint;
-    canvas2d::fill_round_rect(canvas, area, radii(corner), rgb(r * 0.8, g * 0.8, b * 0.8))?;
-    let inset = area.height * 0.07;
-    let inner_h = area.height * (1.0 - text_room) - inset * 2.0;
-    let inner_w = (inner_h * art.width as f32 / art.height as f32).min(area.width - inset * 2.0);
-    let inner = rect(
-        area.x + (area.width - inner_w) / 2.0,
-        area.y + inset,
-        inner_w,
-        inner_h,
-    );
-    canvas2d::drop_shadow_round_rect(canvas, inner, radii(10.0), 14.0, rgba(0.0, 0.0, 0.0, 0.25))?;
-    canvas_images::draw_round(canvas, art.handle, inner, radii(10.0))
+/// Eased progress from `since` over `span` at `now`, 0 to 1: fast out of
+/// the gate and settling softly, the way a spring with no bounce lands.
+fn progress(now: u64, since: u64, span: u64) -> f32 {
+    let t = (now.saturating_sub(since) as f32 / span as f32).clamp(0.0, 1.0);
+    let inv = 1.0 - t;
+    1.0 - inv * inv * inv * inv
 }
 
-/// A pill button with a word on it.
-fn pill_button(
-    canvas: u64,
-    area: gfx::Rect,
-    word: &str,
-    fill: gfx::Color,
-    ink: gfx::Color,
-) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_round_rect(canvas, area, radii(area.height / 2.0), fill)?;
-    let m = canvas2d::measure_text_styled(canvas, word, 15.0, style(800, 0.5))?;
-    canvas2d::draw_text_styled(
-        canvas,
-        word,
-        pt(
-            area.x + (area.width - m.width) / 2.0,
-            area.y + area.height / 2.0 + 5.5,
-        ),
-        15.0,
-        ink,
-        style(800, 0.5),
-    )
-}
-
-impl Screen {
-    fn scroll(&mut self) -> &mut f32 {
-        match self.tab {
-            Tab::Library => &mut self.scroll[0],
-            Tab::Discover => &mut self.scroll[1],
+impl Home {
+    fn scroll_mut(&mut self) -> &mut f32 {
+        if let Some(page) = self.stack.last_mut() {
+            return &mut page.scroll;
         }
+        &mut self.scroll[self.tab.slot()]
     }
 
-    fn draw(&mut self, w: f32, h: f32) -> Result<(), gfx::GfxError> {
-        let canvas = self.canvas;
-        self.hits.clear();
-        canvas2d::clear(canvas, BG)?;
-        let pad = 20.0;
-        let col = (w - pad * 2.0).min(600.0);
-        let x = (w - col) / 2.0;
-        let scroll = *self.scroll();
-        let mut y = 58.0 - scroll;
+    fn max_scroll(&self) -> f32 {
+        (self.content - self.span).max(0.0)
+    }
 
-        // The header: the mark and the name, then the screen's title.
-        if let Some(mark) = self.mark {
-            canvas_images::draw(canvas, mark, rect(x, y, 30.0, 30.0))?;
+    /// The face for a picture file, kept once.
+    fn face_for(&mut self, art: &str) -> Face {
+        if let Some((_, face)) = self.kept_faces.iter().find(|(a, _)| a == art) {
+            return *face;
         }
-        canvas2d::draw_text_styled(
-            canvas,
-            "Krate",
-            pt(x + 38.0, y + 22.0),
-            19.0,
-            INK,
-            style(700, -0.3),
-        )?;
-        y += 78.0;
-        let title = match self.tab {
-            Tab::Library => "Library",
-            Tab::Discover => "Discover",
-        };
-        canvas2d::draw_text_styled(canvas, title, pt(x, y), 34.0, INK, style(800, -1.0))?;
-        y += 22.0;
-
-        y = match self.tab {
-            Tab::Library if self.library.is_empty() => self.draw_empty(x, col, y, h)?,
-            Tab::Library => self.draw_library(x, col, y, h)?,
-            Tab::Discover => self.draw_discover(x, col, y, h)?,
-        };
-        self.content = y + scroll + 130.0;
-
-        self.draw_bar(w, h)?;
-        canvas2d::present(canvas)
+        let face = keep_face(self.canvas, read_raw(art).as_ref());
+        self.kept_faces.push((art.to_string(), face));
+        face
     }
 
-    /// True when a band from `top` to `bottom` is on screen at all.
-    fn visible(top: f32, bottom: f32, h: f32) -> bool {
-        bottom > 0.0 && top < h
-    }
-
-    /// A card's foot: a soft dark fade, so white words over a picture read.
-    fn card_fade(&mut self, area: gfx::Rect, from: f32, corner: f32) -> Result<(), gfx::GfxError> {
-        let top = area.y + area.height * from;
-        let (fw, fh) = (area.width, area.y + area.height - top);
-        let key = ((fw / 8.0) as u32, (fh / 8.0) as u32);
-        let fade = match self.fades.iter().find(|(k, _)| *k == key) {
-            Some((_, fade)) => *fade,
-            None => {
-                let Some(fade) = keep_fade(self.canvas, key.0, key.1, 0.82) else {
-                    return Ok(());
-                };
-                self.fades.push((key, fade));
-                fade
-            }
-        };
-        canvas_images::draw_round(
-            self.canvas,
-            fade,
-            rect(area.x, top, fw, fh),
-            bottom_radii(corner),
-        )
-    }
-
-    fn draw_library(&mut self, x: f32, col: f32, mut y: f32, h: f32) -> Result<f32, gfx::GfxError> {
-        let canvas = self.canvas;
-        y += 18.0;
-        for index in 0..self.library.len() {
-            let card_h = (col / CARD_ASPECT).min(260.0);
-            let area = rect(x, y, col, card_h);
-            if Self::visible(y, y + card_h, h) {
-                let app = &self.library[index];
-                canvas2d::drop_shadow_round_rect(
-                    canvas,
-                    area,
-                    radii(26.0),
-                    22.0,
-                    rgba(0.0, 0.0, 0.0, 0.12),
-                )?;
-                if let Some(art) = &app.art {
-                    picture(canvas, area, art, 26.0, 0.30)?;
+    /// Keep one picture still waiting, the open place's first. False when
+    /// none is left.
+    fn keep_next_face(&mut self) -> bool {
+        let hub_first = self.tab == Tab::Discover;
+        for pass in 0..2 {
+            if (pass == 0) != hub_first {
+                if let Some(n) = self.library.iter().position(|a| a.face.pending) {
+                    let art = self.library[n].art.clone();
+                    self.library[n].face = self.face_for(&art);
+                    return true;
                 }
-                if app.initial {
-                    let side = card_h * 0.46;
-                    let at = rect(x + (col - side) / 2.0, y + card_h * 0.12, side, side);
-                    match self.file_icon {
-                        Some(icon) => canvas_images::draw(canvas, icon, at)?,
-                        None => {
-                            let initial: String = app
-                                .name
-                                .chars()
-                                .next()
-                                .map(|c| c.to_uppercase().collect())
-                                .unwrap_or_default();
-                            let m = canvas2d::measure_text_styled(canvas, &initial, 64.0, style(800, 0.0))?;
-                            canvas2d::draw_text_styled(
-                                canvas,
-                                &initial,
-                                pt(x + (col - m.width) / 2.0, y + card_h * 0.42),
-                                64.0,
-                                rgba(1.0, 1.0, 1.0, 0.92),
-                                style(800, 0.0),
-                            )?;
-                        }
-                    }
-                }
-                self.card_fade(area, 0.45, 26.0)?;
-                let app = &self.library[index];
-                canvas2d::draw_text_styled(
-                    canvas,
-                    &app.name,
-                    pt(x + 20.0, y + card_h - 42.0),
-                    22.0,
-                    CARD,
-                    style(700, -0.4),
-                )?;
-                canvas2d::draw_text_styled(
-                    canvas,
-                    &app.line,
-                    pt(x + 20.0, y + card_h - 20.0),
-                    14.0,
-                    rgba(1.0, 1.0, 1.0, 0.8),
-                    style(500, 0.0),
-                )?;
-                pill_button(
-                    canvas,
-                    rect(x + col - 92.0, y + card_h - 56.0, 72.0, 34.0),
-                    "OPEN",
-                    CARD,
-                    ACCENT,
-                )?;
+            } else if let Some(i) = self.hub.iter().position(|a| a.face.pending) {
+                let art = self.hub[i].art.clone();
+                self.hub[i].face = self.face_for(&art);
+                return true;
             }
-            self.hits.push((area, Hit::Open(index)));
-            y += card_h + 22.0;
         }
-        Ok(y)
+        if self.account.avatar.is_some_and(|f| f.pending) {
+            let art = self.account.avatar_art.clone();
+            let face = self.face_for(&art);
+            self.account.avatar = Some(if face.tile.is_some() {
+                face
+            } else {
+                Face::hue(self.canvas, &self.account.name)
+            });
+            return true;
+        }
+        self.faces_left = false;
+        false
     }
 
-    fn draw_empty(&mut self, x: f32, col: f32, mut y: f32, h: f32) -> Result<f32, gfx::GfxError> {
+    /// Read the hub's list (again), keeping what can be kept.
+    fn load_hub(&mut self) {
         let canvas = self.canvas;
-        let cx = x + col / 2.0;
-        // Three real apps from the hub, stacked like a hand of cards.
-        y += 54.0;
-        let picks: Vec<Kept> = self
-            .hub
-            .iter()
-            .filter(|a| !a.initial)
-            .filter_map(|a| a.art)
-            .take(3)
-            .collect();
-        let deck = [
-            (-56.0f32, 24.0f32, 0.84f32, 1usize),
-            (56.0, 24.0, 0.84, 2),
-            (0.0, 0.0, 1.0, 0),
-        ];
-        for (dx, dy, s, pick) in deck {
-            let Some(art) = picks.get(pick) else {
-                continue;
+        if let Some(feat) = self.featured.take() {
+            for handle in [feat.fill.map(|f| f.0), feat.whole, feat.backdrop]
+                .into_iter()
+                .flatten()
+            {
+                canvas_images::forget(canvas, handle);
+            }
+        }
+        if let Some((_, handle, _, _)) = self.shot.take() {
+            canvas_images::forget(canvas, handle);
+        }
+        let mut hub: Vec<HubApp> = Vec::new();
+        let mut featured = None;
+        for f in lines("discover.txt").into_iter().filter(|f| f.len() >= 7) {
+            // The featured app is the first with a picture that reads.
+            let raw = if featured.is_none() && names_art(&f[5]) {
+                read_raw(&f[5])
+            } else {
+                None
             };
-            let (cw, ch) = (150.0 * s, 190.0 * s);
-            let card = rect(cx + dx - cw / 2.0, y + dy, cw, ch);
-            if Self::visible(card.y, card.y + ch, h) {
-                canvas2d::drop_shadow_round_rect(
-                    canvas,
-                    card,
-                    radii(22.0),
-                    18.0,
-                    rgba(0.0, 0.0, 0.0, 0.16),
-                )?;
-                canvas2d::fill_round_rect(canvas, card, radii(22.0), CARD)?;
-                let inner = rect(card.x + 6.0, card.y + 6.0, cw - 12.0, ch - 12.0);
-                canvas_images::draw_round(canvas, art.handle, inner, radii(17.0))?;
+            let face = match &raw {
+                Some(raw) => match self.kept_faces.iter().find(|(a, _)| *a == f[5]) {
+                    Some((_, face)) => *face,
+                    None => {
+                        let face = keep_face(canvas, Some(raw));
+                        self.kept_faces.push((f[5].clone(), face));
+                        face
+                    }
+                },
+                None if names_art(&f[5]) => Face::WAITING,
+                None => Face::KRATE,
+            };
+            if featured.is_none() {
+                if let Some(raw) = raw {
+                    featured = Some(Featured {
+                        index: hub.len(),
+                        tint: tint(&raw),
+                        raw,
+                        fill: None,
+                        whole: None,
+                        backdrop: None,
+                    });
+                }
             }
-        }
-        y += 236.0;
-        for (text, size, ink, weight) in [
-            ("It starts with an app", 24.0, INK, 750u16),
-            (
-                "Open a .krate from Messages, Mail or Files,",
-                15.0,
-                MUTED,
-                450,
-            ),
-            ("or get one people made in Discover.", 15.0, MUTED, 450),
-        ] {
-            let m = canvas2d::measure_text_styled(canvas, text, size, style(weight, -0.2))?;
-            canvas2d::draw_text_styled(
-                canvas,
-                text,
-                pt(cx - m.width / 2.0, y),
+            let author = field(&f, 2);
+            let size = field(&f, 6);
+            hub.push(HubApp {
+                id: f[0].clone(),
+                name: f[1].clone(),
+                by: match (author.is_empty(), size.is_empty()) {
+                    (false, false) => format!("{author} \u{00b7} {size}"),
+                    (false, true) => author.clone(),
+                    _ => size.clone(),
+                },
+                author,
+                category: if f[3].is_empty() {
+                    "apps".to_string()
+                } else {
+                    f[3].to_lowercase()
+                },
+                description: field(&f, 4),
                 size,
-                ink,
-                style(weight, -0.2),
-            )?;
-            y += if size > 20.0 { 28.0 } else { 21.0 };
+                art: f[5].clone(),
+                face,
+            });
         }
-        y += 18.0;
-        let button = rect(cx - 116.0, y, 232.0, 50.0);
-        canvas2d::fill_round_rect(canvas, button, radii(25.0), ACCENT)?;
-        let label = "Discover apps";
-        let m = canvas2d::measure_text_styled(canvas, label, 17.0, style(650, 0.0))?;
-        canvas2d::draw_text_styled(
-            canvas,
-            label,
-            pt(cx - m.width / 2.0, y + 31.0),
-            17.0,
-            CARD,
-            style(650, 0.0),
-        )?;
-        self.hits.push((button, Hit::Tab(Tab::Discover)));
-        Ok(y + 50.0)
-    }
-
-    fn draw_discover(
-        &mut self,
-        x: f32,
-        col: f32,
-        mut y: f32,
-        h: f32,
-    ) -> Result<f32, gfx::GfxError> {
-        let canvas = self.canvas;
-        if self.hub.is_empty() {
-            y += 24.0;
-            for text in [
-                "The hub could not be reached.",
-                "Apps people share appear here when you are online.",
-            ] {
-                canvas2d::draw_text_styled(canvas, text, pt(x, y), 15.0, MUTED, style(450, 0.0))?;
-                y += 22.0;
-            }
-            return Ok(y);
-        }
-        y += 18.0;
-
-        // The featured app: the newest with a picture, on a big card.
-        let featured = self.hub.iter().position(|a| !a.initial).unwrap_or(0);
-        let card_h = (col * 1.05).min(420.0);
-        let area = rect(x, y, col, card_h);
-        if Self::visible(y, y + card_h, h) {
-            canvas2d::drop_shadow_round_rect(
-                canvas,
-                area,
-                radii(28.0),
-                26.0,
-                rgba(0.0, 0.0, 0.0, 0.16),
-            )?;
-            if let Some(art) = &self.hub[featured].art {
-                picture(canvas, area, art, 28.0, 0.36)?;
-            }
-            self.card_fade(area, 0.42, 28.0)?;
-            let app = &self.hub[featured];
-            canvas2d::draw_text_styled(
-                canvas,
-                "NEW ON THE HUB",
-                pt(x + 20.0, y + 32.0),
-                12.0,
-                rgba(1.0, 1.0, 1.0, 0.86),
-                style(750, 0.8),
-            )?;
-            let mut ty = y + card_h - 112.0;
-            canvas2d::draw_text_styled(
-                canvas,
-                &app.name,
-                pt(x + 20.0, ty),
-                28.0,
-                CARD,
-                style(800, -0.6),
-            )?;
-            ty += 24.0;
-            for line in wrap(canvas, &app.description, 15.0, col - 130.0, 2)? {
-                canvas2d::draw_text_styled(
-                    canvas,
-                    &line,
-                    pt(x + 20.0, ty),
-                    15.0,
-                    rgba(1.0, 1.0, 1.0, 0.84),
-                    style(450, 0.0),
-                )?;
-                ty += 20.0;
-            }
-            pill_button(
-                canvas,
-                rect(x + col - 92.0, y + card_h - 58.0, 72.0, 34.0),
-                "GET",
-                CARD,
-                ACCENT,
-            )?;
-        }
-        self.hits.push((area, Hit::Get(featured)));
-        y += card_h + 34.0;
-
-        // Every app, the way a store lists them.
-        canvas2d::draw_text_styled(canvas, "All apps", pt(x, y), 22.0, INK, style(750, -0.4))?;
-        y += 14.0;
-        let row_h = 84.0;
-        for index in 0..self.hub.len() {
-            if index == featured {
+        // Sections in the order the hub lists them, the featured app shown
+        // once, at the top.
+        let mut sections: Vec<(String, Vec<usize>)> = Vec::new();
+        for (index, app) in hub.iter().enumerate() {
+            if featured
+                .as_ref()
+                .is_some_and(|f: &Featured| f.index == index)
+            {
                 continue;
             }
-            if Self::visible(y, y + row_h, h) {
-                let app = &self.hub[index];
-                let thumb = rect(x, y + 12.0, 60.0, 60.0);
-                canvas2d::drop_shadow_round_rect(
-                    canvas,
-                    thumb,
-                    radii(14.0),
-                    8.0,
-                    rgba(0.0, 0.0, 0.0, 0.12),
-                )?;
-                match &app.art {
-                    Some(art) => canvas_images::draw_round(canvas, art.handle, thumb, radii(14.0))?,
-                    None => canvas2d::fill_round_rect(canvas, thumb, radii(14.0), PILL)?,
+            match sections.iter_mut().find(|(c, _)| *c == app.category) {
+                Some((_, apps)) => apps.push(index),
+                None => sections.push((app.category.clone(), alloc::vec![index])),
+            }
+        }
+        for p in self.account.published.iter_mut() {
+            p.hub = hub.iter().position(|a| a.id == p.id && !p.id.is_empty());
+        }
+        // A page about a hub app no longer listed closes.
+        self.stack.retain(|p| !matches!(p.target, Target::Hub(_)));
+        self.hub = hub;
+        self.featured = featured;
+        self.sections = sections;
+        self.faces_left = true;
+    }
+
+    /// Read how the hub is doing and what is downloading. True when the
+    /// screen should change.
+    fn read_state(&mut self) -> bool {
+        let state = match lines("hub-state.txt").first() {
+            Some(f) => match f[0].as_str() {
+                "loading" => HubState::Loading,
+                "offline" => HubState::Offline,
+                "error" => HubState::Error(field(f, 1)),
+                _ => HubState::Ready,
+            },
+            None if self.hub.is_empty() => HubState::Offline,
+            None => HubState::Ready,
+        };
+        let progress: Vec<(String, u32)> = lines("progress.txt")
+            .into_iter()
+            .filter(|f| f.len() >= 3 && f[0] == "get")
+            .map(|f| {
+                let id: String = f[1].chars().filter(char::is_ascii_hexdigit).collect();
+                (id, f[2].parse::<u32>().unwrap_or(0).min(100))
+            })
+            .collect();
+        let mut changed = progress != self.progress;
+        self.progress = progress;
+        let sync = read_sync();
+        if sync != self.sync {
+            self.sync = sync;
+            changed = true;
+        }
+        if state != self.hub_state {
+            if self.hub_state == HubState::Loading {
+                self.load_hub();
+            }
+            self.hub_state = state;
+            changed = true;
+        }
+        changed
+    }
+
+    fn polling(&self) -> bool {
+        self.hub_state == HubState::Loading || !self.progress.is_empty() || self.sync.checking
+    }
+
+    /// The recovery code typed so far, letters and digits only.
+    fn typed_code(&self) -> String {
+        self.typed.clone()
+    }
+
+    /// Put the keyboard away, if it is up.
+    fn stop_typing(&mut self) {
+        if self.typing {
+            krate::ui::text_entry::stop(self.win);
+            self.typing = false;
+        }
+    }
+
+    /// Open a page over what is showing.
+    fn push(&mut self, target: Target) {
+        if self.page_anim.is_some() || self.stack.len() >= 6 {
+            return;
+        }
+        match target {
+            Target::Lib(n) => {
+                self.perms = read_all(&format!("perms/{n}.txt")).map(|bytes| {
+                    let list = core::str::from_utf8(&bytes)
+                        .unwrap_or("")
+                        .lines()
+                        .filter_map(|l| {
+                            let (words, how) = l.split_once('\t')?;
+                            let words = words.trim();
+                            (!words.is_empty()).then(|| (words.to_string(), how.trim() != "asked"))
+                        })
+                        .collect();
+                    (n, list)
+                });
+            }
+            Target::Hub(i) => {
+                if self.shot.is_some_and(|s| s.0 != i) {
+                    if let Some((_, handle, _, _)) = self.shot.take() {
+                        canvas_images::forget(self.canvas, handle);
+                    }
                 }
-                if app.initial {
-                    match self.file_icon {
-                        Some(icon) => canvas_images::draw(
-                            canvas,
-                            icon,
-                            rect(thumb.x + 8.0, thumb.y + 8.0, 44.0, 44.0),
-                        )?,
-                        None => {
-                            let initial: String = app
-                                .name
-                                .chars()
-                                .next()
-                                .map(|c| c.to_uppercase().collect())
-                                .unwrap_or_default();
-                            let m = canvas2d::measure_text_styled(canvas, &initial, 26.0, style(800, 0.0))?;
-                            canvas2d::draw_text_styled(
-                                canvas,
-                                &initial,
-                                pt(thumb.x + (60.0 - m.width) / 2.0, thumb.y + 39.0),
-                                26.0,
-                                CARD,
-                                style(800, 0.0),
-                            )?;
+                if self.shot.is_none() {
+                    if let Some(raw) = read_raw(&self.hub[i].art) {
+                        if let Ok(handle) =
+                            canvas_images::keep(self.canvas, raw.width, raw.height, &raw.rgba)
+                        {
+                            self.shot = Some((i, handle, raw.width, raw.height));
                         }
                     }
                 }
-                let tx = x + 74.0;
-                let text_w = col - 74.0 - 86.0;
-                let name = ellipsize(canvas, &app.name, 17.0, text_w, style(650, -0.2))?;
-                canvas2d::draw_text_styled(
-                    canvas,
-                    &name,
-                    pt(tx, y + 36.0),
-                    17.0,
-                    INK,
-                    style(650, -0.2),
-                )?;
-                let by = if app.author.is_empty() {
-                    format!("{} \u{00b7} {}", title_case(&app.category), app.size)
-                } else {
-                    format!("{} \u{00b7} {}", app.author, title_case(&app.category))
-                };
-                let by = ellipsize(canvas, &by, 13.0, text_w, style(450, 0.0))?;
-                canvas2d::draw_text_styled(
-                    canvas,
-                    &by,
-                    pt(tx, y + 56.0),
-                    13.0,
-                    MUTED,
-                    style(450, 0.0),
-                )?;
-                pill_button(
-                    canvas,
-                    rect(x + col - 72.0, y + 26.0, 72.0, 32.0),
-                    "GET",
-                    PILL,
-                    ACCENT,
-                )?;
-                canvas2d::fill_rect(canvas, rect(tx, y + row_h - 0.5, col - 74.0, 0.5), HAIRLINE)?;
             }
-            self.hits.push((rect(x, y, col, row_h), Hit::Get(index)));
-            y += row_h;
+            _ => {}
         }
-        Ok(y)
+        self.stack.push(Page {
+            target,
+            scroll: 0.0,
+        });
+        self.page_anim = Some((true, self.now));
     }
 
-    /// The floating bar: the two tabs in a pill -- the open one shows its
-    /// name -- and open-from-Files on its own black button.
-    fn draw_bar(&mut self, w: f32, h: f32) -> Result<(), gfx::GfxError> {
-        let canvas = self.canvas;
-        let y = h - 92.0;
-        // The list fades out under the bar.
-        let fade = 40.0;
-        let bands = 10;
-        for i in 0..bands {
-            let t = (i + 1) as f32 / bands as f32;
-            let band = fade / bands as f32;
-            canvas2d::fill_rect(
-                canvas,
-                rect(0.0, y - fade + i as f32 * band, w, band + 0.5),
-                rgba(BG.r, BG.g, BG.b, t * t),
-            )?;
+    /// Start the top page sliding away.
+    fn pop(&mut self) -> bool {
+        if self.stack.is_empty() {
+            return false;
         }
-        canvas2d::fill_rect(canvas, rect(0.0, y, w, h - y), BG)?;
+        self.stop_typing();
+        if self.page_anim.is_none() {
+            self.page_anim = Some((false, self.now));
+        }
+        true
+    }
 
-        let pill = rect(20.0, y, 196.0, 58.0);
-        canvas2d::drop_shadow_round_rect(
-            canvas,
-            pill,
-            radii(29.0),
-            18.0,
-            rgba(0.0, 0.0, 0.0, 0.12),
-        )?;
-        canvas2d::fill_round_rect(canvas, pill, radii(29.0), CARD)?;
-        let mut tx = pill.x + 6.0;
-        for (tab, label) in [(Tab::Library, "Library"), (Tab::Discover, "Discover")] {
-            let on = self.tab == tab;
-            let width = if on { 122.0 } else { 62.0 };
-            let slot = rect(tx, pill.y + 6.0, width, 46.0);
-            if on {
-                canvas2d::fill_round_rect(canvas, slot, radii(23.0), INK)?;
+    fn close_sheet(&mut self) {
+        if self.ask.is_some() && !matches!(self.sheet_anim, Some((false, _))) {
+            self.sheet_anim = Some((false, self.now));
+        }
+    }
+
+    fn switch(&mut self, tab: Tab) {
+        self.stop_typing();
+        if tab != self.tab {
+            self.tab_from = self.tab;
+            self.tab_since = self.now;
+            self.tab = tab;
+        }
+        self.stack.clear();
+        self.page_anim = None;
+        self.ask = None;
+        self.sheet_anim = None;
+        if self.seen[tab.slot()] == 0 {
+            self.seen[tab.slot()] = self.now.max(1);
+        }
+    }
+
+    /// Do what a tap asks that stays on this screen.
+    fn act(&mut self, hit: Hit) {
+        match hit {
+            Hit::Tab(tab) => self.switch(tab),
+            Hit::Show(target) => self.push(target),
+            Hit::Back => {
+                self.pop();
             }
-            let ink = if on { CARD } else { MUTED };
-            let ix = slot.x + if on { 26.0 } else { width / 2.0 };
-            let iy = slot.y + 23.0;
-            match tab {
-                Tab::Library => {
-                    // Two stacked cards.
-                    canvas2d::fill_round_rect(
-                        canvas,
-                        rect(ix - 8.0, iy - 9.0, 16.0, 7.5),
-                        radii(2.5),
-                        ink,
-                    )?;
-                    canvas2d::fill_round_rect(
-                        canvas,
-                        rect(ix - 8.0, iy + 1.5, 16.0, 7.5),
-                        radii(2.5),
-                        ink,
-                    )?;
-                }
-                Tab::Discover => {
-                    // A grid of four apps.
-                    for (gx, gy) in [(-8.5f32, -8.5f32), (1.0, -8.5), (-8.5, 1.0), (1.0, 1.0)] {
-                        canvas2d::fill_round_rect(
-                            canvas,
-                            rect(ix + gx, iy + gy, 7.5, 7.5),
-                            radii(2.2),
-                            ink,
-                        )?;
+            Hit::Clear(n) => self.ask_for(Ask::Clear(n)),
+            Hit::Remove(n) => self.ask_for(Ask::Remove(n)),
+            Hit::Approve(i) => self.ask_for(Ask::Approve(i)),
+            Hit::No => self.close_sheet(),
+            Hit::CodeField => {
+                // A phone shows its keyboard; a computer's is always there.
+                let _ = krate::ui::text_entry::start(self.win);
+                self.typing = true;
+                self.code_short = false;
+            }
+            // Too few letters: say so under the field, and stay.
+            Hit::CodeSubmit => self.code_short = true,
+            _ => {}
+        }
+    }
+
+    fn ask_for(&mut self, ask: Ask) {
+        self.ask = Some(ask);
+        self.sheet_anim = Some((true, self.now));
+    }
+
+    /// Back one step: a sheet, then a page. False when there is nowhere to
+    /// go back to.
+    fn back(&mut self) -> bool {
+        if self.ask.is_some() {
+            self.close_sheet();
+            return true;
+        }
+        self.pop()
+    }
+
+    /// Finish what has finished moving. True while anything still moves.
+    fn tick(&mut self, now: u64) -> bool {
+        self.now = now;
+        let mut moving = false;
+        if let Some((pushing, since)) = self.page_anim {
+            if now - since >= PAGE_NS {
+                self.page_anim = None;
+                if !pushing {
+                    if let Some(page) = self.stack.pop() {
+                        if let Target::Hub(i) = page.target {
+                            if self.shot.is_some_and(|s| s.0 == i) {
+                                if let Some((_, handle, _, _)) = self.shot.take() {
+                                    canvas_images::forget(self.canvas, handle);
+                                }
+                            }
+                        }
                     }
                 }
             }
-            if on {
-                canvas2d::draw_text_styled(
-                    canvas,
-                    label,
-                    pt(ix + 16.0, iy + 5.5),
-                    15.0,
-                    CARD,
-                    style(650, -0.1),
-                )?;
+            moving = true;
+        }
+        if let Some((opening, since)) = self.sheet_anim {
+            if now - since >= SHEET_NS {
+                self.sheet_anim = None;
+                if !opening {
+                    self.ask = None;
+                }
             }
-            self.hits.push((slot, Hit::Tab(tab)));
-            tx += width;
+            moving = true;
         }
-
-        let plus = pt(w - 49.0, y + 29.0);
-        canvas2d::drop_shadow_round_rect(
-            canvas,
-            rect(plus.x - 29.0, plus.y - 29.0, 58.0, 58.0),
-            radii(29.0),
-            16.0,
-            rgba(0.0, 0.0, 0.0, 0.2),
-        )?;
-        canvas2d::fill_circle(canvas, plus, 29.0, BLACK)?;
-        canvas2d::fill_round_rect(
-            canvas,
-            rect(plus.x - 9.0, plus.y - 1.25, 18.0, 2.5),
-            radii(1.25),
-            CARD,
-        )?;
-        canvas2d::fill_round_rect(
-            canvas,
-            rect(plus.x - 1.25, plus.y - 9.0, 2.5, 18.0),
-            radii(1.25),
-            CARD,
-        )?;
-        self.hits
-            .push((rect(plus.x - 30.0, plus.y - 30.0, 60.0, 60.0), Hit::Files));
-        Ok(())
-    }
-}
-
-fn title_case(word: &str) -> String {
-    let mut chars = word.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
-/// Cut a line to `width` with an ellipsis.
-fn ellipsize(
-    canvas: u64,
-    text: &str,
-    size: f32,
-    width: f32,
-    st: gfx::TextStyle,
-) -> Result<String, gfx::GfxError> {
-    if canvas2d::measure_text_styled(canvas, text, size, st)?.width <= width {
-        return Ok(text.to_string());
-    }
-    let mut cut: String = text.to_string();
-    while !cut.is_empty() {
-        cut.pop();
-        let candidate = format!("{}\u{2026}", cut.trim_end());
-        if canvas2d::measure_text_styled(canvas, &candidate, size, st)?.width <= width {
-            return Ok(candidate);
+        if now - self.tab_since < TAB_NS {
+            moving = true;
         }
-    }
-    Ok(String::new())
-}
-
-/// Word-wrap to `max` lines, the last one ending in an ellipsis if cut.
-fn wrap(
-    canvas: u64,
-    text: &str,
-    size: f32,
-    width: f32,
-    max: usize,
-) -> Result<Vec<String>, gfx::GfxError> {
-    let mut lines: Vec<String> = Vec::new();
-    let mut current = String::new();
-    for word in text.split_whitespace() {
-        let candidate = if current.is_empty() {
-            word.to_string()
-        } else {
-            format!("{current} {word}")
+        let seen = self.seen[self.tab.slot()];
+        let rows = match self.tab {
+            Tab::Library => !self.library.is_empty(),
+            Tab::Discover => !self.hub.is_empty(),
+            Tab::You => false,
         };
-        if canvas2d::measure_text_styled(canvas, &candidate, size, style(450, 0.0))?.width <= width
+        if rows && self.stack.is_empty() && seen > 0 && now - seen < ROWS_NS + ROW_STEP_NS * 14 {
+            moving = true;
+        }
+        // Discover's placeholders breathe while the hub loads.
+        if self.tab == Tab::Discover
+            && self.stack.is_empty()
+            && self.hub.is_empty()
+            && self.hub_state == HubState::Loading
         {
-            current = candidate;
+            moving = true;
+        }
+        moving
+    }
+}
+
+fn read_account(canvas: u64, hub: &[HubApp]) -> Account {
+    let mut account = Account::default();
+    for (i, f) in lines("account.txt").into_iter().enumerate() {
+        let tag = f[0].as_str();
+        if i == 0 && tag == "signed-in" {
+            account.signed_in = true;
+            account.name = field(&f, 1);
+            account.handle = field(&f, 2).trim_start_matches('@').to_string();
+            if account.name.is_empty() {
+                account.name = account.handle.clone();
+            }
+            account.avatar_art = field(&f, 3);
+            account.avatar = Some(if names_art(&account.avatar_art) {
+                Face::WAITING
+            } else {
+                Face::hue(canvas, &account.name)
+            });
             continue;
         }
-        if lines.len() + 1 == max {
-            lines.push(format!("{current}\u{2026}"));
-            return Ok(lines);
+        match tag {
+            "org" if f.len() >= 2 => {
+                let name = field(&f, 1);
+                account.orgs.push(Org {
+                    face: Face::hue(canvas, &name),
+                    role: field(&f, 2),
+                    name,
+                });
+            }
+            "published" if f.len() >= 3 => {
+                let id: String = f[1].chars().filter(char::is_ascii_hexdigit).collect();
+                account.published.push(Published {
+                    hub: hub.iter().position(|a| a.id == id && !id.is_empty()),
+                    line: field(&f, 3),
+                    name: field(&f, 2),
+                    id,
+                });
+            }
+            "device" => account.device = field(&f, 1),
+            "storage" => account.storage = field(&f, 1),
+            "version" => account.version = field(&f, 1),
+            _ => {}
         }
-        if !current.is_empty() {
-            lines.push(current);
-        }
-        current = word.to_string();
     }
-    if !current.is_empty() && lines.len() < max {
-        lines.push(current);
-    }
-    Ok(lines)
+    account
 }
 
 fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetNode {
@@ -948,6 +1131,12 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
         selected: None,
         text_cursor: None,
     }
+}
+
+/// What an event asks of the loop.
+enum Next {
+    Stay,
+    Leave(String),
 }
 
 struct Component;
@@ -977,166 +1166,406 @@ impl krate::Guest for Component {
             return 1;
         };
 
-        // Every picture crosses into the host once, here.
+        // Every picture crosses into the host once, at the size it is
+        // shown: the first screen's before the first frame, the rest while
+        // the screen is idle (see `keep_next_face`), so opening Krate never
+        // waits on pictures nobody is looking at.
         let library: Vec<LibraryApp> = lines("library.txt")
             .into_iter()
             .filter(|f| f.len() >= 3)
-            .map(|f| {
-                let art = keep_art(canvas, &f[2]);
-                let initial = art.is_none();
-                LibraryApp {
-                    art: art.or_else(|| keep_gradient(canvas, &f[0])),
-                    initial,
-                    name: f[0].clone(),
-                    line: f[1].clone(),
-                }
+            .map(|f| LibraryApp {
+                face: if names_art(&f[2]) {
+                    Face::WAITING
+                } else {
+                    Face::KRATE
+                },
+                art: f[2].clone(),
+                name: f[0].clone(),
+                line: f[1].clone(),
+                data: field(&f, 3),
+                version: field(&f, 4),
             })
             .collect();
-        let hub: Vec<HubApp> = lines("discover.txt")
-            .into_iter()
-            .filter(|f| f.len() >= 7)
-            .map(|f| {
-                let art = keep_art(canvas, &f[5]);
-                HubApp {
-                    initial: art.is_none(),
-                    art: art.or_else(|| keep_gradient(canvas, &f[1])),
-                    id: f[0].clone(),
-                    name: f[1].clone(),
-                    author: f[2].clone(),
-                    category: f[3].clone(),
-                    description: f[4].clone(),
-                    size: f[6].clone(),
-                }
-            })
-            .collect();
-        let start = match read_all("start.txt") {
-            Some(text) if text.trim_ascii() == b"discover" => Tab::Discover,
+        let now = clock::monotonic_nanos();
+        let mut home = Home {
+            canvas,
+            win,
+            library,
+            hub: Vec::new(),
+            account: Account::default(),
+            featured: None,
+            sections: Vec::new(),
+            hub_state: HubState::Ready,
+            progress: Vec::new(),
+            sync: read_sync(),
+            code: {
+                // `sync-code` and the code: shown once, never in a file.
+                let raw = args::raw();
+                let mut parts = raw.split('\n');
+                (parts.next() == Some("sync-code"))
+                    .then(|| parts.next())
+                    .flatten()
+                    .map(|c| {
+                        c.chars()
+                            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                            .collect::<String>()
+                    })
+                    .filter(|c| !c.is_empty())
+            },
+            typed: String::new(),
+            typing: false,
+            code_short: false,
+            next_poll: 0,
+            mark: canvas_images::keep(canvas, MARK_SIZE, MARK_SIZE, MARK).ok(),
+            fades: Vec::new(),
+            icons: Vec::new(),
+            nav_shadow: None,
+            kept_faces: Vec::new(),
+            faces_left: true,
+            text: Text::new(canvas),
+            look: Look::now(),
+            now,
+            tab: Tab::Library,
+            tab_from: Tab::Library,
+            tab_since: 0,
+            seen: [0; 3],
+            stack: Vec::new(),
+            page_anim: None,
+            ask: None,
+            sheet_anim: None,
+            perms: None,
+            shot: None,
+            scroll: [0.0; 3],
+            content: 0.0,
+            span: 1.0,
+            hits: Vec::new(),
+            pressed: None,
+            tapped: false,
+            said: Said::new(),
+        };
+        home.load_hub();
+        home.account = read_account(canvas, &home.hub);
+        home.read_state();
+
+        let start = read_all("start.txt")
+            .map(|b| String::from_utf8_lossy(&b).trim().to_string())
+            .unwrap_or_default();
+        let tab = match start.split_once(':').map(|(a, _)| a).unwrap_or(&start) {
+            "discover" | "hub" => Tab::Discover,
+            "you" | "settings" | "storage" | "safety" | "links" | "sync" | "recover" => Tab::You,
             _ => Tab::Library,
         };
-        let mut screen = Screen {
-            canvas,
-            library,
-            hub,
-            mark: canvas_images::keep(canvas, MARK_SIZE, MARK_SIZE, MARK).ok(),
-            file_icon: canvas_images::keep(canvas, FILE_ICON_SIDE, FILE_ICON_SIDE, FILE_ICON).ok(),
-            fades: Vec::new(),
-            tab: start,
-            scroll: [0.0; 2],
-            content: 0.0,
-            hits: Vec::new(),
-        };
+        home.switch(tab);
+        home.tab_since = 0;
+        match start.split_once(':') {
+            Some(("app", n)) => {
+                if let Ok(n) = n.trim().parse::<usize>() {
+                    if n < home.library.len() {
+                        home.push(Target::Lib(n));
+                    }
+                }
+            }
+            Some(("hub", id)) => {
+                if let Some(i) = home.hub.iter().position(|a| a.id == id.trim()) {
+                    home.push(Target::Hub(i));
+                }
+            }
+            _ => {
+                let under = match start.as_str() {
+                    "storage" => Some(Target::Storage),
+                    "safety" => Some(Target::Safety),
+                    "links" => Some(Target::Links),
+                    _ => None,
+                };
+                if start == "settings" || under.is_some() {
+                    home.push(Target::Settings);
+                    home.page_anim = None;
+                }
+                if let Some(page) = under {
+                    home.push(page);
+                }
+                // Sync opens from You, and the code page over it.
+                if (start == "sync" || start == "recover") && home.sync.known {
+                    home.push(Target::Sync);
+                    home.page_anim = None;
+                    if start == "recover" {
+                        home.push(Target::Recover);
+                    }
+                }
+            }
+        }
+        // Opening on a page shows it in place, not sliding in.
+        home.page_anim = None;
+
+        // The first screen's pictures before the first frame; the rest
+        // while idle.
+        for _ in 0..8 {
+            if !home.keep_next_face() {
+                break;
+            }
+        }
 
         // Draw only after a change. A flick keeps gliding after the finger
         // lifts and slows to a stop, the way a phone list moves: velocity is
         // in points per millisecond and every step uses the time that really
         // passed, so an uneven frame shows as a longer step, not a stutter.
+        // Every event waiting is taken before the next frame, so a burst of
+        // scroll steps costs one frame, not one each.
         let mut dirty = true;
         let mut velocity = 0.0f32;
         let mut last_wheel = 0u64;
         let mut last_step = 0u64;
-        let mut pressed_at: Option<usize> = None;
+        // A tap that leaves: the row shows pressed for a moment first.
+        let mut leaving: Option<(String, u64)> = None;
         loop {
             let (w, h) = match canvas2d::canvas_size(canvas) {
                 Ok(size) => (size.width.max(1.0), size.height.max(1.0)),
                 Err(_) => (390.0, 844.0),
             };
-            if dirty {
-                if screen.draw(w, h).is_err() {
+            let now = clock::monotonic_nanos();
+            let moving = home.tick(now);
+            if dirty || moving {
+                if home.draw(w, h).is_err() {
                     out("home:closed");
                     return 1;
                 }
                 let _ = window::request_redraw(win);
                 dirty = false;
             }
-            let gliding = velocity.abs() > 0.02;
-            let event = events::wait(if gliding { Some(8) } else { None });
             let now = clock::monotonic_nanos();
-            match event {
-                Some(types::Event::CloseRequested(_)) => {
-                    out("home:closed");
+            if let Some((answer, at)) = &leaving {
+                if now >= *at {
+                    out(answer);
                     return 0;
                 }
-                Some(types::Event::Resized(_)) => dirty = true,
-                Some(types::Event::Wheel(wheel)) => {
-                    // The finger's own speed, smoothed; a pause forgets the
-                    // speed before it.
-                    let gap = (now - last_wheel) as f32 / 1_000_000.0;
-                    let speed = wheel.dy / gap.clamp(4.0, 100.0);
-                    velocity = if gap > 100.0 { speed } else { velocity * 0.3 + speed * 0.7 };
-                    last_wheel = now;
-                    last_step = now;
-                    let max = (screen.content - h).max(0.0);
-                    let s = screen.scroll();
-                    let next = (*s + wheel.dy).clamp(0.0, max);
-                    if next != *s {
-                        *s = next;
-                        dirty = true;
+            }
+            if home.polling() && now >= home.next_poll {
+                home.next_poll = now + POLL_NS;
+                dirty |= home.read_state();
+            }
+            let gliding = velocity.abs() > 0.02;
+            let timeout = match &leaving {
+                Some((_, at)) => Some((((*at - now) / MS) as u32).max(1)),
+                None if gliding || moving => Some(8),
+                // Pictures still to keep: look for input, then keep some.
+                None if home.faces_left => Some(0),
+                None if home.polling() => {
+                    Some(((home.next_poll.saturating_sub(now)) / MS) as u32 + 1)
+                }
+                // Wake now and then to follow a change to dark mode or text
+                // size the platform did not announce.
+                None => Some(1000),
+            };
+            let mut event = events::wait(timeout);
+            if event.is_none() && home.faces_left && leaving.is_none() && !gliding {
+                for _ in 0..3 {
+                    if !home.keep_next_face() {
+                        break;
                     }
                 }
-                // Act on release over the item that was pressed, as iOS
-                // does: a press that turns into a scroll is let go elsewhere
-                // (or far outside the window), and opens nothing.
-                Some(types::Event::Pointer(p)) if p.pressed && p.button.is_some() => {
+                dirty = true;
+            }
+            let mut taken = 0;
+            while let Some(e) = event.take() {
+                let now = clock::monotonic_nanos();
+                home.now = now;
+                match handle(
+                    &mut home,
+                    e,
+                    now,
+                    &mut velocity,
+                    &mut last_wheel,
+                    &mut last_step,
+                ) {
+                    (Next::Leave(answer), _) => {
+                        out(&answer);
+                        return 0;
+                    }
+                    (Next::Stay, changed) => dirty |= changed,
+                }
+                taken += 1;
+                if taken < 64 && leaving.is_none() && !home.tapped {
+                    event = events::poll();
+                }
+            }
+            // A tap: something that leaves shows pressed, then goes;
+            // anything else happens now.
+            if home.tapped && leaving.is_none() {
+                home.tapped = false;
+                if let Some(hit) = home.pressed {
+                    match hit.answer(&home) {
+                        Some(answer) => {
+                            leaving = Some((answer, clock::monotonic_nanos() + FLASH_NS));
+                        }
+                        None => {
+                            home.pressed = None;
+                            home.now = clock::monotonic_nanos();
+                            home.act(hit);
+                            velocity = 0.0;
+                        }
+                    }
+                    dirty = true;
+                }
+            }
+            let now = clock::monotonic_nanos();
+            if gliding && leaving.is_none() && now - last_wheel > 40 * MS {
+                // The finger has lifted: keep going, slowing down at iOS's
+                // own rate (0.998 per millisecond).
+                let dt = ((now - last_step) as f32 / MS as f32).min(50.0);
+                last_step = now;
+                let max = home.max_scroll();
+                let s = home.scroll_mut();
+                let next = (*s + velocity * dt).clamp(0.0, max);
+                if next == *s {
                     velocity = 0.0;
-                    pressed_at = screen.hits.iter().rposition(|(r, _)| {
-                        p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
-                    });
-                }
-                Some(types::Event::Pointer(p)) if !p.pressed && p.button.is_some() => {
-                    let released_at = screen.hits.iter().rposition(|(r, _)| {
-                        p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
-                    });
-                    let same = released_at.is_some() && released_at == pressed_at.take();
-                    let hit = if same {
-                        released_at.map(|i| &screen.hits[i])
-                    } else {
-                        None
-                    };
-                    match hit.map(|(_, hit)| hit) {
-                        Some(Hit::Open(index)) => {
-                            out(&format!("home:open:{index}"));
-                            return 0;
-                        }
-                        Some(Hit::Get(index)) => {
-                            out(&format!("home:get:{}", screen.hub[*index].id));
-                            return 0;
-                        }
-                        Some(Hit::Files) => {
-                            out("home:files");
-                            return 0;
-                        }
-                        Some(Hit::Tab(tab)) => {
-                            if screen.tab != *tab {
-                                screen.tab = *tab;
-                                dirty = true;
-                            }
-                        }
-                        None => {}
+                } else {
+                    *s = next;
+                    // 0.998 to the power dt, without a float library.
+                    for _ in 0..dt as u32 {
+                        velocity *= 0.998;
                     }
+                    velocity *= 1.0 - 0.002 * (dt - (dt as u32) as f32);
+                    dirty = true;
                 }
-                None if gliding && now - last_wheel > 40_000_000 => {
-                    // The finger has lifted: keep going, slowing down at
-                    // iOS's own rate (0.998 per millisecond).
-                    let dt = ((now - last_step) as f32 / 1_000_000.0).min(50.0);
-                    last_step = now;
-                    let max = (screen.content - h).max(0.0);
-                    let s = screen.scroll();
-                    let next = (*s + velocity * dt).clamp(0.0, max);
-                    if next == *s {
-                        velocity = 0.0;
-                    } else {
-                        *s = next;
-                        // 0.998 to the power dt, without a float library.
-                        for _ in 0..dt as u32 {
-                            velocity *= 0.998;
-                        }
-                        velocity *= 1.0 - 0.002 * (dt - (dt as u32) as f32);
-                        dirty = true;
-                    }
-                }
-                _ => {}
+            }
+            let look = Look::now();
+            if look != home.look {
+                dirty = true;
             }
         }
+    }
+}
+
+/// Act on one event. Returns what the loop does next and whether the
+/// screen changed.
+fn handle(
+    home: &mut Home,
+    event: types::Event,
+    now: u64,
+    velocity: &mut f32,
+    last_wheel: &mut u64,
+    last_step: &mut u64,
+) -> (Next, bool) {
+    let busy = home.page_anim.is_some();
+    match event {
+        // The system back gesture: back a step, and only out of Krate from
+        // a list.
+        types::Event::CloseRequested(_) => {
+            if home.back() {
+                *velocity = 0.0;
+                (Next::Stay, true)
+            } else {
+                (Next::Leave("home:closed".to_string()), false)
+            }
+        }
+        // The recovery code, typed: letters and digits only, at most 26.
+        types::Event::TextInput(text) if home.typing => {
+            for c in text.chars().filter(char::is_ascii_alphanumeric) {
+                if home.typed.len() < CODE_LEN {
+                    home.typed.push(c.to_ascii_uppercase());
+                }
+            }
+            home.code_short = false;
+            (Next::Stay, true)
+        }
+        types::Event::TextChanged(change) if home.typing => {
+            home.typed = change
+                .text
+                .chars()
+                .filter(char::is_ascii_alphanumeric)
+                .map(|c| c.to_ascii_uppercase())
+                .take(CODE_LEN)
+                .collect();
+            (Next::Stay, true)
+        }
+        types::Event::Key(key) if key.pressed && home.typing && key.key == "Backspace" => {
+            home.typed.pop();
+            (Next::Stay, true)
+        }
+        types::Event::Key(key) if key.pressed && home.typing && key.key == "Enter" => {
+            match Hit::CodeSubmit.answer(home) {
+                Some(answer) => {
+                    home.stop_typing();
+                    (Next::Leave(answer), false)
+                }
+                None => {
+                    home.code_short = true;
+                    (Next::Stay, true)
+                }
+            }
+        }
+        types::Event::Key(key)
+            if key.pressed && matches!(key.key.as_str(), "Escape" | "GoBack" | "BrowserBack") =>
+        {
+            let changed = home.back();
+            (Next::Stay, changed)
+        }
+        types::Event::Resized(_)
+        | types::Event::RedrawRequested(_)
+        | types::Event::ThemeChanged(_) => (Next::Stay, true),
+        types::Event::Wheel(wheel) => {
+            if home.ask.is_some() || busy {
+                return (Next::Stay, false);
+            }
+            // The finger's own speed, smoothed; a pause forgets the speed
+            // before it.
+            let gap = (now - *last_wheel) as f32 / MS as f32;
+            let speed = wheel.dy / gap.clamp(4.0, 100.0);
+            *velocity = if gap > 100.0 {
+                speed
+            } else {
+                *velocity * 0.3 + speed * 0.7
+            };
+            *last_wheel = now;
+            *last_step = now;
+            let mut changed = false;
+            // A scroll is not a tap: let go of what was held.
+            if home.pressed.take().is_some() {
+                changed = true;
+            }
+            let max = home.max_scroll();
+            let s = home.scroll_mut();
+            let next = (*s + wheel.dy).clamp(0.0, max);
+            if next != *s {
+                *s = next;
+                changed = true;
+            }
+            (Next::Stay, changed)
+        }
+        // Act on release over what was pressed, as iOS does: a press that
+        // turns into a scroll is let go elsewhere, and opens nothing.
+        types::Event::Pointer(p) if p.button.is_some() => {
+            if busy {
+                return (Next::Stay, false);
+            }
+            let at = home
+                .hits
+                .iter()
+                .rposition(|(r, _)| inside(r, p.x, p.y))
+                .map(|i| home.hits[i].1);
+            if p.pressed {
+                *velocity = 0.0;
+                // A place switches at the touch, the way a tab bar does.
+                if let Some(Hit::Tab(tab)) = at {
+                    let changed = home.tab != tab || !home.stack.is_empty();
+                    home.act(Hit::Tab(tab));
+                    home.pressed = None;
+                    return (Next::Stay, changed);
+                }
+                let changed = home.pressed != at;
+                home.pressed = at;
+                return (Next::Stay, changed);
+            }
+            let held = home.pressed;
+            if at.is_some() && at == held {
+                home.tapped = true;
+                (Next::Stay, true)
+            } else {
+                home.pressed = None;
+                (Next::Stay, held.is_some())
+            }
+        }
+        _ => (Next::Stay, false),
     }
 }
 

@@ -253,6 +253,12 @@ jobs:
           # And that a failed build tells the person what happened in
           # words about their app, from the engine's real output (K-892).
           node docs/landing/studio/failure-words-test.mjs
+          # And that the plan step's refusal is said as one, with what Krate
+          # can make instead, and never starts a build (K-1243).
+          node docs/landing/studio/plan-cannot-test.mjs
+          # And that a phone or tablet ports from a .zip, read in the tab into
+          # the same files a chosen folder gives (a phone cannot choose one).
+          node docs/landing/studio/port-zip-test.mjs
           # And that a sign-in link from somebody else cannot sign this
           # browser in (K-909): /login/done keeps a session only when the
           # nonce this browser started with comes back beside it, and /make

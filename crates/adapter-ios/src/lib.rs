@@ -495,9 +495,10 @@ impl WindowAdapter for IosUikitPrototypeUiAdapter {
 
 impl UiAdapter for IosUikitPrototypeUiAdapter {
     fn supports_canvas_lists(&self) -> bool {
-        // The GPU consumer. When its lazy init fails at first present, it
-        // returns false per frame and the CPU raster keeps the screen.
-        cfg!(target_os = "ios")
+        // The GPU consumer, until it fails to start: then the runtime paints
+        // on the CPU from the next frame (K-1214) -- recording frames for a
+        // GPU that never draws them left a blank white screen.
+        cfg!(target_os = "ios") && uikit_native::gpu_usable()
     }
 
     fn present_canvas_list(
@@ -729,6 +730,15 @@ impl UiAdapter for IosUikitPrototypeUiAdapter {
         uikit_native::export_file(path)
     }
 
+    #[cfg(target_os = "ios")]
+    fn ask(&self, _window: WindowId, title: &str, body: &str, question: bool) -> Option<bool> {
+        Some(uikit_native::ask(title, body, question))
+    }
+
+    fn set_canvas_presses(&self, window: WindowId, widget: WidgetId, presses: bool) {
+        uikit_native::set_canvas_presses(window, widget, presses)
+    }
+
     fn set_adapts(&self, adapts: bool) {
         uikit_native::set_adapts(adapts)
     }
@@ -742,6 +752,15 @@ impl UiAdapter for IosUikitPrototypeUiAdapter {
 
     fn drain_raw_pointer_input(&self) -> Vec<RawPointerSample> {
         uikit_native::drain_pointer_samples()
+    }
+
+    /// Where the pointer is and whether it is held (krate:ui/pointer).
+    fn pointer(&self, window: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        uikit_native::pointer_state(window)
+    }
+
+    fn take_pointer_motion(&self, window: WindowId) -> (f32, f32) {
+        uikit_native::take_pointer_motion(window)
     }
 
     fn drain_raw_key_input(&self) -> Vec<krate_adapter_common::ui::RawKeySample> {

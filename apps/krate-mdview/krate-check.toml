@@ -1,0 +1,16 @@
+# Mdview's job: show a Markdown document as a page a person reads to the end.
+# The window opens on the title; the end of the page is below it, reached by
+# scrolling.
+name = "read the document to its end and back"
+[[step]]
+expect_text = "The Markdown Reader"
+[[step]]
+expect_no_text = "section break"
+[[step]]
+key = "End"
+[[step]]
+expect_text = "section break"
+[[step]]
+key = "Home"
+[[step]]
+expect_text = "The Markdown Reader"

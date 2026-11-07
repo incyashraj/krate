@@ -26,9 +26,9 @@ What actually happened. Include any error output (wrap in ` ```backtrace ``` ` i
 ## Environment
 
 - **Krate version:** (output of `krate version`)
-- **OS / arch:** (e.g. macOS 15 arm64, Ubuntu 24.04 x86_64, Windows 11 x64)
+- **OS / arch:** (e.g. macOS 15 arm64, Ubuntu 24.04 x86_64, Windows 11 x64; for an app opened from a link, the browser and device, e.g. Safari on iPhone 15)
 - **How you installed Krate:** (release download, installer, or built from source)
-- **What you were using:** (CLI, desktop Studio, or browser Studio)
+- **What you were using:** (CLI, desktop Studio, browser Studio, an app opened from a link, or an organisation's console)
 - **Rust version, only if building from source:** (output of `rustc --version`)
 
 ## Additional context

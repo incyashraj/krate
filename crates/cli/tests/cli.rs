@@ -679,16 +679,20 @@ fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
     std::fs::write(source.join("src/main.rs"), "fn main() {}\n").expect("write source");
     let bundle = root.path().join("must-not-exist.krate");
 
-    let output = krate()
+    // No --prepare, so the kept workspace goes under a temporary HOME.
+    let home = root.path().join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let mut command = krate();
+    command
         .arg("port")
         .arg(&source)
         .arg("--author-cmd")
         .arg("printf 'fn changed() {}\\n' > \"$KRATE_PORT_SOURCE/src/main.rs\"")
         .arg("--to")
         .arg(&bundle)
-        .arg("--no-install")
-        .output()
-        .expect("run source integrity test");
+        .arg("--no-install");
+    with_temp_home(&mut command, &home);
+    let output = command.output().expect("run source integrity test");
 
     assert!(!output.status.success());
     assert!(!bundle.exists());
@@ -702,6 +706,737 @@ fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
         "unexpected stderr:\n{stderr}\nstdout:\n{}",
         String::from_utf8_lossy(&output.stdout)
     );
+}
+
+/// IC-120's stand-in authors. Each test below drives a full port with a
+/// deterministic author command -- no AI is involved -- and checks how the
+/// one initiation ends: ported with evidence, not verified, or blocked on a
+/// named requirement, always with the workspace kept and named.
+///
+/// The original is the E5 invoice: 2 + 3 + 5 at a unit price of 10 prints
+/// `total=100`. The authors copy one of these into the candidate from the
+/// source snapshot, so the command holds no host path (a Windows temp path
+/// is full of backslashes a shell reads as escapes).
+const INVOICE_PORT: &str = r#"//! Invoice: sums the quantities in a file at a unit price of 10.
+#![no_std]
+extern crate alloc;
+
+use krate::{
+    fs::{self, OpenMode},
+    io::{args, stdio},
+    Guest,
+};
+
+const UNIT_PRICE: i64 = 10;
+
+struct Component;
+
+impl Guest for Component {
+    fn run() -> i32 {
+        let raw = args::raw();
+        let Some(path) = raw.split('\n').find(|arg| !arg.is_empty()) else {
+            let _ = stdio::eprintln("usage: invoice <file>");
+            return 2;
+        };
+        if path == "quick" {
+            let _ = stdio::println("total=0");
+            return 0;
+        }
+        let Ok(file) = fs::open(path, OpenMode::Read) else {
+            let _ = stdio::eprintln("invoice: could not read the file");
+            return 5;
+        };
+        let mut sum: i64 = 0;
+        let mut current: i64 = 0;
+        loop {
+            let Ok(chunk) = file.read(8192) else { return 22 };
+            if chunk.is_empty() {
+                break;
+            }
+            for byte in &chunk {
+                if byte.is_ascii_digit() {
+                    current = current.saturating_mul(10).saturating_add(i64::from(*byte - b'0'));
+                } else {
+                    sum = sum.saturating_add(current);
+                    current = 0;
+                }
+            }
+        }
+        sum = sum.saturating_add(current);
+        let mut line = [0u8; 32];
+        let mut len = 0usize;
+        for b in b"total=" {
+            if let Some(slot) = line.get_mut(len) {
+                *slot = *b;
+                len += 1;
+            }
+        }
+        let mut digits = [0u8; 20];
+        let mut n = 0usize;
+        let mut value = sum.saturating_mul(UNIT_PRICE).unsigned_abs();
+        loop {
+            if let Some(slot) = digits.get_mut(n) {
+                *slot = b'0' + (value % 10) as u8;
+                n += 1;
+            }
+            value /= 10;
+            if value == 0 {
+                break;
+            }
+        }
+        for i in (0..n).rev() {
+            if let (Some(src), Some(dst)) = (digits.get(i), line.get_mut(len)) {
+                *dst = *src;
+                len += 1;
+            }
+        }
+        if let Ok(text) = core::str::from_utf8(line.get(..len).unwrap_or(&[])) {
+            let _ = stdio::println(text);
+        }
+        0
+    }
+}
+
+krate::export!(Component);
+"#;
+
+/// The invoice source, the port variants inside it (read by the author from
+/// the snapshot), and the recorded cases beside it. Returns (source, oracle).
+fn invoice_port_fixture(root: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let source = root.join("invoice");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::create_dir_all(source.join("port-fixtures")).expect("create fixtures");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"invoice\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(
+        source.join("src/main.rs"),
+        r#"use std::{env, fs};
+fn main() {
+    let path = env::args().nth(1).unwrap_or_else(|| "qty.txt".to_string());
+    let text = fs::read_to_string(&path).expect("read quantities");
+    let sum: i64 = text.split_whitespace().filter_map(|w| w.parse::<i64>().ok()).sum();
+    println!("total={}", sum * 10);
+}
+"#,
+    )
+    .expect("write source");
+    std::fs::write(source.join("qty.txt"), "2\n3\n5\n").expect("write input");
+    // The right port, and one that opens, runs and charges 9 a unit.
+    std::fs::write(source.join("port-fixtures/good.rs.txt"), INVOICE_PORT).expect("good");
+    let wrong = INVOICE_PORT.replace("UNIT_PRICE: i64 = 10", "UNIT_PRICE: i64 = 9");
+    assert_ne!(wrong, INVOICE_PORT, "the wrong port must really differ");
+    std::fs::write(source.join("port-fixtures/wrong.rs.txt"), wrong).expect("wrong");
+    let oracle = root.join("cases.json");
+    std::fs::write(
+        &oracle,
+        r#"{
+  "schema": "krate.port.oracle.v1",
+  "cases": [
+    {"id": "invoice-total", "args": ["input/qty.txt"],
+     "files": {"input/qty.txt": "2\n3\n5\n"}, "stdout": "total=100\n"},
+    {"id": "empty-invoice", "args": ["input/empty.txt"],
+     "files": {"input/empty.txt": ""}, "stdout": "total=0\n"}
+  ]
+}
+"#,
+    )
+    .expect("write oracle");
+    (source, oracle)
+}
+
+/// Copy one port variant from the snapshot into the candidate.
+fn copy_port(variant: &str) -> String {
+    format!(
+        "cp \"$KRATE_PORT_SOURCE/port-fixtures/{variant}.rs.txt\" \"$KRATE_PORT_CANDIDATE/src/lib.rs\""
+    )
+}
+
+fn last_line(text: &str) -> &str {
+    text.lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+}
+
+fn port_outcome(workspace: &std::path::Path) -> serde_json::Value {
+    serde_json::from_slice(
+        &std::fs::read(workspace.join("port-outcome.json")).expect("read port-outcome.json"),
+    )
+    .expect("parse port-outcome.json")
+}
+
+/// A port is run against a temporary HOME when it gets no --prepare, so the
+/// workspace it keeps lands there and not in the person's own ~/.krate. The
+/// toolchain stays the real one.
+fn with_temp_home(command: &mut Command, home: &std::path::Path) {
+    let real_home = std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .expect("a home directory");
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".cargo"));
+    let rustup_home = std::env::var_os("RUSTUP_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".rustup"));
+    command
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("CARGO_HOME", cargo_home)
+        .env("RUSTUP_HOME", rustup_home);
+}
+
+/// IC-120: a port that prints what the original printed on every recorded
+/// case ends ported -- the .krate at the requested path, the evidence it was
+/// judged on in the workspace, one closing line, and the same verdict as
+/// JSON. Run from a relative --prepare, which used to hand the author a
+/// candidate path that did not exist from inside the workspace (K-1233).
+#[test]
+fn a_port_that_matches_the_recorded_cases_ends_ported_with_its_evidence() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+
+    let output = krate()
+        .current_dir(root.path())
+        .arg("port")
+        .arg(&source)
+        .args(["--prepare", "port-work"])
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && printf 'Ported the invoice total.\\n' > PORT_RESULT.md",
+            copy_port("good")
+        ))
+        .args(["--to", "invoice.krate", "--no-install", "--json"])
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a port that matches every recorded case is ported\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    assert!(
+        bundle.is_file(),
+        "the verified .krate is at the requested path"
+    );
+
+    // --json: the last line of stdout is the ending.
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    assert_eq!(outcome["schema"], "krate.port.outcome.v1");
+    assert_eq!(outcome["verdict"], "ported");
+    assert_eq!(outcome["exit_code"], 0);
+    assert!(outcome["requirement"].is_null());
+    let named = std::path::PathBuf::from(outcome["workspace"].as_str().expect("workspace"));
+    assert!(named.is_absolute() && named.join("candidate").is_dir());
+    assert_eq!(
+        port_outcome(&workspace),
+        outcome,
+        "the file and the JSON agree"
+    );
+    // And the plain line, on stderr under --json.
+    let line = last_line(&stderr);
+    assert!(line.starts_with("Ported: "), "closing line: {line}");
+    assert!(line.contains("Workspace: "), "closing line: {line}");
+
+    // The evidence the verdict rests on.
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("journey results"),
+    )
+    .expect("parse");
+    let primary = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "primary-task")
+        .expect("primary-task");
+    assert_eq!(primary["status"], "passed");
+    assert_eq!(primary["cases"].as_array().map(Vec::len), Some(2));
+    assert_eq!(primary["cases"][0]["stdout"], "total=100\n");
+    let journeys: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(workspace.join("journeys.json")).expect("journeys"))
+            .expect("parse");
+    assert!(journeys["journeys"]
+        .as_array()
+        .expect("journeys")
+        .iter()
+        .any(|j| j["id"] == "primary-task" && j["kind"] == "recorded-io"));
+    assert!(workspace.join("oracle.json").is_file());
+    let task = std::fs::read_to_string(workspace.join("AGENT_TASK.md")).expect("task");
+    assert!(
+        task.contains("invoice-total"),
+        "the agent is shown the cases"
+    );
+    let result: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("port-result.json")).expect("port result"),
+    )
+    .expect("parse");
+    assert_eq!(result["verdict"], "ported");
+    assert_eq!(result["bundle_sha256"], results["bundle_sha256"]);
+}
+
+/// IC-120's build-only false positive: a candidate that compiles, packs,
+/// imports only krate:*, runs and keeps its permission wall -- and is a
+/// different program. With recorded cases it is blocked on the journey it
+/// fails, never ported, and nothing is written to the requested path.
+#[test]
+fn a_port_that_builds_but_does_something_else_is_blocked_on_its_journey() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    // A working line counter, as in E5.
+    let author = "printf '//! A line counter.\\n#![no_std]\\nextern crate alloc;\\n\
+                  use krate::{io::stdio, Guest};\\nstruct Component;\\n\
+                  impl Guest for Component {\\n    fn run() -> i32 {\\n        \
+                  let _ = stdio::print(\"lines=3\\\\n\");\\n        0\\n    }\\n}\\n\
+                  krate::export!(Component);\\n' > \"$KRATE_PORT_CANDIDATE/src/lib.rs\"";
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(author)
+        .args(["--repair-attempts", "0", "--no-install", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "a line counter is not a port of an invoice app\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!bundle.exists(), "nothing at the requested path");
+    assert!(
+        workspace.join("candidate.krate").is_file(),
+        "the candidate that was judged is kept in the workspace"
+    );
+    let line = last_line(&stdout);
+    assert!(
+        line.starts_with("Blocked on primary-task: ") && line.contains("\"lines=3\""),
+        "the closing line names the journey and what came out: {line}"
+    );
+    assert!(line.contains(&format!("Workspace: {}", workspace.display())));
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "blocked");
+    assert_eq!(outcome["requirement"], "primary-task");
+    assert!(outcome["bundle"].is_null());
+    assert!(
+        stderr.contains("This port failed: different behavior"),
+        "{stderr}"
+    );
+    let report =
+        std::fs::read_to_string(workspace.join("FAILURE-REPORT.md")).expect("failure report");
+    assert!(
+        report.contains("total=100") && report.contains("lines=3"),
+        "{report}"
+    );
+}
+
+/// IC-120's opens-but-wrong behavior and repair exhaustion: an author whose
+/// port opens and prints the wrong total, and whose repairs never fix it,
+/// gets exactly its repair budget -- each attempt handed the difference --
+/// and then ends blocked on the failed journey.
+#[test]
+fn a_port_that_never_prints_the_right_answer_stops_after_its_repair_budget() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(copy_port("wrong"))
+        .args(["--repair-attempts", "2", "--no-install", "--json", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!bundle.exists());
+    for attempt in 1..=2 {
+        let log = std::fs::read_to_string(workspace.join(format!("repair/behavior-{attempt}.txt")))
+            .expect("each repair is handed the difference");
+        assert!(
+            log.contains("total=100") && log.contains("total=90"),
+            "attempt {attempt}: {log}"
+        );
+    }
+    assert!(
+        !workspace.join("repair/behavior-3.txt").exists(),
+        "no third attempt"
+    );
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    assert_eq!(outcome["verdict"], "blocked");
+    assert_eq!(outcome["exit_code"], 8);
+    assert_eq!(outcome["requirement"], "primary-task");
+    assert_eq!(outcome["repair_attempts_used"], 2);
+    assert!(outcome["reason"]
+        .as_str()
+        .expect("reason")
+        .contains("\"total=90\" where the original printed \"total=100\""));
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("journey results"),
+    )
+    .expect("parse");
+    let primary = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "primary-task")
+        .expect("primary-task");
+    assert_eq!(primary["status"], "failed");
+    assert!(last_line(&stderr).starts_with("Blocked on primary-task: "));
+}
+
+/// IC-120's repair success: the first port prints the wrong total, the
+/// repair attempt is handed the difference and fixes it, and the port ends
+/// verified.
+#[test]
+fn a_repair_that_fixes_the_behavior_ends_ported() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    // The repair copies the right port only when the log it was handed names
+    // the wrong total -- proof the difference reached it.
+    let author = format!(
+        "if [ -n \"$KRATE_PORT_REPAIR_LOG\" ]; then \
+         grep -q 'total=90' \"$KRATE_PORT_REPAIR_LOG\" && {good}; \
+         else {wrong}; fi",
+        good = copy_port("good"),
+        wrong = copy_port("wrong")
+    );
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(author)
+        .args(["--repair-attempts", "2", "--no-install", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(bundle.is_file());
+    assert!(workspace.join("repair/behavior-1.txt").is_file());
+    assert!(!workspace.join("repair/behavior-2.txt").exists());
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "ported");
+    assert_eq!(outcome["repair_attempts_used"], 1);
+    assert!(last_line(&stdout).starts_with("Ported: "));
+}
+
+/// IC-120's agent failure: an author that crashes, one that never returns,
+/// and one that changes nothing each end blocked on `agent`, in words, with
+/// the workspace kept and named -- including a port started without
+/// --prepare, whose workspace used to be a temporary directory deleted on
+/// the way out.
+#[test]
+fn an_author_that_crashes_hangs_or_does_nothing_is_a_named_blocker() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, _oracle) = invoice_port_fixture(root.path());
+
+    for (name, author, says) in [
+        (
+            "crash",
+            "echo 'agent crashed' >&2; exit 3",
+            "exited with code 3",
+        ),
+        // Two commands, so the shell keeps the sleep as a child of its own
+        // on every system (Ubuntu's dash does that even for one command):
+        // only stopping the author's whole process group ends it.
+        ("hang", "sleep 120; true", "did not finish within 2 seconds"),
+        ("nothing", "true", "without changing the candidate"),
+    ] {
+        let workspace = root.path().join(format!("ws-{name}"));
+        let bundle = root.path().join(format!("{name}.krate"));
+        let started = std::time::Instant::now();
+        let output = krate()
+            .arg("port")
+            .arg(&source)
+            .arg("--prepare")
+            .arg(&workspace)
+            .arg("--author-cmd")
+            .arg(author)
+            .args(["--no-install", "--to"])
+            .arg(&bundle)
+            .env("KRATE_AUTHOR_TIMEOUT_SECS", "2")
+            .output()
+            .expect("run port");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.code(),
+            Some(8),
+            "{name}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "{name}: the author must be stopped at its deadline, not waited on"
+        );
+        assert!(!bundle.exists(), "{name}: no bundle");
+        let line = last_line(&stdout);
+        assert!(
+            line.starts_with("Blocked on agent: ") && line.contains(says),
+            "{name}: closing line: {line}"
+        );
+        assert!(line.contains(&format!("Workspace: {}", workspace.display())));
+        assert!(
+            workspace.join("candidate/src/lib.rs").is_file(),
+            "{name}: kept"
+        );
+        let outcome = port_outcome(&workspace);
+        assert_eq!(outcome["requirement"], "agent", "{name}");
+        assert!(
+            stderr.contains("This port failed: the AI tool stopped"),
+            "{name}: {stderr}"
+        );
+    }
+
+    // No --prepare: the workspace is kept under ~/.krate/ports and named.
+    let home = root.path().join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let mut command = krate();
+    command
+        .arg("port")
+        .arg(&source)
+        .args(["--author-cmd", "exit 3", "--no-install", "--json", "--to"])
+        .arg(root.path().join("unprepared.krate"));
+    with_temp_home(&mut command, &home);
+    let output = command.output().expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    let workspace = std::path::PathBuf::from(outcome["workspace"].as_str().expect("workspace"));
+    assert!(
+        workspace.starts_with(home.join(".krate").join("ports")),
+        "kept under ~/.krate/ports: {}",
+        workspace.display()
+    );
+    assert!(workspace.join("candidate/src/lib.rs").is_file());
+    assert!(workspace.join("FAILURE-REPORT.md").is_file());
+    assert_eq!(port_outcome(&workspace), outcome);
+}
+
+/// The recorded cases are criteria like the journeys: an agent that rewrites
+/// `oracle.json` to match what its port prints is marking its own exam, and
+/// the port stops before anything is built.
+#[test]
+fn an_agent_cannot_rewrite_the_recorded_cases() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && sed -i.bak 's/total=100/total=90/' oracle.json",
+            copy_port("wrong")
+        ))
+        .args(["--no-install", "--to"])
+        .arg(&bundle)
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.contains("marking its own exam"), "{stderr}");
+    assert!(!bundle.exists());
+    assert!(
+        !workspace.join("candidate.krate").exists(),
+        "stopped before packaging"
+    );
+    assert_eq!(
+        port_outcome(&workspace)["requirement"],
+        "criteria-unchanged"
+    );
+}
+
+/// IC-120's original-source drift: the person's own project changing while
+/// the agent runs ends the port blocked on `source-unchanged`, before
+/// anything is built, so a port never silently races their edits.
+#[test]
+fn the_original_changing_during_a_port_is_a_named_blocker() {
+    if cfg!(windows) {
+        // The author names the original by its host path, and a Windows temp
+        // path is full of backslashes the shell reads as escapes.
+        eprintln!("skipping the source-drift check on Windows: the author names a host path");
+        return;
+    }
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && printf '// edited by the person\\n' >> '{}'",
+            copy_port("good"),
+            source.join("src/main.rs").display()
+        ))
+        .args(["--no-install", "--to"])
+        .arg(&bundle)
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        std::fs::read_to_string(source.join("src/main.rs"))
+            .expect("read original")
+            .contains("edited by the person"),
+        "the fixture really changed the original"
+    );
+    assert!(stderr.contains("original source changed"), "{stderr}");
+    assert!(last_line(&stdout).starts_with("Blocked on source-unchanged: "));
+    assert!(!bundle.exists());
+    assert!(
+        !workspace.join("candidate.krate").exists(),
+        "stopped before packaging"
+    );
+    assert_eq!(port_outcome(&workspace)["requirement"], "source-unchanged");
+}
+
+/// A case file Krate cannot use is refused before anything is prepared or
+/// any author runs: finding a typo after the agent's time is spent is the
+/// most expensive way to find it.
+#[test]
+fn a_case_file_krate_cannot_use_is_refused_before_the_port_starts() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, _oracle) = invoice_port_fixture(root.path());
+    for (name, text) in [
+        (
+            "misspelt",
+            r#"{"schema":"krate.port.oracle.v1","cases":[{"id":"a","expected_stdout":"x"}]}"#,
+        ),
+        ("empty", r#"{"schema":"krate.port.oracle.v1","cases":[]}"#),
+        (
+            "escapes",
+            r#"{"schema":"krate.port.oracle.v1","cases":[{"id":"a","stdout":"x","files":{"../x":""}}]}"#,
+        ),
+    ] {
+        let oracle = root.path().join(format!("{name}.json"));
+        std::fs::write(&oracle, text).expect("write oracle");
+        let workspace = root.path().join(format!("ws-{name}"));
+        let output = krate()
+            .arg("port")
+            .arg(&source)
+            .arg("--prepare")
+            .arg(&workspace)
+            .arg("--oracle")
+            .arg(&oracle)
+            .args(["--author-cmd", "touch ran-anyway", "--no-install", "--to"])
+            .arg(root.path().join(format!("{name}.krate")))
+            .output()
+            .expect("run port");
+        assert!(!output.status.success(), "{name} was accepted");
+        assert!(!workspace.exists(), "{name}: nothing is prepared");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(&format!("{name}.json")),
+            "{name}: the refusal names the file: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[test]
@@ -12230,6 +12965,17 @@ fn main() {
         stdout.contains("primary-task"),
         "the unfinished journey must be named: {stdout}"
     );
+    // One closing line and one recorded ending, naming the unchecked journey
+    // and the kept workspace (IC-120).
+    let line = last_line(&stdout);
+    assert!(
+        line.starts_with("Not verified: ") && line.contains("primary-task"),
+        "closing line: {line}"
+    );
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "unverified");
+    assert_eq!(outcome["exit_code"], 7);
+    assert_eq!(outcome["requirement"], "primary-task");
     assert!(
         bundle.is_file(),
         "the bundle is still written: it built and runs, it is just not proven \
@@ -13353,6 +14099,78 @@ fn a_widget_app_is_drawn_in_the_persons_look() {
     let dark = shoot("dark,text=1.35");
     assert!(light > 0.8, "a light window by default: {light:.2}");
     assert!(dark < 0.3, "the same app goes dark in dark mode: {dark:.2}");
+}
+
+/// A game drawn at a design size fits inside the edges a phone covers from
+/// its very first frame (K-1217).
+///
+/// `nova.wasm` is apps/krate-nova built: it sets its design size from the
+/// screen and draws a dark starfield to every edge of it. The covered edges
+/// used to reach the canvas only at present, after the first frame was
+/// drawn, so that frame landed centred on the whole phone; the bands filled
+/// at publish, from the fit with the edges, then painted over its top (the
+/// score) and copied a blank white row across the bottom 62 points. Every
+/// check-app phone picture is a first frame, and showed exactly that.
+#[test]
+fn a_design_size_game_fits_the_phone_from_its_first_frame() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/nova.wasm")).expect("nova");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../apps/krate-nova/manifest.toml"
+        ),
+        &manifest,
+    )
+    .expect("manifest");
+    let text = std::fs::read_to_string(&manifest).expect("read manifest");
+    let entry = text
+        .lines()
+        .find(|l| l.starts_with("entry"))
+        .expect("entry line")
+        .to_string();
+    std::fs::write(&manifest, text.replace(&entry, "entry = \"code.wasm\"")).expect("manifest");
+    let png = dir.path().join("phone.png");
+    let out = krate()
+        .arg("run")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .args(["--auto-grant", "--shoot"])
+        .arg(&png)
+        .args(["--shoot-scale", "1", "--", "quick"])
+        .env("KRATE_SCREEN", "390x844")
+        .output()
+        .expect("run");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let decoder = png::Decoder::new(std::io::BufReader::new(
+        std::fs::File::open(&png).expect("shot"),
+    ));
+    let mut reader = decoder.read_info().expect("png");
+    let mut buf = vec![0; reader.output_buffer_size().expect("size")];
+    let info = reader.next_frame(&mut buf).expect("frame");
+    let channels = info.color_type.samples();
+    let (w, h) = (info.width as usize, info.height as usize);
+    assert_eq!((w, h), (390, 844));
+    let bright_rows: Vec<usize> = (0..h)
+        .filter(|&y| {
+            let row = &buf[y * w * channels..(y + 1) * w * channels];
+            row.chunks_exact(channels)
+                .all(|p| p[0] > 240 && p[1] > 240 && p[2] > 240)
+        })
+        .collect();
+    assert!(
+        bright_rows.is_empty(),
+        "rows {:?}..={:?} of the phone are blank white: the first frame was not fitted inside the covered edges",
+        bright_rows.first(),
+        bright_rows.last()
+    );
 }
 
 /// An app that draws itself tells the screen reader what it drew
@@ -25626,5 +26444,536 @@ fn starter_purchase_orders_is_shared_by_two_people_through_its_window() {
             ("click", "Received (1)"),
             ("expect_text", chairs),
         ],
+    );
+}
+
+/// K-764: the door that starts the conversation never offers what the door
+/// that builds refuses.
+///
+/// `plan` is Studio's first answer to a person; `create` is what builds.
+/// They disagreed on one sentence three ways: a refusal printed as a
+/// `{"plan": ...}` (shown as "Here's what I'll build:" with a Build it
+/// button `create` then refused), a wall plan offered for words `create`
+/// refuses, and an agreed plan whose own prose ("nothing is uploaded to the
+/// cloud") made `create` refuse the app it described. This walks every
+/// request through both doors exactly as Studio does -- `create` gets the
+/// request plus "(The agreed plan: ...)" -- with a stand-in planning AI, so
+/// no AI is spent. `create` is stopped at the toolchain check (an empty
+/// HOME and PATH), which runs after the refusal screen and before any build.
+#[cfg(unix)]
+#[test]
+fn plan_never_offers_what_create_refuses() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let bin = dir.path().join("bin");
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    // The stand-in AI answers every plan with a private journal whose prose
+    // mentions the cloud, plus two needs `create` would refuse.
+    let answer = dir.path().join("answer.json");
+    std::fs::write(
+        &answer,
+        r#"{"name":"Journal","plan":"A private journal: entries stay on this computer and nothing is uploaded to the cloud.","points":["Write an entry","Browse past entries"],"needs":["store.kv","fs.write:<chosen-folder>/**","ui.window"],"shape":"krate-checklist"}"#,
+    )
+    .unwrap();
+    let fake = bin.join("claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '2.0.0 (Claude Code)'; exit 0; }}\ncat '{}'\n",
+            answer.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let run = |args: &[&str]| -> serde_json::Value {
+        let out = krate()
+            .env("PATH", &path)
+            .env("HOME", &home)
+            .env_remove("CARGO_HOME")
+            .env_remove("RUSTUP_HOME")
+            .env("KRATE_TEST_POLICY", "none")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .expect("run krate");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let line = stdout
+            .lines()
+            .rev()
+            .find(|l| l.trim_start().starts_with('{'))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no JSON from {args:?}: {stdout}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                )
+            });
+        serde_json::from_str(line).expect("json")
+    };
+    let output = dir.path().join("out.krate");
+    let output = output.to_str().unwrap();
+
+    let cases = [
+        // The screen refuses it: plan must say so, in create's words.
+        "an app that reads my Gmail inbox",
+        // A wall AND a refusal: the refusal wins in both doors.
+        "a pomodoro timer that keeps running in the background and pings me",
+        // A wall only: plan offers the substitute, create builds it.
+        "a background timer that keeps running after I close the window",
+        // Goes to the AI, whose plan mentions the cloud.
+        "a private journal for my evening notes",
+    ];
+    let (mut refused, mut planned) = (0, 0);
+    for request in cases {
+        let plan = run(&["plan", request, "--agent", "claude"]);
+        if let Some(cannot) = plan.get("cannot").and_then(|c| c.as_str()) {
+            refused += 1;
+            assert!(
+                plan.get("plan").is_none(),
+                "a refusal must not ride as a plan: {plan}"
+            );
+            let create = run(&[
+                "create",
+                request,
+                "--output",
+                output,
+                "--json",
+                "--no-install",
+            ]);
+            assert_eq!(
+                create["error"], "cannot-build",
+                "plan refused {request:?}, so create must too: {create}"
+            );
+            assert!(
+                cannot.contains(create["reason"].as_str().unwrap_or("?")),
+                "both doors give the same reason: {cannot} / {create}"
+            );
+            continue;
+        }
+        planned += 1;
+        let said = plan["plan"].as_str().unwrap_or_default();
+        assert!(!said.is_empty(), "{request:?}: {plan}");
+        for need in plan["needs"].as_array().cloned().unwrap_or_default() {
+            let need = need.as_str().unwrap_or_default().to_string();
+            assert!(
+                !need.contains('<') && need != "ui.window",
+                "plan offered a permission create refuses: {need}"
+            );
+        }
+        // Exactly what Studio sends once the plan is agreed.
+        let agreed = format!("{request}\n\n(The agreed plan: {said})");
+        let create = run(&[
+            "create",
+            &agreed,
+            "--output",
+            output,
+            "--json",
+            "--no-install",
+        ]);
+        assert_ne!(
+            create["error"], "cannot-build",
+            "plan offered {said:?} for {request:?}, and create refused it: {create}"
+        );
+    }
+    assert!(refused >= 2 && planned >= 2, "both arms were walked");
+}
+
+/// K-763: a failure is classified by who can fix it, and the words follow.
+///
+/// Two failures that came back to the agent dressed as something they are
+/// not. A build the machine refused -- here a target folder it may not
+/// write -- was "Fix the compiler errors above" unless the folder happened
+/// to be named `cache`. And a manifest whose `entry` names another file (what
+/// every app seeded from an example starts with) was refused at the door as
+/// "exit 5 means a capability it needs is not declared", which real Studio
+/// agents then chased. Each must say what it is.
+#[cfg(unix)]
+#[test]
+fn check_app_says_what_kind_of_failure_it_found() {
+    use std::os::unix::fs::PermissionsExt;
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let check = |dir: &std::path::Path, extra: &[&str], target: Option<&std::path::Path>| {
+        let mut command = krate();
+        command.arg("check-app").arg(dir).args(extra).arg("--json");
+        if let Some(target) = target {
+            command.env("CARGO_TARGET_DIR", target);
+        }
+        let out = command.output().expect("run check-app");
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let line = stdout.lines().last().unwrap_or_default().to_string();
+        serde_json::from_str::<serde_json::Value>(&line)
+            .unwrap_or_else(|_| panic!("one JSON object: {stdout}"))
+    };
+    let diceroll = workspace_path(PathBuf::from("apps/krate-diceroll"));
+
+    // 1. A build this machine refuses: a target folder that may not be
+    //    written, named nothing like `cache`.
+    let locked = tempfile::tempdir().expect("temp dir");
+    std::fs::set_permissions(locked.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(locked.path().join("probe"), b"").is_ok() {
+        eprintln!("skipping the refused-build half: this user can write a read-only folder");
+    } else {
+        let report = check(&diceroll, &["--no-run"], Some(&locked.path().join("t")));
+        std::fs::set_permissions(locked.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(report["stage"], "build", "{report}");
+        assert_eq!(report["kind"], "environment", "{report}");
+        let fix = report["fix"].as_str().unwrap_or_default();
+        assert!(
+            !fix.contains("Fix the compiler errors") && fix.contains("not a compiler error"),
+            "a refused build is not a compile error: {fix}"
+        );
+    }
+
+    // 2. A manifest whose entry names another app's file.
+    let copy = tempfile::tempdir().expect("temp dir");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().unwrap_or(root);
+    let cargo = std::fs::read_to_string(diceroll.join("Cargo.toml"))
+        .unwrap()
+        .replace("\"../../", &format!("\"{}/", root.display()));
+    std::fs::write(copy.path().join("Cargo.toml"), cargo).unwrap();
+    for file in [
+        "Cargo.lock",
+        "src/lib.rs",
+        "src/bindings.rs",
+        ".cargo/config.toml",
+    ] {
+        let from = diceroll.join(file);
+        if from.exists() {
+            let to = copy.path().join(file);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::copy(&from, &to).unwrap();
+        }
+    }
+    let manifest = std::fs::read_to_string(diceroll.join("manifest.toml"))
+        .unwrap()
+        .replace("krate_diceroll.wasm", "krate_checklist.wasm");
+    assert!(
+        manifest.contains("krate_checklist.wasm"),
+        "the fixture carries the hazard"
+    );
+    std::fs::write(copy.path().join("manifest.toml"), manifest).unwrap();
+    let report = check(copy.path(), &[], None);
+    assert_eq!(report["stage"], "run", "{report}");
+    assert_eq!(report["kind"], "project", "{report}");
+    let fix = report["fix"].as_str().unwrap_or_default();
+    assert!(
+        fix.contains("entry = \"target/wasm32-wasip1/release/krate_diceroll.wasm\""),
+        "the fix names the file this crate builds: {fix}"
+    );
+    assert!(
+        !report["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("capability it needs is not declared"),
+        "an entry mismatch is not a missing capability: {report}"
+    );
+}
+
+/// K-1241: an app seeded from an example passes its first full check
+/// untouched.
+///
+/// The model-starter seed rewrote the example's id and name but kept its
+/// `entry`, so a tip calculator seeded from krate-checklist named
+/// krate_checklist.wasm while its crate built tip_calculator.wasm. Its first
+/// full `check-app` was refused at the door (exit 5), and every seeded Studio
+/// build paid an agent repair round to change that one line. The author here
+/// is `true`: it changes nothing, so the check judges the seed itself.
+#[test]
+fn a_seeded_starter_passes_its_first_full_check() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let out = work.path().join("out.krate");
+    let created = krate()
+        .args(["create", "a tip calculator that splits the bill"])
+        .args(["--name", "tip-calculator", "--author-cmd", "true"])
+        .arg("--work-dir")
+        .arg(work.path().join("w"))
+        .arg("--output")
+        .arg(&out)
+        .arg("--no-install")
+        .env("KRATE_STARTER_SHAPE", "krate-checklist")
+        .stdin(Stdio::null())
+        .output()
+        .expect("run create");
+    assert!(
+        created.status.success(),
+        "create: {}{}",
+        String::from_utf8_lossy(&created.stdout),
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let app = work.path().join("w/tip-calculator");
+    let mode = std::fs::read_to_string(app.join(".starter-mode")).unwrap_or_default();
+    assert!(
+        mode.starts_with("model:krate-checklist"),
+        "the fixture carries the hazard: the app was seeded from an example ({mode:?})"
+    );
+    let manifest = std::fs::read_to_string(app.join("manifest.toml")).unwrap();
+    assert!(
+        manifest.contains("entry = \"target/wasm32-wasip1/release/tip_calculator.wasm\""),
+        "the seeded entry names the file this crate builds:\n{manifest}"
+    );
+    let check = krate()
+        .arg("check-app")
+        .arg(&app)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run check-app");
+    assert!(
+        check.status.success(),
+        "a seeded starter's first full check passes: {}{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
+/// K-1242: an automatic repair runs every round it is allowed, and a repair
+/// that changes nothing is reported as that.
+///
+/// A stand-in `gemini` on PATH (no AI is spent) writes an app that does not
+/// compile, then answers each repair task without fixing it -- once by
+/// changing a line, once by changing nothing. Before the fix the repair's
+/// own failing check ended the loop after one round (two agent calls, never
+/// "2 of 2"), and a repair that changed nothing was "byte-identical to the
+/// starter ... as if it were" Krate's own repair task, quoted as the
+/// person's request.
+#[cfg(unix)]
+#[test]
+fn an_automatic_repair_gets_every_round_and_says_when_it_changed_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fake = bin.join("gemini");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\n\
+         [ \"$1\" = --version ] && { echo 0.9.0; exit 0; }\n\
+         n=$(cat \"$FAKE_STATE/calls\" 2>/dev/null || echo 0); n=$((n+1)); echo $n > \"$FAKE_STATE/calls\"\n\
+         if [ \"$n\" = 1 ]; then printf '\\ncompile_error!(\"still broken\");\\n' >> src/lib.rs\n\
+         elif [ \"$FAKE_MODE\" = edit ]; then printf '\\nconst _ROUND_%s: u8 = %s;\\n' $n $n >> src/lib.rs\n\
+         fi\n\
+         exit 0\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    for mode in ["edit", "none"] {
+        let state = dir.path().join(format!("state-{mode}"));
+        std::fs::create_dir_all(&state).unwrap();
+        let out = krate()
+            .args(["create", "a tip calculator that splits the bill"])
+            .args([
+                "--name",
+                "tip-calculator",
+                "--agent",
+                "gemini",
+                "--no-install",
+            ])
+            .arg("--work-dir")
+            .arg(dir.path().join(format!("w-{mode}")))
+            .arg("--output")
+            .arg(dir.path().join(format!("{mode}.krate")))
+            .env("PATH", &path)
+            .env("FAKE_STATE", &state)
+            .env("FAKE_MODE", mode)
+            .env("KRATE_STARTER_SHAPE", "none")
+            .stdin(Stdio::null())
+            .output()
+            .expect("run create");
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !out.status.success(),
+            "{mode}: the app never builds: {said}"
+        );
+        assert!(
+            said.contains("still broken"),
+            "{mode}: the fixture carries the hazard (a compile error): {said}"
+        );
+        let calls = std::fs::read_to_string(state.join("calls")).unwrap_or_default();
+        assert_eq!(
+            calls.trim(),
+            "3",
+            "{mode}: one authoring run and both repair rounds: {said}"
+        );
+        assert!(said.contains("(2 of 2)"), "{mode}: round two ran: {said}");
+        if mode == "none" {
+            assert!(
+                said.contains("The AI looked at the failure and changed nothing."),
+                "a repair that changed nothing says so: {said}"
+            );
+            for wrong in [
+                "byte-identical",
+                "explained the app",
+                "krate-change",
+                "\u{1}",
+                "The app you just wrote for",
+            ] {
+                assert!(
+                    !said.contains(wrong),
+                    "a no-change repair must not say {wrong:?}: {said}"
+                );
+            }
+        }
+    }
+}
+
+/// K-1181: Ctrl-C stops a running command-line app.
+///
+/// `loop-probe.wasm` is apps/krate-loop-probe built (`cargo component build
+/// --release` there): it prints "started", writes "still here" with no
+/// newline and no flush, and loops forever -- `spin` never calls the host,
+/// `sleep` sleeps in it. Before the fix the press was recorded for a window
+/// that a command-line app never opens, and the app ran on through any
+/// number of presses. Now one press ends it with 130, what it wrote reaches
+/// the terminal, and one line says why; a run without epoch checks
+/// (`--headless`) ends a moment later, or at once on a second press.
+///
+/// Unix only: the test sends SIGINT. On Windows the console's own Ctrl-C
+/// still ends the process the way it always has.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_stops_a_running_command_line_app() {
+    use std::io::BufRead;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/loop-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.loop-probe\"\nname = \"loop-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"say\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"mode\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("loop.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+
+    // Start the app, wait until it is looping, press Ctrl-C `presses` times,
+    // and say how long after the first press it ended.
+    let press = |extra: &[&str], mode: &str, presses: u32| {
+        let mut child = krate()
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .args(extra)
+            .args(["--", mode])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run");
+        let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut first = String::new();
+        stdout.read_line(&mut first).expect("read");
+        assert_eq!(first, "started\n", "the app is running before the press");
+        // In the loop, not still on its way there.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let pressed = std::time::Instant::now();
+        for n in 0..presses {
+            if n > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            assert!(Command::new("kill")
+                .args(["-INT", &child.id().to_string()])
+                .status()
+                .expect("kill")
+                .success());
+        }
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("wait") {
+                break status;
+            }
+            if pressed.elapsed() > std::time::Duration::from_secs(5) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{extra:?} {mode}: still running 5 s after Ctrl-C");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        let took = pressed.elapsed();
+        let mut rest = String::new();
+        stdout.read_to_string(&mut rest).expect("stdout");
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .expect("stderr");
+        assert_eq!(
+            status.code(),
+            Some(130),
+            "{extra:?} {mode}: ends with 130 ({status:?}): {stderr}"
+        );
+        assert_eq!(
+            rest, "still here",
+            "{extra:?} {mode}: what the app wrote reaches the terminal"
+        );
+        assert_eq!(
+            stderr.trim(),
+            "stopped: you pressed Ctrl-C",
+            "{extra:?} {mode}: one line says why"
+        );
+        took
+    };
+
+    // A loop that never calls the host, ended by the runtime's interrupt --
+    // well inside the second the watcher would wait before ending it.
+    let took = press(&[], "spin", 1);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "the guest itself is interrupted, not left to the watcher: spin ended {took:?} after Ctrl-C"
+    );
+    // A loop that sleeps in the host.
+    let took = press(&[], "sleep", 1);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "sleep ended {took:?} after Ctrl-C"
+    );
+    // No epoch checks: the watcher ends it a moment later...
+    let took = press(&["--headless"], "spin", 1);
+    assert!(
+        took.as_secs_f32() < 2.5,
+        "headless ended {took:?} after Ctrl-C"
+    );
+    // ...or at once on a second press.
+    let took = press(&["--headless"], "spin", 2);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "a second Ctrl-C ends it at once, not after the grace: {took:?}"
     );
 }

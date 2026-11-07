@@ -70,6 +70,7 @@
 
   <application
       android:label="Krate"
+      android:icon="@mipmap/ic_launcher"
       android:hasCode="true"
       android:extractNativeLibs="true">
     <activity
@@ -94,14 +95,17 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
       <!-- A shared app link: https://hub.krate.tech/a/<hash> runs the app
-           directly. Without assetlinks verification Android offers a
-           chooser next to the browser; that is the honest default until a
-           release signing certificate exists to pin. -->
+           directly, and so does the link an organisation shares for its
+           app, /run/org/<slug>/<app> (K-1171), fetched with the sign-in.
+           Without assetlinks verification Android offers a chooser next to
+           the browser; that is the honest default until a release signing
+           certificate exists to pin. -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="https" android:host="hub.krate.tech" android:pathPrefix="/a/" />
+        <data android:scheme="https" android:host="hub.krate.tech" android:pathPrefix="/run/" />
       </intent-filter>
       <!-- krate:ui/sign-in: the one redirect scheme any app may use
            (krate-signin://<app id>/...). Android returns a sign-in only to
@@ -113,6 +117,15 @@
         <category android:name="android.intent.category.DEFAULT" />
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="krate-signin" />
+      </intent-filter>
+      <!-- Krate's own sign-in: krate.tech/login/done hands it back as
+           krate://signed-in?token=...&app_nonce=..., and the Player takes it
+           only while it is waiting for one it started (the nonce is its own). -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="krate" android:host="signed-in" />
       </intent-filter>
       <!-- A .krate file from Files, a share sheet, or a download. Content
            resolvers usually report octet-stream and often drop the
@@ -126,8 +139,30 @@
       <intent-filter>
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />
-        <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\\.krate" />
-        <data android:scheme="file" android:mimeType="*/*" android:pathPattern=".*\\.krate" />
+        <!-- Android reads a path pattern only when a host is named: without
+             host="*" this claimed every file and folder of every type, and
+             Krate was offered to open photos and folders. The extra
+             patterns are for names with dots before ".krate", which
+             Android's matcher otherwise misses. -->
+        <data android:scheme="content" android:host="*" android:mimeType="*/*" />
+        <data android:scheme="file" android:host="*" android:mimeType="*/*" />
+        <data android:pathPattern=".*\\.krate" />
+        <data android:pathPattern=".*\\..*\\.krate" />
+        <data android:pathPattern=".*\\..*\\..*\\.krate" />
+        <data android:pathPattern=".*\\..*\\..*\\..*\\.krate" />
+      </intent-filter>
+      <!-- Krate in the share sheet for a .krate another app holds (Files,
+           Gmail, Drive, a chat): it opens as if tapped (KrateActivity.asOpen).
+           A share carries a type but no file name, so the types a .krate
+           arrives as are claimed, not */*, which would put Krate under
+           every photo. -->
+      <intent-filter>
+        <action android:name="android.intent.action.SEND" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="application/octet-stream" />
+        <data android:mimeType="application/zip" />
+        <data android:mimeType="application/x-krate" />
+        <data android:mimeType="application/vnd.krate" />
       </intent-filter>
     </activity>
     <!-- Restart from Krate's menu: ends Krate's process and opens it again

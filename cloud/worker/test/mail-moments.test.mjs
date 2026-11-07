@@ -36,7 +36,7 @@ function stubResend() {
 }
 
 const hubEnv = () => {
-  const env = orgEnv({ RESEND_API_KEY: "re_test", VISITOR_SALT: "salt", PUBLIC_BASE: "https://hub.example" });
+  const env = orgEnv({ RESEND_API_KEY: "re_test", VISITOR_SALT: "salt", PUBLIC_BASE: "https://hub.example", KEY_WRAP_SECRET: "wrap-secret" });
   env.USAGE = { writeDataPoint() {} };
   return env;
 };

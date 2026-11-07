@@ -23,7 +23,6 @@ mod api_author;
 mod api_key;
 mod audit;
 mod authoring_context;
-mod connections;
 mod fleet;
 mod github_auth;
 mod krate_mode;
@@ -31,6 +30,7 @@ mod lineedit;
 mod mcp;
 mod org;
 mod player;
+mod port_oracle;
 mod port_report;
 mod progress;
 mod sdk;
@@ -869,11 +869,14 @@ enum Command {
         output: Option<PathBuf>,
     },
 
-    /// Look at a request BEFORE building: answer with either up to three
-    /// short questions (when answering them would change what gets built)
-    /// or a one-paragraph plan of what will be made and what it needs.
-    /// Prints one JSON object -- {"ask":[...]} or {"plan":"...","needs":[...]}
-    /// -- and never builds anything. This is the Studio's conversation door.
+    /// Look at a request BEFORE building: answer with up to three short
+    /// questions (when answering them would change what gets built), a
+    /// one-paragraph plan of what will be made and what it needs, or -- when
+    /// `create` would refuse the request -- why not and what Krate can build
+    /// instead. Prints one JSON object -- {"ask":[...]},
+    /// {"plan":"...","needs":[...]} or {"cannot":"...","instead":"..."} --
+    /// and never builds anything. A plan only offers what `create` will
+    /// build. This is the Studio's conversation door.
     Plan {
         /// What the person asked for, in their own words.
         request: String,
@@ -1209,6 +1212,23 @@ enum Command {
         /// Do not offer to install missing build tools.
         #[arg(long)]
         no_install: bool,
+
+        /// Recorded cases the port must reproduce: a `krate.port.oracle.v1`
+        /// JSON file of inputs and the exact output the original gave for
+        /// each. With it a port can end verified; without it a port that
+        /// builds and runs ends "not verified" (exit 7), because nothing
+        /// compared it with the original. The cases are copied into the
+        /// workspace as `oracle.json`, shown to the agent, and guarded like
+        /// the other criteria.
+        #[arg(long, value_name = "FILE")]
+        oracle: Option<PathBuf>,
+
+        /// Print how the port ended as one JSON object on the last line of
+        /// stdout (`krate.port.outcome.v1`): the same verdict, requirement
+        /// and workspace the closing line names. The plain line goes to
+        /// stderr instead.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show the organisation policy in force on this computer, or check
@@ -1543,6 +1563,53 @@ enum AccountAction {
     Adopt,
     /// Forget the stored sign-in on this machine.
     Logout,
+    /// Your apps' data, the same on every device you sign in on: this
+    /// device, the devices waiting for your yes, the recovery code.
+    Sync {
+        #[command(subcommand)]
+        action: Option<SyncAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SyncAction {
+    /// Let a waiting device read your apps' data.
+    Approve {
+        /// The device's id, as `krate account sync` lists it.
+        device: String,
+    },
+    /// No other device at hand: type the recovery code (read from stdin).
+    Recover,
+    /// Stop syncing on this computer: every app, or the one with this id.
+    Off { app: Option<String> },
+    /// Sync again: every app, or the one with this id.
+    On { app: Option<String> },
+    /// What changed on two of your devices and waits for your choice.
+    Conflicts,
+    /// Answer one: keep this computer's, the other device's, both, or a merge.
+    ///
+    /// Close the app first: an app that is open keeps its own copy of what
+    /// waits, and answers its own way.
+    Resolve {
+        /// The app's id, as `krate account sync conflicts` lists it.
+        app: String,
+        /// The entry -- or the app's file, by its path in the app's
+        /// folder -- that changed on two devices.
+        key: String,
+        /// this: keep this computer's. other: keep the other device's.
+        /// both: keep both, the other's under its device's name. merge: put
+        /// two lists or records together.
+        choice: SyncChoice,
+    },
+}
+
+/// An answer to a change made on two devices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SyncChoice {
+    This,
+    Other,
+    Both,
+    Merge,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2339,6 +2406,8 @@ fn run() -> Result<u8> {
             repair_attempts,
             yes,
             no_install,
+            oracle,
+            json,
         } => {
             if author_cmd.is_some() {
                 fleet::ai_build(Some("author-cmd"))?;
@@ -2357,6 +2426,8 @@ fn run() -> Result<u8> {
                 repair_attempts,
                 yes,
                 no_install,
+                oracle,
+                json,
             })
         }
         Command::Mcp => mcp::serve().map(|()| 0),
@@ -2487,6 +2558,8 @@ struct PortRequest {
     repair_attempts: u8,
     yes: bool,
     no_install: bool,
+    oracle: Option<PathBuf>,
+    json: bool,
 }
 
 fn port_project(req: PortRequest) -> Result<u8> {
@@ -2515,22 +2588,52 @@ fn port_project(req: PortRequest) -> Result<u8> {
     if req.yes && req.no_install {
         anyhow::bail!("--yes and --no-install cannot be used together");
     }
-
-    let held_temp = if req.prepare.is_none() && wants_transform {
-        Some(tempfile::tempdir().context("create port work dir")?)
-    } else {
-        None
+    // Which author, settled before anything is written: an agent Krate
+    // cannot port with is the person's to change, and finding that out after
+    // a workspace exists leaves a folder behind for nothing.
+    let author = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
+        (None, None) => None,
+        (Some(name), None) => Some(if let Some(vendor) = api_key::ApiVendor::parse(name) {
+            PortAuthor::Api(vendor)
+        } else {
+            let provider = resolve_agent(name)?;
+            match provider.name() {
+                "claude" => PortAuthor::Claude,
+                // Porting drives the agent with its own prompts and repair
+                // loop, which have only been built for Claude so far. Say
+                // that plainly rather than silently doing something else.
+                other => anyhow::bail!(
+                    "--agent {other} cannot port yet; porting supports `claude`, `anthropic` \
+                     and `openai` today. Use --author-cmd <command> to drive {other} yourself."
+                ),
+            }
+        }),
+        (None, Some(command)) => Some(PortAuthor::Command(command)),
+        _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
     };
-    let workspace_path = req.prepare.clone().unwrap_or_else(|| {
-        held_temp
-            .as_ref()
-            .map(|temp| temp.path().join("workspace"))
-            .unwrap_or_default()
-    });
+    // The recorded cases, read and checked before anything runs: a typo in
+    // the file is the person's to fix, and finding it after an agent has
+    // spent its time is the most expensive way to find it.
+    let oracle = req.oracle.as_deref().map(port_oracle::load).transpose()?;
+
+    // Every ending names this directory, so it has to outlive the run
+    // (IC-120). Without --prepare it used to be a temporary directory that
+    // was deleted on the way out -- so a port that failed took its
+    // candidate, its repair logs and its failure report with it, and the
+    // person was left with an error and nothing to look at. The path is
+    // absolute because the author command runs inside it: a relative
+    // --prepare handed it KRATE_PORT_CANDIDATE=work/candidate, which from
+    // inside `work/` names a folder that does not exist (K-1233).
+    let workspace_path = match req.prepare.as_deref() {
+        Some(dir) => std::path::absolute(dir)
+            .with_context(|| format!("resolve the workspace path {}", dir.display()))?,
+        None if wants_transform => fresh_port_workspace(Path::new(&report.source)),
+        None => PathBuf::new(),
+    };
     let workspace = workspace_path.as_path();
 
     if req.prepare.is_some() || wants_transform {
-        prepare_port_workspace(&report, workspace)?;
+        prepare_port_workspace(&report, workspace, oracle.as_ref())?;
     }
 
     match req.plan_format {
@@ -2544,47 +2647,285 @@ fn port_project(req: PortRequest) -> Result<u8> {
         println!("  review: {}", workspace.join("PORTING.md").display());
         println!("  AI task: {}", workspace.join("AGENT_TASK.md").display());
         println!("  candidate: {}", workspace.join("candidate").display());
+        if oracle.is_some() {
+            println!(
+                "  recorded cases: {}",
+                workspace.join("oracle.json").display()
+            );
+        }
         println!();
         println!("The original source was not changed.");
     }
 
-    if let Some(output) = req.to.as_deref() {
-        preflight_toolchain(req.yes, req.no_install)?;
-        let command = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
-            (Some(name), None) => {
-                if let Some(vendor) = api_key::ApiVendor::parse(name) {
-                    PortAuthor::Api(vendor)
-                } else {
-                    let provider = resolve_agent(name)?;
-                    match provider.name() {
-                        "claude" => PortAuthor::Claude,
-                        // Porting drives the agent with its own prompts and repair
-                        // loop, which have only been built for Claude so far. Say
-                        // that plainly rather than silently doing something else.
-                        other => anyhow::bail!(
-                        "--agent {other} cannot port yet; porting supports `claude`, `anthropic` \
-                         and `openai` today. Use --author-cmd <command> to drive {other} yourself."
-                    ),
-                    }
-                }
-            }
-            (None, Some(command)) => PortAuthor::Command(command),
-            _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
+    if let (Some(output), Some(author)) = (req.to.as_deref(), author) {
+        let mut progress = PortProgress::default();
+        let ran = preflight_toolchain(req.yes, req.no_install)
+            .map_err(|err| port_blocker("toolchain", format!("{err:#}")))
+            .and_then(|()| {
+                complete_port(
+                    PortRun {
+                        plan: &report,
+                        workspace,
+                        output,
+                        author,
+                        transcript: req.transcript.as_deref(),
+                        repair_attempts: req.repair_attempts,
+                        oracle: oracle.as_ref(),
+                    },
+                    &mut progress,
+                )
+            });
+        // One ending per initiation, whatever happened inside it: the port's
+        // own exit code, a closing line that names the verdict and the
+        // workspace, and the same thing as JSON. A bundle that was never
+        // compared against the original is not a finished port, and saying
+        // so in the exit status is what stops a script shipping it.
+        let ending = match ran {
+            Ok(ending) => ending,
+            Err(err) => PortEnding::blocked(err, &progress),
         };
-        // The port's own exit code, not a blanket 0: a bundle that was never
-        // compared against the original is not a finished port, and saying so
-        // in the exit status is what stops a script shipping it.
-        return complete_port(
-            &report,
-            workspace,
-            output,
-            command,
-            req.transcript.as_deref(),
-            req.repair_attempts,
-        );
+        return Ok(finish_port(ending, workspace, &report.source, req.json));
     }
 
     Ok(0)
+}
+
+/// A durable workspace for a port started without `--prepare`, under
+/// `~/.krate/ports/`. Named for the source and the moment, so two ports of
+/// the same project never share one and the newest sorts last.
+fn fresh_port_workspace(source: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    krate_home().join("ports").join(format!(
+        "{}-{stamp}-{}",
+        port_candidate_name(source),
+        std::process::id()
+    ))
+}
+
+/// How one port initiation ended (IC-120). Every run ends in exactly one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PortVerdict {
+    /// A `.krate` at the requested path that matched the original on every
+    /// recorded case, plus the evidence it was judged on.
+    Ported,
+    /// A `.krate` that builds, runs and keeps its permission wall, and that
+    /// nothing compared with the original. Exit 7.
+    Unverified,
+    /// No `.krate` at the requested path: a named requirement failed.
+    Blocked,
+}
+
+impl PortVerdict {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ported => "ported",
+            Self::Unverified => "unverified",
+            Self::Blocked => "blocked",
+        }
+    }
+
+    /// 0 ported, 7 unverified (Studio reads it as "a file with a note on
+    /// it"), 8 blocked. Blocked is its own code rather than 1 so a script can
+    /// tell "this port stopped on a named requirement" from "Krate itself
+    /// could not run".
+    fn exit_code(self) -> u8 {
+        match self {
+            Self::Ported => 0,
+            Self::Unverified => 7,
+            Self::Blocked => 8,
+        }
+    }
+}
+
+/// What the closing line, the outcome file and `--json` all report.
+struct PortEnding {
+    verdict: PortVerdict,
+    /// The requirement that decided the ending: the journey that failed or
+    /// was never checked, or the stage that stopped the run.
+    requirement: Option<String>,
+    /// One plain sentence.
+    reason: String,
+    /// The full error behind a blocker, for the terminal and the report.
+    detail: Option<String>,
+    bundle: Option<PathBuf>,
+    repairs_used: u8,
+    journey_results: Option<PathBuf>,
+}
+
+impl PortEnding {
+    fn blocked(err: anyhow::Error, progress: &PortProgress) -> Self {
+        let (requirement, reason, detail) = match err.downcast_ref::<PortBlocker>() {
+            Some(blocker) => (
+                blocker.requirement.clone(),
+                blocker.summary.clone(),
+                blocker.detail.clone(),
+            ),
+            None => {
+                let detail = format!("{err:#}");
+                (
+                    "port".to_string(),
+                    first_error_line(&detail).to_string(),
+                    detail,
+                )
+            }
+        };
+        Self {
+            verdict: PortVerdict::Blocked,
+            requirement: Some(requirement),
+            reason,
+            detail: Some(detail),
+            bundle: None,
+            repairs_used: progress.repairs_used,
+            journey_results: progress.journey_results.clone(),
+        }
+    }
+}
+
+/// What a run has done so far, kept outside the run so a blocker can still
+/// report it.
+#[derive(Default)]
+struct PortProgress {
+    repairs_used: u8,
+    journey_results: Option<PathBuf>,
+}
+
+/// A port that stopped on a named requirement. Carried as an error so `?`
+/// still works inside the run; the ending reads the requirement back out.
+#[derive(Debug)]
+struct PortBlocker {
+    requirement: String,
+    summary: String,
+    detail: String,
+}
+
+impl std::fmt::Display for PortBlocker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+impl std::error::Error for PortBlocker {}
+
+fn port_blocker(requirement: &str, detail: impl Into<String>) -> anyhow::Error {
+    let detail = detail.into();
+    PortBlocker {
+        requirement: requirement.to_string(),
+        summary: first_error_line(&detail).to_string(),
+        detail,
+    }
+    .into()
+}
+
+/// Any failure of the author itself -- it crashed, ran out of time, could not
+/// start -- is the `agent` requirement, whatever it printed.
+fn agent_failed(err: anyhow::Error) -> anyhow::Error {
+    if err.downcast_ref::<PortBlocker>().is_some() {
+        return err;
+    }
+    port_blocker("agent", format!("{err:#}"))
+}
+
+/// Print the ending and return the exit code. The last line a person sees
+/// names the verdict, what decided it, and the preserved workspace; the same
+/// classification is written to `port-outcome.json` and, under `--json`,
+/// printed as the last line of stdout.
+fn finish_port(ending: PortEnding, workspace: &Path, source: &str, json: bool) -> u8 {
+    let mut failure_report = None;
+    if ending.verdict == PortVerdict::Blocked {
+        let requirement = ending.requirement.as_deref().unwrap_or("port");
+        let detail = ending.detail.as_deref().unwrap_or(&ending.reason);
+        // Before the error goes to the terminal and is lost, say what kind of
+        // failure it was and write the report the person can choose to send.
+        // Nothing leaves this machine here. Not for an ending that already
+        // said exactly what to do -- a missing compiler, a path that exists,
+        // a criterion or source that changed -- where "send us the report"
+        // would ask for something that tells us nothing.
+        let reportable = !matches!(
+            requirement,
+            "toolchain"
+                | "output-path"
+                | "supported-source"
+                | "criteria-unchanged"
+                | "source-unchanged"
+        );
+        if reportable && workspace.is_dir() {
+            let failure = port_report::classify_for(requirement, detail);
+            failure_report =
+                write_port_failure_report(workspace, &failure, detail, Path::new(source));
+            print_port_failure_guidance(&failure, failure_report.as_deref());
+        }
+        eprintln!("error: {detail}");
+        let staged = workspace.join("candidate.krate");
+        if staged.is_file() {
+            // The failed candidate stays in the workspace as diagnostics.
+            // Nothing was written to the requested path (IC-785).
+            eprintln!(
+                "  the failed candidate is kept at {} -- the requested path was not touched",
+                staged.display()
+            );
+        }
+    }
+
+    let workspace_text = workspace.display().to_string();
+    let bundle = ending
+        .bundle
+        .as_deref()
+        .map(|b| std::path::absolute(b).unwrap_or_else(|_| b.to_path_buf()));
+    let line = match ending.verdict {
+        PortVerdict::Ported => format!(
+            "Ported: {} -- {}. Workspace: {workspace_text}",
+            bundle
+                .as_deref()
+                .map(|b| b.display().to_string())
+                .unwrap_or_default(),
+            ending.reason.trim_end_matches('.')
+        ),
+        PortVerdict::Unverified => format!(
+            "Not verified: {} -- {}. Workspace: {workspace_text}",
+            bundle
+                .as_deref()
+                .map(|b| b.display().to_string())
+                .unwrap_or_default(),
+            ending.reason.trim_end_matches('.')
+        ),
+        PortVerdict::Blocked => format!(
+            "Blocked on {}: {}. Workspace: {workspace_text}",
+            ending.requirement.as_deref().unwrap_or("port"),
+            ending.reason.trim_end_matches('.')
+        ),
+    };
+
+    let outcome = serde_json::json!({
+        "schema": "krate.port.outcome.v1",
+        "verdict": ending.verdict.as_str(),
+        "exit_code": ending.verdict.exit_code(),
+        "requirement": ending.requirement,
+        "reason": ending.reason,
+        "workspace": workspace_text,
+        "bundle": bundle.as_deref().map(|b| b.display().to_string()),
+        "repair_attempts_used": ending.repairs_used,
+        "journey_results": ending.journey_results.as_deref().map(|p| p.display().to_string()),
+        "failure_report": failure_report.as_deref().map(|p| p.display().to_string()),
+    });
+    let outcome_text = serde_json::to_string(&outcome).unwrap_or_default();
+    if workspace.is_dir() {
+        let _ = fs::write(
+            workspace.join("port-outcome.json"),
+            format!("{outcome_text}\n"),
+        );
+    }
+
+    if json {
+        eprintln!("{line}");
+        println!("{outcome_text}");
+    } else {
+        println!();
+        println!("{line}");
+    }
+    ending.verdict.exit_code()
 }
 
 #[derive(Clone, Copy)]
@@ -2604,7 +2945,11 @@ enum PortAuthor<'a> {
 /// Krate's strict component rules, and a task that forbids silent feature
 /// deletion. A later agent run edits only `candidate/`; the original project
 /// remains outside the workspace and untouched.
-fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Result<()> {
+fn prepare_port_workspace(
+    plan: &krate_port::PortPlan,
+    workspace: &Path,
+    oracle: Option<&port_oracle::PortOracle>,
+) -> Result<()> {
     use krate_author::{generate, AppKind, AppRequest};
 
     if workspace.exists() {
@@ -2677,11 +3022,19 @@ fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Resu
         serde_json::to_string_pretty(&snapshot)? + "\n",
     )?;
     fs::write(workspace.join("PORTING.md"), porting_readme(plan, &name))?;
-    fs::write(
-        workspace.join("AGENT_TASK.md"),
-        port_agent_task(&workspace_plan, &name),
-    )?;
-    let journeys = port_behavior_journeys(&workspace_plan);
+    let mut task = port_agent_task(&workspace_plan, &name);
+    if let Some(oracle) = oracle {
+        fs::write(
+            workspace.join("oracle.json"),
+            serde_json::to_string_pretty(oracle)? + "\n",
+        )?;
+        task.push_str(&port_oracle::task_section(oracle));
+    }
+    fs::write(workspace.join("AGENT_TASK.md"), task)?;
+    let mut journeys = port_behavior_journeys(&workspace_plan);
+    if let Some(oracle) = oracle {
+        port_oracle::mark_journeys(&mut journeys, oracle);
+    }
     fs::write(
         workspace.join("journeys.json"),
         serde_json::to_string_pretty(&journeys)? + "\n",
@@ -3011,25 +3364,49 @@ capability. Do not try to run or embed the original.\n",
     )
 }
 
-fn complete_port(
-    original_plan: &krate_port::PortPlan,
-    workspace: &Path,
-    output: &Path,
-    author: PortAuthor<'_>,
-    transcript_path: Option<&Path>,
+/// Everything one port run is handed.
+struct PortRun<'a> {
+    plan: &'a krate_port::PortPlan,
+    workspace: &'a Path,
+    output: &'a Path,
+    author: PortAuthor<'a>,
+    transcript: Option<&'a Path>,
     repair_attempts: u8,
-) -> Result<u8> {
+    oracle: Option<&'a port_oracle::PortOracle>,
+}
+
+/// Carry one accepted port request from transformation to a verdict.
+///
+/// Returns the ending for a bundle that exists (ported or unverified); every
+/// other way out is an error the caller turns into a blocked ending, and a
+/// [`PortBlocker`] among them names the requirement that stopped it.
+fn complete_port(run: PortRun<'_>, progress: &mut PortProgress) -> Result<PortEnding> {
+    let PortRun {
+        plan: original_plan,
+        workspace,
+        output,
+        author,
+        transcript: transcript_path,
+        repair_attempts,
+        oracle,
+    } = run;
     if original_plan.verdict == krate_port::Verdict::Unsupported {
-        anyhow::bail!(
-            "this source has blocking behavior; review {} before attempting a port",
-            workspace.join("PORTING.md").display()
-        );
+        return Err(port_blocker(
+            "supported-source",
+            format!(
+                "this source has blocking behavior; review {} before attempting a port",
+                workspace.join("PORTING.md").display()
+            ),
+        ));
     }
     if output.exists() {
-        anyhow::bail!(
-            "{} already exists; choose another --to path",
-            output.display()
-        );
+        return Err(port_blocker(
+            "output-path",
+            format!(
+                "{} already exists; choose another --to path",
+                output.display()
+            ),
+        ));
     }
 
     let candidate = workspace.join("candidate");
@@ -3054,11 +3431,13 @@ fn complete_port(
     let criteria = AcceptanceCriteria::capture(workspace)?;
     let author_name = match author {
         PortAuthor::Claude => {
-            run_claude_port(workspace, &source_snapshot, &candidate, &task_path)?;
+            run_claude_port(workspace, &source_snapshot, &candidate, &task_path)
+                .map_err(agent_failed)?;
             "claude"
         }
         PortAuthor::Api(vendor) => {
-            run_api_port(vendor, &source_snapshot, &candidate, &task_path, None)?;
+            run_api_port(vendor, &source_snapshot, &candidate, &task_path, None)
+                .map_err(agent_failed)?;
             match vendor {
                 api_key::ApiVendor::Anthropic => "anthropic",
                 api_key::ApiVendor::OpenAi => "openai",
@@ -3073,7 +3452,8 @@ fn complete_port(
                 &plan_path,
                 &task_path,
                 None,
-            )?;
+            )
+            .map_err(agent_failed)?;
             "external-command"
         }
     };
@@ -3086,175 +3466,171 @@ fn complete_port(
     // The agent receives read access to the source in order to understand it,
     // but it must edit only the isolated candidate. Re-analyze the source and
     // compare the complete deterministic plan before building anything.
-    let after_plan = krate_port::analyze(original_source)
-        .with_context(|| format!("re-check original source {}", original_source.display()))?;
-    if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
-        anyhow::bail!(
-            "the original source changed while the port agent was running; \
-             Krate stopped before packaging. Review the source and workspace."
-        );
-    }
+    ensure_original_source_unchanged(original_plan, original_source)?;
 
-    let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
-    if lib_after == scaffold_lib {
-        anyhow::bail!(
-            "the port agent finished without changing the candidate: src/lib.rs is \
-             byte-identical to the starter, so this would package the scaffold as if \
-             it were the app. The agent's transcript is at {} -- it usually means the \
-             agent explained the port instead of performing it.",
-            workspace.join(".agent-transcript.txt").display()
-        );
-    }
-    if lib_after.contains("This is a starting point, not the ported app") {
-        anyhow::bail!(
-            "the candidate still carries the starter's own header, so the app body \
-             was not replaced. See the transcript at {}.",
-            workspace.join(".agent-transcript.txt").display()
-        );
-    }
-
-    let mut repairs_used = 0_u8;
-    let validated = loop {
-        println!("==> validating the port candidate");
-        match validate_port_candidate(&candidate) {
-            Ok(validated) => break validated,
-            Err(error) if repairs_used < repair_attempts => {
-                repairs_used += 1;
-                let repair_dir = workspace.join("repair");
-                fs::create_dir_all(&repair_dir)?;
-                let error_path = repair_dir.join(format!("attempt-{repairs_used}.txt"));
-                fs::write(&error_path, format!("{error}\n"))?;
-                println!(
-                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
-                    first_error_line(&error)
-                );
-                run_port_repair(
-                    author,
-                    workspace,
-                    &source_snapshot,
-                    &candidate,
-                    &plan_path,
-                    &task_path,
-                    PortRepair {
-                        attempt: repairs_used,
-                        error_path: &error_path,
-                    },
-                )?;
-                ensure_original_source_unchanged(original_plan, original_source)?;
-                // A repair is the place the register names: a test edit
-                // hidden inside a code fix. Re-check after every attempt.
-                criteria.ensure_unchanged(workspace)?;
-            }
-            Err(error) => {
-                // The port is over. Before the error goes to the terminal and
-                // is lost, say what kind of failure it was and what that means
-                // for the person waiting -- and write the report they can
-                // choose to send us. Nothing leaves this machine here.
-                let report_path = write_port_failure_report(workspace, &error, original_source);
-                print_port_failure_guidance(&error, report_path.as_deref());
-                anyhow::bail!(
-                    "the port candidate did not pass validation after {} repair attempt(s):\n{}",
-                    repairs_used,
-                    error
-                )
-            }
+    let transcript_note = {
+        let transcript = workspace.join(".agent-transcript.txt");
+        if transcript.is_file() {
+            format!(" The agent's transcript is at {}.", transcript.display())
+        } else {
+            String::new()
         }
     };
-    let wasm = validated.wasm;
-    let manifest = validated.manifest;
+    let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
+    if lib_after == scaffold_lib {
+        return Err(port_blocker(
+            "agent",
+            format!(
+                "the port agent finished without changing the candidate: src/lib.rs is \
+                 byte-identical to the starter, so this would package the scaffold as if \
+                 it were the app. It usually means the agent explained the port instead \
+                 of performing it.{transcript_note}"
+            ),
+        ));
+    }
+    if lib_after.contains("This is a starting point, not the ported app") {
+        return Err(port_blocker(
+            "agent",
+            format!(
+                "the candidate still carries the starter's own header, so the app body \
+                 was not replaced.{transcript_note}"
+            ),
+        ));
+    }
 
-    println!("==> packing {}", output.display());
+    // One loop from build to behavior, with one repair budget across it.
+    //
+    // Verification used to sit outside the budget, so a candidate that
+    // compiled cleanly and computed the wrong answer got zero attempts while
+    // a build error got two -- backwards, because a failing check names the
+    // problem in one line and is the most repairable failure there is. A
+    // ported RSS reader stripped tags before decoding entities, said so in
+    // its own output, and was never asked to try again. And a repair that
+    // broke the build ended the port outright, with budget left.
     let manifest_src = candidate.join("manifest.toml");
     let pack_dir = tempfile::tempdir().context("create port pack dir")?;
     let code = pack_dir.path().join("code.wasm");
-    fs::copy(&wasm, &code)?;
     let packed_manifest = pack_dir.path().join("manifest.toml");
-    write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
     let assets = candidate.join("assets");
     // Packed into the run's own workspace, not the requested path (IC-785).
     // This used to pack straight to `output` and verify afterwards, so a
     // candidate that then failed verification left a plausible .krate at the
     // success path -- and had already replaced whatever the person kept
-    // there. The staged bundle is promoted only after the wall verdict.
+    // there. The staged bundle is promoted only after every check passed.
     let staged = workspace.join("candidate.krate");
-    let size = krate_bundle::pack_with_assets(
-        &packed_manifest,
-        &code,
-        assets.is_dir().then_some(assets.as_path()),
-        &staged,
-    )
-    .with_context(|| format!("pack {}", staged.display()))?;
-
-    println!("==> verifying the permission wall");
-    // Verification is inside the repair budget too. It used to sit outside it,
-    // so a candidate that compiled cleanly and computed the wrong answer got
-    // zero attempts while a build error got two -- backwards, because a failing
-    // self-check names the problem in one line and is the most repairable
-    // failure there is. A ported RSS reader stripped tags before decoding
-    // entities, said so in its own output, and was never asked to try again.
-    let gating = loop {
-        match verify_packed_app(&staged, &manifest) {
-            Ok(gating) => break gating,
-            Err(error) if repairs_used < repair_attempts => {
-                repairs_used += 1;
-                let repair_dir = workspace.join("repair");
-                fs::create_dir_all(&repair_dir)?;
-                let error_path = repair_dir.join(format!("verify-{repairs_used}.txt"));
-                fs::write(&error_path, format!("{error}\n"))?;
-                println!(
-                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
-                    first_error_line(&error.to_string())
-                );
-                run_port_repair(
-                    author,
-                    workspace,
-                    &source_snapshot,
-                    &candidate,
-                    &plan_path,
-                    &task_path,
-                    PortRepair {
-                        attempt: repairs_used,
-                        error_path: &error_path,
-                    },
-                )?;
-                ensure_original_source_unchanged(original_plan, original_source)?;
-                // A repair is the place the register names: a test edit
-                // hidden inside a code fix. Re-check after every attempt.
-                criteria.ensure_unchanged(workspace)?;
-                // The repair changed the source, so rebuild and repack before
-                // asking again -- otherwise the next attempt verifies the same
-                // bundle and fails identically.
-                let revalidated = validate_port_candidate(&candidate).map_err(|err| {
-                    anyhow::anyhow!("the repaired candidate no longer builds:\n{err}")
-                })?;
-                fs::copy(&revalidated.wasm, &code)?;
+    let (manifest, size, gating, behavior) = loop {
+        println!("==> validating the port candidate");
+        // (requirement, the exact error a repair is handed, repair log name)
+        let failed: (String, String, &str) = match validate_port_candidate(&candidate) {
+            Err(error) => ("build".to_string(), error, "attempt"),
+            Ok(validated) => {
+                println!("==> packing {}", staged.display());
+                fs::copy(&validated.wasm, &code)?;
                 write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
-                krate_bundle::pack_with_assets(
+                let size = krate_bundle::pack_with_assets(
                     &packed_manifest,
                     &code,
                     assets.is_dir().then_some(assets.as_path()),
                     &staged,
                 )
-                .with_context(|| format!("repack {}", staged.display()))?;
+                .with_context(|| format!("pack {}", staged.display()))?;
+                println!("==> verifying the permission wall");
+                match verify_packed_app(&staged, &validated.manifest) {
+                    Err(error) => ("permission-wall".to_string(), error.to_string(), "verify"),
+                    Ok(gating) => match oracle {
+                        None => break (validated.manifest, size, gating, None),
+                        Some(oracle) => {
+                            println!(
+                                "==> comparing with the original on {} recorded case(s)",
+                                oracle.cases.len()
+                            );
+                            let checked =
+                                check_port_behavior(&staged, &validated.manifest, oracle)?;
+                            let failures = checked.failures();
+                            match failures.first() {
+                                None => break (validated.manifest, size, gating, Some(checked)),
+                                Some(first) => {
+                                    let requirement = first.case.journey.clone();
+                                    let summary = first.summary();
+                                    // The evidence of what failed outlives the run,
+                                    // whether a repair fixes it or not.
+                                    progress.journey_results = Some(write_journey_results(
+                                        workspace,
+                                        &sha256_file(&staged)?,
+                                        &gating,
+                                        Some(&checked),
+                                    )?);
+                                    if progress.repairs_used >= repair_attempts {
+                                        return Err(PortBlocker {
+                                            requirement,
+                                            summary: format!(
+                                                "{summary} ({} repair attempt(s) used)",
+                                                progress.repairs_used
+                                            ),
+                                            detail: checked.report(),
+                                        }
+                                        .into());
+                                    }
+                                    (requirement, checked.report(), "behavior")
+                                }
+                            }
+                        }
+                    },
+                }
             }
-            Err(error) => {
-                let report_path =
-                    write_port_failure_report(workspace, &error.to_string(), original_source);
-                print_port_failure_guidance(&error.to_string(), report_path.as_deref());
-                // The failed candidate stays in the workspace as diagnostics.
-                // Nothing was written to the requested path: whatever the
-                // person kept there is exactly as it was (IC-785).
-                println!(
-                    "  the failed candidate is kept at {} -- {} was not touched",
-                    staged.display(),
-                    output.display()
-                );
-                return Err(error);
+        };
+        let (requirement, error, log_name) = failed;
+        if progress.repairs_used >= repair_attempts {
+            let what = if requirement == "build" {
+                "the port candidate did not pass validation"
+            } else {
+                "the packed candidate did not pass the permission wall"
+            };
+            return Err(PortBlocker {
+                summary: format!(
+                    "{} ({} repair attempt(s) used)",
+                    first_error_line(&error),
+                    progress.repairs_used
+                ),
+                detail: format!(
+                    "{what} after {} repair attempt(s):\n{error}",
+                    progress.repairs_used
+                ),
+                requirement,
             }
+            .into());
         }
+        progress.repairs_used += 1;
+        let attempt = progress.repairs_used;
+        let repair_dir = workspace.join("repair");
+        fs::create_dir_all(&repair_dir)?;
+        let error_path = repair_dir.join(format!("{log_name}-{attempt}.txt"));
+        fs::write(&error_path, format!("{error}\n"))?;
+        println!(
+            "==> repair attempt {attempt}/{repair_attempts} ({requirement}): {}",
+            first_error_line(&error)
+        );
+        run_port_repair(
+            author,
+            workspace,
+            &source_snapshot,
+            &candidate,
+            &plan_path,
+            &task_path,
+            PortRepair {
+                attempt,
+                error_path: &error_path,
+            },
+        )
+        .map_err(agent_failed)?;
+        ensure_original_source_unchanged(original_plan, original_source)?;
+        // A repair is the place the register names: a test edit hidden
+        // inside a code fix. Re-check after every attempt.
+        criteria.ensure_unchanged(workspace)?;
     };
+    let repairs_used = progress.repairs_used;
 
-    // Verification passed on the staged bytes; only now do they take the
+    // Every check passed on the staged bytes; only now do they take the
     // requested path, through a sibling-and-rename so an interruption leaves
     // the old file or the complete new one, never a torn half (IC-861's
     // discipline, applied to promotion).
@@ -3289,36 +3665,11 @@ fn complete_port(
     } else {
         None
     };
-    let journey_results = serde_json::json!({
-        "schema": "krate.port.journey-results.v1",
-        "bundle_sha256": bundle_sha256,
-        "results": [
-            {
-                "id": "launch",
-                "status": "passed",
-                "evidence": "bounded quick path exited with code 0"
-            },
-            {
-                "id": "permission-denial",
-                "status": "passed",
-                "evidence": format!("withholding {gating} exited with code 5")
-            },
-            {
-                "id": "primary-task",
-                "status": "not-verified",
-                "evidence": "manual comparison with the source application is required"
-            },
-            {
-                "id": "same-bundle-three-systems",
-                "status": "not-verified",
-                "evidence": "the exact bundle must run on macOS, Windows, and Linux"
-            }
-        ]
-    });
-    fs::write(
-        workspace.join("journey-results.json"),
-        serde_json::to_string_pretty(&journey_results)? + "\n",
-    )?;
+    let journey_results_path =
+        write_journey_results(workspace, &bundle_sha256, &gating, behavior.as_ref())?;
+    progress.journey_results = Some(journey_results_path.clone());
+    let journey_results: serde_json::Value =
+        serde_json::from_slice(&fs::read(&journey_results_path)?)?;
     let artifact = serde_json::json!({
         "schema": "krate.port.artifact.v1",
         "bundle": output.to_string_lossy(),
@@ -3333,8 +3684,47 @@ fn complete_port(
         workspace.join("artifact.json"),
         serde_json::to_string_pretty(&artifact)? + "\n",
     )?;
+
+    // The journeys this run did not settle. They are written down in the
+    // journey record, honestly, as `not-verified` -- what was missing was the
+    // pipeline reading its own record before declaring the port done.
+    //
+    // E5: an invoice application printing `total=100` was ported into an app
+    // printing a word-frequency table. It built, imported only krate:*, ran,
+    // refused without its capability, and was reported as a finished port with
+    // four passed checks, while `primary-task` sat at `not-verified` in the
+    // same output. A permission-denial pass is not a primary-task pass, and
+    // treating four green mechanical checks as a port is how the wrong app
+    // gets shipped under the right name.
+    let statuses: Vec<(String, String)> = journey_results["results"]
+        .as_array()
+        .map(|results| {
+            results
+                .iter()
+                .filter_map(|r| {
+                    Some((
+                        r["id"].as_str()?.to_string(),
+                        r["status"].as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let unverified: Vec<&str> = statuses
+        .iter()
+        .filter(|(_, status)| status == "not-verified")
+        .map(|(id, _)| id.as_str())
+        .collect();
+    let not_run: Vec<&str> = statuses
+        .iter()
+        .filter(|(_, status)| status == "not-run")
+        .map(|(id, _)| id.as_str())
+        .collect();
+    let cases_passed = behavior.as_ref().map(|b| b.results.len()).unwrap_or(0);
+
     let transcript = serde_json::json!({
         "schema": "krate.port.result.v1",
+        "verdict": if unverified.is_empty() { "ported" } else { "unverified" },
         "source": original_plan.source,
         "profile": original_plan.profile,
         "plan_verdict": original_plan.verdict,
@@ -3349,20 +3739,12 @@ fn complete_port(
         "requested_permissions": permissions,
         "gating_permission": gating,
         "agent_result": result_note,
-        "checks": [
-            "candidate built as a WebAssembly component",
-            "component imports only krate:* interfaces",
-            "bundle runs with all declared grants",
-            "bundle refuses when its required gating permission is withheld"
-        ],
+        "checks": port_checks(cases_passed),
         "behavior_journeys": workspace.join("journeys.json").to_string_lossy(),
-        "journey_results": workspace.join("journey-results.json").to_string_lossy(),
+        "journey_results": journey_results_path.to_string_lossy(),
         "artifact_evidence": workspace.join("artifact.json").to_string_lossy(),
-        "remaining_verification": [
-            "compare the original and ported user journeys",
-            "test interactive behavior and persistence",
-            "run the same bundle on Mac, Windows, and Linux"
-        ]
+        "recorded_cases": behavior.as_ref().map(|_| workspace.join("oracle.json").to_string_lossy().into_owned()),
+        "remaining_verification": unverified.iter().chain(not_run.iter()).collect::<Vec<_>>()
     });
     let transcript_json = serde_json::to_string_pretty(&transcript)? + "\n";
     fs::write(workspace.join("port-result.json"), &transcript_json)?;
@@ -3376,28 +3758,6 @@ fn complete_port(
         fs::write(path, &transcript_json).with_context(|| format!("write {}", path.display()))?;
     }
 
-    // The journeys this run did not settle. They are already written down
-    // above, honestly, as `not-verified` -- what was missing is the pipeline
-    // reading its own record before declaring the port done.
-    //
-    // E5: an invoice application printing `total=100` was ported into an app
-    // printing a word-frequency table. It built, imported only krate:*, ran,
-    // refused without its capability, and was reported as a finished port with
-    // four passed checks, while `primary-task` sat at `not-verified` in the
-    // same output. A permission-denial pass is not a primary-task pass, and
-    // treating four green mechanical checks as a port is how the wrong app
-    // gets shipped under the right name.
-    let unverified: Vec<&str> = journey_results["results"]
-        .as_array()
-        .map(|results| {
-            results
-                .iter()
-                .filter(|r| r["status"] == "not-verified")
-                .filter_map(|r| r["id"].as_str())
-                .collect()
-        })
-        .unwrap_or_default();
-
     println!();
     println!("Created {}", output.display());
     println!("  source unchanged: yes");
@@ -3410,8 +3770,22 @@ fn complete_port(
     println!();
 
     if unverified.is_empty() {
-        println!("Every journey passed. This is a port.");
-        return Ok(0);
+        println!(
+            "  checked:      the app builds, runs, refuses without its access, and \
+             printed what the original printed on {cases_passed} recorded case(s)"
+        );
+        for id in &not_run {
+            print_unchecked_journey(id, "not run here");
+        }
+        return Ok(PortEnding {
+            verdict: PortVerdict::Ported,
+            requirement: None,
+            reason: format!("it matched the original on all {cases_passed} recorded case(s)"),
+            detail: None,
+            bundle: Some(output.to_path_buf()),
+            repairs_used,
+            journey_results: progress.journey_results.clone(),
+        });
     }
 
     println!("This is not a finished port yet.");
@@ -3420,30 +3794,217 @@ fn complete_port(
     println!("  NOT checked:  whether it does what the original did");
     println!();
     println!("  still to check:");
-    for id in &unverified {
-        // Name them, so this is a list of work rather than a warning to skim.
-        match *id {
-            "primary-task" => println!(
-                "    - primary-task: run the original and the port on the same \
-                 input and compare what they print"
-            ),
-            "same-bundle-three-systems" => println!(
-                "    - same-bundle-three-systems: open this exact .krate on \
-                 macOS, Windows and Linux"
-            ),
-            other => println!("    - {other}"),
-        }
+    for id in unverified.iter().chain(not_run.iter()) {
+        print_unchecked_journey(id, "");
     }
     println!();
     println!(
-        "  Record what you find with `krate accept {}`.",
+        "  Record what you find with `krate accept {}`, or give the inputs and the",
         output.display()
     );
+    println!("  original's exact output with --oracle so the next port can check it.");
     // Exit 7: the bundle exists and is real, and the port is not established.
     // Not an error -- nothing went wrong and the file is on disk -- but not a
     // success either, so a script that treated the old exit 0 as "ported"
     // stops here instead of shipping it.
-    Ok(7)
+    let first = unverified.first().copied().unwrap_or("primary-task");
+    let why = match behavior.as_ref().and_then(|b| b.not_run_because.clone()) {
+        Some(why) => format!("{first} was not compared with the original: {why}"),
+        None => format!("{first} was never compared with the original"),
+    };
+    Ok(PortEnding {
+        verdict: PortVerdict::Unverified,
+        requirement: Some(first.to_string()),
+        reason: format!("it builds and runs, but {why}"),
+        detail: None,
+        bundle: Some(output.to_path_buf()),
+        repairs_used,
+        journey_results: progress.journey_results.clone(),
+    })
+}
+
+/// One line per journey a run did not settle, saying what settles it.
+fn print_unchecked_journey(id: &str, label: &str) {
+    let label = if label.is_empty() {
+        String::new()
+    } else {
+        format!("{label}: ")
+    };
+    match id {
+        "primary-task" => println!(
+            "    - {label}primary-task: run the original and the port on the same \
+             input and compare what they print"
+        ),
+        "same-bundle-three-systems" => println!(
+            "    - {label}same-bundle-three-systems: this run had only {}; open this \
+             exact .krate on macOS, Windows and Linux",
+            host_os_name()
+        ),
+        other => println!("    - {label}{other}"),
+    }
+}
+
+fn host_os_name() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        other => other,
+    }
+}
+
+/// What a finished port was judged on, in the transcript's words.
+fn port_checks(cases: usize) -> Vec<String> {
+    let mut checks = vec![
+        "candidate built as a WebAssembly component".to_string(),
+        "component imports only krate:* interfaces".to_string(),
+        "bundle runs with all declared grants".to_string(),
+        "bundle refuses when its required gating permission is withheld".to_string(),
+    ];
+    if cases > 0 {
+        checks.push(format!(
+            "bundle printed exactly what the original printed on {cases} recorded case(s)"
+        ));
+    }
+    checks
+}
+
+/// Write `journey-results.json`: every journey, what settled it, and the
+/// evidence. Written for a blocked behavior check too, so the record of what
+/// differed survives the run.
+fn write_journey_results(
+    workspace: &Path,
+    bundle_sha256: &str,
+    gating: &str,
+    behavior: Option<&port_oracle::BehaviorCheck>,
+) -> Result<PathBuf> {
+    let mut results = vec![
+        serde_json::json!({
+            "id": "launch",
+            "status": "passed",
+            "evidence": "bounded quick path exited with code 0"
+        }),
+        serde_json::json!({
+            "id": "permission-denial",
+            "status": "passed",
+            "evidence": format!("withholding {gating} exited with code 5")
+        }),
+    ];
+    let mut journeys = behavior.map(|b| b.journeys()).unwrap_or_default();
+    if !journeys.iter().any(|j| j == port_oracle::PRIMARY_TASK) {
+        journeys.insert(0, port_oracle::PRIMARY_TASK.to_string());
+    }
+    for journey in journeys {
+        let cases: Vec<&port_oracle::CaseResult> = behavior
+            .map(|b| {
+                b.results
+                    .iter()
+                    .filter(|r| r.case.journey == journey)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let entry = if cases.is_empty() {
+            let evidence = match behavior.and_then(|b| b.not_run_because.as_deref()) {
+                Some(why) => format!("the recorded cases were not run: {why}"),
+                None => "no recorded case covers it; compare it with the original by hand, \
+                         or give one with --oracle"
+                    .to_string(),
+            };
+            serde_json::json!({"id": journey, "status": "not-verified", "evidence": evidence})
+        } else {
+            let passed = cases.iter().all(|r| r.passed());
+            serde_json::json!({
+                "id": journey,
+                "status": if passed { "passed" } else { "failed" },
+                "evidence": format!(
+                    "{} of {} recorded case(s) printed exactly what the original printed",
+                    cases.iter().filter(|r| r.passed()).count(),
+                    cases.len()
+                ),
+                "cases": cases.iter().map(|r| r.evidence()).collect::<Vec<_>>()
+            })
+        };
+        results.push(entry);
+    }
+    results.push(serde_json::json!({
+        "id": "same-bundle-three-systems",
+        "status": "not-run",
+        "evidence": format!(
+            "this run had only {}; the exact bundle must run on macOS, Windows, and Linux",
+            host_os_name()
+        )
+    }));
+    let record = serde_json::json!({
+        "schema": "krate.port.journey-results.v1",
+        "bundle_sha256": bundle_sha256,
+        "results": results
+    });
+    let path = workspace.join("journey-results.json");
+    fs::write(&path, serde_json::to_string_pretty(&record)? + "\n")?;
+    Ok(path)
+}
+
+/// Run the packed candidate on every recorded case and keep what it did.
+///
+/// Each case runs in its own empty folder with its files written in, with the
+/// same grants the permission wall's allow half used: everything that stays
+/// inside the run. A case whose app needs access an automated run may not
+/// grant is not run at all, because a refusal is not the app's behavior.
+fn check_port_behavior(
+    staged: &Path,
+    manifest: &krate_manifest::Manifest,
+    oracle: &port_oracle::PortOracle,
+) -> Result<port_oracle::BehaviorCheck> {
+    let (granted, required_withheld) = grants_inside_the_run(manifest)?;
+    if !required_withheld.is_empty() {
+        return Ok(port_oracle::BehaviorCheck {
+            results: Vec::new(),
+            not_run_because: Some(format!(
+                "the app requires {}, which an automated run may not grant",
+                required_withheld.join(", ")
+            )),
+        });
+    }
+    let bundle = absolute_output_path(staged)?;
+    let bundle_str = bundle.to_str().context("bundle path is not valid UTF-8")?;
+    let mut results = Vec::new();
+    for case in &oracle.cases {
+        let dir = tempfile::tempdir().context("create a folder for a recorded case")?;
+        for (name, contents) in &case.files {
+            let path = dir.path().join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, contents).with_context(|| format!("write {}", path.display()))?;
+        }
+        let mut args: Vec<String> = vec![
+            "run".into(),
+            // Krate is checking the app, not a person using it (IC-245).
+            "--profile".into(),
+            "analysis".into(),
+            bundle_str.into(),
+            "--untrusted".into(),
+            "--headless".into(),
+        ];
+        for cap in &granted {
+            args.push("--grant".into());
+            args.push(cap.clone());
+        }
+        args.push("--".into());
+        args.extend(case.args.iter().cloned());
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (exit, stdout, stderr) = run_self_captured(dir.path(), &refs)?;
+        results.push(port_oracle::CaseResult {
+            case: case.clone(),
+            stdout,
+            stderr,
+            exit,
+        });
+    }
+    Ok(port_oracle::BehaviorCheck {
+        results,
+        not_run_because: None,
+    })
 }
 
 /// Record a person's verdict on a built app.
@@ -3806,10 +4367,10 @@ fn requestable_capability_list() -> String {
 /// returns `None` rather than compounding one error with another.
 fn write_port_failure_report(
     workspace: &Path,
+    failure: &port_report::PortFailure,
     error: &str,
     source: &Path,
 ) -> Option<std::path::PathBuf> {
-    let failure = port_report::classify(error);
     let path = workspace.join("FAILURE-REPORT.md");
 
     let mut text = String::new();
@@ -3856,9 +4417,7 @@ fn write_port_failure_report(
 ///
 /// Printed before the error itself, because the error is long and the part they
 /// need -- is this our gap or their code, and how long -- is one line.
-fn print_port_failure_guidance(error: &str, report_path: Option<&Path>) {
-    let failure = port_report::classify(error);
-
+fn print_port_failure_guidance(failure: &port_report::PortFailure, report_path: Option<&Path>) {
     eprintln!();
     eprintln!("This port failed: {}.", failure.kind.label());
     eprintln!("{}", failure.kind.promise());
@@ -3911,11 +4470,14 @@ impl AcceptanceCriteria {
     /// A file that is not there is recorded as absent, so deleting one is a
     /// change like any other -- deletion is the simplest way to weaken a test.
     fn capture(workspace: &Path) -> Result<Self> {
-        const CRITERIA: [&str; 4] = [
+        const CRITERIA: [&str; 5] = [
             "journeys.json",
             "JOURNEYS.md",
             "port-plan.json",
             "AGENT_TASK.md",
+            // The recorded cases, when the person gave them. Absent is
+            // recorded too, so an agent that writes one of its own is caught.
+            "oracle.json",
         ];
         let mut digests = Vec::new();
         for name in CRITERIA {
@@ -3947,16 +4509,19 @@ impl AcceptanceCriteria {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                anyhow::bail!(
-                    "{name} changed while the port agent was running. That file \
-                     says what this port has to do, so an agent editing it is \
-                     an agent marking its own exam -- Krate stopped before \
-                     packaging.\n\n\
-                     If the requirement really is wrong, change it in {}, then \
-                     start the port again. A criterion is changed in the open, \
-                     before the run, never inside a repair.",
-                    workspace.display()
-                );
+                return Err(port_blocker(
+                    "criteria-unchanged",
+                    format!(
+                        "{name} changed while the port agent was running. That file \
+                         says what this port has to do, so an agent editing it is \
+                         an agent marking its own exam -- Krate stopped before \
+                         packaging.\n\n\
+                         If the requirement really is wrong, change it in {}, then \
+                         start the port again. A criterion is changed in the open, \
+                         before the run, never inside a repair.",
+                        workspace.display()
+                    ),
+                ));
             }
         }
         Ok(())
@@ -3970,10 +4535,11 @@ fn ensure_original_source_unchanged(
     let after_plan = krate_port::analyze(original_source)
         .with_context(|| format!("re-check original source {}", original_source.display()))?;
     if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
-        anyhow::bail!(
+        return Err(port_blocker(
+            "source-unchanged",
             "the original source changed while the port agent was running; \
-             Krate stopped before packaging. Review the source and workspace."
-        );
+             Krate stopped before packaging. Review the source and workspace.",
+        ));
     }
     Ok(())
 }
@@ -4047,11 +4613,105 @@ fn run_port_author_command(
             .env("KRATE_PORT_REPAIR_ATTEMPT", attempt.to_string())
             .env("KRATE_PORT_REPAIR_LOG", error_path);
     }
-    let status = child.status().context("run --author-cmd")?;
+    own_process_group(&mut child);
+    let mut child = child.spawn().context("start the --author-cmd command")?;
+    let status = wait_for_port_author(&mut child, "the port author command")?;
     if !status.success() {
-        anyhow::bail!("port author command failed");
+        let how = match status.code() {
+            // The shell's own "not found", which reads as the tool failing.
+            // The command runs inside the workspace, so a relative path to a
+            // script beside the person's project is the usual cause.
+            Some(127) => "it exited with code 127, which means the shell could not find \
+                          the command. It runs inside the port workspace, so give a script \
+                          by its absolute path"
+                .to_string(),
+            Some(code) => format!("it exited with code {code}"),
+            None => "it was ended by a signal".to_string(),
+        };
+        anyhow::bail!("the port author command failed: {how}");
     }
     Ok(())
+}
+
+/// How long a port's author may run before it is stopped. The same budget
+/// and override as `krate create`'s agent: generous, because a real port is
+/// many build cycles, and finite, because an author that never returns used
+/// to hold the port -- and the person's terminal -- for ever.
+fn port_author_timeout() -> std::time::Duration {
+    std::time::Duration::from_secs(
+        std::env::var("KRATE_AUTHOR_TIMEOUT_SECS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(AGENT_AUTHOR_TIMEOUT_SECS),
+    )
+}
+
+/// Start an author in a process group of its own (Unix), so that stopping
+/// it at its deadline stops everything it started too.
+///
+/// `sh -c "tool ..."` is the tool itself only where the shell execs its last
+/// command (bash, the Mac's sh). Ubuntu's sh is dash, which does not: killing
+/// the shell left the tool running, holding the output pipes, and the port
+/// waited on it after all (CI, 2026-11-07).
+fn own_process_group(command: &mut ProcessCommand) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(not(unix))]
+    let _ = command;
+}
+
+/// Stop an author and, on Unix, its whole process group.
+fn stop_process_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // The group was made with the author as its leader
+        // (`own_process_group`), so its id is the author's pid.
+        // SAFETY: kill(2) with a negative pid signals that process group;
+        // it reads no memory of ours.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+}
+
+/// Wait for a port author, stopping it at the deadline.
+///
+/// The author runs in a process group of its own, and the whole group is
+/// stopped, so a tool started through a shell ends with it.
+fn wait_for_port_author(
+    child: &mut std::process::Child,
+    what: &str,
+) -> Result<std::process::ExitStatus> {
+    let budget = port_author_timeout();
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .with_context(|| format!("wait for {what}"))?
+        {
+            return Ok(status);
+        }
+        if start.elapsed() >= budget {
+            stop_process_group(child);
+            let _ = child.wait();
+            let secs = budget.as_secs();
+            let said = if secs >= 120 {
+                format!("{} minutes", secs / 60)
+            } else {
+                format!("{secs} seconds")
+            };
+            anyhow::bail!(
+                "{what} did not finish within {said} and was stopped. A large port can \
+                 need longer: set KRATE_AUTHOR_TIMEOUT_SECS to more seconds and start it \
+                 again."
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 /// This binary's path, for a prompt that tells the agent what to run.
@@ -4162,6 +4822,7 @@ port.",
         .arg("--permission-mode")
         .arg("bypassPermissions")
         .current_dir(workspace);
+    own_process_group(&mut command);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
             command.stdout(std::process::Stdio::from(clone));
@@ -4170,9 +4831,10 @@ port.",
             command.stderr(std::process::Stdio::from(clone));
         }
     }
-    let status = command
-        .status()
+    let mut child = command
+        .spawn()
         .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+    let status = wait_for_port_author(&mut child, "the Claude port agent")?;
     if !status.success() {
         anyhow::bail!(
             "the Claude port agent did not finish successfully: {}; see {}",
@@ -4242,6 +4904,7 @@ explain in chat. Make the smallest complete repair.",
         .arg("--permission-mode")
         .arg("bypassPermissions")
         .current_dir(workspace);
+    own_process_group(&mut command);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
             command.stdout(std::process::Stdio::from(clone));
@@ -4250,9 +4913,10 @@ explain in chat. Make the smallest complete repair.",
             command.stderr(std::process::Stdio::from(clone));
         }
     }
-    let status = command
-        .status()
+    let mut child = command
+        .spawn()
         .context("run the `claude` CLI for a port repair")?;
+    let status = wait_for_port_author(&mut child, "the Claude repair attempt")?;
     if !status.success() {
         anyhow::bail!(
             "the Claude repair attempt did not finish successfully; see {}",
@@ -5284,6 +5948,466 @@ fn account_command(action: Option<AccountAction>, json: bool) -> Result<u8> {
             } else {
                 println!("nobody was signed in");
             }
+            Ok(0)
+        }
+        Some(AccountAction::Sync { action }) => account_sync_command(action, json),
+    }
+}
+
+/// The stores on this computer of the app with id `app_id`, whoever
+/// published it: `<id>.kv`, `<id>@<publisher>.kv`, `<id>+<machine>.kv`.
+fn stores_of_app(app_id: &str) -> Vec<PathBuf> {
+    let legacy = app_store_path(app_id);
+    let Some(dir) = legacy.parent() else {
+        return Vec::new();
+    };
+    let stem = sanitize_storage_name(app_id);
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| store_of_entry(&entry.path()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            name.ends_with(".kv")
+                && (name == format!("{stem}.kv")
+                    || name.starts_with(&format!("{stem}@"))
+                    || name.starts_with(&format!("{stem}+")))
+        })
+        .collect();
+    if found.is_empty() {
+        found.push(legacy);
+    }
+    found
+}
+
+/// `krate account sync`: this computer and the account's data key, the
+/// devices waiting for a yes, the recovery code once, and the toggles
+/// (IC-981). Krate's home does the same with buttons (S2).
+fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
+    use krate_accountsync::device::{account_of, Account, KeyStatus};
+    use krate_runtime::account_sync_host::{global_toggle_path, set_app_sync};
+
+    let device_dir = account_sync_dir();
+    match &action {
+        Some(SyncAction::Off { app }) | Some(SyncAction::On { app }) => {
+            let on = matches!(action, Some(SyncAction::On { .. }));
+            match app {
+                None => {
+                    let path = global_toggle_path(&device_dir);
+                    if on {
+                        let _ = fs::remove_file(&path);
+                    } else {
+                        fs::create_dir_all(&device_dir)?;
+                        fs::write(&path, b"sync is off for every app on this computer\n")?;
+                    }
+                    println!(
+                        "{}",
+                        if on {
+                            "your apps' data syncs across your devices again"
+                        } else {
+                            "your apps' data stays on this computer: it keeps its copy and stops syncing"
+                        }
+                    );
+                }
+                Some(id) => {
+                    for store in stores_of_app(id) {
+                        set_app_sync(&store, on)?;
+                    }
+                    println!(
+                        "{id}: {}",
+                        if on {
+                            "syncs across your devices again"
+                        } else {
+                            "keeps its copy here and stops syncing"
+                        }
+                    );
+                }
+            }
+            return Ok(0);
+        }
+        _ => {}
+    }
+
+    let Some(identity) = github_auth::current() else {
+        eprintln!("not signed in -- `krate account login` first, and your apps' data follows you");
+        return Ok(1);
+    };
+    if let Some(SyncAction::Conflicts) | Some(SyncAction::Resolve { .. }) = &action {
+        return sync_conflicts_command(action, &identity, &device_dir, json);
+    }
+    let hub = krate_accountsync::hub::Hub::new(&shared_hub_url(), &identity.token);
+    let id = account_of(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let account = Account::load(
+        &device_dir,
+        &id,
+        &machine_key(),
+        &this_computers_name(identity.display_name()),
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let status = account.refresh(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+    match action {
+        Some(SyncAction::Approve { device }) => {
+            let KeyStatus::Holds(ring) = status else {
+                anyhow::bail!(
+                    "this computer cannot pass the key on: it is waiting for one of your devices \
+                     to approve it, or for `krate account sync recover`"
+                );
+            };
+            account
+                .approve(&hub, &ring, device.trim())
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("done: that device can now read your apps' data");
+            Ok(0)
+        }
+        Some(SyncAction::Recover) => {
+            eprint!("recovery code: ");
+            let mut code = String::new();
+            std::io::stdin().read_line(&mut code)?;
+            account
+                .recover(&hub, &code)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("this computer holds your apps' data key now");
+            Ok(0)
+        }
+        _ => {
+            let pending = account.pending(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let code = account.take_recovery_code();
+            let on = !global_toggle_path(&device_dir).exists();
+            let holds = matches!(status, KeyStatus::Holds(_));
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "on": on,
+                        "device": { "id": account.device.id(), "name": account.name, "holds_key": holds },
+                        "waiting": pending.iter().map(|d| serde_json::json!({ "id": d.device_id, "name": d.name })).collect::<Vec<_>>(),
+                        "recovery_code": code,
+                    })
+                );
+                return Ok(0);
+            }
+            println!(
+                "Sync across your devices: {}",
+                if on { "on" } else { "off on this computer" }
+            );
+            if holds {
+                println!(
+                    "This computer ({}) holds your apps' data key.",
+                    account.name
+                );
+            } else {
+                println!(
+                    "This computer ({}) is waiting: approve it on a device that syncs already \
+                     (`krate account sync approve {}`), or type your recovery code \
+                     (`krate account sync recover`).",
+                    account.name,
+                    account.device.id()
+                );
+            }
+            if let Some(code) = code {
+                println!();
+                println!("Your recovery code -- shown this once, so write it down:");
+                println!("  {code}");
+                println!(
+                    "With it, a new device reads your apps' data when none of your others is at hand."
+                );
+            }
+            for device in pending {
+                println!(
+                    "Waiting for your yes: {} -- `krate account sync approve {}`",
+                    if device.name.is_empty() {
+                        "a device"
+                    } else {
+                        &device.name
+                    },
+                    device.device_id
+                );
+            }
+            Ok(0)
+        }
+    }
+}
+
+/// The store a file in the stores folder belongs to: the `.kv` itself, or
+/// the `.kv.sync` folder beside it -- an app that keeps only files syncs
+/// with no `.kv` written (S3).
+fn store_of_entry(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    if let Some(store) = name.strip_suffix(".sync").filter(|s| s.ends_with(".kv")) {
+        return path.is_dir().then(|| path.with_file_name(store));
+    }
+    name.ends_with(".kv").then(|| path.to_path_buf())
+}
+
+/// Every store on this computer that syncs, with the id of the app it
+/// belongs to: `<id>.kv`, `<id>@<publisher>.kv`, `<id>+<machine>.kv` with a
+/// `.sync` folder beside it.
+fn synced_stores() -> Vec<(String, PathBuf)> {
+    let legacy = app_store_path("x");
+    let Some(dir) = legacy.parent() else {
+        return Vec::new();
+    };
+    let mut found: Vec<(String, PathBuf)> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| store_of_entry(&entry.path()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| krate_runtime::account_sync_host::sync_dir(path).is_dir())
+        .filter_map(|path| {
+            let name = path.file_stem()?.to_string_lossy().into_owned();
+            let id = name.split(['@', '+']).next().unwrap_or(&name).to_string();
+            Some((id, path))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// `krate account sync conflicts` and `resolve`: the same calls Krate's
+/// home makes on a phone (IC-981 S2), read from this computer's stores with
+/// no network needed -- the account and device names are the last ones the
+/// hub gave, refreshed when it answers.
+fn sync_conflicts_command(
+    action: Option<SyncAction>,
+    identity: &github_auth::Identity,
+    device_dir: &Path,
+    json: bool,
+) -> Result<u8> {
+    use krate_accountsync::overview::{look, Me};
+    use krate_accountsync::readable::preview;
+    use krate_accountsync::readable::{ago, size_in_words};
+    use krate_accountsync::Resolution;
+    use krate_runtime::account_sync_files::{file_conflicts_at, resolve_file_at, FileSide};
+    use krate_runtime::account_sync_host::{conflicts_at, resolve_at};
+
+    let name = this_computers_name(identity.display_name());
+    let machine = machine_key();
+    let hub = shared_hub_url();
+    let me = Me {
+        device_dir,
+        hub: &hub,
+        token: &identity.token,
+        machine_key: &machine,
+        name: &name,
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let overview = look(&me, now);
+    let Some(account) = overview.account.clone() else {
+        if json {
+            println!("{}", serde_json::json!({ "conflicts": [] }));
+        } else {
+            println!("Nothing has synced on this computer yet, so nothing waits for your choice.");
+        }
+        return Ok(0);
+    };
+    let names = overview.names();
+    match action {
+        Some(SyncAction::Resolve { app, key, choice }) => {
+            let choice = match choice {
+                SyncChoice::This => Resolution::KeepMine,
+                SyncChoice::Other => Resolution::KeepOther(0),
+                SyncChoice::Both => Resolution::KeepBoth,
+                SyncChoice::Merge => Resolution::Merge,
+            };
+            let mut answered = false;
+            let mut files = false;
+            for store in stores_of_app(&app) {
+                if conflicts_at(&store, &account, &names)
+                    .iter()
+                    .any(|c| c.key == key)
+                {
+                    resolve_at(&store, &account, &names, &key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                } else if file_conflicts_at(&store, &account, &names)
+                    .iter()
+                    .any(|c| c.path == key)
+                {
+                    resolve_file_at(&store, &account, &names, &key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                    files = true;
+                }
+            }
+            if !answered {
+                anyhow::bail!(
+                    "nothing waits for a choice on {key:?} in {app} -- `krate account sync conflicts` lists what does"
+                );
+            }
+            // Sent now, the app closed, so the other devices settle without
+            // it opening again; offline, it goes with the app's next run.
+            let context = krate_runtime::account_sync_host::AccountSyncContext {
+                hub: hub.clone(),
+                token: identity.token.clone(),
+                device_dir: device_dir.to_path_buf(),
+                device_name: name.clone(),
+                machine_key: machine.clone(),
+                app_id: String::new(),
+                publisher: String::new(),
+                enabled: true,
+                background: false,
+                files: None,
+            };
+            let sent = stores_of_app(&app).into_iter().any(|store| {
+                if files {
+                    krate_runtime::account_sync_files::sync_files_closed(
+                        &store,
+                        &account,
+                        context.clone(),
+                    )
+                    .is_ok()
+                } else {
+                    krate_runtime::account_sync_host::sync_closed(&store, &account, context.clone())
+                        .is_ok()
+                }
+            });
+            println!(
+                "done: {app} keeps {} -- {}",
+                match choice {
+                    Resolution::KeepMine => "this computer's",
+                    Resolution::KeepOther(_) => "the other device's",
+                    Resolution::KeepBoth => "both",
+                    Resolution::Merge => "the two put together",
+                },
+                if sent {
+                    "sent to your other devices"
+                } else {
+                    "your other devices take it the next time this app syncs here"
+                }
+            );
+            Ok(0)
+        }
+        _ => {
+            let mut listed = Vec::new();
+            let mut files = Vec::new();
+            for (app, store) in synced_stores() {
+                for conflict in conflicts_at(&store, &account, &names) {
+                    listed.push((app.clone(), conflict));
+                }
+                for conflict in file_conflicts_at(&store, &account, &names) {
+                    files.push((app.clone(), conflict));
+                }
+            }
+            let side = |side: &Option<FileSide>| match side {
+                None => "deleted".to_string(),
+                Some(side) => match side.at {
+                    Some(at) => format!("{}, changed {}", size_in_words(side.size), ago(now, at)),
+                    None => size_in_words(side.size),
+                },
+            };
+            if json {
+                let rows: Vec<serde_json::Value> = listed
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "key": c.key,
+                            "here": c.mine.as_deref().map(|v| preview(v, 120)),
+                            "others": c.others.iter().map(|(v, device)| serde_json::json!({
+                                "device": device,
+                                "value": v.as_deref().map(|v| preview(v, 120)),
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                        })
+                    })
+                    .collect();
+                let file_rows: Vec<serde_json::Value> = files
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "file": c.path,
+                            "here": c.mine.as_ref().map(|s| serde_json::json!({ "size": s.size, "at": s.at })),
+                            "others": c.others.iter().map(|(s, device)| serde_json::json!({
+                                "device": device,
+                                "file": s.as_ref().map(|s| serde_json::json!({ "size": s.size, "at": s.at })),
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                        })
+                    })
+                    .collect();
+                println!(
+                    "{}",
+                    serde_json::json!({ "conflicts": rows, "files": file_rows })
+                );
+                return Ok(0);
+            }
+            if listed.is_empty() && files.is_empty() {
+                println!("Nothing waits for your choice: every app agrees on all your devices.");
+                return Ok(0);
+            }
+            for (app, c) in &listed {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .map(|(v, d)| (v.clone(), d.clone()))
+                    .unwrap_or((None, "another device".to_string()));
+                let here = c.mine.as_deref().map(|v| preview(v, 100));
+                let there = other.as_deref().map(|v| preview(v, 100));
+                println!("{app}: {:?} changed on two devices", c.key);
+                println!(
+                    "  on this computer: {}",
+                    here.as_deref().unwrap_or("deleted")
+                );
+                println!("  on {device}: {}", there.as_deref().unwrap_or("deleted"));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.key,
+                    if here.is_some() && there.is_some() {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            for (app, c) in &files {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .cloned()
+                    .unwrap_or((None, "another device".to_string()));
+                let name = c.path.rsplit('/').next().unwrap_or(&c.path);
+                match (&c.mine, &other) {
+                    (Some(_), Some(_)) => println!("{app}: {name} changed on two devices"),
+                    (None, _) => println!("{app}: {name} was deleted here and changed on {device}"),
+                    (Some(_), None) => {
+                        println!("{app}: {name} was deleted on {device} and changed here")
+                    }
+                }
+                println!("  on this computer: {}", side(&c.mine));
+                println!("  on {device}: {}", side(&other));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.path,
+                    if c.mine.is_some() && other.is_some() {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            println!("Until you choose, both are kept and each device goes on reading its own.");
             Ok(0)
         }
     }
@@ -9567,6 +10691,161 @@ fn wall_in_request(request: &str) -> Option<Wall> {
     None
 }
 
+/// What no Krate app can do under any grant, in the words both AIs are given.
+///
+/// `plan` and `create` each hand the request to an AI, and each AI used to
+/// get its own idea of the limits. The authoring prompt named these four and
+/// told the agent to refuse them; the planning prompt named only the sandbox
+/// and told the AI to plan "the closest thing". So on one sentence -- "an app
+/// that downloads all my email from gmail and deletes the spam folder" --
+/// plan promised an IMAP client with an app password and `create` refused it,
+/// three runs out of three (K-764). One list, read by both prompts.
+const OUT_OF_REACH: &str = "reading the mail, photos, contacts or messages already on \
+     this computer, signing in to somebody's Google/Spotify/Twitter account, reaching \
+     another person's device, or running while the app is closed";
+
+/// Krate's and the AI's own notes that Studio folds into a request, after
+/// the person's words. They are what was SAID about the request, not what
+/// was asked for, so they are never judged as the request.
+const STUDIO_NOTES: [&str; 3] = [
+    "(The agreed plan: ",
+    "(The person was asked ",
+    "(The app is called ",
+];
+
+/// The part of a request that is the person's: their words and their
+/// answers, without the questions, the agreed plan, or the name Studio adds.
+///
+/// Studio builds by sending `create` the request plus "(The agreed plan:
+/// ...)". The plan's own sentence was judged as if the person had typed it,
+/// so a plan that said "nothing is uploaded to the cloud" for a private
+/// journal was refused by `create` for asking for the cloud (K-764).
+fn request_to_judge(request: &str) -> String {
+    let person = person_words_only(request);
+    let cut = STUDIO_NOTES
+        .iter()
+        .filter_map(|note| person.find(note))
+        .min()
+        .unwrap_or(person.len());
+    person[..cut].trim_end().to_string()
+}
+
+/// Whether Krate will build a request: the ONE verdict `plan` and `create`
+/// both give, so the door that starts the conversation can never offer what
+/// the door that builds refuses (K-764).
+fn build_verdict(request: &str) -> krate_author::feasibility::Verdict {
+    krate_author::feasibility::screen(&request_to_judge(request))
+}
+
+/// `create`'s refusal, as the one line both doors say it in.
+fn cannot_build_line(reason: &str, instead: &str) -> String {
+    format!(
+        "Krate cannot build that: {}. Try instead: {}.",
+        reason.trim().trim_end_matches('.'),
+        instead.trim().trim_end_matches('.')
+    )
+}
+
+/// The plan's third answer: Krate will not build this, and what it can do
+/// instead. Its own arm, never a `plan` -- a refusal printed as
+/// `{"plan": ...}` was shown as "Here's what I'll build:" over a sentence
+/// saying it could not be built, with a Build it button that `create` then
+/// refused (K-764).
+fn plan_cannot_json(reason: &str, instead: &str, limit: Option<&str>) -> serde_json::Value {
+    serde_json::json!({
+        "cannot": cannot_build_line(reason, instead),
+        "reason": reason.trim().trim_end_matches('.'),
+        "instead": instead.trim().trim_end_matches('.'),
+        "limit": limit,
+    })
+}
+
+/// Whether a plan's "needs" entry is something `create` will let an app
+/// declare. The manifest's own parser decides, so the plan cannot offer a
+/// permission the build would refuse: an unknown name, a default every app
+/// already has (declaring one is an error), a pattern left unfilled
+/// (`fs.write:<chosen-folder>/**`), or a filesystem-wide glob, which
+/// check-app refuses (K-764).
+fn plan_need_is_buildable(need: &str) -> bool {
+    let Ok(cap) = need.trim().parse::<krate_manifest::Capability>() else {
+        return false;
+    };
+    if cap.is_default_granted() || need.contains('<') || need.contains('>') {
+        return false;
+    }
+    !fs_scope_reads_as_everything(need.trim())
+}
+
+/// An fs capability whose scope is everything (`fs.read:**`). The sandbox
+/// would contain it, but it reads as the whole disk to the person deciding,
+/// so check-app refuses it; the plan must not offer it either.
+fn fs_scope_reads_as_everything(cap: &str) -> bool {
+    let (family, scope) = match cap.split_once(':') {
+        Some((family, scope)) => (family, Some(scope)),
+        None => (cap, None),
+    };
+    if !family.starts_with("fs.") {
+        return false;
+    }
+    let bare = scope
+        .map(|s| s.trim_start_matches("./").trim_start_matches('/'))
+        .unwrap_or("");
+    bare == "**" || bare == "*" || bare.is_empty()
+}
+
+/// Hold an AI's plan to what `create` will build: an AI refusal becomes the
+/// `cannot` arm, needs `create` would refuse are left out (and said so on
+/// stderr), and a shape that is not one of the working examples is dropped
+/// rather than handed on. Anything else passes through untouched.
+fn plan_held_to_create(mut value: serde_json::Value) -> serde_json::Value {
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+    if let Some(reason) = object
+        .get("cannot")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_string)
+    {
+        let instead = object
+            .get("instead")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|i| !i.is_empty())
+            .unwrap_or("a version of the app that works on files you pick or data you type in")
+            .to_string();
+        let mut cannot = plan_cannot_json(&reason, &instead, None);
+        if let Some(session) = object.get("agent_session") {
+            cannot["agent_session"] = session.clone();
+        }
+        return cannot;
+    }
+    if let Some(needs) = object.get_mut("needs").and_then(|v| v.as_array_mut()) {
+        needs.retain(|need| {
+            let keep = need.as_str().is_some_and(plan_need_is_buildable);
+            if !keep {
+                eprintln!(
+                    "note: the plan named {need}, which is not a permission a Krate app can \
+                     ask for, so it was left out"
+                );
+            }
+            keep
+        });
+    }
+    let unknown_shape = object
+        .get("shape")
+        .and_then(|v| v.as_str())
+        .is_some_and(|shape| {
+            !shape.eq_ignore_ascii_case("none")
+                && authoring_context::example_by_name(shape).is_none()
+        });
+    if unknown_shape {
+        object.remove("shape");
+    }
+    value
+}
+
 fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> Result<u8> {
     // Deterministic thin gate. name_from_request already knows which words
     // carry meaning; a request it cannot name and that has no sentence
@@ -9598,53 +10877,41 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         return Ok(0);
     }
 
+    // The same verdict `create` gives, for the same request, from the same
+    // function -- and it runs FIRST, before anything that could offer a plan.
+    //
+    // It did not run here at first, and the two doors gave opposite answers
+    // to one sentence: asked for "an app that reads my Gmail inbox", `create`
+    // refused in plain words while `plan` sent the person off to obtain an
+    // OAuth credential. Then it ran, but printed its refusal as a "plan", so
+    // Studio said "Here's what I'll build:" over "Krate cannot build that"
+    // and offered a Build it button that `create` refused. And it ran AFTER
+    // the wall below, so "a timer that keeps running in the background"
+    // was promised a substitute that `create` then refused for the same
+    // words (K-764). A refusal is its own answer now, and it comes first.
+    //
+    // Nothing is spent either way -- deterministic, no AI, no network.
+    if let krate_author::feasibility::Verdict::Refuse(refusal) = build_verdict(request) {
+        let limit = serde_json::to_value(refusal.limit)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string));
+        println!(
+            "{}",
+            plan_cannot_json(&refusal.reason, &refusal.instead, limit.as_deref())
+        );
+        return Ok(0);
+    }
+
     // A wall the runtime genuinely cannot cross is worth naming in ten
     // seconds rather than discovering forty minutes into a build. This step
     // costs nothing -- no AI, no network -- and it runs before the provider
-    // is even resolved.
+    // is even resolved. What it offers is buildable: the request passed the
+    // verdict above, which is the one `create` applies to it.
     if let Some(wall) = wall_in_request(request) {
         println!(
             "{}",
             serde_json::json!({
                 "plan": wall.plan(),
-                "needs": Vec::<String>::new(),
-            })
-        );
-        return Ok(0);
-    }
-
-    // The same feasibility screen `create` runs, for the same request.
-    //
-    // It did not run here, and the two doors gave opposite answers to one
-    // sentence. Asked for "an app that reads my Gmail inbox", `create`
-    // refuses in plain words -- a Krate app cannot sign in to another
-    // company's account, there is no browser to redirect through and
-    // nowhere safe to keep a token. `plan` returned three confident
-    // questions instead, the first of which sends the person off to obtain
-    // an OAuth credential for an app that will then be refused.
-    //
-    // That is worst on the web, where planning IS the front door: a
-    // stranger's first interaction would be an errand, followed by a no.
-    //
-    // `create`'s refusal has an escape hatch (--force) and this one does
-    // not need its own, because the refusal is advisory here: it is
-    // returned as the plan, so the Studio shows it and the person can say
-    // something else. Nothing is spent either way -- this screen is
-    // deterministic, with no AI and no network.
-    if let krate_author::feasibility::Verdict::Refuse(refusal) =
-        krate_author::feasibility::screen(request)
-    {
-        // Both halves: the reason, and the nearest thing Krate CAN build,
-        // phrased so the person can paste it straight back. A refusal
-        // without the second half reads as a dead end, which is the whole
-        // point of `instead` existing on the type.
-        println!(
-            "{}",
-            serde_json::json!({
-                // The reason does not end in a full stop (it is written to be
-                // embedded), so one is added rather than running two
-                // sentences together.
-                "plan": format!("{}. Try instead: {}.", refusal.reason.trim_end_matches('.'), refusal.instead.trim_end_matches('.')),
                 "needs": Vec::<String>::new(),
             })
         );
@@ -9717,9 +10984,8 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          title-cased\", \"plan\": \"ONE short sentence, plain words: what will be \
          built\", \"points\": [\"three to five short points, each a fragment of \
          at most eight words: what it shows, what you can do, what data it keeps. \
-         No full sentences, no rules lists, never their answers read back to them\"], \"needs\": [\"things the person must \
-         supply or approve: a file to attach, a choice to make, a permission the app will \
-         request\"]}} -- needs may be empty.\n\n\
+         No full sentences, no rules lists, never their answers read back to them\"], \"needs\": [\"the permissions the app \
+         will ask for, each a name from the list below\"]}} -- needs may be empty.\n\n\
          Never ask about colors, fonts, or anything with a sensible default. A Krate app \
          runs on Mac, Windows and Linux automatically, so never ask about platforms. Ask \
          only when the answer changes the app.\n\n\
@@ -9727,6 +10993,12 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          clicks to other programs, read other apps' windows, or control the OS. If the \
          request needs that, do not ask questions about it -- reply with a plan for the \
          CLOSEST thing that can truly work, saying plainly what changed and why.\n\n\
+         Some things no Krate app can do under any permission: {OUT_OF_REACH}. The build \
+         refuses a request that needs one of them, so never plan around it. Reply instead:\n\
+         {{\"cannot\": \"one plain sentence saying what is out of reach\", \"instead\": \"the \
+         nearest app Krate CAN build, phrased as a request the person could send\"}}\n\
+         Only when you are certain: a request that could mean a local, offline or \
+         sample-data version gets a plan for that version.\n\n\
          WHICHEVER form you reply with, also include a top-level \"shape\" field: the \
          name of the working example whose SHAPE is closest to this request -- its \
          interaction and data pattern, never its topic -- or \"none\" if nothing fits. \
@@ -9841,16 +11113,26 @@ fn finish_plan(
         }
     }
 
-    let json = extract_plan_json(text).unwrap_or_else(|| {
-        if text.trim().is_empty() {
-            eprintln!("note: the planning AI returned nothing; building directly.");
-        } else {
-            eprintln!("note: could not read a plan from the AI; building directly.");
-        }
-        // An empty plan with no questions: the Studio reads this as "proceed to
-        // build", the same as an AI that decided the request was ready.
-        serde_json::json!({ "plan": "", "needs": [] }).to_string()
-    });
+    // Whatever the AI said, it is held to what `create` will build: its own
+    // refusal becomes the `cannot` arm, and a permission or shape `create`
+    // would refuse is not offered (K-764).
+    let json = extract_plan_json(text)
+        .map(
+            |json| match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(value) => plan_held_to_create(value).to_string(),
+                Err(_) => json,
+            },
+        )
+        .unwrap_or_else(|| {
+            if text.trim().is_empty() {
+                eprintln!("note: the planning AI returned nothing; building directly.");
+            } else {
+                eprintln!("note: could not read a plan from the AI; building directly.");
+            }
+            // An empty plan with no questions: the Studio reads this as "proceed to
+            // build", the same as an AI that decided the request was ready.
+            serde_json::json!({ "plan": "", "needs": [] }).to_string()
+        });
     // Ride the planning session's id along, tagged with the provider, so
     // the studio can hand it to create and the build resumes hot.
     let json = if wants_session {
@@ -9973,7 +11255,7 @@ fn explain_answer(text: &str, provider: &str) -> Result<String> {
 /// "plan" key. Agents wrap answers in prose and code fences no matter what
 /// the prompt says; the contract survives by extraction, not by trust.
 fn extract_plan_json(text: &str) -> Option<String> {
-    extract_json_with(text, &["ask", "plan"])
+    extract_json_with(text, &["ask", "plan", "cannot"])
 }
 
 /// The first JSON object in an AI's output that carries one of `keys`, in
@@ -10448,7 +11730,11 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // The screen refuses only what is certainly impossible and says so in one
     // sentence; anything it is unsure about is built. A caveat is not a
     // refusal: the app is authored and the note is printed with it.
-    let feasibility = krate_author::feasibility::screen(&req.request);
+    //
+    // Judged on the person's words only, by the same function `plan` uses:
+    // the agreed plan Studio appends is the AI's prose, and judging it as a
+    // request refused plans `plan` had just offered (K-764).
+    let feasibility = build_verdict(&req.request);
     if let krate_author::feasibility::Verdict::Refuse(refusal) = &feasibility {
         if !req.force {
             return Err(report_refusal(&req, refusal));
@@ -11383,15 +12669,33 @@ pub(crate) const CHANGE_MARKER: &str = "\u{1}krate-change\u{1}";
 /// reference stays available for a call it has not used before -- reading less
 /// is not the goal, doing less is.
 fn change_prompt(app_dir: &str, change: &str, krate_bin: &str) -> String {
+    // A repair is not a change to a working app, and saying it was told the
+    // agent "the app compiles, passes check-app" over a failure that said
+    // the opposite. The repair task itself says what kind of failure it is
+    // (K-763); this frame must not contradict it.
+    let (opening, state) = if change.starts_with(REPAIR_OPENING) {
+        (
+            "You are repairing a Krate app that does not pass `check-app` yet",
+            "This is a repair, not a rewrite. What failed, and what kind of failure it\n\
+             is, is said above; trust that over any guess. The rest of the app\n\
+             already demonstrates the no_std and krate:* discipline in its own\n\
+             source -- you do not need to re-derive any of that.",
+        )
+    } else {
+        (
+            "You are changing a Krate app that already works",
+            "This is an edit, not a rewrite. The app compiles, passes `check-app`, and\n\
+             already demonstrates the no_std and krate:* discipline in its own source --\n\
+             you do not need to re-derive any of that, and you do not need a worked\n\
+             example. Its code is the example.",
+        )
+    };
     format!(
-        "You are changing a Krate app that already works. It is in {app_dir}.\n\
+        "{opening}. It is in {app_dir}.\n\
 \n\
     {change}\n\
 \n\
-This is an edit, not a rewrite. The app compiles, passes `check-app`, and\n\
-already demonstrates the no_std and krate:* discipline in its own source --\n\
-you do not need to re-derive any of that, and you do not need a worked\n\
-example. Its code is the example.\n\
+{state}\n\
 \n\
 How to work:\n\
 1. Read src/lib.rs and find the one place this change belongs. Most changes\n\
@@ -11411,7 +12715,8 @@ How to work:\n\
    than after every edit. Do not stop until it prints OK.\n\
 \n\
 Keep the same crate name, the same package name, and the same manifest unless\n\
-the change genuinely needs a new capability. Changing them breaks the app's\n\
+the change genuinely needs a new capability, or the failure above is in the\n\
+manifest. Changing them otherwise breaks the app's\n\
 identity for somebody who already has it.\n\
 \n\
 Do not explain what you did; make the change until the check passes."
@@ -11539,9 +12844,7 @@ Use the Read, Edit, Write, and Bash tools. Do not explain what you did; just\n\
 build the app until the check passes.\n\
 \n\
 One exception, and only one. If the request needs something no Krate app can\n\
-do -- reading the mail, photos, contacts or messages already on this computer,\n\
-signing in to somebody's Google/Spotify/Twitter account, reaching another\n\
-person's device, or running while the app is closed -- then do NOT build a\n\
+do -- {OUT_OF_REACH} -- then do NOT build a\n\
 convincing app over invented data and let check-app pass it. An app that looks\n\
 like a mail reader but can never read mail is worse than no app. Write the\n\
 single line\n\
@@ -12660,6 +13963,15 @@ fn run_provider_author(
                 transcript.display()
             );
         }
+        // A change run that changed nothing is not an empty app: the code
+        // the run started from is still there. Say what happened, and never
+        // quote Krate's own task as if the person had written it (K-1242).
+        if let Some(change) = request.strip_prefix(CHANGE_MARKER) {
+            return Err(ChangeRunMiss::Unchanged {
+                message: unchanged_change_message(change, &transcript),
+            }
+            .into());
+        }
         anyhow::bail!(
             "the agent finished without changing the app: its source ({watched_file} and the \
              rest) is byte-identical to the starter, so this would package an empty app as if it were \
@@ -12686,7 +13998,7 @@ fn run_provider_author(
     // is the deep fix for "grok writes an app that panics/leaks and then stops":
     // the loop closes here, automatically, instead of on a person noticing the
     // error and running create again.
-    if let Err(failure) = check_app_verdict(app_dir) {
+    if let Err((kind, failure)) = check_app_verdict_kind(app_dir) {
         // Only a fresh authoring run drives the automatic repair loop. A
         // CHANGE_MARKER request IS a repair or an edit already -- auto-repairing
         // it here would nest run_provider_author inside auto_repair inside
@@ -12694,13 +14006,14 @@ fn run_provider_author(
         // change just reports; the outer loop (auto_repair, or the user's own
         // revise) decides what happens next.
         if request.starts_with(CHANGE_MARKER) {
-            anyhow::bail!(
-                "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
-                 The agent's transcript is at {}.",
-                transcript.display()
-            );
+            return Err(ChangeRunMiss::CheckFails {
+                message: failed_check_message(kind, &failure, &transcript),
+                kind,
+                failure,
+            }
+            .into());
         }
-        return auto_repair(provider, app_dir, request, &failure, &transcript);
+        return auto_repair(provider, app_dir, request, kind, &failure, &transcript);
     }
     // A fresh authoring run that passed its final check is a finished build.
     // A CHANGE_MARKER run is a repair/edit step inside a larger flow, so it is
@@ -12899,19 +14212,32 @@ fn auto_repair(
     provider: &'static dyn agent_provider::AgentProvider,
     app_dir: &str,
     request: &str,
+    first_kind: FailureKind,
     first_failure: &str,
     transcript: &Path,
 ) -> Result<u8> {
     const MAX_REPAIR_ROUNDS: u32 = 2;
+    let mut kind = first_kind;
     let mut failure = first_failure.to_string();
+    // Whether the last round left the code as it was.
+    let mut unchanged = false;
     for round in 1..=MAX_REPAIR_ROUNDS {
+        // A failure no edit can fix is not sent to the agent at all. The
+        // sandbox refusing the build cache came back as a code repair, the
+        // agent changed nothing -- correctly, the code compiled -- and the
+        // person was then told the agent "explained the app instead of
+        // writing it" (K-763). Stop, and say what it is.
+        let Some(instruction) = kind.agent_instruction() else {
+            break;
+        };
         trace::repair(round, MAX_REPAIR_ROUNDS, first_line(&failure));
         eprintln!(
             "    the app did not pass yet -- asking the AI to fix it ({round} of {MAX_REPAIR_ROUNDS})"
         );
         let task = format!(
-            "{CHANGE_MARKER}The app you just wrote for \"{request}\" does not pass \
-             `krate check-app` yet. Here is exactly what failed and how to fix it:\n\n\
+            "{CHANGE_MARKER}{REPAIR_OPENING} for \"{request}\" does not pass \
+             `krate check-app` yet. {instruction}\n\n\
+             Here is exactly what failed and how to fix it:\n\n\
              {failure}\n\n\
              Fix only what this names. Do not rewrite the app or start over -- the code \
              you already wrote is in src/lib.rs. Make the change, then run check-app \
@@ -12921,23 +14247,139 @@ fn auto_repair(
         // task -- run_provider_author dispatches that to the edit prompt, which
         // says "find the one place, change that, leave the rest alone" rather
         // than re-deriving the whole app.
-        run_provider_author(provider, app_dir, &task)?;
-        match check_app_verdict(app_dir) {
+        //
+        // A repair that still fails, or changes nothing, is this round's
+        // result, not the end of the loop. Propagating it with `?` ended
+        // every repair after one round, so round two never ran (K-1242).
+        // Only a run that could not happen at all -- the agent would not
+        // start, its account refused -- ends the loop here: no further
+        // round would fare better.
+        let verdict = match run_provider_author(provider, app_dir, &task) {
+            Ok(_) => {
+                unchanged = false;
+                check_app_verdict_kind(app_dir)
+            }
+            Err(error) => match error.downcast::<ChangeRunMiss>() {
+                Ok(ChangeRunMiss::CheckFails {
+                    kind: next_kind,
+                    failure: next,
+                    ..
+                }) => {
+                    unchanged = false;
+                    Err((next_kind, next))
+                }
+                // The code is as it was, so the verdict is too.
+                Ok(ChangeRunMiss::Unchanged { .. }) => {
+                    unchanged = true;
+                    eprintln!("    {REPAIR_UNCHANGED}");
+                    Err((kind, failure.clone()))
+                }
+                Err(error) => {
+                    trace::build_end("failed", Some(first_line(&error.to_string())));
+                    return Err(error);
+                }
+            },
+        };
+        match verdict {
             Ok(()) => {
                 eprintln!("    fixed.");
                 trace::build_end("ok", Some("fixed by auto-repair"));
                 return Ok(0);
             }
-            Err(next) => failure = next,
+            Err((next_kind, next)) => {
+                kind = next_kind;
+                failure = next;
+            }
         }
     }
     trace::build_end("failed", Some(first_line(&failure)));
-    anyhow::bail!(
-        "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
+    // The kind's plain sentence still leads: it is the line a reader, or
+    // Studio, takes as the verdict.
+    if unchanged {
+        anyhow::bail!(
+            "{} {REPAIR_UNCHANGED} `check-app` still does not pass:\n\n{failure}\n\n\
+             The agent's transcript is at {}.",
+            kind.person_words(),
+            transcript.display()
+        );
+    }
+    anyhow::bail!("{}", failed_check_message(kind, &failure, transcript));
+}
+
+/// What the person is told when a repair round left the code as it was.
+const REPAIR_UNCHANGED: &str = "The AI looked at the failure and changed nothing.";
+
+/// How a change run -- a repair round or a person's edit -- ended short of
+/// a pass, kept typed so the repair loop can go round again instead of
+/// stopping on the first miss (K-1242). Its words are the message the
+/// person reads when nothing goes round again.
+#[derive(Debug)]
+enum ChangeRunMiss {
+    /// The run's closing check still fails.
+    CheckFails {
+        kind: FailureKind,
+        failure: String,
+        message: String,
+    },
+    /// The agent left the app's source as it was.
+    Unchanged { message: String },
+}
+
+impl std::fmt::Display for ChangeRunMiss {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChangeRunMiss::CheckFails { message, .. } | ChangeRunMiss::Unchanged { message } => {
+                f.write_str(message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ChangeRunMiss {}
+
+/// What a change run that changed nothing says. A repair names no request at
+/// all -- its task is Krate's own words, not the person's; a person's edit
+/// names their change, without the files Krate attached to it.
+fn unchanged_change_message(change: &str, transcript: &Path) -> String {
+    let transcript = transcript.display();
+    if change.starts_with(REPAIR_OPENING) {
+        return format!("{REPAIR_UNCHANGED} The agent's transcript is at {transcript}.");
+    }
+    let asked = change
+        .split(ATTACHED_PREAMBLE)
+        .next()
+        .unwrap_or(change)
+        .trim();
+    format!(
+        "The AI finished without changing the app, so \"{asked}\" was not made. The app is \
+         as it was. The agent's transcript is at {transcript}."
+    )
+}
+
+/// How a repair task opens, so the edit prompt can tell a repair of a
+/// failing app from a change to a working one.
+const REPAIR_OPENING: &str = "The app you just wrote";
+
+/// What the person reads when a build ends on a failing check: the kind's
+/// plain sentence first -- the line a reader, or Studio, takes as the
+/// verdict -- then the check's own words.
+fn failed_check_message(kind: FailureKind, failure: &str, transcript: &Path) -> String {
+    if kind == FailureKind::Environment {
+        return format!(
+            "{}\n\n{failure}\n\n\
+             Put that right on this computer, then run the command again: the app's code \
+             is kept, and nothing in it needs to change. The agent's transcript is at {}.",
+            kind.person_words(),
+            transcript.display()
+        );
+    }
+    format!(
+        "{} The agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
          The agent's transcript is at {}. Running the command again often gets it \
          the rest of the way.",
+        kind.person_words(),
         transcript.display()
-    );
+    )
 }
 
 /// Pull the agent's own error sentence out of its transcript.
@@ -13790,6 +15232,12 @@ fn loop_bound_seconds(lib: &str, bound_name: &str) -> Option<u64> {
 }
 
 fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
+    check_app_verdict_kind(app_dir).map_err(|(_, message)| message)
+}
+
+/// [`check_app_verdict`] with the failure's kind, which decides whether an
+/// agent is asked to repair it at all and what it is told (K-763).
+fn check_app_verdict_kind(app_dir: &str) -> std::result::Result<(), (FailureKind, String)> {
     let outcome = run_check_app(Path::new(app_dir), None, false);
     // Where the check's time went, beside its verdict, so a build's trace
     // shows what the closing check cost and whether it was reused.
@@ -13812,7 +15260,7 @@ fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
                 message.push_str("\n\nFix: ");
                 message.push_str(&failure.fix);
             }
-            Err(message)
+            Err((failure.kind(), message))
         }
     }
 }
@@ -13886,6 +15334,12 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
                         format!("id = \"dev.krate.{snake}\"")
                     } else if t.starts_with("name =") || t.starts_with("name=") {
                         format!("name = \"{}\"", ctx.name)
+                    } else if t.starts_with("entry =") || t.starts_with("entry=") {
+                        // The file THIS crate builds. Kept as the example's,
+                        // every seeded app's first full check was refused at
+                        // the door (exit 5) and its build paid a repair
+                        // round to change one line (K-1241).
+                        format!("entry = \"target/wasm32-wasip1/release/{snake}.wasm\"")
                     } else {
                         line.to_string()
                     }
@@ -15155,6 +16609,16 @@ fn build_component(app_dir: &Path) -> Result<PathBuf> {
         if let Some(missing) = wasi_sdk::explain_c_failure(&text) {
             anyhow::bail!("{missing}");
         }
+        // The machine refused the build, not the compiler: this used to end
+        // "the compiler's message above is the cause" over a sandbox's
+        // "Operation not permitted" (K-763).
+        if build_refused_by_machine(&text) {
+            anyhow::bail!(
+                "{}\n\n{}",
+                FailureKind::Environment.headline(),
+                build_fix(&text)
+            );
+        }
         if text.contains("wasm32-wasip1") {
             anyhow::bail!(
                 "cargo-component build failed: the `wasm32-wasip1` target looks missing. \
@@ -15331,6 +16795,95 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
     Ok(read_arg)
 }
 
+/// A manifest's declared capabilities, split into the ones an automated run
+/// may grant (their effects stay inside the run) and the ones only a person
+/// can (they reach the person or the world).
+fn split_grants(manifest: &krate_manifest::Manifest) -> Result<(Vec<String>, Vec<String>)> {
+    let mut granted: Vec<String> = Vec::new();
+    let mut withheld: Vec<String> = Vec::new();
+    for request in &manifest.capabilities {
+        let parsed: krate_manifest::Capability = request
+            .cap
+            .parse()
+            .with_context(|| format!("parse declared capability {}", request.cap))?;
+        if krate_policy::reaches_outside_the_run(&parsed) {
+            withheld.push(request.cap.clone());
+        } else {
+            granted.push(request.cap.clone());
+        }
+    }
+    Ok((granted, withheld))
+}
+
+/// The grants an automated run may give, and the required capabilities it
+/// may not (so the app cannot run here at all).
+fn grants_inside_the_run(
+    manifest: &krate_manifest::Manifest,
+) -> Result<(Vec<String>, Vec<String>)> {
+    let (granted, withheld) = split_grants(manifest)?;
+    let required_withheld = withheld
+        .into_iter()
+        .filter(|cap| {
+            manifest
+                .capabilities
+                .iter()
+                .any(|request| request.required && &request.cap == cap)
+        })
+        .collect();
+    Ok((granted, required_withheld))
+}
+
+/// Re-invoke this binary and keep what the app printed: (exit, stdout,
+/// stderr). Bounded by the verification timeout: a run that waits for ever
+/// is stopped and comes back as exit -1, so it is a failed case, not a hung
+/// port.
+fn run_self_captured(dir: &Path, args: &[&str]) -> Result<(i32, String, String)> {
+    use std::io::Read as _;
+    let exe = std::env::current_exe().context("locate self")?;
+    let mut child = std::process::Command::new(exe)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(dir)
+        .spawn()
+        .context("re-invoke krate for a recorded case")?;
+    let mut out_pipe = child.stdout.take().context("capture the app's stdout")?;
+    let mut err_pipe = child.stderr.take().context("capture the app's stderr")?;
+    let out_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = out_pipe.read_to_end(&mut bytes);
+        bytes
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = err_pipe.read_to_end(&mut bytes);
+        bytes
+    });
+    let start = std::time::Instant::now();
+    let code = loop {
+        if let Some(status) = child.try_wait().context("wait for a recorded case")? {
+            break status.code().unwrap_or(-1);
+        }
+        if start.elapsed() >= VERIFY_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            break -1;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let stdout = out_reader.join().unwrap_or_default();
+    let mut stderr = String::from_utf8_lossy(&err_reader.join().unwrap_or_default()).into_owned();
+    if code == -1 && start.elapsed() >= VERIFY_TIMEOUT {
+        // A case that never ends is a case the port failed, said as such.
+        stderr.push_str(&format!(
+            "\n[krate: stopped after {} seconds without finishing]",
+            VERIFY_TIMEOUT.as_secs()
+        ));
+    }
+    Ok((code, String::from_utf8_lossy(&stdout).into_owned(), stderr))
+}
+
 /// Re-invoke this same `krate` binary in `dir` with `args`, returning its exit
 /// code. Used to verify a packed bundle in isolation.
 /// How long the verification run may take before it is treated as hung and
@@ -15472,19 +17025,7 @@ fn verify_permission_wall(
     manifest: &krate_manifest::Manifest,
     verify_arg: &str,
 ) -> Result<WallEvidence> {
-    let mut granted: Vec<String> = Vec::new();
-    let mut withheld: Vec<String> = Vec::new();
-    for request in &manifest.capabilities {
-        let parsed: krate_manifest::Capability = request
-            .cap
-            .parse()
-            .with_context(|| format!("parse declared capability {}", request.cap))?;
-        if krate_policy::reaches_outside_the_run(&parsed) {
-            withheld.push(request.cap.clone());
-        } else {
-            granted.push(request.cap.clone());
-        }
-    }
+    let (granted, withheld) = split_grants(manifest)?;
     let required_withheld: Vec<&String> = withheld
         .iter()
         .filter(|cap| {
@@ -16054,6 +17595,94 @@ fn run_component(request: RunRequest) -> Result<u8> {
         },
     );
     opened
+}
+
+/// How long a command-line app has to stop after Ctrl-C before Krate ends
+/// it: a loop blocked in a host call, or a run with no epoch checks
+/// (`--headless`), never reaches the runtime's interrupt.
+const CTRL_C_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The exit code of a run the person ended with Ctrl-C, as a shell gives one.
+const CTRL_C_EXIT: u8 = 130;
+
+/// Ctrl-C on a running command-line app (K-1181).
+///
+/// Before this the handler `run_component` installs recorded the press and
+/// only a window ever read it, so a looping CLI app ran on through any
+/// number of presses. Now the first press ends the guest at its next epoch
+/// check (the runtime's callback) and the run returns 130; if the guest has
+/// not stopped within [`CTRL_C_GRACE`], or the person presses again, this
+/// watcher ends the process. Either way the output written so far is
+/// flushed and one line on stderr says what happened.
+struct CtrlCWatch {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl CtrlCWatch {
+    fn start() -> Self {
+        use std::sync::atomic::Ordering::SeqCst;
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = done.clone();
+        let _ = std::thread::Builder::new()
+            .name("krate-ctrl-c".to_string())
+            .spawn(move || {
+                let presses = &krate_runtime::phase3_gui_host::INTERRUPT_PRESSES;
+                let mut first: Option<std::time::Instant> = None;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    if finished.load(SeqCst) {
+                        return;
+                    }
+                    let pressed = presses.load(SeqCst);
+                    if pressed == 0 {
+                        continue;
+                    }
+                    let since = *first.get_or_insert_with(std::time::Instant::now);
+                    if pressed >= 2 || since.elapsed() >= CTRL_C_GRACE {
+                        // The app may be stuck inside a write; never wait on
+                        // its lock for longer than a moment.
+                        let (said, flushed) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let _ = io::stdout().flush();
+                            let _ = said.send(());
+                        });
+                        let _ = flushed.recv_timeout(std::time::Duration::from_millis(200));
+                        say_stopped_by_ctrl_c();
+                        std::process::exit(CTRL_C_EXIT.into());
+                    }
+                }
+            });
+        Self { done }
+    }
+}
+
+impl Drop for CtrlCWatch {
+    fn drop(&mut self) {
+        self.done.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Whether the person pressed Ctrl-C during this run.
+fn pressed_ctrl_c() -> bool {
+    krate_runtime::phase3_gui_host::INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The one line a run ended by Ctrl-C leaves on stderr, said once.
+fn say_stopped_by_ctrl_c() {
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !SAID.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // On its own line: the terminal has just echoed ^C, and the app may
+        // have stopped mid-line.
+        eprintln!("\nstopped: you pressed Ctrl-C");
+    }
+}
+
+/// End a run the person stopped with Ctrl-C: what the app wrote reaches the
+/// terminal first, then the note.
+fn stopped_by_ctrl_c() -> u8 {
+    let _ = io::stdout().flush();
+    say_stopped_by_ctrl_c();
+    CTRL_C_EXIT
 }
 
 /// Fail early, and in plain words, when the X11 keyboard library is absent.
@@ -16793,7 +18422,28 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             })
         })
     };
+    // The person's own data on every device they sign in on (IC-981):
+    // only a person's run of the default profile, never a picture, a
+    // usability check or a scripted task.
+    let account_sync = if profile == "default"
+        && !request.for_screenshot
+        && request.usability_report.is_none()
+        && request.task.is_none()
+    {
+        storage.as_ref().and_then(|principal| {
+            account_sync_context(
+                manifest.map(|m| m.app.id.as_str()).unwrap_or_default(),
+                principal,
+                &principal_store_path_in(&store_home, principal),
+                &policy,
+                &request.sandbox_root,
+            )
+        })
+    } else {
+        None
+    };
     let config = Config {
+        account_sync,
         fuel: request.fuel,
         memory_bytes: memory_mib
             .checked_mul(1024 * 1024)
@@ -16902,6 +18552,8 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         Some(AppWorld::Phase3Gui) => RuntimeWorld::Gui,
         None => RuntimeWorld::Auto,
     };
+    // A command-line app has no window to hear Ctrl-C through (K-1181).
+    let _ctrl_c = (runtime_world == RuntimeWorld::Cli).then(CtrlCWatch::start);
 
     if request.json {
         let started = std::time::Instant::now();
@@ -16927,6 +18579,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     RunJsonExit::failure("no-matching-world", &message),
                     Vec::new(),
                     2,
+                ),
+                Err(RuntimeError::Trap(_)) if pressed_ctrl_c() => (
+                    RunJsonExit::failure("interrupted", "stopped: you pressed Ctrl-C"),
+                    Vec::new(),
+                    CTRL_C_EXIT,
                 ),
                 Err(RuntimeError::Trap(message)) => {
                     (RunJsonExit::failure("trap", &message), Vec::new(), 3)
@@ -16989,6 +18646,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             eprintln!("this component fits no Krate world: {message}");
             Ok(2)
         }
+        Err(RuntimeError::Trap(_)) if pressed_ctrl_c() => Ok(stopped_by_ctrl_c()),
         Err(RuntimeError::Trap(message)) => {
             eprintln!("trap: {message}");
             Ok(3)
@@ -18579,6 +20237,12 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <string>{name} asked to turn speech into text. Apple's recognizer does it, on this Mac where it can.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>{name} asked to add a picture to your Photos, and you allowed it in Krate's permission window.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>{name} asked to reach a Bluetooth device, and you allowed it in Krate's permission window. It reaches only the device you pick.</string>
 {icon_entry}</dict>
 </plist>
 "#,
@@ -18974,6 +20638,22 @@ fn open_studio() -> bool {
         .unwrap_or(false)
 }
 
+/// The Info.plist keys macOS reads before an app may reach a piece of
+/// hardware (IC-982). Every bundle Krate writes for an app to run in carries
+/// all of them; the runtime and the macOS adapter check the one they need
+/// before touching the framework, and answer unavailable without it. The
+/// tests below hold every bundle writer to this list.
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) const HARDWARE_USAGE_KEYS: [&str; 7] = [
+    "NSCameraUsageDescription",
+    "NSMicrophoneUsageDescription",
+    "NSSpeechRecognitionUsageDescription",
+    "NSPhotoLibraryAddUsageDescription",
+    "NSLocationWhenInUseUsageDescription",
+    "NSLocationUsageDescription",
+    "NSBluetoothAlwaysUsageDescription",
+];
+
 /// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
 /// us to open, then run it through the ordinary consent + native-window flow.
 /// The sandbox root is the folder the `.krate` sits in, so an app that writes
@@ -19038,6 +20718,18 @@ fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Resu
          \u{20}   <key>NSSpeechRecognitionUsageDescription</key>\n\
          \u{20}   <string>{name} asked to turn speech into text. Apple's recognizer does \
          it, on this Mac where it can.</string>\n\
+         \u{20}   <key>NSPhotoLibraryAddUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to add a picture to your Photos, and you allowed it \
+         in Krate's permission window.</string>\n\
+         \u{20}   <key>NSLocationWhenInUseUsageDescription</key>\n\
+         \u{20}   <string>{name} asked where you are, and you allowed it in Krate's \
+         permission window. It is told only while it is open.</string>\n\
+         \u{20}   <key>NSLocationUsageDescription</key>\n\
+         \u{20}   <string>{name} asked where you are, and you allowed it in Krate's \
+         permission window. It is told only while it is open.</string>\n\
+         \u{20}   <key>NSBluetoothAlwaysUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to reach a Bluetooth device, and you allowed it \
+         in Krate's permission window. It reaches only the device you pick.</string>\n\
          </dict>\n</plist>\n"
     );
     fs::write(app.join("Contents/Info.plist"), plist)?;
@@ -20567,6 +22259,227 @@ struct CheckFailure {
     fix: String,
 }
 
+impl CheckFailure {
+    fn kind(&self) -> FailureKind {
+        failure_kind(self.stage, &self.detail)
+    }
+}
+
+/// What KIND of failure a check found. The stage says where it failed; the
+/// kind says who can fix it, and so what the agent is asked to do and what
+/// the person is told.
+///
+/// Without it every failure reached the agent framed as a code edit. A
+/// build the sandbox refused -- "Operation not permitted" writing the build
+/// cache -- went back to the agent as "fix the compiler errors above" when
+/// it compiled, and it spent a whole budget hunting for an override that
+/// could not work (K-763). A permission denial on any folder but one named
+/// `cache` still did, and a manifest entry that named the wrong file came
+/// back as "a capability it needs is not declared", which real Studio
+/// agents then chased.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FailureKind {
+    /// The app's files, or its manifest's shape, are not what a Krate app's
+    /// are.
+    Project,
+    /// The code does not compile.
+    Compile,
+    /// This computer refused the build: a sandbox or permission denied a
+    /// write, the disk is full, or a build tool is missing. Nothing in the
+    /// app causes it, so no edit to the app can fix it.
+    Environment,
+    /// It compiles, but the built app imports host APIs Krate does not give.
+    Imports,
+    /// The manifest and the code disagree about what the app may touch.
+    Capability,
+    /// It builds and starts, and fails when Krate uses it.
+    Test,
+    /// It ran past its time or work budget.
+    Timeout,
+}
+
+impl FailureKind {
+    /// The label machine readers get (`check-app --json`'s `kind`).
+    fn label(self) -> &'static str {
+        match self {
+            FailureKind::Project => "project",
+            FailureKind::Compile => "compile",
+            FailureKind::Environment => "environment",
+            FailureKind::Imports => "imports",
+            FailureKind::Capability => "capability",
+            FailureKind::Test => "test",
+            FailureKind::Timeout => "timeout",
+        }
+    }
+
+    /// One line under "FAILED at <stage>" saying what sort of problem this is.
+    fn headline(self) -> &'static str {
+        match self {
+            FailureKind::Project => {
+                "The app's files, or what manifest.toml says about them, are wrong -- not a \
+                 compiler error, and not a missing capability."
+            }
+            FailureKind::Compile => "The code does not compile.",
+            FailureKind::Environment => {
+                "This computer refused the build -- not a compiler error. Nothing in the \
+                 app's code causes it, and no edit to the code will fix it."
+            }
+            FailureKind::Imports => {
+                "The code compiles, but the built app reaches for host APIs Krate does not \
+                 provide. There are no compiler errors to fix."
+            }
+            FailureKind::Capability => {
+                "The code compiles, but the app and its manifest.toml disagree about what \
+                 it may touch."
+            }
+            FailureKind::Test => {
+                "The code compiles and the app starts; it fails when Krate uses it the way \
+                 a person would."
+            }
+            FailureKind::Timeout => "The code compiles; the app ran past its time or work budget.",
+        }
+    }
+
+    /// What the agent is told to do, ahead of the check's own detail and fix.
+    /// None for a failure no edit can fix: the agent is not asked at all.
+    fn agent_instruction(self) -> Option<&'static str> {
+        Some(match self {
+            FailureKind::Project => {
+                "The app's files or its manifest's shape are wrong. Put them right as the \
+                 fix says; the code itself may be fine."
+            }
+            FailureKind::Compile => {
+                "The code does not compile. Fix the compiler errors named below -- change \
+                 the lines they point at, nothing else."
+            }
+            FailureKind::Environment => return None,
+            FailureKind::Imports => {
+                "The code compiles. It fails because the built app imports host APIs Krate \
+                 does not provide, so there are NO compiler errors to fix: remove what pulls \
+                 those imports in, as the fix says."
+            }
+            FailureKind::Capability => {
+                "The code compiles. It fails because the app and its manifest.toml disagree \
+                 about what it may touch. The change is in manifest.toml (or in no longer \
+                 using that capability), not in how the app works, and not in compiler errors \
+                 -- there are none."
+            }
+            FailureKind::Test => {
+                "The code compiles and the app starts. It fails when Krate uses it the way a \
+                 person would. Fix the behaviour named below; the build itself is fine."
+            }
+            FailureKind::Timeout => {
+                "The code compiles. The app ran past its time or work budget: make it do less \
+                 work per frame, and do the work once and exit when it is started with `quick`."
+            }
+        })
+    }
+
+    /// The first thing the person reads when a build ends on this failure.
+    fn person_words(self) -> &'static str {
+        match self {
+            FailureKind::Project | FailureKind::Compile => {
+                "The app the AI wrote does not build yet."
+            }
+            FailureKind::Environment => {
+                "This computer stopped Krate from building the app. That is not a fault in \
+                 the app's code, so Krate did not ask the AI to change it."
+            }
+            FailureKind::Imports => {
+                "The app the AI wrote builds, but it reaches for parts of the computer Krate \
+                 does not give apps."
+            }
+            FailureKind::Capability => {
+                "The app the AI wrote builds, but it does not ask for what it uses."
+            }
+            FailureKind::Test => {
+                "The app the AI wrote builds and opens, but it did not work when Krate tried it."
+            }
+            FailureKind::Timeout => {
+                "The app the AI wrote builds, but it ran too long when Krate tried it."
+            }
+        }
+    }
+}
+
+/// Classify a check failure from its stage and its own words.
+fn failure_kind(stage: CheckStage, detail: &str) -> FailureKind {
+    let lower = detail.to_lowercase();
+    match stage {
+        CheckStage::Layout => FailureKind::Project,
+        CheckStage::Manifest if lower.contains("capabilit") || lower.contains("asks for") => {
+            FailureKind::Capability
+        }
+        CheckStage::Manifest => FailureKind::Project,
+        CheckStage::Build if build_refused_by_machine(detail) => FailureKind::Environment,
+        CheckStage::Build if lower.starts_with("could not read the built component") => {
+            FailureKind::Environment
+        }
+        CheckStage::Build => FailureKind::Compile,
+        CheckStage::Imports => FailureKind::Imports,
+        _ if lower.starts_with("could not ")
+            && (lower.contains("scratch dir") || lower.contains("could not run the app")) =>
+        {
+            FailureKind::Environment
+        }
+        _ if lower.contains("(exit 4)")
+            || lower.contains("fuel")
+            || lower.contains("timed out")
+            || lower.contains("time limit") =>
+        {
+            FailureKind::Timeout
+        }
+        CheckStage::Run if lower.contains("manifest entry") => FailureKind::Project,
+        CheckStage::Run if lower.contains("(exit 5)") => FailureKind::Capability,
+        _ => FailureKind::Test,
+    }
+}
+
+/// Whether a failed build was refused by the machine rather than the
+/// compiler: a sandbox or permission denial, a read-only or full disk, or
+/// no C compiler for a crate that needs one. Matched on the operating
+/// system's own words and error numbers, never on a folder's name -- the
+/// first cut only knew a denial under a folder called `cache`, so the same
+/// denial anywhere else was still sent to the agent as compiler errors.
+fn build_refused_by_machine(detail: &str) -> bool {
+    const SIGNS: &[&str] = &[
+        "Operation not permitted",
+        "(os error 1)",
+        "Permission denied",
+        "(os error 13)",
+        "Access is denied",
+        "(os error 5)",
+        "Read-only file system",
+        "(os error 30)",
+        "No space left on device",
+        "(os error 28)",
+        "There is not enough space on the disk",
+        "(os error 112)",
+        "Disk quota exceeded",
+    ];
+    // A rustc error code means the compiler ran and judged the code; an
+    // app's own text ("Permission denied" on a label) quoted in that error
+    // must not turn it into the machine's fault.
+    if detail.contains("error[E") {
+        return false;
+    }
+    SIGNS.iter().any(|sign| detail.contains(sign)) || wasi_sdk::explain_c_failure(detail).is_some()
+}
+
+/// The path a refused write named, when the error says which.
+fn refused_path(detail: &str) -> Option<String> {
+    for (open, close) in [("at path \"", '"'), ("directory `", '`'), ("file `", '`')] {
+        if let Some(at) = detail.find(open) {
+            let rest = &detail[at + open.len()..];
+            if let Some(end) = rest.find(close) {
+                return Some(rest[..end].to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Put the `krate` dependency back into a `#![no_std]` app that lost it.
 ///
 /// Returns whether it changed anything. This is a repair, not a check, and it
@@ -20657,21 +22570,14 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
 
     for request in &manifest.capabilities {
         let cap = request.cap.to_string();
-        let (family, scope) = match cap.split_once(':') {
-            Some((f, s)) => (f, Some(s)),
-            None => (cap.as_str(), None),
-        };
+        let family = cap.split_once(':').map_or(cap.as_str(), |(f, _)| f);
 
-        // Rule 1: unscoped fs globs.
-        if family.starts_with("fs.") {
-            let bare = scope
-                .map(|s| s.trim_start_matches("./").trim_start_matches('/'))
-                .unwrap_or("");
-            if bare == "**" || bare == "*" || bare.is_empty() {
-                return Some(format!(
-                    "the manifest asks for {cap}, which reads as everything. The sandbox contains it, but a person cannot tell -- and an app wide open on paper fails the permission wall even when the runtime holds"
-                ));
-            }
+        // Rule 1: unscoped fs globs. The same rule `plan` holds its needs
+        // to, so it never offers a permission this refuses (K-764).
+        if fs_scope_reads_as_everything(&cap) {
+            return Some(format!(
+                "the manifest asks for {cap}, which reads as everything. The sandbox contains it, but a person cannot tell -- and an app wide open on paper fails the permission wall even when the runtime holds"
+            ));
         }
 
         // Rule 2: a family whose interface the component never imports.
@@ -20800,22 +22706,41 @@ fn build_fix(detail: &str) -> String {
     //
     // Named here with the one override that IS honoured. A person hitting
     // this outside an agent gets the same sentence, which is still true.
-    if detail.contains("Operation not permitted")
-        || detail.contains("os error 1)")
-        || (detail.contains("Permission denied") && detail.contains("cache"))
-    {
-        return "The build could not WRITE to its cache -- this is a \
-                permission problem, not a compiler error, and nothing in the \
-                app's code will fix it.\n\
-                It usually means the build is running inside a sandbox that \
-                only allows writes under the project directory, while the \
-                shared dependency cache lives under your home directory.\n\
-                Set CARGO_TARGET_DIR to a path inside the project and build \
-                again, for example:\n\
-                \u{20}\u{20}CARGO_TARGET_DIR=./target krate check-app .\n\
-                KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME are NOT read \
-                by this build; CARGO_TARGET_DIR is the one that works."
-            .to_string();
+    //
+    // Any refusal by the machine, not only one under a folder named
+    // `cache`: "Permission denied (os error 13)" on a target folder
+    // anywhere else still came back as "fix the compiler errors above".
+    if build_refused_by_machine(detail) {
+        let path = refused_path(detail)
+            .map(|path| format!(" ({path})"))
+            .unwrap_or_default();
+        if [
+            "No space left on device",
+            "(os error 28)",
+            "not enough space",
+            "quota",
+        ]
+        .iter()
+        .any(|sign| detail.contains(sign))
+        {
+            return format!(
+                "The disk is full{path} -- this is not a compiler error, and nothing in the \
+                 app's code will fix it. Free some space, then build again."
+            );
+        }
+        return format!(
+            "The build could not WRITE where it needed to{path} -- this is a \
+             permission problem, not a compiler error, and nothing in the \
+             app's code will fix it.\n\
+             It usually means the build is running inside a sandbox that \
+             only allows writes under the project directory, while the \
+             shared dependency cache lives under your home directory.\n\
+             Set CARGO_TARGET_DIR to a path inside the project and build \
+             again, for example:\n\
+             \u{20}\u{20}CARGO_TARGET_DIR=./target krate check-app .\n\
+             KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME are NOT read \
+             by this build; CARGO_TARGET_DIR is the one that works."
+        );
     }
     // The no_std guest with no SDK. rustc reports the missing lang items one at
     // a time, so match any of them rather than one exact string.
@@ -21020,12 +22945,14 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "ok": false,
                         "dir": dir.display().to_string(),
                         "stage": failure.stage.label(),
+                        "kind": failure.kind().label(),
                         "detail": failure.detail,
                         "fix": failure.fix,
                     })
                 );
             } else {
                 eprintln!("FAILED at {}", failure.stage.label());
+                eprintln!("{}", failure.kind().headline());
                 eprintln!();
                 eprintln!("{}", failure.detail.trim_end());
                 if !failure.fix.is_empty() {
@@ -21603,6 +23530,52 @@ fn run_check_app(
     };
     stage_took("run", run_started);
     if exit != 0 {
+        // Exit 5 is every refusal at the door, and they are not all
+        // capabilities. The seeded starter's manifest names the example's
+        // own `entry` file, so a fresh app is refused with "permission
+        // denied: manifest entry ... does not match" -- and this said "a
+        // capability it needs is not declared", which Studio agents then
+        // chased (K-763). Run it once more to read the refusal's own words:
+        // a refusal is immediate, so this costs well under a second.
+        if exit == 5 {
+            let said = run_self_captured(verify_dir.path(), &run_arg_refs)
+                .map(|(_, _, stderr)| stderr)
+                .unwrap_or_default();
+            let refusal = said
+                .lines()
+                .find(|line| line.contains("permission denied"))
+                .map(str::trim)
+                .unwrap_or("")
+                .to_string();
+            if refusal.contains("manifest entry") {
+                let built = wasm
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "<crate>.wasm".to_string());
+                return Err(CheckFailure {
+                    stage: CheckStage::Run,
+                    detail: format!(
+                        "the app was refused before it started (exit 5) because manifest.toml's \
+                         `entry` names a different file from the one this build makes: {refusal}"
+                    ),
+                    fix: format!(
+                        "In manifest.toml, set `entry = \"target/wasm32-wasip1/release/{built}\"` \
+                         -- the file this crate builds. Nothing else needs to change: this is \
+                         not a missing capability."
+                    ),
+                });
+            }
+            if !refusal.is_empty() {
+                return Err(CheckFailure {
+                    stage: CheckStage::Run,
+                    detail: format!("the app was refused something it needs (exit 5): {refusal}"),
+                    fix: "Declare the capability it names in manifest.toml, scoped as \
+                          narrowly as the app needs (KRATE_AUTHORING.md section 2 lists them), \
+                          or stop using it."
+                        .to_string(),
+                });
+            }
+        }
         let hint = match exit {
             4 => " (exit 4 means it exhausted its fuel budget -- either a runaway loop, or honest work that is too expensive per frame: hoist per-pixel math out of inner loops, and draw fewer `quick` frames)",
             5 => " (exit 5 means a capability it needs is not declared in manifest.toml)",
@@ -21611,11 +23584,18 @@ fn run_check_app(
         return Err(CheckFailure {
             stage: CheckStage::Run,
             detail: format!("the app failed to run headless with all grants (exit {exit}){hint}"),
-            fix: "Run it yourself to see its output: \
-                  `krate run <wasm> --manifest manifest.toml --auto-grant`. Set \
-                  KRATE_VERIFY_LOG=/path/to/log to capture what it printed. If it needs a \
-                  capability, declare it in manifest.toml."
-                .to_string(),
+            // The capability sentence only where a capability is the
+            // question: an app that returned 3 was told to go declare one.
+            fix: format!(
+                "Run it yourself to see its output: \
+                 `krate run <wasm> --manifest manifest.toml --auto-grant`. Set \
+                 KRATE_VERIFY_LOG=/path/to/log to capture what it printed.{}",
+                match exit {
+                    5 => " If it needs a capability, declare it in manifest.toml.",
+                    4 => "",
+                    _ => " A non-zero exit is the app's own answer: find where it returns it.",
+                }
+            ),
         });
     }
     passed.push("run");
@@ -24055,17 +26035,11 @@ impl StoragePrincipal {
     /// publishers shipping the same app id cannot collide with each other.
     fn storage_key(&self) -> String {
         match self {
-            // Short prefix of the publisher key: enough to separate
-            // publishers without an unreadable 64-character filename. A
-            // collision here needs a deliberate 16-hex-character preimage,
-            // and the consequence would be two of ONE publisher's own apps
-            // sharing a store, not a stranger reaching in.
+            // `<id>@<first 16 of the publisher key>`: the rule is shared
+            // with the phones (K-1172), so a computer and a phone name one
+            // signed app's data the same way.
             StoragePrincipal::Verified { publisher, app_id } => {
-                format!(
-                    "{}@{}",
-                    sanitize_storage_name(app_id),
-                    &publisher[..publisher.len().min(16)]
-                )
+                krate_runtime::storage_key::verified_storage_key(app_id, publisher)
             }
             StoragePrincipal::Unverified { app_id } => sanitize_storage_name(app_id),
             // A different separator from the publisher's `@`, so the two can
@@ -24208,25 +26182,9 @@ fn percent_encode_text(text: &str) -> String {
     out
 }
 
-/// Reduce a name to something safe to put in a path.
-fn sanitize_storage_name(name: &str) -> String {
-    let safe: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let safe = safe.replace("..", "__");
-    if safe.trim_matches(['.', '_'].as_slice()).is_empty() {
-        "unnamed-app".to_string()
-    } else {
-        safe
-    }
-}
+// Reduce a name to something safe to put in a path: the rule the phones
+// share (K-1172).
+use krate_runtime::storage_key::sanitize_storage_name;
 
 /// This machine's development identity (IC-737).
 ///
@@ -24792,6 +26750,98 @@ fn shared_hub_url() -> String {
         .unwrap_or_else(|_| fleet::pinned_hub().unwrap_or(DEFAULT_HUB_URL).to_string())
 }
 
+/// Where this machine keeps its account-sync files: device keys, the key
+/// it holds, the toggle for every app (IC-981).
+pub(crate) fn account_sync_dir() -> PathBuf {
+    krate_home().join("account-sync")
+}
+
+/// What a run needs to keep an app's store.kv -- and, for an installed
+/// app, its own files -- on every device of the signed-in person (IC-981),
+/// or `None`: nobody signed in, the app granted neither, or
+/// `KRATE_NO_ACCOUNT_SYNC` set. A toggle that is off rides along as
+/// `enabled: false`.
+fn account_sync_context(
+    app_id: &str,
+    principal: &StoragePrincipal,
+    store: &Path,
+    policy: &krate_policy::SessionPolicy,
+    sandbox: &Path,
+) -> Option<krate_runtime::account_sync_host::AccountSyncContext> {
+    if std::env::var_os("KRATE_NO_ACCOUNT_SYNC").is_some() || app_id.is_empty() {
+        return None;
+    }
+    let files = own_files_folder(app_id, sandbox);
+    if !policy.allows(&krate_manifest::Capability::new("store", "kv", None).ok()?)
+        && files.is_none()
+    {
+        return None;
+    }
+    let identity = github_auth::current()?;
+    let device_dir = account_sync_dir();
+    // The publisher every device reads from the bundle: a verified root, or
+    // `unsigned` (this machine's development identity is not something
+    // another device can check).
+    let publisher = match principal {
+        StoragePrincipal::Verified { publisher, .. } => {
+            krate_accountsync::publisher_label(Some(publisher))
+        }
+        _ => krate_accountsync::publisher_label(None),
+    };
+    Some(krate_runtime::account_sync_host::AccountSyncContext {
+        hub: shared_hub_url(),
+        token: identity.token.clone(),
+        enabled: krate_runtime::account_sync_host::sync_wanted(store, &device_dir),
+        device_dir,
+        device_name: this_computers_name(identity.display_name()),
+        machine_key: machine_key(),
+        app_id: app_id.to_string(),
+        publisher,
+        background: true,
+        files,
+    })
+}
+
+/// The app's files sync (S3) only from a folder Krate keeps for that app
+/// alone -- an installed app's data folder (IC-943). The folder beside a
+/// `.krate` someone opened, or one named with `--sandbox-root`, holds the
+/// person's other things too, and is never sent anywhere.
+fn own_files_folder(app_id: &str, sandbox: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let own = installed_app_data_dir(&home_dir()?, app_id);
+        let same = match (own.canonicalize(), sandbox.canonicalize()) {
+            (Ok(own), Ok(sandbox)) => own == sandbox,
+            _ => false,
+        };
+        same.then_some(own)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app_id, sandbox);
+        None
+    }
+}
+
+/// What the person's device list calls this computer: its own name where
+/// the system has one ("Yashraj's MacBook Pro"), else who and which system.
+pub(crate) fn this_computers_name(who: &str) -> String {
+    let asked = if cfg!(target_os = "macos") {
+        std::process::Command::new("scutil")
+            .args(["--get", "ComputerName"])
+            .output()
+            .ok()
+    } else {
+        std::process::Command::new("hostname").output().ok()
+    };
+    asked
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("{who}'s {} computer", std::env::consts::OS))
+}
+
 /// The env var a debug build reads to move the clock an app's organisation
 /// data is stamped with, so a test can be a device whose clock is wrong.
 const ORG_CLOCK_SKEW_ENV: &str = "KRATE_TEST_ORG_CLOCK_SKEW_MS";
@@ -24816,30 +26866,13 @@ pub(crate) fn org_run_access(
     manifest: Option<&krate_manifest::Manifest>,
 ) -> Result<krate_runtime::org_store::OrgAccess> {
     Ok(match (opened, manifest) {
-        (Some(opened), Some(manifest)) => krate_runtime::org_store::OrgAccess::Granted(Box::new(
-            krate_runtime::org_store::OrgGrant {
-                slug: opened.slug.clone(),
-                hub: opened.hub.clone(),
-                digest: opened.digest.clone(),
-                authorization: opened.authorization.clone(),
-                me: opened
-                    .principal
-                    .as_deref()
-                    .map(|p| p.split_once(':').map_or(p, |(_, v)| v).to_string()),
-                mirror: access::org_data_path(
-                    &opened.slug,
-                    &manifest.app.id.to_ascii_lowercase(),
-                    opened.principal.as_deref(),
-                ),
-                clock_skew_ms: org_clock_skew_ms(),
-                app_id: manifest.app.id.to_ascii_lowercase(),
-                device_secret: krate_runtime::org_store::DeviceSecret(
-                    *access::org_device_key()?.secret(),
-                ),
-                device_name: access::device_name(opened.principal.as_deref()),
-                org_name: opened.org_name.clone(),
-            },
-        )),
+        (Some(opened), Some(manifest)) => krate_orgaccess::org_access(
+            &access::HERE,
+            opened,
+            &manifest.app.id,
+            org_clock_skew_ms(),
+        )
+        .map_err(|words| anyhow::anyhow!(words))?,
         _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
     })
 }
@@ -24848,19 +26881,14 @@ pub(crate) fn org_run_access(
 /// granted `net.connection:<name>` gets that connection's credential, from
 /// the hub, into memory only. `digest` is the opened bytes' sha256, worked
 /// out only when the app asks for a connection. One place for every door
-/// (K-1102).
+/// (K-1102), and the phones' too (K-1171).
 pub(crate) fn run_connections(
     manifest: Option<&krate_manifest::Manifest>,
     policy: &krate_policy::SessionPolicy,
     bundle: Option<&krate_bundle::OpenBundle>,
     digest: impl FnOnce() -> Option<String>,
 ) -> krate_runtime::connections::Connections {
-    connections::resolve(manifest, policy, || {
-        let access::Mark::Signed(slug) = access::mark_of(bundle?) else {
-            return None;
-        };
-        Some((slug, digest()?))
-    })
+    krate_orgaccess::connections::for_run(&access::HERE, manifest, policy, bundle, digest)
 }
 
 /// How far a test moves this device's clock for `store.org`. Zero in a
@@ -25883,6 +27911,187 @@ mod refusal_tests {
         assert!(extract_plan_json(planned).is_some());
         assert!(agent_failure_reason_in(asked).is_none());
         assert!(agent_failure_reason_in(planned).is_none());
+    }
+}
+
+#[cfg(test)]
+mod failure_kind_tests {
+    use super::{build_fix, failed_check_message, failure_kind, CheckStage, FailureKind};
+    use std::path::Path;
+
+    /// Each failure is told apart by who can fix it (K-763).
+    #[test]
+    fn a_failure_is_classified_by_who_can_fix_it() {
+        let cases: &[(CheckStage, &str, FailureKind)] = &[
+            (
+                CheckStage::Build,
+                "error[E0425]: cannot find value `x` in this scope",
+                FailureKind::Compile,
+            ),
+            (
+                CheckStage::Build,
+                "error: Operation not permitted (os error 1) at path \"/Users/a/.cache/krate/build/x\"",
+                FailureKind::Environment,
+            ),
+            // Any folder, not only one named `cache`.
+            (
+                CheckStage::Build,
+                "error: Permission denied (os error 13) at path \"/tmp/ro/target/t\"",
+                FailureKind::Environment,
+            ),
+            (
+                CheckStage::Build,
+                "error: couldn't create a temp dir: No space left on device (os error 28)",
+                FailureKind::Environment,
+            ),
+            // The app's own text quoted in a compiler error is still the code.
+            (
+                CheckStage::Build,
+                "error[E0308]: mismatched types\n let x: u32 = \"Permission denied\";",
+                FailureKind::Compile,
+            ),
+            (
+                CheckStage::Imports,
+                "the component imports non-Krate APIs: wasi:filesystem/types@0.2.0",
+                FailureKind::Imports,
+            ),
+            (
+                CheckStage::Run,
+                "the app was refused something it needs (exit 5): permission denied: store.kv",
+                FailureKind::Capability,
+            ),
+            (
+                CheckStage::Run,
+                "the app was refused before it started (exit 5) because manifest.toml's `entry` \
+                 names a different file: permission denied: manifest entry `a` does not match `b`",
+                FailureKind::Project,
+            ),
+            (
+                CheckStage::Run,
+                "the app failed to run headless with all grants (exit 4) (exit 4 means it \
+                 exhausted its fuel budget)",
+                FailureKind::Timeout,
+            ),
+            (
+                CheckStage::Run,
+                "the app failed to run headless with all grants (exit 3)",
+                FailureKind::Test,
+            ),
+            (
+                CheckStage::Manifest,
+                "the manifest asks for fs.read:**, which reads as everything",
+                FailureKind::Capability,
+            ),
+            (CheckStage::Usability, "the window closed by itself", FailureKind::Test),
+        ];
+        for (stage, detail, expected) in cases {
+            assert_eq!(failure_kind(*stage, detail), *expected, "{detail}");
+        }
+    }
+
+    /// A refusal by the machine is never sent as "fix the compiler errors",
+    /// and the agent is not asked to edit anything for it.
+    #[test]
+    fn a_refused_build_is_not_sent_to_the_agent_as_compiler_errors() {
+        let denied = "error: Permission denied (os error 13) at path \"/tmp/ro/target/t\"";
+        let fix = build_fix(denied);
+        assert!(!fix.contains("Fix the compiler errors"), "{fix}");
+        assert!(fix.contains("/tmp/ro/target/t"), "the path is named: {fix}");
+        assert!(FailureKind::Environment.agent_instruction().is_none());
+        for kind in [
+            FailureKind::Imports,
+            FailureKind::Capability,
+            FailureKind::Test,
+            FailureKind::Timeout,
+        ] {
+            let said = kind.agent_instruction().expect("an edit can fix it");
+            assert!(said.contains("compiles"), "{kind:?}: {said}");
+            assert!(!said.contains("does not compile"), "{kind:?}: {said}");
+        }
+        let words = failed_check_message(FailureKind::Environment, denied, Path::new("/t.txt"));
+        assert!(words.starts_with("This computer stopped Krate"), "{words}");
+        assert!(
+            !words.contains("often gets it the rest of the way"),
+            "{words}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod plan_agrees_with_create_tests {
+    use super::{build_verdict, plan_held_to_create, plan_need_is_buildable, request_to_judge};
+    use krate_author::feasibility::Verdict;
+
+    /// Studio's notes are not the request: the agreed plan, an unanswered
+    /// question and the app's name are dropped; the person's answer stays.
+    #[test]
+    fn only_the_persons_words_are_judged() {
+        let studio = "a journal\n\n(When asked \"Where?\" the person answered: \"on my laptop\")\n\n\
+                      (The person was asked \"Sync to the cloud?\" and chose not to answer.)\n\n\
+                      (The agreed plan: nothing is uploaded to the cloud.)\n\n(The app is called \"Diary\".)";
+        let judged = request_to_judge(studio);
+        assert!(
+            judged.contains("a journal") && judged.contains("on my laptop"),
+            "{judged}"
+        );
+        assert!(
+            !judged.contains("cloud") && !judged.contains("Diary"),
+            "{judged}"
+        );
+        assert!(matches!(
+            build_verdict(studio),
+            Verdict::Buildable | Verdict::Caveat(_)
+        ));
+        // The person's own words still decide.
+        assert!(matches!(
+            build_verdict("an app that reads my Gmail inbox\n\n(The agreed plan: a mail viewer.)"),
+            Verdict::Refuse(_)
+        ));
+    }
+
+    #[test]
+    fn a_plan_only_names_permissions_create_accepts() {
+        for good in [
+            "store.kv",
+            "net.connect:api.example.com:443",
+            "fs.write:exports/**",
+        ] {
+            assert!(plan_need_is_buildable(good), "{good}");
+        }
+        for bad in [
+            "ui.window",
+            "ui.window:create",
+            "fs.write:<chosen-folder>/**",
+            "fs.read:**",
+            "a CSV file of your expenses",
+            "camera.photograph",
+        ] {
+            assert!(!plan_need_is_buildable(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_ai_refusal_becomes_the_cannot_arm_not_a_plan() {
+        let held = plan_held_to_create(serde_json::json!({
+            "cannot": "a Krate app cannot sign in to your Google account",
+            "instead": "a viewer for mail you export",
+            "agent_session": "claude:abc",
+        }));
+        assert!(held.get("plan").is_none(), "{held}");
+        assert_eq!(
+            held["cannot"],
+            "Krate cannot build that: a Krate app cannot sign in to your Google account. \
+             Try instead: a viewer for mail you export."
+        );
+        assert_eq!(held["agent_session"], "claude:abc");
+
+        let plan = plan_held_to_create(serde_json::json!({
+            "plan": "a tip calculator",
+            "needs": ["store.kv", "ui.window"],
+            "shape": "krate-no-such-example",
+        }));
+        assert_eq!(plan["needs"], serde_json::json!(["store.kv"]));
+        assert!(plan.get("shape").is_none(), "{plan}");
     }
 }
 
@@ -28608,6 +30817,32 @@ mod url_cache_tests {
 mod storage_identity_tests {
     use super::*;
 
+    /// A signed app's store name is pinned, byte for byte (K-1172): the
+    /// rule moved to krate_runtime::storage_key so the phones share it, and
+    /// a person's data on this computer must still be where it was.
+    #[test]
+    fn a_signed_apps_store_name_is_unchanged_by_sharing_the_rule() {
+        let signed = StoragePrincipal::Verified {
+            publisher: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(signed.storage_key(), "dev.krate.notes@0123456789abcdef");
+        let unsigned = StoragePrincipal::Unverified {
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(unsigned.storage_key(), "dev.krate.notes");
+        let home = Path::new("/h");
+        assert_eq!(
+            principal_store_path_in(home, &signed),
+            Path::new("/h/store/dev.krate.notes@0123456789abcdef.kv")
+        );
+        assert_eq!(
+            principal_store_path_in(home, &unsigned),
+            Path::new("/h/store/dev.krate.notes.kv")
+        );
+    }
+
     /// What the app id does and does not decide (IC-736).
     ///
     /// It decides where an app's data lives, which is right: data follows the
@@ -29794,5 +32029,28 @@ mod publish_staged_tests {
             "version 1"
         );
         assert!(!previous.exists());
+    }
+}
+
+/// The bundle an opened app runs in says why for every piece of hardware
+/// (IC-982): without the location sentence macOS drops the prompt and the
+/// app waits for ever; without the Bluetooth one it ends the process.
+#[cfg(all(test, target_os = "macos"))]
+mod launcher_plist_tests {
+    #[test]
+    fn an_opened_app_s_bundle_says_why_for_every_piece_of_hardware() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let engine = dir.path().join("engine");
+        std::fs::write(&engine, b"not a program").expect("engine");
+        super::macos_launcher_bundle(dir.path(), "Heart Rate", &engine).expect("bundle");
+        let plist = std::fs::read_to_string(dir.path().join("Heart Rate.app/Contents/Info.plist"))
+            .expect("Info.plist");
+        for key in super::HARDWARE_USAGE_KEYS {
+            assert!(
+                plist.contains(&format!("<key>{key}</key>")),
+                "missing {key}"
+            );
+        }
+        assert!(plist.contains("Heart Rate asked to reach a Bluetooth device"));
     }
 }

@@ -376,12 +376,20 @@ h3 { font-size: 19px; line-height: 1.3; font-weight: 500; letter-spacing: -.02em
    scripts/ensure-touch-targets.py adds at deploy, so the kit carries its own,
    sized to its own parts: stacked footer links stay stacked. */
 @media (pointer: coarse) {
-  .mi, .signin, .cta, .btn, .btn.sm, .thm, .burger, .drawer a, .toc a { min-height: 44px; }
+  .mi, .signin, .cta, .btn, .btn.sm, .thm, .burger, .drawer a, .toc a, .brand { min-height: 44px; }
   .thm, .burger { width: 44px; height: 44px; }
   .mnav a { min-height: 48px; display: flex; align-items: center; padding: 0; }
   .foot a { min-height: 44px; display: flex; align-items: center; margin-bottom: 0; }
   .qa summary { min-height: 48px; }
   .chk { min-height: 44px; align-items: center; }
   .chk input { margin-top: 0; width: 20px; height: 20px; }
+}
+/* phones: a 14px floor under the kit's small type (footer, eyebrows, the
+   meta line, pills), which was 13-13.5px and hard to read at arm's length. */
+@media (max-width: 680px) {
+  /* :root-prefixed so a page's own ".ph .meta { font-size: 13px }" does not
+     win back the phone size; only the size changes. */
+  :root .foot h5, :root .foot a, :root .foot .copy span, :root .ph .meta, :root .meta,
+  :root .ph .updated, :root .updated, :root .eye, :root .pill { font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .js .rv { opacity: 1; transform: none; } }

@@ -9,23 +9,33 @@
 // Resend's plan counts mails per day, so each moment mails once: a publish
 // only for bytes the hub did not hold, a build only the first time its case
 // makes a file, an open only the first time someone else opens an app.
+//
+// All three are NON-ESSENTIAL (mail-prefs.js has the whole list): each
+// asks the account's switch first, ends with the unsubscribe line, and
+// carries the one-click headers.
 
 import { addressFor } from "./org-mail.js";
+import { newsMail } from "./mail-prefs.js";
 
 export const KRATE_FROM = "Krate <hello@krate.tech>";
 export const REPLY_TO = "incyashraj@gmail.com";
 const SITE = "https://krate.tech";
 const SIGN_OFF = "\n\nKrate\nkrate.tech\n\nReply to this mail and it reaches the person who builds Krate.";
 
-/// One mail through Resend; null when it went, else why not.
-export async function sendMail(env, { to, subject, text }) {
+/// One mail through Resend; null when it went, else why not. `html` goes
+/// beside the text when given; `headers` are extra mail headers (the
+/// one-click unsubscribe pair).
+export async function sendMail(env, { to, subject, text, html, headers, from = KRATE_FROM, replyTo = REPLY_TO }) {
   if (!env.RESEND_API_KEY) return "mail is not set up on this hub";
   if (!to) return "no address";
+  const mail = { from, to: [to], reply_to: replyTo, subject, text };
+  if (html) mail.html = html;
+  if (headers) mail.headers = headers;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: KRATE_FROM, to: [to], reply_to: REPLY_TO, subject, text }),
+      body: JSON.stringify(mail),
     });
     if (res.ok) return null;
     return `resend ${res.status} ${await res.text().catch(() => "")}`;
@@ -34,20 +44,48 @@ export async function sendMail(env, { to, subject, text }) {
   }
 }
 
-/// Where the owner of a listing can be mailed: an account's own address
-/// (a proved inbox first), or a GitHub login's account. Null when unknown.
-export async function addressOfOwner(env, owner) {
+/// Where an account is mailed: a proved inbox first, else its email.
+export function accountAddress(user) {
+  if (!user) return null;
+  if (Array.isArray(user.verified_emails) && user.verified_emails.length) return user.verified_emails[0];
+  return user.email || null;
+}
+
+/// The account that owns a listing, with where it is mailed:
+/// `{id, user, to}`, or null when there is no account. An `account:<id>`
+/// owner is that account; a `github:<login>` owner is the account its
+/// GitHub sign-in belongs to, mailed where addressFor says.
+export async function ownerAccount(env, owner) {
   const who = String(owner || "");
   try {
-    if (who.startsWith("account:")) {
-      const user = JSON.parse((await env.APPS.get(`user:${who.slice("account:".length)}`)) || "null");
-      if (!user) return null;
-      if (Array.isArray(user.verified_emails) && user.verified_emails.length) return user.verified_emails[0];
-      return user.email || null;
-    }
-    if (who.startsWith("github:")) return await addressFor(env, who);
-  } catch (_) {}
-  return null;
+    let id = null;
+    if (who.startsWith("account:")) id = who.slice("account:".length);
+    else if (who.startsWith("github:")) id = await env.APPS.get(`ghlogin:${who.slice("github:".length)}`);
+    if (!id) return null;
+    const user = JSON.parse((await env.APPS.get(`user:${id}`)) || "null");
+    if (!user) return null;
+    const to = who.startsWith("github:") ? await addressFor(env, who) : accountAddress(user);
+    return { id, user, to };
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Where the owner of a listing can be mailed, or null.
+export async function addressOfOwner(env, owner) {
+  const account = await ownerAccount(env, owner);
+  return (account && account.to) || null;
+}
+
+/// One non-essential mail to an account: its switch asked first, the
+/// unsubscribe line last, the one-click headers on. Null when it went.
+async function sendNews(env, { id, user, to }, mail, what) {
+  const news = await newsMail(env, id, user, what);
+  if (news.skip) return news.skip;
+  if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
+  const why = await sendMail(env, { to, subject: mail.subject, text: mail.text + news.footer, headers: news.headers });
+  if (why) console.error(`${what} did not go: ${why}`);
+  return why;
 }
 
 /// How many moment mails go in one day (UTC), hub-wide and to one inbox.
@@ -82,6 +120,23 @@ export async function momentAllowed(env, to) {
     const ttl = { expirationTtl: 2 * 24 * 3600 };
     await env.APPS.put(allKey, String(all + 1), ttl);
     await env.APPS.put(inboxKey, String(inbox + 1), ttl);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// One slot of the hub's day for an announcement: the same hub-wide
+/// ceiling the moments count against (no per-inbox one: an announcement
+/// reaches each inbox once). One read and one write per mail that goes.
+export async function daySlot(env) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const perDay = Number(env.MAIL_MOMENTS_PER_DAY) || MOMENTS_PER_DAY;
+    const allKey = `mail-day:${day}:all`;
+    const all = Number(await env.APPS.get(allKey)) || 0;
+    if (all >= perDay) return false;
+    await env.APPS.put(allKey, String(all + 1), { expirationTtl: 2 * 24 * 3600 });
     return true;
   } catch (_) {
     return false;
@@ -133,12 +188,9 @@ Each one sees what it asks for before it runs, and opens it with nothing to inst
 /// Tell the publisher their app is live. Never throws.
 export async function tellPublished(env, owner, { name, url, listed }) {
   try {
-    const to = await addressOfOwner(env, owner);
-    if (!to) return "no address";
-    if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
-    const why = await sendMail(env, { to, ...publishedMail({ name, url, listed }) });
-    if (why) console.error(`the published mail did not go: ${why}`);
-    return why;
+    const account = await ownerAccount(env, owner);
+    if (!account || !account.to) return "no address";
+    return await sendNews(env, account, publishedMail({ name, url, listed }), "the published mail");
   } catch (e) {
     return String(e);
   }
@@ -147,13 +199,11 @@ export async function tellPublished(env, owner, { name, url, listed }) {
 /// Tell a person the app they asked for is made. Never throws.
 export async function tellMade(env, user, record) {
   try {
-    const to = (Array.isArray(user && user.verified_emails) && user.verified_emails[0]) || (user && user.email);
+    const to = accountAddress(user);
     if (!to) return "no address";
     if (!env.RESEND_API_KEY) return "mail is not set up on this hub";
-    if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
-    const why = await sendMail(env, { to, ...madeMail({ request: record && record.request }) });
-    if (why) console.error(`the made mail did not go: ${why}`);
-    return why;
+    if (!user.id) return "no account to unsubscribe";
+    return await sendNews(env, { id: user.id, user, to }, madeMail({ request: record && record.request }), "the made mail");
   } catch (e) {
     return String(e);
   }
@@ -169,14 +219,11 @@ export async function tellFirstOpen(env, hash, record, base) {
     // and "someone opened it" for v2, v3 ... is the same news again.
     const flag = `told-opened:${record.line || hash}`;
     if (await env.APPS.get(flag)) return "already told";
-    const to = await addressOfOwner(env, record.owner || (record.author_login ? `github:${String(record.author_login).toLowerCase()}` : ""));
-    if (!to) return "no address";
+    const account = await ownerAccount(env, record.owner || (record.author_login ? `github:${String(record.author_login).toLowerCase()}` : ""));
+    if (!account || !account.to) return "no address";
     // Marked first: a second open while this mail is in flight is told nothing.
     await env.APPS.put(flag, String(Math.floor(Date.now() / 1000)));
-    if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
-    const why = await sendMail(env, { to, ...firstOpenMail({ name: record.name || "your app", url: `${base}/a/${hash}` }) });
-    if (why) console.error(`the first-open mail did not go: ${why}`);
-    return why;
+    return await sendNews(env, account, firstOpenMail({ name: record.name || "your app", url: `${base}/a/${hash}` }), "the first-open mail");
   } catch (e) {
     return String(e);
   }

@@ -1,0 +1,18 @@
+# Krate's home screen with nothing prepared: an empty Library, a hub out of
+# reach and nobody signed in. Every place must switch and say what to do
+# next.
+name = "move between Library, Discover and You"
+[[step]]
+expect_text = "No apps yet"
+[[step]]
+click = "Discover"
+[[step]]
+expect_text = "The hub is out of reach"
+[[step]]
+click = "You"
+[[step]]
+expect_text = "Sign in to Krate"
+[[step]]
+click = "Library"
+[[step]]
+expect_text = "Open a file"

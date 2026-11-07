@@ -62,18 +62,25 @@ def stat_tiles(claims):
 
     runtime = first(r"installed once at ([0-9.,]+ MiB)", size["caveat"], "the shared runtime size")
     ratio = first(r"first-app disk ratio ([0-9.]+x)", size["caveat"], "the first-app disk ratio")
-    not_ratio = first(r"not ([0-9.,]+x)", size["caveat"], "the payload ratio it is not")
     warm_us = first(r"^([0-9.,]+ ms)", warm["us"], "Krate's warm open")
     mem_us = first(r"^([0-9.,]+ MiB)", mem["us"], "Krate's memory")
     tiles = [
         (warm_us, "Warm open, 50,000 lines, median", f"MarkText: {warm['them']}"),
         (mem_us, "Memory, 50,000 lines" + (", one process" if "one process" in mem["us"] else ""), f"MarkText: {mem['them']}"),
         (runtime, "Shared Krate runtime, installed once", f"Per-app payload: {size['us']}".replace(" KiB", "\u00a0KiB").replace(" MiB", "\u00a0MiB")),
-        (ratio, "First-app disk ratio", f"Not {not_ratio}"),
+        (ratio, "Less disk, first app", "And almost nothing for every app after"),
     ]
     return "\n".join(
         f'          <div class="stat"><b>{html_escape(b)}</b><span>{html_escape(l)}</span><span class="vs">{html_escape(v)}</span></div>'
         for b, l, v in tiles)
+
+
+def shown_caveat(caveat):
+    """The caveat as a reader sees it. The record ends with an instruction to
+    us ("Never quote the payload ratio as a whole-install ratio"); it stays
+    in the record, where check-claims reads it, and stays off the page."""
+    shown = re.sub(r"\.?\s*Never quote [^.]*\.?$", "", caveat).rstrip(". ")
+    return shown[:1].upper() + shown[1:]
 
 
 def wbr_path(path):
@@ -165,9 +172,9 @@ def main():
 .prose .steps li + li {{ margin-top: 0; }}
 .pl {{ margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; }}
 .tbl .fn {{ white-space: nowrap; }}
-@media (max-width: 680px) {{ .tbl.cmp {{ min-width: 0; font-size: 13px; }} .tbl.cmp td:first-child {{ min-width: 0; }} .tbl.cmp th, .tbl.cmp td {{ padding-left: 10px; padding-right: 10px; }} }}
-@media (max-width: 680px) {{ .doc .stats {{ gap: 10px; }} .doc .stat {{ padding: 18px 16px 16px; }} .doc .stat b {{ font-size: 25px; white-space: nowrap; }} .doc .stat span {{ font-size: 13px; }} .steps li {{ padding-left: 52px; }} .steps li::before {{ left: 12px; }} .tblw.tall {{ max-height: 480px; }} }}
-@media (max-width: 680px) {{ .prose .tbl:not(.cmp) {{ font-size: 13px; }} .prose .tbl:not(.cmp) th {{ white-space: normal; padding: 10px 8px; }} .prose .tbl:not(.cmp) td {{ padding: 12px 8px; }} .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child {{ padding-left: 14px; }} .prose .tbl:not(.cmp) td:first-child {{ white-space: normal; }} .prose .tbl:not(.cmp) code {{ white-space: normal; overflow-wrap: anywhere; font-size: 11.5px; }} }}
+@media (max-width: 680px) {{ .tbl.cmp {{ min-width: 0; font-size: 14px; }} .tbl.cmp td:first-child {{ min-width: 0; }} .tbl.cmp th, .tbl.cmp td {{ padding-left: 10px; padding-right: 10px; }} }}
+@media (max-width: 680px) {{ .doc .stats {{ gap: 10px; }} .doc .stat {{ padding: 18px 16px 16px; }} .doc .stat b {{ font-size: 25px; white-space: nowrap; }} .doc .stat span {{ font-size: 14px; }} .steps li {{ padding-left: 52px; }} .steps li::before {{ left: 12px; }} .tblw.tall {{ max-height: 480px; }} }}
+@media (max-width: 680px) {{ .prose .tbl:not(.cmp) {{ font-size: 14px; }} .prose .tbl:not(.cmp) th {{ white-space: normal; padding: 10px 8px; }} .prose .tbl:not(.cmp) td {{ padding: 12px 8px; }} .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child {{ padding-left: 14px; }} .prose .tbl:not(.cmp) td:first-child {{ white-space: normal; }} .prose .tbl:not(.cmp) code {{ white-space: normal; overflow-wrap: anywhere; font-size: 13px; }} }}
 </style>
 </head>
 <body>
@@ -178,7 +185,7 @@ def main():
 <section class="ph wrap n">
   <span class="eye">Reports</span>
   <h1>Measurements you can inspect.</h1>
-  <p class="lede">A notes workload compared on the same machine, plus an inventory of application files in this checkout. These are different kinds of evidence: neither establishes a performance result for every Krate app or for the latest release.</p>
+  <p class="lede">The same 50,000-line notes workload, run on the same Apple M4 against an Electron editor: memory, time to open and the files themselves, with the raw method and a sealed run you can check.</p>
   <p class="meta">Page generated {today} from commit <code class="k">{revision}</code>. Benchmark measured {html_escape(claims[0]["measured_on"])}. Building this page does not run a new benchmark.</p>
 </section>
 
@@ -204,8 +211,8 @@ def main():
           </table>
         </div>
         <p class="method">Warm open is time to a visible window, median of ten runs per app. Memory is settled footprint across the whole process tree. The historical app-bundle row excludes Krate's shared runtime and does not measure a current source-bearing bundle.</p>
-        <div class="call warn"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7.5 13h-15z"/><path d="M10 8.5v3.5M10 14.4v.1"/></svg><span>{html_escape(claims[0]["caveat"])}. That first-app ratio is the historical runtime-plus-payload accounting, not a current source-bearing bundle installation measurement.</span></div>
-        <p>Lower numbers in these rows are useful evidence for this workload, not a universal efficiency claim. Application features, assets, rendering, host calls and data handling can change the result. Energy was not measured.</p>
+        <div class="call"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v4.5M10 6.4v.1"/></svg><span>{html_escape(shown_caveat(claims[0]["caveat"]))}.</span></div>
+        <p>Measured on this workload; your app's features and assets change the numbers, and the method below lets you run it on yours.</p>
         <div class="ev">
           <a class="btn ghost sm" href="{analysis_url}">Read the run analysis <span class="ext">↗</span></a>
           <a class="btn ghost sm" href="{kit_url}">Protocol and reproduction scripts <span class="ext">↗</span></a>

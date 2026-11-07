@@ -71,9 +71,17 @@ public class KrateActivity extends NativeActivity {
     private volatile int[] covered = new int[4];
     /** The invisible text editor the on-screen keyboard talks to (K-1024). */
     private volatile Typing typing;
+    /** A link or file came while Krate ran, and Krate's own screen has not closed for it yet. */
+    private boolean openedMeanwhile;
 
     @Override
     protected void onCreate(android.os.Bundle saved) {
+        // Before the player asks what it was opened on (krateTakeOpen).
+        Intent opened = asOpen(getIntent());
+        if (opened != null && opened.getComponent() == null) {
+            opened.setComponent(new android.content.ComponentName(this, KrateActivity.class));
+        }
+        setIntent(opened);
         super.onCreate(saved);
         // What covers the window's edges, kept as Android says, so an app
         // keeps its text out from under the clock and the gesture bar (K-1039).
@@ -115,6 +123,58 @@ public class KrateActivity extends NativeActivity {
                         return view.onApplyWindowInsets(insets);
                     }
                 });
+    }
+
+    /**
+     * Dark status-bar and navigation icons over a light app, light ones over
+     * a dark app: Krate looks at what the app drew under each bar and says.
+     * White icons over Krate's own light home could not be read.
+     */
+    public void krateLightBars(final boolean lightTop, final boolean lightBottom) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        android.view.WindowInsetsController bars = getWindow().getInsetsController();
+                        if (bars == null) {
+                            return;
+                        }
+                        int status = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS;
+                        int nav = android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                        bars.setSystemBarsAppearance((lightTop ? status : 0) | (lightBottom ? nav : 0), status | nav);
+                    } else {
+                        android.view.View decor = getWindow().getDecorView();
+                        int flags = decor.getSystemUiVisibility()
+                                & ~(android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                                        | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+                        if (lightTop) {
+                            flags |= android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                        }
+                        if (lightBottom) {
+                            flags |= android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                        }
+                        decor.setSystemUiVisibility(flags);
+                    }
+                } catch (RuntimeException failed) {
+                    Log.w(TAG, "bar colours: " + failed);
+                }
+            }
+        });
+    }
+
+    /** The phone's name as its owner sees it ("Galaxy S22 Ultra"), else its model. */
+    public String krateDeviceName() {
+        try {
+            String named = android.provider.Settings.Global.getString(getContentResolver(), "device_name");
+            if (named != null && !named.trim().isEmpty()) {
+                return named.trim();
+            }
+        } catch (RuntimeException ignored) {
+            // Some phones keep no name; the model is the next best thing.
+        }
+        String model = android.os.Build.MODEL;
+        return model == null || model.isEmpty() ? "This phone" : model;
     }
 
     /** Pixels covered at the top, right, bottom and left edges. */
@@ -870,7 +930,10 @@ public class KrateActivity extends NativeActivity {
     /**
      * Krate runs one app at a time in one activity (singleTask): a link, a
      * file or a reminder tapped while it runs comes here rather than starting
-     * a second player beside the first.
+     * a second player beside the first. Krate stays running on its home
+     * screen, so what was tapped waits as the activity's intent for the
+     * player to take (krateTakeOpen): Krate's own screens close for it at
+     * once (krateOpenedMeanwhile), and an app that is running finishes first.
      */
     @Override
     protected void onNewIntent(Intent intent) {
@@ -879,6 +942,72 @@ public class KrateActivity extends NativeActivity {
             return;
         }
         Log.i(TAG, "opened again while running: " + intent.getAction());
+        intent = asOpen(intent);
+        if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
+            synchronized (this) {
+                setIntent(intent);
+                openedMeanwhile = true;
+            }
+        }
+    }
+
+    /**
+     * A file shared to Krate from another app's share sheet (Files, Gmail,
+     * Drive, a chat's "Share") opens exactly as if it had been tapped: the
+     * shared stream becomes the file to open. Krate keeps the read grant the
+     * sender gave this activity, so the player reads it the same way.
+     * Anything else is left as it came.
+     */
+    @SuppressWarnings("deprecation")
+    static Intent asOpen(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) {
+            return intent;
+        }
+        Uri stream = null;
+        Object extra = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (extra instanceof Uri) {
+            stream = (Uri) extra;
+        }
+        ClipData clip = intent.getClipData();
+        if (stream == null && clip != null && clip.getItemCount() > 0) {
+            stream = clip.getItemAt(0).getUri();
+        }
+        if (stream == null) {
+            return intent;
+        }
+        Intent view = new Intent(Intent.ACTION_VIEW, stream);
+        // NativeActivity finds its library through the intent's component
+        // in onCreate: without it, Krate crashed on every share.
+        view.setComponent(intent.getComponent());
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Log.i(TAG, "shared to Krate: " + stream.getScheme());
+        return view;
+    }
+
+    /** The link or file Krate was opened on, once: null when there is none. */
+    public synchronized String krateTakeOpen() {
+        Intent intent = getIntent();
+        String open = null;
+        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction())) {
+            open = intent.getDataString();
+        }
+        setIntent(new Intent(Intent.ACTION_MAIN));
+        openedMeanwhile = false;
+        return open;
+    }
+
+    /** Whether a link or file is waiting for krateTakeOpen. */
+    public synchronized boolean krateOpenWaiting() {
+        Intent intent = getIntent();
+        return intent != null && Intent.ACTION_VIEW.equals(intent.getAction())
+                && intent.getData() != null;
+    }
+
+    /** Whether a link or file came since last asked: Krate's own screen closes for it. */
+    public synchronized boolean krateOpenedMeanwhile() {
+        boolean came = openedMeanwhile;
+        openedMeanwhile = false;
+        return came;
     }
 
     /** Write the file at path into the document at uri; true when it all went. */

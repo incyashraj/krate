@@ -577,5 +577,3 @@ Windows while running through the same Krate runtime model.
 
 If you used the Phase 1 proof app, read
 [Migrating From Phase 1 To Phase 2](../phase2/migrating-from-phase1.md).
-
-See [`Plan/Phase-2-Plan.md`](https://github.com/incyashraj/krate/blob/main/Plan/Phase-2-Plan.md).

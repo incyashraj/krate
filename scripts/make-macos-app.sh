@@ -127,6 +127,12 @@ cat > "$APP/Contents/Info.plist" << PLIST
     <string>Krate adds a picture to your Photos only when an app asks and you allow it.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Krate turns speech into text only for apps that ask, with Apple's recognizer on this Mac where it can.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Krate tells an app where you are only when it asks, you allow it, and only while it is open.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>Krate tells an app where you are only when it asks, you allow it, and only while it is open.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Krate lets an app reach a Bluetooth device only when it asks, you allow it, and only the device you pick.</string>
     <key>CFBundleIconFile</key>
     <string>Krate</string>
     <key>CFBundleDocumentTypes</key>

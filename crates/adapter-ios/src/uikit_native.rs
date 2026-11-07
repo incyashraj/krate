@@ -47,8 +47,8 @@ mod real {
     use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_core_foundation::{CGPoint, CGRect};
     use objc2_core_graphics::{
-        CGBitmapContextCreate, CGBitmapContextCreateImage, CGColorSpaceCreateDeviceRGB,
-        CGImageAlphaInfo, CGImageByteOrderInfo,
+        CGBitmapContextCreate, CGBitmapContextCreateImage, CGColorSpace, CGImageAlphaInfo,
+        CGImageByteOrderInfo,
     };
     use objc2_foundation::NSObjectProtocol;
     use objc2_ui_kit::UIDocumentPickerDelegate;
@@ -178,6 +178,11 @@ mod real {
         gesture: Option<TouchGesture>,
         /// Every finger, for apps that read them all (krate:ui/touch).
         fingers: krate_adapter_common::ui::FingerTracker,
+        /// Where the pointer is and whether it is held, for apps that ask
+        /// (krate:ui/pointer): fed from the presses as they leave for the
+        /// runtime. Never fed, a game steering by `button-held` could not
+        /// be steered by finger.
+        pointer: krate_adapter_common::ui::PointerTracker,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
         paint_buffer: Vec<u32>,
@@ -198,15 +203,48 @@ mod real {
         drags: bool,
     }
 
+    /// The canvases a finger presses rather than scrolls, by Krate window
+    /// and widget: games drawn at a design size (K-1202).
+    static PRESSING: Mutex<
+        std::collections::BTreeSet<(WindowId, krate_adapter_common::ui::WidgetId)>,
+    > = Mutex::new(std::collections::BTreeSet::new());
+
+    /// Note whether a finger on this canvas presses it (the runtime says).
+    pub fn set_canvas_presses(
+        window: WindowId,
+        widget: krate_adapter_common::ui::WidgetId,
+        presses: bool,
+    ) {
+        let mut pressing = PRESSING.lock().expect("pressing lock");
+        if presses {
+            pressing.insert((window, widget));
+        } else {
+            pressing.remove(&(window, widget));
+        }
+    }
+
     /// Whether a finger landing at (x, y) is on something that drags: a
-    /// slider Krate draws, or an element the app described to the screen
-    /// reader as adjustable.
-    fn drags_at(placements: &[krate_adapter_common::ui::WidgetPlacement], x: f32, y: f32) -> bool {
+    /// slider Krate draws, a game's canvas, or an element the app described
+    /// to the screen reader as adjustable. A canvas that lays itself out
+    /// for the screen is a page, and scrolls.
+    fn drags_at(
+        window: WindowId,
+        placements: &[krate_adapter_common::ui::WidgetPlacement],
+        x: f32,
+        y: f32,
+    ) -> bool {
         let inside =
             |px: f32, py: f32, w: f32, h: f32| x >= px && x < px + w && y >= py && y < py + h;
+        let pressing = PRESSING.lock().expect("pressing lock");
         placements.iter().any(|p| {
-            p.kind == krate_adapter_common::ui::WidgetKind::Slider
-                && inside(p.x, p.y, p.width, p.height)
+            let drags = match p.kind {
+                krate_adapter_common::ui::WidgetKind::Slider => true,
+                krate_adapter_common::ui::WidgetKind::Canvas => {
+                    pressing.contains(&(window, p.widget))
+                }
+                _ => false,
+            };
+            drags && inside(p.x, p.y, p.width, p.height)
         }) || ACCESS_DESCRIBED
             .lock()
             .expect("access lock")
@@ -1495,6 +1533,75 @@ mod real {
         }
     }
 
+    /// Show a message with one button (`question` false) or a yes-or-no
+    /// question as the iPhone's own alert, and wait until the person closes
+    /// it (krate:ui/dialog). Yes is the only yes. The alert runs on the
+    /// main thread; the app's thread waits, as it does for the picker.
+    pub fn ask(title: &str, body: &str, question: bool) -> bool {
+        let (title, body) = (title.to_string(), body.to_string());
+        let (tx, rx) = std::sync::mpsc::channel();
+        DispatchQueue::main().exec_async(move || present_ask(&title, &body, question, tx));
+        rx.recv().unwrap_or(false)
+    }
+
+    fn present_ask(title: &str, body: &str, question: bool, tx: std::sync::mpsc::Sender<bool>) {
+        let (Some(controller), Some(alert_class), Some(action_class)) = (
+            main_controller(),
+            objc2::runtime::AnyClass::get(c"UIAlertController"),
+            objc2::runtime::AnyClass::get(c"UIAlertAction"),
+        ) else {
+            let _ = tx.send(false);
+            return;
+        };
+        // SAFETY: a UIAlertController with one or two UIAlertActions,
+        // presented from the topmost controller (a controller already
+        // presenting something shows nothing new, and the app would wait
+        // forever); the handler blocks run on the main thread.
+        unsafe {
+            let mut top: Retained<objc2::runtime::AnyObject> = Retained::cast_unchecked(controller);
+            loop {
+                let next: Option<Retained<objc2::runtime::AnyObject>> =
+                    msg_send![&*top, presentedViewController];
+                match next {
+                    Some(next) => top = next,
+                    None => break,
+                }
+            }
+            let alert: Retained<objc2::runtime::AnyObject> = msg_send![
+                alert_class,
+                alertControllerWithTitle: &*objc2_foundation::NSString::from_str(title),
+                message: &*objc2_foundation::NSString::from_str(body),
+                preferredStyle: 1isize
+            ];
+            let button = |label: &str, style: isize, answer: bool| {
+                let tx = tx.clone();
+                let handler =
+                    block2::RcBlock::new(move |_action: *mut objc2::runtime::AnyObject| {
+                        let _ = tx.send(answer);
+                    });
+                let action: Retained<objc2::runtime::AnyObject> = msg_send![
+                    action_class,
+                    actionWithTitle: &*objc2_foundation::NSString::from_str(label),
+                    style: style,
+                    handler: &*handler
+                ];
+                let _: () = msg_send![&*alert, addAction: &*action];
+            };
+            if question {
+                button("No", 1, false);
+                button("Yes", 0, true);
+            } else {
+                button("OK", 0, false);
+            }
+            let _: () = msg_send![
+                &*top,
+                presentViewController: &*alert,
+                animated: true,
+                completion: Option::<&objc2::runtime::AnyObject>::None
+            ];
+        }
+    }
+
     /// What the app may use this run, in plain words, with the way to
     /// change it: Krate asks on every open, so "Ask again" opens it again.
     fn show_uses() {
@@ -2291,10 +2398,11 @@ mod real {
     unsafe extern "C" {}
 
     /// Where the photos picked are copied, and who waits for them.
+    /// Where the picked photos' copies go (or why there are none).
+    type PhotoReply = std::sync::mpsc::Sender<Result<Vec<std::path::PathBuf>, String>>;
+
     struct PhotoPick {
-        tx: std::cell::RefCell<
-            Option<std::sync::mpsc::Sender<Result<Vec<std::path::PathBuf>, String>>>,
-        >,
+        tx: std::cell::RefCell<Option<PhotoReply>>,
     }
 
     define_class!(
@@ -3387,6 +3495,9 @@ mod real {
         HAPTICS.with(|cell| {
             let h = cell.get_or_init(|| {
                 let impact = |style| {
+                    // initWithStyle:view: needs a view, and haptics are
+                    // asked for from the guest's side with none to hand.
+                    #[allow(deprecated)]
                     UIImpactFeedbackGenerator::initWithStyle(
                         UIImpactFeedbackGenerator::alloc(mtm),
                         style,
@@ -3720,6 +3831,8 @@ mod real {
             // The capsule: top right, inside the safe area (clear of the
             // notch and the status bar), above the app.
             if let Some(scene) = main_side.window.windowScene() {
+                // effectiveGeometry is iOS 16; Krate runs from iOS 15.
+                #[allow(deprecated)]
                 let turn = scene.interfaceOrientation().0;
                 INTERFACE_TURN.store(turn.clamp(0, 4) as u8, std::sync::atomic::Ordering::Relaxed);
             }
@@ -3783,10 +3896,10 @@ mod real {
         let uiview: &UIView = view;
         let mut shared = SHARED.lock().expect("shared state lock");
         for touch in touches.allObjects() {
-            let location: CGPoint = unsafe { touch.locationInView(Some(uiview)) };
+            let location: CGPoint = touch.locationInView(Some(uiview));
             let finger = Retained::as_ptr(&touch) as usize;
             shared.touches.push(RawTouch {
-                phase: unsafe { touch.phase() },
+                phase: touch.phase(),
                 x: location.x as f32,
                 y: location.y as f32,
                 finger,
@@ -3817,6 +3930,9 @@ mod real {
                         "main-queue closure ran off the main thread".to_string(),
                     )
                 })?;
+                // The app-delegate lifecycle (no scene manifest) has no
+                // view or trait collection yet to ask: this is the screen.
+                #[allow(deprecated)]
                 let screen = UIScreen::mainScreen(mtm);
                 let bounds: CGRect = screen.bounds();
                 // Capped at 2x deliberately: CPU-rasterizing full 3x spent
@@ -3824,19 +3940,20 @@ mod real {
                 // the final stretch free (K-089).
                 let scale = (screen.scale() as f32).min(2.0);
 
-                let window = unsafe { UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds) };
+                // Joined to the connected scene just below; init(windowScene:)
+                // would need that scene before the window exists.
+                #[allow(deprecated)]
+                let window = UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds);
                 // The window MUST join the connected UIWindowScene: since
                 // iOS 13 an unattached window still renders but rides a
                 // legacy event path that starves continuous touch delivery
                 // -- a real 120 Hz phone produced 116 touch callouts in an
                 // entire scrolling session before this line existed.
-                unsafe {
-                    let scenes = UIApplication::sharedApplication(mtm).connectedScenes();
-                    for scene in scenes.allObjects() {
-                        if let Ok(window_scene) = scene.downcast::<UIWindowScene>() {
-                            window.setWindowScene(Some(&window_scene));
-                            break;
-                        }
+                let scenes = UIApplication::sharedApplication(mtm).connectedScenes();
+                for scene in scenes.allObjects() {
+                    if let Ok(window_scene) = scene.downcast::<UIWindowScene>() {
+                        window.setWindowScene(Some(&window_scene));
+                        break;
                     }
                 }
                 let controller: Retained<KrateViewController> = {
@@ -3849,18 +3966,16 @@ mod real {
                     // initializer.
                     unsafe { msg_send![super(this), initWithFrame: bounds] }
                 };
-                unsafe {
-                    view.setUserInteractionEnabled(true);
-                    // Every finger, not only the first: a game moves with one
-                    // thumb and aims with the other (krate:ui/touch). UIKit
-                    // delivers one touch per view unless told otherwise.
-                    view.setMultipleTouchEnabled(true);
-                    let as_uiview: &UIView = &view;
-                    controller.setView(Some(as_uiview));
-                    let as_controller: &UIViewController = &controller;
-                    window.setRootViewController(Some(as_controller));
-                    window.makeKeyAndVisible();
-                }
+                view.setUserInteractionEnabled(true);
+                // Every finger, not only the first: a game moves with one
+                // thumb and aims with the other (krate:ui/touch). UIKit
+                // delivers one touch per view unless told otherwise.
+                view.setMultipleTouchEnabled(true);
+                let as_uiview: &UIView = &view;
+                controller.setView(Some(as_uiview));
+                let as_controller: &UIViewController = &controller;
+                window.setRootViewController(Some(as_controller));
+                window.makeKeyAndVisible();
                 let logical = WindowSize::new(
                     (bounds.size.width as u32).max(1),
                     (bounds.size.height as u32).max(1),
@@ -3878,13 +3993,11 @@ mod real {
                 // contentsScale still presents it sharp on a 3x panel.
                 let native_scale = (screen.scale() as f32).min(2.0);
                 let metal: objc2::rc::Retained<objc2_quartz_core::CAMetalLayer> =
-                    unsafe { objc2_quartz_core::CAMetalLayer::new() };
-                unsafe {
-                    metal.setFrame(bounds);
-                    metal.setContentsScale(native_scale as f64);
-                    let as_uiview: &UIView = &view;
-                    as_uiview.layer().addSublayer(&metal);
-                }
+                    objc2_quartz_core::CAMetalLayer::new();
+                metal.setFrame(bounds);
+                metal.setContentsScale(native_scale as f64);
+                let as_uiview: &UIView = &view;
+                as_uiview.layer().addSublayer(&metal);
                 // The display link: the panel tells us when a frame is due.
                 // Scheduled on the main run loop in the common modes so it
                 // keeps firing during tracking (a finger on the screen is
@@ -4042,6 +4155,7 @@ mod real {
                     pending_scroll: None,
                     gesture: None,
                     fingers: Default::default(),
+                    pointer: Default::default(),
                     hovered: None,
                     pressed_widget: None,
                     paint_buffer: Vec::new(),
@@ -4076,34 +4190,32 @@ mod real {
                 _ => guest.fingers.touch(touch.finger as u64, touch.x, touch.y),
             }
             match touch.phase {
-                UITouchPhase::Began => {
-                    if guest.gesture.is_none() {
-                        let drags = drags_at(&guest.placements, touch.x, touch.y);
-                        guest.gesture = Some(TouchGesture {
-                            finger: touch.finger,
-                            start: (touch.x, touch.y),
-                            last: (touch.x, touch.y),
-                            scrolling: false,
-                            began: std::time::Instant::now(),
-                            pressed: drags,
-                            drags,
+                UITouchPhase::Began if guest.gesture.is_none() => {
+                    let drags = drags_at(krate, &guest.placements, touch.x, touch.y);
+                    guest.gesture = Some(TouchGesture {
+                        finger: touch.finger,
+                        start: (touch.x, touch.y),
+                        last: (touch.x, touch.y),
+                        scrolling: false,
+                        began: std::time::Instant::now(),
+                        pressed: drags,
+                        drags,
+                    });
+                    // Something that drags is pressed at once, so the
+                    // first movement already moves it.
+                    if drags {
+                        guest.pointer_samples.push(RawPointerSample {
+                            window: krate,
+                            x: touch.x,
+                            y: touch.y,
+                            pressed: true,
                         });
-                        // Something that drags is pressed at once, so the
-                        // first movement already moves it.
-                        if drags {
-                            guest.pointer_samples.push(RawPointerSample {
-                                window: krate,
-                                x: touch.x,
-                                y: touch.y,
-                                pressed: true,
-                            });
-                        }
-                        guest.hovered = krate_adapter_common::painter::topmost_interactive_at(
-                            &guest.placements,
-                            touch.x,
-                            touch.y,
-                        );
                     }
+                    guest.hovered = krate_adapter_common::painter::topmost_interactive_at(
+                        &guest.placements,
+                        touch.x,
+                        touch.y,
+                    );
                 }
                 UITouchPhase::Moved => {
                     let same = guest
@@ -4253,7 +4365,7 @@ mod real {
                 let Some(main_side) = MAIN_SIDE.0.get() else {
                     return;
                 };
-                let color_space = CGColorSpaceCreateDeviceRGB();
+                let color_space = CGColorSpace::new_device_rgb();
                 // 0xAARRGGBB u32s are BGRA in little-endian memory:
                 // premultiplied-first + 32-little describes them exactly,
                 // and alpha is always 0xFF.
@@ -4490,7 +4602,45 @@ mod real {
         with_guest(|guest| {
             digest_touches(guest);
             deliver_due_press(guest);
-            Ok(std::mem::take(&mut guest.pointer_samples))
+            let samples = std::mem::take(&mut guest.pointer_samples);
+            for sample in &samples {
+                guest.pointer.moved_to(sample.x, sample.y);
+                guest.pointer.button(
+                    krate_adapter_common::ui::PointerButton::Primary,
+                    sample.pressed,
+                );
+            }
+            Ok(samples)
+        })
+        .unwrap_or_default()
+    }
+
+    /// The pointer as the presses so far leave it (krate:ui/pointer).
+    pub fn pointer_state(id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        if !guest_initialized() {
+            return Default::default();
+        }
+        with_guest(|guest| {
+            Ok(if guest.krate == Some(id) {
+                guest.pointer
+            } else {
+                Default::default()
+            })
+        })
+        .unwrap_or_default()
+    }
+
+    /// Hand over the pointer's motion since the last call.
+    pub fn take_pointer_motion(id: WindowId) -> (f32, f32) {
+        if !guest_initialized() {
+            return (0.0, 0.0);
+        }
+        with_guest(|guest| {
+            Ok(if guest.krate == Some(id) {
+                guest.pointer.take_motion()
+            } else {
+                (0.0, 0.0)
+            })
         })
         .unwrap_or_default()
     }
@@ -4645,6 +4795,17 @@ mod real {
     /// is pure heat.
     static GPU_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+    /// The GPU would not start on this device (the simulator's Metal lacks
+    /// indirect execution; any device can fail): from then on Krate says it
+    /// has no GPU, so the runtime paints frames on the CPU instead of
+    /// recording them for a GPU that will not draw them (K-1214).
+    static GPU_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// Whether frames should be recorded for the GPU: on iOS, until it fails.
+    pub fn gpu_usable() -> bool {
+        !GPU_FAILED.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Render one recorded canvas frame on the GPU. True when claimed;
     /// false hands the frame back to the CPU path (init failed, wrong
     /// window, not a list this consumer knows).
@@ -4712,6 +4873,7 @@ mod real {
                     }
                     Err(why) => {
                         eprintln!("krate-ios: gpu canvas unavailable: {why}");
+                        GPU_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
                         return false;
                     }
                 }
@@ -4834,6 +4996,14 @@ mod stub {
         Vec::new()
     }
 
+    pub fn pointer_state(_id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        Default::default()
+    }
+
+    pub fn take_pointer_motion(_id: WindowId) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
     pub fn drain_key_samples() -> Vec<RawKeySample> {
         Vec::new()
     }
@@ -4849,6 +5019,21 @@ mod stub {
     }
 
     pub fn set_adapts(_adapts: bool) {}
+
+    pub fn gpu_usable() -> bool {
+        false
+    }
+
+    pub fn set_canvas_presses(
+        _window: WindowId,
+        _widget: krate_adapter_common::ui::WidgetId,
+        _presses: bool,
+    ) {
+    }
+
+    pub fn ask(_title: &str, _body: &str, _question: bool) -> bool {
+        false
+    }
 
     pub fn set_background(_on: bool) {}
 

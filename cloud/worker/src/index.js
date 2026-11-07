@@ -40,6 +40,8 @@ import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
 import { orgBillingRoute, orgBillingEvent, orgBillingAlerts } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
+import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
+import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
@@ -74,7 +76,7 @@ import { orgLiveRoute } from "./org-data-live.js";
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
 // serves it behind /a/'s own checks, and the cross-origin-isolated page.
-import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
+import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, webPackKey, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
 // The receive loop (F-320): the link card, the open counted per person, a
 // stranger's report (receive.js).
 import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState, newerVersionLine } from "./receive.js";
@@ -96,7 +98,14 @@ import { orgChatRoute, chatSweep } from "./org-chat.js";
 // whose approving and candidates list they wrap.
 import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
-import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, sessionId, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+// Deleting an account, and its export (K-1245).
+import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./account-delete.js";
+// A signed-in person's own app data on every device (IC-981), kept in one
+// SQLite-backed Durable Object per account; wrangler.toml binds it as
+// SYNC_ACCOUNTS.
+import { accountSyncRoute, SyncAccount } from "./account-sync.js";
+export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -258,6 +267,11 @@ const RATE_LIMITS = {
   founding: 5,
   makeit: 5,
   "support/new": 5,
+  // A person's whole export reads everything the hub keeps about them;
+  // deleting reads and removes it. Nobody needs either more than a few
+  // times a minute (K-1245).
+  "me/export": 5,
+  "me/delete": 60,
   // Requests with no session to an organisation's routes or private
   // links (IC-946). They never reach the organisation's store -- so they
   // cannot grow its audit -- and this bounds what they cost. A person
@@ -404,8 +418,13 @@ export default {
       // Only while the automatic welcome is switched on; the founder writes
       // them himself otherwise, from the desk.
       if (env.WELCOME_AUTO === "1") await sendDueWelcomes(env);
+      // An announcement larger than one run, or than the day's mail,
+      // carries on here (mail-announce.js). One KV read when none waits.
+      await runQueuedAnnouncements(env).catch((e) => console.error(`queued announcement: ${e}`));
       return;
     }
+    // An account deletion a request left part-way (account-delete.js).
+    await resumeAccountDeletions(env, accountDeleteDeps()).catch((e) => console.error(`account deletions: ${e}`));
     await runScrub(env, { repair: false });
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
@@ -749,6 +768,24 @@ export default {
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
       }
+      // Delete my account, and download my data (account-delete.js).
+      if (pathname === "/me/delete" || pathname === "/me/export") {
+        const over = await rateLimited(request, env, pathname.slice(1));
+        if (over) return cors(over);
+        const res = await accountDeleteRoute(request, url, env, accountDeleteDeps());
+        if (res) return cors(res);
+      }
+      // Krate's non-essential mail: the person's own switch, and the
+      // one-click way out that every such mail links to (mail-prefs.js).
+      if ((request.method === "GET" || request.method === "PUT") && pathname === "/me/mail") {
+        return cors(await meMailRoute(request, env, authedUser));
+      }
+      if ((request.method === "GET" || request.method === "POST") && pathname === "/mail/unsubscribe") {
+        return await unsubscribeRoute(request, url, env);
+      }
+      if (request.method === "POST" && pathname === "/admin/mail/announce") {
+        return await announceRoute(request, env, { isAdmin });
+      }
       if (request.method === "POST" && pathname === "/me/onboarded") {
         return cors(await markAccountOnboarded(request, env));
       }
@@ -883,6 +920,12 @@ export default {
       // Signed-in sessions: list them, sign one out, sign out the others.
       if (pathname.startsWith("/account/sessions")) {
         const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
+        if (res) return cors(res);
+      }
+      // An app's own data on every device a person signs in on (IC-981,
+      // account-sync.js): end-to-end sealed, the hub holds ciphertext only.
+      if (pathname === "/account/sync" || pathname.startsWith("/account/sync/")) {
+        const res = await accountSyncRoute(request, url, env, { authedUser });
         if (res) return cors(res);
       }
       // A live team-data socket (org-data-live.js): handed to the
@@ -1532,6 +1575,9 @@ async function putReport(request, env) {
   const meta = {
     id,
     from: identity ? identity.login : "anonymous",
+    // Whose it is, as a principal nobody can choose (K-1085): what account
+    // deletion finds it by (K-1245). `from` is display only.
+    ...(identity && ownerOf(identity) ? { owner: ownerOf(identity) } : {}),
     name: identity ? identity.name || identity.login : "anonymous",
     session: header(request, "x-krate-session") || "",
     krate: header(request, "x-krate-version") || "",
@@ -1586,9 +1632,10 @@ async function getReport(request, id, env) {
   });
 }
 
-/// Take an app off the gallery. Only its author can; the bundle and every
-/// link already shared keep working -- unpublishing removes the listing,
-/// not the content people were sent.
+/// Take an app down. Only its author can. The listing, the bytes at this
+/// address, its screenshot, icon and short links all go; the app's own link
+/// (/a/v...) falls back to its newest earlier version, and is removed with
+/// the last one.
 async function unpublish(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
@@ -1616,6 +1663,8 @@ async function unpublish(request, hash, env) {
   await env.BUNDLES.delete(hash);
   await env.BUNDLES.delete(`shot:${hash}`);
   await env.BUNDLES.delete(`icon:${hash}`);
+  // The tab Player's copy, made the first time someone opened it in a tab.
+  await env.BUNDLES.delete(webPackKey(hash));
   // The alias is keyed by prefix, so clear every prefix length a short link
   // could have used.
   for (let length = 8; length <= 32; length += 1) {
@@ -3246,6 +3295,8 @@ function founderInboxes(env) {
 
 /// The moment an account is made: who, how, when, and the welcome ready
 /// to send. Plain text so it reads at a glance on a phone.
+///
+/// ESSENTIAL (to the founder only, never a user): no unsubscribe switch.
 async function notifyFounderOfSignup(env, user) {
   if (!env.RESEND_API_KEY) return;
   const who = user.name || user.login || user.email || "Someone";
@@ -3285,6 +3336,10 @@ async function notifyFounderOfSignup(env, user) {
 
 /// Send one welcome; null when it went, else why not.
 ///
+/// NON-ESSENTIAL (mail-prefs.js): nobody asked for it, so it ends with the
+/// unsubscribe line and carries the one-click headers, and an account that
+/// turned Krate's emails off is never sent one (sendDueWelcomes asks).
+///
 /// Through Gmail itself when the founder's app password is set
 /// (GMAIL_APP_PASSWORD): From his own Gmail, Cc his krate.tech address.
 /// Sent through Resend, the same note was filed under Promotions -- the
@@ -3293,7 +3348,9 @@ async function notifyFounderOfSignup(env, user) {
 /// Otherwise through Resend, from his krate.tech address (it cannot claim
 /// the Gmail address: Gmail's DMARC policy is reject).
 async function sendWelcome(env, user) {
-  const text = welcomeText(user.name);
+  const news = await newsMail(env, user.id, user, "the welcome");
+  if (news.skip) return news.skip;
+  const text = welcomeText(user.name) + news.footer + "\n";
   if (env.GMAIL_APP_PASSWORD) {
     const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
     return smtpSend(connect, {
@@ -3304,6 +3361,7 @@ async function sendWelcome(env, user) {
       cc: WELCOME_CC,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     });
   }
   const res = await fetch("https://api.resend.com/emails", {
@@ -3318,6 +3376,7 @@ async function sendWelcome(env, user) {
       reply_to: WELCOME_REPLY_TO,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     }),
   });
   if (res.ok) return null;
@@ -3385,6 +3444,8 @@ async function smtpSend(connect, msg) {
       "MIME-Version: 1.0",
       "Content-Type: text/plain; charset=UTF-8",
       "Content-Transfer-Encoding: base64",
+      // The one-click unsubscribe pair on a non-essential mail (RFC 8058).
+      ...Object.entries(msg.headers || {}).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, "")}`),
     ].filter(Boolean);
     await say(`${headers.join("\r\n")}\r\n\r\n${body}.`);
     const accepted = await reply();
@@ -3421,6 +3482,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
       await env.APPS.delete(key);
       continue;
     }
+    // Turned Krate's emails off before the welcome was due: never sent.
+    if (!wantsNews(user)) {
+      console.log("the welcome was not sent: the account turned Krate's emails off");
+      await env.APPS.delete(key);
+      continue;
+    }
+    if (!user.id) user.id = userId;
     const failed = await sendWelcome(env, user);
     if (failed) {
       // Left due: the next run tries again, until the mark expires in a week.
@@ -3755,6 +3823,8 @@ function signInEmailHtml(link) {
 </html>`;
 }
 
+/// ESSENTIAL mail (mail-prefs.js): the person asked for this link, so the
+/// switch for Krate's emails never stops it and it carries no unsubscribe.
 async function emailStart(request, env) {
   if (!env.RESEND_API_KEY) {
     return text("Email sign-in is not configured on this hub yet.", 503);
@@ -5682,6 +5752,23 @@ async function billingConfig(env) {
   });
 }
 
+/// What account-delete.js needs from the hub, in one place.
+function accountDeleteDeps() {
+  return {
+    authedUser,
+    verifyGitHub,
+    ownerOfRecord,
+    orgAsk,
+    deleteBigParts,
+    sessionOwner,
+    sessionId,
+    wantsNews,
+    siteBase,
+    hubBase: (env) => String(env.PUBLIC_BASE || "").replace(/\/$/, ""),
+    githubClientId: GITHUB_CLIENT_ID,
+  };
+}
+
 /// The signed-in user behind a request: a Krate session or a GitHub token.
 async function authedUser(request, env) {
   const auth = request.headers.get("authorization") || "";
@@ -5791,6 +5878,9 @@ async function writeEntitlementFromSubscription(env, sub) {
   const userId =
     (sub.metadata && sub.metadata.krate_user) || (await env.APPS.get(`cust:${sub.customer}`));
   if (!userId) return;
+  // A deleted account stays deleted: Stripe's late "subscription deleted"
+  // for the plan cancelled while deleting it must not write it back (K-1245).
+  if (!(await env.APPS.get(`user:${userId}`))) return;
   const priceId =
     sub.items && sub.items.data && sub.items.data[0] ? sub.items.data[0].price.id : "";
   await env.APPS.put(`cust:${sub.customer}`, userId);
@@ -6701,6 +6791,8 @@ async function meProfile(request, env) {
       // Studio's welcome has been seen on this account, on any device.
       onboarded: Boolean(user.onboarded),
     },
+    // Krate's non-essential mail is on unless the person turned it off.
+    mail: { news: wantsNews(user) },
     plan: {
       plan: ent ? ent.plan : "free",
       active: entitlementActive(ent),
@@ -7029,6 +7121,11 @@ async function adminApi(request, pathname, env) {
   if (!admin) return text("not found", 404);
   const route = pathname.slice("/admin/api/".length);
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+  // The Mail section: compose, preview, pick people, send, history.
+  if (route.startsWith("mail/")) {
+    const answer = await deskMailApi(request, route, env, body, admin);
+    if (answer) return answer;
+  }
 
   if (route === "overview") {
     const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
@@ -7061,7 +7158,9 @@ async function adminApi(request, pathname, env) {
         providers: u.providers || [],
         created: u.created || 0,
         welcomed: u.welcomed || 0,
-        compose: u.email ? welcomeComposeUrl(u) : null,
+        // Turned Krate's emails off: no welcome by hand either.
+        unsubscribed: !wantsNews(u),
+        compose: u.email && wantsNews(u) ? welcomeComposeUrl(u) : null,
       });
     }
     out.sort((a, b) => b.created - a.created);
@@ -7104,6 +7203,15 @@ async function adminApi(request, pathname, env) {
       await env.APPS.delete(`ent:${body.id}`);
     }
     return json({ ok: true });
+  }
+  // Deleting an account for someone who asked support (account-delete.js):
+  // first what it would do, then -- with the account's email typed in --
+  // the deletion itself, which carries on a part-way one.
+  if (route === "user/delete-preview" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: true });
+  }
+  if (route === "user/delete" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: false });
   }
   if (route === "user/logout" && request.method === "POST") {
     // Krate sessions, and GitHub sign-ins the hub indexed (account-sessions.js).
@@ -7379,6 +7487,7 @@ textarea{min-height:70px;resize:vertical}
 .pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--mut)}
 .pill.open{color:var(--warn);border-color:#5a4636}.pill.active{color:var(--ok);border-color:#2c5243}
 #login{max-width:420px}
+${DESK_MAIL_STYLE}
 </style>
 <h1>Krate desk</h1><p class="sub" id="who">signing in&hellip;</p>
 <div id="login" class="card" style="display:none">
@@ -7394,6 +7503,7 @@ textarea{min-height:70px;resize:vertical}
   <button data-t="apps">App reports</button>
   <button data-t="users">Users</button>
   <button data-t="makeit">Make-it queue</button>
+  <button data-t="mail">Mail</button>
 </nav>
 <div id="view"></div>
 </div>
@@ -7407,7 +7517,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -7432,7 +7542,7 @@ async function show(tab){
     const badge=el("#waiting");badge.textContent=W.waiting;badge.style.display=W.waiting?"":"none";
     const waiting=W.people.filter(p=>!p.welcomed&&p.email),done=W.people.filter(p=>p.welcomed),none=W.people.filter(p=>!p.email);
     const row=p=>'<div class="card row" data-id="'+esc(p.id)+'"><div class="grow"><b>'+esc(p.name||p.login||p.email)+'</b> <span class="mut">'+esc(p.email)+' · '+esc(p.providers.join(", "))+' · joined '+ago(p.created)+'</span>'
-      +(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
+      +(p.unsubscribed?' <span class="pill">unsubscribed</span>':'')+(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
       +(p.compose&&!p.welcomed?'<a class="act" style="text-decoration:none;padding:7px 13px;border-radius:8px;background:var(--acc);color:#fff;font-size:12.5px" target="_blank" rel="noopener" href="'+esc(p.compose)+'">Write the welcome</a>':'')
       +(p.email?'<button class="ghost mark">'+(p.welcomed?"Not welcomed":"Mark welcomed")+'</button>':'')+'</div>';
     v.innerHTML='<p class="mut" style="margin-bottom:10px">Everyone who made an account, newest first. "Write the welcome" opens Gmail as you, the note written; send it, then mark them welcomed. You also get an email the moment someone signs up.</p>'
@@ -7529,16 +7639,33 @@ async function show(tab){
       for(const x of users){
         const d=document.createElement("div");d.className="card row";
         d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
-        <span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
+        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}<span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
         <button class="ghost" data-a="plan">\${x.ent&&x.ent.plan==="comp"?"Remove comp":"Comp plan"}</button>
-        <button class="ghost" data-a="out">Sign out everywhere</button>\`;
+        <button class="ghost" data-a="out">Sign out everywhere</button>
+        <button class="ghost" data-a="del">Delete account</button>\`;
         d.querySelector('[data-a=plan]').onclick=async()=>{await api("user/plan",{method:"POST",body:JSON.stringify({id:x.id,plan:x.ent&&x.ent.plan==="comp"?"none":"comp"})});load();};
         d.querySelector('[data-a=out]').onclick=async()=>{const r=await api("user/logout",{method:"POST",body:JSON.stringify({id:x.id})});alert(r.revoked+" sessions revoked");};
+        d.querySelector('[data-a=del]').onclick=async()=>{
+          const call=(r,b)=>fetch(HUB+"/admin/api/"+r,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify(b)}).then(async res=>({status:res.status,body:await res.json().catch(()=>({}))}));
+          const p=await call("user/delete-preview",{id:x.id});
+          if(p.status!==200){alert(p.body.message||("Failed: "+p.status));return;}
+          const v=p.body;
+          if(v.blocked){alert(v.blocked.message);return;}
+          if(v.subscription&&!v.subscription.cancels){alert(v.subscription.message);return;}
+          let apps="remove";
+          if(v.app_builds){apps=confirm("Published apps:\\n"+((v.apps||[]).map(a=>"  "+a.name).join("\\n")||"  (earlier builds only)")+"\\n\\nOK removes them with the account. Cancel leaves them up.")?"remove":"keep";}
+          const typed=prompt("Delete "+(x.email||x.id)+" for good?\\n\\nGoes: "+v.deletes.join("; ")+".\\n\\nType the account's "+(x.email?"email address":"id")+" to confirm:");
+          if(!typed)return;
+          let r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          for(let i=0;r.status===202&&i<50;i++)r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          alert(r.body.state==="done"?"Deleted.":(r.body.message||("Failed: "+r.status)));load();
+        };
         u.appendChild(d);
       }
     };
     el("#go").onclick=load;el("#q").onkeydown=e=>{if(e.key==="Enter")load()};load();
   }
+  if(tab==="mail"){await deskMail(v);}
   if(tab==="makeit"){
     const {requests}=await api("makeit");
     v.innerHTML=requests.length?"":'<p class="mut">Queue is empty.</p>';
@@ -7551,6 +7678,7 @@ async function show(tab){
     }
   }
 }
+${deskMailScript()}
 boot();
 </script>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });

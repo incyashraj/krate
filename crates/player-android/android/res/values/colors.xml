@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- The icon art's own light background, so its edges disappear. -->
+  <color name="ic_launcher_background">#F5F6FA</color>
+</resources>

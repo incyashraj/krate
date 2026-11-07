@@ -31,7 +31,11 @@ pub struct Phase2Host<'a> {
     /// The app's own key-value store. `None` until a run supplies a location,
     /// in which case every store call refuses -- an app cannot conjure storage
     /// the runtime did not give it.
-    store: Option<crate::store_host::AppStore>,
+    store: Option<crate::account_sync_host::KvStore>,
+    /// The app's own files kept the same on the person's devices (IC-981
+    /// S3): a thread of its own, closed with the run.
+    #[cfg(not(target_arch = "wasm32"))]
+    files_sync: Option<crate::account_sync_files::SyncedFiles>,
     /// The app's own database, on the same terms as the store above.
     database: Option<crate::sql_host::AppDatabase>,
     /// The app's own secrets, encrypted at rest.
@@ -98,6 +102,8 @@ impl<'a> Phase2Host<'a> {
             resources: Phase2ResourceTable::default(),
             asset_root: None,
             store: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            files_sync: None,
             database: None,
             secrets: None,
             shared: None,
@@ -163,8 +169,30 @@ impl<'a> Phase2Host<'a> {
     /// app, so an app that was refused `store.kv` gets a store that answers
     /// `Denied` to everything instead of no store at all -- the refusal is
     /// explicit rather than looking like a missing feature.
-    pub fn with_store(mut self, path: Option<PathBuf>, granted: bool) -> Self {
-        self.store = path.map(|path| crate::store_host::AppStore::open(path, granted));
+    ///
+    /// `sync` keeps it the same on every device the person signs in on
+    /// (IC-981, account_sync_host): the same file, the same answers, with
+    /// the exchange on a thread of its own.
+    pub fn with_store(
+        mut self,
+        path: Option<PathBuf>,
+        granted: bool,
+        sync: Option<&crate::account_sync_host::AccountSyncContext>,
+    ) -> Self {
+        // The app's own folder, when the player names one for it alone:
+        // its files follow the person by the same rule (S3). Whatever the
+        // store.kv grant, an app's files are its files.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(store), Some(context)) = (path.as_ref(), sync.filter(|c| c.enabled)) {
+            if let Some(folder) = context.files.clone() {
+                self.files_sync = Some(crate::account_sync_files::SyncedFiles::open(
+                    folder,
+                    store.clone(),
+                    context.clone(),
+                ));
+            }
+        }
+        self.store = path.map(|path| crate::account_sync_host::KvStore::open(path, granted, sync));
         self
     }
 

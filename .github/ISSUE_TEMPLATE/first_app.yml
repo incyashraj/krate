@@ -32,6 +32,9 @@ body:
         - macOS
         - Windows
         - Linux
+        - A browser, from a link
+        - Android
+        - iPhone or iPad
     validations:
       required: true
   - type: textarea

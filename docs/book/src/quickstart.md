@@ -82,9 +82,11 @@ commands:10
 drawn:yes
 ```
 
-This check passed with the published v0.5.0 macOS ARM64 runtime. It checks the
-chart's drawing commands, not an interactive session. The same sample also
-passes the [source-built runtime's Linux, macOS and Windows CI replay](https://github.com/incyashraj/krate/actions/runs/35454102875).
+This check passes with Krate 0.5.4, the current release: CI built the
+runtime from the v0.5.4 tag and ran this same file on macOS ARM64, Ubuntu
+x86_64 and Windows x86_64
+([records](https://github.com/incyashraj/krate/tree/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3)).
+It checks the chart's drawing commands, not an interactive session.
 
 ### Open another app
 

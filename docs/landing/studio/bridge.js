@@ -531,6 +531,78 @@ function pickLocalFolder() {
   });
 }
 
+/* Phones and tablets cannot choose a folder: iOS and Android browsers
+ * ignore webkitdirectory, so the picker either offers single files or
+ * nothing at all -- and Choose a folder did nothing (Studio audit, 2026-11-07). They
+ * can choose a .zip (GitHub's Code, then Download ZIP, or Files' Compress),
+ * so that is what a port asks for there. iPadOS calls itself a Mac. */
+function cannotPickFolders() {
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod/.test(ua)) return true;
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+  try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch (e) { return false; }
+}
+
+function pickLocalZip() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip,application/zip,application/x-zip-compressed";
+    input.style.display = "none";
+    document.body.appendChild(input);
+    let settled = false;
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      try { input.remove(); } catch (e) {}
+      resolve(value);
+    };
+    window.addEventListener("focus", () => { setTimeout(() => done(null), 600); }, { once: true });
+    input.addEventListener("change", () => done((input.files && input.files[0]) || null));
+    input.click();
+  });
+}
+
+function bytesBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+const PROJECT_ZIP_MAX = 100 * 1024 * 1024;
+
+/* A zipped project, as the same {name, files} a chosen folder gives: the
+ * zip is read in the tab (zipEntries/zipRead below), the same files are
+ * skipped, and the build service receives exactly what it gets from a
+ * folder. A zip of a folder holds it under one top folder -- GitHub's
+ * "repo-main/" -- and the project is what is inside it. */
+async function projectFromZip(file) {
+  if (file.size > PROJECT_ZIP_MAX) throw refusal(`${file.name} is over 100 MB. Zip the project without its build folders (node_modules, target, dist) and try again.`);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const entries = zipEntries(bytes).filter((e) => !e.name.endsWith("/") && !/^__MACOSX\//.test(e.name));
+  if (!entries.length) throw refusal(`${file.name} is not a zip Krate can open. Zip the project's folder and choose that.`);
+  const tops = new Set(entries.map((e) => e.name.split("/")[0]));
+  // Not when that one folder is itself one a port skips (a zip of only
+  // node_modules is not a project inside node_modules).
+  const only = [...tops][0];
+  const under = tops.size === 1 && entries.every((e) => e.name.includes("/")) && !PROJECT_SKIP.test(`/${only}/`) ? `${only}/` : "";
+  const name = ((under ? under.slice(0, -1) : file.name.replace(/\.zip$/i, "")).replace(/-(main|master)$/i, "")) || "project";
+  const kept = [];
+  let total = 0;
+  for (const entry of entries) {
+    const rel = entry.name.slice(under.length);
+    if (!rel || PROJECT_SKIP.test("/" + rel)) continue;
+    if (entry.size > PROJECT_FILE_MAX) continue;
+    if (kept.length >= PROJECT_FILES_MAX || total + entry.size > PROJECT_BYTES_MAX) break;
+    const data = await zipRead(bytes, entry).catch(() => null);
+    if (!data) continue;
+    total += data.length;
+    kept.push({ path: rel, bytes: bytesBase64(data) });
+  }
+  if (!kept.length) throw refusal(`${name} has no files a port can read (source files, under 2 MB each).`);
+  return { name, files: kept };
+}
+
 function pickLocalFiles({ accept, multiple }) {
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
@@ -2240,6 +2312,12 @@ const COMMANDS = {
    * build, dotfiles, and files past 2 MB -- none of which a port reads. */
   async pick_source_folder() {
     if (!bridge.token) return goSignIn("");
+    if (cannotPickFolders()) {
+      const zip = await pickLocalZip();
+      if (!zip) return null;
+      bridge.project = await projectFromZip(zip);
+      return bridge.project.name;
+    }
     const files = await pickLocalFolder();
     if (!files.length) return null;
     const name = (files[0].webkitRelativePath || "").split("/")[0] || "project";
@@ -3219,6 +3297,24 @@ function speakWebWording() {
   return hits.length;
 }
 
+/* Port, where no folder can be chosen: the same door, asking for what
+ * works there (see cannotPickFolders). */
+function speakWebPort() {
+  if (!cannotPickFolders()) return;
+  const title = document.querySelector("#homePortDrop .kr-ta2 b");
+  const sub = document.querySelector("#homePortDrop .kr-ta2 small");
+  if (title) title.textContent = "Choose a .zip of an app you already have";
+  if (sub) sub.textContent = "Electron, Tauri or a web app, zipped. On GitHub: Code, then Download ZIP. Krate shows the plan first.";
+  const link = document.getElementById("homePort");
+  if (link) link.textContent = "Have an app already? Choose its .zip and I'll port it.";
+  const go1 = document.querySelector("#homePortDrop .kr-portgo");
+  if (go1) go1.textContent = "Choose a .zip";
+  const choose = document.getElementById("homePortChoose");
+  if (choose && choose.lastChild && choose.lastChild.nodeType === 3) choose.lastChild.nodeValue = "Choose a .zip";
+  const go = document.getElementById("homePortGo");
+  if (go) go.title = "Choose a .zip";
+}
+
 function speakWeb() {
   // Nothing to swap in onboarding: a tab never shows it (see the
   // krate-onboarded flag at the top). The desktop's wording is its own.
@@ -3246,6 +3342,7 @@ function speakWeb() {
   trimDesktopOnly();
   speakWebWording();
   speakTouchWording();
+  speakWebPort();
   // Studio rewrites the composer's hint itself when a build finishes, so
   // a one-shot pass at boot would be undone a minute later. Watching the
   // one element is cheaper and more honest than re-scanning on a timer.

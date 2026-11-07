@@ -3,8 +3,9 @@
 This policy is adapted from the structure and enforcement expectations of
 Contributor Covenant 2.1.
 
-OneOS is a technical community for building a universal application platform.
-We want it to be rigorous, welcoming, and worth people's time.
+Krate is a technical community building an app runtime and file format that
+let one app open on every device. We want it to be rigorous, welcoming, and
+worth people's time.
 
 ## Expected behavior
 
@@ -24,9 +25,7 @@ We want it to be rigorous, welcoming, and worth people's time.
 
 ## Reporting
 
-Report concerns to `conduct@kratelabs.dev`.
-
-If that address is not yet active during Phase 0, contact the repository owner
+Report concerns to `yashraj@krate.tech`, or contact the repository owner
 privately through GitHub. We will acknowledge reports within 72 hours whenever
 possible, handle them with discretion, and prioritize contributor safety.
 

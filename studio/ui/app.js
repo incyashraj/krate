@@ -1566,6 +1566,7 @@ function appendLiveChip(version) {
   }
   $("thread").appendChild(el);
   $("thread").scrollTop = $("thread").scrollHeight;
+  markLatestReceipt();
   return el;
 }
 
@@ -1587,7 +1588,7 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
     : null;
   const open = document.createElement("button");
   open.className = "vact";
-  open.textContent = "Open";
+  open.textContent = "Run";
   open.addEventListener("click", () => openApp(mine, version));
   chip.appendChild(open);
   const share = document.createElement("button");
@@ -1595,6 +1596,17 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
   share.textContent = "Share";
   share.addEventListener("click", () => openSendSheet(mine, version, share));
   chip.appendChild(share);
+  markLatestReceipt();
+}
+
+/* The newest receipt in the conversation carries no buttons of its own:
+ * the app's card says the same things (Run, Share, Stop, Try again) next
+ * to the app itself, and the same action in two places reads as two
+ * actions. Older receipts keep theirs -- they are the only way back to
+ * that version. */
+function markLatestReceipt() {
+  const all = [...document.querySelectorAll("#thread .msg.vlive, #thread .msg.vok, #thread .msg.vbad")];
+  all.forEach((m, i) => m.classList.toggle("vlatest", i === all.length - 1));
 }
 
 function settleChipBad(el, version, retry, stopped) {
@@ -1616,6 +1628,7 @@ function settleChipBad(el, version, retry, stopped) {
     fix.addEventListener("click", retry);
     el.querySelector(".vchip").appendChild(fix);
   }
+  markLatestReceipt();
 }
 
 function say(who, body, files, extra) {
@@ -2693,7 +2706,12 @@ function failBuild(why, request) {
   // brand the sentence about the NEW build as the failure.
   const redirecting = why === "stopped" && state.replacing;
   if (!redirecting) {
-    sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
+    // The reason goes in the conversation too. On a phone the conversation
+    // and the app are two screens, and the line here was the only thing on
+    // the Chat side: "that build didn't come together", with the why only
+    // on the App side, a tap away that nothing pointed at. The words start
+    // the same, so older readers of the line still recognise a failure.
+    sayTo(built, "KRATE", why === "stopped" ? "stopped" : `That build didn't come together. ${why}`);
     // The failure is a recorded FACT on the message too, so replay can see
     // it even in a session file saved before failedRequest survived disk.
     const last = built && built.messages[built.messages.length - 1];
@@ -3209,6 +3227,7 @@ async function openReportSheet() {
       "workspace/src/lib.rs": "the app code the AI had written",
       "workspace/Cargo.toml": "the app's build setup",
       "workspace/manifest.toml": "the permissions the app declared",
+      "build.json": "the build service's record of this build",
     };
     $("repList").innerHTML = "";
     for (const f of info.files) {
@@ -3236,12 +3255,12 @@ async function sendReport() {
       note: $("repNote").value.trim(),
     });
     $("reportSheet").classList.add("hidden");
-    say("KRATE", `Sent to Krate support (${said}). Thank you. This is how the next person avoids it.`, null, { variant: "ask" });
+    say("KRATE", `Report sent (${said}). Thank you: this is how the next person avoids it.`, null, { variant: "ask" });
   } catch (err) {
     $("repResult").textContent = `It did not send: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Try again, or save it and email it.`;
     $("repSend").disabled = false;
   } finally {
-    $("repSend").textContent = "Send to support";
+    $("repSend").textContent = "Send report";
   }
 }
 
@@ -3386,6 +3405,17 @@ function planAnsweredAway(S, P, answer, err) {
   let body = "";
   if (!err && answer && answer.agent_session) P.agentSession = answer.agent_session;
   if (!err && answer && answer.shape) P.shape = String(answer.shape);
+  if (!err && answer && answer.cannot) {
+    // Nothing waits to be built, so nothing is kept to resume and no
+    // Build it comes back when the session is reopened (K-1243).
+    const m = cannotMessage(answer);
+    S.messages.push({ who: "KRATE", body: m.body, files: [], when: Math.floor(Date.now() / 1000) });
+    S.planningSaved = null;
+    persistSession(S);
+    if (window.krToast) window.krToast(`${S.planName || S.title || "Your app"}: Krate cannot build that one`);
+    if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+    return;
+  }
   if (!err && answer && answer.ask && answer.ask.length && P.rounds < 1) {
     P.rounds += 1;
     P.lastQuestions = answer.ask;
@@ -3406,6 +3436,41 @@ function planAnsweredAway(S, P, answer, err) {
   persistSession(S);
   if (window.krToast) window.krToast(`${S.planName || S.title || "Your app"}: ${body.startsWith("1.") ? "a question is waiting" : "the plan is ready"}`);
   if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+}
+
+/* `krate plan`'s refusal (K-1243): {"cannot": "Krate cannot build that:
+ * <reason>. Try instead: <instead>.", "instead", "reason", "limit"}. The
+ * suggestion is offered as a button, so the words stop before it rather
+ * than saying it twice. */
+function cannotMessage(answer) {
+  const line = String((answer && answer.cannot) || "").replace(/\s+/g, " ").trim();
+  const instead = String((answer && answer.instead) || "").replace(/\s+/g, " ").trim().replace(/[.]$/, "");
+  const said = (instead ? line.replace(/\s*Try instead:.*$/i, "") : line).trim() || "Krate cannot build that.";
+  return {
+    said,
+    instead,
+    body: instead ? `${said}\n\nWhat Krate can make instead: ${instead}.` : said,
+  };
+}
+
+/* Said as its own answer, calmly: the reason, and the one thing that can
+ * be made instead as a single tap. No Build it -- there is nothing here
+ * Krate would build. */
+function showCannot(answer) {
+  const m = cannotMessage(answer);
+  clearAnsweredActions();
+  say("KRATE", m.body, null, {
+    variant: "ask",
+    actions: m.instead
+      ? [{ label: "Make this instead", primary: true, run: () => { const box = $("prompt"); if (!box) return; box.value = m.instead; submitInSession(); } }]
+      : [],
+  });
+  state.planning = null;
+  setIdleNote("");
+  show("idle");
+  unlockComposer("Describe something else to make…");
+  $("send").disabled = false;
+  persist();
 }
 
 /* The plan as the card shows it: the sentence, short points, the name, and
@@ -3457,6 +3522,13 @@ async function runPlanInner() {
     // The model's own pick of the working shape the build starts from --
     // the universal matcher (no keywords): it read the request, it chose.
     if (answer.shape) state.planning.shape = String(answer.shape);
+    // The plan's third answer (K-1243): Krate will not build this. It is
+    // neither a question nor a plan, and it used to fall through to the
+    // build -- which `create` refused a second later, in Plan mode too.
+    if (answer.cannot) {
+      showCannot(answer);
+      return;
+    }
     if (answer.ask && answer.ask.length && state.planning.rounds < 1) {
       // ONE round of questions, ever. The first live session got two
       // rounds and called it what it is: frustrating.
@@ -3637,6 +3709,23 @@ async function runPlanInner() {
     // plainly, and nothing is built (K-904).
     if (/over the 10 MB attachment limit|a folder cannot be attached|attached file .* does not exist/i.test(String(err && err.message ? err.message : err))) {
       say("KRATE", plainWords(err));
+      state.planning = null;
+      setIdleNote("");
+      show("idle");
+      $("send").disabled = false;
+      return;
+    }
+    // No connection is not a planning hiccup either: the build needs the
+    // same connection, so "I'll skip the questions and build right away"
+    // was followed, seconds later, by a failed build saying the connection
+    // dropped. Said once, nothing built, and Try again asks again.
+    if (/failed to fetch|networkerror|load failed|err_internet|err_network|\bnetwork\b|offline|could not connect|connection (refused|reset|dropped)/i
+      .test(String(err && err.message ? err.message : err))) {
+      const kept = state.planning;
+      say("KRATE", "The connection dropped before I could read your request. Nothing was built, and your words are kept.", null, {
+        variant: "ask",
+        actions: [{ label: "Try again", primary: true, run: () => { state.planning = kept; runPlan(); } }],
+      });
       state.planning = null;
       setIdleNote("");
       show("idle");
@@ -4175,8 +4264,35 @@ function plainWords(err) {
   // Already plain words (the build service's own sentence for a build it
   // stopped or let expire): said as they are, not as "the build failed".
   if (err && err.plain) return raw;
+  // A port that stopped names what stopped it on its last line ("Blocked on
+  // primary-task: case `total` printed ... Workspace: ..."), and exits 8
+  // (IC-120). Every such ending read "The build failed. Press Details" --
+  // the engine had said exactly what was wrong and the card hid it
+  // (K-1237). Said in words here, the raw line stays under Details.
+  const blocked = /^Blocked on ([a-z-]+): (.*?)\.? Workspace: .*$/m.exec(raw);
+  if (blocked) {
+    const [, need, reason] = blocked;
+    // Try again starts the port from its plan again (studio/src/main.rs
+    // port_project): the stopped attempt stays on disk, it is not resumed.
+    const kept = "Your project was not changed.";
+    if (need === "primary-task")
+      return `The port runs, but it did not do what your original does: ${reason}. ${kept}`;
+    if (need === "build")
+      return `The port would not build, even after it tried to repair itself. ${kept} Press Details for the compiler output.`;
+    if (need === "agent")
+      return `The AI tool stopped before the port was finished. Check it is signed in and working, then try again. ${kept}`;
+    if (need === "source-unchanged")
+      return "Your project changed while it was being ported. Let it settle, then try again.";
+    return `The port stopped: ${reason}. ${kept}`;
+  }
   // Classify on what the PROVIDER said, never on what Krate said about it.
-  const text = providerWords(raw);
+  // Krate's own advice under a failure goes too: check-app ends a compile
+  // failure with "Fix: ... The build uses rustup's toolchain and the
+  // wasm32-wasip1 target; run `krate doctor` ...", and matching THAT told a
+  // person with seven compile errors that the build tools were not set up,
+  // and to press Try again (K-756). The advice runs from a "Fix:" line to
+  // the next `error:` line or the end; Details still shows all of it.
+  const text = providerWords(raw).replace(/^\s*Fix:[\s\S]*?(?=^\s*error:|(?![\s\S]))/gm, "");
   // The engine's summary when it gave one, else everything. The keyword
   // rules below read `judged`; only the compiler rule reads the whole log.
   const judged = engineVerdict(text) || text;
@@ -4194,6 +4310,35 @@ function plainWords(err) {
   if (/over the 10 MB attachment limit|a folder cannot be attached/i.test(judged)) return judged;
   if (/no space left on device|disk (is )?full/i.test(judged))
     return "The disk is full. Free some space, then try again.";
+  // What kind of failure it was, as the engine now says it (K-1243, from
+  // check-app's FailureKind in crates/cli/src/main.rs): `krate create`
+  // leads with the kind's own sentence, check-app's text output with its
+  // headline, and --json with `"kind"`. Read before the guesses below: a
+  // sandbox refusing the build cache says "permission denied" too, and was
+  // told to pick another folder in Settings.
+  {
+    const web = typeof tauri === "undefined" || !tauri;
+    const KINDS = [
+      ["environment", /This computer stopped Krate from building the app|This computer refused the build/i,
+        web
+          ? "The build service could not build the app just now. That is on Krate's side, not in your app's code. Try again in a few minutes."
+          : "This computer stopped Krate from building the app: a permission, a sandbox or a missing tool, not your app's code. Press Details for what refused it."],
+      ["imports", /reaches for parts of the computer Krate does not give apps|reaches for host APIs Krate does not provide/i,
+        "The app builds, but it reaches for parts of the computer Krate does not give apps. Try again, and the AI takes them out."],
+      ["capability", /builds, but it does not ask for what it uses|and its manifest\.toml disagree about what it may touch/i,
+        "The app builds, but it does not ask permission for what it uses. Try again, and the AI fixes what it asks for."],
+      ["test", /builds and opens, but it did not work when Krate tried it|fails when Krate uses it/i,
+        "The app builds and opens, but it did not work when Krate tried it. Press Details for what went wrong."],
+      ["timeout", /builds, but it ran too long when Krate tried it/i,
+        "The app builds, but it ran too long when Krate tried it. Press Details for where it got stuck."],
+      ["compile", /The app the AI wrote does not build yet|^The code does not compile\.|manifest\.toml says about them, are wrong/im,
+        "The generated code did not compile. Press Details for the compiler output."],
+    ];
+    const named = /"kind"\s*:\s*"(project|compile|environment|imports|capability|test|timeout)"/.exec(raw);
+    const want = named ? (named[1] === "project" ? "compile" : named[1]) : "";
+    const hit = KINDS.find(([k, re]) => (want ? k === want : re.test(raw)));
+    if (hit) return hit[2];
+  }
   if (/read-only file system|permission denied|cannot write to|could not write/i.test(judged))
     return "Krate cannot save into that folder. Pick another folder in Settings, then try again.";
   if (/is not there any more/i.test(judged)) return judged;
@@ -4205,7 +4350,14 @@ function plainWords(err) {
   // Specific before general: a rustup install log mentions authentication
   // incidentally, and matching the sign-in guess first told a person with a
   // PATH problem to go sign in -- a wrong door with a confident sign on it.
-  if (/rustup|wasm32-wasip1 target|toolchain|cargo-component is not|build tools/i.test(judged))
+  //
+  // The shapes that MEAN a missing toolchain, never a bare mention of one:
+  // "rustup" or "toolchain" turn up in plenty of failures that have nothing
+  // to do with the install (K-756).
+  // rustc's "can't find crate for `core`" is read from the whole log: it is
+  // the compiler's line, under an engine summary that does not repeat it.
+  if (/can't find crate for `?(core|std)\b/i.test(text) ||
+      /rustup target add|target (is |may )?(be )?not installed|target looks missing|rustup:? (is )?(not found|command not found|not available)|no such command|cargo-component is not|toolchain [^.\n]*(not installed|is missing|was not found)|build tools/i.test(judged))
     return "The build tools aren't set up yet. Trying again lets Krate install them.";
   if (/quota|rate.?limit/i.test(judged)) return "Your AI is out of quota right now. It usually comes back within the hour.";
   // The AI's own sandbox broke: its words, not a guess. Seen live with
@@ -6645,6 +6797,10 @@ async function publishFromSheet() {
     // version is current, so the link sent today opens tomorrow's update.
     state.session.result.share_url = url;
     if (out.version) state.session.result.published_version = out.version;
+    // In the gallery once it was published listed. A later link-only share
+    // does not take it off the shelf (the hub keeps an updated listed app
+    // listed), so this is never turned back to false.
+    if ($("pubListed").checked) state.session.result.listed = true;
     state.lastPublish = out;
     forgetVersions(app);
     $("publishSheet").classList.add("hidden");
@@ -6919,19 +7075,17 @@ function setPane(name) {
   if (name !== "preview") fillPane(name);
 }
 
-/* Run and Share in the panel's header: the finished app's two verbs,
- * shown only when there is a finished app. They press the card's own
- * buttons, so everything those do -- the web's download, the send sheet,
- * a version's own file -- stays in one place. */
+/* Run and Share live on the app's own card, under the preview, and
+ * nowhere else. The panel's header used to carry them too, as "Run it"
+ * and "Share" beside the card's Run and Share and the receipt's Open and
+ * Share: one app, two actions, three names. The header buttons stay in
+ * the page, hidden, because older doors still press them by id. */
 function paintPanelBar() {
   const run = $("barRun");
   const share = $("barShare");
   if (!run || !share) return;
-  const ready = state.phase === "done" && !!currentApp();
-  run.classList.toggle("hidden", !ready);
-  share.classList.toggle("hidden", !ready);
-  const label = $("openBtn") && $("openBtn").textContent.trim();
-  if (label) run.textContent = label;
+  run.classList.add("hidden");
+  share.classList.add("hidden");
 }
 
 async function appContents(app) {
@@ -7036,8 +7190,11 @@ function group(label, rows) {
 async function fillFiles(app) {
   const host = $("filesList");
   host.replaceChildren();
-  $("filesSave").classList.toggle("hidden", !app);
-  $("filesSave").textContent = tauri ? "Show in folder" : "Download the app";
+  // The header's own Download (or Show in folder) did what the app's row
+  // below does, one above the other. The row keeps it; the header button
+  // stays in the page, hidden, because Share and the card's menu press it.
+  $("filesSave").classList.add("hidden");
+  $("filesSave").textContent = tauri ? "Show in folder" : "Download the file";
   // What the person handed the AI, from their own messages.
   const given = [];
   for (const m of (state.session && state.session.messages) || []) {
@@ -7053,7 +7210,7 @@ async function fillFiles(app) {
   }
   host.appendChild(group("Your app", [
     fileRow(ICON_KRATE, app.name || baseName(app.path), "Opens on macOS, Windows and Linux", {
-      label: tauri ? "Show" : "Download",
+      label: tauri ? "Show in folder" : "Download",
       run: () => invoke("reveal", { path: app.path }).catch((e) => toastish(e)),
     }, app.size || ""),
   ]));
@@ -7068,7 +7225,15 @@ async function fillFiles(app) {
       run: () => setPane("code"),
     }, prettyBytes(bytes)));
   }
-  host.appendChild(group("Inside the krate", rows));
+  // A file that could not be opened read as a heading with nothing under
+  // it, which looks like an app with nothing inside. Say it instead.
+  if (rows.length) host.appendChild(group("Inside the krate", rows));
+  else {
+    const none = document.createElement("p");
+    none.className = "pane-empty";
+    none.textContent = "Krate could not read what is inside this file here. Press Download to keep it and open it.";
+    host.appendChild(none);
+  }
   if (given.length) host.appendChild(group("You gave the AI", given.map((f) => fileRow(ICON_CLIP, baseName(f)))));
 }
 
@@ -7337,7 +7502,7 @@ async function fillDetails(app) {
   host.replaceChildren();
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   if (!app) {
-    host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, where it is, and how to build it again from a terminal."));
+    host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, its version and where it runs."));
     return;
   }
   const copyBtn = (label, text, cls) => {
@@ -7382,28 +7547,25 @@ async function fillDetails(app) {
     if (m) version = m[1];
   } catch (e) {}
   const display = (app.name || "").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  // What a person asks first: what it is, which version, how big, where it
+  // runs and what it may touch. Who built it, the file and the developer's
+  // commands come after.
   row("Name", display || "Your app");
-  row("File", app.name || baseName(info.path || app.path), "mono");
-  // The builds made in this session, not published versions: those are
-  // the Versions list below (IC-976), so this row never says "v2" beside it.
-  row("Built", [builds ? `${builds} time${builds === 1 ? "" : "s"} in this session` : "", version ? `manifest ${version}` : ""].filter(Boolean).join(" · ") || "once");
-  row("Size", `${kb} KB · needs the Krate runtime, installed once`);
-  // Which AI wrote it: the session's own record when it has one.
-  const agentId = (state.session && state.session.agent) || state.agent || "";
-  const agentName = (AGENT_ORDER.find((x) => x.name === agentId) || {}).label || agentLabel();
-  const by = el("span", "dt2-by");
-  const mark = el("span", "dt2-mk"); mark.innerHTML = aiLogo(agentId); by.appendChild(mark);
-  by.appendChild(document.createTextNode(`${agentName}, ${tauri ? "on this computer" : "on Krate's build service"}`));
-  row("Built by", by);
+  if (version) row("Version", version);
+  row("Size", `${kb} KB · opens with Krate, installed once`);
+  // A link opens it in a browser, on a phone too (the web Player), so a
+  // phone is one of the places it runs.
   const os = el("span", "dt2-os");
-  for (const n of ["macOS", "Windows", "Linux"]) { const i = el("span", "", n); os.appendChild(i); }
+  for (const n of ["macOS", "Windows", "Linux", "Any browser, by link"]) { const i = el("span", "", n); os.appendChild(i); }
   row("Runs on", os);
-  // What it may touch, in words, and what it may not.
+  // What it may touch, in words, and what it may not. Every app has its
+  // window, said once (the window's own capability read "open a window"
+  // beside it: "A window, open a window, and ...").
   const words = [];
   for (const c of caps) {
     if (ASK_PLUMBING.test(c)) continue;
     const w = friendlyAsk(c);
-    if (w && !words.includes(w)) words.push(w);
+    if (w && !/\bwindow\b/i.test(w) && !words.includes(w)) words.push(w);
   }
   const may = ["A window", ...words.map((w) => (w === "save your data on this computer" ? "its own saved data" : w))];
   const list = (a) => (a.length > 1 ? a.slice(0, -1).join(", ") + ", and " + a[a.length - 1] : a[0]);
@@ -7414,11 +7576,26 @@ async function fillDetails(app) {
   if (!caps.some((c) => c.startsWith("audio.capture"))) not.push("the microphone");
   if (!caps.some((c) => c.startsWith("fs."))) not.push("your other files");
   if (not.length) row("May not touch", (not[0].charAt(0).toUpperCase() + not[0].slice(1)) + (not.length > 1 ? ", " + not.slice(1).join(", ") : ""));
+  // Which AI wrote it: the session's own record when it has one.
+  const agentId = (state.session && state.session.agent) || state.agent || "";
+  const agentName = (AGENT_ORDER.find((x) => x.name === agentId) || {}).label || agentLabel();
+  const by = el("span", "dt2-by");
+  // Krate's own AI wears Krate's mark, not the empty ring kept for a tool
+  // with no logo of its own.
+  const mark = el("span", "dt2-mk");
+  mark.innerHTML = !AI_LOGOS[agentId] && /krate/i.test(agentName) ? '<img src="krate-logo.png" alt="" width="16" height="16">' : aiLogo(agentId);
+  by.appendChild(mark);
+  by.appendChild(document.createTextNode(`${agentName}, ${tauri ? "on this computer" : "on Krate's build service"}`));
+  row("Built by", by);
+  // The builds made in this session, not published versions: those are
+  // the Versions list below (IC-976), so this row never says "v2" beside it.
+  if (builds) row("Builds", `${builds} in this session`);
+  row("File", app.name || baseName(info.path || app.path), "mono");
   // Where it is, and where its source is.
   if (tauri && info.path) {
     const w = el("span", "dt2-act");
     w.appendChild(el("span", "mono dt2-path", info.path));
-    const show = el("button", "dt2-link", "Show"); show.type = "button";
+    const show = el("button", "dt2-link", "Show in folder"); show.type = "button";
     show.addEventListener("click", () => invoke("reveal", { path: info.path }).catch((e) => toastish(e)));
     w.appendChild(show);
     row("Where", w);
@@ -7459,17 +7636,29 @@ async function fillDetails(app) {
     };
     renderVersions(vers, line, paint);
   });
-  // The header's one action: run it from a terminal. Building it again is
-  // a second, smaller one beside it.
-  const run = `krate launch ${shellWord(tauri && info.path ? info.path : app.name || "app.krate")}`;
-  const runBtn = copyBtn("Copy the run command", run, "btn btn-sm dt2-run");
-  runBtn.title = run;
-  head.appendChild(runBtn);
-  const build = buildCommandFor(state.session, app);
-  if (build) {
-    const bb = copyBtn("Copy the build command", build, "btn btn-sm dt2-run ghost");
-    bb.title = build;
-    head.insertBefore(bb, runBtn);
+  // The terminal commands, for a developer, at the foot and folded: they
+  // led the pane as its two white buttons, on the web and on phones too,
+  // where there is no terminal to paste them into. Only on a computer with
+  // Krate installed (the desktop Studio) are they offered at all.
+  if (tauri) {
+    const dev = el("details", "dt2-dev");
+    dev.appendChild(el("summary", "", "Terminal commands"));
+    const cmds = el("dl", "dt2-rows");
+    const cmd = (k, text) => {
+      cmds.appendChild(el("dt", "", k));
+      const d = el("dd", "");
+      const w = el("span", "dt2-act");
+      const code = el("span", "mono dt2-path", text); code.title = text;
+      w.appendChild(code);
+      w.appendChild(copyBtn("Copy", text, "dt2-link"));
+      d.appendChild(w);
+      cmds.appendChild(d);
+    };
+    cmd("Run", `krate launch ${shellWord(info.path || app.name || "app.krate")}`);
+    const build = buildCommandFor(state.session, app);
+    if (build) cmd("Build again", build);
+    dev.appendChild(cmds);
+    wrap.appendChild(dev);
   }
 }
 

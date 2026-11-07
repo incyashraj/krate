@@ -1,5 +1,8 @@
 # Vision
 
+> Written in August 2026, while Krate was being built. For Krate today, see the
+> [introduction](introduction.md) and [where Krate is](roadmap.md).
+
 Krate exists because app portability is still broken.
 
 A text file can move from one device to another. A photo can move. A web page
