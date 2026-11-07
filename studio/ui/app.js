@@ -3227,6 +3227,7 @@ async function openReportSheet() {
       "workspace/src/lib.rs": "the app code the AI had written",
       "workspace/Cargo.toml": "the app's build setup",
       "workspace/manifest.toml": "the permissions the app declared",
+      "build.json": "the build service's record of this build",
     };
     $("repList").innerHTML = "";
     for (const f of info.files) {
@@ -3254,12 +3255,12 @@ async function sendReport() {
       note: $("repNote").value.trim(),
     });
     $("reportSheet").classList.add("hidden");
-    say("KRATE", `Sent to Krate support (${said}). Thank you. This is how the next person avoids it.`, null, { variant: "ask" });
+    say("KRATE", `Report sent (${said}). Thank you: this is how the next person avoids it.`, null, { variant: "ask" });
   } catch (err) {
     $("repResult").textContent = `It did not send: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Try again, or save it and email it.`;
     $("repSend").disabled = false;
   } finally {
-    $("repSend").textContent = "Send to support";
+    $("repSend").textContent = "Send report";
   }
 }
 

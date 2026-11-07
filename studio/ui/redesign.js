@@ -2667,9 +2667,11 @@
       q(".kr-ffail p", f).textContent = why;
       q(".kr-ffail p", f).hidden = !why;
       const acts = q(".kr-facts2", f);
-      // Report an issue rides along: it lived only on the old failure pane,
-      // which this card hides, so a failed build could not be reported.
-      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["makeitBtn", "kr-plain", "Send this to Krate"], ["reportBtn", "kr-plain", "Report an issue"]]
+      // One way to tell us: Report an issue, which sends the evidence and
+      // the request with it. "Send this to Krate" sat beside it and did
+      // nearly the same (the request, no evidence), and a person could not
+      // tell which to press; it stays in the page, out of sight.
+      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["reportBtn", "kr-plain", "Report an issue"]]
         .filter(([id]) => { const b = $(id); return b && !b.classList.contains("hidden") && !b.hidden; });
       const key = want.map(([id]) => id + ":" + ($(id).textContent || "")).join("|") + "|" + stopped;
       if (acts.dataset.k !== key) {
