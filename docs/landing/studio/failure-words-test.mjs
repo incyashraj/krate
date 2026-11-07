@@ -42,6 +42,36 @@ assert.doesNotMatch(says(compile), /Reinstall|build tools/);
 const cargoLog = "Updating crates.io index\n  Locking 3 packages to latest compatible versions\n  (Cargo.lock)\nerror: the app could not be built";
 assert.doesNotMatch(says(cargoLog), /build tools/, says(cargoLog));
 
+// K-756: Krate's own advice under a compile failure ("Fix: ... The build uses
+// rustup's toolchain and the wasm32-wasip1 target; run `krate doctor` if the
+// target or toolchain looks wrong.", crates/cli build_fix) is not the error.
+// Matching it told the founder "The build tools aren't set up yet" over 7
+// compile errors. Each shape check-app's failure reaches Studio in: the Fix
+// inline, after "FAILED at build", and as its own block.
+{
+  const errs = [
+    "   Compiling sketch-painter v0.1.0 (/Users/y/.krate/studio/builds/s-9/sketch-painter)",
+    "error[E0599]: no method named `stroke_path` found for struct `Canvas` in the current scope",
+    "  --> src/lib.rs:88:14",
+    "error[E0308]: mismatched types",
+    "  --> src/lib.rs:120:20",
+    "error: could not compile `sketch-painter` (lib) due to 7 previous errors",
+  ].join("\n");
+  const advice = "Fix the compiler errors above. The build uses rustup's toolchain and the wasm32-wasip1 target; run `krate doctor` if the target or toolchain looks wrong.";
+  for (const text of [
+    `${errs}\n\nFix: ${advice}`,
+    `build failed: ${errs}\n\nFix: ${advice}`,
+    `FAILED at build\n\n${errs}\n\nFix:\n${advice}`,
+  ]) {
+    assert.doesNotMatch(says(text), /build tools/, says(text));
+    assert.match(says(text), /did not compile/, says(text));
+  }
+  // The shapes that really mean a missing toolchain still say so.
+  assert.match(says("error: cargo-component build failed: the `wasm32-wasip1` target looks missing. Install it with `rustup target add wasm32-wasip1`."), /build tools/);
+  assert.match(says("error[E0463]: can't find crate for `core`\n  = note: the `wasm32-wasip1` target may not be installed\nerror: the app could not be built"), /build tools/);
+  console.log("ok  a compile error under Krate's toolchain advice is a compile error (K-756)");
+}
+
 // A port that stopped says what stopped it (IC-120, K-1237): exit 8 and a
 // last line "Blocked on <requirement>: <what>. Workspace: <path>". It used
 // to read "The build failed. Press Details", hiding a sentence the engine

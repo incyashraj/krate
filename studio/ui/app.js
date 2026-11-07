@@ -4197,7 +4197,13 @@ function plainWords(err) {
     return `The port stopped: ${reason}. ${kept}`;
   }
   // Classify on what the PROVIDER said, never on what Krate said about it.
-  const text = providerWords(raw);
+  // Krate's own advice under a failure goes too: check-app ends a compile
+  // failure with "Fix: ... The build uses rustup's toolchain and the
+  // wasm32-wasip1 target; run `krate doctor` ...", and matching THAT told a
+  // person with seven compile errors that the build tools were not set up,
+  // and to press Try again (K-756). The advice runs from a "Fix:" line to
+  // the next `error:` line or the end; Details still shows all of it.
+  const text = providerWords(raw).replace(/^\s*Fix:[\s\S]*?(?=^\s*error:|(?![\s\S]))/gm, "");
   // The engine's summary when it gave one, else everything. The keyword
   // rules below read `judged`; only the compiler rule reads the whole log.
   const judged = engineVerdict(text) || text;
@@ -4226,7 +4232,14 @@ function plainWords(err) {
   // Specific before general: a rustup install log mentions authentication
   // incidentally, and matching the sign-in guess first told a person with a
   // PATH problem to go sign in -- a wrong door with a confident sign on it.
-  if (/rustup|wasm32-wasip1 target|toolchain|cargo-component is not|build tools/i.test(judged))
+  //
+  // The shapes that MEAN a missing toolchain, never a bare mention of one:
+  // "rustup" or "toolchain" turn up in plenty of failures that have nothing
+  // to do with the install (K-756).
+  // rustc's "can't find crate for `core`" is read from the whole log: it is
+  // the compiler's line, under an engine summary that does not repeat it.
+  if (/can't find crate for `?(core|std)\b/i.test(text) ||
+      /rustup target add|target (is |may )?(be )?not installed|target looks missing|rustup:? (is )?(not found|command not found|not available)|no such command|cargo-component is not|toolchain [^.\n]*(not installed|is missing|was not found)|build tools/i.test(judged))
     return "The build tools aren't set up yet. Trying again lets Krate install them.";
   if (/quota|rate.?limit/i.test(judged)) return "Your AI is out of quota right now. It usually comes back within the hour.";
   // The AI's own sandbox broke: its words, not a guess. Seen live with
