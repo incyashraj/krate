@@ -96,5 +96,3 @@ the evidence is crisp:
 Phase 2 makes Krate useful: a WebAssembly app can call Krate for files,
 network, time, locale, and terminal I/O, and the runtime can enforce explicit
 capability grants before host access.
-
-Full planning details live in the `Plan/` directory.
