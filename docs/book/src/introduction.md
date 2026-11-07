@@ -4,8 +4,9 @@ Krate is a way to build a desktop app and ship it as one file.
 
 You write Rust. It compiles to a WebAssembly component. Krate packs that
 component, its manifest and its own source into a single `.krate` file.
-The same application bytes run on macOS, Windows and Linux through native
-Krate runtimes. The recipient installs a compatible runtime once; the app
+A link opens it in any modern browser, phones included, with nothing to
+install and no account. The same application bytes run natively on macOS,
+Windows and Linux once the recipient installs the Krate runtime, so the app
 does not need a separate package for each operating system. Existing desktop
 binaries do not become portable without adapting them to supported Krate APIs.
 
@@ -37,8 +38,8 @@ windows, and the runtime checks capabilities before many host calls.
 Agents can drive the whole thing through `krate run --json` and an MCP server,
 receiving permission decisions as data.
 
-Rust is the only language you can ship a window from today. iOS and Android
-exist in the tree as reference ports and are not shipping. The
+On phones and tablets, the same app opens from its link in the browser.
+Rust is the only language you can ship a window from today. The
 [limits page](limits.md) keeps the honest list.
 
 ## The Core Idea
