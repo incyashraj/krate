@@ -869,11 +869,14 @@ enum Command {
         output: Option<PathBuf>,
     },
 
-    /// Look at a request BEFORE building: answer with either up to three
-    /// short questions (when answering them would change what gets built)
-    /// or a one-paragraph plan of what will be made and what it needs.
-    /// Prints one JSON object -- {"ask":[...]} or {"plan":"...","needs":[...]}
-    /// -- and never builds anything. This is the Studio's conversation door.
+    /// Look at a request BEFORE building: answer with up to three short
+    /// questions (when answering them would change what gets built), a
+    /// one-paragraph plan of what will be made and what it needs, or -- when
+    /// `create` would refuse the request -- why not and what Krate can build
+    /// instead. Prints one JSON object -- {"ask":[...]},
+    /// {"plan":"...","needs":[...]} or {"cannot":"...","instead":"..."} --
+    /// and never builds anything. A plan only offers what `create` will
+    /// build. This is the Studio's conversation door.
     Plan {
         /// What the person asked for, in their own words.
         request: String,
@@ -10655,6 +10658,161 @@ fn wall_in_request(request: &str) -> Option<Wall> {
     None
 }
 
+/// What no Krate app can do under any grant, in the words both AIs are given.
+///
+/// `plan` and `create` each hand the request to an AI, and each AI used to
+/// get its own idea of the limits. The authoring prompt named these four and
+/// told the agent to refuse them; the planning prompt named only the sandbox
+/// and told the AI to plan "the closest thing". So on one sentence -- "an app
+/// that downloads all my email from gmail and deletes the spam folder" --
+/// plan promised an IMAP client with an app password and `create` refused it,
+/// three runs out of three (K-764). One list, read by both prompts.
+const OUT_OF_REACH: &str = "reading the mail, photos, contacts or messages already on \
+     this computer, signing in to somebody's Google/Spotify/Twitter account, reaching \
+     another person's device, or running while the app is closed";
+
+/// Krate's and the AI's own notes that Studio folds into a request, after
+/// the person's words. They are what was SAID about the request, not what
+/// was asked for, so they are never judged as the request.
+const STUDIO_NOTES: [&str; 3] = [
+    "(The agreed plan: ",
+    "(The person was asked ",
+    "(The app is called ",
+];
+
+/// The part of a request that is the person's: their words and their
+/// answers, without the questions, the agreed plan, or the name Studio adds.
+///
+/// Studio builds by sending `create` the request plus "(The agreed plan:
+/// ...)". The plan's own sentence was judged as if the person had typed it,
+/// so a plan that said "nothing is uploaded to the cloud" for a private
+/// journal was refused by `create` for asking for the cloud (K-764).
+fn request_to_judge(request: &str) -> String {
+    let person = person_words_only(request);
+    let cut = STUDIO_NOTES
+        .iter()
+        .filter_map(|note| person.find(note))
+        .min()
+        .unwrap_or(person.len());
+    person[..cut].trim_end().to_string()
+}
+
+/// Whether Krate will build a request: the ONE verdict `plan` and `create`
+/// both give, so the door that starts the conversation can never offer what
+/// the door that builds refuses (K-764).
+fn build_verdict(request: &str) -> krate_author::feasibility::Verdict {
+    krate_author::feasibility::screen(&request_to_judge(request))
+}
+
+/// `create`'s refusal, as the one line both doors say it in.
+fn cannot_build_line(reason: &str, instead: &str) -> String {
+    format!(
+        "Krate cannot build that: {}. Try instead: {}.",
+        reason.trim().trim_end_matches('.'),
+        instead.trim().trim_end_matches('.')
+    )
+}
+
+/// The plan's third answer: Krate will not build this, and what it can do
+/// instead. Its own arm, never a `plan` -- a refusal printed as
+/// `{"plan": ...}` was shown as "Here's what I'll build:" over a sentence
+/// saying it could not be built, with a Build it button that `create` then
+/// refused (K-764).
+fn plan_cannot_json(reason: &str, instead: &str, limit: Option<&str>) -> serde_json::Value {
+    serde_json::json!({
+        "cannot": cannot_build_line(reason, instead),
+        "reason": reason.trim().trim_end_matches('.'),
+        "instead": instead.trim().trim_end_matches('.'),
+        "limit": limit,
+    })
+}
+
+/// Whether a plan's "needs" entry is something `create` will let an app
+/// declare. The manifest's own parser decides, so the plan cannot offer a
+/// permission the build would refuse: an unknown name, a default every app
+/// already has (declaring one is an error), a pattern left unfilled
+/// (`fs.write:<chosen-folder>/**`), or a filesystem-wide glob, which
+/// check-app refuses (K-764).
+fn plan_need_is_buildable(need: &str) -> bool {
+    let Ok(cap) = need.trim().parse::<krate_manifest::Capability>() else {
+        return false;
+    };
+    if cap.is_default_granted() || need.contains('<') || need.contains('>') {
+        return false;
+    }
+    !fs_scope_reads_as_everything(need.trim())
+}
+
+/// An fs capability whose scope is everything (`fs.read:**`). The sandbox
+/// would contain it, but it reads as the whole disk to the person deciding,
+/// so check-app refuses it; the plan must not offer it either.
+fn fs_scope_reads_as_everything(cap: &str) -> bool {
+    let (family, scope) = match cap.split_once(':') {
+        Some((family, scope)) => (family, Some(scope)),
+        None => (cap, None),
+    };
+    if !family.starts_with("fs.") {
+        return false;
+    }
+    let bare = scope
+        .map(|s| s.trim_start_matches("./").trim_start_matches('/'))
+        .unwrap_or("");
+    bare == "**" || bare == "*" || bare.is_empty()
+}
+
+/// Hold an AI's plan to what `create` will build: an AI refusal becomes the
+/// `cannot` arm, needs `create` would refuse are left out (and said so on
+/// stderr), and a shape that is not one of the working examples is dropped
+/// rather than handed on. Anything else passes through untouched.
+fn plan_held_to_create(mut value: serde_json::Value) -> serde_json::Value {
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+    if let Some(reason) = object
+        .get("cannot")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_string)
+    {
+        let instead = object
+            .get("instead")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|i| !i.is_empty())
+            .unwrap_or("a version of the app that works on files you pick or data you type in")
+            .to_string();
+        let mut cannot = plan_cannot_json(&reason, &instead, None);
+        if let Some(session) = object.get("agent_session") {
+            cannot["agent_session"] = session.clone();
+        }
+        return cannot;
+    }
+    if let Some(needs) = object.get_mut("needs").and_then(|v| v.as_array_mut()) {
+        needs.retain(|need| {
+            let keep = need.as_str().is_some_and(plan_need_is_buildable);
+            if !keep {
+                eprintln!(
+                    "note: the plan named {need}, which is not a permission a Krate app can \
+                     ask for, so it was left out"
+                );
+            }
+            keep
+        });
+    }
+    let unknown_shape = object
+        .get("shape")
+        .and_then(|v| v.as_str())
+        .is_some_and(|shape| {
+            !shape.eq_ignore_ascii_case("none")
+                && authoring_context::example_by_name(shape).is_none()
+        });
+    if unknown_shape {
+        object.remove("shape");
+    }
+    value
+}
+
 fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> Result<u8> {
     // Deterministic thin gate. name_from_request already knows which words
     // carry meaning; a request it cannot name and that has no sentence
@@ -10686,53 +10844,41 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         return Ok(0);
     }
 
+    // The same verdict `create` gives, for the same request, from the same
+    // function -- and it runs FIRST, before anything that could offer a plan.
+    //
+    // It did not run here at first, and the two doors gave opposite answers
+    // to one sentence: asked for "an app that reads my Gmail inbox", `create`
+    // refused in plain words while `plan` sent the person off to obtain an
+    // OAuth credential. Then it ran, but printed its refusal as a "plan", so
+    // Studio said "Here's what I'll build:" over "Krate cannot build that"
+    // and offered a Build it button that `create` refused. And it ran AFTER
+    // the wall below, so "a timer that keeps running in the background"
+    // was promised a substitute that `create` then refused for the same
+    // words (K-764). A refusal is its own answer now, and it comes first.
+    //
+    // Nothing is spent either way -- deterministic, no AI, no network.
+    if let krate_author::feasibility::Verdict::Refuse(refusal) = build_verdict(request) {
+        let limit = serde_json::to_value(refusal.limit)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string));
+        println!(
+            "{}",
+            plan_cannot_json(&refusal.reason, &refusal.instead, limit.as_deref())
+        );
+        return Ok(0);
+    }
+
     // A wall the runtime genuinely cannot cross is worth naming in ten
     // seconds rather than discovering forty minutes into a build. This step
     // costs nothing -- no AI, no network -- and it runs before the provider
-    // is even resolved.
+    // is even resolved. What it offers is buildable: the request passed the
+    // verdict above, which is the one `create` applies to it.
     if let Some(wall) = wall_in_request(request) {
         println!(
             "{}",
             serde_json::json!({
                 "plan": wall.plan(),
-                "needs": Vec::<String>::new(),
-            })
-        );
-        return Ok(0);
-    }
-
-    // The same feasibility screen `create` runs, for the same request.
-    //
-    // It did not run here, and the two doors gave opposite answers to one
-    // sentence. Asked for "an app that reads my Gmail inbox", `create`
-    // refuses in plain words -- a Krate app cannot sign in to another
-    // company's account, there is no browser to redirect through and
-    // nowhere safe to keep a token. `plan` returned three confident
-    // questions instead, the first of which sends the person off to obtain
-    // an OAuth credential for an app that will then be refused.
-    //
-    // That is worst on the web, where planning IS the front door: a
-    // stranger's first interaction would be an errand, followed by a no.
-    //
-    // `create`'s refusal has an escape hatch (--force) and this one does
-    // not need its own, because the refusal is advisory here: it is
-    // returned as the plan, so the Studio shows it and the person can say
-    // something else. Nothing is spent either way -- this screen is
-    // deterministic, with no AI and no network.
-    if let krate_author::feasibility::Verdict::Refuse(refusal) =
-        krate_author::feasibility::screen(request)
-    {
-        // Both halves: the reason, and the nearest thing Krate CAN build,
-        // phrased so the person can paste it straight back. A refusal
-        // without the second half reads as a dead end, which is the whole
-        // point of `instead` existing on the type.
-        println!(
-            "{}",
-            serde_json::json!({
-                // The reason does not end in a full stop (it is written to be
-                // embedded), so one is added rather than running two
-                // sentences together.
-                "plan": format!("{}. Try instead: {}.", refusal.reason.trim_end_matches('.'), refusal.instead.trim_end_matches('.')),
                 "needs": Vec::<String>::new(),
             })
         );
@@ -10805,9 +10951,8 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          title-cased\", \"plan\": \"ONE short sentence, plain words: what will be \
          built\", \"points\": [\"three to five short points, each a fragment of \
          at most eight words: what it shows, what you can do, what data it keeps. \
-         No full sentences, no rules lists, never their answers read back to them\"], \"needs\": [\"things the person must \
-         supply or approve: a file to attach, a choice to make, a permission the app will \
-         request\"]}} -- needs may be empty.\n\n\
+         No full sentences, no rules lists, never their answers read back to them\"], \"needs\": [\"the permissions the app \
+         will ask for, each a name from the list below\"]}} -- needs may be empty.\n\n\
          Never ask about colors, fonts, or anything with a sensible default. A Krate app \
          runs on Mac, Windows and Linux automatically, so never ask about platforms. Ask \
          only when the answer changes the app.\n\n\
@@ -10815,6 +10960,12 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          clicks to other programs, read other apps' windows, or control the OS. If the \
          request needs that, do not ask questions about it -- reply with a plan for the \
          CLOSEST thing that can truly work, saying plainly what changed and why.\n\n\
+         Some things no Krate app can do under any permission: {OUT_OF_REACH}. The build \
+         refuses a request that needs one of them, so never plan around it. Reply instead:\n\
+         {{\"cannot\": \"one plain sentence saying what is out of reach\", \"instead\": \"the \
+         nearest app Krate CAN build, phrased as a request the person could send\"}}\n\
+         Only when you are certain: a request that could mean a local, offline or \
+         sample-data version gets a plan for that version.\n\n\
          WHICHEVER form you reply with, also include a top-level \"shape\" field: the \
          name of the working example whose SHAPE is closest to this request -- its \
          interaction and data pattern, never its topic -- or \"none\" if nothing fits. \
@@ -10929,16 +11080,26 @@ fn finish_plan(
         }
     }
 
-    let json = extract_plan_json(text).unwrap_or_else(|| {
-        if text.trim().is_empty() {
-            eprintln!("note: the planning AI returned nothing; building directly.");
-        } else {
-            eprintln!("note: could not read a plan from the AI; building directly.");
-        }
-        // An empty plan with no questions: the Studio reads this as "proceed to
-        // build", the same as an AI that decided the request was ready.
-        serde_json::json!({ "plan": "", "needs": [] }).to_string()
-    });
+    // Whatever the AI said, it is held to what `create` will build: its own
+    // refusal becomes the `cannot` arm, and a permission or shape `create`
+    // would refuse is not offered (K-764).
+    let json = extract_plan_json(text)
+        .map(
+            |json| match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(value) => plan_held_to_create(value).to_string(),
+                Err(_) => json,
+            },
+        )
+        .unwrap_or_else(|| {
+            if text.trim().is_empty() {
+                eprintln!("note: the planning AI returned nothing; building directly.");
+            } else {
+                eprintln!("note: could not read a plan from the AI; building directly.");
+            }
+            // An empty plan with no questions: the Studio reads this as "proceed to
+            // build", the same as an AI that decided the request was ready.
+            serde_json::json!({ "plan": "", "needs": [] }).to_string()
+        });
     // Ride the planning session's id along, tagged with the provider, so
     // the studio can hand it to create and the build resumes hot.
     let json = if wants_session {
@@ -11061,7 +11222,7 @@ fn explain_answer(text: &str, provider: &str) -> Result<String> {
 /// "plan" key. Agents wrap answers in prose and code fences no matter what
 /// the prompt says; the contract survives by extraction, not by trust.
 fn extract_plan_json(text: &str) -> Option<String> {
-    extract_json_with(text, &["ask", "plan"])
+    extract_json_with(text, &["ask", "plan", "cannot"])
 }
 
 /// The first JSON object in an AI's output that carries one of `keys`, in
@@ -11536,7 +11697,11 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // The screen refuses only what is certainly impossible and says so in one
     // sentence; anything it is unsure about is built. A caveat is not a
     // refusal: the app is authored and the note is printed with it.
-    let feasibility = krate_author::feasibility::screen(&req.request);
+    //
+    // Judged on the person's words only, by the same function `plan` uses:
+    // the agreed plan Studio appends is the AI's prose, and judging it as a
+    // request refused plans `plan` had just offered (K-764).
+    let feasibility = build_verdict(&req.request);
     if let krate_author::feasibility::Verdict::Refuse(refusal) = &feasibility {
         if !req.force {
             return Err(report_refusal(&req, refusal));
@@ -12627,9 +12792,7 @@ Use the Read, Edit, Write, and Bash tools. Do not explain what you did; just\n\
 build the app until the check passes.\n\
 \n\
 One exception, and only one. If the request needs something no Krate app can\n\
-do -- reading the mail, photos, contacts or messages already on this computer,\n\
-signing in to somebody's Google/Spotify/Twitter account, reaching another\n\
-person's device, or running while the app is closed -- then do NOT build a\n\
+do -- {OUT_OF_REACH} -- then do NOT build a\n\
 convincing app over invented data and let check-app pass it. An app that looks\n\
 like a mail reader but can never read mail is worse than no app. Write the\n\
 single line\n\
@@ -21877,21 +22040,14 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
 
     for request in &manifest.capabilities {
         let cap = request.cap.to_string();
-        let (family, scope) = match cap.split_once(':') {
-            Some((f, s)) => (f, Some(s)),
-            None => (cap.as_str(), None),
-        };
+        let family = cap.split_once(':').map_or(cap.as_str(), |(f, _)| f);
 
-        // Rule 1: unscoped fs globs.
-        if family.starts_with("fs.") {
-            let bare = scope
-                .map(|s| s.trim_start_matches("./").trim_start_matches('/'))
-                .unwrap_or("");
-            if bare == "**" || bare == "*" || bare.is_empty() {
-                return Some(format!(
-                    "the manifest asks for {cap}, which reads as everything. The sandbox contains it, but a person cannot tell -- and an app wide open on paper fails the permission wall even when the runtime holds"
-                ));
-            }
+        // Rule 1: unscoped fs globs. The same rule `plan` holds its needs
+        // to, so it never offers a permission this refuses (K-764).
+        if fs_scope_reads_as_everything(&cap) {
+            return Some(format!(
+                "the manifest asks for {cap}, which reads as everything. The sandbox contains it, but a person cannot tell -- and an app wide open on paper fails the permission wall even when the runtime holds"
+            ));
         }
 
         // Rule 2: a family whose interface the component never imports.
@@ -27173,6 +27329,84 @@ mod refusal_tests {
         assert!(extract_plan_json(planned).is_some());
         assert!(agent_failure_reason_in(asked).is_none());
         assert!(agent_failure_reason_in(planned).is_none());
+    }
+}
+
+#[cfg(test)]
+mod plan_agrees_with_create_tests {
+    use super::{build_verdict, plan_held_to_create, plan_need_is_buildable, request_to_judge};
+    use krate_author::feasibility::Verdict;
+
+    /// Studio's notes are not the request: the agreed plan, an unanswered
+    /// question and the app's name are dropped; the person's answer stays.
+    #[test]
+    fn only_the_persons_words_are_judged() {
+        let studio = "a journal\n\n(When asked \"Where?\" the person answered: \"on my laptop\")\n\n\
+                      (The person was asked \"Sync to the cloud?\" and chose not to answer.)\n\n\
+                      (The agreed plan: nothing is uploaded to the cloud.)\n\n(The app is called \"Diary\".)";
+        let judged = request_to_judge(studio);
+        assert!(
+            judged.contains("a journal") && judged.contains("on my laptop"),
+            "{judged}"
+        );
+        assert!(
+            !judged.contains("cloud") && !judged.contains("Diary"),
+            "{judged}"
+        );
+        assert!(matches!(
+            build_verdict(studio),
+            Verdict::Buildable | Verdict::Caveat(_)
+        ));
+        // The person's own words still decide.
+        assert!(matches!(
+            build_verdict("an app that reads my Gmail inbox\n\n(The agreed plan: a mail viewer.)"),
+            Verdict::Refuse(_)
+        ));
+    }
+
+    #[test]
+    fn a_plan_only_names_permissions_create_accepts() {
+        for good in [
+            "store.kv",
+            "net.connect:api.example.com:443",
+            "fs.write:exports/**",
+        ] {
+            assert!(plan_need_is_buildable(good), "{good}");
+        }
+        for bad in [
+            "ui.window",
+            "ui.window:create",
+            "fs.write:<chosen-folder>/**",
+            "fs.read:**",
+            "a CSV file of your expenses",
+            "camera.photograph",
+        ] {
+            assert!(!plan_need_is_buildable(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_ai_refusal_becomes_the_cannot_arm_not_a_plan() {
+        let held = plan_held_to_create(serde_json::json!({
+            "cannot": "a Krate app cannot sign in to your Google account",
+            "instead": "a viewer for mail you export",
+            "agent_session": "claude:abc",
+        }));
+        assert!(held.get("plan").is_none(), "{held}");
+        assert_eq!(
+            held["cannot"],
+            "Krate cannot build that: a Krate app cannot sign in to your Google account. \
+             Try instead: a viewer for mail you export."
+        );
+        assert_eq!(held["agent_session"], "claude:abc");
+
+        let plan = plan_held_to_create(serde_json::json!({
+            "plan": "a tip calculator",
+            "needs": ["store.kv", "ui.window"],
+            "shape": "krate-no-such-example",
+        }));
+        assert_eq!(plan["needs"], serde_json::json!(["store.kv"]));
+        assert!(plan.get("shape").is_none(), "{plan}");
     }
 }
 

@@ -26445,3 +26445,136 @@ fn starter_purchase_orders_is_shared_by_two_people_through_its_window() {
         ],
     );
 }
+
+/// K-764: the door that starts the conversation never offers what the door
+/// that builds refuses.
+///
+/// `plan` is Studio's first answer to a person; `create` is what builds.
+/// They disagreed on one sentence three ways: a refusal printed as a
+/// `{"plan": ...}` (shown as "Here's what I'll build:" with a Build it
+/// button `create` then refused), a wall plan offered for words `create`
+/// refuses, and an agreed plan whose own prose ("nothing is uploaded to the
+/// cloud") made `create` refuse the app it described. This walks every
+/// request through both doors exactly as Studio does -- `create` gets the
+/// request plus "(The agreed plan: ...)" -- with a stand-in planning AI, so
+/// no AI is spent. `create` is stopped at the toolchain check (an empty
+/// HOME and PATH), which runs after the refusal screen and before any build.
+#[cfg(unix)]
+#[test]
+fn plan_never_offers_what_create_refuses() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let bin = dir.path().join("bin");
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    // The stand-in AI answers every plan with a private journal whose prose
+    // mentions the cloud, plus two needs `create` would refuse.
+    let answer = dir.path().join("answer.json");
+    std::fs::write(
+        &answer,
+        r#"{"name":"Journal","plan":"A private journal: entries stay on this computer and nothing is uploaded to the cloud.","points":["Write an entry","Browse past entries"],"needs":["store.kv","fs.write:<chosen-folder>/**","ui.window"],"shape":"krate-checklist"}"#,
+    )
+    .unwrap();
+    let fake = bin.join("claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '2.0.0 (Claude Code)'; exit 0; }}\ncat '{}'\n",
+            answer.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let run = |args: &[&str]| -> serde_json::Value {
+        let out = krate()
+            .env("PATH", &path)
+            .env("HOME", &home)
+            .env_remove("CARGO_HOME")
+            .env_remove("RUSTUP_HOME")
+            .env("KRATE_TEST_POLICY", "none")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .expect("run krate");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let line = stdout
+            .lines()
+            .rev()
+            .find(|l| l.trim_start().starts_with('{'))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no JSON from {args:?}: {stdout}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                )
+            });
+        serde_json::from_str(line).expect("json")
+    };
+    let output = dir.path().join("out.krate");
+    let output = output.to_str().unwrap();
+
+    let cases = [
+        // The screen refuses it: plan must say so, in create's words.
+        "an app that reads my Gmail inbox",
+        // A wall AND a refusal: the refusal wins in both doors.
+        "a pomodoro timer that keeps running in the background and pings me",
+        // A wall only: plan offers the substitute, create builds it.
+        "a background timer that keeps running after I close the window",
+        // Goes to the AI, whose plan mentions the cloud.
+        "a private journal for my evening notes",
+    ];
+    let (mut refused, mut planned) = (0, 0);
+    for request in cases {
+        let plan = run(&["plan", request, "--agent", "claude"]);
+        if let Some(cannot) = plan.get("cannot").and_then(|c| c.as_str()) {
+            refused += 1;
+            assert!(
+                plan.get("plan").is_none(),
+                "a refusal must not ride as a plan: {plan}"
+            );
+            let create = run(&[
+                "create",
+                request,
+                "--output",
+                output,
+                "--json",
+                "--no-install",
+            ]);
+            assert_eq!(
+                create["error"], "cannot-build",
+                "plan refused {request:?}, so create must too: {create}"
+            );
+            assert!(
+                cannot.contains(create["reason"].as_str().unwrap_or("?")),
+                "both doors give the same reason: {cannot} / {create}"
+            );
+            continue;
+        }
+        planned += 1;
+        let said = plan["plan"].as_str().unwrap_or_default();
+        assert!(!said.is_empty(), "{request:?}: {plan}");
+        for need in plan["needs"].as_array().cloned().unwrap_or_default() {
+            let need = need.as_str().unwrap_or_default().to_string();
+            assert!(
+                !need.contains('<') && need != "ui.window",
+                "plan offered a permission create refuses: {need}"
+            );
+        }
+        // Exactly what Studio sends once the plan is agreed.
+        let agreed = format!("{request}\n\n(The agreed plan: {said})");
+        let create = run(&[
+            "create",
+            &agreed,
+            "--output",
+            output,
+            "--json",
+            "--no-install",
+        ]);
+        assert_ne!(
+            create["error"], "cannot-build",
+            "plan offered {said:?} for {request:?}, and create refused it: {create}"
+        );
+    }
+    assert!(refused >= 2 && planned >= 2, "both arms were walked");
+}
