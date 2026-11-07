@@ -27,6 +27,7 @@ mod fleet;
 mod github_auth;
 mod krate_mode;
 mod lineedit;
+mod maker_key;
 mod mcp;
 mod org;
 mod player;
@@ -827,6 +828,13 @@ enum Command {
         /// Repeatable.
         #[arg(long = "extension", value_name = "OWNER/NAME@VERSION=DIR")]
         extensions: Vec<String>,
+
+        /// Sign the bundle with your own publisher key (made the first time,
+        /// kept on this computer), as `krate create` does. Without it the
+        /// bundle is byte for byte the same on every machine; it is signed
+        /// when it is published, wrapped or made into a card.
+        #[arg(long)]
+        sign: bool,
     },
 
     /// Send a report file to Krate support.
@@ -2114,7 +2122,22 @@ fn run() -> Result<u8> {
             manifest,
             output,
             extensions,
-        } => pack_bundle(&file, &manifest, &output, &extensions),
+            sign,
+        } => {
+            let code = pack_bundle(&file, &manifest, &output, &extensions)?;
+            if code == 0 && sign {
+                match maker_key::sign_if_unsigned(&output)? {
+                    maker_key::Signed::Now { public } => {
+                        println!("signed it as you ({}...)", &public[..12])
+                    }
+                    maker_key::Signed::Already => {}
+                    maker_key::Signed::Off => {
+                        println!("not signed: signing as a maker is off on this machine")
+                    }
+                }
+            }
+            Ok(code)
+        }
         Command::Sign {
             file,
             key,
@@ -3534,6 +3557,8 @@ fn complete_port(run: PortRun<'_>, progress: &mut PortProgress) -> Result<PortEn
                     &staged,
                 )
                 .with_context(|| format!("pack {}", staged.display()))?;
+                // Signed as its maker before it is judged (IC-983).
+                sign_as_maker(&staged, &mut Vec::new(), false);
                 println!("==> verifying the permission wall");
                 match verify_packed_app(&staged, &validated.manifest) {
                     Err(error) => ("permission-wall".to_string(), error.to_string(), "verify"),
@@ -7224,6 +7249,21 @@ fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u
     println!();
     println!("This identity stays on this machine and proves nothing to anyone else.");
     println!("To make a claim others can check, sign the app: krate sign --help");
+
+    // The key every app made here is signed with (IC-983).
+    println!();
+    match (maker_key::public(), maker_key::kept()) {
+        (Some(public), Some(kept)) => {
+            println!("Your publisher key: {}...", &public[..16]);
+            println!("  kept {}; it never leaves this computer.", kept.describe());
+            println!("  Every app you make or share is signed with it, so its data stays");
+            println!("  yours through every rebuild and nothing else can claim it.");
+        }
+        _ => {
+            println!("Your publisher key: not made yet. It is made the first time you make");
+            println!("or share an app, and every app you make is signed with it.");
+        }
+    }
     Ok(0)
 }
 
@@ -8354,6 +8394,8 @@ fn wrap_bundle(
             bundle.display()
         );
     }
+    // Out for use: signed as its maker first when it is not yet (IC-983).
+    maker_key::sign_in_place_for_going_out(bundle)?;
     let opened = krate_bundle::open(bundle)
         .with_context(|| format!("could not open {}", bundle.display()))?;
     let app_name = opened.manifest().app.name.clone();
@@ -9041,6 +9083,8 @@ fn card_bundle(
             bundle.display()
         );
     }
+    // Out for use: signed as its maker first when it is not yet (IC-983).
+    maker_key::sign_in_place_for_going_out(bundle)?;
     let opened = krate_bundle::open(bundle)
         .with_context(|| format!("could not open {}", bundle.display()))?;
     let app_name = opened.manifest().app.name.clone();
@@ -9335,6 +9379,10 @@ fn publish_bundle(
             bundle.display()
         );
     }
+    // Out for use, so signed as its maker first when it is not signed yet
+    // (IC-983): the same bytes then go out every time it is published.
+    let going_out = maker_key::sign_for_going_out(bundle)?;
+    let bundle = going_out.path.as_path();
     let bytes =
         fs::read(bundle).with_context(|| format!("could not read bundle {}", bundle.display()))?;
     if bytes.is_empty() {
@@ -11684,6 +11732,38 @@ impl Drop for WorkspaceKeeper {
     }
 }
 
+/// Sign a freshly made bundle as its maker (IC-983), and say what happened.
+/// Never fails the make: a key that cannot be read leaves the app unsigned,
+/// said in words, and the door that sends it out signs it then.
+fn sign_as_maker(bundle: &Path, steps: &mut Vec<serde_json::Value>, json: bool) {
+    match maker_key::sign_if_unsigned(bundle) {
+        Ok(maker_key::Signed::Now { public }) => {
+            if !json {
+                println!("==> signed as you ({}...)", &public[..12]);
+            }
+            steps.push(serde_json::json!({
+                "step": "sign",
+                "detail": format!("signed with your publisher key {}", &public[..16]),
+            }));
+        }
+        Ok(maker_key::Signed::Already) => {}
+        Ok(maker_key::Signed::Off) => steps.push(serde_json::json!({
+            "step": "sign",
+            "detail": "not signed: signing as a maker is off on this machine",
+        })),
+        Err(err) => {
+            eprintln!(
+                "krate: the app was made but not signed: {err:#}\n\
+                 It works as it is; it is signed when you publish, wrap or share it."
+            );
+            steps.push(serde_json::json!({
+                "step": "sign",
+                "detail": format!("not signed: {err:#}"),
+            }));
+        }
+    }
+}
+
 fn create_krate(req: CreateRequest) -> Result<u8> {
     use krate_author::{generate, AppKind, AppRequest};
 
@@ -12040,6 +12120,13 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         req.changed_from.as_deref(),
     )?;
     steps.push(serde_json::json!({"step": "pack", "detail": format!("{} bytes", size)}));
+    // Signed as its maker, here, before anything judges it (IC-983): the
+    // bytes every check below runs on are the bytes that go out, and the
+    // app's data keys on the maker's key, so it survives every rebuild
+    // (K-247). A key that cannot be read leaves the app unsigned and says
+    // so -- the build is not thrown away for it, and a door that sends it
+    // out signs it then.
+    sign_as_maker(staged.path(), &mut steps, req.json);
 
     // Step 5: verify the permission wall by running the packed bundle with all
     // grants (must succeed) and without the gating capability (must refuse).
@@ -17275,11 +17362,13 @@ fn write_manifest_with_entry(src: &Path, dest: &Path, entry: &str) -> Result<()>
 
 /// What a run target resolved to: the component, the bundle's manifest, the
 /// open bundle (held for the run), and -- for a download -- the sha256 of
-/// the bytes that arrived, which an organisation's check-in names them by.
+/// the bytes that arrived, which an organisation's check-in names them by,
+/// and the tag a Krate hub sent for the account that published it (K-1172).
 type RunTarget = (
     PathBuf,
     Option<PathBuf>,
     Option<krate_bundle::OpenBundle>,
+    Option<String>,
     Option<String>,
 );
 
@@ -17334,10 +17423,13 @@ fn resolve_run_target(target: &str, insecure_http: bool) -> Result<RunTarget> {
             Some(bundle.manifest_path().to_path_buf()),
             Some(bundle),
             None,
+            // A file names no hub account: an unsigned app from a file is
+            // keyed by its id (K-1172).
+            None,
         ));
     }
 
-    Ok((path, None, None, None))
+    Ok((path, None, None, None, None))
 }
 
 /// `krate judge`: the hub's own answer for a file, by a door's limits
@@ -17460,12 +17552,22 @@ fn run_target_from_link(url: &str, asked: &str, insecure_http: bool) -> Result<R
             org::download_refusal(url, reason, message, org.as_deref())
         );
     }
-    let (bundle, sha256) = match fetched.with_context(context)? {
+    let (bundle, sha256, store_tag, from) = match fetched.with_context(context)? {
         krate_bundle::FetchedForRun::Small(fetched) => {
             report_resolution(url, &fetched);
-            (fetched.bundle, fetched.sha256)
+            (
+                fetched.bundle,
+                fetched.sha256,
+                fetched.store_tag,
+                fetched.url,
+            )
         }
-        krate_bundle::FetchedForRun::Big { path, address, .. } => {
+        krate_bundle::FetchedForRun::Big {
+            path,
+            address,
+            store_tag,
+            url: from,
+        } => {
             // Saved as `<sha256>.krate`, checked as it streamed.
             let sha256 = path
                 .file_stem()
@@ -17483,14 +17585,21 @@ fn run_target_from_link(url: &str, asked: &str, insecure_http: bool) -> Result<R
                 .map(Ok)
                 .unwrap_or_else(|| krate_bundle::open(&path))
                 .with_context(context)?;
-            (bundle, sha256)
+            (bundle, sha256, store_tag, from)
         }
     };
+    // Whose app this is, as a Krate hub vouches (K-1172): taken only from a
+    // hub -- the bytes' final address, every redirect followed -- and only
+    // in the hub tag's shape, so no other server names whose data it gets.
+    let hub_tag = store_tag
+        .filter(|_| org::is_hub_link(&from))
+        .filter(|tag| krate_runtime::storage_key::is_hub_owner_tag(tag));
     Ok((
         bundle.component_path().to_path_buf(),
         Some(bundle.manifest_path().to_path_buf()),
         Some(bundle),
         Some(sha256),
+        hub_tag,
     ))
 }
 
@@ -17795,7 +17904,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     validate_app_args(&request.app_args)?;
 
     // Held for the whole run: dropping it removes the extracted bundle.
-    let (file, bundle_manifest, bundle, fetched_sha256) =
+    let (file, bundle_manifest, bundle, fetched_sha256, hub_tag) =
         resolve_run_target(&request.target, request.insecure_http)?;
     krate_runtime::stage_mark("cli: bundle opened");
 
@@ -18107,7 +18216,12 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                                 .ok()
                         })
                         .flatten();
-                    storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
+                    storage_principal_from(
+                        manifest,
+                        envelope.as_ref(),
+                        verdict.as_ref(),
+                        hub_tag.as_deref(),
+                    )
                 }),
             },
         )?;
@@ -18131,12 +18245,38 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     .ok()
             })
             .flatten();
-        let principal = storage_principal(manifest, envelope.as_ref(), verdict.as_ref());
+        let principal = storage_principal_from(
+            manifest,
+            envelope.as_ref(),
+            verdict.as_ref(),
+            hub_tag.as_deref(),
+        );
         // Only a verified app's lists are learned: the principal is
         // Verified only when the signature and its chain held.
         learn_group_lists(&principal, envelope.as_ref());
         principal
     });
+    // The first open of an app signed by THIS computer's maker key takes
+    // what its id kept unsigned across, once (IC-983, K-247); the first open
+    // of an unsigned app a hub vouched for gets a copy of it, once (K-1172).
+    // Before anything reads a store, so the app never starts on a second,
+    // empty one beside its data.
+    if let Some(principal) = &storage {
+        match adopt_id_keyed_data_here(
+            &store_home,
+            principal,
+            maker_key::public().as_deref(),
+            &machine_key,
+        ) {
+            Ok(IdDataAdopted::Moved(pieces)) => eprintln!(
+                "krate: {} is signed as you now; its saved data ({}) moved with it",
+                manifest.map(|m| m.app.name.as_str()).unwrap_or("this app"),
+                pieces.join(", ")
+            ),
+            Ok(_) => {}
+            Err(words) => anyhow::bail!("{words}. Nothing was lost; open it again to finish."),
+        }
+    }
 
     if let Some(manifest) = manifest {
         // What this person already granted this app, carried across the
@@ -19699,6 +19839,7 @@ fn principal_kind(principal: &StoragePrincipal) -> &'static str {
         StoragePrincipal::Verified { .. } => "verified",
         StoragePrincipal::Unverified { .. } => "unverified",
         StoragePrincipal::Development { .. } => "development",
+        StoragePrincipal::HubOwned { .. } => "hub-account",
     }
 }
 
@@ -21726,7 +21867,11 @@ fn print_effective_capabilities(
         println!("Signature");
         println!("  - none: nobody has signed this app");
         if let Some(principal) = &storage {
-            if principal.is_isolated() {
+            if let StoragePrincipal::HubOwned { .. } = principal {
+                println!(
+                    "  - its saved data is kept under the account that published it on the hub"
+                );
+            } else if principal.is_isolated() {
                 println!("  - its saved data is kept under this machine");
             } else {
                 println!("  - its saved data is shared with anything claiming the same app id");
@@ -26025,6 +26170,17 @@ pub(crate) enum StoragePrincipal {
     /// rather than guessing. It is not a publisher claim -- it says "this
     /// machine made this", never "this person is who they say".
     Development { developer: String, app_id: String },
+    /// An unsigned app a Krate hub handed over, with the hub's tag for the
+    /// account that published it (`x-krate-store`, K-1159): keyed by its id
+    /// AND that account, the tab's own name for it (`<id>~<tag>`, K-1172).
+    ///
+    /// The tag is the hub's word, not the file's: it is taken only from a
+    /// download whose bytes came from a Krate hub. It says who published
+    /// this copy, not who the app is, so it isolates two accounts that both
+    /// publish an unsigned `notes` but is not a publisher claim -- a file
+    /// opened from disk, with no hub in the way, is keyed by its id as it
+    /// always was.
+    HubOwned { tag: String, app_id: String },
 }
 
 impl StoragePrincipal {
@@ -26050,6 +26206,12 @@ impl StoragePrincipal {
                 sanitize_storage_name(app_id),
                 &developer[..developer.len().min(16)]
             ),
+            // `<id>~<tag>`, the browser Player's name for it; a tag that is
+            // not a hub tag never reaches here (see `storage_principal`).
+            StoragePrincipal::HubOwned { tag, app_id } => {
+                krate_runtime::storage_key::hub_owner_storage_key(app_id, tag)
+                    .unwrap_or_else(|| sanitize_storage_name(app_id))
+            }
         }
     }
 
@@ -26139,12 +26301,34 @@ pub(crate) fn storage_principal(
     envelope: Option<&krate_bundle::signing::SignatureEnvelope>,
     verdict: Option<&krate_bundle::signing::FullVerdict>,
 ) -> StoragePrincipal {
+    storage_principal_from(manifest, envelope, verdict, None)
+}
+
+/// [`storage_principal`] for an app a Krate hub handed over with its tag for
+/// the publishing account (K-1172): a signed app is still keyed by its
+/// publisher; an unsigned one by its id and that account, never by its id
+/// alone. `hub_tag` is already checked to be a hub's, in a hub tag's shape.
+pub(crate) fn storage_principal_from(
+    manifest: &Manifest,
+    envelope: Option<&krate_bundle::signing::SignatureEnvelope>,
+    verdict: Option<&krate_bundle::signing::FullVerdict>,
+    hub_tag: Option<&str>,
+) -> StoragePrincipal {
     let app_id = manifest.app.id.clone();
+    let unsigned = |app_id: String| match hub_tag
+        .filter(|tag| krate_runtime::storage_key::is_hub_owner_tag(tag))
+    {
+        Some(tag) => StoragePrincipal::HubOwned {
+            tag: tag.to_string(),
+            app_id,
+        },
+        None => unsigned_principal(app_id),
+    };
     let (Some(envelope), Some(full)) = (envelope, verdict) else {
-        return unsigned_principal(app_id);
+        return unsigned(app_id);
     };
     if !full.is_trustworthy() {
-        return unsigned_principal(app_id);
+        return unsigned(app_id);
     }
 
     // The publisher is the ROOT when a release key was delegated. Release
@@ -26256,8 +26440,12 @@ fn group_store_path(principal: &StoragePrincipal, group: &str) -> PathBuf {
         }
         // An app with no lineage at all shares only with other apps that
         // also have none, on this machine. That is weaker than the other two
-        // and it is named `shared-` so nobody reads it as a guarantee.
-        StoragePrincipal::Unverified { .. } => "shared".to_string(),
+        // and it is named `shared-` so nobody reads it as a guarantee. A
+        // hub account is no lineage either: no publisher list names its
+        // members, so it joins nothing (`group_access_for`).
+        StoragePrincipal::Unverified { .. } | StoragePrincipal::HubOwned { .. } => {
+            "shared".to_string()
+        }
     };
     krate_home()
         .join("groups")
@@ -26350,9 +26538,9 @@ pub(crate) fn group_access_for(
             group,
             known_group_list(publisher, group).as_ref(),
         ),
-        StoragePrincipal::Unverified { app_id } | StoragePrincipal::Development { app_id, .. } => {
-            access(None, app_id, group, None)
-        }
+        StoragePrincipal::Unverified { app_id }
+        | StoragePrincipal::Development { app_id, .. }
+        | StoragePrincipal::HubOwned { app_id, .. } => access(None, app_id, group, None),
     }
 }
 
@@ -26653,7 +26841,7 @@ fn principal_store_path_in(home: &Path, principal: &StoragePrincipal) -> PathBuf
         // Unchanged from before, byte for byte: an unsigned app must find
         // the data it already has.
         StoragePrincipal::Unverified { app_id } => app_store_path_in(home, app_id),
-        StoragePrincipal::Verified { .. } => home
+        StoragePrincipal::Verified { .. } | StoragePrincipal::HubOwned { .. } => home
             .join("store")
             .join(format!("{}.kv", principal.storage_key())),
         // A development app prefers its own isolated store, but falls back
@@ -26680,6 +26868,226 @@ fn principal_store_path_in(home: &Path, principal: &StoragePrincipal) -> PathBuf
             }
         }
     }
+}
+
+/// What an open did with the data an app's id kept unsigned (IC-983,
+/// K-1172).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IdDataAdopted {
+    /// Not an app whose first open takes anything: unsigned, from a file, or
+    /// signed by a key that is not this computer's maker key.
+    NotTaken,
+    /// The id's data was decided before: nothing moves now, or ever again.
+    Settled,
+    /// First open, and the id kept nothing.
+    Nothing,
+    /// First open of the maker's own signed app: these pieces moved.
+    Moved(Vec<String>),
+    /// First open of a hub-published unsigned app: these pieces copied.
+    Copied(Vec<String>),
+}
+
+/// The pieces of one store, journal before database, so a move cut short
+/// never leaves a database at its new name without its newest writes.
+const ID_DATA_PIECES: [&str; 8] = [
+    "sqlite-wal",
+    "sqlite-shm",
+    "sqlite-journal",
+    "sqlite",
+    "kv.sync",
+    "kv",
+    "secrets",
+    "shared.json",
+];
+
+/// The first open of an app whose data is keyed apart from its bare id
+/// takes what the id kept before, once -- the phones' rule (a613e9fd9) on
+/// a computer:
+///
+/// - **An app signed by this computer's maker key** (IC-983) MOVES it: the
+///   maker built this app here, its unsigned builds wrote that data, and
+///   its first signed build must open with it (K-247). Renamed, never
+///   copied, secrets sealed again under the new name, and the id settled in
+///   `store/<id>.moved` (the publisher, then `done`) so nothing takes it
+///   again and an unsigned file declaring the id opens to a fresh store.
+///   Only the maker's own key: an app signed by anyone else -- a download,
+///   another person's release -- takes nothing, as before.
+/// - **An unsigned app a hub vouched for** (`HubOwned`, K-1172) gets a
+///   COPY, once (`<its store>.from-id`): the tag says who published this
+///   copy of the app, not who wrote the data -- on a computer that is most
+///   often the person's own app of the same id -- so a link takes nothing
+///   from anyone and gets nothing it could not already read.
+///
+/// `Err` is words for the person: the app must not run on a half-moved
+/// store.
+fn adopt_id_keyed_data_here(
+    home: &Path,
+    principal: &StoragePrincipal,
+    maker: Option<&str>,
+    machine_key: &dyn Fn() -> Vec<u8>,
+) -> std::result::Result<IdDataAdopted, String> {
+    let (copy, app_id) = match principal {
+        StoragePrincipal::Verified { publisher, app_id } if Some(publisher.as_str()) == maker => {
+            (false, app_id)
+        }
+        StoragePrincipal::HubOwned { app_id, .. } => (true, app_id),
+        _ => return Ok(IdDataAdopted::NotTaken),
+    };
+    let old = unsigned_principal(app_id.clone());
+    let old_base = principal_store_path_in(home, &old);
+    let new_base = principal_store_path_in(home, principal);
+    if old_base == new_base {
+        return Ok(IdDataAdopted::NotTaken);
+    }
+    let said = |e: std::io::Error| {
+        format!(
+            "{app_id}'s saved data could not be {} to its own place ({e})",
+            if copy { "copied" } else { "moved" }
+        )
+    };
+
+    let record = if copy {
+        let settled = new_base.with_extension("from-id");
+        if settled.exists() {
+            return Ok(IdDataAdopted::Settled);
+        }
+        settled
+    } else {
+        let record = app_store_path_in(home, app_id).with_extension("moved");
+        let publisher = maker.unwrap_or_default();
+        match fs::read_to_string(&record) {
+            Ok(text) => {
+                let mut lines = text.lines();
+                if lines.next() != Some(publisher) || lines.next() == Some("done") {
+                    return Ok(IdDataAdopted::Settled);
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                if let Some(parent) = record.parent() {
+                    fs::create_dir_all(parent).map_err(said)?;
+                }
+                fs::write(&record, format!("{publisher}\n")).map_err(said)?;
+            }
+            Err(e) => return Err(said(e)),
+        }
+        record
+    };
+
+    let mut taken = Vec::new();
+    for piece in ID_DATA_PIECES {
+        let from = old_base.with_extension(piece);
+        let to = new_base.with_extension(piece);
+        let did = if copy {
+            copy_store_piece(&from, &to)
+        } else {
+            move_store_piece(&from, &to)
+        };
+        if did.map_err(said)? {
+            taken.push(piece.to_string());
+        }
+    }
+    if taken.iter().any(|p| p == "secrets") || new_base.with_extension("secrets").exists() {
+        reseal_moved_secrets(
+            &new_base.with_extension("secrets"),
+            &old.storage_key(),
+            &principal.storage_key(),
+            &machine_key(),
+        )?;
+    }
+    if copy {
+        fs::write(&record, b"").map_err(said)?;
+    } else {
+        let publisher = maker.unwrap_or_default();
+        let done = record.with_extension("moved-tmp");
+        fs::write(&done, format!("{publisher}\ndone\n")).map_err(said)?;
+        fs::rename(&done, &record).map_err(said)?;
+    }
+    Ok(match (taken.is_empty(), copy) {
+        (true, _) => IdDataAdopted::Nothing,
+        (false, false) => IdDataAdopted::Moved(taken),
+        (false, true) => IdDataAdopted::Copied(taken),
+    })
+}
+
+/// Rename `from` to `to` when `from` is there and `to` is not: one rename
+/// on one disk, so the piece is in one place or the other, never both.
+fn move_store_piece(from: &Path, to: &Path) -> io::Result<bool> {
+    if fs::symlink_metadata(from).is_err() || fs::symlink_metadata(to).is_ok() {
+        return Ok(false);
+    }
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(from, to)?;
+    Ok(true)
+}
+
+/// Copy `from` (a file, or a folder like `kv.sync`) to `to` when `from` is
+/// there and `to` is not, through a sibling renamed into place.
+fn copy_store_piece(from: &Path, to: &Path) -> io::Result<bool> {
+    fn tree(from: &Path, to: &Path) -> io::Result<()> {
+        if fs::symlink_metadata(from)?.is_dir() {
+            fs::create_dir_all(to)?;
+            for entry in fs::read_dir(from)? {
+                let entry = entry?;
+                tree(&entry.path(), &to.join(entry.file_name()))?;
+            }
+            Ok(())
+        } else {
+            fs::copy(from, to).map(|_| ())
+        }
+    }
+    let Ok(meta) = fs::symlink_metadata(from) else {
+        return Ok(false);
+    };
+    if meta.file_type().is_symlink() || fs::symlink_metadata(to).is_ok() {
+        return Ok(false);
+    }
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut staging = to.as_os_str().to_owned();
+    staging.push(".copying");
+    let staging = PathBuf::from(staging);
+    let _ = fs::remove_dir_all(&staging);
+    let _ = fs::remove_file(&staging);
+    tree(from, &staging)?;
+    fs::rename(&staging, to)?;
+    Ok(true)
+}
+
+/// Secrets that moved were sealed under the old name; open them with it and
+/// seal them again under the new, beside the file and then over it, so they
+/// read under one name or the other at every moment. A file that reads as
+/// empty under both is left exactly as it is.
+fn reseal_moved_secrets(
+    path: &Path,
+    old_label: &str,
+    new_label: &str,
+    machine_key: &[u8],
+) -> std::result::Result<(), String> {
+    use krate_runtime::secret_host::AppSecrets;
+    let read = |label: &str| AppSecrets::open(path.to_path_buf(), label, machine_key, true);
+    if !path.exists() || !read(new_label).names().unwrap_or_default().is_empty() {
+        return Ok(());
+    }
+    let sealed = read(old_label);
+    let names = sealed.names().unwrap_or_default();
+    if names.is_empty() {
+        return Ok(());
+    }
+    let said = |e: String| format!("its saved secrets could not be moved ({e})");
+    let beside = path.with_extension("secrets-reseal");
+    let _ = fs::remove_file(&beside);
+    let mut resealed = AppSecrets::open(beside.clone(), new_label, machine_key, true);
+    for name in names {
+        if let Some(value) = sealed.get(&name).map_err(|e| said(format!("{e:?}")))? {
+            resealed
+                .set(&name, value)
+                .map_err(|e| said(format!("{e:?}")))?;
+        }
+    }
+    fs::rename(&beside, path).map_err(|e| said(e.to_string()))
 }
 
 fn app_store_path(app_id: &str) -> PathBuf {
@@ -30841,6 +31249,255 @@ mod storage_identity_tests {
             principal_store_path_in(home, &unsigned),
             Path::new("/h/store/dev.krate.notes.kv")
         );
+    }
+
+    const MAKER: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const STRANGER: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+    /// An app's unsigned data, every piece with something in it, sealed as
+    /// the run seals it: under the unsigned principal's own name.
+    fn unsigned_data(home: &Path, app_id: &str, key: &[u8]) -> PathBuf {
+        let old = unsigned_principal(app_id.to_string());
+        let base = principal_store_path_in(home, &old);
+        fs::create_dir_all(base.parent().unwrap()).unwrap();
+        fs::write(base.with_extension("kv"), b"notes").unwrap();
+        fs::write(base.with_extension("sqlite"), b"db").unwrap();
+        fs::write(base.with_extension("sqlite-wal"), b"wal").unwrap();
+        fs::write(base.with_extension("shared.json"), b"{}").unwrap();
+        let mut secrets = krate_runtime::secret_host::AppSecrets::open(
+            base.with_extension("secrets"),
+            &old.storage_key(),
+            key,
+            true,
+        );
+        secrets.set("token", b"s3cret".to_vec()).unwrap();
+        base
+    }
+
+    fn secret_in(base: &Path, label: &str, key: &[u8]) -> Option<Vec<u8>> {
+        krate_runtime::secret_host::AppSecrets::open(
+            base.with_extension("secrets"),
+            label,
+            key,
+            true,
+        )
+        .get("token")
+        .ok()
+        .flatten()
+    }
+
+    /// IC-983, K-247: the first open of an app signed by THIS computer's
+    /// maker key takes what its unsigned builds kept, once -- renamed, its
+    /// secrets sealed again under the signed name -- and a rebuild (the same
+    /// key) finds it there. The id is settled: an unsigned file declaring
+    /// the id later opens to a fresh store, and nothing is taken again.
+    #[test]
+    fn the_makers_first_signed_open_takes_its_unsigned_data_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let signed = StoragePrincipal::Verified {
+            publisher: MAKER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let new = principal_store_path_in(home, &signed);
+
+        let moved = adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine).unwrap();
+        let IdDataAdopted::Moved(pieces) = moved else {
+            panic!("expected a move, got {moved:?}")
+        };
+        for piece in ["sqlite-wal", "sqlite", "kv", "secrets", "shared.json"] {
+            assert!(pieces.iter().any(|p| p == piece), "{piece} in {pieces:?}");
+        }
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+        assert_eq!(fs::read(new.with_extension("sqlite-wal")).unwrap(), b"wal");
+        for piece in ["kv", "sqlite", "sqlite-wal", "secrets", "shared.json"] {
+            assert!(
+                !old.with_extension(piece).exists(),
+                "{piece} left at the id"
+            );
+        }
+        assert_eq!(
+            secret_in(&new, &signed.storage_key(), &key).as_deref(),
+            Some(&b"s3cret"[..]),
+            "its secrets open under the signed name"
+        );
+        let old_label = unsigned_principal("dev.krate.notes".to_string()).storage_key();
+        assert_eq!(secret_in(&new, &old_label, &key), None);
+
+        // A rebuild: same key, nothing to take, the data is where it was.
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine),
+            Ok(IdDataAdopted::Settled)
+        );
+        fs::write(old.with_extension("kv"), b"an unsigned file's").unwrap();
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine),
+            Ok(IdDataAdopted::Settled),
+            "what an unsigned file writes under the id later stays its own"
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+        assert_eq!(
+            fs::read(old.with_extension("kv")).unwrap(),
+            b"an unsigned file's"
+        );
+    }
+
+    /// Only the maker's own key takes anything: an app signed by another
+    /// publisher -- a download, someone else's release -- moves nothing, and
+    /// an unsigned app from a file is where it always was.
+    #[test]
+    fn an_app_signed_by_another_key_takes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let theirs = StoragePrincipal::Verified {
+            publisher: STRANGER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &theirs, Some(MAKER), &machine),
+            Ok(IdDataAdopted::NotTaken)
+        );
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &theirs, None, &machine),
+            Ok(IdDataAdopted::NotTaken),
+            "no maker key on this computer: nothing is anyone's to take"
+        );
+        let unsigned = unsigned_principal("dev.krate.notes".to_string());
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &unsigned, Some(MAKER), &machine),
+            Ok(IdDataAdopted::NotTaken)
+        );
+        assert_eq!(fs::read(old.with_extension("kv")).unwrap(), b"notes");
+        assert!(!principal_store_path_in(home, &theirs).exists());
+    }
+
+    /// A move cut short finishes on the maker's next open, never on another
+    /// publisher's.
+    #[test]
+    fn a_makers_move_cut_short_finishes_on_the_next_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let signed = StoragePrincipal::Verified {
+            publisher: MAKER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let new = principal_store_path_in(home, &signed);
+        // As a crash leaves it: the record names the maker, the database
+        // is across, the rest is not.
+        fs::write(
+            app_store_path_in(home, "dev.krate.notes").with_extension("moved"),
+            format!("{MAKER}\n"),
+        )
+        .unwrap();
+        fs::rename(old.with_extension("sqlite"), new.with_extension("sqlite")).unwrap();
+        let finished = adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine).unwrap();
+        assert!(
+            matches!(&finished, IdDataAdopted::Moved(p) if !p.iter().any(|p| p == "sqlite") && p.iter().any(|p| p == "kv")),
+            "{finished:?}"
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+    }
+
+    const TAG: &str = "k0123456789abcdef";
+
+    /// K-1172 on a computer: an unsigned app a hub handed over is keyed by
+    /// its id and the account that published it -- two accounts, two stores
+    /// -- and a file with no hub tag keeps the id-keyed path it always had.
+    #[test]
+    fn two_unsigned_apps_with_one_id_from_two_hub_accounts_get_different_stores() {
+        let manifest = |id: &str| {
+            Manifest::parse(&format!(
+                "[app]\nid = \"{id}\"\nname = \"N\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ))
+            .unwrap()
+        };
+        let notes = manifest("dev.krate.notes");
+        let alice = storage_principal_from(&notes, None, None, Some(TAG));
+        let mallory = storage_principal_from(&notes, None, None, Some("kfedcba9876543210"));
+        let file = storage_principal_from(&notes, None, None, None);
+        assert_eq!(alice.storage_key(), "dev.krate.notes~k0123456789abcdef");
+        assert_ne!(alice.storage_key(), mallory.storage_key());
+        assert!(alice.is_isolated() && !alice.is_verified());
+        let home = Path::new("/h");
+        assert_eq!(
+            principal_store_path_in(home, &alice),
+            Path::new("/h/store/dev.krate.notes~k0123456789abcdef.kv")
+        );
+        assert_eq!(file, unsigned_principal("dev.krate.notes".to_string()));
+        // A header that is not a hub tag keys nothing apart.
+        assert_eq!(
+            storage_principal_from(&notes, None, None, Some("../../x")),
+            file
+        );
+        // No id spells its way into an account's store: a manifest refuses
+        // the `~`, and the name it would make is sanitized apart anyway.
+        assert!(Manifest::parse(
+            "[app]\nid = \"dev.krate.notes~k0123456789abcdef\"\nname = \"N\"\n\
+             version = \"1.0.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+        )
+        .is_err());
+        let spelled = StoragePrincipal::Unverified {
+            app_id: "dev.krate.notes~k0123456789abcdef".to_string(),
+        };
+        assert_ne!(
+            principal_store_path_in(home, &spelled),
+            principal_store_path_in(home, &alice)
+        );
+    }
+
+    /// The first open of a hub-published unsigned app gets a COPY of its
+    /// id's data, once: nothing is taken from the person's own app of the
+    /// same id, and a second account's app gets its own copy.
+    #[test]
+    fn a_hub_published_app_gets_a_copy_of_its_ids_data_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let alice = StoragePrincipal::HubOwned {
+            tag: TAG.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let new = principal_store_path_in(home, &alice);
+        let copied = adopt_id_keyed_data_here(home, &alice, Some(MAKER), &machine).unwrap();
+        assert!(
+            matches!(&copied, IdDataAdopted::Copied(p) if p.iter().any(|p| p == "kv")),
+            "{copied:?}"
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+        assert_eq!(
+            secret_in(&new, &alice.storage_key(), &key).as_deref(),
+            Some(&b"s3cret"[..])
+        );
+        assert_eq!(
+            fs::read(old.with_extension("kv")).unwrap(),
+            b"notes",
+            "nothing taken"
+        );
+        fs::write(new.with_extension("kv"), b"alice's own").unwrap();
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &alice, Some(MAKER), &machine),
+            Ok(IdDataAdopted::Settled)
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"alice's own");
+        // The maker's own signed build still finds the id's data to take.
+        let signed = StoragePrincipal::Verified {
+            publisher: MAKER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let moved = adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine).unwrap();
+        assert!(matches!(moved, IdDataAdopted::Moved(_)), "{moved:?}");
     }
 
     /// What the app id does and does not decide (IC-736).

@@ -4976,6 +4976,11 @@ pub struct Fetched {
     /// The plain sha256 of the bytes that arrived: what an organisation's
     /// lease and the hub's check-in name them by (IC-948 G).
     pub sha256: String,
+    /// What the server said in `x-krate-store`: a Krate hub's tag for the
+    /// account that published the app (K-1159, K-1172). Any server can
+    /// send the header, so the caller takes it only from a Krate hub, and
+    /// only in the hub tag's shape.
+    pub store_tag: Option<String>,
 }
 
 /// The bytes served at a content address must BE that content (IC-389,
@@ -5152,6 +5157,8 @@ pub enum FetchedForRun {
         path: PathBuf,
         url: String,
         address: Option<String>,
+        /// As [`Fetched::store_tag`].
+        store_tag: Option<String>,
     },
 }
 
@@ -5204,6 +5211,7 @@ fn fetch_big(
 ) -> Result<FetchedForRun> {
     use sha2::{Digest, Sha256};
     let final_url = response.get_url().to_string();
+    let store_tag = response.header("x-krate-store").map(str::to_string);
     let total: Option<u64> = response
         .header("content-length")
         .and_then(|n| n.parse().ok());
@@ -5228,6 +5236,7 @@ fn fetch_big(
                 path: saved,
                 url: final_url.clone(),
                 address: Some(segment.to_string()),
+                store_tag,
             });
         }
     }
@@ -5292,6 +5301,7 @@ fn fetch_big(
         path: saved,
         url: final_url,
         address,
+        store_tag,
     })
 }
 
@@ -5301,6 +5311,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
     // fixed address it currently points at, and that is the address the
     // bytes are held to.
     let final_url = response.get_url().to_string();
+    let store_tag = response.header("x-krate-store").map(str::to_string);
     let mut bytes = Vec::new();
     response
         .into_reader()
@@ -5344,6 +5355,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
         url: final_url,
         address,
         sha256,
+        store_tag,
     })
 }
 

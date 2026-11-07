@@ -8333,8 +8333,15 @@ fn publishing_an_app_again_says_it_updated_and_to_which_version() {
         r#"{"login":"alice","name":"Alice","avatar_url":null,"token":"krs_alice"}"#,
     )
     .expect("sign-in");
-    let bundle =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/ported/bounce.krate");
+    // A copy: publishing signs an unsigned file as its maker, in place
+    // (IC-983), and the repository's evidence must stay as it was.
+    let kept = tempfile::tempdir().expect("copy dir");
+    let bundle = kept.path().join("bounce.krate");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/ported/bounce.krate"),
+        &bundle,
+    )
+    .expect("copy bounce");
     let answer = Arc::new(Mutex::new(serde_json::json!({})));
     let state = answer.clone();
     let Some((addr, stop)) =
@@ -8409,6 +8416,23 @@ fn a_big_app_is_published_in_parts_and_a_cut_off_publish_resumes() {
     )
     .expect("sign-in");
     let bundle = noisy_bundle(dir.path(), 12 * 1024 * 1024, 7);
+    // Signed before it is measured: an unsigned file is signed as its maker
+    // when it goes out (IC-983), and these bytes must be what goes out.
+    let signed = krate()
+        .arg("sign")
+        .arg(&bundle)
+        .arg("--key")
+        .arg(dir.path().join("publisher.key"))
+        .arg("--generate-key")
+        .args(["--namespace", "alice/bigpub"])
+        .env("HOME", home.path())
+        .output()
+        .expect("sign");
+    assert!(
+        signed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&signed.stderr)
+    );
     let bytes = std::fs::read(&bundle).expect("bundle");
     let sha = format!("{:x}", Sha256::digest(&bytes));
     let part_size = 5 * 1024 * 1024usize;
@@ -26975,5 +26999,540 @@ fn ctrl_c_stops_a_running_command_line_app() {
     assert!(
         took.as_secs_f32() < 0.9,
         "a second Ctrl-C ends it at once, not after the grace: {took:?}"
+    );
+}
+
+/// A minimal app packed under `id` (unsigned), for the maker-key tests.
+fn pack_minimal(
+    dir: &std::path::Path,
+    home: &std::path::Path,
+    id: &str,
+    name: &str,
+    sign: bool,
+) -> PathBuf {
+    let wasm = dir.join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let manifest = dir.join(format!("{name}.toml"));
+    std::fs::write(&manifest, BUNDLE_MANIFEST.replace("com.example.bundle", id)).expect("manifest");
+    let bundle = dir.join(format!("{name}.krate"));
+    let mut pack = krate();
+    pack.arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .env("HOME", home);
+    if sign {
+        pack.arg("--sign");
+    }
+    let out = pack.output().expect("pack");
+    assert!(
+        out.status.success(),
+        "pack: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    bundle
+}
+
+/// The public key a bundle's signature names, or None when unsigned.
+fn signer_of(bundle: &std::path::Path) -> Option<String> {
+    let opened = krate_bundle::open(bundle).expect("open");
+    let verdict = opened
+        .full_verdict(&krate_bundle::delegation::RevocationState::Unknown {
+            last_known: Vec::new(),
+        })
+        .expect("verdict")?;
+    assert!(
+        verdict.is_trustworthy(),
+        "{bundle:?} carries a signature that does not verify"
+    );
+    opened.signing_authority().expect("authority")
+}
+
+fn maker_public(home: &std::path::Path) -> String {
+    std::fs::read_to_string(home.join(".krate/keys/maker.pub"))
+        .expect("maker.pub")
+        .lines()
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+fn run_headless(bundle: &std::path::Path, home: &std::path::Path) -> std::process::Output {
+    krate()
+        .arg("run")
+        .arg(bundle)
+        .args(["--headless", "--auto-grant"])
+        .env("HOME", home)
+        .output()
+        .expect("run")
+}
+
+/// IC-983, K-247: a fresh home's first signed make gets a publisher key
+/// nobody was asked about, kept on this computer; the app's unsigned data
+/// moves to the key on its first signed open; a rebuild keeps the publisher
+/// and the data; an app signed by another key takes nothing; and signing
+/// sends nothing anywhere and puts nothing private in the bundle.
+#[test]
+fn the_makers_key_signs_a_make_and_keeps_its_data_through_a_rebuild() {
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    let store = home.path().join(".krate/store");
+    std::fs::create_dir_all(&store).expect("store");
+    // What the app's unsigned builds wrote, before signing was the default.
+    std::fs::write(store.join("dev.krate.mine.kv"), b"my notes").expect("old data");
+    assert!(!home.path().join(".krate/keys/maker.pub").exists());
+
+    // Signing reaches no hub and sends no usage: every request would land here.
+    let (url, count) = counting_listener();
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let manifest = dir.path().join("mine.toml");
+    std::fs::write(
+        &manifest,
+        BUNDLE_MANIFEST.replace("com.example.bundle", "dev.krate.mine"),
+    )
+    .expect("manifest");
+    let first = dir.path().join("mine.krate");
+    let out = krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&first)
+        .arg("--sign")
+        .env("HOME", home.path())
+        .env("KRATE_HUB_URL", &url)
+        .env("KRATE_USAGE_URL", format!("{url}/usage"))
+        .output()
+        .expect("pack --sign");
+    let said =
+        String::from_utf8_lossy(&out.stderr).to_string() + &String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains("Made your publisher key"),
+        "told once: {said}"
+    );
+    assert!(said.contains("signed it as you"), "{said}");
+    let public = maker_public(home.path());
+    assert_eq!(
+        signer_of(&first).as_deref(),
+        Some(public.as_str()),
+        "signed by the maker key"
+    );
+    thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        count.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "signing sent nothing"
+    );
+
+    // The private half: on this computer, owner-only, and nowhere in the bundle.
+    let private = std::fs::read(home.path().join(".krate/keys/maker.key")).expect("maker.key");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(home.path().join(".krate/keys/maker.key"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0, "only the person reads the key: {mode:o}");
+    }
+    let shipped = std::fs::read(&first).expect("bundle");
+    // The seed is the 32 bytes after ring's PKCS#8 v2 prefix (16 bytes).
+    let seed = &private[16..48];
+    assert!(
+        !shipped.windows(seed.len()).any(|w| w == seed),
+        "the private key must never be inside the bundle"
+    );
+    assert!(
+        !shipped
+            .windows(private.len())
+            .any(|w| w == private.as_slice()),
+        "the key document must never be inside the bundle"
+    );
+
+    // First signed open: the unsigned data moves to the maker's store.
+    let ran = run_headless(&first, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let signed_store = store.join(format!("dev.krate.mine@{}.kv", &public[..16]));
+    assert_eq!(std::fs::read(&signed_store).expect("moved"), b"my notes");
+    assert!(
+        !store.join("dev.krate.mine.kv").exists(),
+        "nothing left at the bare id"
+    );
+    assert!(store.join("dev.krate.mine.moved").exists());
+
+    // A rebuild: the same publisher, the same data, nothing moves again.
+    let second = pack_minimal(
+        dir.path(),
+        home.path(),
+        "dev.krate.mine",
+        "mine-again",
+        true,
+    );
+    assert_eq!(
+        signer_of(&second).as_deref(),
+        Some(public.as_str()),
+        "a rebuild keeps its publisher"
+    );
+    std::fs::write(store.join("dev.krate.mine.kv"), b"an unsigned file's").unwrap();
+    let ran = run_headless(&second, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert_eq!(std::fs::read(&signed_store).unwrap(), b"my notes");
+    assert_eq!(
+        std::fs::read(store.join("dev.krate.mine.kv")).unwrap(),
+        b"an unsigned file's"
+    );
+
+    // Another publisher's app with an id this computer has data for takes none of it.
+    std::fs::write(store.join("dev.krate.theirs.kv"), b"mine, not theirs").unwrap();
+    let theirs = pack_minimal(dir.path(), home.path(), "dev.krate.theirs", "theirs", false);
+    let other_key = dir.path().join("other.key");
+    let out = krate()
+        .arg("sign")
+        .arg(&theirs)
+        .arg("--key")
+        .arg(&other_key)
+        .arg("--generate-key")
+        .args(["--namespace", "someone/theirs"])
+        .env("HOME", home.path())
+        .output()
+        .expect("sign");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let ran = run_headless(&theirs, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert_eq!(
+        std::fs::read(store.join("dev.krate.theirs.kv")).unwrap(),
+        b"mine, not theirs"
+    );
+    assert!(!store.join("dev.krate.theirs.moved").exists());
+
+    // `krate pack` without --sign stays byte for byte what it was.
+    let a = pack_minimal(dir.path(), home.path(), "dev.krate.plain", "plain-a", false);
+    let b = pack_minimal(dir.path(), home.path(), "dev.krate.plain", "plain-b", false);
+    assert_eq!(std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
+    assert_eq!(signer_of(&a), None);
+}
+
+/// IC-983: an older unsigned file is signed as its maker the moment it goes
+/// out -- published here -- in place, so publishing it again sends the same
+/// bytes; an already-signed file is sent exactly as it is.
+#[test]
+fn publishing_an_unsigned_older_app_signs_it_first() {
+    use std::sync::{Arc, Mutex};
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    std::fs::create_dir_all(home.path().join(".krate")).expect("krate home");
+    std::fs::write(
+        home.path().join(".krate/github.json"),
+        r#"{"login":"alice","name":"Alice","avatar_url":null,"token":"krs_alice"}"#,
+    )
+    .expect("sign-in");
+    let older = pack_minimal(dir.path(), home.path(), "dev.krate.older", "older", false);
+    assert_eq!(
+        signer_of(&older),
+        None,
+        "made before signing was the default"
+    );
+
+    let uploads: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
+    let seen = uploads.clone();
+    let Some((addr, stop)) = spawn_fake_hub(Arc::new(move |method, path, _headers, body| {
+        match (method, path) {
+            ("POST", "/publish") => {
+                seen.lock().unwrap().push(body.to_vec());
+                let id = krate_bundle::sha256_hex(body);
+                (
+                    200,
+                    vec![],
+                    serde_json::json!({"id": id, "url": format!("http://hub.example/a/{id}")})
+                        .to_string()
+                        .into_bytes(),
+                )
+            }
+            _ => (404, vec![], b"not found".to_vec()),
+        }
+    })) else {
+        eprintln!("skipping: no local port for the fake hub");
+        return;
+    };
+    let publish = || {
+        krate()
+            .arg("publish")
+            .arg(&older)
+            .args(["--hub", &format!("http://{addr}")])
+            .args(["--shot", "/nonexistent.png"])
+            .env("HOME", home.path())
+            .output()
+            .expect("publish")
+    };
+    let out = publish();
+    let said =
+        String::from_utf8_lossy(&out.stderr).to_string() + &String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{said}");
+    assert!(said.contains("before it goes out"), "{said}");
+    let public = maker_public(home.path());
+    assert_eq!(
+        signer_of(&older).as_deref(),
+        Some(public.as_str()),
+        "signed in place"
+    );
+    let out = publish();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let sent = uploads.lock().unwrap().clone();
+    assert_eq!(sent.len(), 2, "two publishes");
+    assert_eq!(
+        sent[0],
+        std::fs::read(&older).unwrap(),
+        "what went out is the signed file"
+    );
+    assert_eq!(sent[0], sent[1], "publishing again sends the same bytes");
+}
+
+/// The bytes of `bundle` served by a stand-in hub at `/a/<sha>`, naming
+/// `tag` as the publishing account (`x-krate-store`).
+fn serve_app_with_tag(
+    apps: Vec<(Vec<u8>, &'static str)>,
+) -> Option<(SocketAddr, std::sync::Arc<std::sync::atomic::AtomicBool>)> {
+    let apps: Vec<(String, Vec<u8>, &'static str)> = apps
+        .into_iter()
+        .map(|(bytes, tag)| (krate_bundle::sha256_hex(&bytes), bytes, tag))
+        .collect();
+    spawn_fake_hub(std::sync::Arc::new(move |method, path, _headers, _body| {
+        for (sha, bytes, tag) in &apps {
+            if method == "GET" && path == format!("/a/{sha}") {
+                return (
+                    200,
+                    vec![
+                        (
+                            "content-type".to_string(),
+                            "application/octet-stream".to_string(),
+                        ),
+                        ("x-krate-store".to_string(), tag.to_string()),
+                    ],
+                    bytes.clone(),
+                );
+            }
+        }
+        (404, vec![], b"not found".to_vec())
+    }))
+}
+
+/// K-1172 on a computer: an unsigned app opened from a Krate hub's link is
+/// keyed by its id AND the account that published it, and gets a copy of
+/// what its id kept, once; another account publishing the same id gets
+/// another store; a server that is not the hub names nobody; and a file
+/// opened from disk keeps the id-keyed path it always had.
+#[test]
+fn a_linked_unsigned_app_is_keyed_by_the_account_that_published_it() {
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    let store = home.path().join(".krate/store");
+    std::fs::create_dir_all(&store).expect("store");
+    std::fs::write(store.join("dev.krate.linked.kv"), b"shared by id").expect("old data");
+    let alices = pack_minimal(dir.path(), home.path(), "dev.krate.linked", "alice", false);
+    // Mallory's app declares the same id; different bytes, another account.
+    let mallorys_manifest = dir.path().join("mallory.toml");
+    std::fs::write(
+        &mallorys_manifest,
+        BUNDLE_MANIFEST
+            .replace("com.example.bundle", "dev.krate.linked")
+            .replace("version = \"0.1.0\"", "version = \"6.6.6\""),
+    )
+    .unwrap();
+    let mallorys = dir.path().join("mallory.krate");
+    let out = krate()
+        .arg("pack")
+        .arg(dir.path().join("code.wasm"))
+        .arg("--manifest")
+        .arg(&mallorys_manifest)
+        .arg("-o")
+        .arg(&mallorys)
+        .env("HOME", home.path())
+        .output()
+        .expect("pack");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let alice_bytes = std::fs::read(&alices).unwrap();
+    let mallory_bytes = std::fs::read(&mallorys).unwrap();
+    let (alice_sha, mallory_sha) = (
+        krate_bundle::sha256_hex(&alice_bytes),
+        krate_bundle::sha256_hex(&mallory_bytes),
+    );
+    const ALICE: &str = "k0123456789abcdef";
+    const MALLORY: &str = "kfedcba9876543210";
+    let Some((addr, stop)) =
+        serve_app_with_tag(vec![(alice_bytes, ALICE), (mallory_bytes, MALLORY)])
+    else {
+        eprintln!("skipping: no local port for the fake hub");
+        return;
+    };
+    let hub = format!("http://{addr}");
+    let open_link = |sha: &str, hub_url: &str| {
+        let out = krate()
+            .arg("run")
+            .arg(format!("{hub}/a/{sha}"))
+            .args(["--headless", "--auto-grant", "--insecure-http"])
+            .env("HOME", home.path())
+            .env("KRATE_HUB_URL", hub_url)
+            .output()
+            .expect("run link");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+
+    open_link(&alice_sha, &hub);
+    let alice_store = store.join(format!("dev.krate.linked~{ALICE}.kv"));
+    assert_eq!(
+        std::fs::read(&alice_store).expect("alice's copy"),
+        b"shared by id"
+    );
+    assert_eq!(
+        std::fs::read(store.join("dev.krate.linked.kv")).unwrap(),
+        b"shared by id",
+        "a copy takes nothing from the id's own store"
+    );
+
+    // Alice's app writes; the id's store changes; her store is never
+    // overwritten by a later open.
+    std::fs::write(&alice_store, b"alice's own").unwrap();
+    std::fs::write(store.join("dev.krate.linked.kv"), b"newer, by id").unwrap();
+    open_link(&alice_sha, &hub);
+    assert_eq!(std::fs::read(&alice_store).unwrap(), b"alice's own");
+
+    // Another account's app with the same id: another store.
+    open_link(&mallory_sha, &hub);
+    let mallory_store = store.join(format!("dev.krate.linked~{MALLORY}.kv"));
+    assert_eq!(std::fs::read(&mallory_store).unwrap(), b"newer, by id");
+    assert_eq!(
+        std::fs::read(&alice_store).unwrap(),
+        b"alice's own",
+        "never alice's"
+    );
+
+    // A server that is not this computer's hub names nobody.
+    let before: Vec<_> = std::fs::read_dir(&store)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    std::fs::remove_file(&alice_store).unwrap();
+    std::fs::remove_file(store.join(format!("dev.krate.linked~{ALICE}.from-id"))).unwrap();
+    open_link(&alice_sha, "https://hub.example");
+    assert!(
+        !alice_store.exists(),
+        "a tag from a server that is not the hub keys nothing"
+    );
+
+    // A file opened from disk: the id's own store, as always.
+    let ran = run_headless(&alices, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let after: Vec<_> = std::fs::read_dir(&store)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert!(
+        after.iter().all(|name| before.contains(name)),
+        "a file makes no new store: {after:?}"
+    );
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// IC-983: on a fresh home, the first `krate create` -- the command the
+/// website tells people to run -- makes a signed app with a publisher key
+/// nobody was asked about, and the app passes every check signed (the bytes
+/// checked are the bytes that go out).
+#[test]
+fn a_fresh_homes_first_create_is_signed_with_its_own_key() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let home = tempfile::tempdir().expect("home");
+    let real_home = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME is set"));
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".cargo"));
+    let rustup_home = std::env::var_os("RUSTUP_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".rustup"));
+    // A fresh Krate home, with the compiled SDK borrowed so the build takes
+    // seconds: what is fresh here is the KEY, not the compiler's cache.
+    let real_build = real_home.join(".cache/krate/build");
+    #[cfg(unix)]
+    if real_build.is_dir() {
+        std::fs::create_dir_all(home.path().join(".cache/krate")).unwrap();
+        std::os::unix::fs::symlink(&real_build, home.path().join(".cache/krate/build")).unwrap();
+    }
+    let work = tempfile::tempdir().expect("work");
+    let out = work.path().join("made.krate");
+    let made = krate()
+        .arg("create")
+        .arg("a grocery list app")
+        .arg("--output")
+        .arg(&out)
+        .arg("--work-dir")
+        .arg(work.path().join("inspect"))
+        .env("HOME", home.path())
+        .env("CARGO_HOME", &cargo_home)
+        .env("RUSTUP_HOME", &rustup_home)
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .expect("run create");
+    let said =
+        String::from_utf8_lossy(&made.stdout).to_string() + &String::from_utf8_lossy(&made.stderr);
+    assert!(made.status.success(), "{said}");
+    assert!(said.contains("Made your publisher key"), "{said}");
+    assert!(said.contains("signed as you"), "{said}");
+    let public = maker_public(home.path());
+    assert_eq!(signer_of(&out).as_deref(), Some(public.as_str()), "{said}");
+    assert!(
+        home.path().join(".krate/keys/maker.key").is_file(),
+        "kept on this computer"
     );
 }
