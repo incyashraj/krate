@@ -117,6 +117,8 @@ def render_llms():
               "- [Porting guide](https://krate.tech/docs/porting.html)",
               "- [Current limits](https://krate.tech/docs/limits.html)",
               "- [Studio](https://krate.tech/studio/)",
+              "- [Organisations: private apps for a team](https://krate.tech/docs/organisations.html)",
+              "- [Security model](https://krate.tech/security/)",
               "- [Measurements](https://krate.tech/reports/)",
               "- [Repository inventory](https://krate.tech/progress/)",
               "- [FAQ](https://krate.tech/faq/)",
