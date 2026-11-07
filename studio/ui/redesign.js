@@ -1205,7 +1205,7 @@
     const name = appName(), size = res.size || "";
     const words = r.revise
       ? "Done. The change is in, and I opened it again to check it still works."
-      : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Try it with Run it, or send it to someone.`;
+      : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Press Run to try it, or Share to send it to someone.`;
     const el = document.createElement("div"); el.className = "msg krate kr-close";
     el.innerHTML = '<span class="body"></span>'; q(".body", el).textContent = words;
     const tools = q(":scope > .kr-tools", msg);
@@ -1685,7 +1685,7 @@
   const shareWrap = document.createElement("div");
   shareWrap.className = "sheet-wrap hidden kr-share-wrap"; shareWrap.id = "krShare";
   shareWrap.innerHTML = `<div class="sheet kr-share" role="dialog" aria-modal="true" aria-labelledby="krShareH">
-    <div class="kr-sh-h"><div><h2 id="krShareH">Share <span data-n></span></h2><p class="sheet-sub">One file. Whoever gets it double-clicks, and it opens.</p></div>
+    <div class="kr-sh-h"><div><h2 id="krShareH">Share <span data-n></span></h2><p class="sheet-sub">A link opens in any browser, on a phone too. The file opens with Krate on a computer.</p></div>
       <button type="button" class="kr-x" data-close title="Close" aria-label="Close">${ico("x")}</button></div>
     <div class="kr-shfile"><span class="kr-shic"><img src="krate-logo.png" alt=""></span><span class="kr-sht"><b data-f></b><small data-s></small></span><em data-v hidden></em></div>
     <div class="kr-ways" role="tablist">
