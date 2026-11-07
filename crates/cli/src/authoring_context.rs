@@ -238,6 +238,8 @@ capability. Believe this table over your instinct:
   runs with no fs grant at all. A `store.kv` value holds up to 1 MiB and
   `set` returns an error past it -- check the result and say so on screen.
   A document the person writes goes in a file (`ui.dialog:file-save`).
+  What an app keeps in `store.kv` or its own files follows a signed-in
+  person to every device they use, end-to-end encrypted, with no code.
 - **Working on the person's own files IS real.** Declare
   `ui.dialog:open-folder`; their pick is the grant.
 
@@ -1480,10 +1482,20 @@ damage, a 100-150 ms screen shake on big hits, particles on destruction \
 (eight 2px squares with velocity and gravity are plenty).\n\n\
 7. **Title, pause, game over.** Title screen: name, one-line goal, \
 controls, \"press space\". Esc pauses. Game over shows the score and \
-restarts on space, keeping the high score in `store.kv`.\n\n\
+restarts on space, showing the best score (rule 9).\n\n\
 8. **Ramp the difficulty.** Start winnable for thirty seconds, then speed \
 up or add hazards on a schedule. The first death should teach, not \
-ambush.\n\n";
+ambush.\n\n\
+9. **Keep what the player earned.** Best score, level reached, unlocks and \
+settings (sound, difficulty) go in `store.kv` when they change -- on game \
+over, level up, a setting flipped; never every frame -- and are read back at \
+start: declare `store.kv`, then `krate::store::get` / `krate::store::set`. \
+Krate then carries them to every device the person signs in on, with no \
+code of yours. Never keep them only in memory: a best score that is gone \
+when the window closes is a bug. Before saving a best, read the stored one \
+and write only if it is beaten, so a better score from their other device \
+is never lowered. `apps/krate-nova` and `apps/krate-bounce` do exactly \
+this.\n\n";
 
 /// Section 3: the no_std discipline. Authored, because it is the reasoning
 /// behind the rules, not a list that can be scraped. The concrete facts it
@@ -3327,6 +3339,12 @@ interface api {
         // Game feel rides only on a game, and must still be there for one.
         let game = inline_essentials("a snake game");
         assert!(game.contains("# 2f."), "a game gets game feel");
+        // A game's progress is kept, so it follows the person (IC-981).
+        assert!(
+            game.contains("Keep what the player earned")
+                && game.contains("Never keep them only in memory"),
+            "a game is not told to keep its best score and settings in store.kv"
+        );
         assert!(
             game.contains("# 2g. What the app should look like"),
             "a game is told how it should look too"
