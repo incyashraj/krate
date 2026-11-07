@@ -14,7 +14,7 @@
 # of each is enough to lint against; a Player you install needs them built
 # by `krate check-app`, which makes them components.
 
-set -euo pipefail
+set -eu
 cd "$(dirname "$0")/.."
 
 CHANNEL=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
