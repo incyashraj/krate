@@ -139,7 +139,9 @@ async function livedIn(env, token, { email, seed, bundles, org }) {
   const ticket = ok(await hit(env, "POST", "/support/new", { token, json: { subject: `help ${seed}`, text: `it broke for ${seed}` } }), "ticket").body;
   const report = ok(await hit(env, "POST", "/report", { token, bytes: new Uint8Array([...ZIP, seed.charCodeAt(0)]), headers: { "x-krate-note": `report from ${seed}` } }), "report").body;
   ok(await hit(env, "POST", "/makeit", { json: { email, request: `a ${seed} tracker` } }), "makeit");
-  ok(await hit(env, "POST", "/founding", { json: { email } }), "founding");
+  // The founding-200 list is closed (F-322); a person who joined it before
+  // still has the record, and deleting must still take it.
+  env._kv.set(`founding:${email}`, JSON.stringify({ at: 1 }));
   const me = ok(await hit(env, "GET", "/me", { token }), "me").body;
   // Account sync: a device, the key, one entry and one file.
   const dev = await deviceOf(Buffer.from(seed).toString("hex"));

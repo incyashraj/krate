@@ -32,12 +32,12 @@ const MAX_REPORT_BYTES = 12 * 1024 * 1024;
 // is re-read on every call because it can grow.
 import * as validatorImport from "./validator.wasm";
 import { Org, SLUG, EMAIL, chainOk, messageFor } from "./org.js";
-// Organisation lifecycle, billing, mail and the refused-attempt limit
+// Organisation lifecycle, mail and the refused-attempt limit
 // (IC-948), each in its own module; importing the store's half registers
 // its commands with the Org class.
 import "./org-lifecycle-store.js";
 import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
-import { orgBillingRoute, orgBillingEvent, orgBillingAlerts } from "./org-billing.js";
+import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
 import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
@@ -264,7 +264,6 @@ const RATE_LIMITS = {
   "lines/current": 30,
   "share/new": 10,
   usage: 60,
-  founding: 5,
   makeit: 5,
   "support/new": 5,
   // A person's whole export reads everything the hub keeps about them;
@@ -465,10 +464,6 @@ export default {
       if (request.method === "POST" && pathname === "/admin/scrub") {
         return cors(await scrubRoute(request, env, true));
       }
-      if (request.method === "GET" && pathname === "/admin/org-billing-alerts") {
-        if (!(await isAdmin(request, env))) return cors(text("not found", 404));
-        return cors(json(await orgBillingAlerts(env)));
-      }
       if (request.method === "GET" && pathname === "/admin/scrub/last") {
         return cors(await lastScrub(request, env));
       }
@@ -559,13 +554,10 @@ export default {
       if (request.method === "POST" && pathname === "/auth/poll") {
         return cors(await authPoll(request, env));
       }
-      if (request.method === "POST" && pathname === "/founding") {
-        // The founding 200: an email and a timestamp, nothing else. No
-        // checkout here -- this is the list that gets the $79/yr lock when
-        // Studio leaves preview.
-        const over = await rateLimited(request, env, "founding");
-        if (over) return cors(over);
-        return cors(await founding(request, env));
+      if (pathname === "/founding") {
+        // The founding-200 list was a waiting list for a paid plan. Krate
+        // has no paid plans (F-322), so the door is closed, in words.
+        return cors(noPaidPlans());
       }
       if (request.method === "POST" && pathname === "/makeit") {
         // A failed build, sent to us. Studio used to offer this as "a
@@ -701,18 +693,12 @@ export default {
       if (request.method === "GET" && pathname === "/admin/reports") {
         return cors(await listReports(request, env));
       }
-      // ---- billing: the paid plan, end to end -------------------------
-      if (request.method === "GET" && pathname === "/billing/config") {
-        return cors(await billingConfig(env));
-      }
-      if (request.method === "POST" && pathname === "/billing/checkout") {
-        return cors(await billingCheckout(request, env));
-      }
-      if (request.method === "POST" && pathname === "/billing/webhook") {
-        return await billingWebhook(request, env);
-      }
-      if (request.method === "GET" && pathname === "/billing/status") {
-        return cors(await billingStatus(request, env));
+      // ---- billing: there is none (F-322) -----------------------------
+      // Krate has no paid plans. Every /billing/ door -- config, checkout,
+      // status, portal and the Stripe webhook -- answers 410 in words, so
+      // an old Studio or a stale link meets a sentence, not a payment page.
+      if (pathname === "/billing" || pathname.startsWith("/billing/")) {
+        return cors(noPaidPlans());
       }
       // ---- the free-tier device counter -------------------------------
       // The three-a-month wall is device-bound. The device keeps its own
@@ -810,9 +796,6 @@ export default {
       }
       if (request.method === "POST" && pathname === "/referral/claim") {
         return cors(await referralClaim(request, env));
-      }
-      if (request.method === "POST" && pathname === "/billing/portal") {
-        return cors(await billingPortal(request, env));
       }
       // ---- support: tickets with real conversations -------------------
       if (request.method === "POST" && pathname === "/support/new") {
@@ -2364,25 +2347,6 @@ async function mobileLanding(hash, env, via = "-") {
       vary: "accept, user-agent",
     },
   });
-}
-
-async function founding(request, env) {
-  let email = "";
-  try {
-    const body = await request.json();
-    email = String(body.email || "").trim().toLowerCase();
-  } catch (_) {
-    return text("bad request", 400);
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254) {
-    return text("that does not look like an email address", 400);
-  }
-  const key = `founding:${email}`;
-  const existing = await env.APPS.get(key);
-  if (!existing) {
-    await env.APPS.put(key, JSON.stringify({ at: Math.floor(Date.now() / 1000) }));
-  }
-  return json({ ok: true });
 }
 
 async function makeit(request, env) {
@@ -5710,58 +5674,20 @@ export class Room {
   }
 }
 
-// ===================================================================== paid
+// ================================================================= no paid plans
 //
-// The paid plan, end to end. Stripe is the processor; the worker never sees
-// a card. Entitlements live in KV (`ent:{userId}`) and are written ONLY by
-// verified Stripe webhooks or an admin override -- the client can ask, never
-// tell. Everything is gated on the Stripe secrets existing, so this whole
-// surface is dormant until they are set and the studio's limit stays soft.
-
-// Personal pricing is frozen (IC-640, IC-402).
-//
-// The founder's decision is that individual use stays free during adoption,
-// and that no price is set before buyer, usage and cost are measured. The
-// live surface said otherwise: `/billing/config` returned live:true with
-// $12/month, $96/year and $79/year, and a checkout that took money for them.
-// A policy that the product contradicts is not a policy.
-//
-// So this is an explicit switch rather than deleted code. The Stripe
-// integration is real work and will be needed when a price is actually
-// decided -- CP8 revisits it with measured data. Removing it would mean
-// rebuilding it; leaving it live would mean charging people against the
-// stated policy. `KRATE_BILLING_UNFROZEN` is the deliberate act that turns
-// it back on, and it is not set anywhere.
-function billingFrozen(env) {
-  return env.KRATE_BILLING_UNFROZEN !== "1";
-}
-
-function billingLive(env) {
-  if (billingFrozen(env)) return false;
-  return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_MONTHLY && env.STRIPE_PRICE_YEARLY);
-}
-
-const FOUNDING_SEATS = 200;
-
-async function foundingSold(env) {
-  return parseInt((await env.APPS.get("foundingSold")) || "0", 10);
-}
-
-async function billingConfig(env) {
-  // While frozen, say so plainly and quote no price. A page that renders
-  // "$12/month" next to a button that cannot charge is worse than a page
-  // with no prices on it.
-  if (billingFrozen(env)) {
-    return json({ live: false, founding: false, frozen: true, prices: {} });
-  }
-  const sold = await foundingSold(env);
-  return json({
-    live: billingLive(env),
-    // The founding door closes itself the moment the 200th seat is taken:
-    // every buy button keyed on this flag disappears with it.
-    founding: Boolean(env.STRIPE_PRICE_FOUNDING) && sold < FOUNDING_SEATS,
-    prices: { monthly: "$12/month", yearly: "$96/year", founding: "$79/year" },
-  });
+// Krate has no paid plans (F-322, 2026-11-07). The Stripe integration that
+// lived here -- config, checkout, the webhook, the customer portal, the
+// founding-200 seat count -- is removed, and every door it had answers this.
+// What stays: `ent:` records, read by entitlementActive, because the desk's
+// "lift free limits" override writes them and an entitlement paid for before
+// the decision runs out on its own date; and the `pay:` receipts already
+// written, which a person's export and deletion still read (account-delete.js).
+function noPaidPlans() {
+  return text(
+    "Krate has no paid plans, so there is nothing to buy or manage here. Making apps is free: in Krate Studio on your computer with your own AI, or in the browser with your own API key after the free app.",
+    410,
+  );
 }
 
 /// What account-delete.js needs from the hub, in one place.
@@ -5807,196 +5733,6 @@ async function authedUser(request, env) {
     email: (p.email || "").toLowerCase() || undefined,
   });
 }
-
-function planForPrice(env, priceId) {
-  if (priceId === env.STRIPE_PRICE_MONTHLY) return "monthly";
-  if (priceId === env.STRIPE_PRICE_YEARLY) return "yearly";
-  if (priceId === env.STRIPE_PRICE_FOUNDING) return "founding";
-  return "unknown";
-}
-
-async function stripe(env, path, form) {
-  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: form ? "POST" : "GET",
-    headers: {
-      authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      ...(form ? { "content-type": "application/x-www-form-urlencoded" } : {}),
-    },
-    body: form ? new URLSearchParams(form) : undefined,
-  });
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error((body.error && body.error.message) || `stripe ${path} failed`);
-  }
-  return body;
-}
-
-async function billingCheckout(request, env) {
-  if (!billingLive(env)) return text("Billing is not open yet.", 503);
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const { plan } = await request.json().catch(() => ({}));
-  if (plan === "founding" && (await foundingSold(env)) >= FOUNDING_SEATS) {
-    return text("The founding 200 is full. The monthly and yearly plans are open.", 409);
-  }
-  const price =
-    plan === "monthly" ? env.STRIPE_PRICE_MONTHLY
-    : plan === "yearly" ? env.STRIPE_PRICE_YEARLY
-    : plan === "founding" ? env.STRIPE_PRICE_FOUNDING
-    : null;
-  if (!price) return text("Unknown plan.", 400);
-  try {
-    const session = await stripe(env, "checkout/sessions", {
-      mode: "subscription",
-      "line_items[0][price]": price,
-      "line_items[0][quantity]": "1",
-      client_reference_id: user.id,
-      ...(user.email ? { customer_email: user.email } : {}),
-      "subscription_data[metadata][krate_user]": user.id,
-      allow_promotion_codes: "true",
-      success_url: "https://krate.tech/billing/done/",
-      cancel_url: "https://krate.tech/studio/#pricing",
-    });
-    return json({ url: session.url });
-  } catch (err) {
-    return text(`Checkout could not start: ${err.message}`, 502);
-  }
-}
-
-/// Verify a Stripe webhook signature: HMAC-SHA256 of `t.payload`.
-async function stripeSignatureValid(request, payload, env) {
-  const header = request.headers.get("stripe-signature") || "";
-  const parts = Object.fromEntries(
-    header.split(",").map((p) => p.split("=")).filter((p) => p.length === 2),
-  );
-  if (!parts.t || !parts.v1) return false;
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(env.STRIPE_WEBHOOK_SECRET || ""),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const mac = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${parts.t}.${payload}`),
-  );
-  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return hex === parts.v1;
-}
-
-async function writeEntitlementFromSubscription(env, sub) {
-  const userId =
-    (sub.metadata && sub.metadata.krate_user) || (await env.APPS.get(`cust:${sub.customer}`));
-  if (!userId) return;
-  // A deleted account stays deleted: Stripe's late "subscription deleted"
-  // for the plan cancelled while deleting it must not write it back (K-1245).
-  if (!(await env.APPS.get(`user:${userId}`))) return;
-  const priceId =
-    sub.items && sub.items.data && sub.items.data[0] ? sub.items.data[0].price.id : "";
-  await env.APPS.put(`cust:${sub.customer}`, userId);
-  // The founding seat count follows real transitions: taken when a founding
-  // subscription becomes active, freed when that subscription ends. The evt
-  // replay guard upstream keeps retries from double-counting.
-  {
-    const plan = planForPrice(env, priceId);
-    const active = sub.status === "active" || sub.status === "trialing";
-    const prior = JSON.parse((await env.APPS.get(`ent:${userId}`)) || "null");
-    const priorFounding = Boolean(prior && prior.plan === "founding" && entitlementActive(prior));
-    const nowFounding = plan === "founding" && active;
-    if (nowFounding && !priorFounding) {
-      await env.APPS.put("foundingSold", String((await foundingSold(env)) + 1));
-    } else if (priorFounding && !nowFounding) {
-      await env.APPS.put("foundingSold", String(Math.max(0, (await foundingSold(env)) - 1)));
-    }
-  }
-  await env.APPS.put(
-    `ent:${userId}`,
-    JSON.stringify({
-      plan: planForPrice(env, priceId),
-      status: sub.status,
-      until: (sub.current_period_end || 0) * 1000,
-      sub: sub.id,
-      customer: sub.customer,
-      at: Date.now(),
-    }),
-  );
-}
-
-async function billingWebhook(request, env) {
-  const payload = await request.text();
-  if (!env.STRIPE_WEBHOOK_SECRET || !(await stripeSignatureValid(request, payload, env))) {
-    return text("bad signature", 400);
-  }
-  let event;
-  try {
-    event = JSON.parse(payload);
-  } catch (_) {
-    return text("bad payload", 400);
-  }
-  // Stripe retries; process each event once.
-  //
-  // The marker is written AFTER the work, not before it (IC-409).
-  //
-  // It used to be written here, first. If the entitlement write then failed,
-  // Stripe's retry found the event already marked processed and returned
-  // success -- so Stripe believed delivery had worked while a paying
-  // customer never received access, permanently and silently. Reproduced in
-  // a controlled test before this change.
-  //
-  // Marking afterwards means a crash mid-way leaves the event unmarked and
-  // Stripe retries it. That can process an event twice, which is the safe
-  // direction: every write below is idempotent -- entitlements are derived
-  // from the subscription's current state, not incremented -- so a repeat
-  // lands on the same answer. Losing a payment is not recoverable; repeating
-  // one is.
-  if (await env.APPS.get(`evt:${event.id}`)) return json({ ok: true });
-
-  // An organisation's event (IC-948 E): its store decides, failing closed.
-  if (await orgBillingEvent(env, event, orgAsk)) {
-    await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
-    return json({ ok: true });
-  }
-
-  const obj = event.data && event.data.object;
-  if (event.type === "checkout.session.completed" && obj) {
-    if (obj.client_reference_id && obj.customer) {
-      await env.APPS.put(`cust:${obj.customer}`, obj.client_reference_id);
-    }
-    if (obj.subscription) {
-      try {
-        const sub = await stripe(env, `subscriptions/${obj.subscription}`);
-        await writeEntitlementFromSubscription(env, sub);
-      } catch (_) { /* the subscription.updated event will carry it */ }
-    }
-  } else if (
-    (event.type === "customer.subscription.updated"
-      || event.type === "customer.subscription.deleted"
-      || event.type === "customer.subscription.created") && obj
-  ) {
-    await writeEntitlementFromSubscription(env, obj);
-  } else if (event.type === "invoice.payment_succeeded" && obj) {
-    const userId = await env.APPS.get(`cust:${obj.customer}`);
-    await env.APPS.put(
-      `pay:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`,
-      JSON.stringify({
-        userId: userId || "",
-        email: obj.customer_email || "",
-        amount: obj.amount_paid,
-        currency: obj.currency,
-        invoice: obj.id,
-        at: Date.now(),
-      }),
-    );
-  }
-
-  // Only now: the work above completed without throwing, so this event is
-  // genuinely done and Stripe need not send it again.
-  await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
-  return json({ ok: true });
-}
-
 
 // ================================================================ free tier
 
@@ -6217,7 +5953,8 @@ async function caseOpen(request, env) {
   // never the one they want.
   const isEdit = Boolean(body.edit);
 
-  // The wall. A paid plan lifts it; the free allowance is counted in cases
+  // The wall. Only the desk's override lifts it (there is no paid plan,
+  // F-322); the free allowance is counted in cases
   // that produced a file, so a person whose attempts all failed for our
   // reasons has spent nothing.
   const made = await consumedCount(env, user, device, byId);
@@ -6240,7 +5977,7 @@ async function caseOpen(request, env) {
   // What a free person's tries may cost us, whatever they produced
   // (2026-10-06). The allowance counts only "made", so failed tries were
   // unlimited, and one person's builds took about $5 of the Krate key in
-  // half an hour without an app. Two limits, both lifted by a paid plan and
+  // half an hour without an app. Two limits, both lifted only by the desk's override and
   // neither touching a build on the person's own key (those open no case):
   //   - FREE_TRIES_PER_DAY cases opened in 24 hours that made nothing
   //     (5: four failures on a bad provider afternoon must still leave room
@@ -6527,8 +6264,8 @@ async function planCount(request, env, increment) {
 // ================================================================ account
 //
 // One profile call for the website's account page and the studio: who you
-// are, what plan you are on, how your referrals stand. Referrals: send
-// three people who actually sign up and you get a month of Studio on us.
+// are and how many people joined through your link. A referral earns
+// nothing to pay for: Krate has no paid plans (F-322).
 
 async function getOrMakeRefCode(env, user) {
   if (user.refcode) return user.refcode;
@@ -6805,13 +6542,9 @@ async function meProfile(request, env) {
     },
     // Krate's non-essential mail is on unless the person turned it off.
     mail: { news: wantsNews(user) },
-    plan: {
-      plan: ent ? ent.plan : "free",
-      active: entitlementActive(ent),
-      until: ent ? ent.until : 0,
-      via: (ent && ent.via) || "",
-      portal: Boolean(ent && ent.customer),
-    },
+    // Whether Krate's free limits are lifted on this account (the desk's
+    // override). There is no plan to buy (F-322).
+    limits_lifted: entitlementActive(ent),
     referral: { code: await getOrMakeRefCode(env, user), count: refs.length, awards },
   });
 }
@@ -6971,41 +6704,11 @@ async function referralClaim(request, env) {
   const refs = JSON.parse((await env.APPS.get(`refs:${ownerId}`)) || "[]");
   if (!refs.includes(user.id)) refs.push(user.id);
   await env.APPS.put(`refs:${ownerId}`, JSON.stringify(refs.slice(0, 500)));
-  const awards = parseInt((await env.APPS.get(`refawards:${ownerId}`)) || "0", 10);
-  const due = Math.floor(refs.length / 3);
-  if (due > awards) {
-    // A month of Studio on us, stacked on whatever time is already there.
-    // If a paid subscription event later overwrites this record the person
-    // is paying anyway; the credit mostly serves free accounts, which is
-    // exactly who referrals recruit.
-    await env.APPS.put(`refawards:${ownerId}`, String(due));
-    const ent = JSON.parse((await env.APPS.get(`ent:${ownerId}`)) || "null");
-    const base = ent && ent.until && ent.until > Date.now() ? ent.until : Date.now();
-    await env.APPS.put(`ent:${ownerId}`, JSON.stringify({
-      plan: ent && entitlementActive(ent) && ent.via !== "referral" ? ent.plan : "studio",
-      status: "active",
-      until: base + (due - awards) * 30 * 24 * 3600 * 1000,
-      via: "referral",
-      sub: (ent && ent.sub) || "",
-      customer: (ent && ent.customer) || "",
-      at: Date.now(),
-    }));
-  }
+  // Counted, and nothing more. This used to award "a month of Studio" for
+  // every three, as an `ent:` record that also lifted the free limits on
+  // Krate's own AI key -- a paid plan given away, and a way round the spend
+  // limits. There is no plan (F-322), so a referral is a count.
   return json({ ok: true, counted: true });
-}
-
-// Stripe's own customer portal: change card, switch plan, cancel. We never
-// touch any of it; the person manages their money on stripe.com.
-async function billingPortal(request, env) {
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
-  if (!ent || !ent.customer) return text("No subscription on this account yet.", 404);
-  const session = await stripe(env, "billing_portal/sessions", {
-    customer: ent.customer,
-    return_url: "https://krate.tech/account/",
-  });
-  return json({ url: session.url });
 }
 
 function entitlementActive(ent) {
@@ -7014,18 +6717,6 @@ function entitlementActive(ent) {
   const okStatus = ent.status === "active" || ent.status === "trialing";
   const grace = 3 * 24 * 3600 * 1000;
   return okStatus && (!ent.until || ent.until + grace > Date.now());
-}
-
-async function billingStatus(request, env) {
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
-  return json({
-    live: billingLive(env),
-    plan: ent ? ent.plan : "free",
-    active: entitlementActive(ent),
-    until: ent ? ent.until : 0,
-  });
 }
 
 // ================================================================== support
@@ -7056,9 +6747,6 @@ async function supportNew(request, env) {
   }
   const id = crypto.randomUUID().slice(0, 8);
   const key = crypto.randomUUID().replaceAll("-", "");
-  // Paying people are promised the front of the queue; the stamp travels
-  // with the ticket so the desk can honor that without a lookup per row.
-  const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
   const ticket = {
     id,
     key,
@@ -7067,7 +6755,6 @@ async function supportNew(request, env) {
     email,
     subject,
     session,
-    priority: entitlementActive(ent),
     status: "open",
     created: Date.now(),
     updated: Date.now(),
@@ -7125,7 +6812,7 @@ async function supportReply(request, env) {
 // ==================================================================== admin
 //
 // The support desk: one page, the same verified-GitHub-login gate as
-// /admin/reports (KRATE_ADMINS). Users, plans, payments, tickets, the
+// /admin/reports (KRATE_ADMINS). Users, tickets, the
 // make-it-for-me queue, and session revocation.
 
 async function adminApi(request, pathname, env) {
@@ -7142,7 +6829,6 @@ async function adminApi(request, pathname, env) {
   if (route === "overview") {
     const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
     const ticks = await env.APPS.list({ prefix: "tick:", limit: 1000 });
-    const pays = await env.APPS.list({ prefix: "pay:", limit: 1000 });
     const reps = await env.APPS.list({ prefix: "report:", limit: 1000 });
     const appReps = await env.APPS.list({ prefix: "app-report:", limit: 1000 });
     return json({
@@ -7150,8 +6836,6 @@ async function adminApi(request, pathname, env) {
       tickets: ticks.keys.length,
       reports: reps.keys.length,
       app_reports: appReps.keys.length,
-      payments: pays.keys.length,
-      billing_live: billingLive(env),
     });
   }
   if (route === "welcomes") {
@@ -7207,9 +6891,11 @@ async function adminApi(request, pathname, env) {
     out.sort((a, b) => (b.created || 0) - (a.created || 0));
     return json({ users: out.slice(0, 200) });
   }
-  if (route === "user/plan" && request.method === "POST") {
-    // The support override: comp a user, or clear an override.
-    if (body.plan === "comp") {
+  if (route === "user/limits" && request.method === "POST") {
+    // The support override: lift the free limits on Krate's AI key for one
+    // person (a friend testing, someone a failure of ours cost), or put
+    // them back. Nothing is sold (F-322); the record keeps its old name.
+    if (body.lifted) {
       await env.APPS.put(`ent:${body.id}`, JSON.stringify({ plan: "comp", status: "active", until: 0, at: Date.now(), by: admin.login }));
     } else {
       await env.APPS.delete(`ent:${body.id}`);
@@ -7236,10 +6922,9 @@ async function adminApi(request, pathname, env) {
       const t = JSON.parse((await env.APPS.get(k.name)) || "null");
       if (t) out.push(t);
     }
-    // Open before closed, paying people first within open, newest first.
+    // Open before closed, newest first.
     out.sort((a, b) =>
       (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1)
-      || (b.priority ? 1 : 0) - (a.priority ? 1 : 0)
       || b.updated - a.updated);
     return json({ tickets: out });
   }
@@ -7258,15 +6943,6 @@ async function adminApi(request, pathname, env) {
     t.updated = Date.now();
     await env.APPS.put(`tick:${t.id}`, JSON.stringify(t));
     return json({ ok: true });
-  }
-  if (route === "payments") {
-    const listing = await env.APPS.list({ prefix: "pay:", limit: 1000 });
-    const out = [];
-    for (const k of listing.keys.reverse()) {
-      const p = JSON.parse((await env.APPS.get(k.name)) || "null");
-      if (p) out.push(p);
-    }
-    return json({ payments: out });
   }
   if (route === "makeit") {
     const listing = await env.APPS.list({ prefix: "makeit:", limit: 1000 });
@@ -7601,7 +7277,7 @@ async function show(tab){
       // words Studio adds: "[Studio web · ... · session s-123]".
       if(!t.session){const m=/session ([A-Za-z0-9_-]{1,64})\]/.exec((t.messages[0]||{}).text||"");if(m)t.session=m[1];}
       const d=document.createElement("div");d.className="card";
-      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b>\${t.priority?'<span class="pill" style="border-color:#5a4a17;background:#2b2410;color:#e7c766">priority</span>':''}<span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
+      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b><span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
       <div>\${t.messages.map(m=>\`<div class="msg \${m.who}">\${esc(m.text)}<div class="mut">\${m.who==="krate"?"you":"them"} · \${when(m.at)}</div></div>\`).join("")}</div>
       <div class="row" style="margin-top:8px"><textarea placeholder="Reply…"></textarea></div>
       <div class="row" style="margin-top:8px"><button class="act">Send reply</button><button class="ghost">\${t.status==="open"?"Close":"Reopen"}</button><button class="ghost sbtn">\${t.session?"Open the session":"Their sessions"}</button>\${t.session?'<span class="mut">session '+esc(t.session)+'</span>':''}</div>
@@ -7651,11 +7327,11 @@ async function show(tab){
       for(const x of users){
         const d=document.createElement("div");d.className="card row";
         d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
-        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}<span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
-        <button class="ghost" data-a="plan">\${x.ent&&x.ent.plan==="comp"?"Remove comp":"Comp plan"}</button>
+        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}\${x.active?'<span class="pill active">limits lifted</span>':''}
+        <button class="ghost" data-a="limits">\${x.active?"Restore free limits":"Lift free limits"}</button>
         <button class="ghost" data-a="out">Sign out everywhere</button>
         <button class="ghost" data-a="del">Delete account</button>\`;
-        d.querySelector('[data-a=plan]').onclick=async()=>{await api("user/plan",{method:"POST",body:JSON.stringify({id:x.id,plan:x.ent&&x.ent.plan==="comp"?"none":"comp"})});load();};
+        d.querySelector('[data-a=limits]').onclick=async()=>{await api("user/limits",{method:"POST",body:JSON.stringify({id:x.id,lifted:!x.active})});load();};
         d.querySelector('[data-a=out]').onclick=async()=>{const r=await api("user/logout",{method:"POST",body:JSON.stringify({id:x.id})});alert(r.revoked+" sessions revoked");};
         d.querySelector('[data-a=del]').onclick=async()=>{
           const call=(r,b)=>fetch(HUB+"/admin/api/"+r,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify(b)}).then(async res=>({status:res.status,body:await res.json().catch(()=>({}))}));

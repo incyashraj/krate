@@ -556,22 +556,6 @@ async function allowedToBuild(token, device) {
       };
     }
 
-    // The old three-a-month paywall stays switched off. The count is still
-    // taken and recorded, so the day KRATE_CHARGING is set the numbers are
-    // already right and any future wall works on real history rather than
-    // starting everyone at zero.
-    // ONE free app, not three (IC-639). This still said three, so the day
-    // KRATE_CHARGING is set the server would have handed out three funded
-    // apps while every screen in Studio promised one -- the same drift the
-    // client was corrected for twice, surviving here because this branch
-    // has never run.
-    if (process.env.KRATE_CHARGING === "1" && made >= 1) {
-      return {
-        ok: false,
-        message: "You have made your free app. Krate Studio on your own machine is free and unlimited with your own AI.",
-        wall: true,
-      };
-    }
     return { ok: true, account: me.user.login || me.user.email };
   } catch (err) {
     // A hub we cannot reach is our fault, not theirs -- but we still do
@@ -579,7 +563,7 @@ async function allowedToBuild(token, device) {
     return {
       ok: false,
       upstream: true,
-      message: "We could not check your plan just now. Nothing was counted. Try again in a moment.",
+      message: "We could not check your account just now. Nothing was counted. Try again in a moment.",
     };
   }
 }
