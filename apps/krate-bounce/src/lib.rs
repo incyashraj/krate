@@ -17,6 +17,11 @@
 //! ball, long enough to break real bricks. It prints `playable:yes` only when
 //! bricks were broken through the paddle path, so the nightly replay proves
 //! the whole input-paddle-collision-score loop rather than that pixels moved.
+//!
+//! The best score is kept in `store.kv` (`best-score`): written when a game
+//! ends with a new best, read back at start. Krate syncs the store, so the
+//! best follows the person to every device they sign in on with no more code
+//! than this. The `quick` run neither reads nor writes it.
 
 #![no_std]
 extern crate alloc;
@@ -62,6 +67,10 @@ const BRICK_X0: f32 =
 /// Top of the grid, leaving a band for the score text.
 const BRICK_Y0: f32 = 30.0;
 
+/// Where the best score is kept, as decimal text so a sync conflict card
+/// shows a number a person can read.
+const BEST_KEY: &str = "best-score";
+
 /// Simulated frames the `quick` run plays before reporting.
 const QUICK_FRAMES: u32 = 600;
 
@@ -80,6 +89,8 @@ struct Game {
     paddle_x: f32,
     bricks: [bool; BRICK_COUNT],
     score: u32,
+    /// The best score on any of this person's devices, from `store.kv`.
+    best: u32,
     lives: u32,
     /// The ball rides the paddle until launched, which is how every Breakout
     /// gives you a breath between lives.
@@ -99,6 +110,7 @@ impl Game {
             paddle_x: (WIDTH - PADDLE_WIDTH) / 2.0,
             bricks: [true; BRICK_COUNT],
             score: 0,
+            best: 0,
             lives: 3,
             launched: false,
             over: false,
@@ -228,9 +240,42 @@ impl Game {
         }
     }
 
-    /// Fresh board, score reset. Space after game over lands here.
+    /// Fresh board, score reset, best kept. Space after game over lands here.
     fn restart(&mut self) {
+        let best = self.best;
         *self = Self::new();
+        self.best = best;
+    }
+}
+
+/// The best score saved on this or any of the person's devices; 0 when
+/// nothing is saved yet or the store is not granted.
+fn load_best() -> u32 {
+    let Ok(Some(bytes)) = krate::store::get(BEST_KEY) else {
+        return 0;
+    };
+    let mut n = 0_u32;
+    for b in bytes.iter() {
+        if !b.is_ascii_digit() {
+            return 0;
+        }
+        n = n.saturating_mul(10).saturating_add((b - b'0') as u32);
+    }
+    n
+}
+
+/// Keep this game's score if it beats the best. Re-reads the store first, so
+/// a better score another device synced in meanwhile is never overwritten,
+/// and writes nothing when the best stands.
+fn bank_best(game: &mut Game) {
+    game.best = game.best.max(load_best());
+    if game.score > game.best {
+        game.best = game.score;
+        let mut buf = [0_u8; 32];
+        let len = push_number(&mut buf, 0, game.score as u64);
+        if let Some(digits) = buf.get(..len) {
+            let _ = krate::store::set(BEST_KEY, digits);
+        }
     }
 }
 
@@ -284,12 +329,13 @@ fn ball_sprite() -> [u8; 8 * 8 * 4] {
     rgba
 }
 
-/// Write "Score N   Lives N" into a fixed buffer and return its length.
+/// Write "Score N   Best N   Lives N" into a fixed buffer and return its
+/// length. The best shows once one has been kept.
 ///
 /// By hand rather than `format!`, matching the number-printing helper below:
 /// the buffer lives on the stack and the digits are pushed in place, so the
 /// HUD costs no allocation per frame and keeps the import list clean.
-fn hud_line(buf: &mut [u8; 32], score: u32, lives: u32) -> usize {
+fn hud_line(buf: &mut [u8; 32], score: u32, best: u32, lives: u32) -> usize {
     let mut len = 0;
     for byte in b"Score " {
         if let Some(slot) = buf.get_mut(len) {
@@ -298,6 +344,15 @@ fn hud_line(buf: &mut [u8; 32], score: u32, lives: u32) -> usize {
         }
     }
     len = push_number(buf, len, score as u64);
+    if best > 0 {
+        for byte in b"   Best " {
+            if let Some(slot) = buf.get_mut(len) {
+                *slot = *byte;
+                len += 1;
+            }
+        }
+        len = push_number(buf, len, best.max(score) as u64);
+    }
     for byte in b"   Lives " {
         if let Some(slot) = buf.get_mut(len) {
             *slot = *byte;
@@ -392,7 +447,7 @@ fn draw(canvas: u64, game: &Game) -> Result<(), gfx::GfxError> {
 
     // The HUD.
     let mut buf = [0_u8; 32];
-    let len = hud_line(&mut buf, game.score, game.lives);
+    let len = hud_line(&mut buf, game.score, game.best, game.lives);
     if let Some(slice) = buf.get(..len) {
         if let Ok(text) = core::str::from_utf8(slice) {
             canvas2d::draw_text(
@@ -521,6 +576,12 @@ impl krate::Guest for Component {
         );
 
         let mut game = Game::new();
+        if !quick {
+            game.best = load_best();
+        }
+        // Whether this game's score has been offered to the store yet: once,
+        // the moment it ends -- not every frame.
+        let mut banked = false;
 
         let started = clock::monotonic_nanos();
         let mut last = started;
@@ -567,6 +628,7 @@ impl krate::Guest for Component {
                 if events::key_held("Space") || events::gamepad_held("south") {
                     if game.over {
                         game.restart();
+                        banked = false;
                     } else {
                         game.launch();
                     }
@@ -574,6 +636,10 @@ impl krate::Guest for Component {
             }
 
             game.step(dt);
+            if game.over && !banked && !quick {
+                bank_best(&mut game);
+                banked = true;
+            }
             if draw(canvas, &game).is_err() {
                 out("draw:no");
                 return 1;
@@ -594,6 +660,11 @@ impl krate::Guest for Component {
             }
         }
 
+        // Closed mid-game: a best reached before the close still counts.
+        if !banked && !quick {
+            bank_best(&mut game);
+        }
+
         let elapsed_nanos = clock::monotonic_nanos().saturating_sub(started);
         out_number("frames:", frames as u64);
         let fps_centi = if elapsed_nanos > 0 {
@@ -603,6 +674,7 @@ impl krate::Guest for Component {
         };
         out_number("fps-centi:", fps_centi);
         out_number("bricks:", game.score as u64);
+        out_number("best:", game.best as u64);
         // The claim the replay pins. Bricks only break when the scripted
         // paddle kept the rally alive, so this line proves the whole loop:
         // input moved the paddle, the paddle returned the ball, the ball

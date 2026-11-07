@@ -14,6 +14,12 @@
 //! the wasi:* import set. Entities live in fixed-capacity arrays with active
 //! counts -- no growing Vec in the hot loop, no array indexing that can panic,
 //! no format!, no unwrap. Numbers are formatted by hand into byte buffers.
+//!
+//! The best score is kept in `store.kv` (`best-score`), written when a game
+//! ends with a new best and read back at start. Nothing else is needed for it
+//! to follow the person to every device they sign in on: Krate syncs the
+//! store. A best kept only in memory would be gone the moment the window
+//! closed.
 
 #![no_std]
 #![allow(clippy::needless_range_loop)]
@@ -117,6 +123,9 @@ const FIRE_COOLDOWN: f32 = 0.14;
 const EBULLET_SPEED: f32 = 230.0;
 
 const QUICK_FRAMES: u32 = 240;
+/// Where the best score is kept, as decimal text so a sync conflict card
+/// shows a number a person can read.
+const BEST_KEY: &str = "best-score";
 const MAX_FRAMES: u32 = 100_000;
 
 struct Component;
@@ -211,6 +220,8 @@ struct World {
     py: f32,
     lives: i32,
     score: u32,
+    /// The best score on any of this person's devices, from `store.kv`.
+    best: u32,
     fire_timer: f32,
     spawn_timer: f32,
     /// Difficulty ramps with time: spawn interval shrinks, speeds grow.
@@ -321,6 +332,7 @@ impl World {
             // The automated shot depicts a run already in progress, so it opens
             // on a believable mid-game score rather than zero.
             score: if quick { 12_800 } else { 0 },
+            best: 0,
             fire_timer: 0.0,
             // In the automated shot, start with a short fuse and a pre-ramped
             // clock so the frame we capture is already dense with enemies,
@@ -1140,6 +1152,27 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
                 color(0.9, 0.95, 1.0, 1.0),
             )?;
         }
+        // The best, or the news that this run is it.
+        let mut bbuf = [0u8; 20];
+        let best = if w.score > 0 && w.score >= w.best {
+            Some(&b"NEW BEST"[..])
+        } else if w.best > 0 {
+            Some(num_to_bytes_prefixed(b"BEST  ", w.best, &mut bbuf))
+        } else {
+            None
+        };
+        if let Some(txt) = best.and_then(|b| core::str::from_utf8(b).ok()) {
+            draw_text(
+                canvas,
+                0.0,
+                0.0,
+                txt,
+                (WIDTH - text_w(canvas, txt, small)) * 0.5,
+                cy - big * 0.25 + mid * 2.0 + small * 1.6,
+                small,
+                color(1.0, 0.8, 0.35, 1.0),
+            )?;
+        }
         let again = "TAP OR PRESS SPACE TO PLAY AGAIN";
         draw_text(
             canvas,
@@ -1147,7 +1180,7 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
             0.0,
             again,
             (WIDTH - text_w(canvas, again, small)) * 0.5,
-            cy - big * 0.25 + mid * 2.0 + small * 2.9,
+            cy - big * 0.25 + mid * 2.0 + small * 3.6,
             small,
             color(0.75, 0.8, 0.95, 0.9),
         )?;
@@ -1307,6 +1340,23 @@ fn draw_hud(canvas: u64, w: &World) -> Result<(), gfx::GfxError> {
         label,
         color(0.45, 0.6, 0.8, 1.0),
     )?;
+    // The best so far, top-centre, once one has been kept.
+    if w.best > 0 {
+        let mut bbuf = [0u8; 20];
+        let b = num_to_bytes_prefixed(b"BEST  ", w.best.max(w.score), &mut bbuf);
+        if let Ok(txt) = core::str::from_utf8(b) {
+            draw_text(
+                canvas,
+                0.0,
+                0.0,
+                txt,
+                (WIDTH - text_w(canvas, txt, label)) * 0.5,
+                label_y,
+                label,
+                color(0.45, 0.6, 0.8, 1.0),
+            )?;
+        }
+    }
 
     // Lives top-right as little cyan chevrons.
     let mut i = 0i32;
@@ -1634,6 +1684,39 @@ fn num_core12(value: u32, buf: &mut [u8; 12]) -> &[u8] {
 }
 
 // ------------------------------------------------------------------
+// The best score, kept in store.kv
+// ------------------------------------------------------------------
+
+/// The best score saved on this or any of the person's devices; 0 when
+/// nothing is saved yet or the store is not granted.
+fn load_best() -> u32 {
+    let Ok(Some(bytes)) = krate::store::get(BEST_KEY) else {
+        return 0;
+    };
+    let mut n = 0u32;
+    for b in bytes.iter() {
+        if !b.is_ascii_digit() {
+            return 0;
+        }
+        n = n.saturating_mul(10).saturating_add((b - b'0') as u32);
+    }
+    n
+}
+
+/// Keep this game's score if it beats the best. Re-reads the store first, so
+/// a better score another device synced in meanwhile is never overwritten,
+/// and writes nothing when the best stands.
+fn bank_best(w: &mut World) {
+    let stored = load_best();
+    w.best = w.best.max(stored);
+    if w.score > w.best {
+        w.best = w.score;
+        let mut buf = [0u8; 20];
+        let _ = krate::store::set(BEST_KEY, num_to_bytes(w.score, &mut buf));
+    }
+}
+
+// ------------------------------------------------------------------
 // Entry point
 // ------------------------------------------------------------------
 
@@ -1684,6 +1767,13 @@ impl krate::Guest for Component {
         fit_world(win, canvas);
         let started = clock::monotonic_nanos();
         let mut world = World::new((started as u32) ^ 0xA53C_1FE9, quick);
+        // The automated shot neither reads nor writes the best: its score is
+        // staged, and its picture must not depend on who ran it.
+        if !quick {
+            world.best = load_best();
+        }
+        // Whether this game's score has been offered to the store yet.
+        let mut banked = false;
 
         // The host captures the FIRST presented frame. So for the automated
         // shot, build a full, lively scene and let it settle for a few steps
@@ -1758,12 +1848,21 @@ impl krate::Guest for Component {
             if closing {
                 break;
             }
+            // A game that just ended is kept once, the moment it ends -- not
+            // every frame, and not only when the window closes.
+            if world.game_over && !quick && !banked {
+                bank_best(&mut world);
+                banked = true;
+            }
             // After GAME OVER, a tap or Space starts a new game.
             if world.game_over
                 && !quick
                 && (tapped || events::key_held("Space") || events::key_held(" "))
             {
+                let best = world.best;
                 world = World::new(seed ^ frames, false);
+                world.best = best;
+                banked = false;
             }
             // A finger on a phone, or a held mouse button, where it is in the
             // game's own coordinates. A phone has no arrow keys, so the ship
@@ -1816,12 +1915,20 @@ impl krate::Guest for Component {
             frames += 1;
         }
 
+        // Closed mid-game: a best reached before the close still counts.
+        if !quick && !banked {
+            bank_best(&mut world);
+        }
+
         // Report on exit.
         let out = stdio::stdout();
         let _ = out.write(b"nova:ok\n");
         let _ = out.write(b"score:");
         let mut buf = [0u8; 20];
         let _ = out.write(num_to_bytes(world.score, &mut buf));
+        let _ = out.write(b"\n");
+        let _ = out.write(b"best:");
+        let _ = out.write(num_to_bytes(world.best, &mut buf));
         let _ = out.write(b"\n");
 
         let _ = window::close(win);
