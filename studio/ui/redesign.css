@@ -2779,6 +2779,19 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .dt2-path, .dt2-hash { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .dt2-link { flex: none; padding: 0; border: 0; background: none; font: 500 12.5px var(--sans); color: var(--ink-2); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .dt2-link:hover { color: var(--ink); text-decoration-color: currentColor; }
+/* Port's one control is its card: the row under it repeated the card's
+   own action twice (Choose a folder, and an arrow that also chose one). */
+#homePortPane .kr-cmprow { display: none; }
+#homePortPane:not([hidden]) { display: flow-root; padding-bottom: 14px; }
+#homePortPane .kr-portdrop { margin-bottom: 0; align-items: center; }
+#homePortPane .kr-portdrop b { color: var(--ink); }
+#homePortPane .kr-portgo { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; border-radius: 99px; background: var(--btn); color: var(--btn-ink); font: 500 13.5px var(--sans); transition: background .2s; }
+#homePortPane .kr-portdrop:hover .kr-portgo { background: var(--btn-hover); }
+@media (max-width: 560px) {
+  #homePortPane .kr-portdrop { flex-wrap: wrap; align-items: flex-start; }
+  #homePortPane .kr-portgo { order: 3; width: 100%; height: 44px; }
+}
+#homeSheetLine.kr-offmode { display: none; }
 /* The terminal commands, folded at the foot of Details (desktop only). */
 #paneDetails .dt2-dev { margin: 0 24px 24px; }
 #paneDetails .dt2-dev > summary { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 2px; list-style: none; cursor: pointer; font: 500 13.5px var(--sans); color: var(--ink-2); border-radius: 10px; }

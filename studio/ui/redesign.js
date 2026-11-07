@@ -213,6 +213,10 @@
     const idePane = $("homeIdePane"), ideUnder = $("homeIdeUnder");
     if (idePane) idePane.hidden = mode !== "ide";
     if (ideUnder) ideUnder.hidden = mode !== "ide";
+    // Start from a spreadsheet is a way to Create; under Port or the IDE it
+    // read as part of that door. app.js owns its `hidden`, so a class.
+    const sheetLine = $("homeSheetLine");
+    if (sheetLine) sheetLine.classList.toggle("kr-offmode", mode !== "create");
     const kb = $("homeKb");
     if (kb) {
       kb.hidden = mode === "port";
