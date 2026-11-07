@@ -12636,15 +12636,33 @@ pub(crate) const CHANGE_MARKER: &str = "\u{1}krate-change\u{1}";
 /// reference stays available for a call it has not used before -- reading less
 /// is not the goal, doing less is.
 fn change_prompt(app_dir: &str, change: &str, krate_bin: &str) -> String {
+    // A repair is not a change to a working app, and saying it was told the
+    // agent "the app compiles, passes check-app" over a failure that said
+    // the opposite. The repair task itself says what kind of failure it is
+    // (K-763); this frame must not contradict it.
+    let (opening, state) = if change.starts_with(REPAIR_OPENING) {
+        (
+            "You are repairing a Krate app that does not pass `check-app` yet",
+            "This is a repair, not a rewrite. What failed, and what kind of failure it\n\
+             is, is said above; trust that over any guess. The rest of the app\n\
+             already demonstrates the no_std and krate:* discipline in its own\n\
+             source -- you do not need to re-derive any of that.",
+        )
+    } else {
+        (
+            "You are changing a Krate app that already works",
+            "This is an edit, not a rewrite. The app compiles, passes `check-app`, and\n\
+             already demonstrates the no_std and krate:* discipline in its own source --\n\
+             you do not need to re-derive any of that, and you do not need a worked\n\
+             example. Its code is the example.",
+        )
+    };
     format!(
-        "You are changing a Krate app that already works. It is in {app_dir}.\n\
+        "{opening}. It is in {app_dir}.\n\
 \n\
     {change}\n\
 \n\
-This is an edit, not a rewrite. The app compiles, passes `check-app`, and\n\
-already demonstrates the no_std and krate:* discipline in its own source --\n\
-you do not need to re-derive any of that, and you do not need a worked\n\
-example. Its code is the example.\n\
+{state}\n\
 \n\
 How to work:\n\
 1. Read src/lib.rs and find the one place this change belongs. Most changes\n\
@@ -12664,7 +12682,8 @@ How to work:\n\
    than after every edit. Do not stop until it prints OK.\n\
 \n\
 Keep the same crate name, the same package name, and the same manifest unless\n\
-the change genuinely needs a new capability. Changing them breaks the app's\n\
+the change genuinely needs a new capability, or the failure above is in the\n\
+manifest. Changing them otherwise breaks the app's\n\
 identity for somebody who already has it.\n\
 \n\
 Do not explain what you did; make the change until the check passes."
@@ -13937,7 +13956,7 @@ fn run_provider_author(
     // is the deep fix for "grok writes an app that panics/leaks and then stops":
     // the loop closes here, automatically, instead of on a person noticing the
     // error and running create again.
-    if let Err(failure) = check_app_verdict(app_dir) {
+    if let Err((kind, failure)) = check_app_verdict_kind(app_dir) {
         // Only a fresh authoring run drives the automatic repair loop. A
         // CHANGE_MARKER request IS a repair or an edit already -- auto-repairing
         // it here would nest run_provider_author inside auto_repair inside
@@ -13945,13 +13964,9 @@ fn run_provider_author(
         // change just reports; the outer loop (auto_repair, or the user's own
         // revise) decides what happens next.
         if request.starts_with(CHANGE_MARKER) {
-            anyhow::bail!(
-                "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
-                 The agent's transcript is at {}.",
-                transcript.display()
-            );
+            anyhow::bail!("{}", failed_check_message(kind, &failure, &transcript));
         }
-        return auto_repair(provider, app_dir, request, &failure, &transcript);
+        return auto_repair(provider, app_dir, request, kind, &failure, &transcript);
     }
     // A fresh authoring run that passed its final check is a finished build.
     // A CHANGE_MARKER run is a repair/edit step inside a larger flow, so it is
@@ -14150,19 +14165,30 @@ fn auto_repair(
     provider: &'static dyn agent_provider::AgentProvider,
     app_dir: &str,
     request: &str,
+    first_kind: FailureKind,
     first_failure: &str,
     transcript: &Path,
 ) -> Result<u8> {
     const MAX_REPAIR_ROUNDS: u32 = 2;
+    let mut kind = first_kind;
     let mut failure = first_failure.to_string();
     for round in 1..=MAX_REPAIR_ROUNDS {
+        // A failure no edit can fix is not sent to the agent at all. The
+        // sandbox refusing the build cache came back as a code repair, the
+        // agent changed nothing -- correctly, the code compiled -- and the
+        // person was then told the agent "explained the app instead of
+        // writing it" (K-763). Stop, and say what it is.
+        let Some(instruction) = kind.agent_instruction() else {
+            break;
+        };
         trace::repair(round, MAX_REPAIR_ROUNDS, first_line(&failure));
         eprintln!(
             "    the app did not pass yet -- asking the AI to fix it ({round} of {MAX_REPAIR_ROUNDS})"
         );
         let task = format!(
-            "{CHANGE_MARKER}The app you just wrote for \"{request}\" does not pass \
-             `krate check-app` yet. Here is exactly what failed and how to fix it:\n\n\
+            "{CHANGE_MARKER}{REPAIR_OPENING} for \"{request}\" does not pass \
+             `krate check-app` yet. {instruction}\n\n\
+             Here is exactly what failed and how to fix it:\n\n\
              {failure}\n\n\
              Fix only what this names. Do not rewrite the app or start over -- the code \
              you already wrote is in src/lib.rs. Make the change, then run check-app \
@@ -14173,22 +14199,46 @@ fn auto_repair(
         // says "find the one place, change that, leave the rest alone" rather
         // than re-deriving the whole app.
         run_provider_author(provider, app_dir, &task)?;
-        match check_app_verdict(app_dir) {
+        match check_app_verdict_kind(app_dir) {
             Ok(()) => {
                 eprintln!("    fixed.");
                 trace::build_end("ok", Some("fixed by auto-repair"));
                 return Ok(0);
             }
-            Err(next) => failure = next,
+            Err((next_kind, next)) => {
+                kind = next_kind;
+                failure = next;
+            }
         }
     }
     trace::build_end("failed", Some(first_line(&failure)));
-    anyhow::bail!(
-        "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
+    anyhow::bail!("{}", failed_check_message(kind, &failure, transcript));
+}
+
+/// How a repair task opens, so the edit prompt can tell a repair of a
+/// failing app from a change to a working one.
+const REPAIR_OPENING: &str = "The app you just wrote";
+
+/// What the person reads when a build ends on a failing check: the kind's
+/// plain sentence first -- the line a reader, or Studio, takes as the
+/// verdict -- then the check's own words.
+fn failed_check_message(kind: FailureKind, failure: &str, transcript: &Path) -> String {
+    if kind == FailureKind::Environment {
+        return format!(
+            "{}\n\n{failure}\n\n\
+             Put that right on this computer, then run the command again: the app's code \
+             is kept, and nothing in it needs to change. The agent's transcript is at {}.",
+            kind.person_words(),
+            transcript.display()
+        );
+    }
+    format!(
+        "{} The agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
          The agent's transcript is at {}. Running the command again often gets it \
          the rest of the way.",
+        kind.person_words(),
         transcript.display()
-    );
+    )
 }
 
 /// Pull the agent's own error sentence out of its transcript.
@@ -15041,6 +15091,12 @@ fn loop_bound_seconds(lib: &str, bound_name: &str) -> Option<u64> {
 }
 
 fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
+    check_app_verdict_kind(app_dir).map_err(|(_, message)| message)
+}
+
+/// [`check_app_verdict`] with the failure's kind, which decides whether an
+/// agent is asked to repair it at all and what it is told (K-763).
+fn check_app_verdict_kind(app_dir: &str) -> std::result::Result<(), (FailureKind, String)> {
     let outcome = run_check_app(Path::new(app_dir), None, false);
     // Where the check's time went, beside its verdict, so a build's trace
     // shows what the closing check cost and whether it was reused.
@@ -15063,7 +15119,7 @@ fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
                 message.push_str("\n\nFix: ");
                 message.push_str(&failure.fix);
             }
-            Err(message)
+            Err((failure.kind(), message))
         }
     }
 }
@@ -16405,6 +16461,16 @@ fn build_component(app_dir: &Path) -> Result<PathBuf> {
         );
         if let Some(missing) = wasi_sdk::explain_c_failure(&text) {
             anyhow::bail!("{missing}");
+        }
+        // The machine refused the build, not the compiler: this used to end
+        // "the compiler's message above is the cause" over a sandbox's
+        // "Operation not permitted" (K-763).
+        if build_refused_by_machine(&text) {
+            anyhow::bail!(
+                "{}\n\n{}",
+                FailureKind::Environment.headline(),
+                build_fix(&text)
+            );
         }
         if text.contains("wasm32-wasip1") {
             anyhow::bail!(
@@ -21950,6 +22016,227 @@ struct CheckFailure {
     fix: String,
 }
 
+impl CheckFailure {
+    fn kind(&self) -> FailureKind {
+        failure_kind(self.stage, &self.detail)
+    }
+}
+
+/// What KIND of failure a check found. The stage says where it failed; the
+/// kind says who can fix it, and so what the agent is asked to do and what
+/// the person is told.
+///
+/// Without it every failure reached the agent framed as a code edit. A
+/// build the sandbox refused -- "Operation not permitted" writing the build
+/// cache -- went back to the agent as "fix the compiler errors above" when
+/// it compiled, and it spent a whole budget hunting for an override that
+/// could not work (K-763). A permission denial on any folder but one named
+/// `cache` still did, and a manifest entry that named the wrong file came
+/// back as "a capability it needs is not declared", which real Studio
+/// agents then chased.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FailureKind {
+    /// The app's files, or its manifest's shape, are not what a Krate app's
+    /// are.
+    Project,
+    /// The code does not compile.
+    Compile,
+    /// This computer refused the build: a sandbox or permission denied a
+    /// write, the disk is full, or a build tool is missing. Nothing in the
+    /// app causes it, so no edit to the app can fix it.
+    Environment,
+    /// It compiles, but the built app imports host APIs Krate does not give.
+    Imports,
+    /// The manifest and the code disagree about what the app may touch.
+    Capability,
+    /// It builds and starts, and fails when Krate uses it.
+    Test,
+    /// It ran past its time or work budget.
+    Timeout,
+}
+
+impl FailureKind {
+    /// The label machine readers get (`check-app --json`'s `kind`).
+    fn label(self) -> &'static str {
+        match self {
+            FailureKind::Project => "project",
+            FailureKind::Compile => "compile",
+            FailureKind::Environment => "environment",
+            FailureKind::Imports => "imports",
+            FailureKind::Capability => "capability",
+            FailureKind::Test => "test",
+            FailureKind::Timeout => "timeout",
+        }
+    }
+
+    /// One line under "FAILED at <stage>" saying what sort of problem this is.
+    fn headline(self) -> &'static str {
+        match self {
+            FailureKind::Project => {
+                "The app's files, or what manifest.toml says about them, are wrong -- not a \
+                 compiler error, and not a missing capability."
+            }
+            FailureKind::Compile => "The code does not compile.",
+            FailureKind::Environment => {
+                "This computer refused the build -- not a compiler error. Nothing in the \
+                 app's code causes it, and no edit to the code will fix it."
+            }
+            FailureKind::Imports => {
+                "The code compiles, but the built app reaches for host APIs Krate does not \
+                 provide. There are no compiler errors to fix."
+            }
+            FailureKind::Capability => {
+                "The code compiles, but the app and its manifest.toml disagree about what \
+                 it may touch."
+            }
+            FailureKind::Test => {
+                "The code compiles and the app starts; it fails when Krate uses it the way \
+                 a person would."
+            }
+            FailureKind::Timeout => "The code compiles; the app ran past its time or work budget.",
+        }
+    }
+
+    /// What the agent is told to do, ahead of the check's own detail and fix.
+    /// None for a failure no edit can fix: the agent is not asked at all.
+    fn agent_instruction(self) -> Option<&'static str> {
+        Some(match self {
+            FailureKind::Project => {
+                "The app's files or its manifest's shape are wrong. Put them right as the \
+                 fix says; the code itself may be fine."
+            }
+            FailureKind::Compile => {
+                "The code does not compile. Fix the compiler errors named below -- change \
+                 the lines they point at, nothing else."
+            }
+            FailureKind::Environment => return None,
+            FailureKind::Imports => {
+                "The code compiles. It fails because the built app imports host APIs Krate \
+                 does not provide, so there are NO compiler errors to fix: remove what pulls \
+                 those imports in, as the fix says."
+            }
+            FailureKind::Capability => {
+                "The code compiles. It fails because the app and its manifest.toml disagree \
+                 about what it may touch. The change is in manifest.toml (or in no longer \
+                 using that capability), not in how the app works, and not in compiler errors \
+                 -- there are none."
+            }
+            FailureKind::Test => {
+                "The code compiles and the app starts. It fails when Krate uses it the way a \
+                 person would. Fix the behaviour named below; the build itself is fine."
+            }
+            FailureKind::Timeout => {
+                "The code compiles. The app ran past its time or work budget: make it do less \
+                 work per frame, and do the work once and exit when it is started with `quick`."
+            }
+        })
+    }
+
+    /// The first thing the person reads when a build ends on this failure.
+    fn person_words(self) -> &'static str {
+        match self {
+            FailureKind::Project | FailureKind::Compile => {
+                "The app the AI wrote does not build yet."
+            }
+            FailureKind::Environment => {
+                "This computer stopped Krate from building the app. That is not a fault in \
+                 the app's code, so Krate did not ask the AI to change it."
+            }
+            FailureKind::Imports => {
+                "The app the AI wrote builds, but it reaches for parts of the computer Krate \
+                 does not give apps."
+            }
+            FailureKind::Capability => {
+                "The app the AI wrote builds, but it does not ask for what it uses."
+            }
+            FailureKind::Test => {
+                "The app the AI wrote builds and opens, but it did not work when Krate tried it."
+            }
+            FailureKind::Timeout => {
+                "The app the AI wrote builds, but it ran too long when Krate tried it."
+            }
+        }
+    }
+}
+
+/// Classify a check failure from its stage and its own words.
+fn failure_kind(stage: CheckStage, detail: &str) -> FailureKind {
+    let lower = detail.to_lowercase();
+    match stage {
+        CheckStage::Layout => FailureKind::Project,
+        CheckStage::Manifest if lower.contains("capabilit") || lower.contains("asks for") => {
+            FailureKind::Capability
+        }
+        CheckStage::Manifest => FailureKind::Project,
+        CheckStage::Build if build_refused_by_machine(detail) => FailureKind::Environment,
+        CheckStage::Build if lower.starts_with("could not read the built component") => {
+            FailureKind::Environment
+        }
+        CheckStage::Build => FailureKind::Compile,
+        CheckStage::Imports => FailureKind::Imports,
+        _ if lower.starts_with("could not ")
+            && (lower.contains("scratch dir") || lower.contains("could not run the app")) =>
+        {
+            FailureKind::Environment
+        }
+        _ if lower.contains("(exit 4)")
+            || lower.contains("fuel")
+            || lower.contains("timed out")
+            || lower.contains("time limit") =>
+        {
+            FailureKind::Timeout
+        }
+        CheckStage::Run if lower.contains("manifest entry") => FailureKind::Project,
+        CheckStage::Run if lower.contains("(exit 5)") => FailureKind::Capability,
+        _ => FailureKind::Test,
+    }
+}
+
+/// Whether a failed build was refused by the machine rather than the
+/// compiler: a sandbox or permission denial, a read-only or full disk, or
+/// no C compiler for a crate that needs one. Matched on the operating
+/// system's own words and error numbers, never on a folder's name -- the
+/// first cut only knew a denial under a folder called `cache`, so the same
+/// denial anywhere else was still sent to the agent as compiler errors.
+fn build_refused_by_machine(detail: &str) -> bool {
+    const SIGNS: &[&str] = &[
+        "Operation not permitted",
+        "(os error 1)",
+        "Permission denied",
+        "(os error 13)",
+        "Access is denied",
+        "(os error 5)",
+        "Read-only file system",
+        "(os error 30)",
+        "No space left on device",
+        "(os error 28)",
+        "There is not enough space on the disk",
+        "(os error 112)",
+        "Disk quota exceeded",
+    ];
+    // A rustc error code means the compiler ran and judged the code; an
+    // app's own text ("Permission denied" on a label) quoted in that error
+    // must not turn it into the machine's fault.
+    if detail.contains("error[E") {
+        return false;
+    }
+    SIGNS.iter().any(|sign| detail.contains(sign)) || wasi_sdk::explain_c_failure(detail).is_some()
+}
+
+/// The path a refused write named, when the error says which.
+fn refused_path(detail: &str) -> Option<String> {
+    for (open, close) in [("at path \"", '"'), ("directory `", '`'), ("file `", '`')] {
+        if let Some(at) = detail.find(open) {
+            let rest = &detail[at + open.len()..];
+            if let Some(end) = rest.find(close) {
+                return Some(rest[..end].to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Put the `krate` dependency back into a `#![no_std]` app that lost it.
 ///
 /// Returns whether it changed anything. This is a repair, not a check, and it
@@ -22176,22 +22463,41 @@ fn build_fix(detail: &str) -> String {
     //
     // Named here with the one override that IS honoured. A person hitting
     // this outside an agent gets the same sentence, which is still true.
-    if detail.contains("Operation not permitted")
-        || detail.contains("os error 1)")
-        || (detail.contains("Permission denied") && detail.contains("cache"))
-    {
-        return "The build could not WRITE to its cache -- this is a \
-                permission problem, not a compiler error, and nothing in the \
-                app's code will fix it.\n\
-                It usually means the build is running inside a sandbox that \
-                only allows writes under the project directory, while the \
-                shared dependency cache lives under your home directory.\n\
-                Set CARGO_TARGET_DIR to a path inside the project and build \
-                again, for example:\n\
-                \u{20}\u{20}CARGO_TARGET_DIR=./target krate check-app .\n\
-                KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME are NOT read \
-                by this build; CARGO_TARGET_DIR is the one that works."
-            .to_string();
+    //
+    // Any refusal by the machine, not only one under a folder named
+    // `cache`: "Permission denied (os error 13)" on a target folder
+    // anywhere else still came back as "fix the compiler errors above".
+    if build_refused_by_machine(detail) {
+        let path = refused_path(detail)
+            .map(|path| format!(" ({path})"))
+            .unwrap_or_default();
+        if [
+            "No space left on device",
+            "(os error 28)",
+            "not enough space",
+            "quota",
+        ]
+        .iter()
+        .any(|sign| detail.contains(sign))
+        {
+            return format!(
+                "The disk is full{path} -- this is not a compiler error, and nothing in the \
+                 app's code will fix it. Free some space, then build again."
+            );
+        }
+        return format!(
+            "The build could not WRITE where it needed to{path} -- this is a \
+             permission problem, not a compiler error, and nothing in the \
+             app's code will fix it.\n\
+             It usually means the build is running inside a sandbox that \
+             only allows writes under the project directory, while the \
+             shared dependency cache lives under your home directory.\n\
+             Set CARGO_TARGET_DIR to a path inside the project and build \
+             again, for example:\n\
+             \u{20}\u{20}CARGO_TARGET_DIR=./target krate check-app .\n\
+             KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME are NOT read \
+             by this build; CARGO_TARGET_DIR is the one that works."
+        );
     }
     // The no_std guest with no SDK. rustc reports the missing lang items one at
     // a time, so match any of them rather than one exact string.
@@ -22396,12 +22702,14 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "ok": false,
                         "dir": dir.display().to_string(),
                         "stage": failure.stage.label(),
+                        "kind": failure.kind().label(),
                         "detail": failure.detail,
                         "fix": failure.fix,
                     })
                 );
             } else {
                 eprintln!("FAILED at {}", failure.stage.label());
+                eprintln!("{}", failure.kind().headline());
                 eprintln!();
                 eprintln!("{}", failure.detail.trim_end());
                 if !failure.fix.is_empty() {
@@ -22979,6 +23287,52 @@ fn run_check_app(
     };
     stage_took("run", run_started);
     if exit != 0 {
+        // Exit 5 is every refusal at the door, and they are not all
+        // capabilities. The seeded starter's manifest names the example's
+        // own `entry` file, so a fresh app is refused with "permission
+        // denied: manifest entry ... does not match" -- and this said "a
+        // capability it needs is not declared", which Studio agents then
+        // chased (K-763). Run it once more to read the refusal's own words:
+        // a refusal is immediate, so this costs well under a second.
+        if exit == 5 {
+            let said = run_self_captured(verify_dir.path(), &run_arg_refs)
+                .map(|(_, _, stderr)| stderr)
+                .unwrap_or_default();
+            let refusal = said
+                .lines()
+                .find(|line| line.contains("permission denied"))
+                .map(str::trim)
+                .unwrap_or("")
+                .to_string();
+            if refusal.contains("manifest entry") {
+                let built = wasm
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "<crate>.wasm".to_string());
+                return Err(CheckFailure {
+                    stage: CheckStage::Run,
+                    detail: format!(
+                        "the app was refused before it started (exit 5) because manifest.toml's \
+                         `entry` names a different file from the one this build makes: {refusal}"
+                    ),
+                    fix: format!(
+                        "In manifest.toml, set `entry = \"target/wasm32-wasip1/release/{built}\"` \
+                         -- the file this crate builds. Nothing else needs to change: this is \
+                         not a missing capability."
+                    ),
+                });
+            }
+            if !refusal.is_empty() {
+                return Err(CheckFailure {
+                    stage: CheckStage::Run,
+                    detail: format!("the app was refused something it needs (exit 5): {refusal}"),
+                    fix: "Declare the capability it names in manifest.toml, scoped as \
+                          narrowly as the app needs (KRATE_AUTHORING.md section 2 lists them), \
+                          or stop using it."
+                        .to_string(),
+                });
+            }
+        }
         let hint = match exit {
             4 => " (exit 4 means it exhausted its fuel budget -- either a runaway loop, or honest work that is too expensive per frame: hoist per-pixel math out of inner loops, and draw fewer `quick` frames)",
             5 => " (exit 5 means a capability it needs is not declared in manifest.toml)",
@@ -22987,11 +23341,18 @@ fn run_check_app(
         return Err(CheckFailure {
             stage: CheckStage::Run,
             detail: format!("the app failed to run headless with all grants (exit {exit}){hint}"),
-            fix: "Run it yourself to see its output: \
-                  `krate run <wasm> --manifest manifest.toml --auto-grant`. Set \
-                  KRATE_VERIFY_LOG=/path/to/log to capture what it printed. If it needs a \
-                  capability, declare it in manifest.toml."
-                .to_string(),
+            // The capability sentence only where a capability is the
+            // question: an app that returned 3 was told to go declare one.
+            fix: format!(
+                "Run it yourself to see its output: \
+                 `krate run <wasm> --manifest manifest.toml --auto-grant`. Set \
+                 KRATE_VERIFY_LOG=/path/to/log to capture what it printed.{}",
+                match exit {
+                    5 => " If it needs a capability, declare it in manifest.toml.",
+                    4 => "",
+                    _ => " A non-zero exit is the app's own answer: find where it returns it.",
+                }
+            ),
         });
     }
     passed.push("run");
@@ -27329,6 +27690,109 @@ mod refusal_tests {
         assert!(extract_plan_json(planned).is_some());
         assert!(agent_failure_reason_in(asked).is_none());
         assert!(agent_failure_reason_in(planned).is_none());
+    }
+}
+
+#[cfg(test)]
+mod failure_kind_tests {
+    use super::{build_fix, failed_check_message, failure_kind, CheckStage, FailureKind};
+    use std::path::Path;
+
+    /// Each failure is told apart by who can fix it (K-763).
+    #[test]
+    fn a_failure_is_classified_by_who_can_fix_it() {
+        let cases: &[(CheckStage, &str, FailureKind)] = &[
+            (
+                CheckStage::Build,
+                "error[E0425]: cannot find value `x` in this scope",
+                FailureKind::Compile,
+            ),
+            (
+                CheckStage::Build,
+                "error: Operation not permitted (os error 1) at path \"/Users/a/.cache/krate/build/x\"",
+                FailureKind::Environment,
+            ),
+            // Any folder, not only one named `cache`.
+            (
+                CheckStage::Build,
+                "error: Permission denied (os error 13) at path \"/tmp/ro/target/t\"",
+                FailureKind::Environment,
+            ),
+            (
+                CheckStage::Build,
+                "error: couldn't create a temp dir: No space left on device (os error 28)",
+                FailureKind::Environment,
+            ),
+            // The app's own text quoted in a compiler error is still the code.
+            (
+                CheckStage::Build,
+                "error[E0308]: mismatched types\n let x: u32 = \"Permission denied\";",
+                FailureKind::Compile,
+            ),
+            (
+                CheckStage::Imports,
+                "the component imports non-Krate APIs: wasi:filesystem/types@0.2.0",
+                FailureKind::Imports,
+            ),
+            (
+                CheckStage::Run,
+                "the app was refused something it needs (exit 5): permission denied: store.kv",
+                FailureKind::Capability,
+            ),
+            (
+                CheckStage::Run,
+                "the app was refused before it started (exit 5) because manifest.toml's `entry` \
+                 names a different file: permission denied: manifest entry `a` does not match `b`",
+                FailureKind::Project,
+            ),
+            (
+                CheckStage::Run,
+                "the app failed to run headless with all grants (exit 4) (exit 4 means it \
+                 exhausted its fuel budget)",
+                FailureKind::Timeout,
+            ),
+            (
+                CheckStage::Run,
+                "the app failed to run headless with all grants (exit 3)",
+                FailureKind::Test,
+            ),
+            (
+                CheckStage::Manifest,
+                "the manifest asks for fs.read:**, which reads as everything",
+                FailureKind::Capability,
+            ),
+            (CheckStage::Usability, "the window closed by itself", FailureKind::Test),
+        ];
+        for (stage, detail, expected) in cases {
+            assert_eq!(failure_kind(*stage, detail), *expected, "{detail}");
+        }
+    }
+
+    /// A refusal by the machine is never sent as "fix the compiler errors",
+    /// and the agent is not asked to edit anything for it.
+    #[test]
+    fn a_refused_build_is_not_sent_to_the_agent_as_compiler_errors() {
+        let denied = "error: Permission denied (os error 13) at path \"/tmp/ro/target/t\"";
+        let fix = build_fix(denied);
+        assert!(!fix.contains("Fix the compiler errors"), "{fix}");
+        assert!(fix.contains("/tmp/ro/target/t"), "the path is named: {fix}");
+        assert!(FailureKind::Environment.agent_instruction().is_none());
+        for kind in [
+            FailureKind::Imports,
+            FailureKind::Capability,
+            FailureKind::Test,
+            FailureKind::Timeout,
+        ] {
+            let said = kind.agent_instruction().expect("an edit can fix it");
+            assert!(said.contains("compiles"), "{kind:?}: {said}");
+            assert!(!said.contains("does not compile"), "{kind:?}: {said}");
+        }
+        let words = failed_check_message(FailureKind::Environment, denied, Path::new("/t.txt"));
+        assert!(words.starts_with("This computer stopped Krate"), "{words}");
+        assert!(
+            !words.contains("often gets it the rest of the way"),
+            "{words}"
+        );
     }
 }
 

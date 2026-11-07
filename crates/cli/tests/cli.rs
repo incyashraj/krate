@@ -26578,3 +26578,99 @@ fn plan_never_offers_what_create_refuses() {
     }
     assert!(refused >= 2 && planned >= 2, "both arms were walked");
 }
+
+/// K-763: a failure is classified by who can fix it, and the words follow.
+///
+/// Two failures that came back to the agent dressed as something they are
+/// not. A build the machine refused -- here a target folder it may not
+/// write -- was "Fix the compiler errors above" unless the folder happened
+/// to be named `cache`. And a manifest whose `entry` names another file (what
+/// every app seeded from an example starts with) was refused at the door as
+/// "exit 5 means a capability it needs is not declared", which real Studio
+/// agents then chased. Each must say what it is.
+#[cfg(unix)]
+#[test]
+fn check_app_says_what_kind_of_failure_it_found() {
+    use std::os::unix::fs::PermissionsExt;
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let check = |dir: &std::path::Path, extra: &[&str], target: Option<&std::path::Path>| {
+        let mut command = krate();
+        command.arg("check-app").arg(dir).args(extra).arg("--json");
+        if let Some(target) = target {
+            command.env("CARGO_TARGET_DIR", target);
+        }
+        let out = command.output().expect("run check-app");
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let line = stdout.lines().last().unwrap_or_default().to_string();
+        serde_json::from_str::<serde_json::Value>(&line)
+            .unwrap_or_else(|_| panic!("one JSON object: {stdout}"))
+    };
+    let diceroll = workspace_path(PathBuf::from("apps/krate-diceroll"));
+
+    // 1. A build this machine refuses: a target folder that may not be
+    //    written, named nothing like `cache`.
+    let locked = tempfile::tempdir().expect("temp dir");
+    std::fs::set_permissions(locked.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(locked.path().join("probe"), b"").is_ok() {
+        eprintln!("skipping the refused-build half: this user can write a read-only folder");
+    } else {
+        let report = check(&diceroll, &["--no-run"], Some(&locked.path().join("t")));
+        std::fs::set_permissions(locked.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(report["stage"], "build", "{report}");
+        assert_eq!(report["kind"], "environment", "{report}");
+        let fix = report["fix"].as_str().unwrap_or_default();
+        assert!(
+            !fix.contains("Fix the compiler errors") && fix.contains("not a compiler error"),
+            "a refused build is not a compile error: {fix}"
+        );
+    }
+
+    // 2. A manifest whose entry names another app's file.
+    let copy = tempfile::tempdir().expect("temp dir");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().unwrap_or(root);
+    let cargo = std::fs::read_to_string(diceroll.join("Cargo.toml"))
+        .unwrap()
+        .replace("\"../../", &format!("\"{}/", root.display()));
+    std::fs::write(copy.path().join("Cargo.toml"), cargo).unwrap();
+    for file in [
+        "Cargo.lock",
+        "src/lib.rs",
+        "src/bindings.rs",
+        ".cargo/config.toml",
+    ] {
+        let from = diceroll.join(file);
+        if from.exists() {
+            let to = copy.path().join(file);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::copy(&from, &to).unwrap();
+        }
+    }
+    let manifest = std::fs::read_to_string(diceroll.join("manifest.toml"))
+        .unwrap()
+        .replace("krate_diceroll.wasm", "krate_checklist.wasm");
+    assert!(
+        manifest.contains("krate_checklist.wasm"),
+        "the fixture carries the hazard"
+    );
+    std::fs::write(copy.path().join("manifest.toml"), manifest).unwrap();
+    let report = check(copy.path(), &[], None);
+    assert_eq!(report["stage"], "run", "{report}");
+    assert_eq!(report["kind"], "project", "{report}");
+    let fix = report["fix"].as_str().unwrap_or_default();
+    assert!(
+        fix.contains("entry = \"target/wasm32-wasip1/release/krate_diceroll.wasm\""),
+        "the fix names the file this crate builds: {fix}"
+    );
+    assert!(
+        !report["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("capability it needs is not declared"),
+        "an entry mismatch is not a missing capability: {report}"
+    );
+}
