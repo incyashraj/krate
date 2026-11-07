@@ -1,6 +1,7 @@
 # Introduction
 
-Krate is a way to build a desktop app and ship it as one file.
+Krate is a way to make an app and send it as one file: it opens from a
+link in any browser, phones included, and runs natively on every desktop.
 
 You write Rust. It compiles to a WebAssembly component. Krate packs that
 component, its manifest and its own source into a single `.krate` file.
@@ -68,6 +69,10 @@ flowchart LR
 - Krate Studio for AI-assisted app creation and revision, alongside the CLI
   and embedding interfaces.
 - A gallery, examples, capability reference and automated checks.
+- Krate's hub: the gallery, publishing, and links that open an app in any
+  browser.
+- Organisations: private apps for a team, with end-to-end encrypted team
+  data ([Organisations](organisations.md)).
 
 The [latest published release](https://github.com/incyashraj/krate/releases/latest)
 lists downloadable artifacts and release notes. This documentation tracks the
