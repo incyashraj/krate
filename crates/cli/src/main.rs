@@ -15193,6 +15193,12 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
                         format!("id = \"dev.krate.{snake}\"")
                     } else if t.starts_with("name =") || t.starts_with("name=") {
                         format!("name = \"{}\"", ctx.name)
+                    } else if t.starts_with("entry =") || t.starts_with("entry=") {
+                        // The file THIS crate builds. Kept as the example's,
+                        // every seeded app's first full check was refused at
+                        // the door (exit 5) and its build paid a repair
+                        // round to change one line (K-1241).
+                        format!("entry = \"target/wasm32-wasip1/release/{snake}.wasm\"")
                     } else {
                         line.to_string()
                     }

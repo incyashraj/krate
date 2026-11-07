@@ -26674,3 +26674,64 @@ fn check_app_says_what_kind_of_failure_it_found() {
         "an entry mismatch is not a missing capability: {report}"
     );
 }
+
+/// K-1241: an app seeded from an example passes its first full check
+/// untouched.
+///
+/// The model-starter seed rewrote the example's id and name but kept its
+/// `entry`, so a tip calculator seeded from krate-checklist named
+/// krate_checklist.wasm while its crate built tip_calculator.wasm. Its first
+/// full `check-app` was refused at the door (exit 5), and every seeded Studio
+/// build paid an agent repair round to change that one line. The author here
+/// is `true`: it changes nothing, so the check judges the seed itself.
+#[test]
+fn a_seeded_starter_passes_its_first_full_check() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let out = work.path().join("out.krate");
+    let created = krate()
+        .args(["create", "a tip calculator that splits the bill"])
+        .args(["--name", "tip-calculator", "--author-cmd", "true"])
+        .arg("--work-dir")
+        .arg(work.path().join("w"))
+        .arg("--output")
+        .arg(&out)
+        .arg("--no-install")
+        .env("KRATE_STARTER_SHAPE", "krate-checklist")
+        .stdin(Stdio::null())
+        .output()
+        .expect("run create");
+    assert!(
+        created.status.success(),
+        "create: {}{}",
+        String::from_utf8_lossy(&created.stdout),
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let app = work.path().join("w/tip-calculator");
+    let mode = std::fs::read_to_string(app.join(".starter-mode")).unwrap_or_default();
+    assert!(
+        mode.starts_with("model:krate-checklist"),
+        "the fixture carries the hazard: the app was seeded from an example ({mode:?})"
+    );
+    let manifest = std::fs::read_to_string(app.join("manifest.toml")).unwrap();
+    assert!(
+        manifest.contains("entry = \"target/wasm32-wasip1/release/tip_calculator.wasm\""),
+        "the seeded entry names the file this crate builds:\n{manifest}"
+    );
+    let check = krate()
+        .arg("check-app")
+        .arg(&app)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run check-app");
+    assert!(
+        check.status.success(),
+        "a seeded starter's first full check passes: {}{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
