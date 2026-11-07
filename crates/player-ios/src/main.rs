@@ -326,6 +326,9 @@ mod player {
                 .map_err(|_| "This app's description could not be read.".to_string())?;
             let into = library.join(crate::home::library_file(&manifest.app.id));
             std::fs::copy(path, &into).map_err(|err| format!("Could not keep the app: {err}"))?;
+            // The hub account it was published by, when the hub handed it
+            // over; a file shared in names none and keys by its id (K-1172).
+            crate::run_config::carry_hub_tag(path, &into);
             remember(library, &into, &manifest.app.name);
             Ok(into)
         })();
@@ -1066,11 +1069,13 @@ mod player {
     /// Download an app from the hub into Documents/Downloads, for `receive`
     /// to keep (it removes the download once kept).
     fn fetch_into(id: &str, data_root: &Path) -> Result<PathBuf, String> {
-        let bytes = crate::hub::download(id, MAX_BUNDLE_BYTES, &private_root(), &device_name())?;
+        let (bytes, owner) =
+            crate::hub::download_with_owner(id, MAX_BUNDLE_BYTES, &private_root(), &device_name())?;
         let downloads = data_root.join("Downloads");
         let _ = std::fs::create_dir_all(&downloads);
         let file = downloads.join(format!("{}.krate", crate::home::hub_id(id)));
         std::fs::write(&file, bytes).map_err(|e| format!("could not save it ({e})"))?;
+        crate::run_config::keep_hub_tag(&file, owner.as_deref());
         Ok(file)
     }
 
@@ -1327,12 +1332,18 @@ mod player {
         let verified = _opened_bundle
             .as_ref()
             .and_then(crate::run_config::verified_publisher);
+        // An unsigned app a hub handed over: by its id and the account that
+        // published it (K-1172), with a copy of what its id kept, once.
+        let owner = match (&app, _opened_bundle.as_ref()) {
+            (App::Received(path), Some(open)) => crate::run_config::owner_of(open, path),
+            _ => verified.clone(),
+        };
         // No machine key on the iPhone yet, and no secrets kept: nothing
         // sealed to open again.
         if let Err(words) = crate::run_config::adopt_id_keyed_data(
             data_root,
             &manifest.app.id,
-            verified.as_deref(),
+            owner.as_deref(),
             &[],
         ) {
             leave_app();
@@ -1348,7 +1359,7 @@ mod player {
             );
             return;
         }
-        let stores = crate::run_config::stores(data_root, &manifest.app.id, verified.as_deref());
+        let stores = crate::run_config::stores(data_root, &manifest.app.id, owner.as_deref());
         let sandbox = stores.files.clone();
         let _ = std::fs::create_dir_all(&sandbox);
         // The app's key-value store and database: the runtime opens them only

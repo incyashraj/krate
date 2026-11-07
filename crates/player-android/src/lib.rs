@@ -178,8 +178,13 @@ mod player {
             // With the sign-in when the link is on Krate's hub, so an
             // organisation's private app downloads for its members (K-1171).
             let phone = crate::run_config::Phone::here(data_root, &phone_name());
-            match krate_orgaccess::download(&phone, uri, MAX_BUNDLE_BYTES as u64, USER_AGENT) {
-                Ok(bytes) => bytes,
+            match krate_orgaccess::download_with_owner(
+                &phone,
+                uri,
+                MAX_BUNDLE_BYTES as u64,
+                USER_AGENT,
+            ) {
+                Ok(fetched) => fetched,
                 Err(krate_orgaccess::GateError::Refused(refusal)) => {
                     log::info!("the hub refused the app: {}", refusal.reason);
                     notice(
@@ -202,7 +207,8 @@ mod player {
         } else {
             log::info!("opening {uri}");
             match crate::intent::read_uri(handles, uri, MAX_BUNDLE_BYTES) {
-                Ok(bytes) => bytes,
+                // A file names no hub account: keyed by its id (K-1172).
+                Ok(bytes) => (bytes, None),
                 Err(why) => {
                     log::error!("could not read the file: {why}");
                     notice(data_root, "Could not open this file", &why);
@@ -210,14 +216,24 @@ mod player {
                 }
             }
         };
-        keep(&bytes, library, data_root)
+        let (bytes, owner) = bytes;
+        keep(&bytes, owner.as_deref(), library, data_root)
     }
 
     /// Keep an app's bytes in the library, named for its app, so the home
     /// screen lists it, a newer copy replaces an older one, and a reminder
     /// tapped later opens it again (IC-921): a link may be offline by then,
     /// and a file's grant from the app that sent it does not last.
-    fn keep(bytes: &[u8], library: &Path, data_root: &Path) -> Option<PathBuf> {
+    ///
+    /// `owner` is the hub's tag for the account that published it, when a
+    /// hub handed the bytes over: an unsigned app's data is keyed by it
+    /// (K-1172); a file's copy has none and is keyed by its id.
+    fn keep(
+        bytes: &[u8],
+        owner: Option<&str>,
+        library: &Path,
+        data_root: &Path,
+    ) -> Option<PathBuf> {
         let open = match krate_bundle::open_reader(Cursor::new(bytes)) {
             Ok(open) => open,
             Err(err) => {
@@ -251,6 +267,7 @@ mod player {
             );
             return None;
         }
+        crate::run_config::keep_hub_tag(&into, owner);
         remember(
             library,
             &file,
@@ -594,14 +611,14 @@ mod player {
                 }
                 HomeAnswer::Get(id) => {
                     log::info!("getting {id} from the hub");
-                    match crate::hub::download(
+                    match crate::hub::download_with_owner(
                         &id,
                         MAX_BUNDLE_BYTES as u64,
                         data_root,
                         &phone_name(),
                     ) {
-                        Ok(bytes) => {
-                            if let Some(app) = keep(&bytes, library, data_root) {
+                        Ok((bytes, owner)) => {
+                            if let Some(app) = keep(&bytes, owner.as_deref(), library, data_root) {
                                 return Some(app);
                             }
                         }
@@ -625,7 +642,7 @@ mod player {
                         let _ = std::fs::remove_file(&path);
                         match read {
                             Some(bytes) => {
-                                if let Some(app) = keep(&bytes, library, data_root) {
+                                if let Some(app) = keep(&bytes, None, library, data_root) {
                                     return Some(app);
                                 }
                             }
@@ -709,17 +726,17 @@ mod player {
                                 })
                                 .take(3)
                             {
-                                match crate::hub::download(
+                                match crate::hub::download_with_owner(
                                     &app.id,
                                     MAX_BUNDLE_BYTES as u64,
                                     data_root,
                                     &phone_name(),
                                 ) {
-                                    Ok(bytes)
+                                    Ok((bytes, owner))
                                         if bundle_app_id(&bytes).as_deref()
                                             == Some(manifest.app.id.as_str()) =>
                                     {
-                                        found = Some(bytes);
+                                        found = Some((bytes, owner));
                                         break;
                                     }
                                     Ok(_) => {}
@@ -727,8 +744,8 @@ mod player {
                                 }
                             }
                             match (found, failed) {
-                                (Some(bytes), _) => {
-                                    let _ = keep(&bytes, library, data_root);
+                                (Some((bytes, owner)), _) => {
+                                    let _ = keep(&bytes, owner.as_deref(), library, data_root);
                                     notice(
                                         data_root,
                                         "Updated",
@@ -853,18 +870,21 @@ mod player {
         // Where its data lives: a signed app's by its id and its verified
         // publisher, so another app declaring the same id reaches a
         // different place (K-1172, the desktop's IC-736); an unsigned app's
-        // by its id, as always. A signed app opening for the first time
-        // takes what its id kept here before across, once.
+        // by its id and the hub account that published it when a hub
+        // handed it over, else by its id, as always. A signed app opening
+        // for the first time takes what its id kept here before across,
+        // once; a hub-published one gets a copy of it, once.
         let verified = crate::run_config::verified_publisher(&opened);
+        let owner = crate::run_config::owner_of(&opened, path);
         match crate::run_config::adopt_id_keyed_data(
             data_root,
             &manifest.app.id,
-            verified.as_deref(),
+            owner.as_deref(),
             &machine_key(data_root),
         ) {
             Ok(adopted) => log::info!("its data: {adopted:?}"),
             Err(words) => {
-                log::error!("a signed app's data did not move: {words}");
+                log::error!("an app's data did not move: {words}");
                 return notice(
                     data_root,
                     "This app did not open",
@@ -875,7 +895,7 @@ mod player {
                 );
             }
         }
-        let stores = crate::run_config::stores(data_root, &manifest.app.id, verified.as_deref());
+        let stores = crate::run_config::stores(data_root, &manifest.app.id, owner.as_deref());
         let sandbox = stores.files.clone();
         let _ = std::fs::create_dir_all(&sandbox);
         // The app's key-value store and database: the runtime opens them only

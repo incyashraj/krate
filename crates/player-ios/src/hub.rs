@@ -143,16 +143,25 @@ pub fn art(app: &HubApp, art_dir: &Path) -> Option<String> {
 /// The app's `.krate`, from its hub link, with the sign-in kept in
 /// `private` when someone is signed in: an organisation's private release
 /// downloads for its members, as on a computer (K-1171).
-pub fn download(id: &str, limit: u64, private: &Path, name: &str) -> Result<Vec<u8>, String> {
+///
+/// With the owner tag the hub sent beside the bytes (`x-krate-store`): an
+/// unsigned app's data is keyed by it (K-1172).
+pub fn download_with_owner(
+    id: &str,
+    limit: u64,
+    private: &Path,
+    name: &str,
+) -> Result<(Vec<u8>, Option<String>), String> {
     let phone = crate::run_config::Phone::here(private, name);
-    krate_orgaccess::download(&phone, &format!("{HUB}/a/{id}"), limit, USER_AGENT).map_err(|err| {
-        let words = err.to_string();
-        let mut chars = words.chars();
-        match chars.next() {
-            Some(first) => first.to_uppercase().chain(chars).collect(),
-            None => words,
-        }
-    })
+    krate_orgaccess::download_with_owner(&phone, &format!("{HUB}/a/{id}"), limit, USER_AGENT)
+        .map_err(|err| {
+            let words = err.to_string();
+            let mut chars = words.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => words,
+            }
+        })
 }
 
 fn decode_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {

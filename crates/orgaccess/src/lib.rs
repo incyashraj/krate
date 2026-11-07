@@ -374,6 +374,21 @@ pub fn download<D: Device + ?Sized>(
     limit: u64,
     user_agent: &str,
 ) -> Result<Vec<u8>, GateError> {
+    download_with_owner(device, url, limit, user_agent).map(|(bytes, _)| bytes)
+}
+
+/// [`download`], with the owner tag the hub sent beside the bytes
+/// (`x-krate-store`, K-1159): the hub's digest of the account that published
+/// the app, which a phone keys an unsigned app's data by (K-1172). Taken
+/// only when the bytes came from a Krate hub -- every redirect followed --
+/// so no other server can name whose data an app reaches. The caller checks
+/// its shape before using it.
+pub fn download_with_owner<D: Device + ?Sized>(
+    device: &D,
+    url: &str,
+    limit: u64,
+    user_agent: &str,
+) -> Result<(Vec<u8>, Option<String>), GateError> {
     use std::io::Read;
     let address = bundle_address(device, url).into_owned();
     let authorization = device
@@ -414,6 +429,10 @@ pub fn download<D: Device + ?Sized>(
             )))
         }
     };
+    let owner = device
+        .is_hub_link(response.get_url())
+        .then(|| response.header("x-krate-store").map(str::to_string))
+        .flatten();
     let mut bytes = Vec::new();
     response
         .into_reader()
@@ -425,7 +444,7 @@ pub fn download<D: Device + ?Sized>(
             "that download is larger than any Krate app".to_string(),
         ));
     }
-    Ok(bytes)
+    Ok((bytes, owner))
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,6 +1282,76 @@ mod tests {
         assert!(days.contains("If you are removed, it stops when it next connects."));
         let online = notice("Acme", "online", None);
         assert!(online.contains("needs a connection every time it opens"));
+    }
+
+    /// A device whose hub is `hub`, for the download tests.
+    struct At {
+        hub: String,
+    }
+
+    impl Device for At {
+        fn home(&self) -> PathBuf {
+            std::env::temp_dir()
+        }
+        fn machine_key(&self) -> Vec<u8> {
+            Vec::new()
+        }
+        fn signed_in(&self) -> Option<SignedIn> {
+            None
+        }
+        fn hub(&self) -> Result<String, GateError> {
+            Ok(self.hub.clone())
+        }
+        fn kind(&self) -> &str {
+            "phone"
+        }
+        fn name(&self, _principal: Option<&str>) -> String {
+            "test".to_string()
+        }
+        fn sign_in_words(&self) -> String {
+            String::new()
+        }
+        fn tell(&self, _title: &str, _words: &str) {}
+    }
+
+    /// One answer per connection: the bytes `app` with `x-krate-store`.
+    fn serve_with_tag(tag: &'static str) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut stream in listener.incoming().flatten() {
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-length: 3\r\nx-krate-store: {tag}\r\n\
+                         connection: close\r\n\r\napp"
+                    )
+                    .as_bytes(),
+                );
+            }
+        });
+        url
+    }
+
+    /// K-1172: the owner tag is taken from a Krate hub, and from nowhere
+    /// else -- another server cannot name whose data an app reaches.
+    #[test]
+    fn the_owner_tag_is_taken_only_from_a_krate_hub() {
+        let url = serve_with_tag("k0123456789abcdef");
+        let link = format!("{url}/a/{}", "a".repeat(64));
+        let hub = At { hub: url.clone() };
+        let (bytes, owner) = download_with_owner(&hub, &link, 1024, "test").unwrap();
+        assert_eq!(bytes, b"app");
+        assert_eq!(owner.as_deref(), Some("k0123456789abcdef"));
+
+        let elsewhere = At {
+            hub: "https://hub.example".to_string(),
+        };
+        let (bytes, owner) = download_with_owner(&elsewhere, &link, 1024, "test").unwrap();
+        assert_eq!(bytes, b"app");
+        assert_eq!(owner, None, "a server that is not the hub names nobody");
     }
 
     #[test]

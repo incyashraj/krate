@@ -118,20 +118,33 @@ pub struct Stores {
 
 /// Where the data of `app_id` lives under `data_root` (K-1172).
 ///
-/// A signed app -- `publisher` is the root its signature verified to
-/// ([`verified_publisher`]) -- is keyed by its id AND its publisher, the
-/// desktop's rule and name (`<id>@<first 16 of the root>`,
-/// krate_runtime::storage_key): another app that declares the same id
-/// reaches a different place. An unsigned app keeps the id-keyed path it
-/// always had, byte for byte: moving it would move people's data, and that
-/// is the founder's call (K-1172's open half).
-pub fn stores(data_root: &Path, app_id: &str, publisher: Option<&str>) -> Stores {
-    let (name, secret_label) = match publisher {
-        Some(publisher) => {
+/// `owner` is who the app's data belongs to, or `None`:
+///
+/// - a signed app's publisher -- the root its signature verified to
+///   ([`verified_publisher`]) -- keys it by its id AND its publisher, the
+///   desktop's rule and name (`<id>@<first 16 of the root>`,
+///   krate_runtime::storage_key): another app that declares the same id
+///   reaches a different place;
+/// - an unsigned app a Krate hub handed over names the account that
+///   published it, as [`hub_owner`] spells it (`~k<16 hex>`), and is keyed
+///   `<id>~k<16 hex>`, the browser Player's own name (K-1159): two accounts
+///   publishing one unsigned id reach two stores;
+/// - `None` -- an unsigned app from a file -- keeps the id-keyed path it
+///   always had, byte for byte.
+pub fn stores(data_root: &Path, app_id: &str, owner: Option<&str>) -> Stores {
+    let hub_key = owner
+        .and_then(|owner| owner.strip_prefix('~'))
+        .and_then(|tag| krate_runtime::storage_key::hub_owner_storage_key(app_id, tag));
+    let (name, secret_label) = match (hub_key, owner) {
+        (Some(key), _) => (key.clone(), key),
+        // Never a publisher: a `~` that is not a hub tag keys nothing new,
+        // so it lands where an unsigned app always did.
+        (None, Some(owner)) if owner.starts_with('~') => (sanitize(app_id), app_id.to_string()),
+        (None, Some(publisher)) => {
             let key = krate_runtime::storage_key::verified_storage_key(app_id, publisher);
             (key.clone(), key)
         }
-        None => (sanitize(app_id), app_id.to_string()),
+        (None, None) => (sanitize(app_id), app_id.to_string()),
     };
     let store = |suffix: &str| store_file(data_root, &name, suffix);
     Stores {
@@ -221,6 +234,54 @@ pub enum Adopted {
     Nothing,
     /// This open took the id's data across: these pieces moved.
     Moved(Vec<String>),
+    /// An unsigned app a hub vouched for opened with this owner for the
+    /// first time and got a copy of what its id kept: these pieces.
+    Copied(Vec<String>),
+}
+
+/// The owner [`stores`] keys a hub-published unsigned app by: `~` and the
+/// hub's tag (`x-krate-store`), or `None` when `tag` is not a hub tag.
+pub fn hub_owner(tag: &str) -> Option<String> {
+    krate_runtime::storage_key::is_hub_owner_tag(tag).then(|| format!("~{tag}"))
+}
+
+/// Beside a kept app, the hub tag it arrived with: `<app>.krate-owner`.
+fn hub_tag_file(kept: &Path) -> PathBuf {
+    kept.with_extension("krate-owner")
+}
+
+/// Record the hub tag a kept app arrived with, or that it arrived with
+/// none: a copy opened from Files, replacing one from a link, keys by its
+/// id again (the hub vouched for the other bytes, not these).
+pub fn keep_hub_tag(kept: &Path, tag: Option<&str>) {
+    match tag.and_then(hub_owner) {
+        Some(_) => {
+            let _ = std::fs::write(hub_tag_file(kept), tag.unwrap_or_default());
+        }
+        None => {
+            let _ = std::fs::remove_file(hub_tag_file(kept));
+        }
+    }
+}
+
+/// A download kept under another name (the iPhone saves to Downloads, then
+/// keeps a copy in its library): carry the tag recorded beside `from` -- or
+/// that there was none -- to the kept copy, and drop it from `from`.
+pub fn carry_hub_tag(from: &Path, kept: &Path) {
+    let tag = std::fs::read_to_string(hub_tag_file(from)).ok();
+    keep_hub_tag(kept, tag.as_deref().map(str::trim));
+    let _ = std::fs::remove_file(hub_tag_file(from));
+}
+
+/// The owner a kept app's data goes by: its verified publisher when it is
+/// signed, else the hub account it was published by when a hub handed it
+/// over, else `None`.
+pub fn owner_of(open: &krate_bundle::OpenBundle, kept: &Path) -> Option<String> {
+    verified_publisher(open).or_else(|| {
+        std::fs::read_to_string(hub_tag_file(kept))
+            .ok()
+            .and_then(|tag| hub_owner(tag.trim()))
+    })
 }
 
 /// The record that an id's old, id-keyed data has been decided:
@@ -232,7 +293,8 @@ fn moved_record(data_root: &Path, app_id: &str) -> PathBuf {
 
 /// The first time a signed app opens on this phone, take what its id kept
 /// under the old id-keyed names across to its publisher's names, once
-/// (K-1172).
+/// (K-1172). An unsigned app a hub vouched for (`~<tag>`, [`hub_owner`])
+/// gets a copy instead ([`copy_id_keyed_data`]).
 ///
 /// Phones keyed every app's data by its id alone until now, so a signed
 /// app's notes are under its bare id. The first signed app to open with
@@ -262,6 +324,9 @@ pub fn adopt_id_keyed_data(
     let Some(publisher) = publisher else {
         return Ok(Adopted::Unsigned);
     };
+    if publisher.starts_with('~') {
+        return copy_id_keyed_data(data_root, app_id, publisher, machine_key);
+    }
     let record = moved_record(data_root, app_id);
     let said =
         |e: std::io::Error| format!("its data could not be moved to its publisher's place ({e})");
@@ -311,6 +376,102 @@ pub fn adopt_id_keyed_data(
     } else {
         Adopted::Moved(moved)
     })
+}
+
+/// The first time an unsigned app a hub vouched for opens with an owner,
+/// give it a COPY of what its id kept under the old id-keyed names (K-1172).
+///
+/// Before this every unsigned app with the id shared one store, so the
+/// id's data has no owner a phone can name: the hub's tag says who
+/// published THIS copy of the app, not who wrote the data. A move would
+/// let the first link opened with the id -- an impostor's as easily as
+/// the real app's -- take the data for itself, away from the app that
+/// wrote it. A copy gives that app nothing it could not already read, and
+/// takes nothing from anyone: the id-keyed store stays where a file opened
+/// from Files, or a signed app's one-time move, finds it.
+///
+/// Once per owner: `stores/<id>~<tag>.from-id` settles it, so a later
+/// open never copies the id's newer data over this owner's. A copy cut
+/// short leaves the pieces already across and finishes the rest on the
+/// next open; until then the app does not run.
+fn copy_id_keyed_data(
+    data_root: &Path,
+    app_id: &str,
+    owner: &str,
+    machine_key: &[u8],
+) -> Result<Adopted, String> {
+    let new = stores(data_root, app_id, Some(owner));
+    let old = stores(data_root, app_id, None);
+    if new.secret_label == old.secret_label {
+        // Not a hub tag after all: nothing is keyed apart, nothing copies.
+        return Ok(Adopted::Unsigned);
+    }
+    let settled = new.kv.with_extension("from-id");
+    if settled.exists() {
+        return Ok(Adopted::Settled);
+    }
+    let said = |e: std::io::Error| format!("its data could not be copied to its own place ({e})");
+    let old_name = sanitize(app_id);
+    let new_name = new.secret_label.clone();
+    let mut copied = Vec::new();
+    let pieces =
+        SQL_SIDECARS
+            .into_iter()
+            .chain(["sqlite", "kv.sync", "kv", "secrets", "shared.json"]);
+    for suffix in pieces {
+        let from = store_file(data_root, &old_name, suffix);
+        let to = store_file(data_root, &new_name, suffix);
+        if copy_across(&from, &to).map_err(said)? {
+            copied.push(suffix.to_string());
+        }
+    }
+    if copy_across(&old.files, &new.files).map_err(said)? {
+        copied.push("files".to_string());
+    }
+    reseal_secrets(&new, &old.secret_label, machine_key)?;
+    std::fs::create_dir_all(data_root.join("stores")).map_err(said)?;
+    std::fs::write(&settled, b"").map_err(said)?;
+    Ok(if copied.is_empty() {
+        Adopted::Nothing
+    } else {
+        Adopted::Copied(copied)
+    })
+}
+
+/// Copy `from` (a file or a folder) to `to` when `from` is there and `to`
+/// is not, through a sibling renamed into place: a copy cut short is never
+/// mistaken for a whole one.
+fn copy_across(from: &Path, to: &Path) -> std::io::Result<bool> {
+    fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+        if std::fs::symlink_metadata(from)?.is_dir() {
+            std::fs::create_dir_all(to)?;
+            for entry in std::fs::read_dir(from)? {
+                let entry = entry?;
+                copy_tree(&entry.path(), &to.join(entry.file_name()))?;
+            }
+            Ok(())
+        } else {
+            std::fs::copy(from, to).map(|_| ())
+        }
+    }
+    let Ok(meta) = std::fs::symlink_metadata(from) else {
+        return Ok(false);
+    };
+    if meta.file_type().is_symlink() || std::fs::symlink_metadata(to).is_ok() {
+        return Ok(false);
+    }
+    let Some(parent) = to.parent() else {
+        return Ok(false);
+    };
+    std::fs::create_dir_all(parent)?;
+    let mut staging = to.as_os_str().to_owned();
+    staging.push(".copying");
+    let staging = PathBuf::from(staging);
+    let _ = std::fs::remove_dir_all(&staging);
+    let _ = std::fs::remove_file(&staging);
+    copy_tree(from, &staging)?;
+    std::fs::rename(&staging, to)?;
+    Ok(true)
 }
 
 /// Rename `from` to `to` when `from` is there and `to` is not. One rename
@@ -367,14 +528,16 @@ fn reseal_secrets(new: &Stores, old_label: &str, machine_key: &[u8]) -> Result<(
     std::fs::rename(&beside, &new.secrets).map_err(|e| said(e.to_string()))
 }
 
-/// A kept app as the home needs it: its manifest, and the publisher its
-/// signature verifies to (None when unsigned), so the home's Storage and
+/// A kept app as the home needs it: its manifest, and the owner its data
+/// goes by ([`owner_of`]: the publisher its signature verifies to, else the
+/// hub account that published it, else None), so the home's Storage and
 /// Clear and sync reach the store the app's runs use (K-1172).
 pub fn kept_app(path: &Path) -> Option<(Manifest, Option<String>)> {
     let open = krate_bundle::open(path).ok()?;
     let text = std::fs::read_to_string(open.manifest_path()).ok()?;
     let manifest = Manifest::parse(&text).ok()?;
-    Some((manifest, verified_publisher(&open)))
+    let owner = owner_of(&open, path);
+    Some((manifest, owner))
 }
 
 /// How much memory the app may use, in bytes, when it asked for more than
@@ -1042,6 +1205,173 @@ mod tests {
             adopt_id_keyed_data(root, "dev.krate.notes", Some(ROOT), &[]),
             Ok(Adopted::Settled)
         );
+    }
+
+    const TAG: &str = "k0123456789abcdef";
+    const TAG2: &str = "kfedcba9876543210";
+
+    /// K-1172 (unsigned half): an unsigned app a hub handed over is keyed by
+    /// its id and the account that published it, so two accounts publishing
+    /// one unsigned id get two stores; a file opened with no hub tag keeps
+    /// the id-keyed path, and nothing but a hub tag keys anything apart.
+    #[test]
+    fn two_unsigned_apps_with_one_id_from_two_hub_accounts_get_different_stores() {
+        let data = Path::new("/data/krate");
+        let alice = stores(data, "dev.krate.notes", hub_owner(TAG).as_deref());
+        let mallory = stores(data, "dev.krate.notes", hub_owner(TAG2).as_deref());
+        let file = stores(data, "dev.krate.notes", None);
+        assert_eq!(
+            alice.kv,
+            Path::new("/data/krate/stores/dev.krate.notes~k0123456789abcdef.kv")
+        );
+        assert_eq!(
+            alice.files,
+            Path::new("/data/krate/apps/dev.krate.notes~k0123456789abcdef")
+        );
+        assert_eq!(alice.secret_label, "dev.krate.notes~k0123456789abcdef");
+        for theirs in [&mallory, &file] {
+            assert_ne!(alice.kv, theirs.kv);
+            assert_ne!(alice.sql, theirs.sql);
+            assert_ne!(alice.secrets, theirs.secrets);
+            assert_ne!(alice.shared, theirs.shared);
+            assert_ne!(alice.files, theirs.files);
+            assert_ne!(alice.secret_label, theirs.secret_label);
+        }
+        assert_eq!(file.kv, Path::new("/data/krate/stores/dev.krate.notes.kv"));
+        // A header that is not a hub tag keys nothing apart, and is never
+        // read as a publisher.
+        assert_eq!(hub_owner("k../../etc"), None);
+        assert_eq!(stores(data, "dev.krate.notes", Some("~k../../etc")), file);
+        // No id spells its way into a hub-keyed store.
+        let spelled = stores(data, "dev.krate.notes~k0123456789abcdef", None);
+        assert_ne!(spelled.kv, alice.kv);
+    }
+
+    /// The first open of a hub-published unsigned app copies what its id
+    /// kept, once per account: secrets sealed again under its own name, the
+    /// id's data left where a file-opened app (or a signed app's move) finds
+    /// it, and another account's app gets its own copy, not this one's.
+    #[test]
+    fn a_hub_published_app_gets_a_copy_of_its_ids_data_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let key = [7u8; 32];
+        old_data(root, &key);
+        let owner = hub_owner(TAG).unwrap();
+        let old = stores(root, "dev.krate.notes", None);
+        let new = stores(root, "dev.krate.notes", Some(&owner));
+
+        let copied = adopt_id_keyed_data(root, "dev.krate.notes", Some(&owner), &key).unwrap();
+        let Adopted::Copied(pieces) = copied else {
+            panic!("expected a copy, got {copied:?}")
+        };
+        for piece in [
+            "sqlite-wal",
+            "sqlite",
+            "kv.sync",
+            "kv",
+            "secrets",
+            "shared.json",
+            "files",
+        ] {
+            assert!(pieces.iter().any(|p| p == piece), "{piece} in {pieces:?}");
+        }
+        assert_eq!(std::fs::read(&new.kv).unwrap(), b"kv");
+        assert_eq!(std::fs::read(&new.sql).unwrap(), b"sql");
+        assert_eq!(
+            std::fs::read(new.files.join("trips").join("rome.txt")).unwrap(),
+            b"pasta"
+        );
+        assert_eq!(
+            secret(&new, &new.secret_label, &key).as_deref(),
+            Some(&b"s3cret"[..])
+        );
+        // The id's own data is untouched: a copy takes nothing from anyone.
+        assert_eq!(std::fs::read(&old.kv).unwrap(), b"kv");
+        assert!(old.files.join("trips").join("rome.txt").exists());
+        assert_eq!(
+            secret(&old, &old.secret_label, &key).as_deref(),
+            Some(&b"s3cret"[..])
+        );
+        assert!(!moved_record(root, "dev.krate.notes").exists());
+
+        // Once: the app's own later writes are never overwritten by the id's.
+        std::fs::write(&new.kv, b"mine now").unwrap();
+        std::fs::write(&old.kv, b"the id's newer data").unwrap();
+        assert_eq!(
+            adopt_id_keyed_data(root, "dev.krate.notes", Some(&owner), &key),
+            Ok(Adopted::Settled)
+        );
+        assert_eq!(std::fs::read(&new.kv).unwrap(), b"mine now");
+
+        // Another account's app with the id gets its own copy, not alice's.
+        let other = hub_owner(TAG2).unwrap();
+        adopt_id_keyed_data(root, "dev.krate.notes", Some(&other), &key).unwrap();
+        let theirs = stores(root, "dev.krate.notes", Some(&other));
+        assert_eq!(std::fs::read(&theirs.kv).unwrap(), b"the id's newer data");
+        assert_eq!(std::fs::read(&new.kv).unwrap(), b"mine now");
+
+        // A signed app's one-time move still finds the id's data.
+        let signed = adopt_id_keyed_data(root, "dev.krate.notes", Some(ROOT), &key).unwrap();
+        assert!(matches!(signed, Adopted::Moved(_)), "{signed:?}");
+    }
+
+    /// A copy cut short (a crash, a full disk) leaves no half piece at the
+    /// app's own name, and finishes on the next open.
+    #[test]
+    fn a_copy_cut_short_finishes_on_the_next_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        old_data(root, &[]);
+        let owner = hub_owner(TAG).unwrap();
+        let new = stores(root, "dev.krate.notes", Some(&owner));
+        // As a crash leaves it: the database across, a half-written kv
+        // beside its name, nothing settled.
+        std::fs::copy(stores(root, "dev.krate.notes", None).sql, &new.sql).unwrap();
+        let mut half = new.kv.as_os_str().to_owned();
+        half.push(".copying");
+        std::fs::write(PathBuf::from(half), b"k").unwrap();
+        let finished = adopt_id_keyed_data(root, "dev.krate.notes", Some(&owner), &[]).unwrap();
+        assert!(
+            matches!(&finished, Adopted::Copied(p) if !p.iter().any(|p| p == "sqlite") && p.iter().any(|p| p == "kv")),
+            "{finished:?}"
+        );
+        assert_eq!(std::fs::read(&new.kv).unwrap(), b"kv");
+    }
+
+    /// The hub tag a kept app arrived with is what its runs and the home key
+    /// it by; a copy from Files replacing it keys by its id again.
+    #[test]
+    fn a_kept_apps_hub_tag_follows_the_bytes_it_came_with() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("manifest.toml");
+        std::fs::write(
+            &manifest,
+            "[app]\nid = \"dev.krate.notes\"\nname = \"Notes\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+        )
+        .unwrap();
+        let code = dir.path().join("code.wasm");
+        std::fs::write(
+            &code,
+            include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+        )
+        .unwrap();
+        let kept = dir.path().join("dev.krate.notes.krate");
+        krate_bundle::pack(&manifest, &code, &kept).unwrap();
+        let open = krate_bundle::open(&kept).unwrap();
+        assert_eq!(owner_of(&open, &kept), None, "no tag: keyed by its id");
+
+        keep_hub_tag(&kept, Some(TAG));
+        assert_eq!(owner_of(&open, &kept), hub_owner(TAG));
+        assert_eq!(kept_app(&kept).unwrap().1, hub_owner(TAG));
+
+        keep_hub_tag(&kept, Some("../../not-a-tag"));
+        assert_eq!(owner_of(&open, &kept), None, "a bad tag is no tag");
+
+        keep_hub_tag(&kept, Some(TAG));
+        keep_hub_tag(&kept, None);
+        assert_eq!(owner_of(&open, &kept), None, "a Files copy keys by its id");
     }
 
     #[test]
