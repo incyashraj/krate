@@ -26735,3 +26735,107 @@ fn a_seeded_starter_passes_its_first_full_check() {
         String::from_utf8_lossy(&check.stderr)
     );
 }
+
+/// K-1242: an automatic repair runs every round it is allowed, and a repair
+/// that changes nothing is reported as that.
+///
+/// A stand-in `gemini` on PATH (no AI is spent) writes an app that does not
+/// compile, then answers each repair task without fixing it -- once by
+/// changing a line, once by changing nothing. Before the fix the repair's
+/// own failing check ended the loop after one round (two agent calls, never
+/// "2 of 2"), and a repair that changed nothing was "byte-identical to the
+/// starter ... as if it were" Krate's own repair task, quoted as the
+/// person's request.
+#[cfg(unix)]
+#[test]
+fn an_automatic_repair_gets_every_round_and_says_when_it_changed_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fake = bin.join("gemini");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\n\
+         [ \"$1\" = --version ] && { echo 0.9.0; exit 0; }\n\
+         n=$(cat \"$FAKE_STATE/calls\" 2>/dev/null || echo 0); n=$((n+1)); echo $n > \"$FAKE_STATE/calls\"\n\
+         if [ \"$n\" = 1 ]; then printf '\\ncompile_error!(\"still broken\");\\n' >> src/lib.rs\n\
+         elif [ \"$FAKE_MODE\" = edit ]; then printf '\\nconst _ROUND_%s: u8 = %s;\\n' $n $n >> src/lib.rs\n\
+         fi\n\
+         exit 0\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    for mode in ["edit", "none"] {
+        let state = dir.path().join(format!("state-{mode}"));
+        std::fs::create_dir_all(&state).unwrap();
+        let out = krate()
+            .args(["create", "a tip calculator that splits the bill"])
+            .args([
+                "--name",
+                "tip-calculator",
+                "--agent",
+                "gemini",
+                "--no-install",
+            ])
+            .arg("--work-dir")
+            .arg(dir.path().join(format!("w-{mode}")))
+            .arg("--output")
+            .arg(dir.path().join(format!("{mode}.krate")))
+            .env("PATH", &path)
+            .env("FAKE_STATE", &state)
+            .env("FAKE_MODE", mode)
+            .env("KRATE_STARTER_SHAPE", "none")
+            .stdin(Stdio::null())
+            .output()
+            .expect("run create");
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !out.status.success(),
+            "{mode}: the app never builds: {said}"
+        );
+        assert!(
+            said.contains("still broken"),
+            "{mode}: the fixture carries the hazard (a compile error): {said}"
+        );
+        let calls = std::fs::read_to_string(state.join("calls")).unwrap_or_default();
+        assert_eq!(
+            calls.trim(),
+            "3",
+            "{mode}: one authoring run and both repair rounds: {said}"
+        );
+        assert!(said.contains("(2 of 2)"), "{mode}: round two ran: {said}");
+        if mode == "none" {
+            assert!(
+                said.contains("The AI looked at the failure and changed nothing."),
+                "a repair that changed nothing says so: {said}"
+            );
+            for wrong in [
+                "byte-identical",
+                "explained the app",
+                "krate-change",
+                "\u{1}",
+                "The app you just wrote for",
+            ] {
+                assert!(
+                    !said.contains(wrong),
+                    "a no-change repair must not say {wrong:?}: {said}"
+                );
+            }
+        }
+    }
+}

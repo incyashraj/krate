@@ -13930,6 +13930,15 @@ fn run_provider_author(
                 transcript.display()
             );
         }
+        // A change run that changed nothing is not an empty app: the code
+        // the run started from is still there. Say what happened, and never
+        // quote Krate's own task as if the person had written it (K-1242).
+        if let Some(change) = request.strip_prefix(CHANGE_MARKER) {
+            return Err(ChangeRunMiss::Unchanged {
+                message: unchanged_change_message(change, &transcript),
+            }
+            .into());
+        }
         anyhow::bail!(
             "the agent finished without changing the app: its source ({watched_file} and the \
              rest) is byte-identical to the starter, so this would package an empty app as if it were \
@@ -13964,7 +13973,12 @@ fn run_provider_author(
         // change just reports; the outer loop (auto_repair, or the user's own
         // revise) decides what happens next.
         if request.starts_with(CHANGE_MARKER) {
-            anyhow::bail!("{}", failed_check_message(kind, &failure, &transcript));
+            return Err(ChangeRunMiss::CheckFails {
+                message: failed_check_message(kind, &failure, &transcript),
+                kind,
+                failure,
+            }
+            .into());
         }
         return auto_repair(provider, app_dir, request, kind, &failure, &transcript);
     }
@@ -14172,6 +14186,8 @@ fn auto_repair(
     const MAX_REPAIR_ROUNDS: u32 = 2;
     let mut kind = first_kind;
     let mut failure = first_failure.to_string();
+    // Whether the last round left the code as it was.
+    let mut unchanged = false;
     for round in 1..=MAX_REPAIR_ROUNDS {
         // A failure no edit can fix is not sent to the agent at all. The
         // sandbox refusing the build cache came back as a code repair, the
@@ -14198,8 +14214,40 @@ fn auto_repair(
         // task -- run_provider_author dispatches that to the edit prompt, which
         // says "find the one place, change that, leave the rest alone" rather
         // than re-deriving the whole app.
-        run_provider_author(provider, app_dir, &task)?;
-        match check_app_verdict_kind(app_dir) {
+        //
+        // A repair that still fails, or changes nothing, is this round's
+        // result, not the end of the loop. Propagating it with `?` ended
+        // every repair after one round, so round two never ran (K-1242).
+        // Only a run that could not happen at all -- the agent would not
+        // start, its account refused -- ends the loop here: no further
+        // round would fare better.
+        let verdict = match run_provider_author(provider, app_dir, &task) {
+            Ok(_) => {
+                unchanged = false;
+                check_app_verdict_kind(app_dir)
+            }
+            Err(error) => match error.downcast::<ChangeRunMiss>() {
+                Ok(ChangeRunMiss::CheckFails {
+                    kind: next_kind,
+                    failure: next,
+                    ..
+                }) => {
+                    unchanged = false;
+                    Err((next_kind, next))
+                }
+                // The code is as it was, so the verdict is too.
+                Ok(ChangeRunMiss::Unchanged { .. }) => {
+                    unchanged = true;
+                    eprintln!("    {REPAIR_UNCHANGED}");
+                    Err((kind, failure.clone()))
+                }
+                Err(error) => {
+                    trace::build_end("failed", Some(first_line(&error.to_string())));
+                    return Err(error);
+                }
+            },
+        };
+        match verdict {
             Ok(()) => {
                 eprintln!("    fixed.");
                 trace::build_end("ok", Some("fixed by auto-repair"));
@@ -14212,7 +14260,67 @@ fn auto_repair(
         }
     }
     trace::build_end("failed", Some(first_line(&failure)));
+    // The kind's plain sentence still leads: it is the line a reader, or
+    // Studio, takes as the verdict.
+    if unchanged {
+        anyhow::bail!(
+            "{} {REPAIR_UNCHANGED} `check-app` still does not pass:\n\n{failure}\n\n\
+             The agent's transcript is at {}.",
+            kind.person_words(),
+            transcript.display()
+        );
+    }
     anyhow::bail!("{}", failed_check_message(kind, &failure, transcript));
+}
+
+/// What the person is told when a repair round left the code as it was.
+const REPAIR_UNCHANGED: &str = "The AI looked at the failure and changed nothing.";
+
+/// How a change run -- a repair round or a person's edit -- ended short of
+/// a pass, kept typed so the repair loop can go round again instead of
+/// stopping on the first miss (K-1242). Its words are the message the
+/// person reads when nothing goes round again.
+#[derive(Debug)]
+enum ChangeRunMiss {
+    /// The run's closing check still fails.
+    CheckFails {
+        kind: FailureKind,
+        failure: String,
+        message: String,
+    },
+    /// The agent left the app's source as it was.
+    Unchanged { message: String },
+}
+
+impl std::fmt::Display for ChangeRunMiss {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChangeRunMiss::CheckFails { message, .. } | ChangeRunMiss::Unchanged { message } => {
+                f.write_str(message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ChangeRunMiss {}
+
+/// What a change run that changed nothing says. A repair names no request at
+/// all -- its task is Krate's own words, not the person's; a person's edit
+/// names their change, without the files Krate attached to it.
+fn unchanged_change_message(change: &str, transcript: &Path) -> String {
+    let transcript = transcript.display();
+    if change.starts_with(REPAIR_OPENING) {
+        return format!("{REPAIR_UNCHANGED} The agent's transcript is at {transcript}.");
+    }
+    let asked = change
+        .split(ATTACHED_PREAMBLE)
+        .next()
+        .unwrap_or(change)
+        .trim();
+    format!(
+        "The AI finished without changing the app, so \"{asked}\" was not made. The app is \
+         as it was. The agent's transcript is at {transcript}."
+    )
 }
 
 /// How a repair task opens, so the edit prompt can tell a repair of a
