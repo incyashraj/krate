@@ -136,6 +136,28 @@ assert.match(says("error: attached file /tmp/a.csv does not exist"), /no longer 
 assert.match(says("error: /x/big.csv is 28.6 MB, over the 10 MB attachment limit."), /10 MB/);
 assert.match(says("error: could not write /Volumes/ro/app.krate: Read-only file system (os error 30)"), /cannot save into that folder/);
 assert.match(says("error: No space left on device (os error 28)"), /disk is full/);
+// K-1243: check-app names the kind of failure (40c00c297), and `krate
+// create` leads its error with the kind's sentence. A sandbox refusing the
+// build cache says "Permission denied" too, and was told to pick another
+// folder in Settings. Real shapes, from failed_check_message and check-app.
+{
+  const cacheRefused = "error: This computer stopped Krate from building the app. That is not a fault in the app's code, so Krate did not ask the AI to change it.\n\nbuild failed: error: failed to open /Users/x/.cargo/registry/cache: Operation not permitted (os error 1)\nPermission denied (os error 13)\n\nPut that right on this computer, then run the command again: the app's code is kept, and nothing in it needs to change. The agent's transcript is at /x/t.txt.";
+  const env = says(cacheRefused);
+  assert.match(env, /stopped Krate from building|could not build the app just now/, env);
+  assert.doesNotMatch(env, /cannot save into that folder|Settings/, env);
+  const failed = (lead) => `error: ${lead} The agent finished, but \`check-app\` does not pass yet:\n\nrun failed: the app exited with 3\n\nThe agent's transcript is at /x/t.txt.`;
+  assert.match(says(failed("The app the AI wrote builds and opens, but it did not work when Krate tried it.")), /did not work when Krate tried it/);
+  assert.match(says(failed("The app the AI wrote builds, but it does not ask for what it uses.")), /does not ask permission for what it uses/);
+  assert.match(says(failed("The app the AI wrote builds, but it reaches for parts of the computer Krate does not give apps.")), /parts of the computer Krate does not give apps/);
+  assert.match(says(failed("The app the AI wrote builds, but it ran too long when Krate tried it.")), /ran too long/);
+  assert.match(says(failed("The app the AI wrote does not build yet.")), /did not compile/);
+  // check-app's own output: --json's "kind", and the text headline.
+  assert.match(says('{"ok":false,"stage":"build","kind":"environment","detail":"Permission denied (os error 13)","fix":""}'), /stopped Krate from building|could not build the app just now/);
+  assert.match(says("FAILED at run\nThe code compiles and the app starts; it fails when Krate uses it the way a person would.\n\nexit 3"), /did not work when Krate tried it/);
+  // A real folder that cannot be written is still that.
+  assert.match(says("error: could not write /Volumes/ro/app.krate: Permission denied (os error 13)"), /cannot save into that folder/);
+  console.log("ok  each kind of failed check is worded as itself, and a sandbox is not a folder (K-1243)");
+}
 // K-903: a healthy app with a behaviour complaint gets the change built.
 assert.match(app, /return buildNow\(request, files \|\| \[\], true\);/, "diagnosis leads into the change");
 console.log("ok  failures a retry cannot fix are named, and a behaviour complaint is built");

@@ -3391,6 +3391,17 @@ function planAnsweredAway(S, P, answer, err) {
   let body = "";
   if (!err && answer && answer.agent_session) P.agentSession = answer.agent_session;
   if (!err && answer && answer.shape) P.shape = String(answer.shape);
+  if (!err && answer && answer.cannot) {
+    // Nothing waits to be built, so nothing is kept to resume and no
+    // Build it comes back when the session is reopened (K-1243).
+    const m = cannotMessage(answer);
+    S.messages.push({ who: "KRATE", body: m.body, files: [], when: Math.floor(Date.now() / 1000) });
+    S.planningSaved = null;
+    persistSession(S);
+    if (window.krToast) window.krToast(`${S.planName || S.title || "Your app"}: Krate cannot build that one`);
+    if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+    return;
+  }
   if (!err && answer && answer.ask && answer.ask.length && P.rounds < 1) {
     P.rounds += 1;
     P.lastQuestions = answer.ask;
@@ -3411,6 +3422,41 @@ function planAnsweredAway(S, P, answer, err) {
   persistSession(S);
   if (window.krToast) window.krToast(`${S.planName || S.title || "Your app"}: ${body.startsWith("1.") ? "a question is waiting" : "the plan is ready"}`);
   if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+}
+
+/* `krate plan`'s refusal (K-1243): {"cannot": "Krate cannot build that:
+ * <reason>. Try instead: <instead>.", "instead", "reason", "limit"}. The
+ * suggestion is offered as a button, so the words stop before it rather
+ * than saying it twice. */
+function cannotMessage(answer) {
+  const line = String((answer && answer.cannot) || "").replace(/\s+/g, " ").trim();
+  const instead = String((answer && answer.instead) || "").replace(/\s+/g, " ").trim().replace(/[.]$/, "");
+  const said = (instead ? line.replace(/\s*Try instead:.*$/i, "") : line).trim() || "Krate cannot build that.";
+  return {
+    said,
+    instead,
+    body: instead ? `${said}\n\nWhat Krate can make instead: ${instead}.` : said,
+  };
+}
+
+/* Said as its own answer, calmly: the reason, and the one thing that can
+ * be made instead as a single tap. No Build it -- there is nothing here
+ * Krate would build. */
+function showCannot(answer) {
+  const m = cannotMessage(answer);
+  clearAnsweredActions();
+  say("KRATE", m.body, null, {
+    variant: "ask",
+    actions: m.instead
+      ? [{ label: "Make this instead", primary: true, run: () => { const box = $("prompt"); if (!box) return; box.value = m.instead; submitInSession(); } }]
+      : [],
+  });
+  state.planning = null;
+  setIdleNote("");
+  show("idle");
+  unlockComposer("Describe something else to make…");
+  $("send").disabled = false;
+  persist();
 }
 
 /* The plan as the card shows it: the sentence, short points, the name, and
@@ -3462,6 +3508,13 @@ async function runPlanInner() {
     // The model's own pick of the working shape the build starts from --
     // the universal matcher (no keywords): it read the request, it chose.
     if (answer.shape) state.planning.shape = String(answer.shape);
+    // The plan's third answer (K-1243): Krate will not build this. It is
+    // neither a question nor a plan, and it used to fall through to the
+    // build -- which `create` refused a second later, in Plan mode too.
+    if (answer.cannot) {
+      showCannot(answer);
+      return;
+    }
     if (answer.ask && answer.ask.length && state.planning.rounds < 1) {
       // ONE round of questions, ever. The first live session got two
       // rounds and called it what it is: frustrating.
@@ -4243,6 +4296,35 @@ function plainWords(err) {
   if (/over the 10 MB attachment limit|a folder cannot be attached/i.test(judged)) return judged;
   if (/no space left on device|disk (is )?full/i.test(judged))
     return "The disk is full. Free some space, then try again.";
+  // What kind of failure it was, as the engine now says it (K-1243, from
+  // check-app's FailureKind in crates/cli/src/main.rs): `krate create`
+  // leads with the kind's own sentence, check-app's text output with its
+  // headline, and --json with `"kind"`. Read before the guesses below: a
+  // sandbox refusing the build cache says "permission denied" too, and was
+  // told to pick another folder in Settings.
+  {
+    const web = typeof tauri === "undefined" || !tauri;
+    const KINDS = [
+      ["environment", /This computer stopped Krate from building the app|This computer refused the build/i,
+        web
+          ? "The build service could not build the app just now. That is on Krate's side, not in your app's code. Try again in a few minutes."
+          : "This computer stopped Krate from building the app: a permission, a sandbox or a missing tool, not your app's code. Press Details for what refused it."],
+      ["imports", /reaches for parts of the computer Krate does not give apps|reaches for host APIs Krate does not provide/i,
+        "The app builds, but it reaches for parts of the computer Krate does not give apps. Try again, and the AI takes them out."],
+      ["capability", /builds, but it does not ask for what it uses|and its manifest\.toml disagree about what it may touch/i,
+        "The app builds, but it does not ask permission for what it uses. Try again, and the AI fixes what it asks for."],
+      ["test", /builds and opens, but it did not work when Krate tried it|fails when Krate uses it/i,
+        "The app builds and opens, but it did not work when Krate tried it. Press Details for what went wrong."],
+      ["timeout", /builds, but it ran too long when Krate tried it/i,
+        "The app builds, but it ran too long when Krate tried it. Press Details for where it got stuck."],
+      ["compile", /The app the AI wrote does not build yet|^The code does not compile\.|manifest\.toml says about them, are wrong/im,
+        "The generated code did not compile. Press Details for the compiler output."],
+    ];
+    const named = /"kind"\s*:\s*"(project|compile|environment|imports|capability|test|timeout)"/.exec(raw);
+    const want = named ? (named[1] === "project" ? "compile" : named[1]) : "";
+    const hit = KINDS.find(([k, re]) => (want ? k === want : re.test(raw)));
+    if (hit) return hit[2];
+  }
   if (/read-only file system|permission denied|cannot write to|could not write/i.test(judged))
     return "Krate cannot save into that folder. Pick another folder in Settings, then try again.";
   if (/is not there any more/i.test(judged)) return judged;
