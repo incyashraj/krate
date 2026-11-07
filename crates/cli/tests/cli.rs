@@ -1208,9 +1208,10 @@ fn an_author_that_crashes_hangs_or_does_nothing_is_a_named_blocker() {
             "echo 'agent crashed' >&2; exit 3",
             "exited with code 3",
         ),
-        // One command, so the shell is the sleep itself and stopping it
-        // stops the whole author.
-        ("hang", "sleep 120", "did not finish within 2 seconds"),
+        // Two commands, so the shell keeps the sleep as a child of its own
+        // on every system (Ubuntu's dash does that even for one command):
+        // only stopping the author's whole process group ends it.
+        ("hang", "sleep 120; true", "did not finish within 2 seconds"),
         ("nothing", "true", "without changing the candidate"),
     ] {
         let workspace = root.path().join(format!("ws-{name}"));

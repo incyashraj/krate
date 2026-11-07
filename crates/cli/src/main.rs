@@ -4613,6 +4613,7 @@ fn run_port_author_command(
             .env("KRATE_PORT_REPAIR_ATTEMPT", attempt.to_string())
             .env("KRATE_PORT_REPAIR_LOG", error_path);
     }
+    own_process_group(&mut child);
     let mut child = child.spawn().context("start the --author-cmd command")?;
     let status = wait_for_port_author(&mut child, "the port author command")?;
     if !status.success() {
@@ -4645,12 +4646,42 @@ fn port_author_timeout() -> std::time::Duration {
     )
 }
 
+/// Start an author in a process group of its own (Unix), so that stopping
+/// it at its deadline stops everything it started too.
+///
+/// `sh -c "tool ..."` is the tool itself only where the shell execs its last
+/// command (bash, the Mac's sh). Ubuntu's sh is dash, which does not: killing
+/// the shell left the tool running, holding the output pipes, and the port
+/// waited on it after all (CI, 2026-11-07).
+fn own_process_group(command: &mut ProcessCommand) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(not(unix))]
+    let _ = command;
+}
+
+/// Stop an author and, on Unix, its whole process group.
+fn stop_process_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // The group was made with the author as its leader
+        // (`own_process_group`), so its id is the author's pid.
+        // SAFETY: kill(2) with a negative pid signals that process group;
+        // it reads no memory of ours.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+}
+
 /// Wait for a port author, stopping it at the deadline.
 ///
-/// Only the author process itself is stopped. Something it started and left
-/// running can outlive it, the same as for `krate create`'s agent; an author
-/// run as one command (`sh -c "tool ..."`) is the tool itself, so this ends
-/// it.
+/// The author runs in a process group of its own, and the whole group is
+/// stopped, so a tool started through a shell ends with it.
 fn wait_for_port_author(
     child: &mut std::process::Child,
     what: &str,
@@ -4665,7 +4696,7 @@ fn wait_for_port_author(
             return Ok(status);
         }
         if start.elapsed() >= budget {
-            let _ = child.kill();
+            stop_process_group(child);
             let _ = child.wait();
             let secs = budget.as_secs();
             let said = if secs >= 120 {
@@ -4791,6 +4822,7 @@ port.",
         .arg("--permission-mode")
         .arg("bypassPermissions")
         .current_dir(workspace);
+    own_process_group(&mut command);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
             command.stdout(std::process::Stdio::from(clone));
@@ -4872,6 +4904,7 @@ explain in chat. Make the smallest complete repair.",
         .arg("--permission-mode")
         .arg("bypassPermissions")
         .current_dir(workspace);
+    own_process_group(&mut command);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
             command.stdout(std::process::Stdio::from(clone));
