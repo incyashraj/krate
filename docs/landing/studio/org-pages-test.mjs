@@ -27,8 +27,8 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
 
   // Tabs per role, from the contract's matrix.
   const tabs = (r) => K.tabsFor(r).join(",");
-  check(tabs("owner") === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,billing,settings", "an owner runs the organisation: Overview, Apps, Approvals, Requests, people, computers, security, connections, numbers, activity, billing, settings");
-  check(tabs("admin") === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,billing,settings", "an admin has the same console as an owner");
+  check(tabs("owner") === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,settings", "an owner runs the organisation: Overview, Apps, Approvals, Requests, people, computers, security, connections, numbers, activity, settings -- no billing");
+  check(tabs("admin") === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,settings", "an admin has the same console as an owner");
   check(tabs("developer") === "home,myapps,build,requests,releases,connections,insights,people,settings", "a developer makes apps: Home, My apps, New app, Requests, company apps, connections, and no Activity");
   check(tabs("reviewer") === "home,waiting,apps,releases,insights,people,settings", "a reviewer has a home and the queue, sees the apps, and has no Activity");
   check(tabs("recipient") === "home,requests,help", "a member has their apps, their requests and help, nothing else");
@@ -128,7 +128,8 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
 
 {
   const owner = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "tok-alice", routes: orgRoutes("github:alice") });
-  check(tabNames(owner) === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,billing,settings", "/org/ shows an owner their console, grouped as the sidebar draws it");
+  check(tabNames(owner) === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,settings", "/org/ shows an owner their console, grouped as the sidebar draws it");
+  check(!/Billing/.test(owner.el("tabs").shown) && owner.sent.every((s) => !/\/billing/.test(s.key)), "the sidebar has no Billing, and the console never asks the hub about billing");
   check(/you are an owner/i.test(owner.el("oMeta").textContent), "and says which role they hold");
   check(/Bounce 1\.0\.0/.test(owner.el("pane").shown) && /Sent by @carol · approved by @bob/.test(owner.el("pane").shown), "Releases names who sent and who approved");
   check(button(owner.el("pane"), "Open in Krate") && button(owner.el("pane"), "Copy link"), "each release has Open in Krate and Copy link");

@@ -1,6 +1,8 @@
 /* The organisation dashboard's Addendum 3 parts (IC-947, IC-948): the
- * closing, closed, suspended and recovery banners; closing and export;
- * replacing the root key; company sign-in; offline access; billing.
+ * closing, closed and recovery banners; closing and export; replacing the
+ * root key; company sign-in; offline access. Organisations are not billed
+ * (2026-11-07), so there is no billing pane and no paused-for-billing
+ * banner.
  *
  * dashboard.js owns the page and hands these parts what they need (D).
  * Each part asks the hub when it is drawn and shows refusals in words,
@@ -55,11 +57,6 @@
             "Its apps still open until then, but nothing new can be sent or approved. Owners can cancel the closing or download an export in Settings.",
             owner() ? [toSettings] : null);
         }
-      }
-      if (o.state !== "closed" && (o.suspended || o.billing_state === "suspended")) {
-        var acts = K.can(D.roleOf(), "billing.read") ? [el("button", { class: "btn ghost sm", type: "button", text: "Open Billing", onclick: function () { D.show("billing"); } })] : null;
-        add("warn", name + " is paused for billing",
-          "Apps already released still open, and the export still works. Sending new apps, seats beyond the free ones and company sign-in come back when billing is settled.", acts);
       }
       var r = o.recovery;
       if (r && !/^(cancelled|completed|done|applied|objected)$/.test(String(r.state || "")) && (D.roleOf() === "owner" || D.roleOf() === "admin")) {
@@ -572,81 +569,12 @@
       if (K.can(D.roleOf(), "org.close")) pane.appendChild(closeCard());
     }
 
-    // ------------------------------------------------------------ billing
-
-    var PLAN = { pilot: "Pilot", seats: "Per seat", paid: "Paid by card", stripe: "Paid by card", invoiced: "Invoiced by Krate", manual: "Invoiced by Krate" };
-    var STATE = {
-      pilot: ["Pilot: everything is on", "ok"], paid: ["Paid", "ok"], active: ["Paid", "ok"], invoiced: ["Invoiced", "ok"],
-      "past-due": ["Payment overdue", "warn"], suspended: ["Paused for billing", "warn"], canceled: ["Cancelled", ""],
-    };
-
-    function billing(pane) {
-      K.api("GET", path("/billing")).then(function (res) {
-        D.head(pane, "Billing", "Seats are owners, admins, developers and reviewers. Recipients are free.");
-        if (!res.ok) return D.failed(pane, res, { what: "see billing", whoCan: "owners and admins" });
-        var b = res.body || {};
-        var st = STATE[b.state] || [b.state || "Unknown", ""];
-        var seats = (b.seats_used != null ? b.seats_used + " used" : "") + (b.seats_paid != null ? " · " + b.seats_paid + " paid" : "");
-        var dl = [
-          el("dt", { text: "Plan" }), el("dd", { text: PLAN[b.plan] || b.plan || "Pilot" }),
-          el("dt", { text: "Seats" }), el("dd", { text: seats || "None yet" }),
-        ];
-        if (b.period_end && !b.manual && b.state !== "pilot") { dl.push(el("dt", { text: "Paid until" })); dl.push(el("dd", { text: K.day(b.period_end) })); }
-        if (b.manual) {
-          dl.push(el("dt", { text: "Invoice" }));
-          dl.push(el("dd", { text: b.manual.reference + (b.manual.paid_until ? ", paid until " + K.day(b.manual.paid_until) : "") }));
-        }
-        var plan = el("div", { class: "card" }, [
-          el("div", { class: "row2" }, [el("h3", { text: nameOf() + "'s plan" }), el("span", { class: "tag " + st[1], text: st[0] })]),
-          el("dl", { class: "kv" }, dl),
-        ]);
-        if (b.state === "pilot") plan.appendChild(el("p", { class: "sub", text: "While it is a pilot, everything is on and nothing is charged." }));
-        if (b.checkout_open && owner()) {
-          var out = el("div");
-          var pay = el("button", { class: "btn dark", type: "button", text: "Pay by card" + (b.seats_used ? " for " + b.seats_used + (b.seats_used === 1 ? " seat" : " seats") : "") });
-          var key = K.key();
-          pay.addEventListener("click", function () {
-            pay.disabled = true;
-            pay.textContent = "Opening checkout";
-            K.api("POST", path("/billing/checkout"), {}, { key: key }).then(function (r) {
-              pay.disabled = false;
-              pay.textContent = "Pay by card";
-              out.textContent = "";
-              if (r.ok && r.body && /^https:\/\//.test(r.body.url || "")) { location.href = r.body.url; return; }
-              out.appendChild(K.refusalBlock(D.words(r.ok ? { body: { error: "hub-error" } } : r, { what: "pay", whoCan: "an owner" }), "bad"));
-            });
-          });
-          plan.appendChild(el("div", { class: "row2" }, [pay]));
-          plan.appendChild(el("p", { class: "sub", text: "Checkout is Stripe's page; the price is shown there before you pay." }));
-          plan.appendChild(out);
-        } else if (!b.checkout_open) {
-          plan.appendChild(el("p", { class: "invline" }, ["Krate invoices pilot organisations directly: write to ", el("a", { href: "mailto:yashraj@krate.tech", text: "yashraj@krate.tech" }), "."]));
-        }
-        pane.appendChild(plan);
-        var inv = el("div", { class: "card rows" }, [el("p", { class: "grp", text: "Invoices" })]);
-        var list = Array.isArray(b.invoices) ? b.invoices : [];
-        if (!list.length) inv.appendChild(el("p", { class: "sub", style: "padding:6px 0 14px", text: "No invoices yet." }));
-        list.forEach(function (i) {
-          var amount = K.money(i.amount, i.currency);
-          inv.appendChild(el("div", { class: "rw flat" }, [
-            el("div", { class: "t" }, [
-              el("b", { text: (i.number || (b.manual && i.id === b.manual.reference ? "Invoice " + i.id : "Invoice")) + (amount ? " · " + amount : "") }),
-              el("small", { text: K.day(i.at) + (i.status ? " · " + i.status : "") }),
-            ]),
-            i.url && /^https:\/\//.test(i.url) ? el("div", { class: "ra" }, [el("a", { class: "btn ghost sm", href: i.url, target: "_blank", rel: "noopener", text: "View" })]) : null,
-          ]));
-        });
-        pane.appendChild(inv);
-      });
-    }
-
     return {
       banner: banner,
       tabs: tabs,
       inviteMail: inviteMail,
       releaseOffline: releaseOffline,
       settings: settings,
-      panes: { billing: billing },
     };
   };
 })(typeof window !== "undefined" ? window : globalThis);

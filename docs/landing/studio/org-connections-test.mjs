@@ -50,7 +50,6 @@ function as(me, extra = {}) {
     "GET /orgs/acme": () => [200, { org: { ...ACME, state: "active", offline_default: "days-7" }, me: people.find((m) => m.principal === me), members: people }],
     "GET /orgs/acme/groups": () => [200, GROUPS],
     "GET /orgs/acme/sso": () => [200, null],
-    "GET /orgs/acme/billing": () => [200, { plan: "pilot", state: "pilot", seats_used: 4, seats_paid: null, period_end: null, checkout_open: false, manual: null, invoices: [] }],
     "GET /orgs/acme/exports": () => [200, { exports: [] }],
     "GET /orgs/acme/connections": () => [200, { connections: list }],
     "GET /orgs/acme/keys": () => [200, KEYS],

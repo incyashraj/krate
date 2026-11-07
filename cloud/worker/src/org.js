@@ -367,7 +367,7 @@ const SCHEMA = [
      prev_hash TEXT NOT NULL, hash TEXT NOT NULL)`,
 ];
 
-/// What other modules add to the store (Addendum 3: lifecycle, billing,
+/// What other modules add to the store (Addendum 3: lifecycle,
 /// sign-in, offline access), each in its own `org-*.js`, so two people
 /// building different areas do not edit the same lines. Order is the
 /// order they were added.

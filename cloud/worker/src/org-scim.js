@@ -36,13 +36,12 @@
 // shapes (application/scim+json, the RFC 7644 error schema).
 
 import { Org, extendOrg, allows, parsePrincipal, displayOf, sha256HexSync } from "./org.js";
-import { lifecycle, billingState, seatsUsed, freeSeats } from "./org-lifecycle-store.js";
+import { lifecycle } from "./org-lifecycle-store.js";
 import { GROUP } from "./org-releases.js";
 
 /// The roles the directory may give. Never owner or admin.
 export const SCIM_ROLES = ["developer", "reviewer", "recipient"];
 export const SCIM_DEFAULT_ROLE = "recipient";
-const SEAT_ROLES = new Set(["owner", "admin", "developer", "reviewer"]);
 
 const USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User";
 const GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group";
@@ -384,15 +383,10 @@ const ops = {
   },
 
   /// Why the directory may not add a member now, or null: an organisation
-  /// that is closing grows no further, and a suspended one adds no paid
-  /// seat past its free ones -- the same rules an invitation meets.
-  scimGrowRefusal(ctx, role) {
+  /// that is closing grows no further -- the same rule an invitation meets.
+  scimGrowRefusal(ctx) {
     if (lifecycle(this).state === "closing") {
       return scimError(409, `${ctx.slug} is closing, so nobody new can join -- an owner can cancel the close`);
-    }
-    const billing = billingState(this, ctx.now);
-    if (billing.suspended && SEAT_ROLES.has(role) && seatsUsed(this) + 1 > freeSeats(this.env)) {
-      return scimError(409, `${ctx.slug} is suspended for billing, and a seat past its free ones is a paid service -- set the SCIM default role to recipient, or settle billing`);
     }
     return null;
   },
@@ -433,7 +427,7 @@ const ops = {
       );
     }
     const role = SCIM_ROLES.includes(m.role) ? m.role : this.scimDefaultRole();
-    const refusal = this.scimGrowRefusal(ctx, role);
+    const refusal = this.scimGrowRefusal(ctx);
     if (refusal) return refusal;
     this.sql.exec(
       "UPDATE members SET role = ?, state = 'active', added_at = ?, added_by = 'scim', removed_at = NULL, removed_by = NULL WHERE principal = ?",
@@ -505,7 +499,7 @@ const ops = {
       }
     } else if (f.active !== false) {
       const role = this.scimDefaultRole();
-      const grow = this.scimGrowRefusal(ctx, role);
+      const grow = this.scimGrowRefusal(ctx);
       if (grow) return grow;
       this.sql.exec(
         "INSERT INTO members (principal, role, state, added_at, added_by) VALUES (?, ?, 'active', ?, 'scim')",
