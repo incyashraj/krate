@@ -215,7 +215,12 @@ body:not(.light) .side-row.on { background: var(--surface-2); }
  * one card holding the composer with Create and Port on top of it. */
 #viewHome .home-glow { display: none; }
 #viewHome .home-hail { display: none; }
-#viewHome .home-hero { width: min(720px, calc(100% - 48px)); margin: 0 auto; text-align: center; }
+/* `auto` on every side, not `0 auto`: the room is a column and the hero's
+   vertical auto margins are what push the shelf down to the floor. With
+   them only on wide windows, a phone centred the hero and the shelf
+   together, and the shelf -- drawn to sit on the window's edge, rounded
+   on top only -- floated 100px above it, looking cut off. */
+#viewHome .home-hero { width: min(720px, calc(100% - 48px)); margin: auto; text-align: center; }
 #viewHome .home-title {
   margin: 0; font-family: var(--sans);
   font-size: clamp(30px, 3vw, 38px); line-height: 1.1; font-weight: 500; letter-spacing: -0.04em;
