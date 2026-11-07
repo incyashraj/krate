@@ -117,6 +117,8 @@ pub enum ResolveError {
     /// The other device's copy of a file has not reached this device yet,
     /// so it cannot be put in place (S3).
     NotHereYet,
+    /// "Keep both" for a row whose table holds one row per key (S4).
+    OneRowOnly,
 }
 
 impl std::fmt::Display for ResolveError {
@@ -129,6 +131,9 @@ impl std::fmt::Display for ResolveError {
             }
             ResolveError::NotHereYet => {
                 "the other device's copy has not reached this device yet -- let it sync, then choose"
+            }
+            ResolveError::OneRowOnly => {
+                "keeping both is not possible here: this list holds one row per key -- keep one of the two, or merge them"
             }
         })
     }
@@ -183,7 +188,7 @@ pub type StoreWrite = (String, Option<Vec<u8>>);
 
 /// What "keep both" calls the other copy: `(key, the other device's name,
 /// whether a name is taken)` to the new key ([`both_name`]).
-pub type BothName = dyn Fn(&str, &str, &dyn Fn(&str) -> bool) -> String;
+pub type BothName<'a> = dyn Fn(&str, &str, &dyn Fn(&str) -> bool) -> String + 'a;
 
 fn hash_of(value: Option<&[u8]>) -> Option<String> {
     value.map(crate::value_hash)
@@ -417,7 +422,7 @@ impl Replica {
         mine: Option<&[u8]>,
         name_of: &dyn Fn(&str) -> String,
         taken: &dyn Fn(&str) -> bool,
-        both: &BothName,
+        both: &BothName<'_>,
     ) -> Result<Vec<StoreWrite>, ResolveError> {
         let device = self.device.clone();
         let state = self.keys.get(key).ok_or(ResolveError::NoConflict)?;

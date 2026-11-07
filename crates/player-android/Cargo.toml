@@ -37,6 +37,8 @@ tempfile = "3.27.0"
 krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
 krate-accountsync = { path = "../accountsync", features = ["agent"] }
 serde_json.workspace = true
+# A row conflict's card is proved on a real database (IC-981 S4).
+krate-appsql = { path = "../appsql" }
 # The host tests hold the output card to the runtime's own argument rule.
 krate-runtime = { path = "../runtime", default-features = false, features = [
     "phase2-bindings",

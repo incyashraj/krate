@@ -34,6 +34,9 @@ serde_json.workspace = true
 tempfile = "3.27.0"
 krate-accountsync = { path = "../accountsync", features = ["agent"] }
 serde_json.workspace = true
+# sync_home.rs (shared from player-android) proves a row conflict's card
+# on a real database (IC-981 S4).
+krate-appsql = { path = "../appsql" }
 # run_config.rs (shared from player-android) tests the output card against
 # the runtime's own argument rule.
 krate-runtime = { path = "../runtime", default-features = false, features = [

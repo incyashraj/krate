@@ -490,6 +490,11 @@ pub struct ConflictCard {
     /// One of the app's own files (S3): `key` is its path in the app's
     /// folder, and the values say its size and when it changed.
     pub file: bool,
+    /// One of its database's rows (S4): `key` says which ("notes, id 3"),
+    /// and the values are the row in a few words.
+    pub row: bool,
+    /// The row's table holds one row per key: "keep both" is not offered.
+    pub one_only: bool,
 }
 
 /// Everything Krate's home shows about sync (`sync.txt`).
@@ -527,7 +532,9 @@ pub struct SyncView {
 /// - `conflict<TAB>n<TAB>key<TAB>this value<TAB>other value<TAB>other
 ///   device<TAB>more<TAB>flags`, flags a comma list of `merge`,
 ///   `this-deleted`, `other-deleted`, `file` (key is a path in the app's
-///   folder; the values are its size and when it changed)
+///   folder; the values are its size and when it changed), `row` (key says
+///   which row of the app's database; the values are the row in words),
+///   `one-only` (its table holds one row per key: no "keep both")
 pub fn sync_file(view: &SyncView) -> String {
     let dash = |text: &str| {
         if text.trim().is_empty() {
@@ -581,6 +588,12 @@ pub fn sync_file(view: &SyncView) -> String {
         }
         if c.file {
             flags.push("file");
+        }
+        if c.row {
+            flags.push("row");
+        }
+        if c.one_only {
+            flags.push("one-only");
         }
         lines.push(format!(
             "conflict\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -873,6 +886,8 @@ mod tests {
                     more: 0,
                     merge: true,
                     file: false,
+                    row: false,
+                    one_only: false,
                 },
                 ConflictCard {
                     app: 0,
@@ -883,6 +898,8 @@ mod tests {
                     more: 1,
                     merge: false,
                     file: false,
+                    row: false,
+                    one_only: false,
                 },
                 ConflictCard {
                     app: 1,
@@ -893,6 +910,20 @@ mod tests {
                     more: 0,
                     merge: false,
                     file: true,
+                    row: false,
+                    one_only: false,
+                },
+                ConflictCard {
+                    app: 2,
+                    key: "tags, name home".into(),
+                    mine: Some("color: red".into()),
+                    theirs: Some("color: green".into()),
+                    device: "Mac".into(),
+                    more: 0,
+                    merge: false,
+                    file: false,
+                    row: true,
+                    one_only: true,
                 },
             ],
             kept: vec![(1, "Files over 16 MB stay on this phone.\nfilm.mov".into())],
@@ -923,7 +954,11 @@ mod tests {
             lines[11],
             "conflict\t1\ttrips/photo.jpg\t2.4 MB, changed 5 minutes ago\t1.1 MB, changed yesterday\tMac\t0\tfile"
         );
-        assert_eq!(lines.len(), 12, "a name cannot add a line");
+        assert_eq!(
+            lines[12],
+            "conflict\t2\ttags, name home\tcolor: red\tcolor: green\tMac\t0\trow,one-only"
+        );
+        assert_eq!(lines.len(), 13, "a name cannot add a line");
         // Waiting devices only get a yes from a phone that holds the key.
         let mut waiting = view.clone();
         waiting.can_approve = false;

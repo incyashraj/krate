@@ -17,6 +17,8 @@ krate-orgkeys = { path = "../orgkeys" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10.9"
+# store.sql's value type (S4: rows by account), without SQLite itself.
+krate-appsql = { path = "../appsql", default-features = false }
 # The device's side of the protocol with the hub and its files on disk
 # (`agent`): only for hosts with a network stack.
 ureq = { workspace = true, optional = true }

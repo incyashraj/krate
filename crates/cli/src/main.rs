@@ -6212,6 +6212,7 @@ fn sync_conflicts_command(
     use krate_accountsync::Resolution;
     use krate_runtime::account_sync_files::{file_conflicts_at, resolve_file_at, FileSide};
     use krate_runtime::account_sync_host::{conflicts_at, resolve_at};
+    use krate_runtime::account_sync_sql::{resolve_row_at, row_conflicts_at, sql_waits_at};
 
     let name = this_computers_name(identity.display_name());
     let machine = machine_key();
@@ -6247,6 +6248,7 @@ fn sync_conflicts_command(
             };
             let mut answered = false;
             let mut files = false;
+            let mut rows = false;
             for store in stores_of_app(&app) {
                 if conflicts_at(&store, &account, &names)
                     .iter()
@@ -6263,6 +6265,15 @@ fn sync_conflicts_command(
                         .map_err(|e| anyhow::anyhow!("{e}"))?;
                     answered = true;
                     files = true;
+                } else if let Some(row) = row_conflicts_at(&store, &account, &names)
+                    .into_iter()
+                    .find(|c| c.place == key || c.key == key)
+                {
+                    // A row is named the way the list shows it: "notes, id 3".
+                    resolve_row_at(&store, &account, &names, &row.key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                    rows = true;
                 }
             }
             if !answered {
@@ -6292,6 +6303,13 @@ fn sync_conflicts_command(
                         context.clone(),
                     )
                     .is_ok()
+                } else if rows {
+                    krate_runtime::account_sync_sql::sync_sql_closed(
+                        &store,
+                        &account,
+                        context.clone(),
+                    )
+                    .is_ok()
                 } else {
                     krate_runtime::account_sync_host::sync_closed(&store, &account, context.clone())
                         .is_ok()
@@ -6316,12 +6334,25 @@ fn sync_conflicts_command(
         _ => {
             let mut listed = Vec::new();
             let mut files = Vec::new();
+            let mut row_conflicts = Vec::new();
+            let mut waiting = Vec::new();
             for (app, store) in synced_stores() {
                 for conflict in conflicts_at(&store, &account, &names) {
                     listed.push((app.clone(), conflict));
                 }
                 for conflict in file_conflicts_at(&store, &account, &names) {
                     files.push((app.clone(), conflict));
+                }
+                for conflict in row_conflicts_at(&store, &account, &names) {
+                    row_conflicts.push((app.clone(), conflict));
+                }
+                for wait in sql_waits_at(&store, &account) {
+                    let device = names
+                        .get(&wait.device)
+                        .cloned()
+                        .unwrap_or_else(|| "another device".to_string());
+                    let words = krate_accountsync::sql::wait_words(&app, &device, &wait);
+                    waiting.push((app.clone(), words));
                 }
             }
             let side = |side: &Option<FileSide>| match side {
@@ -6362,13 +6393,38 @@ fn sync_conflicts_command(
                         })
                     })
                     .collect();
+                let row_rows: Vec<serde_json::Value> = row_conflicts
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "row": c.place,
+                            "table": c.table,
+                            "here": c.mine,
+                            "others": c.others.iter().map(|(v, device)| serde_json::json!({
+                                "device": device,
+                                "row": v,
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                            "both": c.both,
+                        })
+                    })
+                    .collect();
+                let waits: Vec<serde_json::Value> = waiting
+                    .iter()
+                    .map(|(app, words)| serde_json::json!({ "app": app, "words": words }))
+                    .collect();
                 println!(
                     "{}",
-                    serde_json::json!({ "conflicts": rows, "files": file_rows })
+                    serde_json::json!({ "conflicts": rows, "files": file_rows, "rows": row_rows, "waiting": waits })
                 );
                 return Ok(0);
             }
-            if listed.is_empty() && files.is_empty() {
+            for (app, words) in &waiting {
+                println!("{app}: {words}");
+                println!();
+            }
+            if listed.is_empty() && files.is_empty() && row_conflicts.is_empty() {
                 println!("Nothing waits for your choice: every app agrees on all your devices.");
                 return Ok(0);
             }
@@ -6424,6 +6480,46 @@ fn sync_conflicts_command(
                     "  choose: krate account sync resolve {app} {:?} this|other{}{}",
                     c.path,
                     if c.mine.is_some() && other.is_some() {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            for (app, c) in &row_conflicts {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .cloned()
+                    .unwrap_or((None, "another device".to_string()));
+                match (&c.mine, &other) {
+                    (Some(_), Some(_)) => {
+                        println!("{app}: a row in {} changed on two devices", c.table)
+                    }
+                    (None, _) => println!(
+                        "{app}: a row in {} was deleted here and changed on {device}",
+                        c.table
+                    ),
+                    (Some(_), None) => println!(
+                        "{app}: a row in {} was deleted on {device} and changed here",
+                        c.table
+                    ),
+                }
+                println!("  which: {}", c.place);
+                println!(
+                    "  on this computer: {}",
+                    c.mine.as_deref().unwrap_or("deleted")
+                );
+                println!("  on {device}: {}", other.as_deref().unwrap_or("deleted"));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.place,
+                    if c.mine.is_some() && other.is_some() && c.both {
                         "|both"
                     } else {
                         ""
@@ -27207,9 +27303,9 @@ pub(crate) fn account_sync_dir() -> PathBuf {
     krate_home().join("account-sync")
 }
 
-/// What a run needs to keep an app's store.kv -- and, for an installed
-/// app, its own files -- on every device of the signed-in person (IC-981),
-/// or `None`: nobody signed in, the app granted neither, or
+/// What a run needs to keep an app's store.kv and store.sql -- and, for an
+/// installed app, its own files -- on every device of the signed-in person
+/// (IC-981), or `None`: nobody signed in, the app granted none, or
 /// `KRATE_NO_ACCOUNT_SYNC` set. A toggle that is off rides along as
 /// `enabled: false`.
 fn account_sync_context(
@@ -27223,9 +27319,12 @@ fn account_sync_context(
         return None;
     }
     let files = own_files_folder(app_id, sandbox);
-    if !policy.allows(&krate_manifest::Capability::new("store", "kv", None).ok()?)
-        && files.is_none()
-    {
+    // store.sql syncs by row (S4), beside store.kv and the files.
+    let granted = |action: &str| {
+        krate_manifest::Capability::new("store", action, None)
+            .is_ok_and(|capability| policy.allows(&capability))
+    };
+    if !granted("kv") && !granted("sql") && files.is_none() {
         return None;
     }
     let identity = github_auth::current()?;

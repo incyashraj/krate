@@ -71,7 +71,9 @@
 //!     or records), `this-deleted`, `other-deleted`, `file` (one of the
 //!     app's own files: `key` is its path in the app's folder, and the
 //!     values its size and when it changed, "2.4 MB, changed 5 minutes
-//!     ago").
+//!     ago"), `row` (one of its database's rows: `key` says which, "notes,
+//!     id 3", and the values are the row in words), `one-only` (that row's
+//!     table holds one row per key, so "keep both" is not offered).
 //!
 //!   The arguments may carry `sync-code` and the recovery code: shown once,
 //!   until the person says they wrote it down. Never in a file.
@@ -286,6 +288,10 @@ struct Conflict {
     merge: bool,
     /// One of the app's own files: `key` is its path.
     file: bool,
+    /// One of its database's rows: `key` says which ("notes, id 3").
+    row: bool,
+    /// Its table holds one row per key: no "keep both".
+    one_only: bool,
 }
 
 /// Everything `sync.txt` says.
@@ -393,6 +399,8 @@ fn read_sync() -> Sync {
                     more: f[6].parse().unwrap_or(0),
                     merge: has("merge"),
                     file: has("file"),
+                    row: has("row"),
+                    one_only: has("one-only"),
                 });
             }
             _ => {}

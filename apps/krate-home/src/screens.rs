@@ -2713,6 +2713,8 @@ impl Home {
         let key = match (c.file, folder) {
             (true, Some(folder)) => format!("In {app}, {folder}"),
             (true, None) => format!("In {app}"),
+            // A row says which: "In notes, id 3".
+            (false, _) if c.row => format!("In {}", c.key),
             (false, _) => format!("\u{201c}{}\u{201d}", c.key),
         };
         let keys = self.text.wrap(&key, m.small, 400, room, 2);
@@ -2755,7 +2757,9 @@ impl Home {
             (true, true) => {
                 choices.push(("Keep this phone's".to_string(), Choice::This));
                 choices.push((short(&c.device, &mut self.text), Choice::Other));
-                choices.push(("Keep both".to_string(), Choice::Both));
+                if !c.one_only {
+                    choices.push(("Keep both".to_string(), Choice::Both));
+                }
                 if c.merge {
                     choices.push(("Merge into one".to_string(), Choice::Merge));
                 }

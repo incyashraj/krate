@@ -2387,6 +2387,7 @@ dependencies = [
 name = "krate-accountsync"
 version = "0.5.5"
 dependencies = [
+ "krate-appsql",
  "krate-http",
  "krate-orgkeys",
  "serde",
@@ -2698,6 +2699,7 @@ dependencies = [
  "jni 0.21.1",
  "krate-accountsync",
  "krate-adapter-android",
+ "krate-appsql",
  "krate-bundle",
  "krate-manifest",
  "krate-orgaccess",
@@ -2719,6 +2721,7 @@ dependencies = [
  "dispatch2",
  "krate-accountsync",
  "krate-adapter-ios",
+ "krate-appsql",
  "krate-bundle",
  "krate-manifest",
  "krate-orgaccess",

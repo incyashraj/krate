@@ -3,7 +3,7 @@
 //!
 //! Stage S1 is `store.kv`; stage S3 the app's own files ([`files`]: whole
 //! files under the same rule, their bodies apart in the hub's object
-//! store). The parts:
+//! store), and stage S4 its `store.sql` by row ([`sql`]). The parts:
 //!
 //! - [`vv`]: version vectors -- one counter per device -- which say whether
 //!   two writes are one after the other or were made apart. Never a wall
@@ -36,6 +36,7 @@ pub mod json_merge;
 pub mod readable;
 pub mod replica;
 pub mod seal;
+pub mod sql;
 pub mod toggles;
 pub mod vv;
 

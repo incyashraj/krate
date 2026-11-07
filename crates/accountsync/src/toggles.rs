@@ -93,6 +93,18 @@ pub fn held_dir(store: &Path, account: &str) -> PathBuf {
     sync_dir(store).join(format!("{}.held", slot(account)))
 }
 
+/// Where sync keeps what it knows of an app's `store.sql` (S4) for one
+/// account: `<store>.sync/<slot>.sql.json`.
+pub fn sql_state_path(store: &Path, account: &str) -> PathBuf {
+    sync_dir(store).join(format!("{}.sql.json", slot(account)))
+}
+
+/// Where the other devices' rows wait while the person chooses between
+/// them, and while they are put in place: `<store>.sync/<slot>.sql.held/`.
+pub fn sql_held_dir(store: &Path, account: &str) -> PathBuf {
+    sync_dir(store).join(format!("{}.sql.held", slot(account)))
+}
+
 /// The folder (or file stem) one account's files go by.
 pub fn slot(account: &str) -> String {
     crate::value_hash(format!("krate account {account}").as_bytes())[..32].to_string()
@@ -129,12 +141,16 @@ mod tests {
         set_app_sync(&store, false).unwrap();
         std::fs::write(replica_path(&store, "u1"), b"{}").unwrap();
         std::fs::write(files_state_path(&store, "u1"), b"{}").unwrap();
+        std::fs::write(sql_state_path(&store, "u1"), b"{}").unwrap();
+        std::fs::create_dir_all(sql_held_dir(&store, "u1")).unwrap();
         std::fs::create_dir_all(held_dir(&store, "u1")).unwrap();
         std::fs::write(held_dir(&store, "u1").join("x"), b"theirs").unwrap();
         forget_replicas(&store);
         assert!(!replica_path(&store, "u1").exists());
         assert!(!files_state_path(&store, "u1").exists(), "and the files'");
         assert!(!held_dir(&store, "u1").exists());
+        assert!(!sql_state_path(&store, "u1").exists(), "and the database's");
+        assert!(!sql_held_dir(&store, "u1").exists());
         assert!(app_toggle_path(&store).exists());
         assert!(slot("../../etc").chars().all(|c| c.is_ascii_hexdigit()));
     }

@@ -31,6 +31,8 @@ use wasmtime::{
 #[cfg(not(target_arch = "wasm32"))]
 pub mod account_sync_files;
 pub mod account_sync_host;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod account_sync_sql;
 pub mod connections;
 pub mod phase3_ui;
 pub mod uapi;

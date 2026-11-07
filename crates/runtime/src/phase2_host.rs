@@ -36,6 +36,14 @@ pub struct Phase2Host<'a> {
     /// S3): a thread of its own, closed with the run.
     #[cfg(not(target_arch = "wasm32"))]
     files_sync: Option<crate::account_sync_files::SyncedFiles>,
+    /// The app's database kept the same on the person's devices, by row
+    /// (IC-981 S4): a thread of its own, closed with the run.
+    #[cfg(not(target_arch = "wasm32"))]
+    sql_sync: Option<crate::account_sync_sql::SyncedSql>,
+    /// The store and the sync context `with_store` was given, for
+    /// `with_database` to sync the database beside them.
+    #[cfg(not(target_arch = "wasm32"))]
+    sync_beside: Option<(PathBuf, crate::account_sync_host::AccountSyncContext)>,
     /// The app's own database, on the same terms as the store above.
     database: Option<crate::sql_host::AppDatabase>,
     /// The app's own secrets, encrypted at rest.
@@ -104,6 +112,10 @@ impl<'a> Phase2Host<'a> {
             store: None,
             #[cfg(not(target_arch = "wasm32"))]
             files_sync: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            sql_sync: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            sync_beside: None,
             database: None,
             secrets: None,
             shared: None,
@@ -184,6 +196,7 @@ impl<'a> Phase2Host<'a> {
         // store.kv grant, an app's files are its files.
         #[cfg(not(target_arch = "wasm32"))]
         if let (Some(store), Some(context)) = (path.as_ref(), sync.filter(|c| c.enabled)) {
+            self.sync_beside = Some((store.clone(), context.clone()));
             if let Some(folder) = context.files.clone() {
                 self.files_sync = Some(crate::account_sync_files::SyncedFiles::open(
                     folder,
@@ -199,9 +212,32 @@ impl<'a> Phase2Host<'a> {
     /// Give this run its database, on the same terms as the key-value store:
     /// the grant is resolved once from the session policy, and the file is not
     /// opened until the app actually runs a statement.
+    ///
+    /// For a synced run (`with_store` was given a context), the database is
+    /// kept the same on the person's devices by row (IC-981 S4), beside
+    /// the store's own sync.
     pub fn with_database(mut self, path: Option<PathBuf>, granted: bool) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(database), true, Some((store, context))) =
+            (path.as_ref(), granted, self.sync_beside.as_ref())
+        {
+            self.sql_sync = Some(crate::account_sync_sql::SyncedSql::open(
+                database.clone(),
+                store.clone(),
+                context.clone(),
+            ));
+        }
         self.database = path.map(|path| crate::sql_host::AppDatabase::new(path, granted));
         self
+    }
+
+    /// The app wrote to its database: tell its sync (the first write of a
+    /// run wakes it, so a fresh device fills as soon as the tables exist).
+    fn database_written(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(sync) = self.sql_sync.as_ref() {
+            sync.app_wrote();
+        }
     }
 
     /// Give this run its secret store. The machine key never reaches the app;
@@ -808,7 +844,11 @@ impl store::sql::Host for Phase2Host<'_> {
             return Ok(Err(store::sql::SqlError::Denied));
         };
         let params: Vec<_> = params.into_iter().map(value_from_wit).collect();
-        Ok(db.execute(&statement, &params).map_err(sql_error_to_wit))
+        let done = db.execute(&statement, &params).map_err(sql_error_to_wit);
+        if done.is_ok() {
+            self.database_written();
+        }
+        Ok(done)
     }
 
     fn transaction(
@@ -818,7 +858,11 @@ impl store::sql::Host for Phase2Host<'_> {
         let Some(db) = self.database.as_mut() else {
             return Ok(Err(store::sql::SqlError::Denied));
         };
-        Ok(db.transaction(&statements).map_err(sql_error_to_wit))
+        let done = db.transaction(&statements).map_err(sql_error_to_wit);
+        if done.is_ok() {
+            self.database_written();
+        }
+        Ok(done)
     }
 }
 

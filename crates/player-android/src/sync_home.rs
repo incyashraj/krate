@@ -7,8 +7,9 @@
 //! home screen reads `sync.txt` again while it says a look is under way.
 //! Conflicts are read and answered on disk with the app closed, through
 //! the runtime's `conflicts_at` / `resolve_at` (store.kv) and
-//! `file_conflicts_at` / `resolve_file_at` (the app's own files, S3), the
-//! same calls `krate account sync` makes on a computer.
+//! `file_conflicts_at` / `resolve_file_at` (the app's own files, S3) and
+//! `row_conflicts_at` / `resolve_row_at` (its store.sql rows, S4), the same
+//! calls `krate account sync` makes on a computer.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -91,6 +92,15 @@ pub struct LibApp {
     pub uses_kv: bool,
     /// It writes files of its own: its folder syncs too (S3).
     pub uses_files: bool,
+    /// It asks for store.sql: its rows sync too (S4).
+    pub uses_sql: bool,
+}
+
+impl LibApp {
+    /// It keeps something that syncs.
+    fn syncs(&self) -> bool {
+        self.uses_kv || self.uses_files || self.uses_sql
+    }
 }
 
 /// The Library apps as sync sees them, from their manifests and verified
@@ -104,25 +114,41 @@ pub fn lib_apps(
         .enumerate()
         .filter_map(|(n, m)| {
             let m = m.as_ref()?;
-            let uses_kv = m.declared_capabilities().is_ok_and(|caps| {
-                caps.iter()
-                    .any(|c| c.module() == "store" && c.action() == "kv")
-            });
+            let asks = |action: &str| {
+                m.declared_capabilities().is_ok_and(|caps| {
+                    caps.iter()
+                        .any(|c| c.module() == "store" && c.action() == action)
+                })
+            };
+            let uses_kv = asks("kv");
+            let uses_sql = asks("sql");
             Some(LibApp {
                 n,
                 id: m.app.id.clone(),
                 publisher: publishers.get(n).cloned().flatten(),
                 uses_kv,
                 uses_files: crate::run_config::writes_files(m),
+                uses_sql,
             })
         })
         .collect()
 }
 
+/// What a conflict card is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// A key of its store.kv.
+    Kv,
+    /// One of its own files (S3).
+    File,
+    /// A row of its store.sql (S4).
+    Row,
+}
+
 /// What each `conflict` line of the last `sync.txt` was about: the store,
-/// the key (or the file's path), and whether it is a file, so an answer by
-/// number is never misread.
-pub type Asked = Vec<(PathBuf, String, bool)>;
+/// the key (the file's path, the row's name), and what kind it is, so an
+/// answer by number is never misread.
+pub type Asked = Vec<(PathBuf, String, Kind)>;
 
 /// One side of a file conflict in words: "2.4 MB, changed 5 minutes ago".
 fn file_words(side: &krate_runtime::account_sync_files::FileSide, at: u64) -> String {
@@ -191,21 +217,23 @@ pub fn view(phone: &Phone, apps: &[LibApp]) -> (SyncView, Asked) {
     let mut newest: Option<u64> = None;
     for app in apps {
         let store = phone.store(app);
-        let state = if !app.uses_kv && !app.uses_files {
+        let state = if !app.syncs() {
             AppSync::Nothing
         } else if toggles::app_toggle_path(&store).exists() {
             AppSync::Off
         } else {
             let last = account.as_deref().and_then(|a| {
-                krate_runtime::account_sync_host::last_sync_at(&store, a).max(
-                    krate_runtime::account_sync_files::files_last_sync_at(&store, a),
-                )
+                krate_runtime::account_sync_host::last_sync_at(&store, a)
+                    .max(krate_runtime::account_sync_files::files_last_sync_at(
+                        &store, a,
+                    ))
+                    .max(krate_runtime::account_sync_sql::sql_last_sync_at(&store, a))
             });
             newest = newest.max(last);
             AppSync::On(last.map(|t| ago(at, t)).unwrap_or_default())
         };
         view.apps.push((app.n, state));
-        let Some(account) = account.as_deref().filter(|_| app.uses_kv || app.uses_files) else {
+        let Some(account) = account.as_deref().filter(|_| app.syncs()) else {
             continue;
         };
         let kept = krate_runtime::account_sync_files::files_kept_here_at(&store, account);
@@ -242,8 +270,58 @@ pub fn view(phone: &Phone, apps: &[LibApp]) -> (SyncView, Asked) {
                 more: c.others.len().saturating_sub(1),
                 merge: c.mergeable,
                 file: true,
+                row: false,
+                one_only: false,
             });
-            asked.push((store.clone(), c.path, true));
+            asked.push((store.clone(), c.path, Kind::File));
+        }
+        // Its rows (S4): what waits for an update here, what stays here,
+        // and each row changed on two devices.
+        for wait in krate_runtime::account_sync_sql::sql_waits_at(&store, account) {
+            let device = names
+                .get(&wait.device)
+                .cloned()
+                .unwrap_or_else(|| "another device".to_string());
+            view.kept.push((
+                app.n,
+                krate_accountsync::sql::wait_words("this app", &device, &wait)
+                    .replace("this device", "this phone"),
+            ));
+        }
+        let rows_here = krate_runtime::account_sync_sql::sql_kept_here_at(&store, account);
+        if !rows_here.is_empty() {
+            view.kept.push((
+                app.n,
+                format!(
+                    "{} Kept here: {}.",
+                    krate_accountsync::sql::too_big_words().replace("this device", "this phone"),
+                    if rows_here.len() == 1 {
+                        krate_accountsync::sql::key_words(&rows_here[0])
+                    } else {
+                        format!("{} rows", rows_here.len())
+                    }
+                ),
+            ));
+        }
+        for c in krate_runtime::account_sync_sql::row_conflicts_at(&store, account, &names) {
+            let (theirs, device) = c
+                .others
+                .first()
+                .cloned()
+                .unwrap_or((None, "another device".to_string()));
+            view.conflicts.push(ConflictCard {
+                app: app.n,
+                key: c.place.clone(),
+                mine: c.mine.clone(),
+                theirs,
+                device,
+                more: c.others.len().saturating_sub(1),
+                merge: c.mergeable,
+                file: false,
+                row: true,
+                one_only: !c.both,
+            });
+            asked.push((store.clone(), c.key, Kind::Row));
         }
         for c in krate_runtime::account_sync_host::conflicts_at(&store, account, &names) {
             let (theirs, device) = c
@@ -260,8 +338,10 @@ pub fn view(phone: &Phone, apps: &[LibApp]) -> (SyncView, Asked) {
                 more: c.others.len().saturating_sub(1),
                 merge: c.mergeable,
                 file: false,
+                row: false,
+                one_only: false,
             });
-            asked.push((store.clone(), c.key, false));
+            asked.push((store.clone(), c.key, Kind::Kv));
         }
     }
     view.last = newest.map(|t| ago(at, t)).unwrap_or_default();
@@ -460,7 +540,7 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
             acted("sync")
         }
         SyncAnswer::Resolve(c, choice) => {
-            let Some((store, key, file)) = asked.get(*c) else {
+            let Some((store, key, kind)) = asked.get(*c) else {
                 return acted("sync");
             };
             let Some(seen) = overview::cached(&phone.device_dir) else {
@@ -475,22 +555,28 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
                 Choice::Both => Resolution::KeepBoth,
                 Choice::Merge => Resolution::Merge,
             };
-            let answered = if *file {
-                krate_runtime::account_sync_files::resolve_file_at(
+            let answered = match kind {
+                Kind::File => krate_runtime::account_sync_files::resolve_file_at(
                     store,
                     &account,
                     &seen.names(),
                     key,
                     &resolution,
-                )
-            } else {
-                krate_runtime::account_sync_host::resolve_at(
+                ),
+                Kind::Row => krate_runtime::account_sync_sql::resolve_row_at(
                     store,
                     &account,
                     &seen.names(),
                     key,
                     &resolution,
-                )
+                ),
+                Kind::Kv => krate_runtime::account_sync_host::resolve_at(
+                    store,
+                    &account,
+                    &seen.names(),
+                    key,
+                    &resolution,
+                ),
             };
             match answered {
                 Ok(()) => {
@@ -504,12 +590,16 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
                         .and_then(|r| r.clone())
                         .is_some_and(|r| r == Reach::Offline);
                     if let Some(context) = phone.context().filter(|_| !away) {
-                        let _ = if *file {
-                            krate_runtime::account_sync_files::sync_files_closed(
+                        let _ = match kind {
+                            Kind::File => krate_runtime::account_sync_files::sync_files_closed(
                                 store, &account, context,
-                            )
-                        } else {
-                            krate_runtime::account_sync_host::sync_closed(store, &account, context)
+                            ),
+                            Kind::Row => krate_runtime::account_sync_sql::sync_sql_closed(
+                                store, &account, context,
+                            ),
+                            Kind::Kv => krate_runtime::account_sync_host::sync_closed(
+                                store, &account, context,
+                            ),
                         };
                     }
                     acted("sync")
@@ -571,6 +661,7 @@ mod tests {
                 publisher: None,
                 uses_kv: true,
                 uses_files: false,
+                uses_sql: false,
             },
             LibApp {
                 n: 1,
@@ -578,6 +669,7 @@ mod tests {
                 publisher: None,
                 uses_kv: false,
                 uses_files: false,
+                uses_sql: false,
             },
         ]
     }
@@ -744,6 +836,7 @@ mod tests {
             publisher: None,
             uses_kv: false,
             uses_files: true,
+            uses_sql: false,
         };
         let store = p.store(&app);
         let folder = dir.path().join("apps").join("dev.krate.journal");
@@ -811,7 +904,10 @@ mod tests {
         assert!(card.mine.as_deref().unwrap().starts_with("3 KB, changed "));
         assert_eq!(card.theirs.as_deref(), Some("2.4 MB, changed 1 hour ago"));
         assert!(!card.merge, "a picture is not merged");
-        assert_eq!(asked, vec![(store.clone(), "photo.jpg".to_string(), true)]);
+        assert_eq!(
+            asked,
+            vec![(store.clone(), "photo.jpg".to_string(), Kind::File)]
+        );
 
         // Keep both: the Mac's copy lands beside it under the Mac's name.
         let acted = act(
@@ -827,6 +923,129 @@ mod tests {
             theirs
         );
         assert!(view(&p, &[app]).0.conflicts.is_empty(), "answered");
+    }
+
+    #[test]
+    fn a_row_changed_on_two_devices_is_a_card_in_words_and_its_answer_lands() {
+        use krate_accountsync::files::FileValue;
+        use krate_accountsync::sql::{encode_row, row_key};
+        use krate_accountsync::{Replica, Version, VersionVector};
+        use krate_appsql::SqlValue;
+        let dir = tempfile::tempdir().unwrap();
+        let p = phone(dir.path(), Some("krs_x"));
+        let app = LibApp {
+            n: 3,
+            id: "dev.krate.lists".into(),
+            publisher: None,
+            uses_kv: false,
+            uses_files: false,
+            uses_sql: true,
+        };
+        let store = p.store(&app);
+        let stores = crate::run_config::stores(&p.data_root, &app.id, None);
+        std::fs::create_dir_all(stores.sql.parent().unwrap()).unwrap();
+        let db = krate_appsql::rusqlite::Connection::open(&stores.sql).unwrap();
+        db.execute_batch(
+            "CREATE TABLE notes (id INTEGER PRIMARY KEY, title TEXT);
+             CREATE TABLE tags (name TEXT PRIMARY KEY, color TEXT);
+             INSERT INTO notes VALUES (3, 'Plan trip to Oslo');
+             INSERT INTO tags VALUES ('home', 'red');",
+        )
+        .unwrap();
+        let (me, mac) = ("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb");
+        let mut replica = Replica::new(me);
+        let held = toggles::sql_held_dir(&store, "u1");
+        std::fs::create_dir_all(&held).unwrap();
+        for (key, mine, theirs) in [
+            (
+                row_key("notes", &[("id".into(), SqlValue::Integer(3))]),
+                ("title", "Plan trip to Oslo"),
+                ("title", "Plan trip to Rome"),
+            ),
+            (
+                row_key("tags", &[("name".into(), SqlValue::Text("home".into()))]),
+                ("color", "red"),
+                ("color", "green"),
+            ),
+        ] {
+            let mine = encode_row(&[(mine.0.into(), SqlValue::Text(mine.1.into()))]);
+            let theirs = encode_row(&[(theirs.0.into(), SqlValue::Text(theirs.1.into()))]);
+            replica.local_write(&key, Some(&FileValue::of(&mine).encode()));
+            let mut vv = VersionVector::new();
+            vv.bump(mac);
+            replica.merge_remote(
+                &key,
+                &[Version {
+                    value: Some(FileValue::of(&theirs).encode()),
+                    vv,
+                    by: mac.into(),
+                }],
+            );
+            std::fs::write(held.join(FileValue::of(&theirs).hash), &theirs).unwrap();
+        }
+        let state = serde_json::json!({ "replica": replica, "database": stores.sql });
+        std::fs::write(toggles::sql_state_path(&store, "u1"), state.to_string()).unwrap();
+        let seen = Overview {
+            account: Some("u1".into()),
+            device_id: me.into(),
+            device_name: "Galaxy S22 Ultra".into(),
+            holds_key: true,
+            devices: vec![krate_accountsync::overview::Known {
+                id: mac.into(),
+                name: "Mac".into(),
+                holds: true,
+            }],
+            checked_at: 1,
+            reach: Reach::Answered,
+        };
+        std::fs::create_dir_all(&p.device_dir).unwrap();
+        std::fs::write(
+            overview::cache_path(&p.device_dir),
+            serde_json::to_string(&seen).unwrap(),
+        )
+        .unwrap();
+
+        let (v, asked) = view(&p, std::slice::from_ref(&app));
+        assert!(
+            matches!(v.apps[0].1, AppSync::On(_)),
+            "a database alone syncs"
+        );
+        assert_eq!(v.conflicts.len(), 2, "{:?}", v.conflicts);
+        let trip = &v.conflicts[0];
+        assert!(trip.row && !trip.file && !trip.one_only);
+        assert_eq!(trip.key, "notes, id 3");
+        assert_eq!(trip.mine.as_deref(), Some("title: Plan trip to Oslo"));
+        assert_eq!(trip.theirs.as_deref(), Some("title: Plan trip to Rome"));
+        assert_eq!(trip.device, "Mac");
+        assert!(v.conflicts[1].one_only, "one row per tag name");
+        assert_eq!(asked[0].2, Kind::Row);
+
+        // Keep both where the table holds one row per key: words, nothing
+        // changed.
+        let acted = act(
+            &p,
+            std::slice::from_ref(&app),
+            &asked,
+            &SyncAnswer::Resolve(1, Choice::Both),
+        );
+        assert_ne!(acted, super::acted("sync"), "refused in words");
+        // Keep both for the trip: the Mac's lands as a new row.
+        let acted = act(
+            &p,
+            std::slice::from_ref(&app),
+            &asked,
+            &SyncAnswer::Resolve(0, Choice::Both),
+        );
+        assert_eq!(acted, super::acted("sync"));
+        let titles: Vec<String> = db
+            .prepare("SELECT title FROM notes ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(titles, vec!["Plan trip to Oslo", "Plan trip to Rome"]);
+        assert_eq!(view(&p, &[app]).0.conflicts.len(), 1, "one answered");
     }
 
     #[test]
