@@ -6,7 +6,7 @@
 //! contract.
 
 use crate::home::{field, human_size};
-use crate::run_config::{sanitize, stores};
+use crate::run_config::stores;
 use std::path::Path;
 
 /// The mail "Report a problem" opens: to the founder, with this Krate's
@@ -52,26 +52,18 @@ pub fn storage_used(data_root: &Path) -> u64 {
         .sum()
 }
 
-/// What an app keeps on this phone: its sandbox (`apps/<id>`, where the
-/// player runs it) and its stores (`stores/<id>.kv` and the rest).
-pub fn app_data_size(data_root: &Path, app_id: &str) -> u64 {
-    let stores = stores(data_root, app_id);
-    walk(&data_root.join("apps").join(sanitize(app_id)))
-        + [&stores.kv, &stores.sql, &stores.secrets, &stores.shared]
-            .iter()
-            .filter_map(|f| std::fs::metadata(f).ok())
-            .map(|m| m.len())
-            .sum::<u64>()
+/// What an app keeps on this phone: its folder (`apps/<name>`, where the
+/// player runs it) and its stores (`stores/<name>.kv` and the rest), where
+/// its runs keep them -- by its publisher when it is signed (K-1172).
+pub fn app_data_size(data_root: &Path, app_id: &str, publisher: Option<&str>) -> u64 {
+    stores(data_root, app_id, publisher).size()
 }
 
 /// Forget what an app keeps on this phone: its files and its stores.
-pub fn clear_app_data(data_root: &Path, app_id: &str) {
-    let _ = std::fs::remove_dir_all(data_root.join("apps").join(sanitize(app_id)));
-    let stores = stores(data_root, app_id);
-    for file in [&stores.kv, &stores.sql, &stores.secrets, &stores.shared] {
-        let _ = std::fs::remove_file(file);
-    }
-    crate::sync_home::forget_after_clear(data_root, app_id);
+pub fn clear_app_data(data_root: &Path, app_id: &str, publisher: Option<&str>) {
+    let stores = stores(data_root, app_id, publisher);
+    stores.clear();
+    crate::sync_home::forget_after_clear(&stores);
 }
 
 /// The Library row for the app this build carries as native code: the
@@ -147,13 +139,46 @@ mod tests {
         std::fs::create_dir_all(root.join("Library")).unwrap();
         std::fs::write(root.join("Library").join("notes.krate"), [0u8; 1000]).unwrap();
 
-        assert_eq!(app_data_size(&root, "dev.krate.notes"), 150);
+        assert_eq!(app_data_size(&root, "dev.krate.notes", None), 150);
         assert_eq!(storage_used(&root), 1157);
-        clear_app_data(&root, "dev.krate.notes");
-        assert_eq!(app_data_size(&root, "dev.krate.notes"), 0);
+        clear_app_data(&root, "dev.krate.notes", None);
+        assert_eq!(app_data_size(&root, "dev.krate.notes", None), 0);
         assert!(root.join("stores").join("dev.krate.chess.kv").exists());
         assert!(root.join("Library").join("notes.krate").exists());
         assert_eq!(storage_used(&root), 1007);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A signed app's Storage and Clear reach the store its runs use, kept
+    /// by its publisher (K-1172), and leave an unsigned app that declares
+    /// the same id alone.
+    #[test]
+    fn a_signed_apps_storage_and_clear_find_its_publishers_store() {
+        let root = scratch("signed");
+        let publisher = "c0ffee".repeat(11);
+        let signed = stores(&root, "dev.krate.notes", Some(&publisher));
+        assert_eq!(
+            signed.kv,
+            root.join("stores")
+                .join("dev.krate.notes@c0ffeec0ffeec0ff.kv")
+        );
+        std::fs::create_dir_all(signed.files.join("deep")).unwrap();
+        std::fs::write(signed.files.join("deep").join("a.txt"), [0u8; 100]).unwrap();
+        std::fs::create_dir_all(root.join("stores")).unwrap();
+        std::fs::write(&signed.kv, [0u8; 30]).unwrap();
+        std::fs::write(&signed.sql, [0u8; 20]).unwrap();
+        // An unsigned app declaring the same id: its own store.
+        std::fs::write(root.join("stores").join("dev.krate.notes.kv"), [0u8; 7]).unwrap();
+
+        assert_eq!(
+            app_data_size(&root, "dev.krate.notes", Some(&publisher)),
+            150
+        );
+        assert_eq!(app_data_size(&root, "dev.krate.notes", None), 7);
+        clear_app_data(&root, "dev.krate.notes", Some(&publisher));
+        assert_eq!(app_data_size(&root, "dev.krate.notes", Some(&publisher)), 0);
+        assert!(!signed.files.exists());
+        assert_eq!(app_data_size(&root, "dev.krate.notes", None), 7);
         let _ = std::fs::remove_dir_all(&root);
     }
 

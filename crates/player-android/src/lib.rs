@@ -44,7 +44,7 @@ mod account;
 #[cfg(target_os = "android")]
 mod player {
     use crate::home::{HomeAnswer, Indexed};
-    use crate::run_config::{output_args, prints_only, sanitize, use_in_words};
+    use crate::run_config::{output_args, prints_only, use_in_words};
     use krate_adapter_android::winit_native::AndroidApp;
     use std::io::Cursor;
     use std::path::{Path, PathBuf};
@@ -371,37 +371,17 @@ mod player {
             .sum()
     }
 
-    /// What an app keeps on this phone: its files and its stores.
-    fn app_data_size(data_root: &Path, app_id: &str) -> u64 {
-        fn walk(dir: &Path) -> u64 {
-            std::fs::read_dir(dir)
-                .into_iter()
-                .flatten()
-                .flatten()
-                .map(|entry| match entry.metadata() {
-                    Ok(m) if m.is_dir() => walk(&entry.path()),
-                    Ok(m) => m.len(),
-                    Err(_) => 0,
-                })
-                .sum()
-        }
-        let stores = crate::run_config::stores(data_root, app_id);
-        walk(&data_root.join("apps").join(sanitize(app_id)))
-            + [&stores.kv, &stores.sql, &stores.secrets, &stores.shared]
-                .iter()
-                .filter_map(|f| std::fs::metadata(f).ok())
-                .map(|m| m.len())
-                .sum::<u64>()
+    /// What an app keeps on this phone: its files and its stores, where its
+    /// runs keep them -- by its publisher when it is signed (K-1172).
+    fn app_data_size(data_root: &Path, app_id: &str, publisher: Option<&str>) -> u64 {
+        crate::run_config::stores(data_root, app_id, publisher).size()
     }
 
     /// Forget what an app keeps on this phone: its files and its stores.
-    fn clear_app_data(data_root: &Path, app_id: &str) {
-        let _ = std::fs::remove_dir_all(data_root.join("apps").join(sanitize(app_id)));
-        let stores = crate::run_config::stores(data_root, app_id);
-        for file in [&stores.kv, &stores.sql, &stores.secrets, &stores.shared] {
-            let _ = std::fs::remove_file(file);
-        }
-        crate::sync_home::forget_after_clear(data_root, app_id);
+    fn clear_app_data(data_root: &Path, app_id: &str, publisher: Option<&str>) {
+        let stores = crate::run_config::stores(data_root, app_id, publisher);
+        stores.clear();
+        crate::sync_home::forget_after_clear(&stores);
     }
 
     /// This phone, as sync on the home screen needs it (IC-981 S2): the same
@@ -523,19 +503,26 @@ mod player {
 
             let kept_apps = library_apps(library);
             let mut apps: Vec<PathBuf> = kept_apps.iter().map(|(path, _)| path.clone()).collect();
-            let manifests: Vec<Option<krate_manifest::Manifest>> =
-                apps.iter().map(|path| manifest_of(path)).collect();
+            // Each app's manifest and the publisher its signature verifies
+            // to: a signed app's data is kept by its publisher (K-1172).
+            let (manifests, publishers): (Vec<Option<krate_manifest::Manifest>>, Vec<_>) = apps
+                .iter()
+                .map(|path| match crate::run_config::kept_app(path) {
+                    Some((manifest, publisher)) => (Some(manifest), publisher),
+                    None => (None, None),
+                })
+                .unzip();
             let rows: Vec<String> = kept_apps
                 .iter()
-                .zip(&manifests)
-                .map(|((_, kept), manifest)| {
+                .zip(manifests.iter().zip(&publishers))
+                .map(|((_, kept), (manifest, publisher))| {
                     // An app from the hub wears its hub picture: the hub
                     // names apps by the SHA-256 of their bytes.
                     let art = hub_art.get(&kept.sha).map(String::as_str);
                     let from_hub = hub_apps.iter().any(|app| app.id == kept.sha);
                     let data = manifest
                         .as_ref()
-                        .map(|m| app_data_size(data_root, &m.app.id))
+                        .map(|m| app_data_size(data_root, &m.app.id, publisher.as_deref()))
                         .unwrap_or(0);
                     let version = manifest.as_ref().map(|m| m.app.version.as_str());
                     crate::home::library_row_full(
@@ -562,7 +549,7 @@ mod player {
             // Sync across the person's devices: what sync.txt says, from
             // this phone's files; the hub asked on a thread of its own.
             let phone = sync_phone(data_root);
-            let sync_apps = crate::sync_home::lib_apps(&manifests);
+            let sync_apps = crate::sync_home::lib_apps(&manifests, &publishers);
             let (sync_view, asked) = crate::sync_home::view(&phone, &sync_apps);
             crate::sync_home::write(&ui, &sync_view);
             crate::sync_home::check_in_background(&phone, &sync_apps, &ui, false);
@@ -663,14 +650,16 @@ mod player {
                 HomeAnswer::Remove(n) => {
                     if let Some(path) = apps.get(n) {
                         if let Some(Some(manifest)) = manifests.get(n) {
-                            clear_app_data(data_root, &manifest.app.id);
+                            let publisher = publishers.get(n).cloned().flatten();
+                            clear_app_data(data_root, &manifest.app.id, publisher.as_deref());
                         }
                         let _ = std::fs::remove_file(path);
                     }
                 }
                 HomeAnswer::Clear(n) => {
                     if let Some(Some(manifest)) = manifests.get(n) {
-                        clear_app_data(data_root, &manifest.app.id);
+                        let publisher = publishers.get(n).cloned().flatten();
+                        clear_app_data(data_root, &manifest.app.id, publisher.as_deref());
                     }
                     start = Some(format!("app:{n}"));
                 }
@@ -861,14 +850,39 @@ mod player {
         // left it on (K-416).
         let memory_bytes = crate::run_config::memory_budget_bytes(&manifest, &policy);
 
-        let sandbox = data_root.join("apps").join(sanitize(&manifest.app.id));
+        // Where its data lives: a signed app's by its id and its verified
+        // publisher, so another app declaring the same id reaches a
+        // different place (K-1172, the desktop's IC-736); an unsigned app's
+        // by its id, as always. A signed app opening for the first time
+        // takes what its id kept here before across, once.
+        let verified = crate::run_config::verified_publisher(&opened);
+        match crate::run_config::adopt_id_keyed_data(
+            data_root,
+            &manifest.app.id,
+            verified.as_deref(),
+            &machine_key(data_root),
+        ) {
+            Ok(adopted) => log::info!("its data: {adopted:?}"),
+            Err(words) => {
+                log::error!("a signed app's data did not move: {words}");
+                return notice(
+                    data_root,
+                    "This app did not open",
+                    &format!(
+                        "{}. Nothing was lost; open it again to finish.",
+                        capitalised(&words)
+                    ),
+                );
+            }
+        }
+        let stores = crate::run_config::stores(data_root, &manifest.app.id, verified.as_deref());
+        let sandbox = stores.files.clone();
         let _ = std::fs::create_dir_all(&sandbox);
         // The app's key-value store and database: the runtime opens them only
         // when told where, and the phone players never said, so every
         // store.kv and store.sql call was refused and a recipe book made in
         // Studio quit at start. Kept beside the sandbox, not in it, as on a
         // desktop: the app names keys, never files.
-        let stores = crate::run_config::stores(data_root, &manifest.app.id);
         let _ = std::fs::create_dir_all(data_root.join("stores"));
         let files = crate::run_config::writes_files(&manifest).then(|| sandbox.clone());
         let mut config = krate_runtime::Config {
@@ -880,7 +894,7 @@ mod player {
             // phone's: a Vault's entries had nowhere to live on Android.
             app_secrets: Some((
                 stores.secrets.clone(),
-                manifest.app.id.clone(),
+                stores.secret_label.clone(),
                 machine_key(data_root),
             )),
             // Its shared store (store.shared): a phone never said where, so
@@ -899,7 +913,6 @@ mod player {
         };
         // The same data on every device the person signs in on (IC-981):
         // signed in on this phone, the app's store.kv syncs by their account.
-        let verified = crate::run_config::verified_publisher(&opened);
         config.account_sync = crate::run_config::sync_plan(
             data_root,
             verified.as_deref(),

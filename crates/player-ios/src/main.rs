@@ -413,13 +413,6 @@ mod player {
         out
     }
 
-    /// A kept app's manifest, read from its bundle.
-    fn manifest_of(path: &Path) -> Option<krate_manifest::Manifest> {
-        let open = krate_bundle::open(path).ok()?;
-        let text = std::fs::read_to_string(open.manifest_path()).ok()?;
-        krate_manifest::Manifest::parse(&text).ok()
-    }
-
     /// Where the sign-in is kept: Application Support, which the Files app
     /// never shows, not Documents, which a sharing build can.
     fn private_root() -> PathBuf {
@@ -719,6 +712,9 @@ mod player {
             // its manifest, the SHA-256 the hub knows it by, and its row.
             let mut apps: Vec<App> = Vec::new();
             let mut manifests: Vec<Option<krate_manifest::Manifest>> = Vec::new();
+            // Who signed each app: a signed app's data is kept by its
+            // publisher (K-1172), and Storage, Clear and sync look there.
+            let mut publishers: Vec<Option<String>> = Vec::new();
             let mut shas: Vec<Option<String>> = Vec::new();
             let mut rows: Vec<String> = Vec::new();
             #[cfg(krate_native_image)]
@@ -728,11 +724,12 @@ mod player {
                 rows.push(crate::screen::carried_row(
                     &manifest.app.name,
                     art,
-                    crate::screen::app_data_size(data_root, &manifest.app.id),
+                    crate::screen::app_data_size(data_root, &manifest.app.id, None),
                     &manifest.app.version,
                 ));
                 apps.push(App::Carried);
                 manifests.push(Some(manifest));
+                publishers.push(None);
                 shas.push(None);
             }
             // Where the received apps start in the screen's numbering.
@@ -747,10 +744,15 @@ mod player {
                 } else {
                     hub_art.get(&sha).map(String::as_str)
                 };
-                let manifest = manifest_of(&path);
+                let (manifest, publisher) = match crate::run_config::kept_app(&path) {
+                    Some((manifest, publisher)) => (Some(manifest), publisher),
+                    None => (None, None),
+                };
                 let data = manifest
                     .as_ref()
-                    .map(|m| crate::screen::app_data_size(data_root, &m.app.id))
+                    .map(|m| {
+                        crate::screen::app_data_size(data_root, &m.app.id, publisher.as_deref())
+                    })
                     .unwrap_or(0);
                 let from_hub = hub_apps.iter().any(|app| app.id == sha);
                 rows.push(crate::home::library_row_full(
@@ -763,6 +765,7 @@ mod player {
                 ));
                 apps.push(App::Received(path));
                 manifests.push(manifest);
+                publishers.push(publisher);
                 shas.push(Some(sha));
             }
             let _ = std::fs::write(ui.join("library.txt"), rows.join("\n") + "\n");
@@ -792,7 +795,7 @@ mod player {
                 name: device_name(),
                 hub: crate::run_config::SHARED_HUB.to_string(),
             };
-            let sync_apps = crate::sync_home::lib_apps(&manifests);
+            let sync_apps = crate::sync_home::lib_apps(&manifests, &publishers);
             let (sync_view, asked) = crate::sync_home::view(&phone, &sync_apps);
             crate::sync_home::write(&ui, &sync_view);
             crate::sync_home::check_in_background(&phone, &sync_apps, &ui, false);
@@ -877,7 +880,12 @@ mod player {
                 HomeAnswer::Remove(n) => match apps.get(n) {
                     Some(App::Received(path)) => {
                         if let Some(Some(manifest)) = manifests.get(n) {
-                            crate::screen::clear_app_data(data_root, &manifest.app.id);
+                            let publisher = publishers.get(n).cloned().flatten();
+                            crate::screen::clear_app_data(
+                                data_root,
+                                &manifest.app.id,
+                                publisher.as_deref(),
+                            );
                         }
                         let _ = std::fs::remove_file(art_dir.join(preview_name(&apps[n])));
                         let _ = std::fs::remove_file(path);
@@ -895,7 +903,12 @@ mod player {
                 },
                 HomeAnswer::Clear(n) => {
                     if let Some(Some(manifest)) = manifests.get(n) {
-                        crate::screen::clear_app_data(data_root, &manifest.app.id);
+                        let publisher = publishers.get(n).cloned().flatten();
+                        crate::screen::clear_app_data(
+                            data_root,
+                            &manifest.app.id,
+                            publisher.as_deref(),
+                        );
                     }
                     start = Some(format!("app:{n}"));
                 }
@@ -1306,22 +1319,51 @@ mod player {
             .iter()
             .any(|cap| cap.module() == "audio" && cap.action() == "capture");
         record_session(records);
-        let sandbox = data_root.join("apps").join(sanitize(&manifest.app.id));
+        // Where its data lives: a signed app's by its id and its verified
+        // publisher, so another app declaring the same id reaches a
+        // different place (K-1172, the desktop's IC-736); an unsigned app's
+        // (and the carried one's) by its id, as always. A signed app opening
+        // for the first time takes what its id kept here before across, once.
+        let verified = _opened_bundle
+            .as_ref()
+            .and_then(crate::run_config::verified_publisher);
+        // No machine key on the iPhone yet, and no secrets kept: nothing
+        // sealed to open again.
+        if let Err(words) = crate::run_config::adopt_id_keyed_data(
+            data_root,
+            &manifest.app.id,
+            verified.as_deref(),
+            &[],
+        ) {
+            leave_app();
+            let mut chars = words.chars();
+            let words: String = match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => words,
+            };
+            notice(
+                data_root,
+                "This app did not open",
+                &format!("{words}. Nothing was lost; open it again to finish."),
+            );
+            return;
+        }
+        let stores = crate::run_config::stores(data_root, &manifest.app.id, verified.as_deref());
+        let sandbox = stores.files.clone();
         let _ = std::fs::create_dir_all(&sandbox);
         // The app's key-value store and database: the runtime opens them only
         // when told where, and the phone players never said, so every
         // store.kv and store.sql call was refused and a recipe book made in
         // Studio quit at start. Kept beside the sandbox, not in it, as on a
         // desktop: the app names keys, never files.
-        let stores = data_root.join("stores");
-        let _ = std::fs::create_dir_all(&stores);
-        let store = stores.join(format!("{}.kv", sanitize(&manifest.app.id)));
+        let _ = std::fs::create_dir_all(data_root.join("stores"));
+        let store = stores.kv.clone();
         let files = crate::run_config::writes_files(&manifest).then(|| sandbox.clone());
         let mut config = krate_runtime::Config {
             session_policy: krate_policy::SessionPolicy::from_grants(kept),
             sandbox_root: sandbox,
             app_store_path: Some(store.clone()),
-            app_database_path: Some(store.with_extension("sqlite")),
+            app_database_path: Some(stores.sql.clone()),
             bundle_assets_root: assets_root,
             phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
             ..Default::default()
@@ -1331,9 +1373,6 @@ mod player {
         // The device key rests beside the sign-in, in Application Support,
         // which no other app reads and the Files app never shows (no machine
         // key on the iPhone yet).
-        let verified = _opened_bundle
-            .as_ref()
-            .and_then(crate::run_config::verified_publisher);
         let private = private_root();
         config.account_sync = crate::run_config::sync_plan(
             &private,

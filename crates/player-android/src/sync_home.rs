@@ -72,8 +72,10 @@ impl Phone {
         !toggles::global_toggle_path(&self.device_dir).exists()
     }
 
-    fn store(&self, app_id: &str) -> PathBuf {
-        crate::run_config::stores(&self.data_root, app_id).kv
+    /// The app's store.kv: by its publisher when it is signed (K-1172), the
+    /// same place its runs keep it.
+    fn store(&self, app: &LibApp) -> PathBuf {
+        crate::run_config::stores(&self.data_root, &app.id, app.publisher.as_deref()).kv
     }
 }
 
@@ -82,15 +84,21 @@ impl Phone {
 pub struct LibApp {
     pub n: usize,
     pub id: String,
+    /// The publisher its signature verifies to; None when unsigned. Its
+    /// data is kept by it (K-1172).
+    pub publisher: Option<String>,
     /// It asks for store.kv: it has data that syncs.
     pub uses_kv: bool,
     /// It writes files of its own: its folder syncs too (S3).
     pub uses_files: bool,
 }
 
-/// The Library apps as sync sees them, from their manifests in the order
-/// the home screen numbers them.
-pub fn lib_apps(manifests: &[Option<krate_manifest::Manifest>]) -> Vec<LibApp> {
+/// The Library apps as sync sees them, from their manifests and verified
+/// publishers in the order the home screen numbers them.
+pub fn lib_apps(
+    manifests: &[Option<krate_manifest::Manifest>],
+    publishers: &[Option<String>],
+) -> Vec<LibApp> {
     manifests
         .iter()
         .enumerate()
@@ -103,6 +111,7 @@ pub fn lib_apps(manifests: &[Option<krate_manifest::Manifest>]) -> Vec<LibApp> {
             Some(LibApp {
                 n,
                 id: m.app.id.clone(),
+                publisher: publishers.get(n).cloned().flatten(),
                 uses_kv,
                 uses_files: crate::run_config::writes_files(m),
             })
@@ -181,7 +190,7 @@ pub fn view(phone: &Phone, apps: &[LibApp]) -> (SyncView, Asked) {
     let mut asked = Vec::new();
     let mut newest: Option<u64> = None;
     for app in apps {
-        let store = phone.store(&app.id);
+        let store = phone.store(app);
         let state = if !app.uses_kv && !app.uses_files {
             AppSync::Nothing
         } else if toggles::app_toggle_path(&store).exists() {
@@ -398,7 +407,7 @@ pub fn act(phone: &Phone, apps: &[LibApp], asked: &Asked, answer: &SyncAnswer) -
             let Some(app) = apps.iter().find(|a| a.n == *n) else {
                 return acted("library");
             };
-            match toggles::set_app_sync(&phone.store(&app.id), *on) {
+            match toggles::set_app_sync(&phone.store(app), *on) {
                 Ok(()) => acted(&format!("app:{n}")),
                 Err(e) => say(
                     &format!("app:{n}"),
@@ -535,8 +544,8 @@ fn capital(text: &str) -> String {
 /// Clearing an app's data on this phone: what sync remembered about it goes
 /// too, so its next sync brings the account's copy back here rather than
 /// sending the emptied store on as a delete on every device.
-pub fn forget_after_clear(data_root: &Path, app_id: &str) {
-    toggles::forget_replicas(&crate::run_config::stores(data_root, app_id).kv);
+pub fn forget_after_clear(stores: &crate::run_config::Stores) {
+    toggles::forget_replicas(&stores.kv);
 }
 
 #[cfg(test)]
@@ -559,12 +568,14 @@ mod tests {
             LibApp {
                 n: 0,
                 id: "dev.krate.reminders".into(),
+                publisher: None,
                 uses_kv: true,
                 uses_files: false,
             },
             LibApp {
                 n: 1,
                 id: "dev.krate.clock".into(),
+                publisher: None,
                 uses_kv: false,
                 uses_files: false,
             },
@@ -684,7 +695,11 @@ mod tests {
             .ok()
         };
         let kv = "[[capabilities]]\ncap = \"store.kv\"\nrationale = \"x\"\nrequired = true\n";
-        let apps = lib_apps(&[manifest("dev.a", kv), None, manifest("dev.c", "")]);
+        let root = "ab".repeat(32);
+        let apps = lib_apps(
+            &[manifest("dev.a", kv), None, manifest("dev.c", "")],
+            &[None, None, Some(root.clone())],
+        );
         assert_eq!(
             apps.len(),
             2,
@@ -694,6 +709,24 @@ mod tests {
         assert!(
             !apps[1].uses_kv && apps[1].n == 2,
             "numbered as the home numbers it"
+        );
+        assert_eq!(apps[1].publisher.as_deref(), Some(root.as_str()));
+
+        // Sync reads the store the app's runs use: a signed app's is keyed
+        // by its publisher (K-1172), an unsigned app's by its id as before.
+        let dir = tempfile::tempdir().unwrap();
+        let p = phone(dir.path(), None);
+        assert_eq!(
+            p.store(&apps[1]),
+            crate::run_config::stores(dir.path(), "dev.c", Some(&root)).kv
+        );
+        assert_eq!(
+            p.store(&apps[1]),
+            dir.path().join("stores").join("dev.c@abababababababab.kv")
+        );
+        assert_eq!(
+            p.store(&apps[0]),
+            dir.path().join("stores").join("dev.a.kv")
         );
     }
 
@@ -708,10 +741,11 @@ mod tests {
         let app = LibApp {
             n: 2,
             id: "dev.krate.journal".into(),
+            publisher: None,
             uses_kv: false,
             uses_files: true,
         };
-        let store = p.store(&app.id);
+        let store = p.store(&app);
         let folder = dir.path().join("apps").join("dev.krate.journal");
         std::fs::create_dir_all(&folder).unwrap();
         let mine = vec![7u8; 3000];
@@ -798,11 +832,12 @@ mod tests {
     #[test]
     fn clearing_an_apps_data_forgets_only_what_sync_remembered() {
         let dir = tempfile::tempdir().unwrap();
-        let store = crate::run_config::stores(dir.path(), "dev.krate.reminders").kv;
+        let stores = crate::run_config::stores(dir.path(), "dev.krate.reminders", None);
+        let store = stores.kv.clone();
         toggles::set_app_sync(&store, false).unwrap();
         let replica = toggles::replica_path(&store, "u1");
         std::fs::write(&replica, b"{}").unwrap();
-        forget_after_clear(dir.path(), "dev.krate.reminders");
+        forget_after_clear(&stores);
         assert!(!replica.exists());
         assert!(
             toggles::app_toggle_path(&store).exists(),
