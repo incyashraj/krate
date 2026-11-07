@@ -79,7 +79,34 @@
 .newtick .nt-h { font-size: 13.5px; font-weight: 500; }
 #tickList:empty + .newtick { border-top: 0; padding-top: 0; }
 #supNote { margin-top: 12px; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; color: var(--ink-2); background: var(--green-soft); }
+/* your data: download it, or delete the account (rows and the confirm step are written by the live script) */
+.drow { display: flex; align-items: flex-start; gap: 16px; margin-top: 18px; }
+.drow .grow { min-width: 0; }
+.drow b { font-size: 15px; font-weight: 500; }
+.drow .sub { margin-top: 2px; }
+.drow .btn { flex: none; }
+.danger { margin-top: 18px; padding-top: 2px; border-top: 1px solid var(--line); }
+.btn.redtext { color: var(--danger); }
+.btn.red { color: #fff; background: var(--danger); }
+.btn.red:hover { background: color-mix(in srgb, var(--danger) 88%, #000); }
+#delBox { margin-top: 16px; display: grid; gap: 14px; font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+#delBox h3 { font-size: 15px; font-weight: 500; color: var(--ink); letter-spacing: -.01em; }
+#delBox ul { margin-top: 6px; padding-left: 18px; display: grid; gap: 4px; }
+#delBox ul li { overflow-wrap: anywhere; }
+#delBox .pick { display: grid; gap: 8px; margin-top: 8px; }
+#delBox .pick label { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--s2); cursor: pointer; }
+#delBox .pick input { flex: none; margin-top: 4px; accent-color: var(--danger); }
+#delBox .pick small { display: block; margin-top: 2px; font-size: 13px; color: var(--ink-3); }
+#delBox .applist { margin-top: 6px; font-size: 13.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+#delBox .confirm { display: grid; gap: 8px; }
+#delBox .confirm label { font-size: 14px; color: var(--ink); }
+#delBox .confirm code { font-family: inherit; font-weight: 600; }
+#delBox .dacts { display: flex; flex-wrap: wrap; gap: 8px; }
+#delBox .call a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.gone { width: min(460px, 100%); }
+.gone ul { margin-top: 10px; padding-left: 18px; text-align: left; font-size: 14.5px; color: var(--ink-2); display: grid; gap: 4px; }
 @media (max-width: 680px) { .acc { padding-top: 40px; } .who { flex-wrap: wrap; } .who img { width: 48px; height: 48px; } }
+@media (max-width: 440px) { .drow { flex-wrap: wrap; gap: 10px; } .drow .grow { flex-basis: 100%; } #delBox .dacts .btn { flex: 1 1 auto; } }
 </style>
 </head>
 <body>
@@ -190,7 +217,35 @@
         </div>
         <p class="note hidden" id="supNote"></p>
       </div>
+
+      <div class="card" id="data">
+        <h2>Your data</h2>
+        <p class="sub">What Krate keeps about you is yours: take a copy, or delete it.</p>
+        <div class="drow">
+          <div class="grow"><b>Download my data</b>
+            <p class="sub">One file with your account, sign-ins, apps, conversations and messages to us.</p></div>
+          <button class="btn ghost sm" id="expBtn" type="button">Download</button>
+        </div>
+        <p class="note" id="expNote" aria-live="polite"></p>
+        <div class="danger">
+          <div class="drow">
+            <div class="grow"><b>Delete my account</b>
+              <p class="sub">Your account and everything it keeps on Krate, for good. Apps on your computers stay yours.</p></div>
+            <button class="btn ghost sm redtext" id="delOpen" type="button" aria-expanded="false" aria-controls="delBox">Delete account</button>
+          </div>
+          <div id="delBox" class="hidden" aria-live="polite"></div>
+        </div>
+      </div>
     </div>
+  </div>
+
+  <!-- After a deletion. -->
+  <div class="panel gone hidden" id="gone">
+    <img class="mk" src="/krate-mark-3d-96.png" alt="">
+    <h1>Your account is deleted</h1>
+    <p id="goneSub">Everything it kept on Krate is gone. Apps on your computers are still yours.</p>
+    <ul id="goneList"></ul>
+    <div class="stack"><a class="btn dark" href="/">Back to Krate</a></div>
   </div>
 </section>
 
@@ -367,6 +422,133 @@
       loadTickets();
     });
   });
+
+  // ---- your data: the export, and deleting the account ----------------
+  var me = null;
+  $("expBtn").addEventListener("click", function () {
+    var b = $("expBtn"), note = $("expNote");
+    b.disabled = true; note.textContent = "Putting it together…";
+    fetch(HUB + "/me/export", { headers: { authorization: "Bearer " + tok } }).then(function (r) {
+      if (!r.ok) throw new Error(r.status === 401 ? "Sign in again, then try." : "That did not work. Try again in a minute.");
+      // Named here: a page on krate.tech cannot read the hub's file name.
+      var name = "krate-account-" + new Date().toISOString().slice(0, 10) + ".json";
+      return r.blob().then(function (blob) {
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        note.textContent = "Downloaded " + name + ".";
+      });
+    }).catch(function (e) { note.textContent = e.message || "That did not work. Try again in a minute."; })
+      .then(function () { b.disabled = false; });
+  });
+
+  function li(list) { return "<ul>" + list.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>"; }
+  function closeDelete() {
+    $("delBox").classList.add("hidden"); $("delBox").innerHTML = "";
+    $("delOpen").classList.remove("hidden"); $("delOpen").setAttribute("aria-expanded", "false");
+  }
+  $("delOpen").addEventListener("click", function () {
+    var box = $("delBox");
+    $("delOpen").classList.add("hidden"); $("delOpen").setAttribute("aria-expanded", "true");
+    box.classList.remove("hidden");
+    box.innerHTML = '<p class="sub">Checking what your account holds…</p>';
+    api("/me/delete").then(function (v) { me = v; paintDelete(v); })
+      .catch(function () { box.innerHTML = '<p class="sub">That did not load. Try again in a minute.</p>'; });
+  });
+
+  function paintDelete(v) {
+    var box = $("delBox"), h = "";
+    if (v.blocked) {
+      box.innerHTML = '<div class="call bad"><div>' + esc(v.blocked.message) + ' <a href="/orgs/">Your organisations</a></div></div>'
+        + '<div class="dacts"><button class="btn ghost sm" type="button" id="delCancel">Close</button></div>';
+      $("delCancel").addEventListener("click", closeDelete);
+      return;
+    }
+    if (!v.fresh) {
+      box.innerHTML = '<div class="call"><div>For your safety, sign in again first. Then you have ' + esc(v.fresh_minutes || 30) + ' minutes to delete your account.</div></div>'
+        + '<div class="dacts"><a class="btn dark sm" href="/login/?next=account">Sign in again</a><button class="btn ghost sm" type="button" id="delCancel">Not now</button></div>';
+      $("delCancel").addEventListener("click", closeDelete);
+      return;
+    }
+    h += '<div><h3>What goes</h3>' + li(v.deletes) + '</div>';
+    if (v.orgs && v.orgs.length) {
+      var orgNames = v.orgs.map(function (o) { return esc(o.name || o.slug) + " (" + esc(o.roles.join(", ")) + ")"; });
+      var orgList = orgNames.length > 1 ? orgNames.slice(0, -1).join(", ") + " and " + orgNames[orgNames.length - 1] : orgNames[0];
+      h += '<div><h3>Organisations</h3><p>You leave ' + orgList + '. Their apps and records stay with them.</p></div>';
+    }
+    if (v.app_builds) {
+      var names = (v.apps || []).map(function (a) { return a.name; });
+      h += '<div><h3>Your published apps</h3>'
+        + '<p class="applist">' + (names.length ? esc(names.join(", ")) : "Earlier versions of apps you published") + '</p>'
+        + '<div class="pick" role="radiogroup" aria-label="Your published apps">'
+        + '<label><input type="radio" name="delApps" value="remove" checked><span>Remove them<small>Their pages and links stop working.</small></span></label>'
+        + '<label><input type="radio" name="delApps" value="keep"><span>Leave them up<small>' + esc(v.keep_apps_means) + '</small></span></label>'
+        + '</div></div>';
+    }
+    if (v.subscription) h += '<div class="call warn"><div>' + esc(v.subscription.message) + '</div></div>';
+    h += '<div><h3>What stays</h3>' + li(v.stays) + '</div>';
+    if (v.subscription && !v.subscription.cancels) {
+      h += '<div class="dacts"><button class="btn ghost sm" type="button" id="delCancel">Close</button></div>';
+      box.innerHTML = h; $("delCancel").addEventListener("click", closeDelete); return;
+    }
+    h += '<div class="confirm"><label for="delType">Type <code>' + esc(v.confirm_phrase) + '</code> to confirm</label>'
+      + '<input class="inp" id="delType" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="delNote">'
+      + '<p class="note" id="delNote"></p>'
+      + '<div class="dacts"><button class="btn red sm" type="button" id="delGo" disabled>Delete my account</button>'
+      + '<button class="btn ghost sm" type="button" id="delCancel">Cancel</button></div></div>';
+    box.innerHTML = h;
+    var typed = $("delType"), go = $("delGo");
+    typed.addEventListener("input", function () { go.disabled = typed.value.trim().toLowerCase() !== v.confirm_phrase; });
+    $("delCancel").addEventListener("click", closeDelete);
+    go.addEventListener("click", function () { deleteAccount(typed.value.trim()); });
+  }
+
+  function deleteAccount(phrase) {
+    var go = $("delGo"), note = $("delNote");
+    var pick = document.querySelector('input[name="delApps"]:checked');
+    go.disabled = true; $("delCancel").disabled = true; $("delType").disabled = true;
+    note.textContent = "Deleting…";
+    function send(body) {
+      return fetch(HUB + "/me/delete", {
+        method: "POST",
+        headers: Object.assign({ "content-type": "application/json" }, body.resume ? {} : { authorization: "Bearer " + tok }),
+        body: JSON.stringify(body),
+      }).then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j || {} }; }); });
+    }
+    function step(r, n) {
+      // A large account goes over several requests; each answers "running"
+      // with the key that carries it on.
+      if (r.status === 202 && r.body.resume && n < 60) {
+        note.textContent = "Deleting… (" + (r.body.done || 0) + " of " + (r.body.of || 13) + ")";
+        return send({ resume: r.body.resume }).then(function (next) { return step(next, n + 1); });
+      }
+      if (r.status === 200 && r.body.state === "done") return done(r.body);
+      if (r.body.error === "unfinished" && r.body.resume && n < 3) {
+        return send({ resume: r.body.resume }).then(function (next) { return step(next, n + 1); });
+      }
+      note.textContent = r.body.message || "That did not work. Nothing more was deleted; try again in a minute.";
+      $("delCancel").disabled = false; $("delType").disabled = false; go.disabled = false;
+    }
+    send({ confirm: phrase, apps: pick ? pick.value : "remove" }).then(function (r) { return step(r, 0); })
+      .catch(function () { note.textContent = "That did not reach Krate. Check your connection and press Delete again: it carries on where it stopped."; go.disabled = false; $("delCancel").disabled = false; });
+  }
+
+  function done(result) {
+    try { localStorage.removeItem("krate_tok"); } catch (x) {}
+    tok = "";
+    var c = result.counts || {}, lines = [];
+    if (c.app_builds_removed) lines.push(c.apps_removed === 1 ? "Your published app and its versions" : (c.apps_removed || c.app_builds_removed) + " published apps and their versions");
+    if (c.orgs_left) lines.push("You left " + c.orgs_left + (c.orgs_left === 1 ? " organisation" : " organisations"));
+    if (c.conversations) lines.push(c.conversations + (c.conversations === 1 ? " conversation" : " conversations") + " in Studio");
+    if (c.sign_ins) lines.push(c.sign_ins + (c.sign_ins === 1 ? " sign-in ended" : " sign-ins ended"));
+    if (c.subscription_cancelled) lines.push("Your paid plan, cancelled");
+    if (result.github_note) lines.push(result.github_note);
+    $("goneList").innerHTML = lines.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+    $("acct").classList.add("hidden"); $("askLogin").classList.add("hidden"); $("signout").classList.add("hidden");
+    $("gone").classList.remove("hidden");
+    window.scrollTo(0, 0);
+  }
 
   $("signout").addEventListener("click", function (e) {
     e.preventDefault();
