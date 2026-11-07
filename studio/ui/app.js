@@ -3648,6 +3648,23 @@ async function runPlanInner() {
       $("send").disabled = false;
       return;
     }
+    // No connection is not a planning hiccup either: the build needs the
+    // same connection, so "I'll skip the questions and build right away"
+    // was followed, seconds later, by a failed build saying the connection
+    // dropped. Said once, nothing built, and Try again asks again.
+    if (/failed to fetch|networkerror|load failed|err_internet|err_network|\bnetwork\b|offline|could not connect|connection (refused|reset|dropped)/i
+      .test(String(err && err.message ? err.message : err))) {
+      const kept = state.planning;
+      say("KRATE", "The connection dropped before I could read your request. Nothing was built, and your words are kept.", null, {
+        variant: "ask",
+        actions: [{ label: "Try again", primary: true, run: () => { state.planning = kept; runPlan(); } }],
+      });
+      state.planning = null;
+      setIdleNote("");
+      show("idle");
+      $("send").disabled = false;
+      return;
+    }
     say("KRATE", "I'll skip the questions this time and build right away.");
     finishPlanningAndBuild();
     return;
