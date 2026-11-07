@@ -360,7 +360,7 @@ cd krate
 cargo build --workspace && cargo test --workspace
 ```
 
-The workspace has over 1,600 Rust tests. You need the Rust toolchain named in
+The workspace has over 2,300 Rust tests. You need the Rust toolchain named in
 `rust-toolchain.toml` and `cargo-component`; check your machine with
 `krate doctor`. Platform packages, the two Windows traps, and the
 one-package Linux receiver note live in [docs/build.md](docs/build.md).
@@ -369,9 +369,12 @@ one-package Linux receiver note live in [docs/build.md](docs/build.md).
 
 ```text
 apps/       Sample apps and apps used to test Krate
-crates/     Runtime, CLI, policy, adapters, MCP server, authoring, and SDK
+cloud/      The hub (hub.krate.tech) and the build service behind Studio in a browser
+crates/     Runtime, CLI, policy, desktop/browser/phone adapters, MCP server, authoring, SDK
 docs/       Website, book, design records, and technical documentation
+evidence/   Measurements, claim records and release evidence behind the numbers above
 scripts/    Build, install, test, evidence, and release tools
+studio/     Krate Studio, the desktop app
 test/       Integration fixtures and cross-language tests
 wit/        Krate interface definitions
 ```
@@ -400,7 +403,8 @@ Everyone is held to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 A random id made on your machine, the Krate version, the OS name, one of
 `install` / `make` / `open` / `publish`, whether an AI wrote the app, and
-whether it worked. Never: app names, prompts, paths, or anything about you.
+whether it worked; when an app does not open, one word for why from a fixed
+list (`refused`, `not-found`, `bad-bundle` and so on). Never: app names, prompts, paths, or anything about you.
 `krate telemetry off` turns it off (`DO_NOT_TRACK=1` is honoured too), and
 it says so on first run rather than hiding here.
 
@@ -410,7 +414,7 @@ it says so on first run rather than hiding here.
 - Current release: [the latest on the releases page](https://github.com/incyashraj/krate/releases/latest)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
-- License: MIT OR Apache-2.0
+- License: MIT OR Apache-2.0 for the player, format and CLI; BSL 1.1 for Studio and the hub ([details](#license))
 
 
 ## License
