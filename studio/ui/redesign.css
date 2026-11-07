@@ -2152,6 +2152,9 @@ body:not(.light) #viewSession #thread .vchip > b { background: var(--surface-3);
 #viewSession #thread .vchip .vact.vg:hover { background: var(--surface-2); color: var(--ink); }
 #viewSession #thread .vbad .vchip .vact { background: transparent; color: var(--danger); padding: 0 10px; }
 #viewSession #thread .vbad .vchip .vact:hover { background: var(--danger-soft); }
+/* The newest receipt has no buttons: the app's card beside it has Run and
+   Share (or Stop, or Try again). Older receipts keep theirs. */
+#viewSession #thread .msg.vlatest .vchip .vact { display: none; }
 
 /* ---- the card being made: the code streaming in ------------------------- */
 .kr-code { --code-bg: #fdfdfe; position: absolute; inset: 0; z-index: 3; display: none; background: var(--code-bg); }

@@ -1566,6 +1566,7 @@ function appendLiveChip(version) {
   }
   $("thread").appendChild(el);
   $("thread").scrollTop = $("thread").scrollHeight;
+  markLatestReceipt();
   return el;
 }
 
@@ -1587,7 +1588,7 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
     : null;
   const open = document.createElement("button");
   open.className = "vact";
-  open.textContent = "Open";
+  open.textContent = "Run";
   open.addEventListener("click", () => openApp(mine, version));
   chip.appendChild(open);
   const share = document.createElement("button");
@@ -1595,6 +1596,17 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
   share.textContent = "Share";
   share.addEventListener("click", () => openSendSheet(mine, version, share));
   chip.appendChild(share);
+  markLatestReceipt();
+}
+
+/* The newest receipt in the conversation carries no buttons of its own:
+ * the app's card says the same things (Run, Share, Stop, Try again) next
+ * to the app itself, and the same action in two places reads as two
+ * actions. Older receipts keep theirs -- they are the only way back to
+ * that version. */
+function markLatestReceipt() {
+  const all = [...document.querySelectorAll("#thread .msg.vlive, #thread .msg.vok, #thread .msg.vbad")];
+  all.forEach((m, i) => m.classList.toggle("vlatest", i === all.length - 1));
 }
 
 function settleChipBad(el, version, retry, stopped) {
@@ -1616,6 +1628,7 @@ function settleChipBad(el, version, retry, stopped) {
     fix.addEventListener("click", retry);
     el.querySelector(".vchip").appendChild(fix);
   }
+  markLatestReceipt();
 }
 
 function say(who, body, files, extra) {
@@ -7057,19 +7070,17 @@ function setPane(name) {
   if (name !== "preview") fillPane(name);
 }
 
-/* Run and Share in the panel's header: the finished app's two verbs,
- * shown only when there is a finished app. They press the card's own
- * buttons, so everything those do -- the web's download, the send sheet,
- * a version's own file -- stays in one place. */
+/* Run and Share live on the app's own card, under the preview, and
+ * nowhere else. The panel's header used to carry them too, as "Run it"
+ * and "Share" beside the card's Run and Share and the receipt's Open and
+ * Share: one app, two actions, three names. The header buttons stay in
+ * the page, hidden, because older doors still press them by id. */
 function paintPanelBar() {
   const run = $("barRun");
   const share = $("barShare");
   if (!run || !share) return;
-  const ready = state.phase === "done" && !!currentApp();
-  run.classList.toggle("hidden", !ready);
-  share.classList.toggle("hidden", !ready);
-  const label = $("openBtn") && $("openBtn").textContent.trim();
-  if (label) run.textContent = label;
+  run.classList.add("hidden");
+  share.classList.add("hidden");
 }
 
 async function appContents(app) {

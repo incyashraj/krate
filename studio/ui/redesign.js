@@ -754,9 +754,10 @@
       ver.className = "kr-ver"; ver.hidden = true;
       title.insertAdjacentElement("afterend", ver);
       // The newest version, or "draft" before anything is built -- also for
-      // a reopened session, whose transcript has no build rows.
+      // a reopened session, whose transcript has no build rows. Only a build
+      // that made something counts: a first build that failed made no v1.
       const paint = () => {
-        const chips = qa("#thread .vchip b");
+        const chips = qa("#thread .msg.vok .vchip b");
         const last = chips[chips.length - 1];
         const st = app(), sess = st && st.session;
         const word = last ? last.textContent : sess && sess.result ? `v${sess.builds || 1}` : sess ? "draft" : "";
@@ -789,7 +790,8 @@
       (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(place);
     }
     const share = $("barShare");
-    // Run it is relabelled by app.js (textContent), so its icon is drawn in CSS.
+    // Hidden for good (the card under the preview has Run and Share); its
+    // icon is kept so an old door that unhides it still draws it right.
     if (share && !q("svg", share)) share.insertAdjacentHTML("afterbegin", ico("share"));
   })();
 
@@ -1412,7 +1414,7 @@
   function thenPress(id, ms = 6000) {
     const t0 = Date.now();
     const tick = () => {
-      const b = $(id);
+      const b = /^[.#\[]/.test(id) ? q(id) : $(id);
       if (b && !b.classList.contains("hidden") && b.offsetParent) { press(b); return; }
       if (Date.now() - t0 < ms) setTimeout(tick, 100);
     };
@@ -1430,7 +1432,15 @@
       h.className = "kr-hov";
       h.innerHTML = `<span class="kr-hb dark" role="button" tabindex="0" data-a="run">${ico("play")}Run</span>` +
         `<span class="kr-hb" role="button" tabindex="0" data-a="share">${ico("share")}Share</span>`;
-      const go = (b) => { card.click(); thenPress(b.dataset.a === "run" ? "barRun" : "barShare"); };
+      // The app card's own Run and Share, under the preview: the one place
+      // the session has them.
+      // On a phone the session opens on its conversation, so the app side
+      // is shown first or the card's button is never on screen to press.
+      const go = (b) => {
+        card.click();
+        setTimeout(() => { const m = q('.mob-switch [data-mob="app"]'); if (m && m.offsetParent) m.click(); }, 120);
+        thenPress(`.kr-fdone [data-fa="${b.dataset.a === "run" ? "run" : "share"}"]`);
+      };
       h.addEventListener("click", (e) => {
         const b = e.target.closest("[data-a]"); if (!b) return;
         e.stopPropagation(); e.preventDefault();
@@ -2325,7 +2335,7 @@
       } });
       let label = ""; try { label = agentLabel(); } catch (err) {}
       items.push({ mark: logo(st && st.agent), label: "Change the AI", em: label, run: () => agentPicker(t) });
-      if (a) items.push({ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download", run: () => press($("filesSave")) });
+      if (a) items.push({ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download the file", run: () => press($("filesSave")) });
       items.push("sep", { icon: "trash", label: "Remove this app", danger: true, keep: true, run: (row) => {
         if (!row.dataset.armed) { row.dataset.armed = "1"; q(".kr-pt", row).firstChild.textContent = "Click again to remove it"; return true; }
         try { removeCurrentSession(); } catch (err) {}
@@ -2981,7 +2991,7 @@
           <div class="kd-by">${m.author ? `<span class="kr-av sm">${esc(m.author.charAt(0).toUpperCase())}</span>` : ""}${[m.author ? "@" + esc(m.author) : "", m.category ? esc(catName(m.category)) : "", a.opens > 0 ? `${a.opens} open${a.opens === 1 ? "" : "s"} this month` : ""].filter(Boolean).join(" · ")}</div>
           ${m.description ? `<div class="kd-said"><small>In one sentence</small><p>${esc(m.description)}</p></div>` : ""}
           <div class="kd-file"><img src="krate-doc.png" alt=""><div><b>${esc(fileOf(a))}</b><small>${[kb(a), when ? "published " + when : "", "macOS, Windows and Linux"].filter(Boolean).join(" · ")}</small></div></div>
-          <div class="kd-act">${getBtn(a, true)}<button type="button" class="kr-ghost2" data-kd="run">${ico("play")}Run it</button><button type="button" class="kr-ghost2" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button><button type="button" class="kr-ib" data-kd="link" title="Copy the link" aria-label="Copy the link">${ico("link")}</button></div>
+          <div class="kd-act">${getBtn(a, true)}<button type="button" class="kr-ghost2" data-kd="run">${ico("play")}Run</button><button type="button" class="kr-ghost2" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button><button type="button" class="kr-ib" data-kd="link" title="Copy the link" aria-label="Copy the link">${ico("link")}</button></div>
           <div class="kd-note"></div>
           <div class="kd-sec"><h6>What it asks for</h6><div class="kd-asks"><span class="kd-dim">Reading the file…</span></div><p class="kd-wall">${ico("shield")}Krate enforces this list. The app cannot do anything that is not on it, whatever its code says.</p></div>
         </div></div>${more(a)}`;
@@ -3478,7 +3488,11 @@
     wasOpen = open;
     const nowBuilding = shown("stateBuilding") || shown("statePlanning");
     sw.classList.toggle("live", nowBuilding);
-    if (building && !nowBuilding && shown("stateDone") && open) set("app");
+    // Finished, or failed for a reason the card can act on: the app side
+    // has Run and Share, or Try again, so it is shown. A build the person
+    // stopped stays where they pressed Stop.
+    const failed = shown("stateFailed") && !/stop/i.test((document.getElementById("failTitle") || {}).textContent || "");
+    if (building && !nowBuilding && (shown("stateDone") || failed) && open) set("app");
     else if (!building && nowBuilding && view.dataset.mob === "chat") sw.classList.add("news");
     building = nowBuilding;
   };
