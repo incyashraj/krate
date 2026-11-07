@@ -382,6 +382,11 @@ test("the desk: people with who is unsubscribed, a draft that survives, a test t
     assert.deepEqual(mail.sent[0].to, ["yashraj@krate.tech"]);
     assert.equal(mail.sent[0].subject, "[test] Thank you");
     assert.ok(mail.sent[0].html.includes("krate-logo.png"));
+    // Clicking Unsubscribe in a test must not stop the founder's own email:
+    // the line points at the setting, with no one-click link or headers.
+    assert.ok(mail.sent[0].text.includes("https://krate.tech/account/#mail"), mail.sent[0].text);
+    assert.ok(!/mail\/unsubscribe\?u=/.test(mail.sent[0].text + mail.sent[0].html), "no real one-click link in a test");
+    assert.ok(!mail.sent[0].headers || !mail.sent[0].headers["List-Unsubscribe"], "no one-click header in a test");
     assert.equal(env._kv.get(`announce:${draftId}`), undefined);
 
     // Send to two picked people (one picked person later turned off).

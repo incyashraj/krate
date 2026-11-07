@@ -44,6 +44,9 @@ import { wantsNews, unsubscribeLink, unsubscribeHeaders } from "./mail-prefs.js"
 export const FROM = "Yashraj Pardeshi <yashraj@krate.tech>";
 export const REPLY_TO = "yashraj@krate.tech";
 export const TEST_TO = "yashraj@krate.tech";
+/// Where a test email's unsubscribe line goes: the setting, never a real
+/// one-click link.
+const TEST_UNSUBSCRIBE_LINK = "https://krate.tech/account/#mail";
 export const PER_RUN = 40;
 const GAP_MS = 600;
 const DRAFT_KEY = "announce-draft";
@@ -359,14 +362,16 @@ export async function deskMailApi(request, route, env, body, admin, opts = {}) {
     const words = String(body.body || "").trim();
     if (!subject || !words) return json({ error: "empty", message: "Write a subject and the email first." }, 400);
     const mine = await adminAccount(env, admin);
-    const link = (mine && (await unsubscribeLink(env, mine.id))) || `${String(env.PUBLIC_BASE || "").replace(/\/$/, "")}/mail/unsubscribe`;
+    // A test's unsubscribe line points at the email setting, not at the
+    // founder's own one-click link, and carries no one-click headers: a click
+    // while checking how the email looks must not stop his own email.
+    const link = TEST_UNSUBSCRIBE_LINK;
     const mail = renderAnnouncement({ subject, body: words }, { firstName: mine ? firstNameOf(mine.user) : "Yashraj", link });
     const why = await sendMail(env, {
       to: TEST_TO,
       subject: `[test] ${mail.subject}`,
       text: mail.text,
       html: mail.html,
-      headers: unsubscribeHeaders(link),
       from: FROM,
       replyTo: REPLY_TO,
     });
