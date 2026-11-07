@@ -4692,8 +4692,12 @@ fn own_process_group(command: &mut ProcessCommand) {
     let _ = command;
 }
 
-/// Stop an author and, on Unix, its whole process group.
+/// Stop an author and everything it started: its process group on Unix,
+/// its process tree on Windows (Git Bash's sh, like dash, keeps the tool as
+/// a child that holds the output pipes).
 fn stop_process_group(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    crate::winproc::kill_process_tree(child.id());
     #[cfg(unix)]
     if let Ok(pid) = i32::try_from(child.id()) {
         // The group was made with the author as its leader
@@ -12946,7 +12950,9 @@ mod prompt_door_tests {
             false
         ));
         #[cfg(target_os = "linux")]
-        assert!(super::ARGV_ONE_ARG_MAX < 128 * 1024, "under MAX_ARG_STRLEN");
+        const {
+            assert!(super::ARGV_ONE_ARG_MAX < 128 * 1024, "under MAX_ARG_STRLEN")
+        };
     }
 }
 
