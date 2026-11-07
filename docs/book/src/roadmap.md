@@ -1,98 +1,67 @@
-# Roadmap
+# Where Krate is
 
-This roadmap is an estimate, not a promise. Early phases may move faster because
-the project is still small. Later phases depend on hardware access, app store
-rules, security review, and real users.
+Updated 7 November 2026. Krate 0.5.4 is the current release, and 0.5.5 is
+in pre-release (rc9, 4 November 2026). What changed in each version is in
+the [changelog](https://github.com/incyashraj/krate/blob/main/CHANGELOG.md)
+and on the [releases page](https://github.com/incyashraj/krate/releases).
 
-The current state is:
+## What ships today
 
-- **Phase 0 is mostly done.** The repo, docs, CI, issues, labels, and release
-  setup exist. Community and public launch items remain.
-- **Phase 1 engineering is done.** One shared `.wasm` component proved the base
-  runtime path.
-- **Phase 2 is active and close in engineering terms.** Krate now has UAPI
-  slices for CLI-style apps, UCap manifests and launch grants, sample apps, and
-  repeatable evidence scripts. Formal Phase 2 exit still needs final
-  cross-host evidence, UAPI freeze review, and an outside developer walkthrough.
-- **Phase 3 is about half done.** One portable component opens real windows
-  on all three desktop OSes (native AppKit widgets on macOS; winit windows
-  with the first drawn-widget pass on Linux and Windows), and the agent
-  surface (embedding API, `--json` reports, MCP server) is complete. The
-  original contract-layer note follows: the first `gui` world and the
-  `ui`, `gfx`, and `audio` WIT drafts now parse and have a CI checker. This does
-  not freeze the API and does not replace Phase 2's remaining outside review.
+**Make an app.** [Krate Studio](https://krate.tech/studio/) runs on Mac,
+Windows and Linux, and in the browser at
+[krate.tech/app](https://krate.tech/app/): describe the app, watch it get
+built, change it, and publish it. Studio's IDE (Beta) opens, edits and
+builds a Krate project with your AI, in the 0.5.5 pre-release.
 
-## System Timeline
+**Send it as a link.** A link opens a Krate app in any browser tab, phones
+included, with nothing to install. The app keeps its own data, opens and
+saves files, and asks before it uses the camera, microphone or location.
 
-Green means built or proven. Yellow means built enough for the current proof.
-Gray means planned.
+**Run it natively.** The same `.krate` file runs on macOS (Apple silicon
+and Intel), Windows (x64 and ARM64) and Linux (x86_64 and arm64). At Krate
+0.5.4, 10 ported apps pass the same checks on all three systems in CI
+([the records](https://krate.tech/progress/)).
 
-```mermaid
-flowchart LR
-    P0["0. Foundation<br/>repo, docs, CI"]
-    P1["1. Runtime proof<br/>same WASM on 3 desktops"]
-    P2["2. UAPI v0.1<br/>files, network, time, locale"]
-    P3["3. Desktop UI<br/>native windowed app"]
-    P4["4. Mobile hosts<br/>iOS and Android"]
-    P5["5. SDK<br/>templates, debug, hot reload"]
-    P6["6. Distribution<br/>bundles, signing, identity"]
-    P7["7. v1.0<br/>real product migration"]
+**Publish it.** The hub at [krate.tech/cloud](https://krate.tech/cloud/)
+is the gallery: every app gets a page, every developer gets their own page
+at `name.krate.tech`, and publishing an update reaches the links people
+already have.
 
-    P0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+**Know who made it.** Publishers sign their apps, delegate release keys and
+revoke them; an app changed after signing does not run. Every app declares
+what it may touch, and the person opening it sees that list first. The
+[security model](https://krate.tech/security/) has the details.
 
-    classDef done fill:#d9fbe3,stroke:#16833a,color:#102a17,stroke-width:2px;
-    classDef current fill:#fff3bf,stroke:#b7791f,color:#2d2100,stroke-width:2px;
-    classDef pending fill:#eeeeee,stroke:#999999,color:#777777,stroke-width:1px;
+**Use it as a team.** [Organisations](organisations.md) give a company
+private apps with approvals, releases and groups, team data encrypted end
+to end, company connections the hub cannot read, and company sign-in
+(SAML, OpenID Connect and SCIM). The console is live at
+[krate.tech/orgs](https://krate.tech/orgs/), and the command line ships in
+the 0.5.5 pre-release.
 
-    class P0 done;
-    class P1 done;
-    class P2 current;
-    class P3 current;
-    class P4,P5,P6,P7 pending;
-```
+**Bring an app you have (Beta).** `krate port` reads a project and shows
+the plan, and Studio's Port door rewrites it as one `.krate`
+([porting](porting.md)). The door is in web Studio today and in desktop
+Studio in the 0.5.5 pre-release.
 
-## Phase Table
+**Bring bigger programs.** C and C++ programs run as Krate apps, apps reach
+the GPU through `krate:gpu` (wgpu and Bevy draw in a Krate window), and
+`krate:process` lets an app run programs on the computer it opens on. Doom
+ships as one `.krate`. All of this is in the 0.5.5 pre-release.
 
-| # | Phase | Goal | Estimate | Status |
-|---|-------|------|----------|--------|
-| 0 | Foundation | Make the project real enough to work in public. | Done enough for development; external items pending | Mostly done |
-| 1 | Runtime proof | Run one WASM component on Linux, macOS, and Windows. | Done | Engineering done |
-| 2 | UAPI v0.1 | Build useful CLI APIs and sample apps. | in progress | Active; exit evidence in progress |
-| 3 | Desktop UI | Run one GUI app on Windows, macOS, and Linux. | est. 6 to 10 weeks | About half done: real windows on all three OSes, native macOS widgets, first drawn pass, agent surface complete |
-| 4 | Mobile hosts | Run the same app on iOS and Android. | est. 8 to 12 weeks | Planned |
-| 5 | Developer SDK | Make project creation, debug, and packaging smooth. | est. 6 to 10 weeks | Planned |
-| 6 | Distribution | Add bundles, signing, updates, and identity. | est. 8 to 12 weeks | Planned |
-| 7 | v1.0 hardening | Migrate a real app and clean up for public launch. | est. after Phase 6 | Planned |
+## Next
 
-## Later Authoring Direction
+- **Krate's own Players for iPhone and Android, in a release.** Phones
+  open Krate apps from a link in the browser today.
+- **Web apps inside a `.krate`.** Plain HTML and exported web apps run in
+  the same file and behind the same permission card as every other app.
+- **The same data on every device.** A signed-in person's apps keep the
+  same data on each of their devices, with a switch to turn it off and a
+  choice whenever two devices changed the same thing.
 
-After the SDK and core UAPI are stable, Krate plans to explore AI-assisted
-source migration for existing applications. Given an application's source, a
-porting tool could identify operating-system and framework APIs, replace
-supported calls with Krate UAPI calls, derive the capabilities the application
-must request, and package the result as a `.krate`.
+## Earlier pages
 
-This is a source-porting workflow, not a promise that an arbitrary compiled
-`.app`, `.exe`, or other native binary can be wrapped automatically. It will be
-introduced framework by framework and must remain gated by compatibility tests
-and human review of the requested capabilities.
-
-## What Must Happen Before Phase 2 Exits
-
-The code has moved well past Phase 1. Phase 2 should not be called closed until
-the evidence is crisp:
-
-- Freeze UAPI v0.1 after final review.
-- Collect clean Linux, macOS, and Windows evidence for the sample apps and UCap
-  denial paths.
-- Keep benchmark, dependency, and fuzz evidence current for the final commit.
-- Complete one timed outside developer walkthrough.
-- Finalize the Phase 2 retrospective.
-- Keep Phase 3 implementation limited to draft contracts and prototypes until
-  the Phase 2 outside review is complete.
-
-## Phase 2 In One Sentence
-
-Phase 2 makes Krate useful: a WebAssembly app can call Krate for files,
-network, time, locale, and terminal I/O, and the runtime can enforce explicit
-capability grants before host access.
+[Vision](vision.md), [Architecture](architecture.md),
+[Build Log](build-log.md) and [Krate for Everyone](progress-for-everyone.md)
+were written in July and August 2026, while Krate was being built phase by
+phase, and describe the plan as it stood then.

@@ -1,5 +1,8 @@
 # Architecture
 
+> Written in August 2026, while Krate was being built. For Krate today, see the
+> [introduction](introduction.md) and [where Krate is](roadmap.md).
+
 Krate has one job: keep app code above the platform line.
 
 An app should not need to know whether it is running on Linux, Windows, macOS,
