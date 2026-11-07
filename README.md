@@ -329,7 +329,7 @@ never work.
 ## `krate check-app`: the oracle behind AI authoring
 
 An AI writing code needs a truthful, fast answer to "is this actually
-correct?" `check-app` runs six stages and prints one verdict; because the
+correct?" `check-app` runs nine stages and prints one verdict; because the
 failure text names the fix, an agent can loop on it without a human in the
 middle.
 
@@ -341,6 +341,9 @@ middle.
 | imports | 13 | It imports only `krate:*`, no `wasi:*` leak |
 | run | 14 | It actually runs, headless |
 | shoot | 15 | A GUI app paints a real frame |
+| usability | 16 | Driven the way a person would: it stays open, follows a resize, answers a press |
+| screens | 17 | It fits a phone, a tablet and a desktop window (from 0.5.5) |
+| phone | 18 | It runs the way a phone runs it, on the interpreter iOS requires, and its first frame and scrolling are timed (from 0.5.5) |
 
 `--json` gives the same verdict as a machine-readable object; `--shoot
 frame.png` writes the app's first frame to a PNG so output can be looked at
