@@ -292,7 +292,7 @@ See Electron's application packaging (https://www.electronjs.org/docs/latest/tut
 
 ### Compare the distribution boundary
 
-Desktop distribution models, reviewed 20 September 2026
+Desktop distribution models, reviewed 7 November 2026
 
 Question | Electron | Tauri | Krate
 

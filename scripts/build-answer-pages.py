@@ -498,7 +498,7 @@ krate run regex.krate --prompt</pre>
 <p>A link opens the app in any modern browser with nothing to install. On a desktop, the Krate runtime runs the same file natively; it is installed once and shared by every Krate app.</p>
 <p>See Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/application-distribution">application packaging</a> and Tauri's <a href="https://tauri.app/distribute/">distribution formats</a>. Electron's <code>app.asar</code> can package application source, but it is delivered inside a platform-specific Electron distribution; it is not a standalone cross-OS executable.</p>"""),
             ("Compare the distribution boundary", """<div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
-<caption>Desktop distribution models, reviewed 20 September 2026</caption>
+<caption>Desktop distribution models, reviewed 7 November 2026</caption>
 <thead><tr><th scope="col">Question</th><th scope="col">Electron</th><th scope="col">Tauri</th><th scope="col">Krate</th></tr></thead>
 <tbody>
 <tr><th scope="row">Application artifact</th><td>Platform-specific packaged application.</td><td>Platform-specific application bundle or installer.</td><td>One .krate file for every system, and a link that opens it in any browser.</td></tr>

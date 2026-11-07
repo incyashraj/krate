@@ -384,4 +384,12 @@ h3 { font-size: 19px; line-height: 1.3; font-weight: 500; letter-spacing: -.02em
   .chk { min-height: 44px; align-items: center; }
   .chk input { margin-top: 0; width: 20px; height: 20px; }
 }
+/* phones: a 14px floor under the kit's small type (footer, eyebrows, the
+   meta line, pills), which was 13-13.5px and hard to read at arm's length. */
+@media (max-width: 680px) {
+  /* :root-prefixed so a page's own ".ph .meta { font-size: 13px }" does not
+     win back the phone size; only the size changes. */
+  :root .foot h5, :root .foot a, :root .foot .copy span, :root .ph .meta, :root .meta,
+  :root .ph .updated, :root .updated, :root .eye, :root .pill { font-size: 14px; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .js .rv { opacity: 1; transform: none; } }

@@ -172,9 +172,9 @@ def main():
 .prose .steps li + li {{ margin-top: 0; }}
 .pl {{ margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; }}
 .tbl .fn {{ white-space: nowrap; }}
-@media (max-width: 680px) {{ .tbl.cmp {{ min-width: 0; font-size: 13px; }} .tbl.cmp td:first-child {{ min-width: 0; }} .tbl.cmp th, .tbl.cmp td {{ padding-left: 10px; padding-right: 10px; }} }}
-@media (max-width: 680px) {{ .doc .stats {{ gap: 10px; }} .doc .stat {{ padding: 18px 16px 16px; }} .doc .stat b {{ font-size: 25px; white-space: nowrap; }} .doc .stat span {{ font-size: 13px; }} .steps li {{ padding-left: 52px; }} .steps li::before {{ left: 12px; }} .tblw.tall {{ max-height: 480px; }} }}
-@media (max-width: 680px) {{ .prose .tbl:not(.cmp) {{ font-size: 13px; }} .prose .tbl:not(.cmp) th {{ white-space: normal; padding: 10px 8px; }} .prose .tbl:not(.cmp) td {{ padding: 12px 8px; }} .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child {{ padding-left: 14px; }} .prose .tbl:not(.cmp) td:first-child {{ white-space: normal; }} .prose .tbl:not(.cmp) code {{ white-space: normal; overflow-wrap: anywhere; font-size: 11.5px; }} }}
+@media (max-width: 680px) {{ .tbl.cmp {{ min-width: 0; font-size: 14px; }} .tbl.cmp td:first-child {{ min-width: 0; }} .tbl.cmp th, .tbl.cmp td {{ padding-left: 10px; padding-right: 10px; }} }}
+@media (max-width: 680px) {{ .doc .stats {{ gap: 10px; }} .doc .stat {{ padding: 18px 16px 16px; }} .doc .stat b {{ font-size: 25px; white-space: nowrap; }} .doc .stat span {{ font-size: 14px; }} .steps li {{ padding-left: 52px; }} .steps li::before {{ left: 12px; }} .tblw.tall {{ max-height: 480px; }} }}
+@media (max-width: 680px) {{ .prose .tbl:not(.cmp) {{ font-size: 14px; }} .prose .tbl:not(.cmp) th {{ white-space: normal; padding: 10px 8px; }} .prose .tbl:not(.cmp) td {{ padding: 12px 8px; }} .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child {{ padding-left: 14px; }} .prose .tbl:not(.cmp) td:first-child {{ white-space: normal; }} .prose .tbl:not(.cmp) code {{ white-space: normal; overflow-wrap: anywhere; font-size: 13px; }} }}
 </style>
 </head>
 <body>
