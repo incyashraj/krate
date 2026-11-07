@@ -163,6 +163,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Reworked the public mdBook docs into clearer human language, added system flow diagrams, and changed the roadmap from fixed fixed-month language to estimates.
 
 ### Fixed
+- Windowed-sync tests no longer use a fixed 100 ms sleep before asserting the stand-in hub saw the connection; they poll `served` with a 5 s deadline so the test stays reliable on a busy machine (#72).
 - Krate Studio now creates an ignored placeholder resource for debug and test builds when `studio/bin/` is absent, allowing tests to compile on a fresh checkout while keeping the release engine requirement intact.
 
 ---
