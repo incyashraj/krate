@@ -7498,7 +7498,7 @@ async function fillDetails(app) {
   host.replaceChildren();
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   if (!app) {
-    host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, where it is, and how to build it again from a terminal."));
+    host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, its version and where it runs."));
     return;
   }
   const copyBtn = (label, text, cls) => {
@@ -7543,28 +7543,25 @@ async function fillDetails(app) {
     if (m) version = m[1];
   } catch (e) {}
   const display = (app.name || "").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  // What a person asks first: what it is, which version, how big, where it
+  // runs and what it may touch. Who built it, the file and the developer's
+  // commands come after.
   row("Name", display || "Your app");
-  row("File", app.name || baseName(info.path || app.path), "mono");
-  // The builds made in this session, not published versions: those are
-  // the Versions list below (IC-976), so this row never says "v2" beside it.
-  row("Built", [builds ? `${builds} time${builds === 1 ? "" : "s"} in this session` : "", version ? `manifest ${version}` : ""].filter(Boolean).join(" · ") || "once");
-  row("Size", `${kb} KB · needs the Krate runtime, installed once`);
-  // Which AI wrote it: the session's own record when it has one.
-  const agentId = (state.session && state.session.agent) || state.agent || "";
-  const agentName = (AGENT_ORDER.find((x) => x.name === agentId) || {}).label || agentLabel();
-  const by = el("span", "dt2-by");
-  const mark = el("span", "dt2-mk"); mark.innerHTML = aiLogo(agentId); by.appendChild(mark);
-  by.appendChild(document.createTextNode(`${agentName}, ${tauri ? "on this computer" : "on Krate's build service"}`));
-  row("Built by", by);
+  if (version) row("Version", version);
+  row("Size", `${kb} KB · opens with Krate, installed once`);
+  // A link opens it in a browser, on a phone too (the web Player), so a
+  // phone is one of the places it runs.
   const os = el("span", "dt2-os");
-  for (const n of ["macOS", "Windows", "Linux"]) { const i = el("span", "", n); os.appendChild(i); }
+  for (const n of ["macOS", "Windows", "Linux", "Any browser, by link"]) { const i = el("span", "", n); os.appendChild(i); }
   row("Runs on", os);
-  // What it may touch, in words, and what it may not.
+  // What it may touch, in words, and what it may not. Every app has its
+  // window, said once (the window's own capability read "open a window"
+  // beside it: "A window, open a window, and ...").
   const words = [];
   for (const c of caps) {
     if (ASK_PLUMBING.test(c)) continue;
     const w = friendlyAsk(c);
-    if (w && !words.includes(w)) words.push(w);
+    if (w && !/\bwindow\b/i.test(w) && !words.includes(w)) words.push(w);
   }
   const may = ["A window", ...words.map((w) => (w === "save your data on this computer" ? "its own saved data" : w))];
   const list = (a) => (a.length > 1 ? a.slice(0, -1).join(", ") + ", and " + a[a.length - 1] : a[0]);
@@ -7575,11 +7572,26 @@ async function fillDetails(app) {
   if (!caps.some((c) => c.startsWith("audio.capture"))) not.push("the microphone");
   if (!caps.some((c) => c.startsWith("fs."))) not.push("your other files");
   if (not.length) row("May not touch", (not[0].charAt(0).toUpperCase() + not[0].slice(1)) + (not.length > 1 ? ", " + not.slice(1).join(", ") : ""));
+  // Which AI wrote it: the session's own record when it has one.
+  const agentId = (state.session && state.session.agent) || state.agent || "";
+  const agentName = (AGENT_ORDER.find((x) => x.name === agentId) || {}).label || agentLabel();
+  const by = el("span", "dt2-by");
+  // Krate's own AI wears Krate's mark, not the empty ring kept for a tool
+  // with no logo of its own.
+  const mark = el("span", "dt2-mk");
+  mark.innerHTML = !AI_LOGOS[agentId] && /krate/i.test(agentName) ? '<img src="krate-logo.png" alt="" width="16" height="16">' : aiLogo(agentId);
+  by.appendChild(mark);
+  by.appendChild(document.createTextNode(`${agentName}, ${tauri ? "on this computer" : "on Krate's build service"}`));
+  row("Built by", by);
+  // The builds made in this session, not published versions: those are
+  // the Versions list below (IC-976), so this row never says "v2" beside it.
+  if (builds) row("Builds", `${builds} in this session`);
+  row("File", app.name || baseName(info.path || app.path), "mono");
   // Where it is, and where its source is.
   if (tauri && info.path) {
     const w = el("span", "dt2-act");
     w.appendChild(el("span", "mono dt2-path", info.path));
-    const show = el("button", "dt2-link", "Show"); show.type = "button";
+    const show = el("button", "dt2-link", "Show in folder"); show.type = "button";
     show.addEventListener("click", () => invoke("reveal", { path: info.path }).catch((e) => toastish(e)));
     w.appendChild(show);
     row("Where", w);
@@ -7620,17 +7632,29 @@ async function fillDetails(app) {
     };
     renderVersions(vers, line, paint);
   });
-  // The header's one action: run it from a terminal. Building it again is
-  // a second, smaller one beside it.
-  const run = `krate launch ${shellWord(tauri && info.path ? info.path : app.name || "app.krate")}`;
-  const runBtn = copyBtn("Copy the run command", run, "btn btn-sm dt2-run");
-  runBtn.title = run;
-  head.appendChild(runBtn);
-  const build = buildCommandFor(state.session, app);
-  if (build) {
-    const bb = copyBtn("Copy the build command", build, "btn btn-sm dt2-run ghost");
-    bb.title = build;
-    head.insertBefore(bb, runBtn);
+  // The terminal commands, for a developer, at the foot and folded: they
+  // led the pane as its two white buttons, on the web and on phones too,
+  // where there is no terminal to paste them into. Only on a computer with
+  // Krate installed (the desktop Studio) are they offered at all.
+  if (tauri) {
+    const dev = el("details", "dt2-dev");
+    dev.appendChild(el("summary", "", "Terminal commands"));
+    const cmds = el("dl", "dt2-rows");
+    const cmd = (k, text) => {
+      cmds.appendChild(el("dt", "", k));
+      const d = el("dd", "");
+      const w = el("span", "dt2-act");
+      const code = el("span", "mono dt2-path", text); code.title = text;
+      w.appendChild(code);
+      w.appendChild(copyBtn("Copy", text, "dt2-link"));
+      d.appendChild(w);
+      cmds.appendChild(d);
+    };
+    cmd("Run", `krate launch ${shellWord(info.path || app.name || "app.krate")}`);
+    const build = buildCommandFor(state.session, app);
+    if (build) cmd("Build again", build);
+    dev.appendChild(cmds);
+    wrap.appendChild(dev);
   }
 }
 

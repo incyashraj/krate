@@ -2735,8 +2735,7 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 #paneFiles .pane-title, #paneDetails .pane-title { margin: 0; font: 500 15px var(--sans); color: var(--ink); }
 #paneFiles .pane-head .btn, #paneDetails .dt2-head .btn { height: 34px; padding: 0 15px; border-radius: 99px; font: 500 13.5px var(--sans); display: inline-flex; align-items: center; gap: 7px; }
 #filesAttach { background: var(--surface); color: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); }
-#filesSave, #paneDetails .dt2-run:not(.ghost) { background: var(--btn); color: var(--btn-ink); border: 0; box-shadow: none; }
-#paneDetails .dt2-run.ghost { background: var(--surface); color: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--line-strong); }
+#filesSave { background: var(--btn); color: var(--btn-ink); border: 0; box-shadow: none; }
 #filesList { padding: 14px 24px 24px; }
 #paneFiles .f-label { margin: 6px 0 9px 2px; font-size: 11.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
 #paneFiles .f-group { margin-bottom: 22px; border-radius: 14px; }
@@ -2780,6 +2779,14 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .dt2-path, .dt2-hash { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .dt2-link { flex: none; padding: 0; border: 0; background: none; font: 500 12.5px var(--sans); color: var(--ink-2); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .dt2-link:hover { color: var(--ink); text-decoration-color: currentColor; }
+/* The terminal commands, folded at the foot of Details (desktop only). */
+#paneDetails .dt2-dev { margin: 0 24px 24px; }
+#paneDetails .dt2-dev > summary { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 2px; list-style: none; cursor: pointer; font: 500 13.5px var(--sans); color: var(--ink-2); border-radius: 10px; }
+#paneDetails .dt2-dev > summary::-webkit-details-marker { display: none; }
+#paneDetails .dt2-dev > summary::before { content: ""; width: 6px; height: 6px; margin-top: -3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease); }
+#paneDetails .dt2-dev[open] > summary::before { margin-top: -4px; transform: rotate(45deg); }
+#paneDetails .dt2-dev > summary:hover { color: var(--ink); }
+#paneDetails .dt2-dev .dt2-rows { margin: 4px 0 0; }
 /* An app's versions (IC-976): newest first, the current one marked, Open and
    Make current as quiet links, and the one line that says what Make current
    does before it does it. Only the publisher sees it. */
