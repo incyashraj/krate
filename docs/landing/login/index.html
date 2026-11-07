@@ -209,11 +209,11 @@ html.krate-booting .booting { display: flex; }
   // because a second `&from=app` is cut off by Windows' `start` (K-909).
   var fromApp = new URLSearchParams(location.search).get("from") === "app" ||
     new URLSearchParams(location.search).has("app_nonce");
-  // Where to continue AFTER sign-in (the desk, a checkout). Kept in this
+  // Where to continue AFTER sign-in (the desk, the account page). Kept in this
   // origin's storage so it survives the provider round trip.
   var next = new URLSearchParams(location.search).get("next") || "";
   // No next: a plain sign-in. An older one left behind by an abandoned
-  // sign-in (a checkout, say) must not carry this one there (K-972).
+  // sign-in (an organisation page, say) must not carry this one there (K-972).
   // A failed round trip comes back with ?error= and keeps the next it had.
   var err = new URLSearchParams(location.search).get("error") || "";
   try { if (next) localStorage.setItem("krate_next", next); else if (!err) localStorage.removeItem("krate_next"); } catch (e) {}

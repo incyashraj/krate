@@ -48,7 +48,7 @@ class SeoTests(unittest.TestCase):
 
     def test_noindex_shells_but_not_help_contact_or_privacy(self):
         private = ("app/index.html", "login/index.html", "login/done/index.html", "account/index.html",
-                   "billing/done/index.html", "publish/index.html", "support/index.html",
+                   "publish/index.html", "support/index.html",
                    "cloud/app/index.html", "docs/print.html", "404.html")
         public = ("contact/index.html", "privacy/index.html", "docs/help.html", "studio/index.html")
         for path in private + public:

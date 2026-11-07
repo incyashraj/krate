@@ -19,7 +19,7 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   token: null,       // krs_* session token, the same door Studio uses
-  me: null,          // { user, plan, referral } from /me
+  me: null,          // { user, referral } from /me
   job: null,         // the build in flight
   result: null,      // the finished app
   request: "",       // what they asked for, kept for "change it"
@@ -306,7 +306,7 @@ async function startMake() {
     // can contain. Only phrases that can mean nothing else are left.
     if (
       err.status === 402 ||
-      /funded|first app|free app|studio plan|subscri/i.test(message)
+      /funded|first app|free app/i.test(message)
     ) {
       return hitTheWall(message);
     }
@@ -604,7 +604,6 @@ function paused(message) {
 
 function hitTheWall(message) {
   show("viewAsk");
-  const plan = (state.me && state.me.plan) || {};
   const wrap = sheet(`
     <h3>Your first app was on us</h3>
     <p>${escapeHtml(message || "Every app you have made is yours to keep, whatever happens next.")}</p>
@@ -613,7 +612,7 @@ function hitTheWall(message) {
         <span><b>Keep making in Studio</b><small>Free. Your own Claude or Codex does the writing, on your machine.</small></span>
       </button>
     </div>
-    <p class="note">${plan.active ? "" : "Changes to your app and builds that fail never counted against you."}</p>
+    <p class="note">Changes to your app and builds that fail never counted against you.</p>
     <button class="close" data-close>Not now</button>`);
   // "/studio/" with the slash: the Studio DOWNLOAD page. /app/ used to send
   // people to /open, which is the receive-an-app page and not where somebody
@@ -622,46 +621,20 @@ function hitTheWall(message) {
   wrap.querySelector("[data-close]").onclick = () => wrap.remove();
 }
 
-async function checkout(plan) {
-  try {
-    const out = await hub("/billing/checkout", {
-      method: "POST",
-      body: JSON.stringify({ plan, return_url: location.href }),
-    });
-    if (out.url) location.href = out.url;
-  } catch (err) {
-    alert(String(err.message || err));
-  }
-}
-
 async function openAccount() {
   if (!state.token) return askToSignIn();
   const user = (state.me && state.me.user) || {};
-  const plan = (state.me && state.me.plan) || {};
-  const planWords = plan.active
-    ? (plan.plan === "founding" ? "Founding 200" : "Studio")
-    : "Free";
 
   const wrap = sheet(`
     <h3>${escapeHtml(user.name || user.login || "You")}</h3>
     <p>${escapeHtml(user.email || user.login || "")}</p>
     <div class="rows">
-      <button class="row" id="rowPlan"><span><b>Plan</b></span><span class="val">${planWords}</span></button>
       <button class="row" id="rowApps"><span><b>Your apps</b><small>everything you have made</small></span></button>
-      ${plan.portal ? `<button class="row" id="rowBilling"><span><b>Billing</b><small>card, invoices, cancel</small></span></button>` : ""}
     </div>
     <p class="note">Every app you make is a file that is yours forever.</p>
     <button class="close" id="signOut">Sign out</button>`);
 
-  wrap.querySelector("#rowPlan").onclick = () => { wrap.remove(); hitTheWall(""); };
   wrap.querySelector("#rowApps").onclick = () => { wrap.remove(); openApps(); };
-  const billing = wrap.querySelector("#rowBilling");
-  if (billing) billing.onclick = async () => {
-    try {
-      const out = await hub("/billing/portal", { method: "POST", body: JSON.stringify({ return_url: location.href }) });
-      if (out.url) location.href = out.url;
-    } catch (err) { alert(String(err.message || err)); }
-  };
   wrap.querySelector("#signOut").onclick = () => {
     forgetToken();
     location.reload();

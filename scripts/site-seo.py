@@ -22,7 +22,7 @@ ALIASES = {"/docs/introduction.html": "/docs/", **{
     f"/{name}.html": f"/{name}/" for name in ("faq", "reports", "progress")}}
 # These are interfaces, callbacks or authenticated shells, not help articles.
 # /support/ is the token-protected admin console (docs/support/index.html).
-UTILITY_ROOTS = {"app", "account", "login", "billing", "publish", "make", "support", "orgs", "org", "join"}
+UTILITY_ROOTS = {"app", "account", "login", "publish", "make", "support", "orgs", "org", "join"}
 UTILITY_PATHS = {"/cloud/app/", "/docs/print.html", "/404.html", "/docs/404.html"}
 PRIORITY_PATHS = {"/", "/studio/", "/download/", "/about/", "/faq/", "/docs/", "/docs/quickstart.html",
                   "/docs/porting.html", "/docs/limits.html", "/reports/", "/progress/",

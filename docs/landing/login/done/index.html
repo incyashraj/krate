@@ -123,8 +123,8 @@
     }
     return;
   }
-  // A continuation set by /login?next=... : the desk, a checkout, the
-  // account page.
+  // A continuation set by /login?next=... : the desk, the account page,
+  // Studio, a page on this site.
   var next = "";
   try { next = localStorage.getItem("krate_next") || ""; } catch (e) {}
   // A company sign-in (IC-948, Addendum 3 F) says what it did: org and sso
@@ -199,20 +199,6 @@
     if (next === "admin") {
       doneWithNext();
       location.href = "https://hub.krate.tech/admin#token=" + encodeURIComponent(tok);
-      return;
-    }
-    var pay = next.match(/^pay-(monthly|yearly|founding)$/);
-    if (pay) {
-      doneWithNext();
-      // Inside the card, where the person is looking, not after the footer.
-      (document.querySelector(".login-card") || document.body).insertAdjacentHTML("beforeend", "<p class='fine checkout-line'>Taking you to checkout…</p>");
-      fetch("https://hub.krate.tech/billing/checkout", {
-        method: "POST",
-        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
-        body: JSON.stringify({ plan: pay[1] }),
-      }).then(function (r) { return r.json(); }).then(function (res) {
-        if (res.url) location.href = res.url;
-      }).catch(function () {});
       return;
     }
     // A page on this site that sent the person to sign in: an
