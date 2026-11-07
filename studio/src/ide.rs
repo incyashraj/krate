@@ -929,7 +929,10 @@ fn pack_to(
     sink: Sink,
 ) -> Result<u64, String> {
     let mut cmd = silent_cmd(engine);
+    // Signed with the maker's own key, as a build from a request is
+    // (IC-983): a project made here is the person's app from its first file.
     cmd.arg("pack")
+        .arg("--sign")
         .arg("--manifest")
         .arg(project.join("manifest.toml"))
         .arg("--output")

@@ -174,9 +174,15 @@ RUN useradd --create-home --shell /bin/sh builder \
 # one as the person overriding it and switches its own fingerprinted cache
 # off -- so the well-meant setting would replace a correct cache with a
 # blunter one that cannot tell SDK versions apart.
+#
+# KRATE_MAKER_SIGNING=off: this box makes apps for everybody, and Krate signs
+# what a person makes with their own publisher key (IC-983). One key here
+# would sign every account's apps as one publisher, so it signs nothing;
+# how a web build is signed is the founder's open decision in IC-983.
 ENV HOME=/work \
     TMPDIR=/work/tmp \
-    PORT=8080
+    PORT=8080 \
+    KRATE_MAKER_SIGNING=off
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
