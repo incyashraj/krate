@@ -25792,17 +25792,11 @@ impl StoragePrincipal {
     /// publishers shipping the same app id cannot collide with each other.
     fn storage_key(&self) -> String {
         match self {
-            // Short prefix of the publisher key: enough to separate
-            // publishers without an unreadable 64-character filename. A
-            // collision here needs a deliberate 16-hex-character preimage,
-            // and the consequence would be two of ONE publisher's own apps
-            // sharing a store, not a stranger reaching in.
+            // `<id>@<first 16 of the publisher key>`: the rule is shared
+            // with the phones (K-1172), so a computer and a phone name one
+            // signed app's data the same way.
             StoragePrincipal::Verified { publisher, app_id } => {
-                format!(
-                    "{}@{}",
-                    sanitize_storage_name(app_id),
-                    &publisher[..publisher.len().min(16)]
-                )
+                krate_runtime::storage_key::verified_storage_key(app_id, publisher)
             }
             StoragePrincipal::Unverified { app_id } => sanitize_storage_name(app_id),
             // A different separator from the publisher's `@`, so the two can
@@ -25945,25 +25939,9 @@ fn percent_encode_text(text: &str) -> String {
     out
 }
 
-/// Reduce a name to something safe to put in a path.
-fn sanitize_storage_name(name: &str) -> String {
-    let safe: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let safe = safe.replace("..", "__");
-    if safe.trim_matches(['.', '_'].as_slice()).is_empty() {
-        "unnamed-app".to_string()
-    } else {
-        safe
-    }
-}
+// Reduce a name to something safe to put in a path: the rule the phones
+// share (K-1172).
+use krate_runtime::storage_key::sanitize_storage_name;
 
 /// This machine's development identity (IC-737).
 ///
@@ -30595,6 +30573,32 @@ mod url_cache_tests {
 #[cfg(test)]
 mod storage_identity_tests {
     use super::*;
+
+    /// A signed app's store name is pinned, byte for byte (K-1172): the
+    /// rule moved to krate_runtime::storage_key so the phones share it, and
+    /// a person's data on this computer must still be where it was.
+    #[test]
+    fn a_signed_apps_store_name_is_unchanged_by_sharing_the_rule() {
+        let signed = StoragePrincipal::Verified {
+            publisher: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(signed.storage_key(), "dev.krate.notes@0123456789abcdef");
+        let unsigned = StoragePrincipal::Unverified {
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(unsigned.storage_key(), "dev.krate.notes");
+        let home = Path::new("/h");
+        assert_eq!(
+            principal_store_path_in(home, &signed),
+            Path::new("/h/store/dev.krate.notes@0123456789abcdef.kv")
+        );
+        assert_eq!(
+            principal_store_path_in(home, &unsigned),
+            Path::new("/h/store/dev.krate.notes.kv")
+        );
+    }
 
     /// What the app id does and does not decide (IC-736).
     ///

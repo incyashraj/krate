@@ -117,6 +117,7 @@ mod speech_apple;
 mod speech_synthesis;
 mod speech_transcription;
 pub mod sql_host;
+pub mod storage_key;
 pub mod store_host;
 pub mod text_overlap;
 pub mod touch_pad;
