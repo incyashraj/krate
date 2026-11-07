@@ -1828,7 +1828,7 @@ const COMMANDS = {
     return Promise.resolve();
   },
 
-  /* ---- the plan and the money ------------------------------------------ */
+  /* ---- the free app ----------------------------------------------------- */
 
   async plan_makes() {
     try {
@@ -1855,21 +1855,6 @@ const COMMANDS = {
     // counts its own makes is a page anyone can edit. This only reads back
     // what the server already recorded.
     return COMMANDS.plan_makes();
-  },
-
-  async billing_info() {
-    if (!bridge.me) await COMMANDS.account_status();
-    const plan = (bridge.me && bridge.me.plan) || {};
-    return { plan: plan.plan || "free", active: Boolean(plan.active), until: plan.until || 0, portal: Boolean(plan.portal) };
-  },
-
-  async billing_checkout({ plan } = {}) {
-    const out = await hub("/billing/checkout", {
-      method: "POST",
-      body: JSON.stringify({ plan, return_url: location.href }),
-    });
-    if (out.url) location.href = out.url;
-    return out;
   },
 
   /* ---- making ----------------------------------------------------------
@@ -1951,7 +1936,7 @@ const COMMANDS = {
       });
     } catch (err) {
       // The one-app wall. The builder answers with `download: true` when the
-      // right next step is the desktop rather than a payment, and Studio's UI
+      // right next step is the desktop (there is nothing to pay for), and Studio's UI
       // reads `err.download` to offer that instead of a plain failure card.
       const text = String((err && err.message) || err || "");
       let parsed = null;

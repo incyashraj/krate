@@ -2837,8 +2837,8 @@ function cardAsks(asks) {
 /* ---- the free-tier counter (stage 19) --------------------------------
  * Local, honest, soft: ONE free app EVER, and one free change to it. Only
  * a session's FIRST successful build counts -- failed builds and revisions
- * never do. In preview the sheet informs and lets them continue; the same
- * rail is where checkout attaches when Studio leaves preview.
+ * never do. It is the free allowance on Krate's own AI key in a browser,
+ * and nothing more: Krate has no paid plans (F-322).
  *
  * The number has drifted twice, in the same direction both times, and the
  * fix is the same each time: the HUB is the policy and this layer is the
@@ -2861,8 +2861,8 @@ function monthKey() {
 /* The counter of record lives in the shell, keyed to the machine's own
  * hardware identity (~/.krate/plan.json): the free app belongs to the
  * DEVICE, so a cleared cache or a fresh email does not mint another.
- * localStorage stays as the seed for upgrades and the fallback when the
- * shell cannot answer. */
+ * localStorage stays as the seed for an older record and the fallback
+ * when the shell cannot answer. */
 function makesLocal() {
   try {
     const rec = JSON.parse(localStorage.getItem("krateMakes") || "{}");
@@ -2900,9 +2900,8 @@ async function loadPlanMakes() {
     // person who had used their one free app was shown as still having it.
     //
     // Nothing was ever given away: the builder counts server-side and the
-    // hub is the authority. It is a trust bug rather than a money one, which
-    // is its own kind of bad on the screen where somebody decides whether to
-    // pay.
+    // hub is the authority. It is a trust bug rather than a money one, and
+    // a count that lies is a reason to stop trusting the rest.
     const made = typeof rec === "number" ? rec : Number(rec && rec.n) || 0;
     state.planMakes = typeof rec === "number" ? { n: rec } : rec;
     mirrorLocal(made);
@@ -2918,28 +2917,6 @@ function countMake() {
     .catch(() => {});
   renderFreeCount();
 }
-function planIsActiveSafe() {
-  return Boolean(state.billing && state.billing.active);
-}
-
-/// One painter for every place the plan shows: the title-bar chip, the
-/// plan sheet's Free row, and the settings row. They must never disagree
-/// about how many are left.
-/* FREE, FOR NOW (Yashraj, 2026-09-01).
- *
- * Krate is aimed at developers, and a developer evaluating a runtime who
- * meets "1 free app, then $12" reads it as a toy with a meter on it.
- * Nobody bets their distribution on something that might price them out
- * at app four. So the counter does not show and does not stop anyone.
- *
- * The machinery underneath is deliberately LEFT INTACT -- the account
- * key, the device key, the two-key wall in the worker, its tests. The day
- * we charge, the honest limit has to already work, and rebuilding it
- * later costs more than leaving it dormant. What changes is that nothing
- * displays it and nothing enforces it. See K-216.
- */
-const CHARGING = false;
-
 /* Was the allowance spent by this MACHINE rather than by this person?
  *
  * A fresh account on a second-hand or shared Mac starts with its free app
@@ -2956,8 +2933,8 @@ function machineSpentIt() {
   const p = state.planMakes;
   // A NUMBER, not something that coerces to one. `Number("1")` is 1, so a
   // coercing check would explain a wall on the strength of whatever the
-  // wire happened to carry -- and this decides what a person reads on the
-  // screen where they choose whether to pay.
+  // wire happened to carry -- and this decides what a person is told
+  // about their own free app.
   const machine = p && p.machine;
   if (typeof machine !== "number" || !Number.isFinite(machine) || machine <= 0) {
     return false;
@@ -2983,71 +2960,19 @@ function machineNote() {
     ? "This machine has already made its free app."
     : `This machine has already made ${machine} apps.`;
 }
+/// The one painter for the free app: the "What is free" sheet's first row,
+/// and the line that explains a free app this MACHINE already spent
+/// (K-807). Web only. A desktop build runs on the person's own machine with
+/// their own AI and costs Krate nothing, so there is no allowance to show.
+/// Krate has no paid plans (F-322): nothing here sells, it only tells.
 function renderFreeCount() {
-  const n = makesThisMonth();
-  // FREE_MAKES, not a literal 3. This said `3 - n` under a constant that
-  // is 1, so the day CHARGING flips the chip would read "2 of 1 free left"
-  // -- the same three-versus-one drift the rule has been corrected for
-  // more than once (K-216).
-  const left = Math.max(0, FREE_MAKES - n);
-  const chip = $("freeCount");
-  // Desktop has no allowance to report, so it gets no chip -- the same
-  // seam as maybeWelcome and the limit gate. A "3 free apps" badge on a
-  // machine whose builds cost us nothing is an upsell for something the
-  // person already has, and today it is hidden only because CHARGING is
-  // false rather than because anyone decided it should be.
-  if (chip && tauri) {
-    chip.classList.add("hidden");
-  } else if (chip && !CHARGING) {
-    // No count, no cap, no upsell dressed as a status.
-    chip.classList.add("hidden");
-  } else if (chip) {
-    chip.textContent =
-      planIsActiveSafe() ? "Studio plan"
-      : n === 0 ? (FREE_MAKES === 1 ? "1 free app" : `${FREE_MAKES} free apps`)
-      : n < FREE_MAKES ? `${left} of ${FREE_MAKES} free left`
-      : "Free plan";
-    // When billing is open and the person is on free, the chip is a door
-    // to the store -- dressed so it reads as one.
-    chip.classList.toggle(
-      "upsell",
-      !planIsActiveSafe() && Boolean(state.billing && state.billing.live),
-    );
+  if (tauri) return;
+  const tag = $("planUsed");
+  if (tag) tag.textContent = makesThisMonth() >= FREE_MAKES ? "used" : "free";
+  const note = $("planNote");
+  if (note && machineSpentIt()) {
+    note.textContent = `${machineNote()} The free app belongs to the machine rather than the account, so signing in with a new address does not bring another one.`;
   }
-  // While CHARGING is false there is no allowance to report, so nothing
-  // shows a count. The count itself keeps running underneath (K-216).
-  const used = CHARGING
-    ? (planIsActiveSafe()
-        ? `${n} made this month`
-        : n === 0 ? "none used yet"
-        : n <= FREE_MAKES ? `${n} of ${FREE_MAKES} used`
-        : `${n} made`)
-    : "free";
-  const sheetTag = $("planUsed");
-  if (sheetTag) sheetTag.textContent = used;
-  const setVal = $("setPlanUsed");
-  if (setVal) {
-    setVal.textContent = used;
-    setVal.classList.toggle("hidden", !CHARGING);
-  }
-  const setName = $("setPlanName");
-  if (setName) {
-    const active = planIsActiveSafe();
-    setName.textContent = !CHARGING ? "Free"
-      : active ? (state.billing.plan === "founding" ? "Founding 200" : "Studio")
-      : "Free";
-    const hint = $("setPlanHint");
-    if (hint) hint.textContent = !CHARGING
-      ? "One free app, and one free change to it. After that, your own API key keeps you making here, or Krate Studio on your own machine is free and unlimited with your own AI."
-      : active
-        ? "Unlimited apps. Every one is a file that is yours forever."
-        : machineSpentIt()
-          ? `${machineNote()} The free app belongs to the machine, so a new account does not bring another one.`
-          : "One free app, plus one free change to it. Failed builds never count.";
-  }
-}
-function limitAcked() {
-  try { return lsGet("krateLimitAck") === monthKey(); } catch (e) { return false; }
 }
 
 async function make(request, opts) {
@@ -3084,41 +3009,11 @@ async function make(request, opts) {
       return;
     }
   }
-  // The gate: at the free limit, the sheet says what the deal is.
-  // It never fires for revisions (the session already has a result).
-  // CHARGING is false while Krate is free (see renderFreeCount): the
-  // count still runs and still records, so the day this flips the numbers
-  // are already right. It simply does not stop anyone today.
-  // The WEB only, for the same reason the welcome sheet is (see
-  // maybeWelcome). A desktop build runs on the person's own machine with
-  // their own AI: it costs us nothing, so there is nothing to meter and a
-  // "that's your free app" wall with checkout buttons would be
-  // charging for something we do not provide.
-  //
-  // CHARGING is false today, so this cannot fire yet either way. Guarding
-  // it now rather than the day it flips, because that is the day nobody
-  // will be looking at this line.
-  let overCap = !tauri
-    && CHARGING
-    && makesThisMonth() >= FREE_MAKES
-    && !(state.session && state.session.result)
-    && !(opts && opts.pastLimit)
-    && !planIsActive();
-  // Before blocking, ask the hub once more. This is what unlocks the
-  // person whose checkout finished after the poll gave up, and the one
-  // whose plan landed on another machine -- the wall never runs on stale
-  // knowledge when fresh knowledge is one request away.
-  if (overCap) {
-    await loadBilling();
-    overCap = !planIsActive();
-  }
-  if (overCap && ((state.billing && state.billing.live) || !limitAcked())) {
-    // Billing live: a real wall with a checkout door, every time past
-    // the limit. Preview: the soft sheet, once.
-    state.pendingMake = { request, opts };
-    openLimitSheet();
-    return;
-  }
+  // No gate here. The free allowance on Krate's AI key is the hub's to
+  // enforce (CASE_LIMIT_FREE, the tries and spend limits), and its wall
+  // arrives as the build's answer, naming the two free ways on: your own
+  // API key, or Krate Studio on your computer with your own AI. There is
+  // no paid plan to sell at the limit (F-322).
   // Two builds at once would leave the first unstoppable; the backend
   // refuses it too, but stopping here keeps the UI honest. Keyed on the
   // building session, not the visible phase -- browsing away changes the
@@ -8736,93 +8631,19 @@ $("welcomeGo")?.addEventListener("click", () => {
   }
 });
 
-$("limitGo").addEventListener("click", () => {
-  try { lsSet("krateLimitAck", monthKey()); } catch (e) {}
-  $("limitSheet").classList.add("hidden");
-  const p = state.pendingMake;
-  state.pendingMake = null;
-  if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
-});
-$("limitFounding")?.addEventListener("click", () => {
-  invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
-});
-// The plan sheet. While CHARGING is false it is a one-line statement that
-// nothing costs anything; the tier rows and their checkout buttons are not
-// in the markup at all. The paid dressing below is kept for the day the
-// rows come back (K-216) and is unreachable until then.
-function dressPlanSheet() {
-  if (!CHARGING) return;
-  const b = state.billing || {};
-  const studio = $("planStudioAct");
-  const founding = $("planFoundingAct");
-  if (!studio || !founding) return;
-  document.querySelectorAll("#planSheet .plan-row").forEach((r) => {
-    r.classList.remove("current", "hidden");
-  });
-  if (planIsActiveSafe()) {
-    const onFounding = b.plan === "founding";
-    (onFounding ? $("planRowFounding") : $("planRowStudio")).classList.add("current");
-    (onFounding ? founding : studio).innerHTML = '<span class="plan-tag">active</span>';
-    (onFounding ? studio : founding).innerHTML = "";
-    $("planSub").textContent =
-      "Your plan is active. No cap. Every app you make is a file that is yours forever.";
-    return;
-  }
-  $("planRowFree").classList.add("current");
-  $("planSub").textContent =
-    "Every app you make is a file that is yours forever, whatever happens to your plan.";
-  if (b.live) {
-    studio.innerHTML =
-      '<button class="btn btn-primary" id="planBuyMonthly">$12/month</button>' +
-      '<button class="btn" id="planBuyYearly">$96/year</button>';
-    $("planBuyMonthly").addEventListener("click", () => startCheckout("monthly", "planNote"));
-    $("planBuyYearly").addEventListener("click", () => startCheckout("yearly", "planNote"));
-    // The renewal terms sit beside the buttons, before anyone pays: a plan
-    // renews by itself, so the person has to see that, how often, and how
-    // to stop it at the moment they decide (California's automatic renewal
-    // law, and the plain decent thing). Stripe repeats it at checkout.
-    $("planNote").textContent =
-      "Renews automatically every month or year at the same price until you cancel. " +
-      "Cancel any time from your account; your plan stays active to the end of the period you paid for.";
-    if (b.founding) {
-      founding.innerHTML =
-        '<button class="btn btn-primary" id="planBuyFounding">Join for $79/year</button>';
-      $("planBuyFounding").addEventListener("click", () => startCheckout("founding", "planNote"));
-    } else {
-      $("planRowFounding").classList.add("hidden");
-    }
-  } else {
-    // The hub is unreachable: show the list, without doors.
-    studio.innerHTML = '<span class="plan-tag">offline</span>';
-    founding.innerHTML = '<button class="btn" id="planFoundingList">Join the list</button>';
-    $("planFoundingList").addEventListener("click", () => {
-      invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
-    });
-  }
-}
 async function openPlanSheet() {
-  // Never a checkout on the desktop. Builds here run on the person's own
-  // machine with their own AI and cost us nothing, so there is nothing to
-  // sell -- the allowance and its wall are a web rule (see maybeWelcome
-  // and the cap in make()). Today dressPlanSheet returns early because
-  // CHARGING is false, which means this sheet is harmless by accident
-  // rather than by decision; the day that flag flips, two sidebar buttons
-  // would put "$12/month" in front of someone who already has it all for
-  // free. Guarding at the seam instead of relying on the flag.
-  //
-  // The referral block is the part worth keeping, so on desktop the sheet
-  // still opens -- with the prices structurally unreachable.
+  // The desktop has no free-app allowance -- builds there run on the
+  // person's own machine with their own AI -- so the "What is free" rows
+  // are the browser's alone. On the desktop the sheet is only the sharing
+  // part.
   if (tauri) {
     openShareOnly();
     return;
   }
-  renderFreeCount();
   $("planNote").textContent = "";
-  dressPlanSheet();
+  renderFreeCount();
   $("planSheet").classList.remove("hidden");
   fillReferral();
-  await loadBilling();
-  dressPlanSheet();
 }
 
 /* Share Krate on a desktop: only the sharing part. The free-app rows are the
@@ -8841,8 +8662,8 @@ function openShareOnly() {
   fillReferral();
 }
 
-/// The referral corner of the plan sheet: your link, and how far you are
-/// to the next free month. Needs a signed-in account; hides otherwise.
+/// The referral corner of the plan sheet: your link, and how many people
+/// joined through it. Needs a signed-in account; hides otherwise.
 async function fillReferral() {
   try {
     const me = await invoke("me_info");
@@ -8862,9 +8683,6 @@ $("refCopy")?.addEventListener("click", () => {
   $("refCopy").textContent = "Copied";
   setTimeout(() => { $("refCopy").textContent = "Copy"; }, 1500);
 });
-$("freeCount")?.addEventListener("click", openPlanSheet);
-$("setPlanBtn")?.addEventListener("click", openPlanSheet);
-renderFreeCount();
 loadPlanMakes();
 
 // The three painters the browser shell repaints with when ANOTHER TAB
@@ -8882,166 +8700,6 @@ loadPlanMakes();
 window.renderSessions = renderSessions;
 window.renderShelf = renderShelf;
 window.renderFreeCount = renderFreeCount;
-
-/* ---- the paid plan ---------------------------------------------------- */
-// One truth from the hub: is billing live, and is THIS person's plan
-// active. Until billing is live the limit stays the soft preview sheet;
-// the moment it is live, the fourth make is a wall with a checkout door.
-state.billing = { live: false, active: false };
-try {
-  // The last truth the hub told us, surviving restarts: a paying person
-  // stays unlocked through a hub blip, and the wall stays a wall for
-  // everyone who has ever seen billing live -- going dark does not
-  // reopen the free tap.
-  const cached = JSON.parse(lsGet("krateBilling") || "null");
-  if (cached && cached.live !== undefined) state.billing = cached;
-} catch (e) {}
-async function loadBilling() {
-  try {
-    state.billing = await invoke("billing_info");
-    try { localStorage.setItem("krateBilling", JSON.stringify(state.billing)); } catch (e) {}
-  } catch (e) { /* unreachable hub: the cached truth above stands */ }
-  renderFreeCount();
-}
-loadBilling();
-
-function planIsActive() {
-  return Boolean(state.billing && state.billing.active);
-}
-
-/// Open a checkout in the browser, then watch for the plan to land. The
-/// person pays on stripe.com; Studio just notices.
-async function startCheckout(plan, noteId) {
-  const note = $(noteId || "limitNote");
-  note.textContent = "Opening checkout in your browser…";
-  try {
-    const url = await invoke("billing_checkout", { plan });
-    await invoke("open_external", { url });
-    note.textContent = "Finish in the browser. This unlocks by itself.";
-    let rounds = 0;
-    clearInterval(state.billPoll);
-    state.billPoll = setInterval(async () => {
-      rounds += 1;
-      await loadBilling();
-      if (planIsActive()) {
-        clearInterval(state.billPoll);
-        $("limitSheet").classList.add("hidden");
-        $("planSheet").classList.add("hidden");
-        celebrate();
-        say("KRATE", "Welcome to the studio. The cap is gone, your tickets go to the front of the support queue, and our promise stands: every app you make is a file that is yours forever. A plan can lapse, the file cannot.", null, { variant: "ask" });
-        renderFreeCount();
-        const p = state.pendingMake;
-        state.pendingMake = null;
-        if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
-      }
-      if (rounds > 90) {
-        clearInterval(state.billPoll);
-        note.textContent =
-          "Still not seeing the payment. If you finished in the browser, just hit Make again. It re-checks. If not, reopen this sheet to retry.";
-      }
-    }, 5000);
-  } catch (err) {
-    if (String(err).includes("Sign in")) {
-      // The browser sign-in, not the code flow: the code would be written
-      // into the gate, which is not on screen here (K-971).
-      note.textContent = "Sign in in the browser page that just opened, then hit the plan again.";
-      beginBrowserSignIn().catch(() => {});
-    } else {
-      note.textContent = String(err);
-    }
-  }
-}
-
-/// A short, quiet burst of confetti over the whole window -- celebration,
-/// not a casino. Used once, when a plan lands.
-function celebrate() {
-  const c = document.createElement("canvas");
-  c.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:9999";
-  document.body.appendChild(c);
-  const x = c.getContext("2d");
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const W = window.innerWidth, H = window.innerHeight;
-  c.width = W * dpr; c.height = H * dpr;
-  x.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const colors = ["#ffffff", "#7ee2a8", "#8ab8ff", "#e7c766", "#f2a2c0"];
-  const bits = [];
-  for (let i = 0; i < 110; i++) {
-    bits.push({
-      px: W / 2 + (Math.random() - 0.5) * 80, py: H * 0.4,
-      vx: (Math.random() - 0.5) * 11, vy: -(4 + Math.random() * 9),
-      s: 3 + Math.random() * 4, r: Math.random() * Math.PI,
-      vr: (Math.random() - 0.5) * 0.25, col: colors[i % colors.length], life: 1,
-    });
-  }
-  const t0 = performance.now();
-  function tick(t) {
-    x.clearRect(0, 0, W, H);
-    let alive = false;
-    for (const b of bits) {
-      b.vy += 0.22; b.px += b.vx; b.py += b.vy; b.r += b.vr; b.vx *= 0.99;
-      if (t - t0 > 1600) b.life -= 0.02;
-      if (b.life <= 0 || b.py > H + 20) continue;
-      alive = true;
-      x.save();
-      x.globalAlpha = Math.max(0, b.life) * 0.9;
-      x.translate(b.px, b.py); x.rotate(b.r);
-      x.fillStyle = b.col;
-      x.fillRect(-b.s / 2, -b.s / 2, b.s, b.s * 0.6);
-      x.restore();
-    }
-    if (alive) requestAnimationFrame(tick);
-    else c.remove();
-  }
-  requestAnimationFrame(tick);
-}
-
-/// Dress the limit sheet for whichever world we are in: soft preview, or
-/// the real wall with checkout doors.
-function openLimitSheet() {
-  // A fresh look at the hub every time the wall shows: if the plan landed
-  // since, the sheet closes itself and the held make runs.
-  loadBilling().then(() => {
-    if (planIsActive() && !$("limitSheet").classList.contains("hidden")) {
-      $("limitSheet").classList.add("hidden");
-      const p = state.pendingMake;
-      state.pendingMake = null;
-      if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
-    }
-  });
-  const live = state.billing && state.billing.live;
-  // A wall the person did not walk into has to say so (K-807). On a
-  // second-hand or shared machine the free app is already spent before
-  // they have made anything, because it belongs to the device -- and
-  // without this line the refusal reads as a bug, on the screen where
-  // somebody decides whether to trust us with money.
-  $("limitNote").textContent = machineSpentIt()
-    ? `${machineNote()} The free app belongs to the machine rather than the account, so signing in with a new address does not bring another one.`
-    : "";
-  // Only dress this as a paywall once we actually charge. Until then the
-  // markup's own copy stands: nothing is metered, so reaching here is a
-  // bug on our side rather than a limit the person hit.
-  if (CHARGING && live) {
-    $("limitTitle").textContent = "That's your free app";
-    // Worded to match what the hub actually enforces -- one app ever, plus
-    // one change to it (CASE_LIMIT_FREE / EDIT_LIMIT_FREE). A sheet that
-    // promises a monthly reset the server will never give is how the last
-    // two drifts were noticed, by people the product refused.
-    $("limitSub").textContent =
-      "The free plan is one app, and one change to it. Failed builds never count. Unlimited making is the Studio plan. Krate Studio on your own machine is free and unlimited with your own AI.";
-    $("limitSub2").classList.remove("hidden");
-    $("limitSub2").textContent = state.billing.founding
-      ? "The founding 200 lock it at $79 a year instead of $96."
-      : "";
-    $("limitActions").innerHTML =
-      '<button class="btn btn-primary" id="buyMonthly">Upgrade for $12/month</button>' +
-      '<button class="btn" id="buyYearly">$96/year</button>' +
-      (state.billing.founding ? '<button class="btn" id="buyFounding">Founding at $79/year</button>' : "");
-    $("buyMonthly").addEventListener("click", () => startCheckout("monthly"));
-    $("buyYearly").addEventListener("click", () => startCheckout("yearly"));
-    $("buyFounding")?.addEventListener("click", () => startCheckout("founding"));
-  }
-  $("limitSheet").classList.remove("hidden");
-}
 
 /* ---- support: a real conversation ------------------------------------ */
 function supKeys() {
@@ -9069,12 +8727,6 @@ async function openSupportSheet() {
   $("supIntro").textContent = signedIn
     ? "A real person answers, in this same thread. Replies show up right here."
     : "A real person answers. Replies show up right here and go to your email as well.";
-  const paid = planIsActiveSafe();
-  $("supPriorityTag")?.classList.toggle("hidden", !paid);
-  if (paid) {
-    $("supIntro").textContent =
-      "A real person answers, in this same thread, and your tickets go to the front of the queue.";
-  }
   $("supportSheet").classList.remove("hidden");
   renderSupportTickets();
 }
@@ -9969,7 +9621,6 @@ function setShelfOpen(open) {
     // Clear the unread mark once it has been looked at.
     $("sideBellDot")?.classList.add("hidden");
   });
-  $("sideUpgrade")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
   $("sideDocs")?.addEventListener("click", () => {
     setOpen(false);
     invoke("open_external", { url: "https://krate.tech/docs/" }).catch(() => {});
@@ -10495,7 +10146,7 @@ async function loadProfilePage() {
     // a try and survived, the signed-out one was not. The pane rendered
     // correctly either way, so nothing looked wrong while an unhandled
     // rejection was logged on every load, ready to bury a real error the
-    // day somebody debugs the paid path (K-813).
+    // day somebody debugs the signed-out path (K-813).
     const ghSub = $("connGhSub");
     if (ghSub) ghSub.textContent = "Used when you publish a link";
     const ghAct = $("connGhAct");

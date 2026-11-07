@@ -3673,17 +3673,6 @@ body.light .shot-stage .shot-cap { background: rgba(255, 255, 255, 0.92); }
 .pub-list-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; cursor: pointer; }
 .pub-list-row input { margin-top: 3px; accent-color: var(--accent, #6291ff); }
 .pub-list-row small { display: block; color: var(--muted); font-size: 12px; }
-/* The plan chip lives in the title bar beside the theme toggle: quiet
-   until hovered, and a door to the plan sheet rather than a label. */
-.plan-chip {
-  padding: 5px 12px; border-radius: var(--radius-pill);
-  border: 1px solid var(--line); background: none; color: var(--faint);
-  font-size: 12px; cursor: pointer; white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s;
-  -webkit-app-region: no-drag;
-}
-.plan-chip:hover { color: var(--text); border-color: var(--line-strong); }
-
 .plan-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 .plan-row {
   display: flex; align-items: center; gap: 14px;
@@ -3716,12 +3705,6 @@ body.light .shot-stage .shot-cap { background: rgba(255, 255, 255, 0.92); }
 }
 .ref-box .btn { padding: 7px 12px; font-size: 12.5px; flex: none; }
 .ref-stat { font-size: 12px; color: var(--faint); margin-top: 6px; }
-.plan-chip.upsell { border-color: var(--accent, #7ee2a8); color: var(--text); }
-.sup-priority {
-  margin-left: 8px; vertical-align: 2px;
-  color: #7ee2a8; border-color: rgba(126, 226, 168, 0.35);
-}
-#setPlanUsed, #setPlanBtn { white-space: nowrap; }
 
 /* ---- session-local aurora ---------------------------------------------
  * The shared horizon remains the shell treatment everywhere else. Inside
@@ -4022,8 +4005,6 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
 .card-text small { display: block; font-size: 11.5px; color: var(--faint); margin-top: 1px; }
 .card-icon { flex: none; color: var(--muted); display: grid; place-items: center; }
 .card-icon.bolt { color: #8fb3ff; }
-.side-card.upsell { background: rgba(98,145,255,0.10); border-color: rgba(98,145,255,0.22); }
-.side-card.upsell:hover { background: rgba(98,145,255,0.16); border-color: rgba(98,145,255,0.34); }
 
 .side-me { display: flex; align-items: center; gap: 8px; padding: 4px 2px 0; }
 .side-avatar {
