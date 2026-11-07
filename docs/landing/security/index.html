@@ -65,7 +65,7 @@
   <span class="eye">Security</span>
   <h1>How Krate keeps an app inside its limits.</h1>
   <p class="lede">For the security team deciding whether Krate may run on your computers. Every line is written from the source code, which is public, so each one can be checked.</p>
-  <span class="updated">Last updated 2026-10-14</span>
+  <span class="updated">Last updated 2026-11-07</span>
 </section>
 
 <div class="wrap doc lg">
@@ -77,6 +77,7 @@
     <a href="#files">Files and storage</a>
     <a href="#network">Network</a>
     <a href="#apart">Apps kept apart</a>
+    <a href="#link">From a link</a>
     <a href="#signing">Signed apps</a>
     <a href="#computer">What stays on the computer</a>
     <a href="#hub">What Krate's hub sees</a>
@@ -158,6 +159,13 @@
     (Cranelift, through Wasmtime), so it needs to create executable memory.
     On macOS the signed Krate carries Apple's entitlement for that, under the
     hardened runtime.</p>
+
+    <h2 id="link">From a link</h2>
+    <p>An app opened from a link runs in the browser's own sandbox, inside
+    the same permission card: it reaches only the hosts it declared, its
+    storage is kept per publisher (an app from another publisher cannot read
+    it), and the camera, microphone and location still need the browser's
+    own permission as well as Krate's.</p>
 
     <h2 id="signing">Signed apps</h2>
     <p>A publisher signs an app with an Ed25519 key. The signature covers a
