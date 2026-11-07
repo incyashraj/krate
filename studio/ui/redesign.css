@@ -3196,3 +3196,32 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
 .pop .pop-note input:focus { outline: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, var(--hair)); }
 .pop .pop-note .btn { flex: none; width: auto; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--btn); color: var(--btn-ink); font: 500 13px var(--sans); justify-content: center; }
 .pop .pop-note .btn:hover { background: var(--btn-hover); }
+
+/* ---- a thumb needs 44 (2026-11-07) ------------------------------------
+ * style.css raises Studio's controls to 44 on a touch screen, but this
+ * design layer sets fixed heights of its own later in the cascade, so on a
+ * phone they came back at 28-34: the panel's Preview/Files/Code/Details
+ * tabs 28 tall, the card's Run and Share 30, Chat/App 34, the session
+ * title 32, the gallery's sort chips 30, and the "Details" and "Download
+ * the project" links 16-18. Measured in an emulated phone at 390 x 700.
+ * Last in the file so it wins on order; touch only, so a desktop keeps its
+ * density. Small text links keep their look and grow an invisible hit area
+ * instead, so the lines around them do not move. */
+@media (pointer: coarse) {
+  #viewSession .ptabs button, #viewSession .mob-switch button,
+  #viewSession .sess-title, #viewSession #barRun, #viewSession #barShare,
+  #viewSession .btn.btn-sm, .kr-da .btn, .kr-shtog, .kr-mode { height: 44px; min-height: 44px; }
+  #viewSession #barRun, #viewSession #barShare, #viewSession .ptabs button { min-width: 44px; }
+  #paneFiles .f-row > button, #setNav button { min-height: 44px; }
+  .kr-fmore { width: 44px; height: 44px; }
+  #viewCloud .link-btn { min-height: 44px; }
+  /* The chips sit in a scrolling row, which would clip a hit area drawn
+     outside them, so they grow for real. */
+  .kr-cats button, .kr-sorts button { height: 44px; min-width: 44px; }
+  .dt2-link, #thread .thought-head, [data-fa="details"] { position: relative; }
+  .dt2-link::after, #thread .thought-head::after, [data-fa="details"]::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    height: 44px; transform: translateY(-50%);
+  }
+  .set-input { min-height: 44px; }
+}
