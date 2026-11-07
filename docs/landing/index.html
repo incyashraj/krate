@@ -581,6 +581,7 @@ main img, main svg { max-width: none; }
 .find { position: absolute; top: 3px; bottom: 3px; border-radius: 99px; background: color-mix(in srgb, var(--c) 13%, var(--s1)); transition: left .55s var(--ease), width .55s var(--ease); }
 .ft { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px; border: 0; border-radius: 99px; background: none; font: 500 12.5px var(--font, inherit); color: var(--ink-3); cursor: pointer; transition: color .35s; }
 .ft svg { width: 14px; height: 14px; }
+@media (pointer: coarse) { .ft::after { content: ""; position: absolute; left: 0; right: 0; top: -8px; bottom: -8px; } }
 .ft.on { color: var(--c); opacity: 1 !important; transform: none !important; } .ft:not(.on) { opacity: 1 !important; transform: none !important; }
 .fv .f-win .pane:first-child { padding-top: 30px; }
 .fc:first-child .pane { padding-top: 28px; }

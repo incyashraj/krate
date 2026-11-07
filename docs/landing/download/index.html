@@ -34,6 +34,7 @@
 .term .cp { position: absolute; top: 50%; right: 7px; width: 34px; height: 34px; margin-top: -17px; display: grid; place-items: center; border-radius: 9px; color: #9a9aa6; transition: color .2s, background .2s; }
 .term .cp:hover { color: #fff; background: rgba(255,255,255,.09); }
 .term .cp svg { width: 15px; height: 15px; }
+@media (pointer: coarse) { .term .cp::after { content: ""; position: absolute; inset: -5px; } }
 @media (max-width: 480px) { .term pre.k { font-size: 11px; padding-right: 46px; } .term .cp { right: 5px; } .term pre.k .u { white-space: nowrap; } }
 @media (max-width: 360px) { .term pre.k .u { white-space: inherit; } }
 .term .cp .ok { display: none; color: #4ade80; }

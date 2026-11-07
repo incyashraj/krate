@@ -32,6 +32,7 @@
 .fprose ul { margin-top: 14px; padding-left: 20px; display: grid; gap: 8px; color: var(--ink-2); }
 .ph .meta { margin-top: 14px; font-size: 13px; color: var(--ink-3); }
 @media (max-width: 680px) { .facts .frow { grid-template-columns: 1fr; gap: 6px; } }
+@media (pointer: coarse) { .fprose ul.links { gap: 0; } .fprose ul.links a { display: block; padding: 10px 0; } }
 </style>
 </head>
 <body>
@@ -97,7 +98,7 @@
   </ul>
 
   <h2>Answers about shipping desktop apps</h2>
-  <ul>
+  <ul class="links">
       <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
       <li><a href="/krate-vs-electron.html">Krate vs Electron</a></li>
       <li><a href="/krate-vs-tauri.html">Krate vs Tauri</a></li>
