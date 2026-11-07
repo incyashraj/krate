@@ -7186,8 +7186,11 @@ function group(label, rows) {
 async function fillFiles(app) {
   const host = $("filesList");
   host.replaceChildren();
-  $("filesSave").classList.toggle("hidden", !app);
-  $("filesSave").textContent = tauri ? "Show in folder" : "Download the app";
+  // The header's own Download (or Show in folder) did what the app's row
+  // below does, one above the other. The row keeps it; the header button
+  // stays in the page, hidden, because Share and the card's menu press it.
+  $("filesSave").classList.add("hidden");
+  $("filesSave").textContent = tauri ? "Show in folder" : "Download the file";
   // What the person handed the AI, from their own messages.
   const given = [];
   for (const m of (state.session && state.session.messages) || []) {
@@ -7203,7 +7206,7 @@ async function fillFiles(app) {
   }
   host.appendChild(group("Your app", [
     fileRow(ICON_KRATE, app.name || baseName(app.path), "Opens on macOS, Windows and Linux", {
-      label: tauri ? "Show" : "Download",
+      label: tauri ? "Show in folder" : "Download",
       run: () => invoke("reveal", { path: app.path }).catch((e) => toastish(e)),
     }, app.size || ""),
   ]));
