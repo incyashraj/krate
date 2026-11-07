@@ -15,6 +15,9 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 Changes merged since 0.5.5-rc9. Contributors: add a line here with your change.
 
+### Fixed
+- Web Player: in a browser tab, the haptics, motion and unlock interfaces now answer `available() = false` (and the calls answer as a phone without the feature does) instead of showing a "works in Krate on a computer" notice, which a tab cannot promise.
+
 ## [0.5.5] pre-releases (rc2 to rc9) - latest rc9 2026-11-04
 
 ### Added
@@ -273,6 +276,10 @@ Everything below was built for 0.1.0, from the first commit in April 2026.
 - Reduced normal GitHub Actions usage by keeping push CI on cheap Linux checks and moving the full Linux/macOS/Windows matrix, benchmarks, and cargo-deny audit behind manual full CI or `[full-ci]`.
 - Render Mermaid flowcharts as diagrams on the published mdBook site.
 - Reworked the public mdBook docs into clearer human language, added system flow diagrams, and changed the roadmap from fixed fixed-month language to estimates.
+
+### Fixed
+- Windowed-sync tests no longer use a fixed 100 ms sleep before asserting the stand-in hub saw the connection; they poll `served` with a 5 s deadline so the test stays reliable on a busy machine (#72).
+- Krate Studio now creates an ignored placeholder resource for debug and test builds when `studio/bin/` is absent, allowing tests to compile on a fresh checkout while keeping the release engine requirement intact.
 
 ---
 

@@ -803,6 +803,16 @@ export function buildImports(ctx) {
     forget: (c, image) => ui.c_forget(c, image),
   };
   Object.assign(impl, senses({ allows, bridge, present: () => ctx.present(), facts: ctx.senses || {} }));
+  // Haptics, motion and unlock: a tab has no sensor or sheet for them, so it
+  // answers as a computer without the feature does (not available, nothing to
+  // read, nothing to tap, unlock unavailable with a reason) and shows no
+  // notice. A Mac with Touch ID can unlock; a tab cannot, so it says no.
+  impl['krate:ui/haptics'] = { available: () => false, play() {}, impact() {} };
+  impl['krate:ui/motion'] = { available: () => false, read: () => undefined };
+  impl['krate:ui/unlock'] = {
+    available: () => false,
+    check: () => ({ tag: 'unavailable', val: 'This device cannot check it is you.' }),
+  };
 
   // Every interface the component imports: what this file implements,
   // and the hub's refusal for anything else -- including whole interfaces.
