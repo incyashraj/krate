@@ -1300,6 +1300,15 @@ impl Runtime {
                 if krate_adapter_common::ui::app_ending() {
                     return Err(wasmtime::Error::msg(ENDED_BY_KRATE));
                 }
+                // Ctrl-C on an app with no window (K-1181). A windowed app
+                // hears it as a close through its event paths; a
+                // command-line app has none, so its loop is ended here, the
+                // one place a loop that never calls the host still reaches.
+                if ctx.data().phase3_gui.is_none()
+                    && phase3_gui_host::INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    return Err(wasmtime::Error::msg(ENDED_BY_CTRL_C));
+                }
                 EPOCH_PUMPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if let Some(gui) = ctx.data_mut().phase3_gui.as_ref() {
                     gui.pump_native_windows_for_epoch();
@@ -1833,6 +1842,9 @@ pub(crate) fn end_unanswered_close() -> wasmtime::Error {
 
 /// What a run ended by Krate's own Close traps with (IC-934).
 pub(crate) const ENDED_BY_KRATE: &str = "ended by Krate: the app did not answer Close";
+
+/// What a command-line run ended by the person's Ctrl-C traps with (K-1181).
+pub const ENDED_BY_CTRL_C: &str = "ended by Ctrl-C";
 
 /// Code memory that is already executable: the host binary's own signed
 /// text. See [`Runtime::new_for_native_image`].

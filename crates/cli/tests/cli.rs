@@ -26839,3 +26839,140 @@ fn an_automatic_repair_gets_every_round_and_says_when_it_changed_nothing() {
         }
     }
 }
+
+/// K-1181: Ctrl-C stops a running command-line app.
+///
+/// `loop-probe.wasm` is apps/krate-loop-probe built (`cargo component build
+/// --release` there): it prints "started", writes "still here" with no
+/// newline and no flush, and loops forever -- `spin` never calls the host,
+/// `sleep` sleeps in it. Before the fix the press was recorded for a window
+/// that a command-line app never opens, and the app ran on through any
+/// number of presses. Now one press ends it with 130, what it wrote reaches
+/// the terminal, and one line says why; a run without epoch checks
+/// (`--headless`) ends a moment later, or at once on a second press.
+///
+/// Unix only: the test sends SIGINT. On Windows the console's own Ctrl-C
+/// still ends the process the way it always has.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_stops_a_running_command_line_app() {
+    use std::io::BufRead;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/loop-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.loop-probe\"\nname = \"loop-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"say\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"mode\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("loop.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+
+    // Start the app, wait until it is looping, press Ctrl-C `presses` times,
+    // and say how long after the first press it ended.
+    let press = |extra: &[&str], mode: &str, presses: u32| {
+        let mut child = krate()
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .args(extra)
+            .args(["--", mode])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run");
+        let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut first = String::new();
+        stdout.read_line(&mut first).expect("read");
+        assert_eq!(first, "started\n", "the app is running before the press");
+        // In the loop, not still on its way there.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let pressed = std::time::Instant::now();
+        for n in 0..presses {
+            if n > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            assert!(Command::new("kill")
+                .args(["-INT", &child.id().to_string()])
+                .status()
+                .expect("kill")
+                .success());
+        }
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("wait") {
+                break status;
+            }
+            if pressed.elapsed() > std::time::Duration::from_secs(5) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{extra:?} {mode}: still running 5 s after Ctrl-C");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        let took = pressed.elapsed();
+        let mut rest = String::new();
+        stdout.read_to_string(&mut rest).expect("stdout");
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .expect("stderr");
+        assert_eq!(
+            status.code(),
+            Some(130),
+            "{extra:?} {mode}: ends with 130 ({status:?}): {stderr}"
+        );
+        assert_eq!(
+            rest, "still here",
+            "{extra:?} {mode}: what the app wrote reaches the terminal"
+        );
+        assert_eq!(
+            stderr.trim(),
+            "stopped: you pressed Ctrl-C",
+            "{extra:?} {mode}: one line says why"
+        );
+        took
+    };
+
+    // A loop that never calls the host, ended by the runtime's interrupt --
+    // well inside the second the watcher would wait before ending it.
+    let took = press(&[], "spin", 1);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "the guest itself is interrupted, not left to the watcher: spin ended {took:?} after Ctrl-C"
+    );
+    // A loop that sleeps in the host.
+    let took = press(&[], "sleep", 1);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "sleep ended {took:?} after Ctrl-C"
+    );
+    // No epoch checks: the watcher ends it a moment later...
+    let took = press(&["--headless"], "spin", 1);
+    assert!(
+        took.as_secs_f32() < 2.5,
+        "headless ended {took:?} after Ctrl-C"
+    );
+    // ...or at once on a second press.
+    let took = press(&["--headless"], "spin", 2);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "a second Ctrl-C ends it at once, not after the grace: {took:?}"
+    );
+}

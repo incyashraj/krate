@@ -17564,6 +17564,94 @@ fn run_component(request: RunRequest) -> Result<u8> {
     opened
 }
 
+/// How long a command-line app has to stop after Ctrl-C before Krate ends
+/// it: a loop blocked in a host call, or a run with no epoch checks
+/// (`--headless`), never reaches the runtime's interrupt.
+const CTRL_C_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The exit code of a run the person ended with Ctrl-C, as a shell gives one.
+const CTRL_C_EXIT: u8 = 130;
+
+/// Ctrl-C on a running command-line app (K-1181).
+///
+/// Before this the handler `run_component` installs recorded the press and
+/// only a window ever read it, so a looping CLI app ran on through any
+/// number of presses. Now the first press ends the guest at its next epoch
+/// check (the runtime's callback) and the run returns 130; if the guest has
+/// not stopped within [`CTRL_C_GRACE`], or the person presses again, this
+/// watcher ends the process. Either way the output written so far is
+/// flushed and one line on stderr says what happened.
+struct CtrlCWatch {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl CtrlCWatch {
+    fn start() -> Self {
+        use std::sync::atomic::Ordering::SeqCst;
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = done.clone();
+        let _ = std::thread::Builder::new()
+            .name("krate-ctrl-c".to_string())
+            .spawn(move || {
+                let presses = &krate_runtime::phase3_gui_host::INTERRUPT_PRESSES;
+                let mut first: Option<std::time::Instant> = None;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    if finished.load(SeqCst) {
+                        return;
+                    }
+                    let pressed = presses.load(SeqCst);
+                    if pressed == 0 {
+                        continue;
+                    }
+                    let since = *first.get_or_insert_with(std::time::Instant::now);
+                    if pressed >= 2 || since.elapsed() >= CTRL_C_GRACE {
+                        // The app may be stuck inside a write; never wait on
+                        // its lock for longer than a moment.
+                        let (said, flushed) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let _ = io::stdout().flush();
+                            let _ = said.send(());
+                        });
+                        let _ = flushed.recv_timeout(std::time::Duration::from_millis(200));
+                        say_stopped_by_ctrl_c();
+                        std::process::exit(CTRL_C_EXIT.into());
+                    }
+                }
+            });
+        Self { done }
+    }
+}
+
+impl Drop for CtrlCWatch {
+    fn drop(&mut self) {
+        self.done.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Whether the person pressed Ctrl-C during this run.
+fn pressed_ctrl_c() -> bool {
+    krate_runtime::phase3_gui_host::INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The one line a run ended by Ctrl-C leaves on stderr, said once.
+fn say_stopped_by_ctrl_c() {
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !SAID.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // On its own line: the terminal has just echoed ^C, and the app may
+        // have stopped mid-line.
+        eprintln!("\nstopped: you pressed Ctrl-C");
+    }
+}
+
+/// End a run the person stopped with Ctrl-C: what the app wrote reaches the
+/// terminal first, then the note.
+fn stopped_by_ctrl_c() -> u8 {
+    let _ = io::stdout().flush();
+    say_stopped_by_ctrl_c();
+    CTRL_C_EXIT
+}
+
 /// Fail early, and in plain words, when the X11 keyboard library is absent.
 ///
 /// winit loads the X11 keyboard bridge with dlopen when it opens a window,
@@ -18431,6 +18519,8 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         Some(AppWorld::Phase3Gui) => RuntimeWorld::Gui,
         None => RuntimeWorld::Auto,
     };
+    // A command-line app has no window to hear Ctrl-C through (K-1181).
+    let _ctrl_c = (runtime_world == RuntimeWorld::Cli).then(CtrlCWatch::start);
 
     if request.json {
         let started = std::time::Instant::now();
@@ -18456,6 +18546,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     RunJsonExit::failure("no-matching-world", &message),
                     Vec::new(),
                     2,
+                ),
+                Err(RuntimeError::Trap(_)) if pressed_ctrl_c() => (
+                    RunJsonExit::failure("interrupted", "stopped: you pressed Ctrl-C"),
+                    Vec::new(),
+                    CTRL_C_EXIT,
                 ),
                 Err(RuntimeError::Trap(message)) => {
                     (RunJsonExit::failure("trap", &message), Vec::new(), 3)
@@ -18518,6 +18613,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             eprintln!("this component fits no Krate world: {message}");
             Ok(2)
         }
+        Err(RuntimeError::Trap(_)) if pressed_ctrl_c() => Ok(stopped_by_ctrl_c()),
         Err(RuntimeError::Trap(message)) => {
             eprintln!("trap: {message}");
             Ok(3)

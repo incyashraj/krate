@@ -580,11 +580,16 @@ enum DriveStep {
 /// way out still gets to.
 pub static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// How many times Ctrl-C has been pressed: a command-line run ends at once on
+/// the second (K-1181).
+pub static INTERRUPT_PRESSES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 /// Install the Ctrl-C handler. Safe to call more than once.
 pub fn install_interrupt_handler() {
     #[cfg(unix)]
     unsafe {
         extern "C" fn on_interrupt(_signal: i32) {
+            INTERRUPT_PRESSES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
         }
         libc::signal(
