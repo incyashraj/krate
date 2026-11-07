@@ -17398,6 +17398,50 @@ fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
     run_self_env(dir, args, &[])
 }
 
+/// A folder removed when this goes out of scope: a check run's one-off
+/// profile.
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A private copy of an app's folder for one check run: everything but what
+/// building leaves behind, so the run reads the app's own data files (Notes'
+/// notes/, a game's levels) and writes only to the copy.
+fn private_sandbox(dir: &Path) -> Result<tempfile::TempDir> {
+    fn copy_tree(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if top
+                && matches!(
+                    name_str.as_ref(),
+                    "target" | ".git" | "node_modules" | ".last-full-check"
+                )
+            {
+                continue;
+            }
+            let kind = entry.file_type()?;
+            let dest = to.join(&name);
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &dest, false)?;
+            } else if kind.is_file() {
+                std::fs::copy(entry.path(), &dest)?;
+            }
+            // Links are left out: a run must not reach through the copy.
+        }
+        Ok(())
+    }
+    let copy = tempfile::tempdir()?;
+    copy_tree(dir, copy.path(), true)?;
+    Ok(copy)
+}
+
 /// `run_self` with environment set (Some) or removed (None) for this one
 /// child only. check-app's stages used to say how a run should look --
 /// which screen, dark or light, the interpreter -- by setting variables on
@@ -17439,6 +17483,40 @@ fn run_self_env(
         }
         None => (std::process::Stdio::null(), std::process::Stdio::null()),
     };
+    // Each run gets its own copy of the app's folder as its data folder:
+    // check-app runs several stages at once, and they all used the app's
+    // SOURCE folder -- Krate Notes saving a note in one run truncated the
+    // file another run was reading, so its task saw an empty "New Note"
+    // (CI, 2026-11-07), and every check rewrote the files a person keeps in
+    // git. A run that names its own --sandbox-root keeps it.
+    let private = if args.first() == Some(&"run") && !args.contains(&"--sandbox-root") {
+        Some(private_sandbox(dir).context("copy the app's folder for this run")?)
+    } else {
+        None
+    };
+    let mut args: Vec<std::ffi::OsString> = args.iter().map(std::ffi::OsString::from).collect();
+    if let Some(copy) = &private {
+        args.insert(1, "--sandbox-root".into());
+        args.insert(2, copy.path().as_os_str().to_owned());
+    }
+    // And its own store: the analysis profile's stores were shared by every
+    // check run on the machine, so an app that counts its runs (Keyvault)
+    // was judged on what earlier checks had left there. A one-off profile,
+    // removed when the run ends.
+    let _store = if private.is_some() {
+        args.iter()
+            .position(|a| a == "--profile")
+            .filter(|&i| args.get(i + 1).is_some_and(|p| p == "analysis"))
+            .map(|i| {
+                static RUNS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+                let n = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let name = format!("check-{}-{n}", std::process::id());
+                args[i + 1] = name.clone().into();
+                RemoveOnDrop(profile_home(&krate_home(), &name))
+            })
+    } else {
+        None
+    };
     let mut command = std::process::Command::new(exe);
     for (name, value) in env {
         match value {
@@ -17447,7 +17525,7 @@ fn run_self_env(
         };
     }
     let mut child = command
-        .args(args)
+        .args(&args)
         // Null stdin so the verification run is non-interactive. Otherwise it
         // inherits the caller's terminal, and the deny half — which withholds a
         // required capability — sees a TTY, shows the interactive "Grant
