@@ -640,18 +640,33 @@ mod tests {
         let mut shared = joined(dir.path(), url);
         shared.set_windowed();
         shared.set("milk", b"2".to_vec()).unwrap();
+        // Time only the sync() calls themselves - the hub wait below is
+        // allowed a generous deadline and must not count against this.
+        let mut held = std::time::Duration::ZERO;
         let started = std::time::Instant::now();
         assert_eq!(shared.sync(), Ok(false));
+        held += started.elapsed();
+        // Wait until the stand-in hub has seen the connection. A fixed
+        // 100 ms sleep was flaky on a busy machine (#72).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while served.load(Ordering::SeqCst) < 1 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(
+            served.load(Ordering::SeqCst),
+            1,
+            "hub never saw the connection within 5s"
+        );
         // Again while the first exchange hangs: still at once, and no
         // second exchange piles up behind it.
-        std::thread::sleep(std::time::Duration::from_millis(100));
         shared.core().unwrap().last_sync = None;
+        let started = std::time::Instant::now();
         assert_eq!(shared.sync(), Ok(false));
-        let took = started.elapsed();
-        eprintln!("MEASURE two windowed syncs held the caller for {took:?}");
+        held += started.elapsed();
+        eprintln!("MEASURE two windowed syncs held the caller for {held:?}");
         assert!(
-            took < std::time::Duration::from_millis(400),
-            "sync waited {took:?} on the network"
+            held < std::time::Duration::from_millis(400),
+            "sync waited {held:?} on the network"
         );
         assert_eq!(served.load(Ordering::SeqCst), 1, "one exchange at a time");
         assert_eq!(shared.get("milk").unwrap(), Some(b"2".to_vec()));
