@@ -21311,25 +21311,73 @@ fn opened_app_sandbox_root(target: &Path) -> PathBuf {
     let Some(resources) = installed_payload_resources(target) else {
         return own_app_folder(target).unwrap_or(beside);
     };
-    let (Some(home), Ok(manifest)) = (home_dir(), krate_bundle::read_manifest(target)) else {
+    let (Some(home), Some(principal)) = (home_dir(), bundle_principal(target)) else {
         return beside;
     };
-    let data = installed_app_data_dir(&home, &manifest.app.id);
-    if let Err(err) = fs::create_dir_all(&data) {
-        eprintln!(
-            "krate: could not make {} ({err}); this app's files stay beside it",
-            data.display()
-        );
-        return beside;
-    }
+    // The installed app is the one its id's folder was made for (IC-943),
+    // so a signed one takes it.
+    let data = match principal_data_folder(&home, &principal, true, maker_key::public().as_deref())
+    {
+        Ok((data, _)) => data,
+        Err(err) => {
+            eprintln!("krate: {err}; this app's files stay beside it");
+            return beside;
+        }
+    };
     move_app_files_out_of_the_bundle(resources, &data);
     data
 }
 
-/// The folder an installed app's own files live in (IC-943).
-#[cfg(target_os = "macos")]
-fn installed_app_data_dir(home: &Path, app_id: &str) -> PathBuf {
-    app_data_dir(home, app_id)
+/// Who a `.krate` on disk is, as its run will key its store: its publisher
+/// when the signature holds, its id otherwise (`None`: it cannot be read).
+fn bundle_principal(target: &Path) -> Option<StoragePrincipal> {
+    krate_bundle::open(target)
+        .ok()
+        .map(|opened| principal_of(&opened))
+}
+
+/// An app's own folder ([`app_data_dir`]), made if it is not there, and
+/// whether it was just made empty (the caller may bring files in).
+///
+/// A signed app's folder is named for its publisher, as its store is
+/// (K-1253): a file declaring its id under another key, or under none,
+/// opens to a folder of its own. The first time, a signed app takes the
+/// folder its id kept under an older Krate -- moved, once, never copied --
+/// when it is this computer's maker's own app (IC-983, as K-247 moves its
+/// store) or the installed app that folder was made for (IC-943). Any other
+/// app takes nothing, so a stranger's signed file reaches no one's files.
+fn principal_data_folder(
+    home: &Path,
+    principal: &StoragePrincipal,
+    installed: bool,
+    maker: Option<&str>,
+) -> std::result::Result<(PathBuf, bool), String> {
+    let data = app_data_dir(home, principal);
+    if data.is_dir() {
+        return Ok((data, false));
+    }
+    let said = |e: std::io::Error| format!("could not make {} ({e})", data.display());
+    if let StoragePrincipal::Verified { publisher, app_id } = principal {
+        let old = app_data_dir(
+            home,
+            &StoragePrincipal::Unverified {
+                app_id: app_id.clone(),
+            },
+        );
+        if (installed || maker == Some(publisher.as_str())) && old.is_dir() {
+            if let Some(parent) = data.parent() {
+                fs::create_dir_all(parent).map_err(said)?;
+            }
+            fs::rename(&old, &data).map_err(said)?;
+            eprintln!(
+                "krate: this app's files moved to {}, a folder only its publisher's apps open",
+                data.display()
+            );
+            return Ok((data, false));
+        }
+    }
+    fs::create_dir_all(&data).map_err(said)?;
+    Ok((data, true))
 }
 
 /// The folder an app's own files live in on this computer, the app's alone
@@ -21337,11 +21385,14 @@ fn installed_app_data_dir(home: &Path, app_id: &str) -> PathBuf {
 /// Mac, `%APPDATA%\Krate\apps\<id>` on Windows, and
 /// `$XDG_DATA_HOME/krate/app-data/<id>` (`~/.local/share/...`) elsewhere --
 /// apart from `krate/apps`, where Linux keeps the installed apps themselves.
-/// Keyed by the app's id, as a phone keys its folder, so the same app finds
-/// its files whether it was opened from a file or installed, and its files
-/// can follow the person to their other devices (IC-981 S3).
-fn app_data_dir(home: &Path, app_id: &str) -> PathBuf {
-    let id = sanitize_storage_name(app_id);
+/// Keyed by who the app is, as its store and a phone's folder are
+/// (K-1253): `<id>@<publisher>` for a signed app, its id for an unsigned one.
+/// So the same app finds its files whether it was opened from a file or
+/// installed, and its files can follow the person to their other devices
+/// (IC-981 S3).
+fn app_data_dir(home: &Path, principal: &StoragePrincipal) -> PathBuf {
+    // Already directory-safe: every principal's key is sanitized.
+    let id = principal.storage_key();
     if cfg!(target_os = "macos") {
         return home
             .join("Library")
@@ -21372,19 +21423,18 @@ fn app_data_dir(home: &Path, app_id: &str) -> PathBuf {
 /// caller keeps the old place, and says so.
 fn own_app_folder(target: &Path) -> Option<PathBuf> {
     let manifest = krate_bundle::read_manifest(target).ok()?;
+    let principal = bundle_principal(target)?;
     let home = home_dir()?;
-    let data = app_data_dir(&home, &manifest.app.id);
-    if data.is_dir() {
-        return Some(data);
-    }
     let beside = target.parent().map(Path::to_path_buf)?;
-    if let Err(err) = fs::create_dir_all(&data) {
-        eprintln!(
-            "krate: could not make {} ({err}); this app's files stay beside it",
-            data.display()
-        );
-        return None;
-    }
+    let data = match principal_data_folder(&home, &principal, false, maker_key::public().as_deref())
+    {
+        Ok((data, false)) => return Some(data),
+        Ok((data, true)) => data,
+        Err(err) => {
+            eprintln!("krate: {err}; this app's files stay beside it");
+            return None;
+        }
+    };
     let brought = bring_files_in(&beside, &data, &manifest);
     if let Some(words) = brought.words(&manifest.app.name, &data, target) {
         eprintln!("krate: {words}");
@@ -21646,12 +21696,23 @@ mod app_data_folder_tests {
     #[test]
     fn every_desktop_os_names_a_folder_of_the_apps_own() {
         let home = Path::new("/home/ada");
-        let dir = app_data_dir(home, "dev.krate.notes");
+        let unsigned = |app_id: &str| StoragePrincipal::Unverified {
+            app_id: app_id.to_string(),
+        };
+        let dir = app_data_dir(home, &unsigned("dev.krate.notes"));
         assert!(dir.ends_with("dev.krate.notes"));
         assert_eq!(
-            app_data_dir(home, "../../etc").parent(),
+            app_data_dir(home, &unsigned("../../etc")).parent(),
             dir.parent(),
             "an id is never a path"
+        );
+        let signed = StoragePrincipal::Verified {
+            publisher: "0123456789abcdef0123".to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert!(
+            app_data_dir(home, &signed).ends_with("dev.krate.notes@0123456789abcdef"),
+            "a signed app's folder is its publisher's (K-1253)"
         );
         if cfg!(target_os = "macos") {
             assert_eq!(
@@ -21666,6 +21727,68 @@ mod app_data_folder_tests {
             default_sandbox_root("missing.krate", true),
             PathBuf::from(".")
         );
+    }
+}
+
+#[cfg(test)]
+mod principal_folder_tests {
+    use super::*;
+
+    /// K-1253: a signed app's folder is keyed by its publisher. The folder
+    /// its id kept before goes to this computer's maker's own app, or to the
+    /// installed app it was made for, and to nobody else.
+    #[test]
+    fn only_the_apps_own_publisher_takes_the_folder_its_id_kept() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path();
+        // Windows and a Linux with XDG_DATA_HOME set place the folders
+        // outside `home`: a name nothing else uses, removed at the end.
+        let app_id = format!("dev.test.k1253-{}", std::process::id());
+        let unsigned = StoragePrincipal::Unverified {
+            app_id: app_id.clone(),
+        };
+        let signed_by = |publisher: &str| StoragePrincipal::Verified {
+            publisher: publisher.to_string(),
+            app_id: app_id.clone(),
+        };
+        let maker = "aaaaaaaaaaaaaaaa1111";
+        let stranger = "bbbbbbbbbbbbbbbb2222";
+        let id_folder = app_data_dir(home, &unsigned);
+        let fill = || {
+            fs::create_dir_all(&id_folder).unwrap();
+            fs::write(id_folder.join("diary.md"), "mine").unwrap();
+        };
+
+        // A stranger's signed file declaring the id takes nothing.
+        fill();
+        let (theirs, fresh) =
+            principal_data_folder(home, &signed_by(stranger), false, Some(maker)).unwrap();
+        assert!(fresh && !theirs.join("diary.md").exists());
+        assert!(id_folder.join("diary.md").exists(), "left where it was");
+
+        // The maker's own signed build moves it, once.
+        let (mine, fresh) =
+            principal_data_folder(home, &signed_by(maker), false, Some(maker)).unwrap();
+        assert!(!fresh);
+        assert_eq!(fs::read_to_string(mine.join("diary.md")).unwrap(), "mine");
+        assert!(!id_folder.exists(), "moved, not copied");
+
+        // An unsigned file declaring the id now opens to an empty folder.
+        let (bare, fresh) = principal_data_folder(home, &unsigned, false, Some(maker)).unwrap();
+        assert!(fresh && bare == id_folder && !bare.join("diary.md").exists());
+        fs::remove_dir_all(&bare).unwrap();
+
+        // The installed app the id's folder was made for takes it, signed
+        // by whoever published it.
+        let third = "cccccccccccccccc3333";
+        fill();
+        let (installed, fresh) =
+            principal_data_folder(home, &signed_by(third), true, None).unwrap();
+        assert!(!fresh && installed.join("diary.md").exists());
+
+        for folder in [theirs, mine, installed] {
+            let _ = fs::remove_dir_all(folder);
+        }
     }
 }
 
@@ -27737,7 +27860,7 @@ fn account_sync_context(
     if std::env::var_os("KRATE_NO_ACCOUNT_SYNC").is_some() || app_id.is_empty() {
         return None;
     }
-    let files = own_files_folder(app_id, sandbox);
+    let files = own_files_folder(principal, sandbox);
     // store.sql syncs by row (S4), beside store.kv and the files.
     let granted = |action: &str| {
         krate_manifest::Capability::new("store", action, None)
@@ -27776,8 +27899,8 @@ fn account_sync_context(
 /// installed app has on every desktop OS (IC-943, K-1222). A folder named
 /// with `--sandbox-root`, or a developer's current folder, holds other
 /// things too, and is never sent anywhere.
-fn own_files_folder(app_id: &str, sandbox: &Path) -> Option<PathBuf> {
-    let own = app_data_dir(&home_dir()?, app_id);
+fn own_files_folder(principal: &StoragePrincipal, sandbox: &Path) -> Option<PathBuf> {
+    let own = app_data_dir(&home_dir()?, principal);
     let same = match (own.canonicalize(), sandbox.canonicalize()) {
         (Ok(own), Ok(sandbox)) => own == sandbox,
         _ => false,
