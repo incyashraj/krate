@@ -1634,7 +1634,14 @@
       e.stopImmediatePropagation(); sheet();
       setTimeout(() => { const t = q('#aiNav [data-ai="keys"]'); if (t) press(t); }, 0);
     }, true);
-    if (!desktopApp()) { const kp = $("setKeyPanel"); if (kp) kp.hidden = true; }
+    // In a tab the key row stays, in the web's own words. It was hidden
+    // here, which left Settings with no way to add a key while the plan
+    // sheet and the free-app wall both say "your own API key keeps you
+    // making here" -- the only door was the wall itself, after the fact.
+    if (!desktopApp()) {
+      const hint = q("#setKeyPanel .hint");
+      if (hint) hint.textContent = "Your own Anthropic or OpenAI key keeps you making here after the free app. It is kept in your account";
+    }
     // Reduce motion: this computer only, on top of the system's own setting.
     const calm = $("setCalm");
     let on = false; try { on = localStorage.getItem("krate-calm") === "1"; } catch (e) {}
