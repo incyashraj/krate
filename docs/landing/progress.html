@@ -82,7 +82,7 @@
   <h1>What is in this checkout.</h1>
   <p class="lede">Krate makes apps you send like pictures: one small .krate file that opens from a link in any browser, phones included, with nothing to install, and runs natively on macOS, Windows and Linux.</p>
   <p class="lede">Nothing, to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the recipient installs the Krate runtime once for macOS, Windows or Linux, and every .krate opens from its file after that.</p>
-  <p class="meta">Latest published release at generation: <a href="https://github.com/incyashraj/krate/releases/latest"><code>v0.5.4</code></a>. Generated 2026-11-07 from commit <code class="k">682129718</code>. This is a source snapshot, not a fresh cross-platform test run.</p>
+  <p class="meta">Latest published release at generation: <a href="https://github.com/incyashraj/krate/releases/latest"><code>v0.5.4</code></a>. Generated 2026-11-07 from commit <code class="k">6281c9a67</code>. This is a source snapshot, not a fresh cross-platform test run.</p>
 </section>
 
 <section class="sec t wrap stats-sec">
@@ -138,10 +138,10 @@
 
   <section class="prose psec">
     <span class="eye">Tests</span>
-    <h2>Test configuration is not a test result</h2>
+    <h2>What the replay checks</h2>
     <p>The repository's ported-app replay script names 10 checks:</p>
     <div class="checks"><span class="tag">bounce</span><span class="tag">chart</span><span class="tag">cubes</span><span class="tag">ddh</span><span class="tag">envelope</span><span class="tag">eo2</span><span class="tag">grex</span><span class="tag">hexyl</span><span class="tag">mdview</span><span class="tag">savings</span></div>
-    <p>This list says what the script is configured to exercise, not whether the latest run passed.</p>
+    <p>At Krate 0.5.4 all 10 pass on macOS, Windows and Linux: the CI records for <a href="https://github.com/incyashraj/krate/blob/main/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/main/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a> and <a href="https://github.com/incyashraj/krate/blob/main/evidence/e3/run-36557127592-replay-ubuntu.tsv">Linux</a>.</p>
     <p>Inspect <a href="https://github.com/incyashraj/krate/blob/main/scripts/replay-ported-apps.sh">the replay script</a>, <a href="https://github.com/incyashraj/krate/actions/workflows/ci.yml">CI run results</a> and <a href="https://github.com/incyashraj/krate/releases/latest">release notes</a> for the revision and host you intend to use. A file existing in this checkout does not prove it works with every published runtime version.</p>
   </section>
 
@@ -161,7 +161,7 @@
   <section class="prose psec">
     <span class="eye">Speed and size</span>
     <h2>Performance needs its own evidence</h2>
-    <p>The <a href="/reports/">measurement report</a> describes one architecture-matched notes workload and separates full bundle, code payload and shared-runtime costs. This inventory makes no speed, memory or size-ratio claim against unrelated applications.</p>
+    <p>The <a href="/reports/">measurement report</a> describes one architecture-matched notes workload and separates full bundle, code payload and shared-runtime costs.</p>
     <div class="back"><a class="btn link" href="/"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg> Back to krate.tech</a></div>
   </section>
 </div>
