@@ -21351,8 +21351,9 @@ fn bundle_principal(target: &Path) -> Option<StoragePrincipal> {
 /// opens to a folder of its own. The first time, a signed app takes the
 /// folder its id kept under an older Krate -- moved, once, never copied --
 /// when it is this computer's maker's own app (IC-983, as K-247 moves its
-/// store) or the installed app that folder was made for (IC-943). Any other
-/// app takes nothing, so a stranger's signed file reaches no one's files.
+/// store) or the installed app that folder was made for (IC-943); an
+/// installed unsigned app of this computer's own does the same. Any other
+/// app takes nothing, so a stranger's file reaches no one's files.
 fn principal_data_folder(
     home: &Path,
     principal: &StoragePrincipal,
@@ -21364,14 +21365,26 @@ fn principal_data_folder(
         return Ok((data, false));
     }
     let said = |e: std::io::Error| format!("could not make {} ({e})", data.display());
-    if let StoragePrincipal::Verified { publisher, app_id } = principal {
+    // A development key is this computer's, not the author's: any unsigned
+    // file opened here gets it, so only the installed app the old folder
+    // was made for takes it.
+    let heir = match principal {
+        StoragePrincipal::Verified { publisher, app_id }
+            if installed || maker == Some(publisher.as_str()) =>
+        {
+            Some(app_id)
+        }
+        StoragePrincipal::Development { app_id, .. } if installed => Some(app_id),
+        _ => None,
+    };
+    if let Some(app_id) = heir {
         let old = app_data_dir(
             home,
             &StoragePrincipal::Unverified {
                 app_id: app_id.clone(),
             },
         );
-        if (installed || maker == Some(publisher.as_str())) && old.is_dir() {
+        if old.is_dir() {
             if let Some(parent) = data.parent() {
                 fs::create_dir_all(parent).map_err(said)?;
             }

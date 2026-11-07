@@ -8972,6 +8972,13 @@ fn an_installed_apps_files_live_outside_it_and_survive_reinstall() {
     let old = app.join("Contents/Resources/probe-dir");
     std::fs::create_dir_all(&old).expect("old dir");
     std::fs::write(old.join("from-before.txt"), "kept").expect("old file");
+    // And one in the folder an older Krate named by the id alone, before a
+    // folder was keyed by who the app is (K-1253): the installed app it was
+    // made for takes it.
+    let apps = home.path().join("Library/Application Support/Krate/apps");
+    let id_folder = apps.join("com.acme.keeps-files");
+    std::fs::create_dir_all(&id_folder).expect("id folder");
+    std::fs::write(id_folder.join("from-the-id-folder.txt"), "kept").expect("id file");
 
     let double_click = |app: &std::path::Path| {
         let exe = std::fs::read_dir(app.join("Contents/MacOS"))
@@ -8996,12 +9003,18 @@ fn an_installed_apps_files_live_outside_it_and_survive_reinstall() {
     };
     double_click(&app);
 
-    let data = home
-        .path()
-        .join("Library/Application Support/Krate/apps/com.acme.keeps-files");
+    let data = apps.join(&principal);
     assert!(
         data.join("probe-dir/hello.txt").is_file(),
         "the app's file is in its data folder"
+    );
+    assert!(
+        data.join("from-the-id-folder.txt").is_file(),
+        "the id-named folder moved to the app's own"
+    );
+    assert!(
+        !apps.join("com.acme.keeps-files").exists(),
+        "moved, not copied"
     );
     assert_eq!(
         std::fs::read_to_string(data.join("probe-dir/from-before.txt"))
