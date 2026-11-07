@@ -68,3 +68,56 @@ pub fn kill_process_tree(pid: u32) {
         }
     }
 }
+
+/// A Windows job holding a process and everything it starts after it was
+/// put in.
+///
+/// The process-table walk above follows recorded parent ids, and on CI's
+/// Git Bash it missed what a hung author had started: the author was
+/// "stopped" and its `sleep` held the output pipes for two more minutes
+/// (2026-11-07). A job does not depend on who started whom: every process
+/// created inside it stays in it, and one call ends them all.
+pub struct Job(windows_sys::Win32::Foundation::HANDLE);
+
+impl Job {
+    /// Put `child` in a job of its own. `None` when Windows refuses (an
+    /// older system that does not nest jobs inside the one we run in);
+    /// the tree walk is still there for that case.
+    pub fn holding(child: &std::process::Child) -> Option<Job> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
+        // SAFETY: a fresh unnamed job with default security; the handle is
+        // owned by the Job and closed in Drop. The child handle is borrowed
+        // from a live Child for the duration of the call.
+        unsafe {
+            let job = CreateJobObjectW(core::ptr::null(), core::ptr::null());
+            if job.is_null() {
+                return None;
+            }
+            if AssignProcessToJobObject(job, child.as_raw_handle()) == 0 {
+                CloseHandle(job);
+                return None;
+            }
+            Some(Job(job))
+        }
+    }
+
+    /// End every process in the job.
+    pub fn terminate(&self) {
+        // SAFETY: the handle is a job we created and still own.
+        unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.0, 1);
+        }
+    }
+}
+
+impl Drop for Job {
+    fn drop(&mut self) {
+        // SAFETY: closing our own handle once. Without KILL_ON_JOB_CLOSE,
+        // closing it ends nothing -- an author that finished keeps whatever
+        // it left running, as it does on Unix.
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
+}

@@ -4721,6 +4721,9 @@ fn wait_for_port_author(
 ) -> Result<std::process::ExitStatus> {
     let budget = port_author_timeout();
     let start = std::time::Instant::now();
+    // Windows has no process group to signal; a job is its equivalent.
+    #[cfg(windows)]
+    let job = crate::winproc::Job::holding(child);
     loop {
         if let Some(status) = child
             .try_wait()
@@ -4729,6 +4732,10 @@ fn wait_for_port_author(
             return Ok(status);
         }
         if start.elapsed() >= budget {
+            #[cfg(windows)]
+            if let Some(job) = &job {
+                job.terminate();
+            }
             stop_process_group(child);
             let _ = child.wait();
             let secs = budget.as_secs();

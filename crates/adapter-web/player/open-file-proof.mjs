@@ -97,7 +97,9 @@ const seen = [];
 let phase = 'setup';
 const server = http.createServer(async (req, res) => {
   const chunks = [];
-  for await (const c of req) chunks.push(c);
+  // A request the browser abandons as the proof closes it ends "aborted";
+  // uncaught, that ended the whole proof after every check had passed.
+  try { for await (const c of req) chunks.push(c); } catch { return; }
   const body = Buffer.concat(chunks);
   seen.push({ phase, method: req.method, url: req.url, body });
   const headers = new Headers();
