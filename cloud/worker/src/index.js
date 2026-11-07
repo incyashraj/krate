@@ -6167,9 +6167,10 @@ async function planCount(request, env, increment) {
   // change when the account does.
   //
   // Neither is airtight on its own and neither needs to be. Together they
-  // mean getting a fourth free app costs either a new machine or real
+  // mean getting a second free app costs either a new machine or real
   // effort, which is the honest bar for a free tier: enough friction that
-  // it is easier to pay $12 than to cheat.
+  // it is easier to bring your own key, or your own AI on the desktop,
+  // than to cheat.
   const keys = [];
   if (user) keys.push(`mkacct:${user.id}`);
   if (/^[0-9a-f]{64}$/.test(device)) keys.push(`mkdev:${device}`);
