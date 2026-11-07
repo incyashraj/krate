@@ -9,9 +9,9 @@ These words show up everywhere in Krate. This page keeps them plain.
 | **UAPI** | The common app API. Apps call this instead of calling each OS directly. |
 | **UCap** | The permission system. It decides what an app is allowed to use. |
 | **Host adapter** | The code that turns a Krate API call into a native OS call. |
-| **`.krate` bundle** | The future app package containing code, assets, manifest, and signature. |
+| **`.krate` bundle** | The app file you send: the component, its manifest, and optionally its source, assets and signature. |
 | **Manifest** | The file that describes an app and the permissions it asks for. |
-| **Marketplace** | The future distribution, update, and identity layer. |
+| **Hub** | Krate's service at hub.krate.tech: the gallery, publishing, and the links that open an app in any browser. |
 
 ## How They Fit
 
