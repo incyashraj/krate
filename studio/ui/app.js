@@ -6797,6 +6797,10 @@ async function publishFromSheet() {
     // version is current, so the link sent today opens tomorrow's update.
     state.session.result.share_url = url;
     if (out.version) state.session.result.published_version = out.version;
+    // In the gallery once it was published listed. A later link-only share
+    // does not take it off the shelf (the hub keeps an updated listed app
+    // listed), so this is never turned back to false.
+    if ($("pubListed").checked) state.session.result.listed = true;
     state.lastPublish = out;
     forgetVersions(app);
     $("publishSheet").classList.add("hidden");

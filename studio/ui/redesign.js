@@ -1985,12 +1985,23 @@
     sharePlan = o && o.version ? { update: false, same: true, n: o.version, url: linkOf(), label: "Publish", sub: "" } : null;
     paintWays();
   }
-  // The Publish tile says "Publish update" once the app is out.
+  // Each tile says where the app really is. A link made with Share a link
+  // is "Shared by link", on that tile; only a publish with the gallery
+  // switched on makes it "In the gallery". The Publish tile used to say
+  // "v1 is at your link" after a link was made, which under the word
+  // Publish read as if the app were already listed.
   function paintWays() {
-    const w = q('.kr-way[data-w="pub"]', shareWrap); if (!w) return;
+    const w = q('.kr-way[data-w="pub"]', shareWrap), lw = q('.kr-way[data-w="link"]', shareWrap);
+    if (!w || !lw) return;
     const p = planOf();
+    const res = (() => { const s = app(); return s && s.session && s.session.result; })();
+    const here = isCurrent() && (Boolean(linkOf()) || Boolean(p && p.same));
+    const n = (p && p.same && p.n) || (res && res.published_version) || (lastPublish() && lastPublish().version) || null;
+    const vn = n ? ` · v${n}` : "";
+    const listed = isCurrent() && Boolean(res && res.listed);
     q("b", w).textContent = p && p.update ? "Publish update" : "Publish";
-    q("small", w).textContent = p && p.update ? `v${p.n}, behind the same link` : p && p.same ? `v${p.n} is at your link` : "List it in the public gallery";
+    q("small", w).textContent = p && p.update ? `v${p.n}, behind the same link` : listed && here ? `In the gallery${vn}` : "List it in the public gallery";
+    q("small", lw).textContent = p && p.update ? `Your link opens v${p.current || p.n - 1}` : here ? `Shared by link${vn}` : "Opens in any browser, phone or computer";
   }
   function openShare(which, version) {
     let cur = null; try { cur = currentApp(); } catch (e) {}
