@@ -2789,7 +2789,7 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 #homePortPane .kr-portdrop:hover .kr-portgo { background: var(--btn-hover); }
 @media (max-width: 560px) {
   #homePortPane .kr-portdrop { flex-wrap: wrap; align-items: flex-start; }
-  #homePortPane .kr-portgo { order: 3; width: 100%; height: 44px; }
+  #homePortPane .kr-portgo { order: 3; width: 100%; height: 44px; font-size: 15px; }
 }
 #homeSheetLine.kr-offmode { display: none; }
 /* The terminal commands, folded at the foot of Details (desktop only). */
@@ -2829,6 +2829,13 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .kr-upd { margin: 10px 0 12px; }
 @media (max-width: 560px) { .vers { margin: 0 16px 20px; } .vers-top { column-gap: 8px; } .vers-meta { order: 9; flex-basis: 100%; margin: -6px 0 0 42px; } }
 @media (max-width: 560px) { .dt2-rows { grid-template-columns: 1fr; } .dt2-rows dt { min-height: 0; padding-bottom: 0; } .dt2-rows dd { border-top: 0; padding-top: 4px; } #paneFiles .pane-head, #paneDetails .dt2-head { flex-wrap: wrap; } }
+/* On a phone, Files and Details read at the phone's type floor. */
+@media (max-width: 560px) {
+  .dt2-rows dt, .dt2-rows dd, .dt2-rows .dt2-link, #paneDetails .dt2-dev > summary { font-size: 14px; }
+  .dt2-rows dd.mono, .dt2-rows .mono { font-size: 13.5px; }
+  #paneFiles .f-row .f-name, #paneFiles .f-row .f-size, #paneFiles .f-row button, #paneFiles .pane-head .btn { font-size: 14px; }
+  #paneFiles .f-label { font-size: 12px; }
+}
 
 /* ---- the IDE's editor (CodeMirror) and its question bar ------------------ */
 #ideEd { position: relative; }
@@ -3239,6 +3246,14 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
   #viewSession .ptabs button, #viewSession .mob-switch button,
   #viewSession .sess-title, #viewSession #barRun, #viewSession #barShare,
   #viewSession .btn.btn-sm, .kr-da .btn, .kr-shtog, .kr-mode { height: 44px; min-height: 44px; }
+  /* The app's Run and Share, the two buttons a thumb is here for: read at
+     the phone's type floor, not the desktop's 13px. */
+  .kr-da .btn { font-size: 14.5px; }
+  /* A message's own buttons (Make this instead, Try again, Build it). */
+  #thread .msg-actions .btn { height: 44px; min-height: 44px; padding: 0 16px; font-size: 14.5px; }
+  /* The card's own buttons when a build fails or runs (Try again, Report
+     an issue, Details, Stop). */
+  #stage .kr-forge .kr-facts2 .btn, #stage .kr-forge .kr-facts .btn { height: 44px; min-height: 44px; font-size: 14.5px; }
   #viewSession #barRun, #viewSession #barShare, #viewSession .ptabs button { min-width: 44px; }
   #paneFiles .f-row > button, #setNav button { min-height: 44px; }
   .kr-fmore { width: 44px; height: 44px; }
