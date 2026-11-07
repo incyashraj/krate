@@ -12815,6 +12815,41 @@ fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String
     claude_author_prompt_with(app_dir, request, krate_bin, false)
 }
 
+/// The longest single argument a launched program can be given: Linux's
+/// MAX_ARG_STRLEN is 128 KiB per argument, with room left for the rest.
+/// macOS limits only the total (about 1 MiB) and Windows is handled apart.
+const ARGV_ONE_ARG_MAX: usize = if cfg!(target_os = "linux") {
+    120 * 1024
+} else {
+    900 * 1024
+};
+
+/// Whether a prompt this long reaches the provider: any length on stdin,
+/// and on the command line only within one argument's limit.
+fn prompt_fits_its_door(len: usize, via_stdin: bool) -> bool {
+    via_stdin || len <= ARGV_ONE_ARG_MAX
+}
+
+#[cfg(test)]
+mod prompt_door_tests {
+    /// An inlined prompt past Linux's one-argument limit is not sent as an
+    /// argument: "Argument list too long" on CI's Ubuntu (2026-11-07).
+    #[test]
+    fn a_prompt_too_long_for_one_argument_is_not_sent_as_one() {
+        assert!(
+            super::prompt_fits_its_door(10_000_000, true),
+            "stdin takes any length"
+        );
+        assert!(super::prompt_fits_its_door(64 * 1024, false));
+        assert!(!super::prompt_fits_its_door(
+            super::ARGV_ONE_ARG_MAX + 1,
+            false
+        ));
+        #[cfg(target_os = "linux")]
+        assert!(super::ARGV_ONE_ARG_MAX < 128 * 1024, "under MAX_ARG_STRLEN");
+    }
+}
+
 pub(crate) fn claude_author_prompt_with(
     app_dir: &str,
     request: &str,
@@ -13367,10 +13402,18 @@ fn run_provider_author(
     // stdin mode there gets the compact prompt and reads from disk as
     // before. KRATE_INLINE_PACK=0 is the escape hatch.
     let stdin_args = provider.author_args_stdin();
-    let inline = std::env::var("KRATE_INLINE_PACK").as_deref() != Ok("0")
+    let mut inline = std::env::var("KRATE_INLINE_PACK").as_deref() != Ok("0")
         && !request.starts_with(CHANGE_MARKER)
         && (stdin_args.is_some() || !cfg!(windows));
-    let prompt = claude_author_prompt_with(app_dir, request, &krate_bin, inline);
+    let mut prompt = claude_author_prompt_with(app_dir, request, &krate_bin, inline);
+    // Linux caps ONE argument at 128 KiB (MAX_ARG_STRLEN), whatever the
+    // total: an inlined prompt past it failed with "Argument list too long"
+    // for a provider that takes the prompt as an argument (gemini on CI's
+    // Ubuntu, 2026-11-07). Such a prompt goes compact, as on Windows.
+    if inline && !prompt_fits_its_door(prompt.len(), stdin_args.is_some()) {
+        inline = false;
+        prompt = claude_author_prompt_with(app_dir, request, &krate_bin, false);
+    }
     let prompt_via_stdin = inline && stdin_args.is_some() && prompt.len() > 6_000;
     let transcript = Path::new(app_dir).join(".agent-transcript.txt");
     // A snapshot of the skeleton, to detect an agent that answered in chat and
