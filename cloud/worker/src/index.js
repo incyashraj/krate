@@ -40,6 +40,8 @@ import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
 import { orgBillingRoute, orgBillingEvent, orgBillingAlerts } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
+import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
+import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
@@ -409,6 +411,9 @@ export default {
       // Only while the automatic welcome is switched on; the founder writes
       // them himself otherwise, from the desk.
       if (env.WELCOME_AUTO === "1") await sendDueWelcomes(env);
+      // An announcement larger than one run, or than the day's mail,
+      // carries on here (mail-announce.js). One KV read when none waits.
+      await runQueuedAnnouncements(env).catch((e) => console.error(`queued announcement: ${e}`));
       return;
     }
     await runScrub(env, { repair: false });
@@ -753,6 +758,17 @@ export default {
       }
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
+      }
+      // Krate's non-essential mail: the person's own switch, and the
+      // one-click way out that every such mail links to (mail-prefs.js).
+      if ((request.method === "GET" || request.method === "PUT") && pathname === "/me/mail") {
+        return cors(await meMailRoute(request, env, authedUser));
+      }
+      if ((request.method === "GET" || request.method === "POST") && pathname === "/mail/unsubscribe") {
+        return await unsubscribeRoute(request, url, env);
+      }
+      if (request.method === "POST" && pathname === "/admin/mail/announce") {
+        return await announceRoute(request, env, { isAdmin });
       }
       if (request.method === "POST" && pathname === "/me/onboarded") {
         return cors(await markAccountOnboarded(request, env));
@@ -3257,6 +3273,8 @@ function founderInboxes(env) {
 
 /// The moment an account is made: who, how, when, and the welcome ready
 /// to send. Plain text so it reads at a glance on a phone.
+///
+/// ESSENTIAL (to the founder only, never a user): no unsubscribe switch.
 async function notifyFounderOfSignup(env, user) {
   if (!env.RESEND_API_KEY) return;
   const who = user.name || user.login || user.email || "Someone";
@@ -3296,6 +3314,10 @@ async function notifyFounderOfSignup(env, user) {
 
 /// Send one welcome; null when it went, else why not.
 ///
+/// NON-ESSENTIAL (mail-prefs.js): nobody asked for it, so it ends with the
+/// unsubscribe line and carries the one-click headers, and an account that
+/// turned Krate's emails off is never sent one (sendDueWelcomes asks).
+///
 /// Through Gmail itself when the founder's app password is set
 /// (GMAIL_APP_PASSWORD): From his own Gmail, Cc his krate.tech address.
 /// Sent through Resend, the same note was filed under Promotions -- the
@@ -3304,7 +3326,9 @@ async function notifyFounderOfSignup(env, user) {
 /// Otherwise through Resend, from his krate.tech address (it cannot claim
 /// the Gmail address: Gmail's DMARC policy is reject).
 async function sendWelcome(env, user) {
-  const text = welcomeText(user.name);
+  const news = await newsMail(env, user.id, user, "the welcome");
+  if (news.skip) return news.skip;
+  const text = welcomeText(user.name) + news.footer + "\n";
   if (env.GMAIL_APP_PASSWORD) {
     const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
     return smtpSend(connect, {
@@ -3315,6 +3339,7 @@ async function sendWelcome(env, user) {
       cc: WELCOME_CC,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     });
   }
   const res = await fetch("https://api.resend.com/emails", {
@@ -3329,6 +3354,7 @@ async function sendWelcome(env, user) {
       reply_to: WELCOME_REPLY_TO,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     }),
   });
   if (res.ok) return null;
@@ -3396,6 +3422,8 @@ async function smtpSend(connect, msg) {
       "MIME-Version: 1.0",
       "Content-Type: text/plain; charset=UTF-8",
       "Content-Transfer-Encoding: base64",
+      // The one-click unsubscribe pair on a non-essential mail (RFC 8058).
+      ...Object.entries(msg.headers || {}).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, "")}`),
     ].filter(Boolean);
     await say(`${headers.join("\r\n")}\r\n\r\n${body}.`);
     const accepted = await reply();
@@ -3432,6 +3460,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
       await env.APPS.delete(key);
       continue;
     }
+    // Turned Krate's emails off before the welcome was due: never sent.
+    if (!wantsNews(user)) {
+      console.log("the welcome was not sent: the account turned Krate's emails off");
+      await env.APPS.delete(key);
+      continue;
+    }
+    if (!user.id) user.id = userId;
     const failed = await sendWelcome(env, user);
     if (failed) {
       // Left due: the next run tries again, until the mark expires in a week.
@@ -3766,6 +3801,8 @@ function signInEmailHtml(link) {
 </html>`;
 }
 
+/// ESSENTIAL mail (mail-prefs.js): the person asked for this link, so the
+/// switch for Krate's emails never stops it and it carries no unsubscribe.
 async function emailStart(request, env) {
   if (!env.RESEND_API_KEY) {
     return text("Email sign-in is not configured on this hub yet.", 503);
@@ -6712,6 +6749,8 @@ async function meProfile(request, env) {
       // Studio's welcome has been seen on this account, on any device.
       onboarded: Boolean(user.onboarded),
     },
+    // Krate's non-essential mail is on unless the person turned it off.
+    mail: { news: wantsNews(user) },
     plan: {
       plan: ent ? ent.plan : "free",
       active: entitlementActive(ent),
@@ -7040,6 +7079,11 @@ async function adminApi(request, pathname, env) {
   if (!admin) return text("not found", 404);
   const route = pathname.slice("/admin/api/".length);
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+  // The Mail section: compose, preview, pick people, send, history.
+  if (route.startsWith("mail/")) {
+    const answer = await deskMailApi(request, route, env, body, admin);
+    if (answer) return answer;
+  }
 
   if (route === "overview") {
     const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
@@ -7072,7 +7116,9 @@ async function adminApi(request, pathname, env) {
         providers: u.providers || [],
         created: u.created || 0,
         welcomed: u.welcomed || 0,
-        compose: u.email ? welcomeComposeUrl(u) : null,
+        // Turned Krate's emails off: no welcome by hand either.
+        unsubscribed: !wantsNews(u),
+        compose: u.email && wantsNews(u) ? welcomeComposeUrl(u) : null,
       });
     }
     out.sort((a, b) => b.created - a.created);
@@ -7390,6 +7436,7 @@ textarea{min-height:70px;resize:vertical}
 .pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--mut)}
 .pill.open{color:var(--warn);border-color:#5a4636}.pill.active{color:var(--ok);border-color:#2c5243}
 #login{max-width:420px}
+${DESK_MAIL_STYLE}
 </style>
 <h1>Krate desk</h1><p class="sub" id="who">signing in&hellip;</p>
 <div id="login" class="card" style="display:none">
@@ -7405,6 +7452,7 @@ textarea{min-height:70px;resize:vertical}
   <button data-t="apps">App reports</button>
   <button data-t="users">Users</button>
   <button data-t="makeit">Make-it queue</button>
+  <button data-t="mail">Mail</button>
 </nav>
 <div id="view"></div>
 </div>
@@ -7418,7 +7466,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -7443,7 +7491,7 @@ async function show(tab){
     const badge=el("#waiting");badge.textContent=W.waiting;badge.style.display=W.waiting?"":"none";
     const waiting=W.people.filter(p=>!p.welcomed&&p.email),done=W.people.filter(p=>p.welcomed),none=W.people.filter(p=>!p.email);
     const row=p=>'<div class="card row" data-id="'+esc(p.id)+'"><div class="grow"><b>'+esc(p.name||p.login||p.email)+'</b> <span class="mut">'+esc(p.email)+' · '+esc(p.providers.join(", "))+' · joined '+ago(p.created)+'</span>'
-      +(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
+      +(p.unsubscribed?' <span class="pill">unsubscribed</span>':'')+(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
       +(p.compose&&!p.welcomed?'<a class="act" style="text-decoration:none;padding:7px 13px;border-radius:8px;background:var(--acc);color:#fff;font-size:12.5px" target="_blank" rel="noopener" href="'+esc(p.compose)+'">Write the welcome</a>':'')
       +(p.email?'<button class="ghost mark">'+(p.welcomed?"Not welcomed":"Mark welcomed")+'</button>':'')+'</div>';
     v.innerHTML='<p class="mut" style="margin-bottom:10px">Everyone who made an account, newest first. "Write the welcome" opens Gmail as you, the note written; send it, then mark them welcomed. You also get an email the moment someone signs up.</p>'
@@ -7540,7 +7588,7 @@ async function show(tab){
       for(const x of users){
         const d=document.createElement("div");d.className="card row";
         d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
-        <span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
+        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}<span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
         <button class="ghost" data-a="plan">\${x.ent&&x.ent.plan==="comp"?"Remove comp":"Comp plan"}</button>
         <button class="ghost" data-a="out">Sign out everywhere</button>\`;
         d.querySelector('[data-a=plan]').onclick=async()=>{await api("user/plan",{method:"POST",body:JSON.stringify({id:x.id,plan:x.ent&&x.ent.plan==="comp"?"none":"comp"})});load();};
@@ -7550,6 +7598,7 @@ async function show(tab){
     };
     el("#go").onclick=load;el("#q").onkeydown=e=>{if(e.key==="Enter")load()};load();
   }
+  if(tab==="mail"){await deskMail(v);}
   if(tab==="makeit"){
     const {requests}=await api("makeit");
     v.innerHTML=requests.length?"":'<p class="mut">Queue is empty.</p>';
@@ -7562,6 +7611,7 @@ async function show(tab){
     }
   }
 }
+${deskMailScript()}
 boot();
 </script>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
