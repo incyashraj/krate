@@ -48,6 +48,10 @@ pub struct ScreenFacts {
 /// on top of the other, not neighbours whose descenders touch.
 pub const MIN_OVERLAP: f32 = 0.4;
 
+/// A copy of the same text at or under this opacity (0-255) beneath or above
+/// it is a shadow or a glow, not a second label.
+pub const SHADOW_ALPHA: u8 = 160;
+
 /// Fully transparent text cannot be read, so it cannot be too small.
 fn is_invisible(color: u32) -> bool {
     (color >> 24) < 8
@@ -112,7 +116,9 @@ pub fn measure(
     // Visible strings, for naming a cut box by what it holds, and the box
     // each one takes for finding text drawn over text.
     let mut shown: Vec<((f32, f32), String)> = Vec::new();
-    let mut boxes: Vec<((f32, f32, f32, f32), String)> = Vec::new();
+    // Each text's visible box, the text, and its opacity (0-255).
+    type TextBox = ((f32, f32, f32, f32), String, u8);
+    let mut boxes: Vec<TextBox> = Vec::new();
     let mut cut_boxes: Vec<((f32, f32, f32, f32), f32)> = Vec::new();
     for op in ops {
         if let CanvasOp::SetClip(rect) = op {
@@ -164,6 +170,7 @@ pub fn measure(
             boxes.push((
                 (left.max(bl), top.max(bt), right.min(br), bottom.min(bb)),
                 text.clone(),
+                (*color >> 24) as u8,
             ));
             let on_screen = font_size * k;
             if facts
@@ -181,8 +188,14 @@ pub fn measure(
     }
     for i in 0..boxes.len() {
         for j in (i + 1)..boxes.len() {
-            let ((al, at, ar, ab), a) = &boxes[i];
-            let ((bl2, bt2, br2, bb2), b) = &boxes[j];
+            let ((al, at, ar, ab), a, alpha_a) = &boxes[i];
+            let ((bl2, bt2, br2, bb2), b, alpha_b) = &boxes[j];
+            // The same words drawn twice, one copy faint, is a drop shadow:
+            // a design, not one label over another. Krate Keyvault's count
+            // read as "13 is drawn over 13" once it reached two digits.
+            if a == b && (*alpha_a).min(*alpha_b) < SHADOW_ALPHA {
+                continue;
+            }
             let w = ar.min(*br2) - al.max(*bl2);
             let h = ab.min(*bb2) - at.max(*bt2);
             if w <= 0.0 || h <= 0.0 {
@@ -425,6 +438,35 @@ mod tests {
         assert!(
             fault.contains("\"Choose Folder\" is drawn over \"Now Playing\""),
             "{fault}"
+        );
+    }
+
+    #[test]
+    fn a_drop_shadow_is_not_text_drawn_over_text() {
+        // Keyvault draws its count twice: a 35%-black copy 2,3 px off, then
+        // the number. Two strangers in the same place are still a fault.
+        let shadow = CanvasOp::Text {
+            origin: (102.0, 203.0),
+            font_size: 72.0,
+            color: 0x5900_0000,
+            letter_spacing: 0.0,
+            weight: 400,
+            italic: false,
+            family: Default::default(),
+            text: "13".to_string(),
+        };
+        let ops = vec![shadow, text(100.0, 200.0, 72.0, "13")];
+        let facts = measure(&ops, (390.0, 844.0), (390.0, 844.0), None);
+        assert!(facts.overlaps.is_empty(), "{facts:?}");
+        let ops = vec![
+            text(100.0, 200.0, 72.0, "13"),
+            text(102.0, 203.0, 72.0, "13"),
+        ];
+        let facts = measure(&ops, (390.0, 844.0), (390.0, 844.0), None);
+        assert_eq!(
+            facts.overlaps.len(),
+            1,
+            "two solid copies still overlap: {facts:?}"
         );
     }
 
