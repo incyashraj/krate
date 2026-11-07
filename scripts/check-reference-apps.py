@@ -105,8 +105,13 @@ def main() -> int:
         if passed(out) and run.returncode == 0:
             print(f"ok      {app}")
         else:
-            reason = " ".join(line.strip() for line in out.strip().splitlines()[:3] if line.strip())
+            lines = [line.rstrip() for line in out.strip().splitlines() if line.strip()]
+            reason = " ".join(line.strip() for line in lines[:3])
             print(f"FAILED  {app}: {reason}")
+            # The whole verdict, not its headline: the first lines only say
+            # which stage failed, and CI's log is the one place to read why.
+            for line in lines[:40]:
+                print(f"        {line}")
             failed.append((app, reason))
     print(f"\n{checked} reference apps checked, {len(failed)} failed")
     for app, reason in failed:
