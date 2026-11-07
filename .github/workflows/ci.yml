@@ -1258,6 +1258,8 @@ jobs:
             ~/.cargo/git
             target/
           key: ${{ runner.os }}-reference-apps-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-component (check-app builds each app as a component)
+        run: cargo install cargo-component --locked --version 0.21.1
       - name: Build krate
         run: cargo build --release -p krate-cli
       - name: The checker reads the pack and judges as check-app does
