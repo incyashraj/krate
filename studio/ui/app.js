@@ -2693,7 +2693,12 @@ function failBuild(why, request) {
   // brand the sentence about the NEW build as the failure.
   const redirecting = why === "stopped" && state.replacing;
   if (!redirecting) {
-    sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
+    // The reason goes in the conversation too. On a phone the conversation
+    // and the app are two screens, and the line here was the only thing on
+    // the Chat side: "that build didn't come together", with the why only
+    // on the App side, a tap away that nothing pointed at. The words start
+    // the same, so older readers of the line still recognise a failure.
+    sayTo(built, "KRATE", why === "stopped" ? "stopped" : `That build didn't come together. ${why}`);
     // The failure is a recorded FACT on the message too, so replay can see
     // it even in a session file saved before failedRequest survived disk.
     const last = built && built.messages[built.messages.length - 1];

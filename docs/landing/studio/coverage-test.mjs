@@ -398,10 +398,14 @@ assert.match(app, /askMidBuild\(text\);/,
 // the person had just told us to throw away, and failedRequest kept
 // pointing at the replaced request.
 assert.match(app, /state\.replacing = true;/, "a replacement says so");
-const fail = app.slice(app.indexOf("function failBuild(why, request)"));
-assert.match(fail.slice(0, 2600), /const redirecting = why === "stopped" && state\.replacing;/,
+// The whole of failBuild, to its closing brace at the start of a line: a
+// fixed-length slice stopped covering it the day a comment was added.
+const failBuildAt = app.indexOf("function failBuild(why, request)");
+assert.ok(failBuildAt >= 0, "failBuild is in app.js");
+const fail = app.slice(failBuildAt, app.indexOf("\n}\n", failBuildAt) + 3);
+assert.match(fail, /const redirecting = why === "stopped" && state\.replacing;/,
   "and failBuild knows a redirect from an ending");
-assert.match(fail.slice(0, 2600), /if \(redirecting\) return;/,
+assert.match(fail, /if \(redirecting\) return;/,
   "so no Stopped card paints over the build that is replacing it");
 
 // The question expires with the build it asks about. If the build

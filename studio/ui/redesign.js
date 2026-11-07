@@ -2502,7 +2502,7 @@
         `<div class="kr-fx kr-fnote"><div><p class="kr-fstill">${ast}Still going. Bigger apps take a minute.</p></div></div>` +
       `</div>` +
       `<div class="kr-ffail"><h5><i>!</i><span></span></h5><p></p><div class="kr-facts2"></div></div>` +
-      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Show details</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>`;
+      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Details</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>`;
     stage.insertBefore(f, stage.firstChild);
     stage.classList.add("kr-forged");
     const fst = q(".kr-fst", f), fel = q(".kr-fel", f), img = q(".kr-flive img", f);
@@ -2666,13 +2666,16 @@
         });
         if (($("buildLog") || {}).textContent) {
           const l = document.createElement("button"); l.type = "button"; l.className = "btn kr-plain"; l.dataset.fa = "log";
-          l.innerHTML = `${ico("term", "kr-ico")}<span>Show details</span>`; acts.appendChild(l);
+          l.innerHTML = `${ico("term", "kr-ico")}<span>Details</span>`; acts.appendChild(l);
         }
       }
       return stopped;
     }
     function paintLogBtn() {
-      qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logOn ? "Hide details" : "Show details"; });
+      qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logOn ? "Hide details" : "Details"; });
+      // "Details", the word every failure sentence uses ("Press Details for the
+      // compiler output"): the button said "Show details", so the sentence
+      // named a button that was not on the card.
       if (f.classList.contains("kr-logon") !== logOn) { f.classList.toggle("kr-logon", logOn); if (logOn) { lgKey = ""; paintLog(); } }
     }
 
