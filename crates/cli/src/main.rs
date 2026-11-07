@@ -218,9 +218,11 @@ enum Command {
         #[arg(long, default_value_t = DEFAULT_HTTP_TIMEOUT_MILLIS)]
         http_timeout_millis: u32,
 
-        /// Root directory used for relative Phase 2 filesystem paths.
-        #[arg(long, default_value = ".")]
-        sandbox_root: PathBuf,
+        /// Root directory used for relative Phase 2 filesystem paths. Without
+        /// it, a `.krate` opened by a person (`--consent`) keeps its files in
+        /// its own folder (K-1222), and anything else in the current folder.
+        #[arg(long)]
+        sandbox_root: Option<PathBuf>,
 
         /// Path to a Phase 2 manifest.toml. If omitted, Krate checks next to the .wasm file.
         #[arg(long)]
@@ -2063,7 +2065,9 @@ fn run() -> Result<u8> {
             task,
             app_args,
         } => run_component(RunRequest {
-            target,
+            // Cloned: the folder a person's run keeps its files in is
+            // decided from it below.
+            target: target.clone(),
             file: PathBuf::new(),
             insecure_http,
             // An explicit --fuel wins; otherwise --untrusted applies the default
@@ -2076,7 +2080,7 @@ fn run() -> Result<u8> {
             mem_limit,
             max_http_response_bytes,
             http_timeout_millis,
-            sandbox_root,
+            sandbox_root: sandbox_root.unwrap_or_else(|| default_sandbox_root(&target, consent)),
             assets_root: assets.map(PathBuf::from),
             manifest_path: manifest,
             grants: grant,
@@ -21208,11 +21212,12 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
 
 /// Where an opened app's own files live.
 ///
-/// A loose `.krate` keeps the folder it sits in, as it always has. An
-/// installed app's payload sits inside its signed `.app`, and writing there
-/// broke the signature and lost everything on the next install, which swaps
-/// in a fresh `.app` (K-1076). Its files live in a folder of their own
+/// An installed app's payload sits inside its signed `.app`, and writing
+/// there broke the signature and lost everything on the next install, which
+/// swaps in a fresh `.app` (K-1076). Its files live in a folder of their own
 /// instead, keyed by the app's id so a newer version finds them (IC-943).
+/// A loose `.krate` someone opened gets the same folder (K-1222): the one
+/// beside it holds the person's other things too.
 #[cfg(target_os = "macos")]
 fn opened_app_sandbox_root(target: &Path) -> PathBuf {
     let beside = target
@@ -21220,7 +21225,7 @@ fn opened_app_sandbox_root(target: &Path) -> PathBuf {
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     let Some(resources) = installed_payload_resources(target) else {
-        return beside;
+        return own_app_folder(target).unwrap_or(beside);
     };
     let (Some(home), Ok(manifest)) = (home_dir(), krate_bundle::read_manifest(target)) else {
         return beside;
@@ -21240,11 +21245,344 @@ fn opened_app_sandbox_root(target: &Path) -> PathBuf {
 /// The folder an installed app's own files live in (IC-943).
 #[cfg(target_os = "macos")]
 fn installed_app_data_dir(home: &Path, app_id: &str) -> PathBuf {
-    home.join("Library")
-        .join("Application Support")
-        .join("Krate")
-        .join("apps")
-        .join(sanitize_storage_name(app_id))
+    app_data_dir(home, app_id)
+}
+
+/// The folder an app's own files live in on this computer, the app's alone
+/// (IC-943, K-1222): `~/Library/Application Support/Krate/apps/<id>` on a
+/// Mac, `%APPDATA%\Krate\apps\<id>` on Windows, and
+/// `$XDG_DATA_HOME/krate/app-data/<id>` (`~/.local/share/...`) elsewhere --
+/// apart from `krate/apps`, where Linux keeps the installed apps themselves.
+/// Keyed by the app's id, as a phone keys its folder, so the same app finds
+/// its files whether it was opened from a file or installed, and its files
+/// can follow the person to their other devices (IC-981 S3).
+fn app_data_dir(home: &Path, app_id: &str) -> PathBuf {
+    let id = sanitize_storage_name(app_id);
+    if cfg!(target_os = "macos") {
+        return home
+            .join("Library")
+            .join("Application Support")
+            .join("Krate")
+            .join("apps")
+            .join(id);
+    }
+    if cfg!(windows) {
+        let roaming = std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| home.join("AppData").join("Roaming"));
+        return roaming.join("Krate").join("apps").join(id);
+    }
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| home.join(".local").join("share"));
+    data.join("krate").join("app-data").join(id)
+}
+
+/// The folder an app opened from `target` (a `.krate`) keeps its files in:
+/// its own ([`app_data_dir`]), made the first time. That first time, the
+/// files it saved beside the `.krate` under an older Krate are copied in
+/// ([`bring_files_in`]) -- copied, never moved, so nothing of the person's is
+/// touched. `None` when the bundle cannot be read or the folder made: the
+/// caller keeps the old place, and says so.
+fn own_app_folder(target: &Path) -> Option<PathBuf> {
+    let manifest = krate_bundle::read_manifest(target).ok()?;
+    let home = home_dir()?;
+    let data = app_data_dir(&home, &manifest.app.id);
+    if data.is_dir() {
+        return Some(data);
+    }
+    let beside = target.parent().map(Path::to_path_buf)?;
+    if let Err(err) = fs::create_dir_all(&data) {
+        eprintln!(
+            "krate: could not make {} ({err}); this app's files stay beside it",
+            data.display()
+        );
+        return None;
+    }
+    let brought = bring_files_in(&beside, &data, &manifest);
+    if let Some(words) = brought.words(&manifest.app.name, &data, target) {
+        eprintln!("krate: {words}");
+    }
+    Some(data)
+}
+
+/// What [`bring_files_in`] did.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Brought {
+    copied: usize,
+    /// The app may write anywhere in the folder beside it: nothing there is
+    /// knowably its own, so nothing is copied.
+    whole_folder: bool,
+    /// Past the limits: the rest stay where they are.
+    left: usize,
+}
+
+impl Brought {
+    fn words(&self, name: &str, data: &Path, target: &Path) -> Option<String> {
+        let file = target
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if self.whole_folder {
+            return Some(format!(
+                "{name} now keeps its files in {}. Anything it saved beside {file} before stays \
+                 where it is.",
+                data.display()
+            ));
+        }
+        if self.copied == 0 {
+            return None;
+        }
+        let mut words = format!(
+            "{name} now keeps its files in {}. The {} it saved beside {file} {} copied there; \
+             the originals are where they were.",
+            data.display(),
+            if self.copied == 1 {
+                "file".to_string()
+            } else {
+                format!("{} files", self.copied)
+            },
+            if self.copied == 1 { "was" } else { "were" }
+        );
+        if self.left > 0 {
+            words.push_str(&format!(" {} more stay there only.", self.left));
+        }
+        Some(words)
+    }
+}
+
+/// The most files, and bytes, the first open copies in; and the most
+/// entries it looks at in the folder beside the app.
+const BRING_MAX_FILES: usize = 2000;
+const BRING_MAX_BYTES: u64 = 256 * 1024 * 1024;
+const BRING_MAX_LOOKED: usize = 20_000;
+
+/// Copy into `data` the files beside a `.krate` that the app could have
+/// written there: those its `fs.write` permissions cover, judged by the very
+/// rule the run uses. Regular files only (never a link), never over a file
+/// already in `data`. An app allowed to write anywhere in the folder brings
+/// nothing: the folder is the person's, and none of it is knowably the
+/// app's.
+fn bring_files_in(beside: &Path, data: &Path, manifest: &krate_manifest::Manifest) -> Brought {
+    let mut out = Brought::default();
+    let writes: Vec<krate_manifest::Capability> = manifest
+        .declared_capabilities()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| c.module() == "fs" && c.action() == "write")
+        .collect();
+    if writes.is_empty() {
+        return out;
+    }
+    let policy = krate_policy::SessionPolicy::from_grants(writes);
+    let may_write = |rel: &str| {
+        krate_manifest::Capability::new("fs", "write", Some(rel))
+            .is_ok_and(|capability| policy.allows(&capability))
+    };
+    // A name no app would choose: covered, the permission is the folder.
+    if may_write("krate-any-file-probe-2f9c.bin") {
+        out.whole_folder = true;
+        return out;
+    }
+    let mut bytes = 0u64;
+    let mut looked = 0usize;
+    let mut stack = vec![(beside.to_path_buf(), String::new(), 0usize)];
+    while let Some((dir, prefix, depth)) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            looked += 1;
+            if looked > BRING_MAX_LOOKED {
+                return out;
+            }
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            let rel = if prefix.is_empty() {
+                name
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let Ok(meta) = entry.path().symlink_metadata() else {
+                continue;
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                if depth < 16 && entry.path() != data {
+                    stack.push((entry.path(), rel, depth + 1));
+                }
+                continue;
+            }
+            if !meta.is_file() || !may_write(&rel) {
+                continue;
+            }
+            let destination = data.join(&rel);
+            if destination.symlink_metadata().is_ok() {
+                continue;
+            }
+            if out.copied >= BRING_MAX_FILES || bytes + meta.len() > BRING_MAX_BYTES {
+                out.left += 1;
+                continue;
+            }
+            let copied = destination
+                .parent()
+                .map(fs::create_dir_all)
+                .unwrap_or(Ok(()))
+                .and_then(|()| fs::copy(entry.path(), &destination));
+            match copied {
+                Ok(_) => {
+                    out.copied += 1;
+                    bytes += meta.len();
+                }
+                Err(err) => eprintln!(
+                    "krate: could not copy {} to {} ({err})",
+                    entry.path().display(),
+                    destination.display()
+                ),
+            }
+        }
+    }
+    out
+}
+
+/// The folder a person's run of `target` keeps its files in, when nobody
+/// named one: a `.krate` opened by a person (`--consent`: a double-click, a
+/// launcher, an installed app) gets its own folder on every OS (K-1222);
+/// anything else -- a developer's `krate run` of a project -- the current
+/// folder, as before.
+fn default_sandbox_root(target: &str, consent: bool) -> PathBuf {
+    let path = Path::new(target);
+    let opened_bundle =
+        consent && path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("krate");
+    if !opened_bundle {
+        return PathBuf::from(".");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        opened_app_sandbox_root(path)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        own_app_folder(path).unwrap_or_else(|| {
+            path.parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+    }
+}
+
+#[cfg(test)]
+mod app_data_folder_tests {
+    use super::*;
+
+    fn manifest(writes: &str) -> krate_manifest::Manifest {
+        krate_manifest::Manifest::parse(&format!(
+            "[app]\nid = \"dev.krate.notes\"\nname = \"Notes\"\nversion = \"0.1.0\"\n\
+             entry = \"app.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+             [[capabilities]]\ncap = \"fs.write:{writes}\"\nrationale = \"Save\"\nrequired = true\n"
+        ))
+        .expect("a manifest")
+    }
+
+    fn write(dir: &Path, rel: &str, text: &str) {
+        let path = dir.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    /// The first open copies in what the app saved beside its file -- only
+    /// what its permission covers, never the person's other files, never
+    /// over a file already there -- and leaves every original in place.
+    #[test]
+    fn the_first_open_copies_in_only_the_apps_own_files() {
+        let root = tempfile::tempdir().unwrap();
+        let beside = root.path().join("Downloads");
+        write(&beside, "notes/today.md", "dear diary");
+        write(&beside, "notes/trips/rome.md", "colosseum");
+        write(&beside, "tax-return.pdf", "the person's own");
+        write(&beside, "other/notes/x.md", "not the app's");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(beside.join("tax-return.pdf"), beside.join("notes/link.md"))
+            .unwrap();
+        let data = root.path().join("data");
+        write(&data, "notes/today.md", "newer, already here");
+
+        let brought = bring_files_in(&beside, &data, &manifest("./notes/**"));
+        assert_eq!(
+            brought,
+            Brought {
+                copied: 1,
+                whole_folder: false,
+                left: 0
+            }
+        );
+        assert_eq!(
+            fs::read_to_string(data.join("notes/trips/rome.md")).unwrap(),
+            "colosseum"
+        );
+        assert_eq!(
+            fs::read_to_string(data.join("notes/today.md")).unwrap(),
+            "newer, already here",
+            "never over a file already there"
+        );
+        assert!(
+            !data.join("tax-return.pdf").exists(),
+            "the person's own stays"
+        );
+        assert!(!data.join("other").exists());
+        assert!(!data.join("notes/link.md").exists(), "never a link");
+        assert!(
+            beside.join("notes/trips/rome.md").exists(),
+            "copied, not moved"
+        );
+        let words = brought
+            .words("Notes", &data, &beside.join("notes.krate"))
+            .unwrap();
+        assert!(
+            words.contains("The file it saved beside notes.krate was copied there"),
+            "{words}"
+        );
+
+        // An app that may write anywhere in the folder brings nothing.
+        let fresh = root.path().join("fresh");
+        let brought = bring_files_in(&beside, &fresh, &manifest("./**"));
+        assert!(brought.whole_folder && brought.copied == 0);
+        assert!(!fresh.exists());
+        assert!(brought
+            .words("Notes", &fresh, &beside.join("notes.krate"))
+            .unwrap()
+            .contains("stays where it is"));
+    }
+
+    #[test]
+    fn every_desktop_os_names_a_folder_of_the_apps_own() {
+        let home = Path::new("/home/ada");
+        let dir = app_data_dir(home, "dev.krate.notes");
+        assert!(dir.ends_with("dev.krate.notes"));
+        assert_eq!(
+            app_data_dir(home, "../../etc").parent(),
+            dir.parent(),
+            "an id is never a path"
+        );
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                dir,
+                home.join("Library/Application Support/Krate/apps/dev.krate.notes")
+            );
+        }
+        // A developer's run keeps the current folder; a file that is not a
+        // .krate, or a run nobody consented to, too.
+        assert_eq!(default_sandbox_root("app.wasm", true), PathBuf::from("."));
+        assert_eq!(
+            default_sandbox_root("missing.krate", true),
+            PathBuf::from(".")
+        );
+    }
 }
 
 /// `<App>.app/Contents/Resources` when `target` is an installed payload,
@@ -21339,10 +21677,7 @@ fn spawn_open_run(path: &Path) {
         // not show than no attempt at all.
     }
 
-    let sandbox_root = path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let sandbox_root = opened_app_sandbox_root(path);
     let _ = ProcessCommand::new(exe)
         .arg("run")
         .arg(path)
@@ -27353,24 +27688,17 @@ fn account_sync_context(
 }
 
 /// The app's files sync (S3) only from a folder Krate keeps for that app
-/// alone -- an installed app's data folder (IC-943). The folder beside a
-/// `.krate` someone opened, or one named with `--sandbox-root`, holds the
-/// person's other things too, and is never sent anywhere.
+/// alone -- its data folder ([`app_data_dir`]), which every opened or
+/// installed app has on every desktop OS (IC-943, K-1222). A folder named
+/// with `--sandbox-root`, or a developer's current folder, holds other
+/// things too, and is never sent anywhere.
 fn own_files_folder(app_id: &str, sandbox: &Path) -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        let own = installed_app_data_dir(&home_dir()?, app_id);
-        let same = match (own.canonicalize(), sandbox.canonicalize()) {
-            (Ok(own), Ok(sandbox)) => own == sandbox,
-            _ => false,
-        };
-        same.then_some(own)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app_id, sandbox);
-        None
-    }
+    let own = app_data_dir(&home_dir()?, app_id);
+    let same = match (own.canonicalize(), sandbox.canonicalize()) {
+        (Ok(own), Ok(sandbox)) => own == sandbox,
+        _ => false,
+    };
+    same.then_some(own)
 }
 
 /// What the person's device list calls this computer: its own name where
