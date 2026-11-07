@@ -233,6 +233,23 @@ lookalikes:
 Sessions live on your account, so an app you start in the browser opens on
 the desktop with its conversation intact and editable.
 
+## For a team
+
+[krate.tech/orgs](https://krate.tech/orgs/) gives a company its own place
+on Krate. Name the organisation, release its first app (Team Notes,
+Expenses, Stock List, or a `.krate` you made) and invite your team by
+email, all from one page. A developer sends an app, a reviewer approves its
+exact bytes, and only your people can open it: a copied link alone opens
+nothing. The apps' team data and the credentials for your company's APIs
+are encrypted on members' computers, so Krate's hub stores them without
+being able to read them.
+
+For IT: company sign-in with OpenID Connect or SAML 2.0, people and groups
+kept in step by SCIM, a policy that says which apps may open on company
+computers, and an audit of every approval. Read
+[Organisations](https://krate.tech/docs/organisations.html) and
+[Running Krate in an organisation](https://krate.tech/docs/running-in-an-organisation.html).
+
 ## What it costs
 
 Nothing, right now. The player is MIT and Apache licensed and always will
@@ -387,6 +404,8 @@ wit/        Krate interface definitions
 | The paste-in prompt for any AI chat | [Krate Mode](https://krate.tech/docs/pages/krate-mode.html) |
 | Plain guide for making an app | [Make an app with AI](https://krate.tech/docs/pages/make-an-app-with-ai.html) |
 | Developer quickstart | [Quickstart](https://krate.tech/docs/quickstart.html) |
+| Private apps for a company | [Organisations](https://krate.tech/docs/organisations.html) |
+| Bring an app you already have | [Porting guide](https://krate.tech/docs/porting.html) |
 | Build from source | [docs/build.md](docs/build.md) |
 | Exact current evidence | [Status](STATUS.md) |
 
