@@ -192,6 +192,25 @@ test("a tab's storage tag is the vouched publisher's, so two publishers of one a
   assert.equal(await storeTagOf(""), null, "no vouched owner, no tag: the Player keys by the build instead");
 });
 
+test("a link's bytes carry the same owner tag the tab keys storage by (K-1172)", async () => {
+  const { storeTagOf } = await import("../src/lines.js");
+  const env = hubEnv();
+  const alice = await publish(env, "alice", "0.1.0");
+  const bob = await publish(env, "bob", "0.2.0");
+  const bytesTag = async (hash) => {
+    const res = await call(env, null, "GET", `/a/${hash}?dl=1`);
+    assert.equal(res.status, 200, `the bytes download: ${res.status}`);
+    return res.headers.get("x-krate-store");
+  };
+  const a = await bytesTag(alice.body.id);
+  assert.equal(a, await storeTagOf(row(env, alice.body.id).owner), "from the owner the hub recorded");
+  assert.equal(a, (await call(env, null, "GET", `/a/${alice.body.id}/web`)).headers.get("x-krate-store"),
+    "the same tag a tab gets, so a phone and a tab key one app's data alike");
+  assert.notEqual(await bytesTag(bob.body.id), a, "another publisher of the same app id is another store");
+  const head = await call(env, null, "HEAD", `/a/${alice.body.id}?dl=1`);
+  assert.equal(head.headers.get("x-krate-store"), a, "a HEAD says the same");
+});
+
 test("a tab's storage is keyed by the vouched publisher: the web pack names a tag per owner", async () => {
   const { storeTagOf } = await import("../src/lines.js");
   const env = hubEnv();

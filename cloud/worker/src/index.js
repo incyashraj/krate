@@ -2250,6 +2250,17 @@ async function fetchBundle(request, url, hash, env) {
   // the person nothing, sorts meaninglessly in a downloads folder, and looks
   // like something went wrong -- the app already knows what it is called.
   const meta = await env.APPS.get(`app:${hash}`);
+  // Whose app this is, as the hub knows it from the publisher's sign-in:
+  // the tag the tab keys storage by (K-1159), sent with the bytes too, so a
+  // computer or a phone opening the link keys an unsigned app's data by
+  // its publisher as the tab does (K-1172). Fixed per hash, like the bytes.
+  let storeTag = null;
+  try {
+    const raw = meta || (await env.APPS.get(`owner:${hash}`));
+    storeTag = await storeTagOf(raw ? ownerOfRecord(JSON.parse(raw)) : null);
+  } catch (_) {
+    // A bad record must not stop the download; the app keys by its id.
+  }
   let filename = `${hash.slice(0, 12)}.krate`;
   if (meta) {
     try {
@@ -2277,6 +2288,7 @@ async function fetchBundle(request, url, hash, env) {
     // tier, so `krate run` knows to save a big app to a file first.
     "content-length": String(object.size),
     ...(big ? { "x-krate-tier": "big" } : {}),
+    ...(storeTag ? { "x-krate-store": storeTag } : {}),
   };
   if (request.method === "HEAD") {
     // The size is the one thing a HEAD is usually asked for, and the
