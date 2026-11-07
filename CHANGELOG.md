@@ -11,6 +11,9 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 ## [Unreleased]
 
+### Fixed
+- Web Player: in a browser tab, the haptics, motion and unlock interfaces now answer `available() = false` (and the calls answer as a phone without the feature does) instead of showing a "works in Krate on a computer" notice, which a tab cannot promise.
+
 ### Added
 - Manifest `net.connect` host-pattern hardening: capability parsing now rejects invalid dot placement, invalid label-edge `-` forms, and malformed numeric IPv4 host forms before runtime policy matching, with manifest tests for accepted wildcard/label forms and malformed host cases.
 - Docs: added `First Go CLI` and `First TypeScript CLI` walkthroughs under `docs/book/src/uapi/`, and linked them in mdBook navigation so Phase 2 now has one onboarding tutorial per language track (Rust, Go, TypeScript).
