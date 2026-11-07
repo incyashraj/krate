@@ -58,6 +58,9 @@ export function transpileComponent(component) {
 }
 
 const packKey = (hash) => `web/${WEB_PACK_TAG}/${hash}`;
+/// Where the tab Player's pack for `hash` is kept in R2, for removing it
+/// with its app (account-delete.js).
+export const webPackKey = packKey;
 
 /// Make the web pack for `hash` if it does not exist yet. `judgedComponent`
 /// is the validator's: the component exactly as judged, or the refusal.

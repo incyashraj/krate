@@ -265,6 +265,10 @@ export class SyncAccount {
         return this.bucketGet(a.bucket, a.since);
       case "bucket-put":
         return this.bucketPut(a);
+      case "summary":
+        return { status: 200, body: this.summary() };
+      case "erase":
+        return { status: 200, body: this.erase() };
       default:
         return { status: 400, body: { error: "bad-request", message: "no such command" } };
     }
@@ -401,6 +405,38 @@ export class SyncAccount {
     const r = this.row("SELECT version, public_key, params, blob FROM recovery WHERE one = 1");
     if (!r) return { status: 404, body: { error: "no-key", message: "this account has no data key yet" } };
     return { status: 200, body: { version: r.version, public_key: r.public_key, params: JSON.parse(r.params), blob: r.blob } };
+  }
+
+  /// What the account's export shows (GET /me/export): the devices by
+  /// name, whether a key exists, and per app only counts and sizes -- the
+  /// hub cannot read the rest, and the bucket names are digests it cannot
+  /// reverse either.
+  summary() {
+    const key = this.key();
+    const devices = this.rows("SELECT device_id, name, added_at, state FROM devices ORDER BY added_at, device_id");
+    const buckets = this.rows(
+      `SELECT b.rev, b.bytes, b.files,
+              (SELECT COUNT(DISTINCT name) FROM versions v WHERE v.bucket = b.bucket) AS entries,
+              (SELECT COUNT(*) FROM bodies f WHERE f.bucket = b.bucket) AS file_bodies
+         FROM buckets b ORDER BY b.bucket`,
+    );
+    return {
+      key: key ? { version: key.version, created_at: key.created_at } : null,
+      recovery: Boolean(this.row("SELECT one FROM recovery WHERE one = 1")),
+      devices: devices.map((d) => ({ device_id: d.device_id, name: d.name, added_at: d.added_at, state: d.state })),
+      apps: buckets.map((b) => ({ entries: b.entries, bytes: b.bytes, files: b.file_bodies, file_bytes: b.files, changes: b.rev })),
+    };
+  }
+
+  /// Everything this account's object holds, gone (account deletion). Its
+  /// file bodies are in R2 and the worker deletes them (eraseSync).
+  erase() {
+    let rows = 0;
+    for (const table of ["versions", "bodies", "buckets", "envelopes", "recovery", "devices", "account_key"]) {
+      rows += this.row(`SELECT COUNT(*) AS n FROM ${table}`).n;
+      this.sql.exec(`DELETE FROM ${table}`);
+    }
+    return { rows };
   }
 
   bucketRow(bucket) {
@@ -687,4 +723,40 @@ export async function accountSyncRoute(request, url, env, { authedUser }) {
     if (m === "PUT") return bucketPut(request, url, env, uid, rest[1]);
   }
   return refuse(404, "not-found", "no such account sync route");
+}
+
+/// The account's sync, as its export shows it (GET /me/export), or null on
+/// a hub without account sync.
+export async function syncSummary(env, uid) {
+  if (!env.SYNC_ACCOUNTS || !uid) return null;
+  const got = await ask(env, String(uid), "summary");
+  return got.status === 200 && got.text ? JSON.parse(got.text) : null;
+}
+
+/// A deleted account's sync, gone: every sealed file body in R2 under
+/// acsync/<account>/, then every row its object holds. Bodies first, so an
+/// interrupted run leaves the object naming bodies that are gone (harmless,
+/// and the next run erases it) rather than bodies nothing names. Answers
+/// {bodies, rows}.
+export async function eraseSync(env, uid) {
+  const out = { bodies: 0, rows: 0 };
+  if (!uid) return out;
+  if (env.BUNDLES) {
+    const prefix = `acsync/${uid}/`;
+    let cursor;
+    for (let page = 0; page < 200; page += 1) {
+      const listing = await env.BUNDLES.list({ prefix, limit: 1000, cursor });
+      for (const object of listing.objects || []) {
+        await env.BUNDLES.delete(object.key);
+        out.bodies += 1;
+      }
+      if (!listing.truncated || !listing.cursor) break;
+      cursor = listing.cursor;
+    }
+  }
+  if (env.SYNC_ACCOUNTS) {
+    const got = await ask(env, String(uid), "erase");
+    if (got.status === 200 && got.text) out.rows = JSON.parse(got.text).rows || 0;
+  }
+  return out;
 }

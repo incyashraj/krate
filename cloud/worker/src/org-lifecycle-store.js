@@ -235,6 +235,9 @@ const CLOSED_OPEN = new Set([
   "billing-stripe",
   "invite-info",
   "exists",
+  // A member deleting their Krate account leaves a closed organisation too
+  // (account-delete.js): its records keep naming them, as removed.
+  "account-leave",
 ]);
 
 /// Refuse what the lifecycle or billing state does not allow, before the

@@ -76,7 +76,7 @@ import { orgLiveRoute } from "./org-data-live.js";
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
 // serves it behind /a/'s own checks, and the cross-origin-isolated page.
-import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
+import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, webPackKey, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
 // The receive loop (F-320): the link card, the open counted per person, a
 // stranger's report (receive.js).
 import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState, newerVersionLine } from "./receive.js";
@@ -98,7 +98,9 @@ import { orgChatRoute, chatSweep } from "./org-chat.js";
 // whose approving and candidates list they wrap.
 import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
-import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, sessionId, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+// Deleting an account, and its export (K-1245).
+import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./account-delete.js";
 // A signed-in person's own app data on every device (IC-981), kept in one
 // SQLite-backed Durable Object per account; wrangler.toml binds it as
 // SYNC_ACCOUNTS.
@@ -265,6 +267,11 @@ const RATE_LIMITS = {
   founding: 5,
   makeit: 5,
   "support/new": 5,
+  // A person's whole export reads everything the hub keeps about them;
+  // deleting reads and removes it. Nobody needs either more than a few
+  // times a minute (K-1245).
+  "me/export": 5,
+  "me/delete": 60,
   // Requests with no session to an organisation's routes or private
   // links (IC-946). They never reach the organisation's store -- so they
   // cannot grow its audit -- and this bounds what they cost. A person
@@ -416,6 +423,8 @@ export default {
       await runQueuedAnnouncements(env).catch((e) => console.error(`queued announcement: ${e}`));
       return;
     }
+    // An account deletion a request left part-way (account-delete.js).
+    await resumeAccountDeletions(env, accountDeleteDeps()).catch((e) => console.error(`account deletions: ${e}`));
     await runScrub(env, { repair: false });
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
@@ -758,6 +767,13 @@ export default {
       }
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
+      }
+      // Delete my account, and download my data (account-delete.js).
+      if (pathname === "/me/delete" || pathname === "/me/export") {
+        const over = await rateLimited(request, env, pathname.slice(1));
+        if (over) return cors(over);
+        const res = await accountDeleteRoute(request, url, env, accountDeleteDeps());
+        if (res) return cors(res);
       }
       // Krate's non-essential mail: the person's own switch, and the
       // one-click way out that every such mail links to (mail-prefs.js).
@@ -1559,6 +1575,9 @@ async function putReport(request, env) {
   const meta = {
     id,
     from: identity ? identity.login : "anonymous",
+    // Whose it is, as a principal nobody can choose (K-1085): what account
+    // deletion finds it by (K-1245). `from` is display only.
+    ...(identity && ownerOf(identity) ? { owner: ownerOf(identity) } : {}),
     name: identity ? identity.name || identity.login : "anonymous",
     session: header(request, "x-krate-session") || "",
     krate: header(request, "x-krate-version") || "",
@@ -1613,9 +1632,10 @@ async function getReport(request, id, env) {
   });
 }
 
-/// Take an app off the gallery. Only its author can; the bundle and every
-/// link already shared keep working -- unpublishing removes the listing,
-/// not the content people were sent.
+/// Take an app down. Only its author can. The listing, the bytes at this
+/// address, its screenshot, icon and short links all go; the app's own link
+/// (/a/v...) falls back to its newest earlier version, and is removed with
+/// the last one.
 async function unpublish(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
@@ -1643,6 +1663,8 @@ async function unpublish(request, hash, env) {
   await env.BUNDLES.delete(hash);
   await env.BUNDLES.delete(`shot:${hash}`);
   await env.BUNDLES.delete(`icon:${hash}`);
+  // The tab Player's copy, made the first time someone opened it in a tab.
+  await env.BUNDLES.delete(webPackKey(hash));
   // The alias is keyed by prefix, so clear every prefix length a short link
   // could have used.
   for (let length = 8; length <= 32; length += 1) {
@@ -5730,6 +5752,23 @@ async function billingConfig(env) {
   });
 }
 
+/// What account-delete.js needs from the hub, in one place.
+function accountDeleteDeps() {
+  return {
+    authedUser,
+    verifyGitHub,
+    ownerOfRecord,
+    orgAsk,
+    deleteBigParts,
+    sessionOwner,
+    sessionId,
+    wantsNews,
+    siteBase,
+    hubBase: (env) => String(env.PUBLIC_BASE || "").replace(/\/$/, ""),
+    githubClientId: GITHUB_CLIENT_ID,
+  };
+}
+
 /// The signed-in user behind a request: a Krate session or a GitHub token.
 async function authedUser(request, env) {
   const auth = request.headers.get("authorization") || "";
@@ -5839,6 +5878,9 @@ async function writeEntitlementFromSubscription(env, sub) {
   const userId =
     (sub.metadata && sub.metadata.krate_user) || (await env.APPS.get(`cust:${sub.customer}`));
   if (!userId) return;
+  // A deleted account stays deleted: Stripe's late "subscription deleted"
+  // for the plan cancelled while deleting it must not write it back (K-1245).
+  if (!(await env.APPS.get(`user:${userId}`))) return;
   const priceId =
     sub.items && sub.items.data && sub.items.data[0] ? sub.items.data[0].price.id : "";
   await env.APPS.put(`cust:${sub.customer}`, userId);
@@ -7162,6 +7204,15 @@ async function adminApi(request, pathname, env) {
     }
     return json({ ok: true });
   }
+  // Deleting an account for someone who asked support (account-delete.js):
+  // first what it would do, then -- with the account's email typed in --
+  // the deletion itself, which carries on a part-way one.
+  if (route === "user/delete-preview" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: true });
+  }
+  if (route === "user/delete" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: false });
+  }
   if (route === "user/logout" && request.method === "POST") {
     // Krate sessions, and GitHub sign-ins the hub indexed (account-sessions.js).
     return json({ revoked: await endEverySession(env, String(body.id || ""), GITHUB_CLIENT_ID) });
@@ -7590,9 +7641,25 @@ async function show(tab){
         d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
         \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}<span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
         <button class="ghost" data-a="plan">\${x.ent&&x.ent.plan==="comp"?"Remove comp":"Comp plan"}</button>
-        <button class="ghost" data-a="out">Sign out everywhere</button>\`;
+        <button class="ghost" data-a="out">Sign out everywhere</button>
+        <button class="ghost" data-a="del">Delete account</button>\`;
         d.querySelector('[data-a=plan]').onclick=async()=>{await api("user/plan",{method:"POST",body:JSON.stringify({id:x.id,plan:x.ent&&x.ent.plan==="comp"?"none":"comp"})});load();};
         d.querySelector('[data-a=out]').onclick=async()=>{const r=await api("user/logout",{method:"POST",body:JSON.stringify({id:x.id})});alert(r.revoked+" sessions revoked");};
+        d.querySelector('[data-a=del]').onclick=async()=>{
+          const call=(r,b)=>fetch(HUB+"/admin/api/"+r,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify(b)}).then(async res=>({status:res.status,body:await res.json().catch(()=>({}))}));
+          const p=await call("user/delete-preview",{id:x.id});
+          if(p.status!==200){alert(p.body.message||("Failed: "+p.status));return;}
+          const v=p.body;
+          if(v.blocked){alert(v.blocked.message);return;}
+          if(v.subscription&&!v.subscription.cancels){alert(v.subscription.message);return;}
+          let apps="remove";
+          if(v.app_builds){apps=confirm("Published apps:\\n"+((v.apps||[]).map(a=>"  "+a.name).join("\\n")||"  (earlier builds only)")+"\\n\\nOK removes them with the account. Cancel leaves them up.")?"remove":"keep";}
+          const typed=prompt("Delete "+(x.email||x.id)+" for good?\\n\\nGoes: "+v.deletes.join("; ")+".\\n\\nType the account's "+(x.email?"email address":"id")+" to confirm:");
+          if(!typed)return;
+          let r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          for(let i=0;r.status===202&&i<50;i++)r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          alert(r.body.state==="done"?"Deleted.":(r.body.message||("Failed: "+r.status)));load();
+        };
         u.appendChild(d);
       }
     };
