@@ -24,9 +24,15 @@ import { spawn } from "node:child_process";
 import { chmod, mkdtemp, readFile, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { createServer as probeServer } from "node:net";
 
-const HUB_PORT = 8935;
-const BUILDER_PORT = 8936;
+// An OS-chosen free port for a child process to listen on.
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
+const BUILDER_PORT = await freePort();
 const BUILDER = `http://127.0.0.1:${BUILDER_PORT}`;
 const BUILDER_SECRET = "builder-secret-for-tests";
 
@@ -44,7 +50,8 @@ const hub = createServer((req, res) => {
   if (req.url === "/spend") return res.end("{}");
   res.statusCode = 404; res.end("");
 });
-await new Promise((r) => hub.listen(HUB_PORT, r));
+await new Promise((r) => hub.listen(0, "127.0.0.1", r));
+const HUB_PORT = hub.address().port;
 
 // The fake engine records what `port` was handed, writes a bundle and an
 // artifact record, and exits 7 the way the real one does.
