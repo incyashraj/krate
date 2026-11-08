@@ -706,6 +706,15 @@ fn doctor_lists_phase_1_tooling() {
     assert!(stdout.contains("Core tools"));
     assert!(stdout.contains("Phase 2 language tools"));
     assert!(stdout.contains("state dir"));
+    assert!(stdout.contains("cargo-component"
+    assert!(stdout.contains("wasm32-wasip1"));
+    assert!(stdout.contains("wasm32-wasip2"));
+    assert!(stdout.contains("wasm-tools"));
+    assert!(stdout.contains("tinygo"));
+    assert!(stdout.contains("go"));
+    assert!(stdout.contains("node"));
+    assert!(stdout.contains("npm"));
+    assert!(stdout.contains("jco"));;
 }
 
 #[test]
