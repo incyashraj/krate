@@ -22,6 +22,7 @@
  */
 import assert from "node:assert";
 import { createServer } from "node:http";
+import { createServer as probeServer } from "node:net";
 import { spawn } from "node:child_process";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -31,10 +32,16 @@ import { join } from "node:path";
 import worker from "../../worker/src/index.js";
 import { r2Mock } from "../../worker/test/r2-mock.mjs";
 
-const HUB_PORT = 8943;
-const BUILDER_PORT = 8944;
-const HUB = `http://127.0.0.1:${HUB_PORT}`;
-const BUILDER = `http://127.0.0.1:${BUILDER_PORT}`;
+// Ports are chosen by the OS when the test runs (see run()), so parallel runs
+// and anything else on the machine cannot collide.
+let HUB = "";
+let BUILDER = "";
+// An OS-chosen free port for a child process to listen on.
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
 const BUILDER_SECRET = "free-app-rule-builder-secret";
 const HOUSE_KEY = "sk-ant-krate-house-key-for-tests-0000";
 
@@ -54,7 +61,7 @@ const hubEnv = {
     }),
   },
   BUNDLES: r2Mock(),
-  PUBLIC_BASE: HUB,
+  get PUBLIC_BASE() { return HUB; },
   KEY_WRAP_SECRET: "free-app-rule-wrap-secret",
   KRATE_BUILDER_SECRET: BUILDER_SECRET,
 };
@@ -198,7 +205,10 @@ function paidBy(who) {
 }
 
 async function run() {
-  await new Promise((r) => hub.listen(HUB_PORT, r));
+  await new Promise((r) => hub.listen(0, "127.0.0.1", r));
+  HUB = `http://127.0.0.1:${hub.address().port}`;
+  const BUILDER_PORT = await freePort();
+  BUILDER = `http://127.0.0.1:${BUILDER_PORT}`;
   const dir = await mkdtemp(join(tmpdir(), "krate-free-app-"));
   KEYLOG = join(dir, "keys.log");
   writeFileSync(KEYLOG, "");

@@ -15,10 +15,16 @@ import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer as probeServer } from "node:net";
 
-const HUB_PORT = 8931;
+// An OS-chosen free port for a child process to listen on.
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
 const BUILDER_SECRET = "builder-secret-for-tests";
-const BUILDER_PORT = 8932;
+const BUILDER_PORT = await freePort();
 const BUILDER = `http://127.0.0.1:${BUILDER_PORT}`;
 
 /* ---- a hub that knows two people ---------------------------------------- */
@@ -310,7 +316,8 @@ process.on("exit", () => {
   try { hub.close(); } catch (e) {}
 });
 
-hub.listen(HUB_PORT);
+await new Promise((r) => hub.listen(0, "127.0.0.1", r));
+const HUB_PORT = hub.address().port;
 // Where the fake engine records the --attach files it was handed, so the
 // attachment test can prove the bytes reached it.
 const attachLog = join(stateDir, "attachments.log");

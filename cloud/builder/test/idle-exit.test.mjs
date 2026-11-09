@@ -17,8 +17,15 @@ import { spawn } from "node:child_process";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer as probeServer } from "node:net";
 
-const PORT = 8941;
+// An OS-chosen free port for a child process to listen on.
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
+const PORT = await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 const IDLE_MS = 1200;
 const BUILD_SECONDS = 3; // well past the idle time, with no requests at all

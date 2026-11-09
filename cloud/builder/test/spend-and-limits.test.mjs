@@ -15,9 +15,15 @@ import { spawn } from "node:child_process";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer as probeServer } from "node:net";
 
-const HUB_PORT = 8951;
-const PORT = 8952;
+// An OS-chosen free port for a child process to listen on.
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
+const PORT = await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 
 let refuse = true;
@@ -39,7 +45,8 @@ const hub = createServer((req, res) => {
     return send(200, {});
   });
 });
-await new Promise((r) => hub.listen(HUB_PORT, r));
+await new Promise((r) => hub.listen(0, "127.0.0.1", r));
+const HUB_PORT = hub.address().port;
 
 const dir = await mkdtemp(join(tmpdir(), "krate-spend-"));
 const bin = join(dir, "krate");

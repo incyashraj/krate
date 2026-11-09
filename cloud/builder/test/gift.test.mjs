@@ -25,10 +25,17 @@ import { createHash } from "node:crypto";
 import { chmod, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer as probeServer } from "node:net";
+
+// An OS-chosen free port for a child process to listen on.
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
 
 const VERSION = "9.9.9";
-const PORT = 8962;
-const REL_PORT = 8963;
+const PORT = await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const dir = await mkdtemp(join(tmpdir(), "krate-gift-"));
@@ -58,7 +65,8 @@ const release = createServer(async (req, res) => {
   if (tamper && name.includes("x86_64")) bytes = Buffer.concat([bytes, Buffer.from("x")]);
   res.end(bytes);
 });
-await new Promise((r) => release.listen(REL_PORT, r));
+await new Promise((r) => release.listen(0, "127.0.0.1", r));
+const REL_PORT = release.address().port;
 
 // ---- a fake engine that builds an app and makes gifts ---------------------
 const log = join(dir, "engine.log");
