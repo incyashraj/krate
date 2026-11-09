@@ -238,6 +238,8 @@ capability. Believe this table over your instinct:
   runs with no fs grant at all. A `store.kv` value holds up to 1 MiB and
   `set` returns an error past it -- check the result and say so on screen.
   A document the person writes goes in a file (`ui.dialog:file-save`).
+  What an app keeps in `store.kv` or its own files follows a signed-in
+  person to every device they use, end-to-end encrypted, with no code.
 - **Working on the person's own files IS real.** Declare
   `ui.dialog:open-folder`; their pick is the grant.
 
@@ -518,7 +520,8 @@ is wanted -- the first call answers `Err(Finding)` while the phone looks \
 and asks the person; keep calling (twice a second is plenty) and draw \
 \"Finding where you are\" meanwhile. `Err(NotAllowed)` means they said no: \
 say so plainly and keep the rest of the app working; `Err(Unavailable)` \
-is a computer or location switched off. A position carries `accuracy` in \
+is location switched off, or a computer with no way to tell (Linux for \
+now) -- a Mac and a Windows PC ask and answer as a phone does. A position carries `accuracy` in \
 metres -- show it, never pretend a fix is exact. \
 Bluetooth LE devices (a heart-rate strap, a sensor, a light): declare \
 `bluetooth.connect`, then `krate::ui::bluetooth::choose(win, \"180D\", \
@@ -528,23 +531,29 @@ answers the one they pick (`None` if they cancel). The app never scans. \
 Then `read`, `write` and `subscribe` by service and characteristic UUID, \
 and drain `notifications(device)` each frame; on `Err(Disconnected)` or \
 `connected()` false, offer to choose again. `Err(NotFound)` from choose \
-means nothing nearby offers the service: say so. A Share button: \
+means nothing nearby offers the service: say so. A Mac shows the same \
+list; Windows and Linux answer `available()` false for now, so keep a way \
+to type the reading in there. A Share button: \
 `krate::ui::share::share(win, Some(text), Some(url), &[SharedFile { name, \
 data }])` opens the system's share sheet (Messages, Mail, AirDrop, Notes) \
 and answers `Ok(true)` when sent, `Ok(false)` when cancelled; no \
-capability. A computer answers `Err(Unavailable)` for now: offer \
-save-file or Copy there instead. Photos: `krate::ui::photos::pick(win, \
+capability. It works on every computer too: a Mac opens its share \
+picker, and Windows and Linux, which have none, save the files where the \
+person picks and copy the text on their OK -- the same answers. Photos: `krate::ui::photos::pick(win, \
 3)` opens the system's photo picker and returns the picks as chosen \
 files (read them with `krate::fs::read_chosen(&f.token)`); empty \
 means cancelled, no capability. To add a picture: declare `photos.add` \
 and call `photos::save(win, &png_or_jpeg_bytes)`. On a computer pick \
-opens the file dialog for pictures. A reminder that comes with the app \
+opens the file dialog for pictures, and save adds to Photos on a Mac and \
+to the Pictures folder on Windows and Linux. A reminder that comes with the app \
 closed (a timer, a habit, a meeting): with `ui.notify`, \
 `krate::ui::reminders::schedule(\"tea\", \"Tea is ready\", \"Four minutes \
 are up.\", 240, false)` -- the same id replaces it, `true` repeats it \
 daily at that time, `cancel(id)` takes it back, `pending()` lists this \
-app's own; tapping it opens the app. A computer answers \
-`Err(Unavailable)` for now: keep an in-app timer there. Signing the \
+app's own; tapping it opens the app. A Mac and Windows deliver them \
+too (Windows sets a daily one a year ahead: schedule it again each time \
+the app opens); Linux answers `Err(Unavailable)`: keep an in-app timer \
+there. Signing the \
 person in to a service (GitHub, Google, your own backend): never draw a \
 password field. `let (verifier, challenge) = krate::ui::sign_in::pkce();` \
 then `sign_in::start(win, &authorize_url, \"krate-signin\")` with the service's \
@@ -567,7 +576,8 @@ refused and said in `problem`), keeps nothing between openings and \
 cannot reach the app. Something private (a vault, a diary, a \
 banking screen): show it only after `krate::ui::unlock::check(\"Unlock your \
 vault\")` answers `UnlockAnswer::Yes` -- Face ID or the passcode on an \
-iPhone, Touch ID or the password on a Mac, in the system's own sheet. \
+iPhone, Touch ID or the password on a Mac, Windows Hello on a PC, in \
+the system's own sheet. \
 `No` keeps it locked; `Unavailable(why)` means this device cannot check: \
 say so rather than opening it. Keep what it guards in `store.secret`, and \
 lock again when the app goes to the background. No capability. A picture that does not change \
@@ -1472,10 +1482,20 @@ damage, a 100-150 ms screen shake on big hits, particles on destruction \
 (eight 2px squares with velocity and gravity are plenty).\n\n\
 7. **Title, pause, game over.** Title screen: name, one-line goal, \
 controls, \"press space\". Esc pauses. Game over shows the score and \
-restarts on space, keeping the high score in `store.kv`.\n\n\
+restarts on space, showing the best score (rule 9).\n\n\
 8. **Ramp the difficulty.** Start winnable for thirty seconds, then speed \
 up or add hazards on a schedule. The first death should teach, not \
-ambush.\n\n";
+ambush.\n\n\
+9. **Keep what the player earned.** Best score, level reached, unlocks and \
+settings (sound, difficulty) go in `store.kv` when they change -- on game \
+over, level up, a setting flipped; never every frame -- and are read back at \
+start: declare `store.kv`, then `krate::store::get` / `krate::store::set`. \
+Krate then carries them to every device the person signs in on, with no \
+code of yours. Never keep them only in memory: a best score that is gone \
+when the window closes is a bug. Before saving a best, read the stored one \
+and write only if it is beaten, so a better score from their other device \
+is never lowered. `apps/krate-nova` and `apps/krate-bounce` do exactly \
+this.\n\n";
 
 /// Section 3: the no_std discipline. Authored, because it is the reasoning
 /// behind the rules, not a list that can be scraped. The concrete facts it
@@ -2619,7 +2639,7 @@ fn curated_shape(name: &str) -> Option<&'static str> {
         "krate-checklist" => "GUI checkbox list that saves; the simplest GUI+store shape",
         "krate-contacts" => "GUI over a real SQL database (no_std)",
         "krate-keyvault" => "GUI key-value store over store.kv (persistence)",
-        "krate-notes-clip" | "krate-clip" => "GUI using the clipboard",
+        "krate-clip" => "GUI using the clipboard",
         "krate-paint" => "GUI freehand canvas drawing",
         "krate-chart" => "GUI drawing a chart on a canvas",
         "krate-nova" => "GUI canvas game: fills, circles, gradients (no sprites)",
@@ -3319,6 +3339,12 @@ interface api {
         // Game feel rides only on a game, and must still be there for one.
         let game = inline_essentials("a snake game");
         assert!(game.contains("# 2f."), "a game gets game feel");
+        // A game's progress is kept, so it follows the person (IC-981).
+        assert!(
+            game.contains("Keep what the player earned")
+                && game.contains("Never keep them only in memory"),
+            "a game is not told to keep its best score and settings in store.kv"
+        );
         assert!(
             game.contains("# 2g. What the app should look like"),
             "a game is told how it should look too"

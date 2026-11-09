@@ -4,7 +4,7 @@
 //! link the person tapped -- is fetched from the Java side by hand:
 //! android-activity fills ndk-context with the JavaVM and the activity
 //! object, and everything else is plain method calls. Failures never
-//! panic; a player that cannot read its intent falls back to the demo,
+//! panic; a player that cannot read its intent shows Krate's home screen,
 //! and the reason lands in logcat.
 
 #![cfg(target_os = "android")]
@@ -20,50 +20,47 @@ pub struct ActivityHandles {
     pub activity: *mut core::ffi::c_void,
 }
 
-/// The URI the activity was launched to VIEW, if any.
-pub fn view_target(handles: ActivityHandles) -> Option<String> {
-    match try_view_target(handles) {
-        Ok(target) => target,
-        Err(err) => {
-            log::warn!("could not read the launch intent: {err}");
+/// The URI the activity was opened to VIEW -- at launch, or tapped while
+/// Krate ran -- once: taking it clears it, so coming back to the home screen
+/// does not open it again.
+pub fn take_open(handles: ActivityHandles) -> Option<String> {
+    let taken = (|| -> Result<Option<String>, String> {
+        let vm = unsafe { jni::JavaVM::from_raw(handles.vm.cast()) }.map_err(err)?;
+        let mut env = vm.attach_current_thread().map_err(err)?;
+        let activity = unsafe { JObject::from_raw(handles.activity.cast()) };
+        let open = env
+            .call_method(&activity, "krateTakeOpen", "()Ljava/lang/String;", &[])
+            .and_then(|v| v.l())
+            .map_err(|e| {
+                // The description goes to logcat as System.err before the
+                // exception is cleared -- the only way to see which call blew.
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+                format!("krateTakeOpen: {e}")
+            })?;
+        Ok(get_string(&mut env, open))
+    })();
+    match taken {
+        Ok(open) => open,
+        Err(why) => {
+            log::warn!("could not read the launch intent: {why}");
             None
         }
     }
 }
 
-fn try_view_target(handles: ActivityHandles) -> Result<Option<String>, String> {
-    let vm = unsafe { jni::JavaVM::from_raw(handles.vm.cast()) }.map_err(err)?;
-    let mut env = vm.attach_current_thread().map_err(err)?;
-    let activity = unsafe { JObject::from_raw(handles.activity.cast()) };
-
-    let intent = env
-        .call_method(&activity, "getIntent", "()Landroid/content/Intent;", &[])
-        .and_then(|v| v.l())
-        .map_err(|e| {
-            // The description goes to logcat as System.err before the
-            // exception is cleared -- the only way to see which call blew.
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-            format!("getIntent: {e}")
-        })?;
-    if intent.is_null() {
-        return Ok(None);
-    }
-
-    let action_obj = env
-        .call_method(&intent, "getAction", "()Ljava/lang/String;", &[])
-        .and_then(|v| v.l())
-        .map_err(err)?;
-    let action = get_string(&mut env, action_obj);
-    if action.as_deref() != Some("android.intent.action.VIEW") {
-        return Ok(None);
-    }
-
-    let data_obj = env
-        .call_method(&intent, "getDataString", "()Ljava/lang/String;", &[])
-        .and_then(|v| v.l())
-        .map_err(err)?;
-    Ok(get_string(&mut env, data_obj))
+/// Whether a link or file tapped while Krate's own screen showed is waiting
+/// for [`take_open`].
+pub fn open_waiting(handles: ActivityHandles) -> bool {
+    (|| -> Result<bool, String> {
+        let vm = unsafe { jni::JavaVM::from_raw(handles.vm.cast()) }.map_err(err)?;
+        let mut env = vm.attach_current_thread().map_err(err)?;
+        let activity = unsafe { JObject::from_raw(handles.activity.cast()) };
+        env.call_method(&activity, "krateOpenWaiting", "()Z", &[])
+            .and_then(|v| v.z())
+            .map_err(err)
+    })()
+    .unwrap_or(false)
 }
 
 /// Read every byte behind a content:// or file:// URI through the

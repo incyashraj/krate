@@ -21,6 +21,8 @@ members = [
     "crates/lease",
     "crates/orgkeys",
     "crates/orgdata",
+    "crates/orgaccess",
+    "crates/accountsync",
     "crates/http",
     "crates/validator-wasm",
     "crates/manifest",
@@ -116,3 +118,19 @@ lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# The hashing and compression a bundle passes through on every pack, sign
+# and open, optimised even in a debug build. Unoptimised, a 70 MB bundle
+# (an app carrying a speech model) took a minute to pack and sign and more
+# than the 90-second verification budget to open, so a debug-built CI lane
+# failed an app the release build opens in seconds (2026-11-07).
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.zlib-rs]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
+[profile.dev.package.adler2]
+opt-level = 3

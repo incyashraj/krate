@@ -47,14 +47,13 @@ window.fetch = async function (input, init = {}) {
   const path = url.slice(HUB.length).split("?")[0];
   const method = (init.method || "GET").toUpperCase();
 
-  // Signed in, on the free plan, with two of three makes already used --
-  // the state most worth designing against, since it is one make from the
-  // wall.
+  // Signed in, with the free app not yet made -- the state most worth
+  // designing against, since it is one make from the wall.
   if (path === "/me") {
     return reply({
       user: { name: "Yashraj Pardeshi", login: "incyashraj", email: "you@example.com", avatar_url: "" },
-      plan: { plan: "free", active: false, until: 0, via: "", portal: false },
-      referral: { code: "abc123", count: 0, awards: 0 },
+      limits_lifted: false,
+      referral: { code: "abc123", count: 0 },
     });
   }
 

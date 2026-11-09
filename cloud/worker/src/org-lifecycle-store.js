@@ -1,25 +1,23 @@
-// An organisation's lifecycle and billing state, inside its store
-// (IC-948, Addendum 3 D and E, shapes from Addendum 4).
+// An organisation's lifecycle, inside its store (IC-948, Addendum 3 D,
+// shapes from Addendum 4).
 //
-// Three things that are separate on purpose (R17): the lifecycle --
-// active, closing (a scheduled close with a window), closed -- the billing
-// state -- pilot, paid, invoiced, past-due, suspended -- and recovery of a
-// lost owner. Nonpayment never closes anything, a close never touches
-// billing, and neither ever stops an owner from taking the standard export
-// (R24). Everything here runs inside the store's transactions, like every
-// other command, and appends to the same audit chain.
+// Two things that are separate on purpose (R17): the lifecycle -- active,
+// closing (a scheduled close with a window), closed -- and recovery of a
+// lost owner. Neither ever stops an owner from taking the standard export
+// (R24). Organisations are not billed (founder, 2026-11-07): nothing here
+// pauses, suspends or limits an organisation for payment. Everything here
+// runs inside the store's transactions, like every other command, and
+// appends to the same audit chain.
 //
 // Settings, none of them a published promise: ORG_CLOSE_WINDOW_DAYS (30),
 // ORG_EXPORT_WINDOW_DAYS (30, how long former owners can take the export
 // after closing), ORG_EXPORT_PACKAGE_DAYS (7, how long one built package
-// lives), ORG_FREE_SEATS (3, seats a suspended organisation keeps),
-// ORG_BILLING_ENFORCED ("1" before anything is ever suspended).
+// lives).
 
 import { extendOrg, addReasons, parsePrincipal, displayOf, canonicalJson, sha256HexSync } from "./org.js";
 
 const DAY = 24 * 60 * 60;
 export const RECOVERY_WAIT_SECONDS = 72 * 60 * 60;
-const SEAT_ROLES = new Set(["owner", "admin", "developer", "reviewer"]);
 
 const setting = (env, name, fallback) => {
   const n = Number(env && env[name]);
@@ -28,10 +26,6 @@ const setting = (env, name, fallback) => {
 export const closeWindowDays = (env) => setting(env, "ORG_CLOSE_WINDOW_DAYS", 30);
 export const exportWindowDays = (env) => setting(env, "ORG_EXPORT_WINDOW_DAYS", 30);
 export const exportPackageDays = (env) => setting(env, "ORG_EXPORT_PACKAGE_DAYS", 7);
-// The free seats a suspended organisation keeps. 3 is a placeholder: the
-// number is the founder's call, not decided yet (2026-10-14).
-export const freeSeats = (env) => setting(env, "ORG_FREE_SEATS", 3);
-export const billingEnforced = (env) => String((env && env.ORG_BILLING_ENFORCED) || "") === "1";
 
 addReasons({
   "org-closing": {
@@ -39,11 +33,6 @@ addReasons({
     message: (o, d) => d || `${o} is closing -- nothing new can be published or added; an owner can cancel the close`,
   },
   "org-closed": { status: 410, message: (o, d) => d || `${o} is closed` },
-  "org-suspended": {
-    status: 402,
-    message: (o, d) =>
-      d || `${o} is suspended for billing -- its releases still open and owners can export, but paid services are stopped until billing is settled`,
-  },
   "close-statement-mismatch": {
     status: 409,
     message: () => "that is not the digest of this close's statement -- read the statement again and approve the digest it shows",
@@ -53,10 +42,6 @@ addReasons({
     message: (o) => `to close ${o}, type its name exactly: ${o}`,
   },
   "export-not-ready": { status: 409, message: (o, d) => d || "that export is not ready" },
-  "billing-not-open": {
-    status: 503,
-    message: () => "Krate invoices pilot organisations directly: write to yashraj@krate.tech",
-  },
   "recovery-not-waiting": { status: 409, message: (o, d) => d || "that recovery is not waiting any more" },
   "rate-limited": { status: 429, message: () => "too many refused attempts -- wait a minute and try again" },
 });
@@ -77,11 +62,6 @@ const SCHEMA = [
      id TEXT PRIMARY KEY, state TEXT NOT NULL, principal TEXT NOT NULL, by TEXT NOT NULL,
      reason TEXT NOT NULL, requested_at INTEGER NOT NULL, effective_at INTEGER NOT NULL,
      closed_by TEXT, closed_at INTEGER, not_mailed TEXT)`,
-  `CREATE TABLE IF NOT EXISTS billing (
-     id INTEGER PRIMARY KEY CHECK (id = 1),
-     plan TEXT NOT NULL, status TEXT, customer TEXT, subscription TEXT,
-     seats_paid INTEGER, period_end INTEGER,
-     manual_reference TEXT, manual_paid_until INTEGER, updated_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS invite_mail (day TEXT PRIMARY KEY, n INTEGER NOT NULL)`,
 ];
 
@@ -148,34 +128,6 @@ function recoveryView(r) {
   };
 }
 
-/// The billing row, or the pilot entitlement every organisation starts on.
-export function billingRow(store) {
-  return store.row("SELECT * FROM billing WHERE id = 1") || { plan: "pilot", status: null, seats_paid: null, period_end: null };
-}
-
-/// pilot | paid | invoiced | past-due | suspended, and whether the
-/// organisation is suspended. Nothing is ever suspended until the founder
-/// sets ORG_BILLING_ENFORCED=1; from then on, only paid and invoiced are in
-/// good standing.
-export function billingState(store, now) {
-  const b = billingRow(store);
-  let state = "pilot";
-  if (b.plan === "manual") state = (b.manual_paid_until || 0) >= now ? "invoiced" : "past-due";
-  else if (b.plan === "stripe") {
-    const live = (b.status === "active" || b.status === "trialing") && (b.period_end || 0) >= now;
-    state = live ? "paid" : b.status === "canceled" ? "pilot" : "past-due";
-  }
-  const good = state === "paid" || state === "invoiced";
-  const suspended = billingEnforced(store.env) && !good;
-  return { state: suspended ? "suspended" : state, suspended, row: b };
-}
-
-function seatsUsed(store) {
-  return store
-    .rows("SELECT role FROM members WHERE state = 'active'")
-    .filter((m) => SEAT_ROLES.has(m.role)).length;
-}
-
 /// The active owner or admin the command comes from, or the refusal.
 function ownerOrAdmin(store, ctx, action, target, { ownersOnly = false } = {}) {
   const { me, refusal } = store.standing(ctx, action, target);
@@ -232,12 +184,14 @@ const CLOSED_OPEN = new Set([
   "export-get",
   "sweep",
   "swept",
-  "billing-stripe",
   "invite-info",
   "exists",
+  // A member deleting their Krate account leaves a closed organisation too
+  // (account-delete.js): its records keep naming them, as removed.
+  "account-leave",
 ]);
 
-/// Refuse what the lifecycle or billing state does not allow, before the
+/// Refuse what the lifecycle does not allow, before the
 /// command runs. Every refusal is audited like any other.
 function gate(ctx) {
   const life = lifecycle(this).state;
@@ -256,37 +210,15 @@ function gate(ctx) {
       return this.deny(ctx, ctx.op, target, "org-closed");
     }
   }
-  const billing = billingState(this, ctx.now);
-  if (billing.suspended) {
-    if (PUBLISH.has(ctx.op)) return this.deny(ctx, ctx.op, target, "org-suspended");
-    if (GROW.has(ctx.op)) {
-      const role = ctx.op === "accept" ? (this.row("SELECT role FROM invites WHERE code = ?", String(ctx.args.code || "")) || {}).role : ctx.args.role;
-      const already = ctx.op === "set-role" ? this.member(parsePrincipal(ctx.args.principal)?.principal) : null;
-      const adds = SEAT_ROLES.has(role) && !(already && already.state === "active" && SEAT_ROLES.has(already.role));
-      if (adds && seatsUsed(this) + 1 > freeSeats(this.env)) {
-        return this.deny(
-          ctx,
-          ctx.op,
-          target,
-          "org-suspended",
-          `${ctx.slug} is suspended for billing, and a seat beyond its ${freeSeats(this.env)} free ones is a paid service -- recipients can still be added`,
-        );
-      }
-    }
-  }
   return null;
 }
 
 /// The fields Addendum 4 (D1) adds to GET /orgs/<slug>.
 function view(org, me) {
   const life = lifecycle(this);
-  const now = this.now();
-  const billing = billingState(this, now);
   org.state = life.state;
   org.close = closeView(openClose(this));
   org.closed_at = life.closed_at || null;
-  org.billing_state = billing.state;
-  org.suspended = billing.suspended;
   // Owners and admins only.
   org.recovery =
     me && me.state === "active" && (me.role === "owner" || me.role === "admin")
@@ -396,8 +328,7 @@ const ops = {
   },
 
   /// Who may take the export now: an active owner, or -- after the close --
-  /// a former owner within the export window. Export always works for them,
-  /// suspended or not (R24).
+  /// a former owner within the export window (R24).
   "export-begin"(ctx) {
     const target = `org:${ctx.slug}`;
     const allowed = exportAllowed(this, ctx, "org.export", target);
@@ -514,93 +445,6 @@ const ops = {
     return this.ok({ recovery: recoveryView(this.row("SELECT * FROM recoveries WHERE id = ?", id)) });
   },
 
-  // ---------------------------------------------------------- billing
-
-  /// GET /orgs/<slug>/billing, the store's half: owner or admin.
-  "billing-read"(ctx) {
-    const { refusal } = ownerOrAdmin(this, ctx, "billing.read", `org:${ctx.slug}`);
-    if (refusal) return refusal;
-    const b = billingState(this, ctx.now);
-    return this.ok({
-      plan: b.row.plan,
-      state: b.state,
-      seats_used: seatsUsed(this),
-      seats_paid: b.row.seats_paid ?? null,
-      period_end: b.row.plan === "manual" ? b.row.manual_paid_until ?? null : b.row.period_end ?? null,
-      manual: b.row.plan === "manual" ? { reference: b.row.manual_reference, paid_until: b.row.manual_paid_until } : null,
-      customer: b.row.customer || null,
-    });
-  },
-
-  /// The checkout's half: an owner, the seats, and the org's customer.
-  "billing-checkout"(ctx) {
-    const { refusal } = ownerOrAdmin(this, ctx, "billing.checkout", `org:${ctx.slug}`, { ownersOnly: true });
-    if (refusal) return refusal;
-    const b = billingRow(this);
-    if (ctx.args.customer && !b.customer) {
-      this.sql.exec(
-        `INSERT INTO billing (id, plan, customer, updated_at) VALUES (1, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET customer = excluded.customer, updated_at = excluded.updated_at`,
-        b.plan || "pilot",
-        String(ctx.args.customer),
-        ctx.now,
-      );
-      this.audit(ctx.actor, "billing.customer", `org:${ctx.slug}`, "allowed");
-    }
-    this.audit(ctx.actor, "billing.checkout", `org:${ctx.slug}`, "allowed", `${seatsUsed(this)} seats`);
-    return this.ok({ seats: Math.max(1, seatsUsed(this)), customer: billingRow(this).customer || null });
-  },
-
-  /// From the signature-checked Stripe webhook. Fails closed: a customer
-  /// this organisation does not have, or a price that is not the seat
-  /// price, changes nothing and says why (IC-410).
-  "billing-stripe"(ctx) {
-    const a = ctx.args;
-    const b = billingRow(this);
-    const refuse = (why) => {
-      this.audit("stripe", "billing.update", `org:${ctx.slug}`, "denied", why);
-      return { status: 409, body: { error: "billing-refused", message: why } };
-    };
-    if (!a.customer || (b.customer && b.customer !== a.customer)) return refuse("the event's customer is not this organisation's");
-    const price = this.env && this.env.STRIPE_PRICE_ORG_SEAT;
-    if (!price || a.price !== price) return refuse(`unknown price ${a.price || "(none)"} -- the organisation stays on its current entitlement`);
-    this.sql.exec(
-      `INSERT INTO billing (id, plan, status, customer, subscription, seats_paid, period_end, updated_at)
-       VALUES (1, 'stripe', ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET plan = 'stripe', status = excluded.status, customer = excluded.customer,
-         subscription = excluded.subscription, seats_paid = excluded.seats_paid, period_end = excluded.period_end,
-         updated_at = excluded.updated_at`,
-      String(a.status || ""),
-      String(a.customer),
-      String(a.subscription || ""),
-      Number(a.quantity) || 0,
-      Number(a.period_end) || 0,
-      ctx.now,
-    );
-    this.audit("stripe", "billing.update", `org:${ctx.slug}`, "allowed", `${a.status} ${a.quantity} seats`);
-    return this.ok({ billing_state: billingState(this, ctx.now).state });
-  },
-
-  /// PUT /orgs/<slug>/billing/manual, by a Krate admin the door checked:
-  /// invoiced by hand, with a reference and a paid-until date.
-  "billing-manual"(ctx) {
-    const reference = String(ctx.args.reference || "").trim().slice(0, 120);
-    const until = Number(ctx.args.paid_until);
-    if (!reference || !Number.isInteger(until) || until <= 0) {
-      return { status: 400, body: { error: "bad-request", message: "give the invoice reference and paid_until in unix seconds" } };
-    }
-    this.sql.exec(
-      `INSERT INTO billing (id, plan, manual_reference, manual_paid_until, updated_at) VALUES (1, 'manual', ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET plan = 'manual', manual_reference = excluded.manual_reference,
-         manual_paid_until = excluded.manual_paid_until, updated_at = excluded.updated_at`,
-      reference,
-      until,
-      ctx.now,
-    );
-    this.audit(`krate-support:${String(ctx.args.admin || "")}`, "billing.manual", `org:${ctx.slug}`, "allowed", reference);
-    return this.ok({ billing_state: billingState(this, ctx.now).state, manual: { reference, paid_until: until } });
-  },
-
   /// The day's invitation mails, per organisation: at most 20 (Addendum 3, A).
   "invite-mail-slot"(ctx) {
     const day = new Date(ctx.now * 1000).toISOString().slice(0, 10);
@@ -635,7 +479,7 @@ function exportView(e) {
   return out;
 }
 
-/// Owners while it is open (suspended included, R24); former owners within
+/// Owners while it is open (R24); former owners within
 /// the export window once it has closed.
 function exportAllowed(store, ctx, action, target) {
   const life = lifecycle(store);
@@ -685,7 +529,7 @@ function exportData(store, ctx) {
   };
 }
 
-export { seatsUsed, lifecycle };
+export { lifecycle };
 
 extendOrg({
   schema: SCHEMA,

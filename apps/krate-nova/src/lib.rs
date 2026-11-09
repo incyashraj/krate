@@ -14,6 +14,12 @@
 //! the wasi:* import set. Entities live in fixed-capacity arrays with active
 //! counts -- no growing Vec in the hot loop, no array indexing that can panic,
 //! no format!, no unwrap. Numbers are formatted by hand into byte buffers.
+//!
+//! The best score is kept in `store.kv` (`best-score`), written when a game
+//! ends with a new best and read back at start. Nothing else is needed for it
+//! to follow the person to every device they sign in on: Krate syncs the
+//! store. A best kept only in memory would be gone the moment the window
+//! closed.
 
 #![no_std]
 #![allow(clippy::needless_range_loop)]
@@ -24,17 +30,79 @@ extern crate alloc;
 // trapping panic handler, and the memory intrinsics a wasm guest needs when std
 // is not linked. Not called directly; the underscore keeps the import.
 
-
-use krate::gfx::{canvas2d, types as gfx};
 use krate::bindings::krate::io::{args, stdio};
 use krate::bindings::krate::time::clock;
+use krate::gfx::{canvas2d, types as gfx};
 use krate::ui::{events, pointer, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
 const WIDTH: f32 = 480.0;
-const HEIGHT: f32 = 640.0;
+/// The shortest the world is: a desktop window's 3:4.
+const MIN_HEIGHT: f32 = 640.0;
+/// The tallest: a 9:20 phone held upright.
+const MAX_HEIGHT: f32 = 1100.0;
+
+/// The world's height, in the same units as WIDTH. The width is the design;
+/// the height follows the shape of the screen's free space, so a tall phone
+/// shows a taller sky instead of a third of it empty (a fixed 480x640 left
+/// that band on a Galaxy S22 Ultra). Set each frame by `fit_world`.
+static WORLD_H: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0x4420_0000); // 640.0
+
+#[allow(non_snake_case)]
+fn HEIGHT() -> f32 {
+    f32::from_bits(WORLD_H.load(core::sync::atomic::Ordering::Relaxed))
+}
+
+/// The person's text size against the default (`Look::text_scale`), as
+/// f32 bits. `fit_world` reads it from the same `Screen::of` it already asks
+/// every frame, so following it costs the frame nothing.
+static TEXT_K: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0x3F80_0000); // 1.0
+
+/// A font size for this person: `points` at their text size, which is what
+/// `krate::layout::Look::text` computes. The HUD reads its sizes through
+/// this so a person who asked for larger text gets a larger score.
+fn text(points: f32) -> f32 {
+    points * f32::from_bits(TEXT_K.load(core::sync::atomic::Ordering::Relaxed))
+}
+
+/// How wide `text` draws at `size`, for centring and right-aligning.
+fn text_w(canvas: u64, text: &str, size: f32) -> f32 {
+    canvas2d::measure_text(canvas, text, size)
+        .map(|m| m.width)
+        .unwrap_or(text.len() as f32 * size * 0.55)
+}
+
+/// Make the world as tall as the screen's free space is, relative to its
+/// width -- between a 3:4 window and a 9:20 phone -- and tell the host the
+/// design size it now draws in. Returns how far the world grew this frame,
+/// so what sits on the bottom (the ship) can move with it.
+fn fit_world(win: u64, canvas: u64) -> f32 {
+    let screen = krate::layout::Screen::of(win);
+    // Larger text, up to where the HUD still fits the 480-wide world.
+    let k = screen.look.text(1.0).clamp(0.8, 1.6);
+    TEXT_K.store(k.to_bits(), core::sync::atomic::Ordering::Relaxed);
+    let (top, right, bottom, left) = screen.safe;
+    let (w, h) = (screen.width - left - right, screen.height - top - bottom);
+    if w <= 1.0 || h <= 1.0 {
+        return 0.0;
+    }
+    let want = (WIDTH * h / w).clamp(MIN_HEIGHT, MAX_HEIGHT);
+    let was = HEIGHT();
+    if (want - was).abs() < 0.5 {
+        return 0.0;
+    }
+    WORLD_H.store(want.to_bits(), core::sync::atomic::Ordering::Relaxed);
+    let _ = canvas2d::set_design_size(
+        canvas,
+        gfx::Size {
+            width: WIDTH,
+            height: want,
+        },
+    );
+    want - was
+}
 
 // Fixed-capacity entity pools. An active count marks the live prefix; freeing
 // swaps the last live entry down, so the loop is always over a dense range.
@@ -55,6 +123,9 @@ const FIRE_COOLDOWN: f32 = 0.14;
 const EBULLET_SPEED: f32 = 230.0;
 
 const QUICK_FRAMES: u32 = 240;
+/// Where the best score is kept, as decimal text so a sync conflict card
+/// shows a number a person can read.
+const BEST_KEY: &str = "best-score";
 const MAX_FRAMES: u32 = 100_000;
 
 struct Component;
@@ -149,6 +220,8 @@ struct World {
     py: f32,
     lives: i32,
     score: u32,
+    /// The best score on any of this person's devices, from `store.kv`.
+    best: u32,
     fire_timer: f32,
     spawn_timer: f32,
     /// Difficulty ramps with time: spawn interval shrinks, speeds grow.
@@ -216,6 +289,20 @@ const ZERO_POPUP: Popup = Popup {
 };
 
 impl World {
+    /// The world grew (or shrank) by `by` at the bottom: the ship keeps its
+    /// place above the floor, and the sky's stars spread over the new height.
+    fn grown(&mut self, by: f32) {
+        self.py = clampf(
+            self.py + by,
+            HEIGHT() * 0.45,
+            HEIGHT() - PLAYER_H * 0.5 - 6.0,
+        );
+        let h = HEIGHT();
+        for star in self.stars.iter_mut() {
+            star.y = self.rng.range(0.0, h);
+        }
+    }
+
     fn new(seed: u32, quick: bool) -> Self {
         let mut rng = Rng::new(seed);
         let mut stars = [ZERO_STAR; MAX_STARS];
@@ -230,7 +317,7 @@ impl World {
             };
             stars[i] = Star {
                 x: rng.range(0.0, WIDTH),
-                y: rng.range(0.0, HEIGHT),
+                y: rng.range(0.0, HEIGHT()),
                 speed,
                 bright,
                 size,
@@ -240,11 +327,12 @@ impl World {
         World {
             rng,
             px: WIDTH / 2.0,
-            py: HEIGHT - 70.0,
+            py: HEIGHT() - 70.0,
             lives: 3,
             // The automated shot depicts a run already in progress, so it opens
             // on a believable mid-game score rather than zero.
             score: if quick { 12_800 } else { 0 },
+            best: 0,
             fire_timer: 0.0,
             // In the automated shot, start with a short fuse and a pre-ramped
             // clock so the frame we capture is already dense with enemies,
@@ -587,7 +675,7 @@ impl World {
         }
         let _ = moving;
         self.px = clampf(self.px, PLAYER_W * 0.5 + 4.0, WIDTH - PLAYER_W * 0.5 - 4.0);
-        self.py = clampf(self.py, HEIGHT * 0.45, HEIGHT - PLAYER_H * 0.5 - 6.0);
+        self.py = clampf(self.py, HEIGHT() * 0.45, HEIGHT() - PLAYER_H * 0.5 - 6.0);
         // Steady thruster plume.
         self.thruster();
 
@@ -623,7 +711,7 @@ impl World {
         while i < MAX_STARS {
             if let Some(s) = self.stars.get_mut(i) {
                 s.y += s.speed * dt;
-                if s.y > HEIGHT {
+                if s.y > HEIGHT() {
                     s.y = 0.0;
                     s.x = self.rng.range(0.0, WIDTH);
                 }
@@ -658,7 +746,7 @@ impl World {
             if let Some(b) = self.ebullets.get_mut(i) {
                 b.y += b.vy * dt;
                 b.x += b.vx * dt;
-                if b.y > HEIGHT + 12.0 || b.x < -12.0 || b.x > WIDTH + 12.0 {
+                if b.y > HEIGHT() + 12.0 || b.x < -12.0 || b.x > WIDTH + 12.0 {
                     kill = true;
                 }
             }
@@ -692,7 +780,7 @@ impl World {
                     e.x = WIDTH - 18.0;
                     e.vx = -e.vx.abs();
                 }
-                if e.y > HEIGHT + 24.0 {
+                if e.y > HEIGHT() + 24.0 {
                     off = true;
                 }
                 // Divers shoot at the player sometimes.
@@ -880,7 +968,12 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
     // No shake offset: the void stays put while the action shakes over it.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: WIDTH,
+            height: HEIGHT(),
+        },
         color(0.067, 0.067, 0.126, 1.0),
         color(0.039, 0.039, 0.071, 1.0),
     )?;
@@ -900,11 +993,38 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
     while i < w.n_bullets {
         if let Some(b) = w.bullets.get(i) {
             // Long soft trailing glow.
-            fill(canvas, sx, sy, b.x - 4.0, b.y - 12.0, 8.0, 28.0, color(0.15, 0.75, 1.0, 0.28))?;
+            fill(
+                canvas,
+                sx,
+                sy,
+                b.x - 4.0,
+                b.y - 12.0,
+                8.0,
+                28.0,
+                color(0.15, 0.75, 1.0, 0.28),
+            )?;
             // Tighter cyan glow.
-            fill(canvas, sx, sy, b.x - 2.5, b.y - 10.0, 5.0, 22.0, color(0.35, 0.95, 1.0, 0.6))?;
+            fill(
+                canvas,
+                sx,
+                sy,
+                b.x - 2.5,
+                b.y - 10.0,
+                5.0,
+                22.0,
+                color(0.35, 0.95, 1.0, 0.6),
+            )?;
             // White-hot core.
-            fill(canvas, sx, sy, b.x - 1.5, b.y - 9.0, 3.0, 18.0, color(0.95, 1.0, 1.0, 1.0))?;
+            fill(
+                canvas,
+                sx,
+                sy,
+                b.x - 1.5,
+                b.y - 9.0,
+                3.0,
+                18.0,
+                color(0.95, 1.0, 1.0, 1.0),
+            )?;
         }
         i += 1;
     }
@@ -935,7 +1055,15 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
             let radius = p.size * (0.35 + t * 0.65) * 0.7;
             // Soft halo, then a bright core -- a spark that glows rather than a
             // hard square. Halo alpha fades faster than the core.
-            disc(canvas, sx, sy, p.x, p.y, radius * 2.0, color(p.r, p.g, p.b, t * 0.22))?;
+            disc(
+                canvas,
+                sx,
+                sy,
+                p.x,
+                p.y,
+                radius * 2.0,
+                color(p.r, p.g, p.b, t * 0.22),
+            )?;
             disc(canvas, sx, sy, p.x, p.y, radius, color(p.r, p.g, p.b, t))?;
             // Hot white center on the freshest sparks.
             if t > 0.55 {
@@ -966,7 +1094,16 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
             let mut buf = [0u8; 20];
             let s = num_to_bytes_prefixed(b"+", p.value, &mut buf);
             if let Ok(txt) = core::str::from_utf8(s) {
-                draw_text(canvas, sx, sy, txt, p.x - 12.0, p.y, 15.0, color(1.0, 0.95, 0.5, a))?;
+                draw_text(
+                    canvas,
+                    sx,
+                    sy,
+                    txt,
+                    p.x - 12.0,
+                    p.y,
+                    text(15.0),
+                    color(1.0, 0.95, 0.5, a),
+                )?;
             }
         }
         i += 1;
@@ -977,14 +1114,76 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
 
     if w.game_over {
         // Dim overlay + big centered message.
-        fill(canvas, 0.0, 0.0, 0.0, 0.0, WIDTH, HEIGHT, color(0.02, 0.02, 0.05, 0.55))?;
-        draw_text(canvas, 0.0, 0.0, "GAME OVER", WIDTH * 0.5 - 96.0, HEIGHT * 0.5 - 10.0, 40.0, color(1.0, 0.35, 0.5, 1.0))?;
+        fill(
+            canvas,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            WIDTH,
+            HEIGHT(),
+            color(0.02, 0.02, 0.05, 0.55),
+        )?;
+        // Centred by measuring, so the lines stay centred at any text size.
+        let (big, mid, small) = (text(40.0), text(20.0), text(14.0));
+        let cy = HEIGHT() * 0.5;
+        let title = "GAME OVER";
+        draw_text(
+            canvas,
+            0.0,
+            0.0,
+            title,
+            (WIDTH - text_w(canvas, title, big)) * 0.5,
+            cy - big * 0.25,
+            big,
+            color(1.0, 0.35, 0.5, 1.0),
+        )?;
         let mut buf = [0u8; 20];
         let s = num_to_bytes_prefixed(b"SCORE  ", w.score, &mut buf);
         if let Ok(txt) = core::str::from_utf8(s) {
-            draw_text(canvas, 0.0, 0.0, txt, WIDTH * 0.5 - 70.0, HEIGHT * 0.5 + 30.0, 20.0, color(0.9, 0.95, 1.0, 1.0))?;
+            draw_text(
+                canvas,
+                0.0,
+                0.0,
+                txt,
+                (WIDTH - text_w(canvas, txt, mid)) * 0.5,
+                cy - big * 0.25 + mid * 2.0,
+                mid,
+                color(0.9, 0.95, 1.0, 1.0),
+            )?;
         }
-        draw_text(canvas, 0.0, 0.0, "TAP OR PRESS SPACE TO PLAY AGAIN", WIDTH * 0.5 - 150.0, HEIGHT * 0.5 + 70.0, 14.0, color(0.75, 0.8, 0.95, 0.9))?;
+        // The best, or the news that this run is it.
+        let mut bbuf = [0u8; 20];
+        let best = if w.score > 0 && w.score >= w.best {
+            Some(&b"NEW BEST"[..])
+        } else if w.best > 0 {
+            Some(num_to_bytes_prefixed(b"BEST  ", w.best, &mut bbuf))
+        } else {
+            None
+        };
+        if let Some(txt) = best.and_then(|b| core::str::from_utf8(b).ok()) {
+            draw_text(
+                canvas,
+                0.0,
+                0.0,
+                txt,
+                (WIDTH - text_w(canvas, txt, small)) * 0.5,
+                cy - big * 0.25 + mid * 2.0 + small * 1.6,
+                small,
+                color(1.0, 0.8, 0.35, 1.0),
+            )?;
+        }
+        let again = "TAP OR PRESS SPACE TO PLAY AGAIN";
+        draw_text(
+            canvas,
+            0.0,
+            0.0,
+            again,
+            (WIDTH - text_w(canvas, again, small)) * 0.5,
+            cy - big * 0.25 + mid * 2.0 + small * 3.6,
+            small,
+            color(0.75, 0.8, 0.95, 0.9),
+        )?;
     }
 
     canvas2d::present(canvas)?;
@@ -994,12 +1193,35 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
 /// The player ship: a sleek glowing cyan arrowhead with a lit cockpit, glowing
 /// wing lights, and round muzzle flashes when firing. Drawn with smooth chords
 /// so its edges read as a crisp craft, not a stack of blocks.
-fn draw_ship(canvas: u64, sx: f32, sy: f32, x: f32, y: f32, muzzle: bool) -> Result<(), gfx::GfxError> {
+fn draw_ship(
+    canvas: u64,
+    sx: f32,
+    sy: f32,
+    x: f32,
+    y: f32,
+    muzzle: bool,
+) -> Result<(), gfx::GfxError> {
     let cyan = color(0.20, 0.95, 1.0, 1.0);
     let cyan_deep = color(0.10, 0.55, 0.80, 1.0);
     // Ambient glow beneath the whole craft so it sits in a pool of light.
-    disc(canvas, sx, sy, x, y - 2.0, 22.0, color(0.15, 0.75, 1.0, 0.10))?;
-    disc(canvas, sx, sy, x, y - 2.0, 15.0, color(0.15, 0.80, 1.0, 0.14))?;
+    disc(
+        canvas,
+        sx,
+        sy,
+        x,
+        y - 2.0,
+        22.0,
+        color(0.15, 0.75, 1.0, 0.10),
+    )?;
+    disc(
+        canvas,
+        sx,
+        sy,
+        x,
+        y - 2.0,
+        15.0,
+        color(0.15, 0.80, 1.0, 0.14),
+    )?;
 
     // The hull: an arrowhead. For each row from nose (top) to tail, the half
     // width grows linearly, and each row is one smooth chord. A darker under-
@@ -1010,8 +1232,17 @@ fn draw_ship(canvas: u64, sx: f32, sy: f32, x: f32, y: f32, muzzle: bool) -> Res
     while yy <= tail as i32 {
         let f = ((yy as f32) - nose) / (tail - nose); // 0 at nose, 1 at tail
         let half = 2.0 + f * f * 16.0; // narrow nose flaring to wide tail
-        // Deep under-tone at the outer edge, bright core toward the center.
-        fill(canvas, sx, sy, x - half, yy as f32, half * 2.0, 1.0, cyan_deep)?;
+                                       // Deep under-tone at the outer edge, bright core toward the center.
+        fill(
+            canvas,
+            sx,
+            sy,
+            x - half,
+            yy as f32,
+            half * 2.0,
+            1.0,
+            cyan_deep,
+        )?;
         let inner = half * 0.55;
         fill(canvas, sx, sy, x - inner, yy as f32, inner * 2.0, 1.0, cyan)?;
         yy += 1;
@@ -1057,7 +1288,15 @@ fn draw_enemy(canvas: u64, sx: f32, sy: f32, e: &Enemy) -> Result<(), gfx::GfxEr
     glow(canvas, sx, sy, e.x, e.y, radius, r, g, b)?;
     // A dark iris so the orb reads as an eye/creature, not a plain dot -- the
     // small detail that makes it feel designed.
-    disc(canvas, sx, sy, e.x, e.y, radius * 0.32, color(r * 0.25, g * 0.12, b * 0.2, 0.9))?;
+    disc(
+        canvas,
+        sx,
+        sy,
+        e.x,
+        e.y,
+        radius * 0.32,
+        color(r * 0.25, g * 0.12, b * 0.2, 0.9),
+    )?;
     // A tiny offset highlight for a sense of a lit surface.
     disc(
         canvas,
@@ -1072,25 +1311,100 @@ fn draw_enemy(canvas: u64, sx: f32, sy: f32, e: &Enemy) -> Result<(), gfx::GfxEr
 }
 
 fn draw_hud(canvas: u64, w: &World) -> Result<(), gfx::GfxError> {
+    // Sizes at the person's text size; the rows move down as they grow.
+    let (big, label) = (text(30.0), text(12.0));
+    let score_y = 11.0 + big * 0.76;
+    let label_y = score_y + 4.0 + label;
     // Score top-left, big.
     let mut buf = [0u8; 20];
     let s = num_to_bytes(w.score, &mut buf);
     if let Ok(txt) = core::str::from_utf8(s) {
-        draw_text(canvas, 0.0, 0.0, txt, 16.0, 34.0, 30.0, color(0.85, 0.95, 1.0, 1.0))?;
+        draw_text(
+            canvas,
+            0.0,
+            0.0,
+            txt,
+            16.0,
+            score_y,
+            big,
+            color(0.85, 0.95, 1.0, 1.0),
+        )?;
     }
-    draw_text(canvas, 0.0, 0.0, "SCORE", 16.0, 50.0, 12.0, color(0.45, 0.6, 0.8, 1.0))?;
+    draw_text(
+        canvas,
+        0.0,
+        0.0,
+        "SCORE",
+        16.0,
+        label_y,
+        label,
+        color(0.45, 0.6, 0.8, 1.0),
+    )?;
+    // The best so far, top-centre, once one has been kept.
+    if w.best > 0 {
+        let mut bbuf = [0u8; 20];
+        let b = num_to_bytes_prefixed(b"BEST  ", w.best.max(w.score), &mut bbuf);
+        if let Ok(txt) = core::str::from_utf8(b) {
+            draw_text(
+                canvas,
+                0.0,
+                0.0,
+                txt,
+                (WIDTH - text_w(canvas, txt, label)) * 0.5,
+                label_y,
+                label,
+                color(0.45, 0.6, 0.8, 1.0),
+            )?;
+        }
+    }
 
     // Lives top-right as little cyan chevrons.
     let mut i = 0i32;
     while i < w.lives {
         let x = WIDTH - 28.0 - (i as f32) * 24.0;
-        let y = 24.0;
-        fill(canvas, 0.0, 0.0, x - 8.0, y + 4.0, 16.0, 4.0, color(0.2, 0.9, 1.0, 1.0))?;
-        fill(canvas, 0.0, 0.0, x - 4.0, y - 2.0, 8.0, 6.0, color(0.2, 0.9, 1.0, 1.0))?;
-        fill(canvas, 0.0, 0.0, x - 1.5, y - 8.0, 3.0, 8.0, color(0.7, 1.0, 1.0, 1.0))?;
+        let y = score_y - 10.0;
+        fill(
+            canvas,
+            0.0,
+            0.0,
+            x - 8.0,
+            y + 4.0,
+            16.0,
+            4.0,
+            color(0.2, 0.9, 1.0, 1.0),
+        )?;
+        fill(
+            canvas,
+            0.0,
+            0.0,
+            x - 4.0,
+            y - 2.0,
+            8.0,
+            6.0,
+            color(0.2, 0.9, 1.0, 1.0),
+        )?;
+        fill(
+            canvas,
+            0.0,
+            0.0,
+            x - 1.5,
+            y - 8.0,
+            3.0,
+            8.0,
+            color(0.7, 1.0, 1.0, 1.0),
+        )?;
         i += 1;
     }
-    draw_text(canvas, 0.0, 0.0, "LIVES", WIDTH - 92.0, 50.0, 12.0, color(0.45, 0.6, 0.8, 1.0))?;
+    draw_text(
+        canvas,
+        0.0,
+        0.0,
+        "LIVES",
+        WIDTH - 20.0 - text_w(canvas, "LIVES", label),
+        label_y,
+        label,
+        color(0.45, 0.6, 0.8, 1.0),
+    )?;
     Ok(())
 }
 
@@ -1133,7 +1447,15 @@ fn disc(
     r: f32,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_circle(canvas, gfx::Point { x: cx + sx, y: cy + sy }, r, c)
+    canvas2d::fill_circle(
+        canvas,
+        gfx::Point {
+            x: cx + sx,
+            y: cy + sy,
+        },
+        r,
+        c,
+    )
 }
 
 /// A soft radial glow: one native radial gradient for the bloom halo (the true
@@ -1152,7 +1474,10 @@ fn glow(
     grn: f32,
     blu: f32,
 ) -> Result<(), gfx::GfxError> {
-    let center = gfx::Point { x: cx + sx, y: cy + sy };
+    let center = gfx::Point {
+        x: cx + sx,
+        y: cy + sy,
+    };
     // Bloom: bright at the core, fading to fully transparent at ~2x the body
     // radius. Smoothstep falloff is done host-side, so the halo is continuous.
     canvas2d::radial_gradient(
@@ -1188,7 +1513,10 @@ fn draw_text(
     canvas2d::draw_text(
         canvas,
         text,
-        gfx::Point { x: x + sx, y: y + sy },
+        gfx::Point {
+            x: x + sx,
+            y: y + sy,
+        },
         size,
         c,
     )
@@ -1356,6 +1684,39 @@ fn num_core12(value: u32, buf: &mut [u8; 12]) -> &[u8] {
 }
 
 // ------------------------------------------------------------------
+// The best score, kept in store.kv
+// ------------------------------------------------------------------
+
+/// The best score saved on this or any of the person's devices; 0 when
+/// nothing is saved yet or the store is not granted.
+fn load_best() -> u32 {
+    let Ok(Some(bytes)) = krate::store::get(BEST_KEY) else {
+        return 0;
+    };
+    let mut n = 0u32;
+    for b in bytes.iter() {
+        if !b.is_ascii_digit() {
+            return 0;
+        }
+        n = n.saturating_mul(10).saturating_add((b - b'0') as u32);
+    }
+    n
+}
+
+/// Keep this game's score if it beats the best. Re-reads the store first, so
+/// a better score another device synced in meanwhile is never overwritten,
+/// and writes nothing when the best stands.
+fn bank_best(w: &mut World) {
+    let stored = load_best();
+    w.best = w.best.max(stored);
+    if w.score > w.best {
+        w.best = w.score;
+        let mut buf = [0u8; 20];
+        let _ = krate::store::set(BEST_KEY, num_to_bytes(w.score, &mut buf));
+    }
+}
+
+// ------------------------------------------------------------------
 // Entry point
 // ------------------------------------------------------------------
 
@@ -1363,7 +1724,7 @@ impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: WIDTH as u32,
-            height: HEIGHT as u32,
+            height: HEIGHT() as u32,
         };
         let Ok(win) = window::create("Krate Nova", size) else {
             return 30;
@@ -1391,7 +1752,7 @@ impl krate::Guest for Component {
             canvas,
             gfx::Size {
                 width: WIDTH,
-                height: HEIGHT,
+                height: HEIGHT(),
             },
         );
 
@@ -1402,8 +1763,17 @@ impl krate::Guest for Component {
             .next()
             .is_some_and(|first| first == b"quick");
 
+        // The world's height from the screen before anything is placed in it.
+        fit_world(win, canvas);
         let started = clock::monotonic_nanos();
         let mut world = World::new((started as u32) ^ 0xA53C_1FE9, quick);
+        // The automated shot neither reads nor writes the best: its score is
+        // staged, and its picture must not depend on who ran it.
+        if !quick {
+            world.best = load_best();
+        }
+        // Whether this game's score has been offered to the store yet.
+        let mut banked = false;
 
         // The host captures the FIRST presented frame. So for the automated
         // shot, build a full, lively scene and let it settle for a few steps
@@ -1445,6 +1815,11 @@ impl krate::Guest for Component {
         let mut blink_on = true;
 
         while frames < frame_cap {
+            // The phone turned, or a bar came or went: the world follows.
+            let grew = fit_world(win, canvas);
+            if grew != 0.0 {
+                world.grown(grew);
+            }
             let now = clock::monotonic_nanos();
             let real_dt = (now.saturating_sub(last) as f32 / 1_000_000_000.0).min(0.05);
             last = now;
@@ -1473,9 +1848,21 @@ impl krate::Guest for Component {
             if closing {
                 break;
             }
+            // A game that just ended is kept once, the moment it ends -- not
+            // every frame, and not only when the window closes.
+            if world.game_over && !quick && !banked {
+                bank_best(&mut world);
+                banked = true;
+            }
             // After GAME OVER, a tap or Space starts a new game.
-            if world.game_over && !quick && (tapped || events::key_held("Space") || events::key_held(" ")) {
+            if world.game_over
+                && !quick
+                && (tapped || events::key_held("Space") || events::key_held(" "))
+            {
+                let best = world.best;
                 world = World::new(seed ^ frames, false);
+                world.best = best;
+                banked = false;
             }
             // A finger on a phone, or a held mouse button, where it is in the
             // game's own coordinates. A phone has no arrow keys, so the ship
@@ -1528,12 +1915,20 @@ impl krate::Guest for Component {
             frames += 1;
         }
 
+        // Closed mid-game: a best reached before the close still counts.
+        if !quick && !banked {
+            bank_best(&mut world);
+        }
+
         // Report on exit.
         let out = stdio::stdout();
         let _ = out.write(b"nova:ok\n");
         let _ = out.write(b"score:");
         let mut buf = [0u8; 20];
         let _ = out.write(num_to_bytes(world.score, &mut buf));
+        let _ = out.write(b"\n");
+        let _ = out.write(b"best:");
+        let _ = out.write(num_to_bytes(world.best, &mut buf));
         let _ = out.write(b"\n");
 
         let _ = window::close(win);

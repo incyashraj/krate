@@ -227,8 +227,8 @@ test("every number matches a hand count of a known history", async () => {
     withdrawn_month: 1,
     rollbacks_month: 1,
   });
-  // Seats: owner, admin, two developers, reviewer.
-  assert.deepStrictEqual(o.org.cost, { plan: "pilot", state: "pilot", seats_used: 5, seats_paid: null, free_seats: 3, active_month: 5 });
+  // Organisations are not billed: no cost section, no plan, no seats paid.
+  assert.deepStrictEqual(Object.keys(o.org).sort(), ["adoption", "people", "releases", "security"]);
   // alice sent nothing; her own: her MacBook, and Expenses on day 9.
   assert.deepStrictEqual(o.developer.apps, []);
   assert.deepStrictEqual(o.yours.apps, [{ app_id: "com.acme.expenses", name: "Expenses", days: 1, last: dayAgo(9) }]);

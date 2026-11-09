@@ -287,6 +287,8 @@ h1 .ln { display: block; }
 .shipg span { font-size: 14px; line-height: 1.55; color: var(--mute); }
 .shipall { display: inline-flex; align-items: center; gap: 6px; margin-top: 20px; font-size: 14.5px; font-weight: 500; color: var(--accent); }
 .shipall svg { transition: transform .25s var(--ease); } .shipall:hover svg { transform: translateX(3px); }
+/* the second door: organisations */
+.teams p { max-width: 640px; line-height: 1.6; }
 .links { width: min(1240px, 100% - 48px); margin: 70px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
 .links a { font-size: 15px; color: #27272a; line-height: 1.55; letter-spacing: -.01em; display: inline-flex; gap: 6px; align-items: baseline; }
 .links a:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -581,6 +583,7 @@ main img, main svg { max-width: none; }
 .find { position: absolute; top: 3px; bottom: 3px; border-radius: 99px; background: color-mix(in srgb, var(--c) 13%, var(--s1)); transition: left .55s var(--ease), width .55s var(--ease); }
 .ft { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px; border: 0; border-radius: 99px; background: none; font: 500 12.5px var(--font, inherit); color: var(--ink-3); cursor: pointer; transition: color .35s; }
 .ft svg { width: 14px; height: 14px; }
+@media (pointer: coarse) { .ft::after { content: ""; position: absolute; left: 0; right: 0; top: -8px; bottom: -8px; } }
 .ft.on { color: var(--c); opacity: 1 !important; transform: none !important; } .ft:not(.on) { opacity: 1 !important; transform: none !important; }
 .fv .f-win .pane:first-child { padding-top: 30px; }
 .fc:first-child .pane { padding-top: 28px; }
@@ -647,7 +650,7 @@ main img, main svg { max-width: none; }
     <div class="drawer" id="drawer" role="menu">
       <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
       <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
-      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
       <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
     </div>
   </nav>
@@ -659,7 +662,7 @@ main img, main svg { max-width: none; }
   </div>
 </header>
 <nav class="mnav" id="mnav" aria-label="Menu">
-  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
   <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
 </nav>
 
@@ -674,7 +677,7 @@ main img, main svg { max-width: none; }
 <div class="band0">
   <div class="scene" id="scene">
     <div class="shot"><div class="in"><span class="sl on"><img class="lt" src="/os-mac.webp" width="2400" height="1520" decoding="async" fetchpriority="high" alt="Editor.krate, a code editor, open on a Mac"><img class="dk" src="/os-mac-dark.webp" width="2400" height="1520" decoding="async" loading="lazy" alt=""></span><span class="sl"><img class="lt" data-src="/os-win.webp" width="2400" height="1520" decoding="async" loading="lazy" alt="The same Editor.krate open on Windows"><img class="dk" data-src="/os-win-dark.webp" width="2400" height="1520" decoding="async" loading="lazy" alt=""></span><span class="sl"><img class="lt" data-src="/os-linux.webp" width="2400" height="1520" decoding="async" loading="lazy" alt="The same Editor.krate open on Linux"><img class="dk" data-src="/os-linux-dark.webp" width="2400" height="1520" decoding="async" loading="lazy" alt=""></span></div></div>
-    <div class="pstage" id="pstage" aria-label="Editor.krate on an iPhone, an Android phone and a Linux phone, coming soon">
+    <div class="pstage" id="pstage" aria-label="Editor.krate opening on an iPhone, an Android phone and a Linux phone from a link">
       <svg class="parrow" width="210" height="110" viewBox="0 0 210 110"><path pathLength="1" d="M8 96 C 50 28, 126 16, 192 50"/><path pathLength="1" d="M172 30 L 194 50 L 170 64"/></svg>
       <div class="phone p1 ios"><div class="scr"><div class="sbar"><b>9:41</b><span class="isl"></span><i class="sig"><s></s><s></s><s></s><s></s></i></div>
   <div class="chat-hd"><span class="av">S</span><b>Sam</b></div>
@@ -756,7 +759,7 @@ linux   = true</div></div></div>
       <div class="obj pop" data-v="2" style="left:240px;top:330px;--dl:.24s"><div class="par" style="--d:6"><svg class="ast" width="56" height="56" viewBox="0 0 100 100" style="--k:2"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
       <!-- Phones: the file arriving, and a card that says when -->
       <div class="obj slide" data-v="3" style="left:-40px;top:330px;--r:-6deg;--r0:0deg;--fx:-180px"><div class="par" style="--d:24"><div class="notif"><span class="ap"><img src="/krate-mark-3d-96.png" width="30" height="30" alt=""></span><span class="tx"><span class="top"><b>Sam</b><em>now</em></span><span>made a code editor, try it</span><span class="fl">Editor.krate · 294 KB</span></span></div></div></div>
-      <div class="obj pop" data-v="3" style="right:110px;top:170px;--r:4deg;--dl:.08s"><div class="par" style="--d:20"><div class="soonc"><span class="sic"><svg width="22" height="32" viewBox="0 0 22 32" fill="none" stroke="currentColor" stroke-width="2"><rect x="1.5" y="1.5" width="19" height="29" rx="4.5"/><path d="M8.5 26h5" stroke-linecap="round"/></svg></span><span class="stx"><b>Phones and tablets</b><span>Coming soon, from the same one file</span></span><span class="sdot"></span></div></div></div>
+      <div class="obj pop" data-v="3" style="right:110px;top:170px;--r:4deg;--dl:.08s"><div class="par" style="--d:20"><div class="soonc"><span class="sic"><svg width="22" height="32" viewBox="0 0 22 32" fill="none" stroke="currentColor" stroke-width="2"><rect x="1.5" y="1.5" width="19" height="29" rx="4.5"/><path d="M8.5 26h5" stroke-linecap="round"/></svg></span><span class="stx"><b>Phones and tablets</b><span>Opens from a link today, the same one file</span></span><span class="sdot"></span></div></div></div>
       <div class="obj pop" data-v="3" style="left:150px;top:110px;--dl:.16s"><div class="par" style="--d:10"><svg class="ast" width="86" height="86" viewBox="0 0 100 100" style="--k:0"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
       <div class="obj pop" data-v="3" style="right:150px;top:520px;--dl:.22s"><div class="par" style="--d:8"><svg class="ast" width="66" height="66" viewBox="0 0 100 100" style="--k:2"><g><path d="M50 6 L51 93"/><path d="M11 29 L89 73"/><path d="M13 72 L87 28"/></g></svg></div></div>
     </div>
@@ -916,6 +919,8 @@ linux   = true</div></div></div>
   </div>
 </section>
 
+<div class="band teams rv" id="teams"><div><h2>For teams</h2><p>Make the app your team needs, send everyone one link, and decide who can open it. Team data and the credentials for your company's APIs are encrypted end to end, people can sign in with your company's own sign-in, and you approve every version before it opens.</p></div><a class="btn ghost" href="/docs/organisations.html">How organisations work <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a></div>
+
 <section class="ship rv" id="ship" aria-labelledby="shipH">
   <h2 id="shipH">Shipping a desktop app</h2>
   <div class="shipg">
@@ -940,11 +945,11 @@ linux   = true</div></div></div>
 
 <footer class="foot">
   <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
-  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
   <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
-  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
   <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>

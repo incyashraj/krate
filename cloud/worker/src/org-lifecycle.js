@@ -120,7 +120,6 @@ export const EXCLUSIONS = [
   { class: "secrets", why: "no secret held for the organisation (sign-in client secrets included) is exported" },
   { class: "invitation codes", why: "an open invitation's code is a credential; who was invited is in the audit" },
   { class: "idempotency records", why: "request bookkeeping, not organisation data" },
-  { class: "billing identifiers", why: "Stripe customer and subscription ids stay with Krate; invoices come from Stripe" },
 ];
 
 async function buildExport(h) {

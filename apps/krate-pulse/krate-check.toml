@@ -1,0 +1,15 @@
+# Pulse's job: show where the money went, and narrow the recent list to one
+# category when a category is tapped -- then show everything again.
+name = "filter recent activity by a category"
+[[step]]
+expect_text = "Blue Bottle"
+[[step]]
+click = "Transport"
+[[step]]
+expect_text = "Uber"
+[[step]]
+expect_no_text = "Blue Bottle"
+[[step]]
+click = "Transport"
+[[step]]
+expect_text = "Blue Bottle"

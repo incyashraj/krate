@@ -17,7 +17,7 @@ const SECRET = "whsec_" + "B".repeat(43);
 const HUBB = "https://hub.krate.tech";
 const people = [member(ALICE, "owner"), member("github:erin", "admin"), member("github:bob", "reviewer"), member("github:carol", "developer")];
 const org = (me) => ({
-  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, suspended: false, billing_state: "pilot", recovery: null }, me: people.find((m) => m.principal === me), members: people }],
+  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, recovery: null }, me: people.find((m) => m.principal === me), members: people }],
   "GET /orgs/acme/exports": () => [200, []],
   "GET /orgs/acme/sso": () => [200, null],
 });

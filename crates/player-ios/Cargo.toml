@@ -18,8 +18,35 @@ sha2 = "0.10"
 krate-manifest = { path = "../manifest" }
 krate-policy = { path = "../policy" }
 krate-bundle = { path = "../bundle" }
+# Which publisher an app's synced data is kept under, and the sync toggles
+# (IC-981): the same rules on a phone as on a computer.
+krate-accountsync = { path = "../accountsync" }
+# An organisation's private apps (K-1171): the check-in, the lease, this
+# phone's organisation key, its team data and connections -- the computer's
+# own code, over the Player's private storage.
+krate-orgaccess = { path = "../orgaccess" }
+krate-runtime = { path = "../runtime", default-features = false, features = [
+    "phase2-bindings",
+] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
+serde_json.workspace = true
+# sync_home.rs (shared from player-android) proves a row conflict's card
+# on a real database (IC-981 S4).
+krate-appsql = { path = "../appsql" }
+# run_config.rs (shared from player-android) tests the output card against
+# the runtime's own argument rule.
+krate-runtime = { path = "../runtime", default-features = false, features = [
+    "phase2-bindings",
+] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
+# Sync on Krate's home (IC-981 S2): asking the hub how this phone stands,
+# approving a device, the recovery code.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 # Speech stays off, same as Android: whisper.cpp on phones is its own
 # project and the capability degrades honestly.
 krate-runtime = { path = "../runtime", default-features = false, features = [
@@ -62,5 +89,7 @@ objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
     "UIScene",
     "UIView",
     "UIDocumentPickerViewController",
+    # The profile tab: the phone's name.
+    "UIDevice",
     "block2",
 ] }

@@ -2384,6 +2384,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-accountsync"
+version = "0.5.5"
+dependencies = [
+ "krate-appsql",
+ "krate-http",
+ "krate-orgkeys",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
 name = "krate-adapter-android"
 version = "0.5.5"
 dependencies = [
@@ -2480,6 +2494,7 @@ dependencies = [
  "pollster",
  "softbuffer",
  "windows",
+ "windows-future",
  "winit",
 ]
 
@@ -2526,6 +2541,7 @@ dependencies = [
  "calamine",
  "clap",
  "getrandom 0.3.4",
+ "krate-accountsync",
  "krate-adapter-common",
  "krate-adapter-macos",
  "krate-author",
@@ -2534,6 +2550,7 @@ dependencies = [
  "krate-lease",
  "krate-manifest",
  "krate-mcp",
+ "krate-orgaccess",
  "krate-orgkeys",
  "krate-policy",
  "krate-port",
@@ -2633,6 +2650,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-orgaccess"
+version = "0.5.5"
+dependencies = [
+ "krate-bundle",
+ "krate-http",
+ "krate-lease",
+ "krate-manifest",
+ "krate-orgkeys",
+ "krate-policy",
+ "krate-runtime",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "krate-orgdata"
 version = "0.5.5"
 dependencies = [
@@ -2665,12 +2697,19 @@ version = "0.5.5"
 dependencies = [
  "android_logger",
  "jni 0.21.1",
+ "krate-accountsync",
  "krate-adapter-android",
+ "krate-appsql",
  "krate-bundle",
  "krate-manifest",
+ "krate-orgaccess",
+ "krate-orgkeys",
  "krate-policy",
  "krate-runtime",
  "log",
+ "png 0.17.16",
+ "serde_json",
+ "tempfile",
  "ureq",
 ]
 
@@ -2680,9 +2719,12 @@ version = "0.5.5"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
+ "krate-accountsync",
  "krate-adapter-ios",
+ "krate-appsql",
  "krate-bundle",
  "krate-manifest",
+ "krate-orgaccess",
  "krate-policy",
  "krate-runtime",
  "libc",
@@ -2693,6 +2735,7 @@ dependencies = [
  "png 0.17.16",
  "serde_json",
  "sha2",
+ "tempfile",
  "ureq",
 ]
 
@@ -2734,9 +2777,11 @@ dependencies = [
  "block2 0.6.2",
  "cpal",
  "criterion",
+ "directories-next",
  "dispatch2",
  "gilrs",
  "heck",
+ "krate-accountsync",
  "krate-adapter-android",
  "krate-adapter-common",
  "krate-adapter-ios",

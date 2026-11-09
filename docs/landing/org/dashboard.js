@@ -28,7 +28,6 @@
     insights: '<path d="M2.5 13.5h11"/><path d="M4.5 11V8M8 11V4.5M11.5 11V6.5"/>',
     people: '<circle cx="6" cy="5.5" r="2.3"/><path d="M2 13c.4-2.2 2-3.5 4-3.5s3.6 1.3 4 3.5"/><path d="M10.5 3.4a2.2 2.2 0 0 1 0 4.2M11.6 9.7c1.3.4 2.2 1.6 2.4 3.3"/>',
     activity: '<path d="M2 8.5h2.6l1.6-4 3.2 8 1.6-4H14"/>',
-    billing: '<rect x="2" y="3.5" width="12" height="9" rx="1.6"/><path d="M2 6.5h12M4.5 10h2.5"/>',
     myapps: '<rect x="2.5" y="2.5" width="11" height="11" rx="2.4"/><path d="M5.5 8h5M8 5.5v5"/>',
     build: '<path d="M8 3v10M3 8h10"/>',
     computers: '<rect x="2" y="3" width="12" height="8" rx="1.4"/><path d="M5.5 13.5h5M8 11v2.5"/>',
@@ -52,7 +51,6 @@
     connections: { long: "Connections", group: "Organisation" },
     insights: { long: "Insights", group: "Organisation" },
     activity: { long: "Activity", group: "Organisation" },
-    billing: { long: "Billing", group: "Organisation" },
     settings: { long: "Settings", group: "Organisation" },
     requests: { long: "Requests", group: "" },
     help: { long: "Help", group: "" },
@@ -198,11 +196,11 @@
     if (tabs.indexOf(id) < 0 && !ownApp) id = tabs[0];
     S.opts = opts || {};
     S.under = ownApp ? "myapps" : "";
-    // Settings and Billing open in the settings window, over the section
-    // that was open; the page's pane moves into it and back.
+    // Settings opens in the settings window, over the section that was
+    // open; the page's pane moves into it and back.
     var dlg = $("setDlg");
-    var inWindow = (id === "settings" || id === "billing") && dlg && typeof dlg.showModal === "function";
-    if (inWindow) { openSettings(id); return; }
+    var inWindow = id === "settings" && dlg && typeof dlg.showModal === "function";
+    if (inWindow) { openSettings(); return; }
     if (dlg && isOpen(dlg)) closeSettings(true);
     S.tab = id;
     // One version on its own, from the approval email or the bell.
@@ -241,7 +239,7 @@
     }
     S.app = "";
     var G_ = G || {};
-    var draw = ({ home: home, releases: releases, apps: apps, insights: insights, waiting: waiting, people: people, activity: activity, settings: settings, billing: P && P.panes.billing,
+    var draw = ({ home: home, releases: releases, apps: apps, insights: insights, waiting: waiting, people: people, activity: activity, settings: settings,
        computers: G_.computers, security: G_.security, connections: G_.connections, build: G_.build, myapps: G_.myapps, requests: G_.requests, help: G_.help })[id];
     if (draw) { draw(pane); return; }
     head(pane, tabName(id), "");
@@ -252,10 +250,10 @@
   function openApp(id, tab) { show("apps", { app: id, appTab: tab || "" }); }
 
   // ------------------------------------------------------ settings window
-  function openSettings(id) {
+  function openSettings() {
     var dlg = $("setDlg"), pane = $("pane"), slot = $("setSlot");
     if (!isOpen(dlg)) {
-      S.back = S.tab && S.tab !== "settings" && S.tab !== "billing" ? S.tab : tabList()[0];
+      S.back = S.tab && S.tab !== "settings" ? S.tab : tabList()[0];
       // What was behind stays drawn, still, while the pane is away.
       var shadow = pane.cloneNode ? pane.cloneNode(true) : null;
       if (shadow) {
@@ -270,13 +268,13 @@
       if (slot.setAttribute) slot.setAttribute("tabindex", "-1");
       if (slot.focus) { try { slot.focus({ preventScroll: true }); } catch (e) { slot.focus(); } }
     }
-    S.tab = id;
-    try { history.replaceState(null, "", HERE + "&tab=" + id); } catch (e) {}
+    S.tab = "settings";
+    try { history.replaceState(null, "", HERE + "&tab=settings"); } catch (e) {}
     drawTabs();
     pane.textContent = "";
     pane.appendChild(el("p", { class: "loading", text: "Loading" }));
-    (id === "billing" ? P.panes.billing : settings)(pane);
-    settingsNav(id);
+    settings(pane);
+    settingsNav("settings");
   }
   function isOpen(dlg) { return !!(dlg && dlg.getAttribute && dlg.getAttribute("open") !== null && dlg.getAttribute("open") !== undefined); }
   function closeSettings(quiet) {
@@ -287,12 +285,12 @@
     if (!quiet) show(S.back || tabList()[0]);
   }
   /// The window's left side: a row per section of the open page (its cards'
-  /// headings, kept up to date as they arrive), and Billing beside Settings.
+  /// headings, kept up to date as they arrive).
   function settingsNav(id) {
     var nav = $("setNav"), pane = $("pane");
     if (!nav) return;
-    // One list whichever part is open: Settings' sections (remembered from
-    // the last time Settings drew them) and Billing.
+    // Settings' sections (remembered from the last time Settings drew
+    // them).
     function draw() {
       nav.textContent = "";
       var tabs = tabList();
@@ -325,16 +323,10 @@
         nav.appendChild(nb);
       });
       spy();
-      // Arrived from Billing for one section: go to it once it is drawn.
+      // Arrived for one section: go to it once it is drawn.
       if (id === "settings" && S.navGo) {
         var want = sections.filter(function (x) { return x.title === S.navGo; })[0];
         if (want) { S.navGo = null; if (want.card.scrollIntoView) want.card.scrollIntoView({ block: "start" }); }
-      }
-      if (tabs.indexOf("billing") >= 0) {
-        nav.appendChild(el("p", { class: "sd-group", text: "Plan" }));
-        var bill = el("button", { type: "button", text: "Billing", onclick: function () { show("billing"); } });
-        if (id === "billing") bill.setAttribute("aria-current", "true");
-        nav.appendChild(bill);
       }
     }
     // The section in view is the one marked, as the window scrolls.
@@ -1276,6 +1268,8 @@
         ["denied", "Refused", function (e) { return e.result === "denied"; }],
         ["people", "People", function (e) { return /^(member|invite|scim|sso|saml|group)\./.test(e.action); }],
         ["apps", "Releases", function (e) { return /^(candidate|release|lease|offline|app|publisher)\./.test(e.action); }],
+        // billing.* only on rows from before organisations stopped being
+        // billed (2026-11-07); kept so old history still sorts.
         ["setup", "Settings and security", function (e) { return /^(key|signing|root-key|release-key|settings|review|connection|audit-export|billing|org|data)\./.test(e.action) || /^(org\.|billing\.)/.test(e.action); }],
       ];
       var kind = "all", words = "";

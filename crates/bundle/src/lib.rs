@@ -4181,6 +4181,11 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 | "desktop.ini"
                 // The verification frame the pack tells agents to shoot.
                 | "frame.png"
+                // check-app's note that these bytes passed a full check: a
+                // cache on the machine that ran it, not the app. Packed, it
+                // put a different file list into every starter repacked
+                // after a check-app run.
+                | ".last-full-check"
             )
     })
 }
@@ -4971,6 +4976,11 @@ pub struct Fetched {
     /// The plain sha256 of the bytes that arrived: what an organisation's
     /// lease and the hub's check-in name them by (IC-948 G).
     pub sha256: String,
+    /// What the server said in `x-krate-store`: a Krate hub's tag for the
+    /// account that published the app (K-1159, K-1172). Any server can
+    /// send the header, so the caller takes it only from a Krate hub, and
+    /// only in the hub tag's shape.
+    pub store_tag: Option<String>,
 }
 
 /// The bytes served at a content address must BE that content (IC-389,
@@ -5147,6 +5157,8 @@ pub enum FetchedForRun {
         path: PathBuf,
         url: String,
         address: Option<String>,
+        /// As [`Fetched::store_tag`].
+        store_tag: Option<String>,
     },
 }
 
@@ -5199,6 +5211,7 @@ fn fetch_big(
 ) -> Result<FetchedForRun> {
     use sha2::{Digest, Sha256};
     let final_url = response.get_url().to_string();
+    let store_tag = response.header("x-krate-store").map(str::to_string);
     let total: Option<u64> = response
         .header("content-length")
         .and_then(|n| n.parse().ok());
@@ -5223,6 +5236,7 @@ fn fetch_big(
                 path: saved,
                 url: final_url.clone(),
                 address: Some(segment.to_string()),
+                store_tag,
             });
         }
     }
@@ -5287,6 +5301,7 @@ fn fetch_big(
         path: saved,
         url: final_url,
         address,
+        store_tag,
     })
 }
 
@@ -5296,6 +5311,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
     // fixed address it currently points at, and that is the address the
     // bytes are held to.
     let final_url = response.get_url().to_string();
+    let store_tag = response.header("x-krate-store").map(str::to_string);
     let mut bytes = Vec::new();
     response
         .into_reader()
@@ -5339,6 +5355,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
         url: final_url,
         address,
         sha256,
+        store_tag,
     })
 }
 
@@ -10079,7 +10096,13 @@ required = true
         // so the skip cannot be "every dotfile".
         fs::create_dir_all(dir.path().join(".cargo")).expect(".cargo");
         fs::write(dir.path().join(".cargo/config.toml"), b"[build]\n").expect("config");
-        for junk in [".DS_Store", "src/.DS_Store", "Thumbs.db", "src/desktop.ini"] {
+        for junk in [
+            ".DS_Store",
+            "src/.DS_Store",
+            "Thumbs.db",
+            "src/desktop.ini",
+            ".last-full-check",
+        ] {
             fs::write(dir.path().join(junk), b"os state").expect(junk);
         }
 
@@ -10100,7 +10123,7 @@ required = true
                 })
                 .collect()
         };
-        for junk in ["DS_Store", "Thumbs.db", "desktop.ini"] {
+        for junk in ["DS_Store", "Thumbs.db", "desktop.ini", "last-full-check"] {
             assert!(
                 !names.iter().any(|n| n.contains(junk)),
                 "{junk} was packed as source; the bundle now depends on which \

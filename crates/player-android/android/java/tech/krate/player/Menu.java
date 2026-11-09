@@ -53,6 +53,8 @@ final class Menu {
     private static int action;
     /** Open the app again once it has closed. */
     private static boolean restart;
+    /** Counts the apps started, so a late fallback knows its app has gone. */
+    private static int started;
 
     private static Dialog panel;
 
@@ -67,6 +69,7 @@ final class Menu {
             opens = appOpens == null ? "" : appOpens;
             action = 0;
             restart = false;
+            started++;
             MAIN.post(new Runnable() {
                 @Override
                 public void run() {
@@ -220,16 +223,28 @@ final class Menu {
         }
     }
 
+    /** Whether the app started as `run` is still the one running. */
+    private static synchronized boolean stillRunning(int run) {
+        return name != null && started == run;
+    }
+
     /** Ask the app to close (and open again); close it anyway after 2 s. */
     static void close(final KrateActivity activity, boolean again) {
+        final int run;
         synchronized (Menu.class) {
             action = 1;
             restart = again;
+            run = started;
         }
         Log.i(KrateActivity.TAG, "menu: " + (again ? "restart" : "close"));
         MAIN.postDelayed(new Runnable() {
             @Override
             public void run() {
+                // The app closed: Krate is back on its home screen, or on
+                // another app the person opened since, and stays.
+                if (!stillRunning(run)) {
+                    return;
+                }
                 // Still here: the app did not answer. Krate closes it.
                 Log.i(KrateActivity.TAG, "menu: the app did not answer; closing it");
                 if (restartAsked()) {

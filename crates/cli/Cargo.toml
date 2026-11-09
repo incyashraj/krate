@@ -57,9 +57,16 @@ krate-policy = { path = "../policy" }
 krate-bundle = { path = "../bundle" }
 # Offline access to an organisation's private app: the lease and its check (IC-948 G).
 krate-lease = { path = "../lease" }
+# Opening an organisation's private app: the check-in, the lease, this
+# device's organisation key, its team data and connections, shared with the
+# phone Players (K-1171).
+krate-orgaccess = { path = "../orgaccess" }
 # The machine key from the OS generator on every system, Windows included.
 getrandom = "0.3"
 krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
+# A signed-in person's app data on every device (IC-981): `krate account
+# sync` approves devices and shows the recovery code.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 krate-http = { path = "../http" }
 # A threaded app's build folds std's leftover WASI imports into the app (IC-938).
 krate-wasi-fold = { path = "../wasi-fold" }
@@ -110,4 +117,4 @@ winresource = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 # Detaching the console a double-click hands us; see detach_owned_console.
-windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem", "Win32_Media", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_System_Registry"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem", "Win32_Media", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_JobObjects", "Win32_Security"] }

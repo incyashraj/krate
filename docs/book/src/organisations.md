@@ -49,7 +49,7 @@ Each person has one role:
 
 | Role | What it is for |
 |---|---|
-| owner | Everything: approving releases, company sign-in, provisioning, billing, and making other owners. |
+| owner | Everything: approving releases, company sign-in, provisioning, and making other owners. |
 | admin | Invites and removes developers, reviewers and members, sets up groups and company connections, withdraws releases, reads the activity. Does not approve releases. |
 | developer | Makes apps and sends them for approval. |
 | reviewer | Approves what developers send. |
@@ -478,8 +478,9 @@ An owner can close the organisation in Settings. A sole owner confirms by
 typing its name; with two or more owners, another owner approves. It closes
 on the date the console shows, not at once: until then its apps open,
 nothing new can be sent or approved, and any owner can cancel. Former
-owners can still take the export for a while after it closes. Billing never
-closes an organisation and never stops an owner taking the export.
+owners can still take the export for a while after it closes. Organisations
+are not billed: nothing about an organisation is paused or closed for
+payment.
 
 ## When something is refused
 
@@ -496,8 +497,8 @@ A refusal says why and what to do next, for example:
 ## From the command line
 
 Everything people do day to day has a `krate` command. Company sign-in,
-provisioning, the activity export, billing, offline settings, and closing
-or exporting are in the console only.
+provisioning, the activity export, offline settings, and closing or
+exporting are in the console only.
 
 Create an organisation and invite people, by GitHub username or by work
 email. An invitation works once, only for the person it names, for 7 days:

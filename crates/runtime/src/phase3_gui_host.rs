@@ -130,7 +130,10 @@ pub struct Phase3GuiHost {
     /// Per-present loop timings (gap since last present entry, time slept
     /// for pacing), same gate and cadence. When frames are slow and the
     /// work is fast, the loop itself is the suspect.
-    present_times: std::cell::RefCell<Vec<(f32, f32)>>,
+    present_times: std::cell::RefCell<Vec<(f32, f32, f32)>>,
+    /// How long the last frame took to draw and put on screen, for
+    /// KRATE_FRAME_STATS.
+    last_publish_ms: std::cell::Cell<f32>,
     last_present_entry: std::cell::Cell<Option<std::time::Instant>>,
     /// When the native event queue was last drained, for coalescing the
     /// several pumps a frame loop asks for into one.
@@ -272,6 +275,9 @@ pub struct Phase3GuiHost {
     /// When a finger was last on the pad: it rests dimmer when left alone.
     pad_touched_at: std::cell::Cell<std::time::Instant>,
     implicit_designs: std::cell::RefCell<std::collections::BTreeSet<u64>>,
+    /// What each canvas last told the screen about a finger on it: presses
+    /// (drawn at a design size) or scrolls (K-1202).
+    presses_told: std::cell::RefCell<std::collections::BTreeMap<u64, bool>>,
     next_kept_image: std::cell::Cell<u64>,
     /// Connected gamepads, polled on demand.
     gamepads: std::cell::RefCell<crate::gamepad::Gamepads>,
@@ -574,11 +580,16 @@ enum DriveStep {
 /// way out still gets to.
 pub static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// How many times Ctrl-C has been pressed: a command-line run ends at once on
+/// the second (K-1181).
+pub static INTERRUPT_PRESSES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 /// Install the Ctrl-C handler. Safe to call more than once.
 pub fn install_interrupt_handler() {
     #[cfg(unix)]
     unsafe {
         extern "C" fn on_interrupt(_signal: i32) {
+            INTERRUPT_PRESSES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
         }
         libc::signal(
@@ -621,6 +632,7 @@ impl Phase3GuiHost {
             last_present: std::cell::Cell::new(None),
             publish_times: std::cell::RefCell::new(Vec::new()),
             present_times: std::cell::RefCell::new(Vec::new()),
+            last_publish_ms: std::cell::Cell::new(0.0),
             last_present_entry: std::cell::Cell::new(None),
             last_pump: std::cell::Cell::new(None),
             interrupts: std::cell::Cell::new(0),
@@ -689,6 +701,7 @@ impl Phase3GuiHost {
             pad_fingers: std::cell::RefCell::new(Vec::new()),
             pad_touched_at: std::cell::Cell::new(std::time::Instant::now()),
             implicit_designs: std::cell::RefCell::new(std::collections::BTreeSet::new()),
+            presses_told: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             next_kept_image: std::cell::Cell::new(1),
             gamepads: std::cell::RefCell::new(crate::gamepad::Gamepads::new()),
             held_keys: std::cell::RefCell::new(std::collections::BTreeSet::new()),
@@ -993,6 +1006,21 @@ impl Phase3GuiHost {
             ));
         }
         let sender = self.attribution();
+        // Windows: scheduled toasts under the app's own sender, the one its
+        // notifications use (IC-982).
+        #[cfg(target_os = "windows")]
+        {
+            return krate_adapter_windows::toast::schedule(
+                &sender,
+                id,
+                title,
+                body,
+                after_seconds,
+                daily,
+            )
+            .map_err(NotifyError::Unavailable);
+        }
+        #[allow(unreachable_code)]
         self.dispatcher()
             .reminders()
             .reminder_schedule(id, &sender, title, body, after_seconds, daily)
@@ -1006,6 +1034,12 @@ impl Phase3GuiHost {
             .check(&UapiCall::Ui(UiCall::Notify))
             .is_ok();
         if granted && valid_reminder_id(id) && !self.headless {
+            #[cfg(target_os = "windows")]
+            {
+                krate_adapter_windows::toast::cancel(&self.attribution(), id);
+                return;
+            }
+            #[allow(unreachable_code)]
             self.dispatcher().reminders().reminder_cancel(id);
         }
     }
@@ -1019,6 +1053,11 @@ impl Phase3GuiHost {
         if !granted || self.headless {
             return Vec::new();
         }
+        #[cfg(target_os = "windows")]
+        {
+            return krate_adapter_windows::toast::pending(&self.attribution());
+        }
+        #[allow(unreachable_code)]
         self.dispatcher().reminders().reminder_pending()
     }
 
@@ -1093,6 +1132,13 @@ impl Phase3GuiHost {
         if self.headless {
             return Err((1, "no photo library when nothing is on screen".to_string()));
         }
+        // Windows and Linux keep photos in the Pictures folder their photo
+        // apps show (IC-982).
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
+            return crate::pictures::add(&self.attribution(), data).map_err(|why| (1, why));
+        }
+        #[allow(unreachable_code)]
         self.dispatcher().save_photo(data).map_err(|why| match why {
             None => (0, String::new()),
             Some(why) => (1, why),
@@ -1136,6 +1182,27 @@ impl Phase3GuiHost {
         let id = self
             .window_id(window)
             .map_err(|_| (false, "no such window".to_string()))?;
+        // Windows and Linux have no share sheet Krate reaches: the files are
+        // saved where the person picks and the text copied on their OK
+        // (IC-982), so Share works on every computer.
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
+            let _ = id;
+            let dispatcher = self.dispatcher();
+            return crate::share_fallback::share(
+                &self.attribution(),
+                text.as_deref(),
+                url.as_deref(),
+                &files,
+                |offered| {
+                    dispatcher
+                        .write_clipboard_for_person(offered)
+                        .map_err(|e| format!("could not copy it: {e}"))
+                },
+            )
+            .map_err(|why| (true, why));
+        }
+        #[allow(unreachable_code)]
         self.dispatcher()
             .share(id, text.as_deref(), url.as_deref(), &files)
             .map_err(|why| (true, why))
@@ -3393,15 +3460,14 @@ impl Phase3GuiHost {
         let Some((_, _, surface)) = canvases.values().next() else {
             return (x, y);
         };
-        let Some((dw, dh)) = surface.design_size() else {
+        // The one fit every drawing path uses (K-1210), so a point maps back
+        // to exactly where it was drawn.
+        let Some((k, ox, oy)) = surface.design_fit() else {
             return (x, y);
         };
-        let (cw, ch) = surface.dimensions();
-        let k = (cw as f32 / dw).min(ch as f32 / dh);
         if k <= 0.0 {
             return (x, y);
         }
-        let (ox, oy) = ((cw as f32 - dw * k) / 2.0, (ch as f32 - dh * k) / 2.0);
         ((x - ox) / k, (y - oy) / k)
     }
 
@@ -3414,11 +3480,12 @@ impl Phase3GuiHost {
             return event;
         };
         let (cw, ch) = surface.dimensions();
-        let k = (cw as f32 / dw).min(ch as f32 / dh);
+        let Some((k, ox, oy)) = surface.design_fit() else {
+            return event;
+        };
         if k <= 0.0 {
             return event;
         }
-        let (ox, oy) = ((cw as f32 - dw * k) / 2.0, (ch as f32 - dh * k) / 2.0);
         let back = |x: f32, y: f32| ((x - ox) / k, (y - oy) / k);
         match event {
             ui::types::Event::Pointer(mut p) => {
@@ -4072,6 +4139,7 @@ impl Phase3GuiHost {
                 list.logical_width = lw;
                 list.logical_height = lh;
                 list.design = surface.design_size();
+                list.design_inset = surface.design_inset();
                 let frame = std::mem::take(list);
                 (*window, *widget, frame)
             };
@@ -4084,7 +4152,11 @@ impl Phase3GuiHost {
             {
                 return Ok(());
             }
-            // The adapter declined this frame; fall through to pixels.
+            // The adapter declined this frame; fall through to pixels, and
+            // ask again before the next frame: a GPU that failed to start
+            // says so, and the next frame is painted on the CPU rather than
+            // recorded for nothing (K-1214).
+            self.lists_enabled.set(None);
         }
         let stats = std::env::var("KRATE_FRAME_STATS").as_deref() == Ok("1");
         let copy_started = std::time::Instant::now();
@@ -4110,19 +4182,26 @@ impl Phase3GuiHost {
             let sync_ms = sync_started.elapsed().as_secs_f32() * 1000.0;
             let mut times = self.publish_times.borrow_mut();
             times.push((copy_ms, sync_ms));
-            if times.len() >= 60 {
+            if times.len() >= frame_stats_every() {
                 let p = |values: &mut Vec<f32>, q: f32| -> f32 {
                     values.sort_by(|a, b| a.total_cmp(b));
                     values[((values.len() - 1) as f32 * q) as usize]
                 };
                 let mut copies: Vec<f32> = times.iter().map(|(c, _)| *c).collect();
                 let mut syncs: Vec<f32> = times.iter().map(|(_, s)| *s).collect();
-                let (fills, text, measure) = crate::canvas_raster::take_op_millis();
+                let (fills, text, measure, effects) = crate::canvas_raster::take_op_millis();
+                let each: Vec<String> = crate::canvas_raster::take_effect_millis()
+                    .iter()
+                    .filter(|(_, ms)| *ms > 0.05)
+                    .map(|(name, ms)| format!("{name} {ms:.1}ms"))
+                    .collect();
+                eprintln!("krate-effects: {}", each.join(" | "));
                 eprintln!(
-                    "krate-ops: fills {:.1}ms text {:.1}ms measure {:.1}ms over the last {} frames",
+                    "krate-ops: fills {:.1}ms text {:.1}ms measure {:.1}ms effects {:.1}ms over the last {} frames",
                     fills,
                     text,
                     measure,
+                    effects,
                     times.len(),
                 );
                 eprintln!(
@@ -4288,6 +4367,53 @@ impl Phase3GuiHost {
             surface.set_design_size(0.0, 0.0);
             self.implicit_designs.borrow_mut().remove(&canvas);
         }
+    }
+
+    /// Keep a design-size canvas out from under what the phone covers -- the
+    /// status bar, a camera cutout, the navigation or home bar -- every frame,
+    /// so turning the phone or a bar coming and going refits it at once
+    /// (K-1210). An app that lays itself out from the screen has no design
+    /// and reads the covered edges itself (krate:ui/screen), so it may still
+    /// draw to the very edge: a game's sky, a video.
+    fn inset_design(&self, canvas: u64) {
+        let window = match self.canvases.borrow().get(&canvas) {
+            Some((window, _, surface)) if surface.design_size().is_some() => *window,
+            Some((_, _, surface)) if surface.design_inset() == (0.0, 0.0, 0.0, 0.0) => return,
+            Some(_) => {
+                if let Some((_, _, surface)) = self.canvases.borrow_mut().get_mut(&canvas) {
+                    surface.set_design_inset((0.0, 0.0, 0.0, 0.0));
+                }
+                return;
+            }
+            None => return,
+        };
+        let inset = self
+            .screen_now(window)
+            .map(|(_, _, _, safe)| safe)
+            .unwrap_or((0.0, 0.0, 0.0, 0.0));
+        if let Some((_, _, surface)) = self.canvases.borrow_mut().get_mut(&canvas) {
+            surface.set_design_inset(inset);
+        }
+    }
+
+    /// Tell the screen whether a finger on this canvas presses it (a game,
+    /// drawn at a design size, steers by the pointer held) or scrolls it (a
+    /// document laid out for the screen), when that changes. Phones decide
+    /// by it (K-1202); the tab decides the same way from its own canvases.
+    fn tell_presses(&self, canvas: u64) {
+        let Some((window, widget, presses)) = self
+            .canvases
+            .borrow()
+            .get(&canvas)
+            .map(|(window, widget, surface)| (*window, *widget, surface.design_size().is_some()))
+        else {
+            return;
+        };
+        if self.presses_told.borrow_mut().insert(canvas, presses) == Some(presses) {
+            return;
+        }
+        self.dispatcher()
+            .set_canvas_presses(window, widget, presses);
     }
 
     /// The most picture bytes one run may keep (krate:gfx/canvas-images).
@@ -4738,23 +4864,26 @@ impl Phase3GuiHost {
         }
         if std::env::var("KRATE_FRAME_STATS").as_deref() == Ok("1") {
             let mut times = self.present_times.borrow_mut();
-            times.push((gap_ms, slept_ms));
-            if times.len() >= 60 {
+            times.push((gap_ms, slept_ms, self.last_publish_ms.get()));
+            if times.len() >= frame_stats_every() {
                 let p = |values: &mut Vec<f32>, q: f32| -> f32 {
                     values.sort_by(|a, b| a.total_cmp(b));
                     values[((values.len() - 1) as f32 * q) as usize]
                 };
-                let mut gaps: Vec<f32> = times.iter().map(|(g, _)| *g).collect();
-                let mut sleeps: Vec<f32> = times.iter().map(|(_, sl)| *sl).collect();
+                let mut gaps: Vec<f32> = times.iter().map(|(g, _, _)| *g).collect();
+                let mut sleeps: Vec<f32> = times.iter().map(|(_, sl, _)| *sl).collect();
+                let mut draws: Vec<f32> = times.iter().map(|(_, _, d)| *d).collect();
                 let pump = PUMP_MS.with(|c| c.replace(0.0));
                 let calls = PUMP_CALLS.with(|c| c.replace(0));
                 eprintln!("krate-pump: {pump:.1}ms across {calls} pump calls over these frames");
                 eprintln!(
-                    "krate-present: gap p50 {:.2}ms p99 {:.2}ms | slept p50 {:.2}ms p99 {:.2}ms (n={})",
+                    "krate-present: gap p50 {:.2}ms p99 {:.2}ms | slept p50 {:.2}ms p99 {:.2}ms | drawn p50 {:.2}ms p99 {:.2}ms (n={})",
                     p(&mut gaps, 0.5),
                     p(&mut gaps, 0.99),
                     p(&mut sleeps, 0.5),
                     p(&mut sleeps, 0.99),
+                    p(&mut draws, 0.5),
+                    p(&mut draws, 0.99),
                     times.len(),
                 );
                 times.clear();
@@ -4762,7 +4891,10 @@ impl Phase3GuiHost {
         }
         self.last_present.set(Some(std::time::Instant::now()));
 
+        let publish_started = std::time::Instant::now();
         let result = self.publish_canvas(canvas);
+        self.last_publish_ms
+            .set(publish_started.elapsed().as_secs_f32() * 1000.0);
         // A presented canvas is a real drawn frame -- the right moment to
         // capture a 2D game or drawing, which may never call wait.
         if result.is_ok() {
@@ -6170,7 +6302,7 @@ impl ui::dialog::Host for Phase3GuiHost {
     /// Show a message and wait for the person to dismiss it.
     fn message(
         &mut self,
-        _window: u64,
+        window: u64,
         title: String,
         body: String,
     ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
@@ -6189,14 +6321,18 @@ impl ui::dialog::Host for Phase3GuiHost {
         if self.headless {
             return Ok(Ok(()));
         }
-        // Android: shown-and-dismissed, the headless rule, until M3.
+        // Phones: the platform's own dialog, through the adapter. A host
+        // without one counts it shown and dismissed, the headless rule.
         #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
         {
-            let _ = (&title, &body);
+            if let Ok(id) = self.window_id(window) {
+                let _ = self.dispatcher().ask(id, &title, &body, false);
+            }
             Ok(Ok(()))
         }
         #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
         {
+            let _ = window;
             rfd::MessageDialog::new()
                 .set_title(&title)
                 .set_description(&body)
@@ -6212,7 +6348,7 @@ impl ui::dialog::Host for Phase3GuiHost {
     /// is doing something the person did not agree to.
     fn confirm(
         &mut self,
-        _window: u64,
+        window: u64,
         title: String,
         body: String,
     ) -> wasmtime::Result<Result<bool, ui::types::UiError>> {
@@ -6231,14 +6367,22 @@ impl ui::dialog::Host for Phase3GuiHost {
         if self.headless {
             return Ok(Ok(false));
         }
-        // Android: dismissed means no, the function's own rule, until M3.
+        // Phones: the platform's own question, through the adapter, so "Delete
+        // this note?" can be answered yes there (every one answered no). A
+        // host without one: dismissed, which is no.
         #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
         {
-            let _ = (&title, &body);
-            Ok(Ok(false))
+            let Ok(id) = self.window_id(window) else {
+                return Ok(Ok(false));
+            };
+            Ok(Ok(self
+                .dispatcher()
+                .ask(id, &title, &body, true)
+                .unwrap_or(false)))
         }
         #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
         {
+            let _ = window;
             let answer = rfd::MessageDialog::new()
                 .set_title(&title)
                 .set_description(&body)
@@ -6247,6 +6391,17 @@ impl ui::dialog::Host for Phase3GuiHost {
             Ok(Ok(answer == rfd::MessageDialogResult::Yes))
         }
     }
+}
+
+/// How many frames KRATE_FRAME_STATS sums before it prints: 60, or
+/// KRATE_FRAME_STATS_EVERY -- a short animation (a sheet sliding up) is
+/// over before 60 frames.
+fn frame_stats_every() -> usize {
+    std::env::var("KRATE_FRAME_STATS_EVERY")
+        .ok()
+        .and_then(|n| n.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(60)
 }
 
 impl ui::image::Host for Phase3GuiHost {
@@ -6472,8 +6627,16 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
         };
         surface.set_design_size(size.width, size.height);
+        drop(canvases);
         // The app's own design replaces any the host chose for it.
         self.implicit_designs.borrow_mut().remove(&canvas);
+        // Fit it inside the edges a phone covers now, not at the next
+        // present: the CPU raster draws each op as it arrives, so a first
+        // frame drawn before then landed centred on the whole screen, and
+        // the bands filled at publish -- from the fit with the edges --
+        // painted over its top and copied a blank row across its bottom
+        // (K-1217).
+        self.inset_design(canvas);
         Ok(Ok(()))
     }
 
@@ -7259,6 +7422,8 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
                 .push(since.elapsed().as_secs_f32() * 1000.0);
         }
         self.fit_unasked_canvas(canvas);
+        self.inset_design(canvas);
+        self.tell_presses(canvas);
         // The pad is drawn with the app's design switched off, and the design
         // comes back only after the frame is published: the CPU raster fills
         // the bands around a design with its edge colours when it publishes,
@@ -9806,6 +9971,44 @@ mod tests {
         assert!(
             matches!(event, Some(ui::types::Event::CloseRequested(_))),
             "a spent budget must close a loop that only ever polls: {event:?}"
+        );
+    }
+
+    /// K-1202: a phone is told a game's canvas presses under a finger and a
+    /// page's scrolls, and told again when the app changes its mind.
+    #[test]
+    fn the_screen_learns_which_canvas_a_finger_presses() {
+        let (mut host, window, widget) = host_with_canvas_widget();
+        let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
+            .expect("bind call")
+            .expect("binds");
+        let told = |host: &Phase3GuiHost| host.presses_told.borrow().get(&canvas).copied();
+        gfx::canvas2d::Host::present(&mut host, canvas)
+            .expect("present call")
+            .expect("presents");
+        assert_eq!(told(&host), Some(false), "a canvas with no design scrolls");
+        let design = |host: &mut Phase3GuiHost, width: f32, height: f32| {
+            gfx::canvas2d::Host::set_design_size(host, canvas, gfx::types::Size { width, height })
+                .expect("call")
+                .expect("design");
+        };
+        design(&mut host, 320.0, 180.0);
+        gfx::canvas2d::Host::present(&mut host, canvas)
+            .expect("present call")
+            .expect("presents");
+        assert_eq!(
+            told(&host),
+            Some(true),
+            "a game drawn at a design size presses"
+        );
+        design(&mut host, 0.0, 0.0);
+        gfx::canvas2d::Host::present(&mut host, canvas)
+            .expect("present call")
+            .expect("presents");
+        assert_eq!(
+            told(&host),
+            Some(false),
+            "dropping the design scrolls again"
         );
     }
 

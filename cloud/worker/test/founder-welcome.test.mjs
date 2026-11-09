@@ -24,6 +24,8 @@ const env = {
   KRATE_ADMINS: "boss",
   GITHUB_CLIENT_SECRET: "gh-secret",
   RESEND_API_KEY: "resend-key",
+  // What makes each welcome's unsubscribe link (the hub has it as a secret).
+  KEY_WRAP_SECRET: "wrap-secret",
   APPS: {
     get: async (k) => KV.get(k) ?? null,
     put: async (k, v) => { KV.set(k, v); },

@@ -95,7 +95,9 @@
       return base;
     }
     var s = String(p || "");
-    // Who acts for Krate itself in the audit (Addendum 3 D, E).
+    // Who acts for Krate itself in the audit (Addendum 3 D). "stripe"
+    // appears only on billing events from before organisations stopped
+    // being billed (2026-11-07), kept readable as history.
     if (s === "system:krate") return { principal: s, kind: "krate", display: "Krate", label: "Krate" };
     if (s === "stripe") return { principal: s, kind: "stripe", display: "Stripe", label: "Stripe" };
     // The company's directory, acting through SCIM (IC-955).
@@ -145,12 +147,10 @@
     "candidate.approve": { owner: "yes", reviewer: "yes" },
     "release.download": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
     "audit.read": { owner: "yes", admin: "yes" },
-    // Addendum 3: the organisation's lifecycle, billing, SSO and offline
-    // access are an owner's; admins read billing.
+    // Addendum 3: the organisation's lifecycle, SSO and offline access are
+    // an owner's.
     "org.close": { owner: "yes" },
     "org.export": { owner: "yes" },
-    "billing.read": { owner: "yes", admin: "yes" },
-    "billing.checkout": { owner: "yes" },
     "sso.set": { owner: "yes" },
     "offline.set": { owner: "yes" },
     // Release control and groups (IC-949, FLEET-CONTRACT.md R).
@@ -214,7 +214,7 @@
   function tabsFor(role) {
     var out;
     if (role === "owner" || role === "admin") {
-      out = ["home", "apps", "waiting", "requests", "releases", "people", "computers", "security", "connections", "insights", "activity", "billing", "settings"];
+      out = ["home", "apps", "waiting", "requests", "releases", "people", "computers", "security", "connections", "insights", "activity", "settings"];
     } else if (role === "developer") {
       out = ["home", "myapps", "build", "requests", "releases", "connections", "insights", "people", "settings"];
     } else if (role === "reviewer") {
@@ -223,7 +223,6 @@
       out = ["home", "requests", "help"];
     }
     return out.filter(function (id) {
-      if (id === "billing") return can(role, "billing.read");
       if (id === "connections") return can(role, "connection.view");
       if (id === "apps") return can(role, "inventory.view");
       if (id === "insights") return can(role, "insights.view");
@@ -325,16 +324,12 @@
         return { title: org + " is closing", body: "Its apps still open until it closes, but nothing new can be sent or approved. An owner can cancel the closing in Settings.", action: null };
       case "org-closed":
         return { title: org + " is closed", body: "Its apps no longer open. Former owners can still download its export from Settings until the export window ends.", action: mine };
-      case "org-suspended":
-        return { title: org + " is paused for billing", body: "Apps already released still open. Sending new apps, extra seats and company sign-in come back when an owner settles billing.", action: null };
       case "close-statement-mismatch":
         return { title: "The closing changed while you were looking", body: "Nothing was approved. Look at the closing again and approve what it says now.", action: null };
       case "close-confirm-mismatch":
         return { title: "That is not the short name", body: "Nothing changed. Type " + (ctx.slug || "the organisation's short name") + " exactly to close it.", action: null };
       case "export-not-ready":
         return { title: "The export is still being built", body: "It is usually ready in a minute. This list refreshes by itself.", action: null };
-      case "billing-not-open":
-        return { title: "Card billing is not open yet", body: "Krate invoices pilot organisations directly: write to yashraj@krate.tech.", action: { label: "Write to yashraj@krate.tech", href: "mailto:yashraj@krate.tech" } };
       case "sso-required":
         return {
           title: org + " requires company sign-in",
@@ -495,7 +490,6 @@
     "idempotency-key-reused": "a reused request",
     "org-closing": "the organisation is closing",
     "org-closed": "the organisation is closed",
-    "org-suspended": "paused for billing",
     "close-statement-mismatch": "the closing had changed",
     "close-confirm-mismatch": "the short name did not match",
     "sso-required": "company sign-in required",
@@ -562,8 +556,8 @@
         "release.list": "see the releases",
         "release.download": "open " + app(),
         "audit.read": "read the activity",
-        // The store's own command names, which a lifecycle or billing gate
-        // refuses before the command runs (Addendum 3 D).
+        // The store's own command names, which a lifecycle gate refuses
+        // before the command runs (Addendum 3 D).
         approve: "approve " + app(),
         "add-candidate": "send an app for approval",
         "check-candidate": "send an app for approval",
@@ -576,7 +570,6 @@
         "close-approve": "approve the closing",
         "close-cancel": "cancel the closing",
         export: "build an export",
-        "billing-checkout": "open checkout",
         "recover-object": "object to a recovery",
         // Release control and groups (IC-949, R).
         "release.withdraw": "withdraw " + app(),
@@ -702,7 +695,7 @@
           ? a + " released " + app() + " themselves, with no second approver yet."
           : a + " approved " + app() + ". It is released.";
       case "release.download": return a + " opened " + app() + ".";
-      // Addendum 3: closing, export, recovery, billing, SSO, offline.
+      // Addendum 3: closing, export, recovery, SSO, offline.
       case "org.close":
         return /second owner/.test(ev.reason || "") ? a + " asked to close the organisation. It waits for a second owner." : a + " scheduled the organisation to close.";
       case "org.close.approve": return a + " approved closing the organisation. The window has started.";
@@ -716,6 +709,8 @@
       case "member.recover.request": return a + " asked to make " + who(t.value).label + " an owner, because: " + (ev.reason || "no reason given") + ".";
       case "member.recover": return "Krate support restored ownership to " + who(t.value).label + ", by " + who(ev.actor).display + ", reason: " + (ev.reason || "none given") + ".";
       case "member.recover.object": return a + " objected. The ownership recovery is cancelled.";
+      // Billing events from before organisations stopped being billed
+      // (2026-11-07) stay readable in the activity history.
       case "billing.customer": return a + " set up billing with Stripe.";
       case "billing.checkout": return a + " opened checkout" + (ev.reason ? " for " + ev.reason : "") + ".";
       case "billing.update": return "Stripe updated billing" + (ev.reason ? ": " + ev.reason : "") + ".";
@@ -841,7 +836,7 @@
     return v ? n + " " + v : n;
   }
 
-  // ------------------------------------------------- offline, SSO, money
+  // -------------------------------------------------------- offline, SSO
 
   /// Offline classes (Addendum 3 G). Nothing longer than 30 days exists.
   var OFFLINE = [
@@ -890,13 +885,6 @@
     try { raw = store.getItem("krate_sso_notice"); store.removeItem("krate_sso_notice"); } catch (e) {}
     if (!raw) return "";
     try { var n = JSON.parse(raw); return n && n.state ? ssoNotice(n.state, name || n.org) : ""; } catch (e) { return ""; }
-  }
-
-  /// Money only as the hub sent it: Stripe's minor units and currency.
-  function money(amount, currency) {
-    if (typeof amount !== "number" || !currency) return "";
-    var c = String(currency).toUpperCase();
-    try { return new Intl.NumberFormat("en", { style: "currency", currency: c }).format(amount / 100); } catch (e) { return (amount / 100).toFixed(2) + " " + c; }
   }
 
   /// The join link for an invitation answer (`join_url`, Addendum 2).
@@ -1054,7 +1042,7 @@
     refusal: refusal, signInHref: signInHref, eventWords: eventWords, fingerprint: fingerprint,
     day: day, moment: moment, zone: zone, zoneName: zoneName, appName: appName, joinUrl: joinUrl, fileName: fileName, appLink: appLink,
     ssoNotice: ssoNotice, takeSsoNotice: takeSsoNotice,
-    OFFLINE: OFFLINE, offlineName: offlineName, offlineNotice: offlineNotice, PROVIDERS: PROVIDERS, money: money,
+    OFFLINE: OFFLINE, offlineName: offlineName, offlineNotice: offlineNotice, PROVIDERS: PROVIDERS,
     el: el, refusalBlock: refusalBlock, signInChoices: signInChoices, copy: copy, download: download,
     groupsSaid: groupsSaid,
     whyShort: function (reason) { return SHORT_WHY[reason] || ""; },

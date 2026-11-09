@@ -460,6 +460,38 @@ async function noteSpend(token, entry) {
   } catch (e) {}
 }
 
+/* Have the hub sign a finished build as the person's account (IC-983,
+ * option B): the key lives in the hub, sealed, and never comes here --
+ * this box runs an AI agent. Both credentials, as /keys/use: the session
+ * says whose app, the builder's secret says who is asking. Null, and the
+ * build goes out unsigned, when either is missing or the hub says no; a
+ * signature is never a reason to lose an app. */
+async function signedAsTheAccount(token, bytes) {
+  const builderSecret = process.env.KRATE_BUILDER_SECRET || "";
+  if (!token || !builderSecret || !bytes || !bytes.length) return null;
+  try {
+    const res = await fetch(`${HUB}/sign/web-build`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/vnd.krate",
+        authorization: `Bearer ${token}`,
+        "x-krate-builder": builderSecret,
+      },
+      body: bytes,
+    });
+    if (!res.ok) {
+      console.error(`signing: the hub said ${res.status}; the app goes out unsigned`);
+      return null;
+    }
+    const signed = Buffer.from(await res.arrayBuffer());
+    // A signed zip is the same archive plus one entry: never smaller.
+    return signed.length > bytes.length ? signed : null;
+  } catch (e) {
+    console.error(`signing: ${e.message}; the app goes out unsigned`);
+    return null;
+  }
+}
+
 /* The engine prices every run from the API's own token counts and prints it
  * as `krate-spend: {...}`. This is the only honest source for what a build
  * cost -- anything else would be a guess presented as a number. */
@@ -556,22 +588,6 @@ async function allowedToBuild(token, device) {
       };
     }
 
-    // The old three-a-month paywall stays switched off. The count is still
-    // taken and recorded, so the day KRATE_CHARGING is set the numbers are
-    // already right and any future wall works on real history rather than
-    // starting everyone at zero.
-    // ONE free app, not three (IC-639). This still said three, so the day
-    // KRATE_CHARGING is set the server would have handed out three funded
-    // apps while every screen in Studio promised one -- the same drift the
-    // client was corrected for twice, surviving here because this branch
-    // has never run.
-    if (process.env.KRATE_CHARGING === "1" && made >= 1) {
-      return {
-        ok: false,
-        message: "You have made your free app. Krate Studio on your own machine is free and unlimited with your own AI.",
-        wall: true,
-      };
-    }
     return { ok: true, account: me.user.login || me.user.email };
   } catch (err) {
     // A hub we cannot reach is our fault, not theirs -- but we still do
@@ -579,7 +595,7 @@ async function allowedToBuild(token, device) {
     return {
       ok: false,
       upstream: true,
-      message: "We could not check your plan just now. Nothing was counted. Try again in a moment.",
+      message: "We could not check your account just now. Nothing was counted. Try again in a moment.",
     };
   }
 }
@@ -824,6 +840,10 @@ async function startBuild({ request, token, account, device, revise = null, shap
     }
 
     try {
+      // Signed as the person's account by the hub (IC-983): this box never
+      // holds a key. Not signed, the app goes out as it was made.
+      const signed = await signedAsTheAccount(token, await readFile(output));
+      if (signed) await writeFile(output, signed);
       const bytes = await readFile(output);
       const info = await stat(output);
       // The picture of the app that was just made, painted by the same

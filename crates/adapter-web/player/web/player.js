@@ -256,6 +256,23 @@ function keepData() {
   if (!navigator.storage || !navigator.storage.persist) return;
   navigator.storage.persist().then((ok) => { report.persisted = ok; }).catch(() => { report.persisted = false; });
 }
+/// A signed-in person's apps keep the same data on every device they run
+/// Krate on (IC-981) -- but not yet in a tab: a running app here reads its
+/// data from the tab's own copy, which nothing from another device reaches
+/// while it runs. Said once per app, in plain words, with the way to the
+/// same data everywhere.
+function localOnlyNote(storeKey) {
+  const me = session();
+  if (!me || !me.token) return;
+  const seen = `krate-local-only:${JSON.stringify(storeKey)}`;
+  try {
+    if (localStorage.getItem(seen)) return;
+    localStorage.setItem(seen, '1');
+  } catch (_) {
+    return;
+  }
+  notice('This browser keeps this app\'s data here only. Open it in Krate on your computer or phone to have the same data on every device you sign in on.');
+}
 function madeWith(teamApp) {
   if (teamApp || !HASH) return;
   if (FILE) {
@@ -1069,6 +1086,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   const keeps = ['store.kv', 'store.sql', 'store.shared', 'store.secret'].some((c) => granted.includes(c));
   const d = gui || keeps ? await db().catch(() => null) : null;
   if (d && keeps) keepData();
+  if (d && keeps && !granted.includes('store.org')) localOnlyNote(storeKey);
   // The app's database, as the browser kept it: one value per app under a
   // number, which no key-value key (always a string) can be or reach, so
   // store.kv's clear never touches it.

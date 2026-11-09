@@ -18,8 +18,36 @@ crate-type = ["cdylib", "rlib"]
 krate-manifest = { path = "../manifest" }
 krate-policy = { path = "../policy" }
 krate-bundle = { path = "../bundle" }
+# Which publisher an app's synced data is kept under, and the sync toggles
+# (IC-981): the same rules on a phone as on a computer.
+krate-accountsync = { path = "../accountsync" }
+# An organisation's private apps (K-1171): the check-in, the lease, this
+# phone's organisation key, its team data and connections -- the computer's
+# own code, over the Player's private storage.
+krate-orgaccess = { path = "../orgaccess" }
+krate-runtime = { path = "../runtime", default-features = false, features = [
+    "phase2-bindings",
+] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+# The team-app proof (tests/org_team_app.rs) makes the organisation's key
+# on the computer it stands in for.
+krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
+serde_json.workspace = true
+# A row conflict's card is proved on a real database (IC-981 S4).
+krate-appsql = { path = "../appsql" }
+# The host tests hold the output card to the runtime's own argument rule.
+krate-runtime = { path = "../runtime", default-features = false, features = [
+    "phase2-bindings",
+] }
 
 [target.'cfg(target_os = "android")'.dependencies]
+# Sync on Krate's home (IC-981 S2): asking the hub how this phone stands,
+# approving a device, the recovery code.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 # Speech stays off: whisper.cpp on Android is its own project, and the
 # player degrades the capability honestly, the same as arm64 Linux did.
 krate-runtime = { path = "../runtime", default-features = false, features = [
@@ -34,3 +62,7 @@ jni = "0.21"
 # Fetching a tapped krate.tech link from the hub. rustls underneath, so
 # no OpenSSL cross-compilation.
 ureq.workspace = true
+# Krate's home screen: the hub's catalogue, and its screenshots decoded
+# (the iPhone's hub code, shared).
+serde_json.workspace = true
+png = "0.17"

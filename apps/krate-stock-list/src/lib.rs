@@ -138,7 +138,7 @@ impl Team {
             }
             OrgError::Invalid(words) => self.problem = Some(words),
             OrgError::Io(words) => {
-                self.problem = Some(format!("This computer could not save that: {words}"))
+                self.problem = Some(format!("This device could not save that: {words}"))
             }
         }
     }
@@ -1114,10 +1114,10 @@ impl App {
                 ),
             ),
             Access::Unsupported => (
-                String::from("Open Stock List on your computer"),
+                String::from("Open Stock List in the Krate app"),
                 String::from(
                     "Your team's stock list is not available in a browser tab yet. Open Stock List \
-                     with Krate on your computer and it is all there.",
+                     with Krate on your computer or phone and it is all there.",
                 ),
             ),
             Access::Open => (String::new(), String::new()),

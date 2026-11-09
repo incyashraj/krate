@@ -13,7 +13,7 @@
 //   (writes; org-data.js);
 // - connection hand-outs: connection_uses (org-connections.js);
 // - devices holding the organisation key: key_devices and key_envelopes;
-// - members, roles, sign-in, invitations, seats, SCIM tokens, the audit
+// - members, roles, sign-in, invitations, SCIM tokens, the audit
 //   export's delivery: their own tables.
 //
 // What was missing is added here, pre-aggregated per day and kept 90 days,
@@ -44,7 +44,6 @@ import "./org-sso.js";
 import "./org-saml.js";
 import "./org-scim.js";
 import "./org-audit-export.js";
-import { seatsUsed, billingState, freeSeats } from "./org-lifecycle-store.js";
 // Days are the organisation's own (org-time.js, F-319).
 import { dayBefore } from "./org-time.js";
 
@@ -412,9 +411,6 @@ const ops = {
     const rollbacks = this.row("SELECT COALESCE(SUM(n), 0) AS n FROM insights_daily WHERE metric = 'rollback' AND day >= ?", ago(29)).n;
     const withdrawals = this.row("SELECT COUNT(*) AS n FROM candidates WHERE withdrawn_at >= ?", monthAgo).n;
 
-    // Cost.
-    const billing = billingState(this, now);
-
     return {
       adoption: {
         members: members.length,
@@ -485,14 +481,6 @@ const ops = {
         oldest_waiting_since: waitingNow.length ? waitingNow[0].uploaded_at : null,
         withdrawn_month: withdrawals,
         rollbacks_month: rollbacks,
-      },
-      cost: {
-        plan: billing.row.plan || "pilot",
-        state: billing.state,
-        seats_used: seatsUsed(this),
-        seats_paid: billing.row.seats_paid ?? null,
-        free_seats: freeSeats(this.env),
-        active_month: activeIn(ago(29)),
       },
     };
   },

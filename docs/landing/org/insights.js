@@ -3,7 +3,7 @@
  * hub (GET /orgs/<slug>/insights):
  *
  *  - owners and admins: is the organisation getting value, and is it safe
- *    (adoption, people, security, releases, cost);
+ *    (adoption, people, security, releases);
  *  - whoever sends apps: how each of their apps is doing;
  *  - whoever approves: what needs them;
  *  - everyone: their own computers and the apps they used.
@@ -342,25 +342,6 @@
         tile({ label: "Taken back, last 30 days", value: String(r.withdrawn_month), of: "withdrawn", means: r.rollbacks_month ? "and " + plural(r.rollbacks_month, "rollback", "rollbacks") + " to an older version" : "and no rollbacks to an older version", act: go("releases", "See the versions") }),
       ])]));
 
-      // Cost.
-      var c = o.cost;
-      var perHead = tile({ label: "Cost per active person", value: "Working it out", means: "the last invoice, over the " + plural(c.active_month, "person", "people") + " who opened an app in 30 days", act: go("billing", "See invoices") });
-      out.push(card("ins-cost", "Cost", "What does " + name + " pay for what it uses?", [tiles([
-        tile({ label: "Seats in use", value: String(c.seats_used), of: c.seats_paid ? "of " + c.seats_paid + " paid" : "", means: "owners, admins, developers and reviewers; people who only use apps are free" + (c.seats_paid ? "" : " · " + c.free_seats + " seats are free"), act: go("billing", "Open billing") }),
-        perHead,
-      ])]));
-      // The amount is Billing's: the hub's Stripe invoices, read once.
-      K.api("GET", path("/billing")).then(function (res) {
-        var inv = res.ok && res.body && Array.isArray(res.body.invoices) ? res.body.invoices.filter(function (i) { return typeof i.amount === "number" && i.currency; })[0] : null;
-        var val = perHead.children[1], means = perHead.children[2];
-        if (inv && c.active_month) {
-          val.textContent = K.money(Math.round(inv.amount / c.active_month), inv.currency);
-          means.textContent = "the invoice of " + K.day(inv.at) + ", " + K.money(inv.amount, inv.currency) + ", over the " + plural(c.active_month, "person", "people") + " who opened an app in 30 days";
-        } else {
-          val.textContent = "Not yet";
-          means.textContent = inv ? "nobody opened an app in the last 30 days" : "shown once " + name + " has a paid invoice; " + plural(c.active_month, "person", "people") + " opened an app in 30 days";
-        }
-      });
       return out;
     }
 

@@ -1,4 +1,4 @@
-//! Company connections at open (IC-952).
+//! Company connections at open (IC-952), on any device (K-1171).
 //!
 //! An organisation's private app that declares `net.connection:<name>`, and
 //! was granted it, gets that connection's credential from the hub when it
@@ -29,7 +29,7 @@ use krate_runtime::connections::{
 };
 use serde_json::Value;
 
-use crate::access;
+use crate::{Device, OrgSession};
 
 /// What the hub said about one connection.
 enum Answer {
@@ -50,7 +50,7 @@ fn agent(url: &str) -> ureq::Agent {
         .build()
 }
 
-fn ask(session: &access::OrgSession, name: &str, digest: &str) -> Answer {
+fn ask(session: &OrgSession, name: &str, digest: &str) -> Answer {
     let url = format!(
         "{}/orgs/{}/connections/{name}/credential/{digest}",
         session.hub, session.slug
@@ -120,7 +120,7 @@ fn identity_token(answer: &Value) -> Option<IdentityToken> {
 
 /// Ask the hub for a fresh identity token for this run: what the runtime
 /// calls, off the app's path, when the one it holds is nearly done.
-fn identity_refresh(session: &access::OrgSession, name: &str, digest: &str) -> IdentityRefresh {
+fn identity_refresh(session: &OrgSession, name: &str, digest: &str) -> IdentityRefresh {
     let url = format!(
         "{}/orgs/{}/connections/{name}/identity/{digest}",
         session.hub, session.slug
@@ -159,29 +159,29 @@ fn delivered(org: &str, name: &str, answer: &Value) -> Delivered {
     }
 }
 
-/// This computer's copy of the organisation's key, taken from the hub's
+/// This device's copy of the organisation's key, taken from the hub's
 /// envelope for this device (and this device doing its share of the
 /// keyring, as any member device online with an organisation's app open
 /// does), or the plain words of why it has none yet.
-fn this_computers_key(session: &access::OrgSession) -> Result<krate_orgkeys::Keyring, String> {
+fn this_devices_key<D: Device + ?Sized>(
+    device: &D,
+    session: &OrgSession,
+) -> Result<krate_orgkeys::Keyring, String> {
     use krate_orgkeys::agent::{Agent, AgentError, Status};
     let org = &session.slug;
-    let device = access::org_device_key().map_err(|err| format!("{err:#}"))?;
+    let kind = device.kind();
+    let pair = crate::org_device_key(device)?;
     let agent = Agent::new(
         &session.hub,
         org,
         session.authorization.clone(),
-        device,
-        &access::device_name(
-            crate::github_auth::current()
-                .map(|identity| crate::org::principal_of(&identity.login))
-                .as_deref(),
-        ),
+        pair,
+        &device.name(crate::me(device).as_deref()),
     );
     match agent.refresh(None) {
         Ok(Status::Holds(held)) => Ok(held.keyring),
         Ok(Status::Waiting) => Err(format!(
-            "this computer does not have {org}'s encryption key yet, and the credential is \
+            "this {kind} does not have {org}'s encryption key yet, and the credential is \
              encrypted with it. It gets it by itself the next time another member's computer \
              is online with one of {org}'s apps open; then open this app again"
         )),
@@ -194,7 +194,7 @@ fn this_computers_key(session: &access::OrgSession) -> Result<krate_orgkeys::Key
             session.hub
         )),
         Err(err) => Err(format!(
-            "this computer could not take {org}'s encryption key: {err}"
+            "this {kind} could not take {org}'s encryption key: {err}"
         )),
     }
 }
@@ -227,7 +227,8 @@ fn asked_for(manifest: &Manifest, policy: &SessionPolicy) -> Vec<String> {
 /// bundle's digest: `None` for any app that is not an organisation's
 /// private app, which never gets a connection. The access gate has already
 /// let these bytes open.
-pub fn resolve(
+pub fn resolve<D: Device + ?Sized>(
+    device: &D,
     manifest: Option<&Manifest>,
     policy: &SessionPolicy,
     private: impl FnOnce() -> Option<(String, String)>,
@@ -240,16 +241,16 @@ pub fn resolve(
         return Connections::default();
     }
     let session = private().and_then(|(slug, digest)| {
-        access::org_session(&digest)
+        crate::org_session(device, &digest)
             .filter(|s| s.slug == slug)
             .map(|session| (digest, session))
     });
     let Some((digest, session)) = session else {
         for name in &names {
-            eprintln!(
+            device.note(&format!(
                 "this app asks for the company connection {name}, which only an \
                  organisation's private app can use, so it opens without it"
-            );
+            ));
         }
         return Connections::default();
     };
@@ -257,7 +258,7 @@ pub fn resolve(
     // Taken once, the first time the hub hands over a credential.
     let mut keyring: Option<Result<krate_orgkeys::Keyring, String>> = None;
     for name in names {
-        let known = access::known_connection(&digest, &name);
+        let known = crate::known_connection(device, &digest, &name);
         let known_base = known
             .as_ref()
             .and_then(|k| k["base"].as_str().map(str::to_string));
@@ -274,7 +275,7 @@ pub fn resolve(
         match ask(&session, &name, &digest) {
             Answer::Ready(answer) => {
                 let base = answer["base"].as_str().unwrap_or_default().to_string();
-                access::remember_connection(&digest, &name, &base, &answer["allow"]);
+                crate::remember_connection(device, &digest, &name, &base, &answer["allow"]);
                 let identity = identity_token(&answer).map(|token| {
                     Identity::new(token, Some(identity_refresh(&session, &name, &digest)))
                 });
@@ -288,7 +289,7 @@ pub fn resolve(
                     state: open_credential(
                         delivered(&session.slug, &name, &answer),
                         keyring
-                            .get_or_insert_with(|| this_computers_key(&session))
+                            .get_or_insert_with(|| this_devices_key(device, &session))
                             .as_ref()
                             .map_err(Clone::clone),
                     )
@@ -297,14 +298,14 @@ pub fn resolve(
                             "the {name} connection is not available to this app, which opens \
                              without it: {why}"
                         );
-                        eprintln!("{words}");
+                        device.note(&words);
                         ConnectionState::Unavailable(words)
                     }),
                     identity,
                 });
             }
             Answer::Refused { words, base } => {
-                eprintln!("{words}");
+                device.note(&words);
                 if let Some(base) = base.or(known_base) {
                     let (methods, paths) = known_allow(&known);
                     out.push(Connection {
@@ -326,7 +327,7 @@ pub fn resolve(
                      open the app again",
                     session.hub
                 );
-                eprintln!("{words}");
+                device.note(&words);
                 if let Some(base) = known_base {
                     let (methods, paths) = known_allow(&known);
                     out.push(Connection {
@@ -342,6 +343,26 @@ pub fn resolve(
         }
     }
     Connections::new(out)
+}
+
+/// Company connections for a run: an organisation's private app granted
+/// `net.connection:<name>` gets that connection's credential, from the hub,
+/// into memory only. `digest` is the opened bytes' sha256, worked out only
+/// when the app asks for a connection. One place for every door on every
+/// device (K-1102, K-1171).
+pub fn for_run<D: Device + ?Sized>(
+    device: &D,
+    manifest: Option<&Manifest>,
+    policy: &SessionPolicy,
+    bundle: Option<&krate_bundle::OpenBundle>,
+    digest: impl FnOnce() -> Option<String>,
+) -> Connections {
+    resolve(device, manifest, policy, || {
+        let crate::Mark::Signed(slug) = crate::mark_of(bundle?) else {
+            return None;
+        };
+        Some((slug, digest()?))
+    })
 }
 
 #[cfg(test)]

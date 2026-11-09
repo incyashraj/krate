@@ -1,8 +1,8 @@
-/* The organisation pilot's last pieces (IC-948, Addendum 3 A, B, D and E,
+/* The organisation pilot's last pieces (IC-948, Addendum 3 A, B and D,
  * shapes from Addendum 4): invitation mail, the refused-attempt limit,
  * close with approval and a window, the standard export, recovery of a
- * lost owner, suspension, and Stripe billing. Mail and Stripe are stubs:
- * nothing here reaches Gmail or Stripe.
+ * lost owner, and the billing doors that answer 410 because organisations
+ * are not billed. Mail is a stub: nothing here reaches Gmail.
  *
  *   node --experimental-wasm-modules --test cloud/worker/test/org-lifecycle.test.mjs
  */
@@ -236,7 +236,7 @@ test("a sole owner closes by retyping the slug; the window keeps releases open a
   assert.ok(close.ends_at >= t0 + 30 * DAY && close.ends_at <= now() + 30 * DAY, "the default window is 30 days");
   assert.match(close.statement_digest, /^[0-9a-f]{64}$/);
   const org = (await call(env, "bob", "GET", "/orgs/acme")).body.org;
-  assert.deepStrictEqual([org.state, org.close.id, org.closed_at, org.billing_state, org.suspended], ["closing", close.id, null, "pilot", false]);
+  assert.deepStrictEqual([org.state, org.close.id, org.closed_at], ["closing", close.id, null]);
   // During the window.
   assert.strictEqual((await call(env, "dan", "GET", `/a/${x}`)).status, 200, "members keep opening releases");
   const publish = await call(env, "carol", "POST", "/orgs/acme/candidates", { bytes: fixture("candidate-v2.krate") });
@@ -359,7 +359,8 @@ test("the standard export: a versioned manifest with digests and exclusions, the
   const releaseFile = manifest.classes.find((c) => c.class === "releases").files[0];
   assert.strictEqual(await sha256Hex(files[releaseFile.path]), x, "the release's own bytes");
   assert.strictEqual(manifest.audit_chain_ok, true);
-  assert.deepStrictEqual(manifest.excluded.map((e) => e.class).slice(0, 6), ["signing keys", "tokens and sessions", "secrets", "invitation codes", "idempotency records", "billing identifiers"]);
+  assert.deepStrictEqual(manifest.excluded.map((e) => e.class).slice(0, 5), ["signing keys", "tokens and sessions", "secrets", "invitation codes", "idempotency records"]);
+  assert.ok(!manifest.excluded.some((e) => /billing|stripe/i.test(`${e.class} ${e.why}`)), "no billing identifiers: organisations are not billed");
   const everything = Object.entries(files).filter(([n]) => !n.endsWith(".krate")).map(([, b]) => new TextDecoder().decode(b)).join("\n");
   const { KEYS } = await import("./org-tools.mjs");
   for (const secret of ["krs_", "gho_", KEYS.root, "request_hash", open.body.code]) {
@@ -420,175 +421,41 @@ test("a Krate admin restores a lost owner only after 72 hours with no objection,
   assert.ok(lines.includes(`krate-support:github:support member.recover allowed ${body.json.reason}`), lines.join("\n"));
 });
 
-/* ---- D and E: suspension, billing, and states kept apart ------------- */
+/* ---- E: no billing --------------------------------------------------- */
 
-test("nothing is suspended until ORG_BILLING_ENFORCED=1; then the pilot is, and only paid services stop (R24)", async () => {
-  const env = orgEnv();
+test("organisations are not billed: every billing door answers 410 with words and touches nothing", async () => {
+  // The settings that once switched billing on change nothing now.
+  const env = orgEnv({ ORG_BILLING_ENFORCED: "1", STRIPE_SECRET_KEY: "sk_test_x", STRIPE_PRICE_ORG_SEAT: "price_seat", KRATE_ADMINS: "support" });
   await acme(env);
-  const x = await released(env);
-  assert.deepStrictEqual(
-    [(await call(env, "alice", "GET", "/orgs/acme")).body.org.billing_state, (await call(env, "alice", "GET", "/orgs/acme")).body.org.suspended],
-    ["pilot", false],
-  );
-  assert.strictEqual((await call(env, "carol", "POST", "/orgs/acme/candidates", { bytes: fixture("candidate-v2.krate") })).status, 201, "the pilot allows everything");
-  env.ORG_BILLING_ENFORCED = "1";
-  const org = (await call(env, "alice", "GET", "/orgs/acme")).body.org;
-  assert.deepStrictEqual([org.billing_state, org.suspended, org.state], ["suspended", true, "active"], "suspended is not a lifecycle state");
-  const publish = await call(env, "carol", "POST", "/orgs/acme/candidates", { bytes: fixture("root-signed.krate") });
-  assert.deepStrictEqual([publish.status, publish.body.error], [402, "org-suspended"]);
-  assert.strictEqual((await call(env, "dan", "GET", `/a/${x}`)).status, 200, "members still open existing releases");
-  assert.strictEqual((await call(env, "alice", "POST", "/orgs/acme/export")).body.export.state, "ready", "export always works");
-  // Recipients are free; a seat beyond the free three is not.
-  const rec = await call(env, "alice", "POST", "/orgs/acme/invites", { json: { github: "frank", role: "recipient" } });
-  assert.strictEqual(rec.status, 201);
-  const seat = await call(env, "alice", "POST", "/orgs/acme/invites", { json: { github: "frank", role: "developer" } });
-  assert.deepStrictEqual([seat.status, seat.body.error], [402, "org-suspended"]);
-  // A manual invoice puts it in good standing; it lifts at once.
-  const notAdmin = await call(env, "alice", "PUT", "/orgs/acme/billing/manual", { json: { reference: "INV-1", paid_until: now() + 30 * DAY } });
-  assert.strictEqual(notAdmin.body.error, "role-cannot");
-  env.KRATE_ADMINS = "support";
-  const manual = await call(env, "support", "PUT", "/orgs/acme/billing/manual", { json: { reference: "INV-1", paid_until: now() + 30 * DAY } });
-  assert.deepStrictEqual([manual.status, manual.body.billing_state], [200, "invoiced"]);
-  assert.strictEqual((await call(env, "carol", "POST", "/orgs/acme/candidates", { bytes: fixture("root-signed.krate") })).status, 201);
-  // When the paid-until date passes it is past due, and suspended again.
-  at(env, now() + 31 * DAY);
-  assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme")).body.org.billing_state, "suspended");
-  env.ORG_BILLING_ENFORCED = "";
-  assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme")).body.org.billing_state, "past-due", "past due, not suspended, until enforced");
-});
-
-test("lifecycle and billing are separate states (R17): neither moves the other", async () => {
-  const env = orgEnv({ ORG_BILLING_ENFORCED: "1", KRATE_ADMINS: "support" });
-  await acme(env);
-  const c = (await call(env, "alice", "POST", "/orgs/acme/close", { json: { confirm_slug: "acme" } })).body.close;
-  let org = (await call(env, "alice", "GET", "/orgs/acme")).body.org;
-  assert.deepStrictEqual([org.state, org.billing_state], ["closing", "suspended"]);
-  // Paying does not reopen a closing organisation...
-  await call(env, "support", "PUT", "/orgs/acme/billing/manual", { json: { reference: "INV-2", paid_until: now() + 400 * DAY } });
-  org = (await call(env, "alice", "GET", "/orgs/acme")).body.org;
-  assert.deepStrictEqual([org.state, org.billing_state, org.suspended], ["closing", "invoiced", false]);
-  // ...and cancelling the close does not touch billing.
-  await call(env, "alice", "DELETE", `/orgs/acme/close/${c.id}`);
-  org = (await call(env, "alice", "GET", "/orgs/acme")).body.org;
-  assert.deepStrictEqual([org.state, org.billing_state], ["active", "invoiced"]);
-  // A suspended organisation is not closed by it, and can still close.
-  const env2 = orgEnv({ ORG_BILLING_ENFORCED: "1" });
-  await acme(env2);
-  assert.strictEqual((await call(env2, "alice", "GET", "/orgs/acme")).body.org.state, "active");
-  assert.strictEqual((await call(env2, "alice", "POST", "/orgs/acme/close", { json: { confirm_slug: "acme" } })).status, 201);
-});
-
-/* ---- E: Stripe -------------------------------------------------------- */
-
-function fakeStripe() {
+  const before = await auditLines(env);
   const real = globalThis.fetch;
-  const calls = [];
-  let n = 0;
-  globalThis.fetch = async (input, init = {}) => {
-    const url = String((input && input.url) || input);
-    if (!url.startsWith("https://api.stripe.com/")) return real(input, init);
-    const headers = new Headers(init.headers || {});
-    const form = init.body ? Object.fromEntries(new URLSearchParams(String(init.body))) : null;
-    calls.push({ url, method: init.method || "GET", idempotency: headers.get("idempotency-key"), form });
-    if (url.endsWith("/v1/customers")) return Response.json({ id: `cus_${++n}` });
-    if (url.endsWith("/v1/checkout/sessions")) return Response.json({ id: "cs_1", url: "https://checkout.stripe.com/c/pay/cs_1" });
-    if (url.includes("/v1/invoices")) return Response.json({ data: [{ id: "in_1", created: 1, status: "paid", number: "A-1", amount_due: 4500, amount_paid: 4500, currency: "usd", hosted_invoice_url: "https://invoice.stripe.com/i/in_1" }] });
-    if (url.includes("/v1/subscriptions/")) return Response.json(calls.sub || {});
-    return Response.json({ error: { message: "unexpected" } }, { status: 400 });
+  const outside = [];
+  globalThis.fetch = async (input, init) => {
+    outside.push(String((input && input.url) || input));
+    return real(input, init);
   };
-  calls.restore = () => (globalThis.fetch = real);
-  return calls;
-}
-
-test("checkout: billing-not-open without the price; with it, the org's own customer, seats as quantity, idempotent", async () => {
-  const env = orgEnv();
-  await acme(env);
-  const closed = await call(env, "alice", "POST", "/orgs/acme/billing/checkout");
-  assert.deepStrictEqual([closed.status, closed.body.error], [503, "billing-not-open"]);
-  assert.match(closed.body.message, /yashraj@krate.tech/);
-  // Stripe set up, but no organisation price: still invoiced by hand.
-  env.STRIPE_SECRET_KEY = "sk_test_x";
-  const noPrice = await call(env, "alice", "POST", "/orgs/acme/billing/checkout");
-  assert.deepStrictEqual([noPrice.status, noPrice.body.error], [503, "billing-not-open"]);
-  assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme/billing")).body.checkout_open, false);
-  Object.assign(env, { STRIPE_SECRET_KEY: "sk_test_x", STRIPE_PRICE_ORG_SEAT: "price_seat" });
-  const stripe = fakeStripe();
   try {
-    assert.strictEqual((await call(env, "bob", "POST", "/orgs/acme/billing/checkout")).body.error, "role-cannot", "owners only");
-    const r = await call(env, "alice", "POST", "/orgs/acme/billing/checkout", { key: "chk-1" });
-    assert.deepStrictEqual(r.body, { url: "https://checkout.stripe.com/c/pay/cs_1" });
-    const [customer, session] = stripe.filter((c) => c.method === "POST");
-    assert.strictEqual(customer.idempotency, "krate-org-customer-acme");
-    assert.strictEqual(customer.form["metadata[krate_org]"], "acme");
-    assert.strictEqual(session.idempotency, "krate-org-checkout-acme-chk-1", "the request's key, through to Stripe");
-    assert.deepStrictEqual(
-      [session.form.customer, session.form["line_items[0][price]"], session.form["line_items[0][quantity]"], session.form.client_reference_id],
-      ["cus_1", "price_seat", "3", "org:acme"],
-      "seats are owners, admins, developers and reviewers; the recipient is free",
-    );
-    // Again: the same customer, not a second one.
-    await call(env, "alice", "POST", "/orgs/acme/billing/checkout", { key: "chk-2" });
-    assert.strictEqual(stripe.filter((c) => c.url.endsWith("/v1/customers")).length, 1);
-    // The billing read.
-    const read = await call(env, "alice", "GET", "/orgs/acme/billing");
-    assert.deepStrictEqual(Object.keys(read.body).sort(), ["checkout_open", "invoices", "manual", "period_end", "plan", "seats_paid", "seats_used", "state"]);
-    assert.deepStrictEqual([read.body.plan, read.body.state, read.body.seats_used, read.body.checkout_open], ["pilot", "pilot", 3, true]);
-    assert.deepStrictEqual(read.body.invoices[0], { id: "in_1", at: 1, status: "paid", number: "A-1", amount: 4500, currency: "usd", url: "https://invoice.stripe.com/i/in_1" });
-    assert.strictEqual((await call(env, "carol", "GET", "/orgs/acme/billing")).body.error, "role-cannot");
+    for (const [who, method, path] of [
+      ["alice", "GET", "/orgs/acme/billing"],
+      ["alice", "POST", "/orgs/acme/billing/checkout"],
+      ["support", "PUT", "/orgs/acme/billing/manual"],
+      ["bob", "GET", "/orgs/acme/billing/invoices"],
+    ]) {
+      const r = await call(env, who, method, path, method === "GET" ? {} : { json: { reference: "INV-1", paid_until: now() + DAY } });
+      assert.deepStrictEqual(
+        [r.status, r.body.error, r.body.message],
+        [410, "no-billing", "Krate has no paid plans. Nothing about an organisation is billed."],
+        `${method} ${path}`,
+      );
+    }
   } finally {
-    stripe.restore();
+    globalThis.fetch = real;
   }
-});
-
-async function signed(env, event) {
-  const payload = JSON.stringify(event);
-  const t = Math.floor(Date.now() / 1000);
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.STRIPE_WEBHOOK_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${t}.${payload}`));
-  const v1 = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return worker.fetch(new Request("https://hub.example/billing/webhook", { method: "POST", headers: { "stripe-signature": `t=${t},v1=${v1}` }, body: payload }), env);
-}
-
-const subscription = (over = {}) => ({
-  id: "sub_1",
-  customer: "cus_1",
-  status: "active",
-  current_period_end: now() + 30 * DAY,
-  metadata: { krate_org: "acme" },
-  items: { data: [{ quantity: 3, price: { id: "price_seat", product: "prod_seat" } }] },
-  ...over,
-});
-
-test("the webhook moves the entitlement, and fails closed on an unknown price or customer", async () => {
-  const env = orgEnv({ STRIPE_SECRET_KEY: "sk_test_x", STRIPE_PRICE_ORG_SEAT: "price_seat", STRIPE_WEBHOOK_SECRET: "whsec_x", ORG_BILLING_ENFORCED: "1", KRATE_ADMINS: "support" });
-  await acme(env);
-  const stripe = fakeStripe();
-  try {
-    await call(env, "alice", "POST", "/orgs/acme/billing/checkout", { key: "k" });
-  } finally {
-    stripe.restore();
-  }
-  const bad = await worker.fetch(new Request("https://hub.example/billing/webhook", { method: "POST", headers: { "stripe-signature": "t=1,v1=00" }, body: "{}" }), env);
-  assert.strictEqual(bad.status, 400, "unsigned events are refused");
-  // An unknown price: the org stays where it was, and the desk is told.
-  const unknown = await signed(env, { id: "evt_1", type: "customer.subscription.updated", data: { object: subscription({ items: { data: [{ quantity: 9, price: { id: "price_other" } }] } }) } });
-  assert.strictEqual(unknown.status, 200);
-  assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme")).body.org.billing_state, "suspended");
-  const alerts = await (await worker.fetch(new Request("https://hub.example/admin/org-billing-alerts", { headers: { authorization: "Bearer gho_support" } }), env)).json();
-  assert.strictEqual(alerts.length, 1);
-  assert.match(alerts[0].why, /unknown price price_other/);
-  // Somebody else's customer: refused the same way.
-  await signed(env, { id: "evt_2", type: "customer.subscription.updated", data: { object: subscription({ customer: "cus_999" }) } });
-  assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme")).body.org.billing_state, "suspended");
-  // The real thing: paid, seats recorded.
-  await signed(env, { id: "evt_3", type: "customer.subscription.updated", data: { object: subscription() } });
-  const read = (await call(env, "alice", "GET", "/orgs/acme/billing")).body;
-  assert.deepStrictEqual([read.plan, read.state, read.seats_paid], ["stripe", "paid", 3]);
-  assert.strictEqual((await call(env, "carol", "POST", "/orgs/acme/candidates", { bytes: fixture("candidate-v1.krate") })).status, 201, "suspension lifted");
-  // Deleted: no longer paid, suspended again under enforcement.
-  await signed(env, { id: "evt_4", type: "customer.subscription.deleted", data: { object: subscription({ status: "canceled" }) } });
-  assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme")).body.org.billing_state, "suspended");
-  const lines = await auditLines(env);
-  assert.ok(lines.some((l) => l.startsWith("stripe billing.update denied unknown price")));
-  assert.ok(lines.some((l) => l.startsWith("stripe billing.update allowed active 3 seats")));
+  assert.deepStrictEqual(outside.filter((u) => u.includes("stripe")), [], "nothing reaches Stripe");
+  assert.deepStrictEqual(await auditLines(env), before, "nothing is written");
+  const org = (await call(env, "alice", "GET", "/orgs/acme")).body.org;
+  assert.ok(!("billing_state" in org) && !("suspended" in org), "the organisation carries no billing state");
+  // Nothing is ever paused for payment: publishing and adding seats work.
+  assert.strictEqual((await call(env, "carol", "POST", "/orgs/acme/candidates", { bytes: fixture("candidate-v1.krate") })).status, 201);
+  assert.strictEqual((await call(env, "alice", "POST", "/orgs/acme/invites", { json: { github: "frank", role: "developer" } })).status, 201);
 });

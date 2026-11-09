@@ -95,15 +95,6 @@ const ENDPOINTS = [
     }),
   },
   {
-    name: "/founding",
-    limit: 5,
-    make: (who) => new Request("https://hub.example/founding", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...who },
-      body: JSON.stringify({ email: "someone@example.com" }),
-    }),
-  },
-  {
     name: "/makeit",
     limit: 5,
     make: (who) => new Request("https://hub.example/makeit", {

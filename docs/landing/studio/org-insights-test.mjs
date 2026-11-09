@@ -54,7 +54,6 @@ function orgPart({ apps = 2, inactive = null, devices = null } = {}) {
       audit_export: null,
     },
     releases: { approved_month: 2, median_wait_seconds: 7200, approvals_counted: 3, waiting: 1, oldest_waiting_since: NOW - 3 * DAY, withdrawn_month: 1, rollbacks_month: 1 },
-    cost: { plan: "stripe", state: "paid", seats_used: 5, seats_paid: 10, free_seats: 3, active_month: 4 },
   };
 }
 const devPart = (masked) => ({
@@ -93,7 +92,6 @@ function routes(role, insights, extra = {}) {
   return {
     "GET /orgs/acme": () => [200, { org: { ...ACME, created_at: NOW - 120 * DAY, state: "active" }, me, members: role === "recipient" ? [me] : people }],
     "GET /orgs/acme/insights": () => (typeof insights === "function" ? insights() : [200, insights]),
-    "GET /orgs/acme/billing": () => [200, { plan: "stripe", invoices: [{ id: "in_1", at: NOW - 5 * DAY, status: "paid", amount: 5000, currency: "usd" }] }],
     ...extra,
   };
 }
@@ -115,7 +113,7 @@ const linkTo = (root, tab) => root.all((n) => n.tagName === "A" && n.className =
   const p = await open("owner", body("owner"));
   const s = shown(p);
   check(/Insights Is Acme getting value from its apps, and is it safe\? Counts only: Krate never sees what anyone does inside an app\./.test(s), "the tab says what it is for, and what Krate never sees");
-  check(cardsOf(p).map((c) => c.attrs.id).join(",") === "ins-adoption,ins-people,ins-security,ins-releases,ins-cost,ins-app-0,ins-g-reviewer,ins-g-yours", "the owner reads the organisation's five cards, their app, approvals and their own");
+  check(cardsOf(p).map((c) => c.attrs.id).join(",") === "ins-adoption,ins-people,ins-security,ins-releases,ins-app-0,ins-g-reviewer,ins-g-yours", "the owner reads the organisation's four cards, their app, approvals and their own");
   check(/Active in the last 7 days 3 of 9 people in Acme who opened one of its apps Invite your team/.test(s), "a number, what it means, where to act");
   check(/Active in the last 30 days 4 of 9 5 people have not opened one in a month See who has not/.test(s), "and the month, with who has not");
   check(/Apps in use 1 of 2 apps someone opened in the last 30 days See every app/.test(s), "apps in use");
@@ -148,10 +146,10 @@ const linkTo = (root, tab) => root.all((n) => n.tagName === "A" && n.className =
   check(/Refused in the last 7 days 3 attempts the hub said no to; about 0 a week before/.test(s) && /Not a member 2 times/.test(s) && /It was withdrawn 1 time/.test(s), "refusals this week, by reason, in words");
   check(/Expenses 1\.0\.0 Withdrawn .* 1 person can still open it offline until/.test(s), "a withdrawn release still held offline, until when");
   check(/Company directory Needs a look Last synced 2 hours ago · this week 2 worked, 1 failed/.test(s), "directory sync health");
-  // Releases and cost.
+  // Releases; organisations are not billed, so there is no cost card.
   check(/Typical wait, last 90 days 2 hours the middle of the last 3 approvals/.test(s) && /Waiting now 1 the oldest for 3 days Review them/.test(s), "release waits");
   check(/Taken back, last 30 days 1 withdrawn and 1 rollback to an older version/.test(s), "withdrawals and rollbacks");
-  check(/Seats in use 5 of 10 paid/.test(s) && /Cost per active person \$12\.50 the invoice of .*, \$50\.00, over the 4 people who opened an app in 30 days/.test(s), "seats, and the last invoice per active person");
+  check(!/Cost|Seats in use|paid|invoice|billing|[$€£]/i.test(s) && p.sent.every((x) => !/\/billing/.test(x.key)), "no cost card, no seats paid, no invoice, and nothing asks the hub about billing");
   // An owner reads exact counts in their own app.
   check(/Expenses Version 1\.0\.1 opens now\. How is it doing\?/.test(s) && /1\.0\.0 1 person still on it/.test(s), "the owner's own app, exact counts");
   check(/Rota 1\.1\.0 Asks for more Waiting 2 days · sent by @frank · New: it can use the camera/.test(s), "the queue, who sent it (an owner sees names) and what it newly asks for");
@@ -222,7 +220,7 @@ const linkTo = (root, tab) => root.all((n) => n.tagName === "A" && n.className =
   check(!/sent by/.test(s), "and not who sent it");
   check(/Approved by you, last 30 days 2 of 2 approvals in Acme/.test(s), "what they approved this month");
   const a = await open("admin", body("admin"));
-  check(cardsOf(a).map((c) => c.attrs.id).join(",") === "ins-adoption,ins-people,ins-security,ins-releases,ins-cost,ins-g-yours", "an admin reads the organisation and their own");
+  check(cardsOf(a).map((c) => c.attrs.id).join(",") === "ins-adoption,ins-people,ins-security,ins-releases,ins-g-yours", "an admin reads the organisation and their own");
   // A member's console is their apps: no Insights section (their own
   // computers and apps are on My apps).
   const d = await open("recipient", body("recipient"));

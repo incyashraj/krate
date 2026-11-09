@@ -118,9 +118,16 @@ architecture check, test execution, and final audit without cuts.
 
 ## Current evidence status
 
-The official MarkText 0.17.1 artifacts and the local 37,489-byte Krate bundle
-have been independently hashed. The historical 271 MiB installed figure matches
-MarkText's **x86_64** macOS package. The ARM64 package is approximately 284.6
-MiB, so a new M4 performance run must use and report the ARM64 package. The old
-performance table should remain labelled “historical internal measurement” until
-this kit has produced and retained a clean raw run.
+The ARM64 run on an Apple M4 on 25 August 2026,
+[`runs/20260825T085644Z/`](runs/20260825T085644Z/analysis.md), passed
+`scripts/audit.py` ([`audit.txt`](runs/20260825T085644Z/audit.txt): PASS)
+and is the source of every figure in the repository README and in
+`evidence/claims/performance.json`. The repository carries its analysis, audit,
+seal and a public machine summary. The raw samples stay on the measuring Mac
+because they carry local paths and the machine's name; each of the 274 files
+in the run is listed by SHA-256 in
+[`seal.sha256`](runs/20260825T085644Z/seal.sha256).
+
+The 271 MiB figure in the older lab notes one directory up is MarkText's
+**x86_64** package and is superseded by this run's ARM64 measurement
+(284.6 MiB).

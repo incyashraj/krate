@@ -1604,6 +1604,16 @@ fn is_port_unverified(code: Option<i32>, was_stopped: bool, file_exists: bool) -
     code == Some(7) && !was_stopped && file_exists
 }
 
+/// A stopped port's closing line, "Blocked on <requirement>: <what>.
+/// Workspace: <path>", when the run printed one.
+fn blocked_port_line(lines: &[String]) -> Option<&str> {
+    lines
+        .iter()
+        .rev()
+        .map(|line| line.trim())
+        .find(|line| line.starts_with("Blocked on ") && line.contains(" Workspace: "))
+}
+
 /// The reason, from what the engine printed: its verdict line, then each
 /// "asked for:" / "but" line with the spacing collapsed. None when nothing
 /// recognisable was said, so the card falls back to the one-line verdict.
@@ -2374,6 +2384,16 @@ fn run_author(
         let mut why = err_lines.join("\n");
         if why.trim().is_empty() {
             why = tail.join("\n");
+        }
+        // A port that stopped names what stopped it on its last stdout line
+        // ("Blocked on <requirement>: ...", exit 8, IC-120), and stderr only
+        // has the error around it; the card reads the line to say it in
+        // words (K-1237).
+        if let Some(blocked) = blocked_port_line(&tail) {
+            if !why.contains(blocked) {
+                why.push('\n');
+                why.push_str(blocked);
+            }
         }
         return Err(why);
     }
@@ -6435,6 +6455,32 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    /// A stopped port's closing line reaches the failure card (K-1237): it is
+    /// on stdout, and the card is given stderr.
+    #[test]
+    fn a_blocked_ports_closing_line_is_found_in_its_output() {
+        let tail: Vec<String> = [
+            "==> comparing with the original on 2 recorded case(s)",
+            "",
+            "Blocked on primary-task: case `t` printed \"a\" where the original printed \"b\". Workspace: /w",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            super::blocked_port_line(&tail),
+            Some("Blocked on primary-task: case `t` printed \"a\" where the original printed \"b\". Workspace: /w")
+        );
+        let built = vec!["Ported: /a.krate -- it matched. Workspace: /w".to_string()];
+        assert_eq!(super::blocked_port_line(&built), None);
+        let chat = vec!["Blocked on the weather today".to_string()];
+        assert_eq!(
+            super::blocked_port_line(&chat),
+            None,
+            "only the engine's own line"
+        );
+    }
+
     /// The Files and Code tabs read a .krate as it is: every entry listed,
     /// source files carried as text, and nothing that is not UTF-8 or is
     /// over the limit passed off as text.

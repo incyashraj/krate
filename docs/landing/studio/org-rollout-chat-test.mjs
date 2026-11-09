@@ -160,7 +160,7 @@ const rowOf = (p, text) => p.el("pane").querySelectorAll(".rw").find((r) => r.qu
 
 /* ---- Slack and Teams ----------------------------------------------------- */
 const org = (me) => ({
-  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, suspended: false, billing_state: "pilot", recovery: null }, me: people.find((m) => m.principal === me), members: people }],
+  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, recovery: null }, me: people.find((m) => m.principal === me), members: people }],
   "GET /orgs/acme/exports": () => [200, []],
   "GET /orgs/acme/sso": () => [200, null],
   "GET /orgs/acme/scim": () => [404, null],
@@ -276,7 +276,7 @@ const HOOK = { id: "a1b2c3d4e5f6", service: "slack", host: "hooks.slack.com", la
     devices: [dev("Old PC", { identified: false }), dev("Mac", { last_seen: 1755000000, silent: true })],
     refusals: { week: [], week_total: 0, weekly_average_before: 0, spike: false }, withdrawn_offline: [], sign_in: {}, directory: null, audit_export: null,
   };
-  const insightsBody = { sections: ["org"], names: true, now: 1760000000, org: { adoption: { members: 1, active_week: 0, active_month: 0, daily: [], trend: [], apps: 0, apps_used: 0, top: [], unused: [], joined_not_opened: 0 }, people: { by_role: {}, by_sign_in: {}, inactive: [], invites: [], company_sign_in: null, without_company_sign_in: [] }, security: sec, releases: { approved_month: 0, median_wait_seconds: null, approvals_counted: 0, waiting: 0, oldest_waiting_since: null, withdrawn_month: 0, rollbacks_month: 0 }, cost: { plan: "pilot", state: "pilot", seats_used: 1, seats_paid: null, free_seats: 3, active_month: 0 } } };
+  const insightsBody = { sections: ["org"], names: true, now: 1760000000, org: { adoption: { members: 1, active_week: 0, active_month: 0, daily: [], trend: [], apps: 0, apps_used: 0, top: [], unused: [], joined_not_opened: 0 }, people: { by_role: {}, by_sign_in: {}, inactive: [], invites: [], company_sign_in: null, without_company_sign_in: [] }, security: sec, releases: { approved_month: 0, median_wait_seconds: null, approvals_counted: 0, waiting: 0, oldest_waiting_since: null, withdrawn_month: 0, rollbacks_month: 0 } } };
   const q = await page("https://krate.tech/org/?o=acme&tab=insights", DASH, { token: "t", routes: { ...orgRoutes(ALICE), "GET /orgs/acme/insights": () => [200, insightsBody] } });
   const shown = t(q.el("pane").shown);
   check(/Old PC Not identified/.test(shown) && /its Krate is older and does not say when it checks in, so update Krate there to see it here/.test(shown), "K-1115: a computer that never said which it is reads Not identified, with what to do");

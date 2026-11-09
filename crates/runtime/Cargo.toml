@@ -52,6 +52,9 @@ krate-orgkeys = { path = "../orgkeys", features = ["agent"] }
 # The device's copy of the team data, with sealing (the wasm32 build below
 # takes it without: a tab's runtime never syncs).
 krate-orgdata = { path = "../orgdata" }
+# A signed-in person's store.kv on every device they have (IC-981): the
+# merge, the sealing and the hub protocol.
+krate-accountsync = { path = "../accountsync", features = ["agent"] }
 # SQLite itself, for store.sql (crates/appsql's `engine`).
 krate-appsql = { path = "../appsql" }
 cpal = "0.18.1"
@@ -170,6 +173,13 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 dispatch2 = { version = "0.3.0", default-features = false, features = ["std", "objc2"] }
 # The completion block macOS calls with the person's answer to the camera prompt.
 block2 = "0.6.2"
+
+# The Pictures folder a photos.add app adds to on Windows and Linux
+# (IC-982), as each system names it (KnownFolder, XDG user dirs). Already
+# built for every desktop under wasmtime's cache, so a direct edge, not new
+# surface.
+[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+directories-next = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 krate-adapter-windows = { path = "../adapter-windows" }

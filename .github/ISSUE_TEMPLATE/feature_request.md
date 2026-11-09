@@ -21,7 +21,8 @@ Other ways to solve this; why this approach is better.
 
 ## Platforms and required capabilities
 
-Which of macOS, Windows and Linux do you need? Mention relevant requirements
+Which of macOS, Windows, Linux, a browser tab, Android or iPhone do you
+need? Mention relevant requirements
 such as files, networking, UI, media or device access. The
 [current capability reference](https://krate.tech/docs/limits.html) may help.
 

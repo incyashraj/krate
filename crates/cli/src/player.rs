@@ -214,6 +214,12 @@ fn player_plist(icons: bool) -> String {
     <string>Krate adds a picture to your Photos only when an app asks and you allow it.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Krate turns speech into text only for apps that ask, with Apple's recognizer on this Mac where it can.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Krate tells an app where you are only when it asks, you allow it, and only while it is open.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>Krate tells an app where you are only when it asks, you allow it, and only while it is open.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Krate lets an app reach a Bluetooth device only when it asks, you allow it, and only the device you pick.</string>
 {app_icon}    <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -436,5 +442,24 @@ mod tests {
         assert!(!newer("0.5.4", "0.5.4"));
         assert!(!newer("0.5.4-rc1", "0.5.4"));
         assert!(newer("1.0.0", "0.9.99"));
+    }
+
+    /// Every sentence macOS needs before an app may reach a camera, a
+    /// microphone, Photos, its location or a Bluetooth device (IC-982). A
+    /// missing one is a killed process (camera, Bluetooth) or a prompt that
+    /// never shows (location), so the Player written by a gift and the one
+    /// the release script builds must both carry all of them.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn both_players_say_why_for_every_piece_of_hardware() {
+        let script = include_str!("../../../scripts/make-macos-app.sh");
+        for plist in [player_plist(false), script.to_string()] {
+            for key in crate::HARDWARE_USAGE_KEYS {
+                assert!(
+                    plist.contains(&format!("<key>{key}</key>")),
+                    "missing {key} in a Player Info.plist"
+                );
+            }
+        }
     }
 }

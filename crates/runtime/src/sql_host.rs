@@ -68,7 +68,13 @@ impl AppDatabase {
             }
             let connection =
                 Connection::open(&self.path).map_err(|e| SqlError::Io(e.to_string()))?;
-            krate_appsql::prepare_connection(&connection, "PRAGMA journal_mode = WAL;")?;
+            // Sync (IC-981 S4) reads and writes the same file through a
+            // connection of its own: the app's waits its turn for a moment
+            // rather than failing with "database is locked".
+            krate_appsql::prepare_connection(
+                &connection,
+                "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;",
+            )?;
             self.connection = Some(connection);
         }
         Ok(self.connection.as_ref().expect("connection"))

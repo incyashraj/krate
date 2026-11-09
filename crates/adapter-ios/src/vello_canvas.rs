@@ -31,7 +31,6 @@ pub struct GpuCanvas {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
-    surface_format: wgpu::TextureFormat,
     surface_config: wgpu::SurfaceConfiguration,
     /// The layer's contents scale: the 2x cap, or the panel's full scale
     /// while the frames are whole pictures.
@@ -161,7 +160,6 @@ impl GpuCanvas {
             device,
             queue,
             surface,
-            surface_format,
             surface_config,
             layer_scale: scale,
             renderer,
@@ -859,7 +857,7 @@ impl GpuCanvas {
                         .glyphs()
                         .map(|g| {
                             let glyph = vello::Glyph {
-                                id: g.id as u32,
+                                id: g.id,
                                 x: x + g.x,
                                 y: baseline - shift + g.y,
                             };
@@ -1107,7 +1105,13 @@ pub(crate) fn whole_frame_picture(
         None => (list.logical_width as f32, list.logical_height as f32),
         Some((dw, dh)) => {
             let (sw, sh) = (list.logical_width as f32, list.logical_height as f32);
-            if dw <= 0.0 || dh <= 0.0 || ((dw / dh) / (sw / sh) - 1.0).abs() > 0.01 {
+            // Fitted inside covered edges, a design no longer covers the
+            // whole frame, so its picture cannot stand for the frame.
+            if dw <= 0.0
+                || dh <= 0.0
+                || ((dw / dh) / (sw / sh) - 1.0).abs() > 0.01
+                || list.design_inset != (0.0, 0.0, 0.0, 0.0)
+            {
                 return None;
             }
             (dw, dh)

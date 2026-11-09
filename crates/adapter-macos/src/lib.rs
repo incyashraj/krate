@@ -8,8 +8,12 @@ mod accessibility;
 #[cfg(target_os = "macos")]
 mod appearance;
 mod appkit;
+#[cfg(target_os = "macos")]
+mod bluetooth;
 mod clipboard;
 mod consent;
+#[cfg(target_os = "macos")]
+mod location;
 mod open_document;
 #[cfg(target_os = "macos")]
 mod reminders;
@@ -579,6 +583,83 @@ impl UiAdapter for MacosUiAdapter {
     fn reminder_pending(&self) -> Vec<String> {
         reminders::pending()
     }
+
+    #[cfg(target_os = "macos")]
+    /// Where the Mac is: CoreLocation, as on the iPhone (IC-982).
+    fn location_available(&self) -> bool {
+        location::available()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn location(&self) -> krate_adapter_common::ui::LocationAnswer {
+        location::read()
+    }
+
+    #[cfg(target_os = "macos")]
+    /// Bluetooth LE: CoreBluetooth, as on the iPhone (IC-982).
+    fn bluetooth_available(&self) -> bool {
+        bluetooth::available()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bluetooth_choose(
+        &self,
+        _window: WindowId,
+        service: &str,
+        title: &str,
+    ) -> Result<Option<krate_adapter_common::ui::BtDevice>, krate_adapter_common::ui::BtError> {
+        bluetooth::choose(service, title)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bluetooth_read(
+        &self,
+        device: u64,
+        service: &str,
+        characteristic: &str,
+    ) -> Result<Vec<u8>, krate_adapter_common::ui::BtError> {
+        bluetooth::read(device, service, characteristic)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bluetooth_write(
+        &self,
+        device: u64,
+        service: &str,
+        characteristic: &str,
+        data: &[u8],
+        with_response: bool,
+    ) -> Result<(), krate_adapter_common::ui::BtError> {
+        bluetooth::write(device, service, characteristic, data, with_response)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bluetooth_subscribe(
+        &self,
+        device: u64,
+        service: &str,
+        characteristic: &str,
+    ) -> Result<(), krate_adapter_common::ui::BtError> {
+        bluetooth::subscribe(device, service, characteristic)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bluetooth_notifications(
+        &self,
+        device: u64,
+    ) -> Vec<krate_adapter_common::ui::BtNotification> {
+        bluetooth::notifications(device)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bluetooth_connected(&self, device: u64) -> bool {
+        bluetooth::connected(device)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn bluetooth_disconnect(&self, device: u64) {
+        bluetooth::disconnect(device)
+    }
 }
 
 impl UiAdapter for MacosAppKitPrototypeUiAdapter {
@@ -751,6 +832,74 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
 
     fn appearance(&self) -> krate_adapter_common::ui::Appearance {
         self.headless.appearance()
+    }
+
+    fn location_available(&self) -> bool {
+        self.headless.location_available()
+    }
+
+    fn location(&self) -> krate_adapter_common::ui::LocationAnswer {
+        self.headless.location()
+    }
+
+    fn bluetooth_available(&self) -> bool {
+        self.headless.bluetooth_available()
+    }
+
+    fn bluetooth_choose(
+        &self,
+        window: WindowId,
+        service: &str,
+        title: &str,
+    ) -> Result<Option<krate_adapter_common::ui::BtDevice>, krate_adapter_common::ui::BtError> {
+        self.headless.bluetooth_choose(window, service, title)
+    }
+
+    fn bluetooth_read(
+        &self,
+        device: u64,
+        service: &str,
+        characteristic: &str,
+    ) -> Result<Vec<u8>, krate_adapter_common::ui::BtError> {
+        self.headless
+            .bluetooth_read(device, service, characteristic)
+    }
+
+    fn bluetooth_write(
+        &self,
+        device: u64,
+        service: &str,
+        characteristic: &str,
+        data: &[u8],
+        with_response: bool,
+    ) -> Result<(), krate_adapter_common::ui::BtError> {
+        self.headless
+            .bluetooth_write(device, service, characteristic, data, with_response)
+    }
+
+    fn bluetooth_subscribe(
+        &self,
+        device: u64,
+        service: &str,
+        characteristic: &str,
+    ) -> Result<(), krate_adapter_common::ui::BtError> {
+        self.headless
+            .bluetooth_subscribe(device, service, characteristic)
+    }
+
+    fn bluetooth_notifications(
+        &self,
+        device: u64,
+    ) -> Vec<krate_adapter_common::ui::BtNotification> {
+        self.headless.bluetooth_notifications(device)
+    }
+
+    fn bluetooth_connected(&self, device: u64) -> bool {
+        self.headless.bluetooth_connected(device)
+    }
+
+    fn bluetooth_disconnect(&self, device: u64) {
+        self.headless.bluetooth_disconnect(device)
     }
 
     #[cfg(target_os = "macos")]

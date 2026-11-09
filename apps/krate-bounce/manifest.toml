@@ -19,3 +19,8 @@ required = true
 cap = "io.args"
 rationale = "Read the quick-run argument used by automated verification"
 required = true
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Remember your best score, on every device you sign in on"
+required = false

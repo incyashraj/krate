@@ -30,6 +30,10 @@
 // store -- never in KV -- and each event mailed once. Nothing is mailed
 // when the hub has no mail set up, and a mail that fails changes nothing.
 // Nothing about mail is audited.
+//
+// These count as ESSENTIAL for the account-wide switch (mail-prefs.js):
+// they are the person's work in a team they joined, and each kind already
+// has its own switch here, named at the foot of every one of these mails.
 import { Org, extendOrg, allows, displayOf } from "./org.js";
 import { gmail, addressFor, mailReady } from "./org-mail.js";
 // The same moments post to the organisation's Slack and Teams channels.

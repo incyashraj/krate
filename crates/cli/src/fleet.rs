@@ -1057,12 +1057,7 @@ fn app_id_shape(id: &str) -> bool {
 
 /// An organisation's short name, as the hub allows it (org.js SLUG).
 pub(crate) fn org_slug(slug: &str) -> bool {
-    let bytes = slug.as_bytes();
-    (2..=39).contains(&bytes.len())
-        && bytes[0].is_ascii_lowercase()
-        && bytes
-            .iter()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+    krate_orgaccess::is_org_slug(slug)
 }
 
 /// The organisation this computer's policy names (`[org] slug`): its apps

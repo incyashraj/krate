@@ -32,14 +32,16 @@ const MAX_REPORT_BYTES = 12 * 1024 * 1024;
 // is re-read on every call because it can grow.
 import * as validatorImport from "./validator.wasm";
 import { Org, SLUG, EMAIL, chainOk, messageFor } from "./org.js";
-// Organisation lifecycle, billing, mail and the refused-attempt limit
+// Organisation lifecycle, mail and the refused-attempt limit
 // (IC-948), each in its own module; importing the store's half registers
 // its commands with the Org class.
 import "./org-lifecycle-store.js";
 import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
-import { orgBillingRoute, orgBillingEvent, orgBillingAlerts } from "./org-billing.js";
+import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
+import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
+import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
@@ -74,7 +76,7 @@ import { orgLiveRoute } from "./org-data-live.js";
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
 // serves it behind /a/'s own checks, and the cross-origin-isolated page.
-import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
+import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, webPackKey, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
 // The receive loop (F-320): the link card, the open counted per person, a
 // stranger's report (receive.js).
 import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState, newerVersionLine } from "./receive.js";
@@ -96,7 +98,14 @@ import { orgChatRoute, chatSweep } from "./org-chat.js";
 // whose approving and candidates list they wrap.
 import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
-import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, sessionId, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+// Deleting an account, and its export (K-1245).
+import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./account-delete.js";
+// A signed-in person's own app data on every device (IC-981), kept in one
+// SQLite-backed Durable Object per account; wrangler.toml binds it as
+// SYNC_ACCOUNTS.
+import { accountSyncRoute, SyncAccount } from "./account-sync.js";
+export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -255,9 +264,13 @@ const RATE_LIMITS = {
   "lines/current": 30,
   "share/new": 10,
   usage: 60,
-  founding: 5,
   makeit: 5,
   "support/new": 5,
+  // A person's whole export reads everything the hub keeps about them;
+  // deleting reads and removes it. Nobody needs either more than a few
+  // times a minute (K-1245).
+  "me/export": 5,
+  "me/delete": 60,
   // Requests with no session to an organisation's routes or private
   // links (IC-946). They never reach the organisation's store -- so they
   // cannot grow its audit -- and this bounds what they cost. A person
@@ -404,8 +417,13 @@ export default {
       // Only while the automatic welcome is switched on; the founder writes
       // them himself otherwise, from the desk.
       if (env.WELCOME_AUTO === "1") await sendDueWelcomes(env);
+      // An announcement larger than one run, or than the day's mail,
+      // carries on here (mail-announce.js). One KV read when none waits.
+      await runQueuedAnnouncements(env).catch((e) => console.error(`queued announcement: ${e}`));
       return;
     }
+    // An account deletion a request left part-way (account-delete.js).
+    await resumeAccountDeletions(env, accountDeleteDeps()).catch((e) => console.error(`account deletions: ${e}`));
     await runScrub(env, { repair: false });
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
@@ -445,10 +463,6 @@ export default {
       }
       if (request.method === "POST" && pathname === "/admin/scrub") {
         return cors(await scrubRoute(request, env, true));
-      }
-      if (request.method === "GET" && pathname === "/admin/org-billing-alerts") {
-        if (!(await isAdmin(request, env))) return cors(text("not found", 404));
-        return cors(json(await orgBillingAlerts(env)));
       }
       if (request.method === "GET" && pathname === "/admin/scrub/last") {
         return cors(await lastScrub(request, env));
@@ -540,13 +554,10 @@ export default {
       if (request.method === "POST" && pathname === "/auth/poll") {
         return cors(await authPoll(request, env));
       }
-      if (request.method === "POST" && pathname === "/founding") {
-        // The founding 200: an email and a timestamp, nothing else. No
-        // checkout here -- this is the list that gets the $79/yr lock when
-        // Studio leaves preview.
-        const over = await rateLimited(request, env, "founding");
-        if (over) return cors(over);
-        return cors(await founding(request, env));
+      if (pathname === "/founding") {
+        // The founding-200 list was a waiting list for a paid plan. Krate
+        // has no paid plans (F-322), so the door is closed, in words.
+        return cors(noPaidPlans());
       }
       if (request.method === "POST" && pathname === "/makeit") {
         // A failed build, sent to us. Studio used to offer this as "a
@@ -682,18 +693,12 @@ export default {
       if (request.method === "GET" && pathname === "/admin/reports") {
         return cors(await listReports(request, env));
       }
-      // ---- billing: the paid plan, end to end -------------------------
-      if (request.method === "GET" && pathname === "/billing/config") {
-        return cors(await billingConfig(env));
-      }
-      if (request.method === "POST" && pathname === "/billing/checkout") {
-        return cors(await billingCheckout(request, env));
-      }
-      if (request.method === "POST" && pathname === "/billing/webhook") {
-        return await billingWebhook(request, env);
-      }
-      if (request.method === "GET" && pathname === "/billing/status") {
-        return cors(await billingStatus(request, env));
+      // ---- billing: there is none (F-322) -----------------------------
+      // Krate has no paid plans. Every /billing/ door -- config, checkout,
+      // status, portal and the Stripe webhook -- answers 410 in words, so
+      // an old Studio or a stale link meets a sentence, not a payment page.
+      if (pathname === "/billing" || pathname.startsWith("/billing/")) {
+        return cors(noPaidPlans());
       }
       // ---- the free-tier device counter -------------------------------
       // The three-a-month wall is device-bound. The device keeps its own
@@ -733,6 +738,10 @@ export default {
       if (request.method === "POST" && pathname === "/keys/forget") {
         return cors(await forgetKey(request, env));
       }
+      if (request.method === "POST" && pathname === "/sign/web-build") {
+        // NOT cors(), as /keys/use: the build service's door only.
+        return signWebBuild(request, env);
+      }
       if (request.method === "POST" && pathname === "/keys/use") {
         // NOT cors(): only the build service calls this, server to server.
         // Without the header a browser cannot read the answer, so a script
@@ -748,6 +757,24 @@ export default {
       }
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
+      }
+      // Delete my account, and download my data (account-delete.js).
+      if (pathname === "/me/delete" || pathname === "/me/export") {
+        const over = await rateLimited(request, env, pathname.slice(1));
+        if (over) return cors(over);
+        const res = await accountDeleteRoute(request, url, env, accountDeleteDeps());
+        if (res) return cors(res);
+      }
+      // Krate's non-essential mail: the person's own switch, and the
+      // one-click way out that every such mail links to (mail-prefs.js).
+      if ((request.method === "GET" || request.method === "PUT") && pathname === "/me/mail") {
+        return cors(await meMailRoute(request, env, authedUser));
+      }
+      if ((request.method === "GET" || request.method === "POST") && pathname === "/mail/unsubscribe") {
+        return await unsubscribeRoute(request, url, env);
+      }
+      if (request.method === "POST" && pathname === "/admin/mail/announce") {
+        return await announceRoute(request, env, { isAdmin });
       }
       if (request.method === "POST" && pathname === "/me/onboarded") {
         return cors(await markAccountOnboarded(request, env));
@@ -773,9 +800,6 @@ export default {
       }
       if (request.method === "POST" && pathname === "/referral/claim") {
         return cors(await referralClaim(request, env));
-      }
-      if (request.method === "POST" && pathname === "/billing/portal") {
-        return cors(await billingPortal(request, env));
       }
       // ---- support: tickets with real conversations -------------------
       if (request.method === "POST" && pathname === "/support/new") {
@@ -883,6 +907,12 @@ export default {
       // Signed-in sessions: list them, sign one out, sign out the others.
       if (pathname.startsWith("/account/sessions")) {
         const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
+        if (res) return cors(res);
+      }
+      // An app's own data on every device a person signs in on (IC-981,
+      // account-sync.js): end-to-end sealed, the hub holds ciphertext only.
+      if (pathname === "/account/sync" || pathname.startsWith("/account/sync/")) {
+        const res = await accountSyncRoute(request, url, env, { authedUser });
         if (res) return cors(res);
       }
       // A live team-data socket (org-data-live.js): handed to the
@@ -1532,6 +1562,9 @@ async function putReport(request, env) {
   const meta = {
     id,
     from: identity ? identity.login : "anonymous",
+    // Whose it is, as a principal nobody can choose (K-1085): what account
+    // deletion finds it by (K-1245). `from` is display only.
+    ...(identity && ownerOf(identity) ? { owner: ownerOf(identity) } : {}),
     name: identity ? identity.name || identity.login : "anonymous",
     session: header(request, "x-krate-session") || "",
     krate: header(request, "x-krate-version") || "",
@@ -1586,9 +1619,10 @@ async function getReport(request, id, env) {
   });
 }
 
-/// Take an app off the gallery. Only its author can; the bundle and every
-/// link already shared keep working -- unpublishing removes the listing,
-/// not the content people were sent.
+/// Take an app down. Only its author can. The listing, the bytes at this
+/// address, its screenshot, icon and short links all go; the app's own link
+/// (/a/v...) falls back to its newest earlier version, and is removed with
+/// the last one.
 async function unpublish(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
@@ -1616,6 +1650,8 @@ async function unpublish(request, hash, env) {
   await env.BUNDLES.delete(hash);
   await env.BUNDLES.delete(`shot:${hash}`);
   await env.BUNDLES.delete(`icon:${hash}`);
+  // The tab Player's copy, made the first time someone opened it in a tab.
+  await env.BUNDLES.delete(webPackKey(hash));
   // The alias is keyed by prefix, so clear every prefix length a short link
   // could have used.
   for (let length = 8; length <= 32; length += 1) {
@@ -2201,6 +2237,17 @@ async function fetchBundle(request, url, hash, env) {
   // the person nothing, sorts meaninglessly in a downloads folder, and looks
   // like something went wrong -- the app already knows what it is called.
   const meta = await env.APPS.get(`app:${hash}`);
+  // Whose app this is, as the hub knows it from the publisher's sign-in:
+  // the tag the tab keys storage by (K-1159), sent with the bytes too, so a
+  // computer or a phone opening the link keys an unsigned app's data by
+  // its publisher as the tab does (K-1172). Fixed per hash, like the bytes.
+  let storeTag = null;
+  try {
+    const raw = meta || (await env.APPS.get(`owner:${hash}`));
+    storeTag = await storeTagOf(raw ? ownerOfRecord(JSON.parse(raw)) : null);
+  } catch (_) {
+    // A bad record must not stop the download; the app keys by its id.
+  }
   let filename = `${hash.slice(0, 12)}.krate`;
   if (meta) {
     try {
@@ -2228,6 +2275,7 @@ async function fetchBundle(request, url, hash, env) {
     // tier, so `krate run` knows to save a big app to a file first.
     "content-length": String(object.size),
     ...(big ? { "x-krate-tier": "big" } : {}),
+    ...(storeTag ? { "x-krate-store": storeTag } : {}),
   };
   if (request.method === "HEAD") {
     // The size is the one thing a HEAD is usually asked for, and the
@@ -2303,25 +2351,6 @@ async function mobileLanding(hash, env, via = "-") {
       vary: "accept, user-agent",
     },
   });
-}
-
-async function founding(request, env) {
-  let email = "";
-  try {
-    const body = await request.json();
-    email = String(body.email || "").trim().toLowerCase();
-  } catch (_) {
-    return text("bad request", 400);
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254) {
-    return text("that does not look like an email address", 400);
-  }
-  const key = `founding:${email}`;
-  const existing = await env.APPS.get(key);
-  if (!existing) {
-    await env.APPS.put(key, JSON.stringify({ at: Math.floor(Date.now() / 1000) }));
-  }
-  return json({ ok: true });
 }
 
 async function makeit(request, env) {
@@ -3246,6 +3275,8 @@ function founderInboxes(env) {
 
 /// The moment an account is made: who, how, when, and the welcome ready
 /// to send. Plain text so it reads at a glance on a phone.
+///
+/// ESSENTIAL (to the founder only, never a user): no unsubscribe switch.
 async function notifyFounderOfSignup(env, user) {
   if (!env.RESEND_API_KEY) return;
   const who = user.name || user.login || user.email || "Someone";
@@ -3285,6 +3316,10 @@ async function notifyFounderOfSignup(env, user) {
 
 /// Send one welcome; null when it went, else why not.
 ///
+/// NON-ESSENTIAL (mail-prefs.js): nobody asked for it, so it ends with the
+/// unsubscribe line and carries the one-click headers, and an account that
+/// turned Krate's emails off is never sent one (sendDueWelcomes asks).
+///
 /// Through Gmail itself when the founder's app password is set
 /// (GMAIL_APP_PASSWORD): From his own Gmail, Cc his krate.tech address.
 /// Sent through Resend, the same note was filed under Promotions -- the
@@ -3293,7 +3328,9 @@ async function notifyFounderOfSignup(env, user) {
 /// Otherwise through Resend, from his krate.tech address (it cannot claim
 /// the Gmail address: Gmail's DMARC policy is reject).
 async function sendWelcome(env, user) {
-  const text = welcomeText(user.name);
+  const news = await newsMail(env, user.id, user, "the welcome");
+  if (news.skip) return news.skip;
+  const text = welcomeText(user.name) + news.footer + "\n";
   if (env.GMAIL_APP_PASSWORD) {
     const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
     return smtpSend(connect, {
@@ -3304,6 +3341,7 @@ async function sendWelcome(env, user) {
       cc: WELCOME_CC,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     });
   }
   const res = await fetch("https://api.resend.com/emails", {
@@ -3318,6 +3356,7 @@ async function sendWelcome(env, user) {
       reply_to: WELCOME_REPLY_TO,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     }),
   });
   if (res.ok) return null;
@@ -3385,6 +3424,8 @@ async function smtpSend(connect, msg) {
       "MIME-Version: 1.0",
       "Content-Type: text/plain; charset=UTF-8",
       "Content-Transfer-Encoding: base64",
+      // The one-click unsubscribe pair on a non-essential mail (RFC 8058).
+      ...Object.entries(msg.headers || {}).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, "")}`),
     ].filter(Boolean);
     await say(`${headers.join("\r\n")}\r\n\r\n${body}.`);
     const accepted = await reply();
@@ -3421,6 +3462,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
       await env.APPS.delete(key);
       continue;
     }
+    // Turned Krate's emails off before the welcome was due: never sent.
+    if (!wantsNews(user)) {
+      console.log("the welcome was not sent: the account turned Krate's emails off");
+      await env.APPS.delete(key);
+      continue;
+    }
+    if (!user.id) user.id = userId;
     const failed = await sendWelcome(env, user);
     if (failed) {
       // Left due: the next run tries again, until the mark expires in a week.
@@ -3755,6 +3803,8 @@ function signInEmailHtml(link) {
 </html>`;
 }
 
+/// ESSENTIAL mail (mail-prefs.js): the person asked for this link, so the
+/// switch for Krate's emails never stops it and it carries no unsubscribe.
 async function emailStart(request, env) {
   if (!env.RESEND_API_KEY) {
     return text("Email sign-in is not configured on this hub yet.", 503);
@@ -5628,58 +5678,37 @@ export class Room {
   }
 }
 
-// ===================================================================== paid
+// ================================================================= no paid plans
 //
-// The paid plan, end to end. Stripe is the processor; the worker never sees
-// a card. Entitlements live in KV (`ent:{userId}`) and are written ONLY by
-// verified Stripe webhooks or an admin override -- the client can ask, never
-// tell. Everything is gated on the Stripe secrets existing, so this whole
-// surface is dormant until they are set and the studio's limit stays soft.
-
-// Personal pricing is frozen (IC-640, IC-402).
-//
-// The founder's decision is that individual use stays free during adoption,
-// and that no price is set before buyer, usage and cost are measured. The
-// live surface said otherwise: `/billing/config` returned live:true with
-// $12/month, $96/year and $79/year, and a checkout that took money for them.
-// A policy that the product contradicts is not a policy.
-//
-// So this is an explicit switch rather than deleted code. The Stripe
-// integration is real work and will be needed when a price is actually
-// decided -- CP8 revisits it with measured data. Removing it would mean
-// rebuilding it; leaving it live would mean charging people against the
-// stated policy. `KRATE_BILLING_UNFROZEN` is the deliberate act that turns
-// it back on, and it is not set anywhere.
-function billingFrozen(env) {
-  return env.KRATE_BILLING_UNFROZEN !== "1";
+// Krate has no paid plans (F-322, 2026-11-07). The Stripe integration that
+// lived here -- config, checkout, the webhook, the customer portal, the
+// founding-200 seat count -- is removed, and every door it had answers this.
+// What stays: `ent:` records, read by entitlementActive, because the desk's
+// "lift free limits" override writes them and an entitlement paid for before
+// the decision runs out on its own date; and the `pay:` receipts already
+// written, which a person's export and deletion still read (account-delete.js).
+function noPaidPlans() {
+  return text(
+    "Krate has no paid plans, so there is nothing to buy or manage here. Making apps is free: in Krate Studio on your computer with your own AI, or in the browser with your own API key after the free app.",
+    410,
+  );
 }
 
-function billingLive(env) {
-  if (billingFrozen(env)) return false;
-  return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_MONTHLY && env.STRIPE_PRICE_YEARLY);
-}
-
-const FOUNDING_SEATS = 200;
-
-async function foundingSold(env) {
-  return parseInt((await env.APPS.get("foundingSold")) || "0", 10);
-}
-
-async function billingConfig(env) {
-  // While frozen, say so plainly and quote no price. A page that renders
-  // "$12/month" next to a button that cannot charge is worse than a page
-  // with no prices on it.
-  if (billingFrozen(env)) {
-    return json({ live: false, founding: false, frozen: true, prices: {} });
-  }
-  const sold = await foundingSold(env);
-  return json({
-    live: billingLive(env),
-    // The founding door closes itself the moment the 200th seat is taken:
-    // every buy button keyed on this flag disappears with it.
-    founding: Boolean(env.STRIPE_PRICE_FOUNDING) && sold < FOUNDING_SEATS,
-    prices: { monthly: "$12/month", yearly: "$96/year", founding: "$79/year" },
-  });
+/// What account-delete.js needs from the hub, in one place.
+function accountDeleteDeps() {
+  return {
+    authedUser,
+    verifyGitHub,
+    ownerOfRecord,
+    orgAsk,
+    deleteBigParts,
+    sessionOwner,
+    sessionId,
+    wantsNews,
+    siteBase,
+    hubBase: (env) => String(env.PUBLIC_BASE || "").replace(/\/$/, ""),
+    githubClientId: GITHUB_CLIENT_ID,
+  };
 }
 
 /// The signed-in user behind a request: a Krate session or a GitHub token.
@@ -5708,193 +5737,6 @@ async function authedUser(request, env) {
     email: (p.email || "").toLowerCase() || undefined,
   });
 }
-
-function planForPrice(env, priceId) {
-  if (priceId === env.STRIPE_PRICE_MONTHLY) return "monthly";
-  if (priceId === env.STRIPE_PRICE_YEARLY) return "yearly";
-  if (priceId === env.STRIPE_PRICE_FOUNDING) return "founding";
-  return "unknown";
-}
-
-async function stripe(env, path, form) {
-  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: form ? "POST" : "GET",
-    headers: {
-      authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      ...(form ? { "content-type": "application/x-www-form-urlencoded" } : {}),
-    },
-    body: form ? new URLSearchParams(form) : undefined,
-  });
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error((body.error && body.error.message) || `stripe ${path} failed`);
-  }
-  return body;
-}
-
-async function billingCheckout(request, env) {
-  if (!billingLive(env)) return text("Billing is not open yet.", 503);
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const { plan } = await request.json().catch(() => ({}));
-  if (plan === "founding" && (await foundingSold(env)) >= FOUNDING_SEATS) {
-    return text("The founding 200 is full. The monthly and yearly plans are open.", 409);
-  }
-  const price =
-    plan === "monthly" ? env.STRIPE_PRICE_MONTHLY
-    : plan === "yearly" ? env.STRIPE_PRICE_YEARLY
-    : plan === "founding" ? env.STRIPE_PRICE_FOUNDING
-    : null;
-  if (!price) return text("Unknown plan.", 400);
-  try {
-    const session = await stripe(env, "checkout/sessions", {
-      mode: "subscription",
-      "line_items[0][price]": price,
-      "line_items[0][quantity]": "1",
-      client_reference_id: user.id,
-      ...(user.email ? { customer_email: user.email } : {}),
-      "subscription_data[metadata][krate_user]": user.id,
-      allow_promotion_codes: "true",
-      success_url: "https://krate.tech/billing/done/",
-      cancel_url: "https://krate.tech/studio/#pricing",
-    });
-    return json({ url: session.url });
-  } catch (err) {
-    return text(`Checkout could not start: ${err.message}`, 502);
-  }
-}
-
-/// Verify a Stripe webhook signature: HMAC-SHA256 of `t.payload`.
-async function stripeSignatureValid(request, payload, env) {
-  const header = request.headers.get("stripe-signature") || "";
-  const parts = Object.fromEntries(
-    header.split(",").map((p) => p.split("=")).filter((p) => p.length === 2),
-  );
-  if (!parts.t || !parts.v1) return false;
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(env.STRIPE_WEBHOOK_SECRET || ""),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const mac = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${parts.t}.${payload}`),
-  );
-  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return hex === parts.v1;
-}
-
-async function writeEntitlementFromSubscription(env, sub) {
-  const userId =
-    (sub.metadata && sub.metadata.krate_user) || (await env.APPS.get(`cust:${sub.customer}`));
-  if (!userId) return;
-  const priceId =
-    sub.items && sub.items.data && sub.items.data[0] ? sub.items.data[0].price.id : "";
-  await env.APPS.put(`cust:${sub.customer}`, userId);
-  // The founding seat count follows real transitions: taken when a founding
-  // subscription becomes active, freed when that subscription ends. The evt
-  // replay guard upstream keeps retries from double-counting.
-  {
-    const plan = planForPrice(env, priceId);
-    const active = sub.status === "active" || sub.status === "trialing";
-    const prior = JSON.parse((await env.APPS.get(`ent:${userId}`)) || "null");
-    const priorFounding = Boolean(prior && prior.plan === "founding" && entitlementActive(prior));
-    const nowFounding = plan === "founding" && active;
-    if (nowFounding && !priorFounding) {
-      await env.APPS.put("foundingSold", String((await foundingSold(env)) + 1));
-    } else if (priorFounding && !nowFounding) {
-      await env.APPS.put("foundingSold", String(Math.max(0, (await foundingSold(env)) - 1)));
-    }
-  }
-  await env.APPS.put(
-    `ent:${userId}`,
-    JSON.stringify({
-      plan: planForPrice(env, priceId),
-      status: sub.status,
-      until: (sub.current_period_end || 0) * 1000,
-      sub: sub.id,
-      customer: sub.customer,
-      at: Date.now(),
-    }),
-  );
-}
-
-async function billingWebhook(request, env) {
-  const payload = await request.text();
-  if (!env.STRIPE_WEBHOOK_SECRET || !(await stripeSignatureValid(request, payload, env))) {
-    return text("bad signature", 400);
-  }
-  let event;
-  try {
-    event = JSON.parse(payload);
-  } catch (_) {
-    return text("bad payload", 400);
-  }
-  // Stripe retries; process each event once.
-  //
-  // The marker is written AFTER the work, not before it (IC-409).
-  //
-  // It used to be written here, first. If the entitlement write then failed,
-  // Stripe's retry found the event already marked processed and returned
-  // success -- so Stripe believed delivery had worked while a paying
-  // customer never received access, permanently and silently. Reproduced in
-  // a controlled test before this change.
-  //
-  // Marking afterwards means a crash mid-way leaves the event unmarked and
-  // Stripe retries it. That can process an event twice, which is the safe
-  // direction: every write below is idempotent -- entitlements are derived
-  // from the subscription's current state, not incremented -- so a repeat
-  // lands on the same answer. Losing a payment is not recoverable; repeating
-  // one is.
-  if (await env.APPS.get(`evt:${event.id}`)) return json({ ok: true });
-
-  // An organisation's event (IC-948 E): its store decides, failing closed.
-  if (await orgBillingEvent(env, event, orgAsk)) {
-    await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
-    return json({ ok: true });
-  }
-
-  const obj = event.data && event.data.object;
-  if (event.type === "checkout.session.completed" && obj) {
-    if (obj.client_reference_id && obj.customer) {
-      await env.APPS.put(`cust:${obj.customer}`, obj.client_reference_id);
-    }
-    if (obj.subscription) {
-      try {
-        const sub = await stripe(env, `subscriptions/${obj.subscription}`);
-        await writeEntitlementFromSubscription(env, sub);
-      } catch (_) { /* the subscription.updated event will carry it */ }
-    }
-  } else if (
-    (event.type === "customer.subscription.updated"
-      || event.type === "customer.subscription.deleted"
-      || event.type === "customer.subscription.created") && obj
-  ) {
-    await writeEntitlementFromSubscription(env, obj);
-  } else if (event.type === "invoice.payment_succeeded" && obj) {
-    const userId = await env.APPS.get(`cust:${obj.customer}`);
-    await env.APPS.put(
-      `pay:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`,
-      JSON.stringify({
-        userId: userId || "",
-        email: obj.customer_email || "",
-        amount: obj.amount_paid,
-        currency: obj.currency,
-        invoice: obj.id,
-        at: Date.now(),
-      }),
-    );
-  }
-
-  // Only now: the work above completed without throwing, so this event is
-  // genuinely done and Stripe need not send it again.
-  await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
-  return json({ ok: true });
-}
-
 
 // ================================================================ free tier
 
@@ -6115,7 +5957,8 @@ async function caseOpen(request, env) {
   // never the one they want.
   const isEdit = Boolean(body.edit);
 
-  // The wall. A paid plan lifts it; the free allowance is counted in cases
+  // The wall. Only the desk's override lifts it (there is no paid plan,
+  // F-322); the free allowance is counted in cases
   // that produced a file, so a person whose attempts all failed for our
   // reasons has spent nothing.
   const made = await consumedCount(env, user, device, byId);
@@ -6138,7 +5981,7 @@ async function caseOpen(request, env) {
   // What a free person's tries may cost us, whatever they produced
   // (2026-10-06). The allowance counts only "made", so failed tries were
   // unlimited, and one person's builds took about $5 of the Krate key in
-  // half an hour without an app. Two limits, both lifted by a paid plan and
+  // half an hour without an app. Two limits, both lifted only by the desk's override and
   // neither touching a build on the person's own key (those open no case):
   //   - FREE_TRIES_PER_DAY cases opened in 24 hours that made nothing
   //     (5: four failures on a bad provider afternoon must still leave room
@@ -6328,9 +6171,10 @@ async function planCount(request, env, increment) {
   // change when the account does.
   //
   // Neither is airtight on its own and neither needs to be. Together they
-  // mean getting a fourth free app costs either a new machine or real
+  // mean getting a second free app costs either a new machine or real
   // effort, which is the honest bar for a free tier: enough friction that
-  // it is easier to pay $12 than to cheat.
+  // it is easier to bring your own key, or your own AI on the desktop,
+  // than to cheat.
   const keys = [];
   if (user) keys.push(`mkacct:${user.id}`);
   if (/^[0-9a-f]{64}$/.test(device)) keys.push(`mkdev:${device}`);
@@ -6425,8 +6269,8 @@ async function planCount(request, env, increment) {
 // ================================================================ account
 //
 // One profile call for the website's account page and the studio: who you
-// are, what plan you are on, how your referrals stand. Referrals: send
-// three people who actually sign up and you get a month of Studio on us.
+// are and how many people joined through your link. A referral earns
+// nothing to pay for: Krate has no paid plans (F-322).
 
 async function getOrMakeRefCode(env, user) {
   if (user.refcode) return user.refcode;
@@ -6619,6 +6463,104 @@ async function useKey(request, env) {
   return json({ vendor, key });
 }
 
+/* ---- signing a person's web builds (IC-983, option B) -------------------
+ *
+ * An app made on a computer is signed there with the maker's own key. An
+ * app made on krate.tech is built on the Fly builder, which runs an AI
+ * agent and so must never hold a key. It hands the finished bundle here
+ * instead, and the hub signs it with a key it keeps for that account alone:
+ * made on the account's first web build, sealed under KEY_WRAP_SECRET like
+ * a person's API keys, never sent anywhere. Every web build of theirs is
+ * then the same publisher's, so its data stays theirs across rebuilds.
+ */
+
+/// The PKCS#8 wrapper for an Ed25519 seed: a fixed prefix, then the seed.
+const ED25519_PKCS8_PREFIX = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+const WEB_SIGN_MAX_BYTES = 64 * 1024 * 1024;
+
+/// The account's signing seed (32 bytes), made the first time. Null when
+/// the hub cannot seal one (no KEY_WRAP_SECRET) or the one it holds does
+/// not open: a second key would be a second publisher, so it never makes
+/// another over one it cannot read.
+async function accountSigningSeed(env, userId) {
+  const key = `signkey:${userId}`;
+  const held = await env.APPS.get(key);
+  const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const fromHex = (h) => Uint8Array.from(h.match(/../g) || [], (b) => parseInt(b, 16));
+  if (held) {
+    const seed = await openKey(env, JSON.parse(held));
+    return seed && /^[0-9a-f]{64}$/.test(seed) ? fromHex(seed) : null;
+  }
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const sealed = await sealKey(env, toHex(seed));
+  if (!sealed) return null;
+  await env.APPS.put(key, JSON.stringify(sealed));
+  return seed;
+}
+
+/// POST /sign/web-build: the bundle a person's build just made, from the
+/// build service (its secret) for that person (their session), answered
+/// signed as their account. Refused, the builder hands the bundle over
+/// unsigned, as before.
+async function signWebBuild(request, env) {
+  if (!(await fromBuilder(request, env))) {
+    return text("Only the build service may ask for this.", 403);
+  }
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const bundle = new Uint8Array(await request.arrayBuffer());
+  if (!bundle.length || bundle.length > WEB_SIGN_MAX_BYTES) return text("expected a .krate", 400);
+  const seed = await accountSigningSeed(env, user.id);
+  if (!seed) return text("this account's signing key is not available", 503);
+  // The validator takes the seed with its public half (ring checks the
+  // pair); WebCrypto derives that half from the seed.
+  const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const pkcs8 = new Uint8Array([...ED25519_PKCS8_PREFIX, ...seed]);
+  const imported = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, true, ["sign"]);
+  pkcs8.fill(0);
+  const { x } = await crypto.subtle.exportKey("jwk", imported);
+  const publicKey = Uint8Array.from(atob(x.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const header = new TextEncoder().encode(
+    JSON.stringify({
+      account: user.id,
+      signed_at: Math.floor(Date.now() / 1000),
+      seed: toHex(seed),
+      public: toHex(publicKey),
+    }),
+  );
+  seed.fill(0);
+  const frame = new Uint8Array(4 + header.length + bundle.length);
+  new DataView(frame.buffer).setUint32(0, header.length, true);
+  frame.set(header, 4);
+  frame.set(bundle, 4 + header.length);
+  let body;
+  try {
+    const v = validator();
+    const input = v.krate_alloc(frame.length);
+    new Uint8Array(v.memory.buffer, input, frame.length).set(frame);
+    const out = v.krate_sign(input, frame.length);
+    const length = new DataView(v.memory.buffer).getUint32(out, true);
+    body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
+    // The key went into the module's memory: wipe it before freeing.
+    new Uint8Array(v.memory.buffer, input, 4 + header.length).fill(0);
+    v.krate_free(out, 4 + length);
+    v.krate_free(input, frame.length);
+  } catch (err) {
+    return text("the signing code stopped", 500);
+  }
+  frame.fill(0, 0, 4 + header.length);
+  const metaLength = new DataView(body.buffer).getUint32(0, true);
+  const meta = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + metaLength)));
+  if (!meta.ok) return text(meta.problem || "the app could not be signed", 422);
+  return new Response(body.subarray(4 + metaLength), {
+    headers: {
+      "content-type": "application/vnd.krate",
+      "x-krate-publisher": meta.public_key,
+      "x-krate-namespace": meta.namespace,
+    },
+  });
+}
+
 /* ---- what the builds cost ----------------------------------------------
  *
  * Anybody spending their own money on inference is owed the number, per
@@ -6701,13 +6643,11 @@ async function meProfile(request, env) {
       // Studio's welcome has been seen on this account, on any device.
       onboarded: Boolean(user.onboarded),
     },
-    plan: {
-      plan: ent ? ent.plan : "free",
-      active: entitlementActive(ent),
-      until: ent ? ent.until : 0,
-      via: (ent && ent.via) || "",
-      portal: Boolean(ent && ent.customer),
-    },
+    // Krate's non-essential mail is on unless the person turned it off.
+    mail: { news: wantsNews(user) },
+    // Whether Krate's free limits are lifted on this account (the desk's
+    // override). There is no plan to buy (F-322).
+    limits_lifted: entitlementActive(ent),
     referral: { code: await getOrMakeRefCode(env, user), count: refs.length, awards },
   });
 }
@@ -6867,41 +6807,11 @@ async function referralClaim(request, env) {
   const refs = JSON.parse((await env.APPS.get(`refs:${ownerId}`)) || "[]");
   if (!refs.includes(user.id)) refs.push(user.id);
   await env.APPS.put(`refs:${ownerId}`, JSON.stringify(refs.slice(0, 500)));
-  const awards = parseInt((await env.APPS.get(`refawards:${ownerId}`)) || "0", 10);
-  const due = Math.floor(refs.length / 3);
-  if (due > awards) {
-    // A month of Studio on us, stacked on whatever time is already there.
-    // If a paid subscription event later overwrites this record the person
-    // is paying anyway; the credit mostly serves free accounts, which is
-    // exactly who referrals recruit.
-    await env.APPS.put(`refawards:${ownerId}`, String(due));
-    const ent = JSON.parse((await env.APPS.get(`ent:${ownerId}`)) || "null");
-    const base = ent && ent.until && ent.until > Date.now() ? ent.until : Date.now();
-    await env.APPS.put(`ent:${ownerId}`, JSON.stringify({
-      plan: ent && entitlementActive(ent) && ent.via !== "referral" ? ent.plan : "studio",
-      status: "active",
-      until: base + (due - awards) * 30 * 24 * 3600 * 1000,
-      via: "referral",
-      sub: (ent && ent.sub) || "",
-      customer: (ent && ent.customer) || "",
-      at: Date.now(),
-    }));
-  }
+  // Counted, and nothing more. This used to award "a month of Studio" for
+  // every three, as an `ent:` record that also lifted the free limits on
+  // Krate's own AI key -- a paid plan given away, and a way round the spend
+  // limits. There is no plan (F-322), so a referral is a count.
   return json({ ok: true, counted: true });
-}
-
-// Stripe's own customer portal: change card, switch plan, cancel. We never
-// touch any of it; the person manages their money on stripe.com.
-async function billingPortal(request, env) {
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
-  if (!ent || !ent.customer) return text("No subscription on this account yet.", 404);
-  const session = await stripe(env, "billing_portal/sessions", {
-    customer: ent.customer,
-    return_url: "https://krate.tech/account/",
-  });
-  return json({ url: session.url });
 }
 
 function entitlementActive(ent) {
@@ -6910,18 +6820,6 @@ function entitlementActive(ent) {
   const okStatus = ent.status === "active" || ent.status === "trialing";
   const grace = 3 * 24 * 3600 * 1000;
   return okStatus && (!ent.until || ent.until + grace > Date.now());
-}
-
-async function billingStatus(request, env) {
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
-  return json({
-    live: billingLive(env),
-    plan: ent ? ent.plan : "free",
-    active: entitlementActive(ent),
-    until: ent ? ent.until : 0,
-  });
 }
 
 // ================================================================== support
@@ -6952,9 +6850,6 @@ async function supportNew(request, env) {
   }
   const id = crypto.randomUUID().slice(0, 8);
   const key = crypto.randomUUID().replaceAll("-", "");
-  // Paying people are promised the front of the queue; the stamp travels
-  // with the ticket so the desk can honor that without a lookup per row.
-  const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
   const ticket = {
     id,
     key,
@@ -6963,7 +6858,6 @@ async function supportNew(request, env) {
     email,
     subject,
     session,
-    priority: entitlementActive(ent),
     status: "open",
     created: Date.now(),
     updated: Date.now(),
@@ -7021,7 +6915,7 @@ async function supportReply(request, env) {
 // ==================================================================== admin
 //
 // The support desk: one page, the same verified-GitHub-login gate as
-// /admin/reports (KRATE_ADMINS). Users, plans, payments, tickets, the
+// /admin/reports (KRATE_ADMINS). Users, tickets, the
 // make-it-for-me queue, and session revocation.
 
 async function adminApi(request, pathname, env) {
@@ -7029,11 +6923,15 @@ async function adminApi(request, pathname, env) {
   if (!admin) return text("not found", 404);
   const route = pathname.slice("/admin/api/".length);
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+  // The Mail section: compose, preview, pick people, send, history.
+  if (route.startsWith("mail/")) {
+    const answer = await deskMailApi(request, route, env, body, admin);
+    if (answer) return answer;
+  }
 
   if (route === "overview") {
     const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
     const ticks = await env.APPS.list({ prefix: "tick:", limit: 1000 });
-    const pays = await env.APPS.list({ prefix: "pay:", limit: 1000 });
     const reps = await env.APPS.list({ prefix: "report:", limit: 1000 });
     const appReps = await env.APPS.list({ prefix: "app-report:", limit: 1000 });
     return json({
@@ -7041,8 +6939,6 @@ async function adminApi(request, pathname, env) {
       tickets: ticks.keys.length,
       reports: reps.keys.length,
       app_reports: appReps.keys.length,
-      payments: pays.keys.length,
-      billing_live: billingLive(env),
     });
   }
   if (route === "welcomes") {
@@ -7061,7 +6957,9 @@ async function adminApi(request, pathname, env) {
         providers: u.providers || [],
         created: u.created || 0,
         welcomed: u.welcomed || 0,
-        compose: u.email ? welcomeComposeUrl(u) : null,
+        // Turned Krate's emails off: no welcome by hand either.
+        unsubscribed: !wantsNews(u),
+        compose: u.email && wantsNews(u) ? welcomeComposeUrl(u) : null,
       });
     }
     out.sort((a, b) => b.created - a.created);
@@ -7096,14 +6994,25 @@ async function adminApi(request, pathname, env) {
     out.sort((a, b) => (b.created || 0) - (a.created || 0));
     return json({ users: out.slice(0, 200) });
   }
-  if (route === "user/plan" && request.method === "POST") {
-    // The support override: comp a user, or clear an override.
-    if (body.plan === "comp") {
+  if (route === "user/limits" && request.method === "POST") {
+    // The support override: lift the free limits on Krate's AI key for one
+    // person (a friend testing, someone a failure of ours cost), or put
+    // them back. Nothing is sold (F-322); the record keeps its old name.
+    if (body.lifted) {
       await env.APPS.put(`ent:${body.id}`, JSON.stringify({ plan: "comp", status: "active", until: 0, at: Date.now(), by: admin.login }));
     } else {
       await env.APPS.delete(`ent:${body.id}`);
     }
     return json({ ok: true });
+  }
+  // Deleting an account for someone who asked support (account-delete.js):
+  // first what it would do, then -- with the account's email typed in --
+  // the deletion itself, which carries on a part-way one.
+  if (route === "user/delete-preview" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: true });
+  }
+  if (route === "user/delete" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: false });
   }
   if (route === "user/logout" && request.method === "POST") {
     // Krate sessions, and GitHub sign-ins the hub indexed (account-sessions.js).
@@ -7116,10 +7025,9 @@ async function adminApi(request, pathname, env) {
       const t = JSON.parse((await env.APPS.get(k.name)) || "null");
       if (t) out.push(t);
     }
-    // Open before closed, paying people first within open, newest first.
+    // Open before closed, newest first.
     out.sort((a, b) =>
       (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1)
-      || (b.priority ? 1 : 0) - (a.priority ? 1 : 0)
       || b.updated - a.updated);
     return json({ tickets: out });
   }
@@ -7138,15 +7046,6 @@ async function adminApi(request, pathname, env) {
     t.updated = Date.now();
     await env.APPS.put(`tick:${t.id}`, JSON.stringify(t));
     return json({ ok: true });
-  }
-  if (route === "payments") {
-    const listing = await env.APPS.list({ prefix: "pay:", limit: 1000 });
-    const out = [];
-    for (const k of listing.keys.reverse()) {
-      const p = JSON.parse((await env.APPS.get(k.name)) || "null");
-      if (p) out.push(p);
-    }
-    return json({ payments: out });
   }
   if (route === "makeit") {
     const listing = await env.APPS.list({ prefix: "makeit:", limit: 1000 });
@@ -7379,6 +7278,7 @@ textarea{min-height:70px;resize:vertical}
 .pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--mut)}
 .pill.open{color:var(--warn);border-color:#5a4636}.pill.active{color:var(--ok);border-color:#2c5243}
 #login{max-width:420px}
+${DESK_MAIL_STYLE}
 </style>
 <h1>Krate desk</h1><p class="sub" id="who">signing in&hellip;</p>
 <div id="login" class="card" style="display:none">
@@ -7394,6 +7294,7 @@ textarea{min-height:70px;resize:vertical}
   <button data-t="apps">App reports</button>
   <button data-t="users">Users</button>
   <button data-t="makeit">Make-it queue</button>
+  <button data-t="mail">Mail</button>
 </nav>
 <div id="view"></div>
 </div>
@@ -7407,7 +7308,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -7432,7 +7333,7 @@ async function show(tab){
     const badge=el("#waiting");badge.textContent=W.waiting;badge.style.display=W.waiting?"":"none";
     const waiting=W.people.filter(p=>!p.welcomed&&p.email),done=W.people.filter(p=>p.welcomed),none=W.people.filter(p=>!p.email);
     const row=p=>'<div class="card row" data-id="'+esc(p.id)+'"><div class="grow"><b>'+esc(p.name||p.login||p.email)+'</b> <span class="mut">'+esc(p.email)+' · '+esc(p.providers.join(", "))+' · joined '+ago(p.created)+'</span>'
-      +(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
+      +(p.unsubscribed?' <span class="pill">unsubscribed</span>':'')+(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
       +(p.compose&&!p.welcomed?'<a class="act" style="text-decoration:none;padding:7px 13px;border-radius:8px;background:var(--acc);color:#fff;font-size:12.5px" target="_blank" rel="noopener" href="'+esc(p.compose)+'">Write the welcome</a>':'')
       +(p.email?'<button class="ghost mark">'+(p.welcomed?"Not welcomed":"Mark welcomed")+'</button>':'')+'</div>';
     v.innerHTML='<p class="mut" style="margin-bottom:10px">Everyone who made an account, newest first. "Write the welcome" opens Gmail as you, the note written; send it, then mark them welcomed. You also get an email the moment someone signs up.</p>'
@@ -7479,7 +7380,7 @@ async function show(tab){
       // words Studio adds: "[Studio web · ... · session s-123]".
       if(!t.session){const m=/session ([A-Za-z0-9_-]{1,64})\]/.exec((t.messages[0]||{}).text||"");if(m)t.session=m[1];}
       const d=document.createElement("div");d.className="card";
-      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b>\${t.priority?'<span class="pill" style="border-color:#5a4a17;background:#2b2410;color:#e7c766">priority</span>':''}<span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
+      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b><span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
       <div>\${t.messages.map(m=>\`<div class="msg \${m.who}">\${esc(m.text)}<div class="mut">\${m.who==="krate"?"you":"them"} · \${when(m.at)}</div></div>\`).join("")}</div>
       <div class="row" style="margin-top:8px"><textarea placeholder="Reply…"></textarea></div>
       <div class="row" style="margin-top:8px"><button class="act">Send reply</button><button class="ghost">\${t.status==="open"?"Close":"Reopen"}</button><button class="ghost sbtn">\${t.session?"Open the session":"Their sessions"}</button>\${t.session?'<span class="mut">session '+esc(t.session)+'</span>':''}</div>
@@ -7529,16 +7430,33 @@ async function show(tab){
       for(const x of users){
         const d=document.createElement("div");d.className="card row";
         d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
-        <span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
-        <button class="ghost" data-a="plan">\${x.ent&&x.ent.plan==="comp"?"Remove comp":"Comp plan"}</button>
-        <button class="ghost" data-a="out">Sign out everywhere</button>\`;
-        d.querySelector('[data-a=plan]').onclick=async()=>{await api("user/plan",{method:"POST",body:JSON.stringify({id:x.id,plan:x.ent&&x.ent.plan==="comp"?"none":"comp"})});load();};
+        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}\${x.active?'<span class="pill active">limits lifted</span>':''}
+        <button class="ghost" data-a="limits">\${x.active?"Restore free limits":"Lift free limits"}</button>
+        <button class="ghost" data-a="out">Sign out everywhere</button>
+        <button class="ghost" data-a="del">Delete account</button>\`;
+        d.querySelector('[data-a=limits]').onclick=async()=>{await api("user/limits",{method:"POST",body:JSON.stringify({id:x.id,lifted:!x.active})});load();};
         d.querySelector('[data-a=out]').onclick=async()=>{const r=await api("user/logout",{method:"POST",body:JSON.stringify({id:x.id})});alert(r.revoked+" sessions revoked");};
+        d.querySelector('[data-a=del]').onclick=async()=>{
+          const call=(r,b)=>fetch(HUB+"/admin/api/"+r,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify(b)}).then(async res=>({status:res.status,body:await res.json().catch(()=>({}))}));
+          const p=await call("user/delete-preview",{id:x.id});
+          if(p.status!==200){alert(p.body.message||("Failed: "+p.status));return;}
+          const v=p.body;
+          if(v.blocked){alert(v.blocked.message);return;}
+          if(v.subscription&&!v.subscription.cancels){alert(v.subscription.message);return;}
+          let apps="remove";
+          if(v.app_builds){apps=confirm("Published apps:\\n"+((v.apps||[]).map(a=>"  "+a.name).join("\\n")||"  (earlier builds only)")+"\\n\\nOK removes them with the account. Cancel leaves them up.")?"remove":"keep";}
+          const typed=prompt("Delete "+(x.email||x.id)+" for good?\\n\\nGoes: "+v.deletes.join("; ")+".\\n\\nType the account's "+(x.email?"email address":"id")+" to confirm:");
+          if(!typed)return;
+          let r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          for(let i=0;r.status===202&&i<50;i++)r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          alert(r.body.state==="done"?"Deleted.":(r.body.message||("Failed: "+r.status)));load();
+        };
         u.appendChild(d);
       }
     };
     el("#go").onclick=load;el("#q").onkeydown=e=>{if(e.key==="Enter")load()};load();
   }
+  if(tab==="mail"){await deskMail(v);}
   if(tab==="makeit"){
     const {requests}=await api("makeit");
     v.innerHTML=requests.length?"":'<p class="mut">Queue is empty.</p>';
@@ -7551,6 +7469,7 @@ async function show(tab){
     }
   }
 }
+${deskMailScript()}
 boot();
 </script>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });

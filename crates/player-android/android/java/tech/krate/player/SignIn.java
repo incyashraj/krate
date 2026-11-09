@@ -33,6 +33,8 @@ final class SignIn {
     private SignIn() {}
 
     static final String SCHEME = "krate-signin";
+    /** Krate's own sign-in: krate.tech hands it back as krate://signed-in. */
+    static final String KRATE = "krate";
     static final int AUTH_TAB = 0x4b05;
 
     private static final String CUSTOM_TABS_SERVICE =
@@ -98,8 +100,12 @@ final class SignIn {
         if (pkg == null) {
             return "This phone has no browser to sign in with.";
         }
-        final boolean shared = SCHEME.equals(scheme);
-        if (!shared && !authTabSupported(activity, pkg)) {
+        // krate-signin (apps') and krate (Krate's own) are named in the
+        // manifest, so a plain Custom Tab can return to them; any other
+        // scheme needs Chrome's Auth Tab.
+        final boolean auth = authTabSupported(activity, pkg);
+        final boolean shared = SCHEME.equals(scheme) || (KRATE.equals(scheme) && !auth);
+        if (!shared && !auth) {
             return "This phone's browser cannot return to " + scheme
                     + ": use krate-signin as the redirect.";
         }
@@ -166,6 +172,16 @@ final class SignIn {
      */
     static boolean redirected(Intent intent) {
         Uri data = intent == null ? null : intent.getData();
+        if (data != null && KRATE.equals(data.getScheme()) && "signed-in".equals(data.getHost())) {
+            synchronized (SignIn.class) {
+                if (step != 1 || !KRATE.equals(waitingFor)) {
+                    Log.w(KrateActivity.TAG, "sign-in: a krate://signed-in nothing is waiting for");
+                    return true;
+                }
+            }
+            finish(data.toString());
+            return true;
+        }
         if (data == null || !SCHEME.equals(data.getScheme())) {
             return false;
         }

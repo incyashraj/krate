@@ -399,8 +399,6 @@ body.light #viewSession { --tk-kw: #6d3fd6; --tk-str: #2f7d3a; --tk-cm: #8a8f99;
 .side-card .card-text b { font-size: 13.5px; font-weight: 400; color: inherit; }
 .side-card .card-text small { display: none; }
 .side-card .card-icon { color: inherit; opacity: 0.72; }
-.side-card.upsell { background: none; border: 0; color: var(--blue-soft); }
-.side-card.upsell:hover { background: var(--film); }
 
 /* ---- the finished app, inside the panel -------------------------------
  * The panel is already the frame; a card inside it was a frame in a frame. */

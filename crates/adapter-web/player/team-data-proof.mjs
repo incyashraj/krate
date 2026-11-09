@@ -72,7 +72,9 @@ const nodeFetch = globalThis.fetch;
 globalThis.fetch = (url, init) => (String(url).startsWith(`${HUB}/`) ? worker.fetch(new Request(url, init), env, { waitUntil() {} }) : nodeFetch(url, init));
 const server = http.createServer(async (req, res) => {
   const chunks = [];
-  for await (const c of req) chunks.push(c);
+  // A request the browser abandons as the proof closes it ends "aborted";
+  // uncaught, that ended the whole proof after every check had passed.
+  try { for await (const c of req) chunks.push(c); } catch { return; }
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers)) headers.set(k, Array.isArray(v) ? v.join(', ') : v);
   const body = chunks.length ? Buffer.concat(chunks) : undefined;

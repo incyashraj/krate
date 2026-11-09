@@ -4,8 +4,11 @@
 //! Everything is cached in the app's own folder, so Discover still shows
 //! the last catalogue when the phone is offline, and a screenshot is
 //! fetched and decoded once.
+//!
+//! The Android player includes this same file (crates/player-android), so
+//! both phones show one Discover.
 
-#![cfg(target_os = "ios")]
+#![cfg(any(target_os = "ios", target_os = "android"))]
 
 use std::io::Read;
 use std::path::Path;
@@ -26,11 +29,16 @@ pub struct HubApp {
     pub size: u64,
 }
 
+#[cfg(target_os = "ios")]
+const USER_AGENT: &str = concat!("Krate/", env!("CARGO_PKG_VERSION"), " (iPhone)");
+#[cfg(target_os = "android")]
+const USER_AGENT: &str = concat!("Krate/", env!("CARGO_PKG_VERSION"), " (Android)");
+
 fn agent() -> ureq::Agent {
     // The hub's edge refuses requests without a real user agent.
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(8))
-        .user_agent(concat!("Krate/", env!("CARGO_PKG_VERSION"), " (iPhone)"))
+        .user_agent(USER_AGENT)
         .build()
 }
 
@@ -62,9 +70,14 @@ pub fn refresh(cache: &Path, art_dir: &Path) {
         }
         Err(why) => eprintln!("hub catalogue: {why}; keeping the last one"),
     }
-    for app in catalogue(cache) {
-        let _ = art(&app, art_dir);
-    }
+    // Every screenshot at once: one after another, a first visit waited
+    // on a dozen round trips in a row.
+    let apps = catalogue(cache);
+    std::thread::scope(|scope| {
+        for app in &apps {
+            scope.spawn(move || art(app, art_dir));
+        }
+    });
 }
 
 /// The listed apps, as last fetched; empty before the first fetch.
@@ -127,9 +140,28 @@ pub fn art(app: &HubApp, art_dir: &Path) -> Option<String> {
     Some(name)
 }
 
-/// The app's `.krate`, from its hub link.
-pub fn download(id: &str, limit: u64) -> Result<Vec<u8>, String> {
-    get(&format!("{HUB}/a/{id}"), limit)
+/// The app's `.krate`, from its hub link, with the sign-in kept in
+/// `private` when someone is signed in: an organisation's private release
+/// downloads for its members, as on a computer (K-1171).
+///
+/// With the owner tag the hub sent beside the bytes (`x-krate-store`): an
+/// unsigned app's data is keyed by it (K-1172).
+pub fn download_with_owner(
+    id: &str,
+    limit: u64,
+    private: &Path,
+    name: &str,
+) -> Result<(Vec<u8>, Option<String>), String> {
+    let phone = crate::run_config::Phone::here(private, name);
+    krate_orgaccess::download_with_owner(&phone, &format!("{HUB}/a/{id}"), limit, USER_AGENT)
+        .map_err(|err| {
+            let words = err.to_string();
+            let mut chars = words.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => words,
+            }
+        })
 }
 
 fn decode_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {

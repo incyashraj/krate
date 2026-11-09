@@ -38,7 +38,7 @@ mod bluetooth;
 pub mod camera;
 mod clipboard;
 pub mod dialog;
-mod documents;
+pub mod documents;
 mod haptics;
 #[cfg(target_os = "android")]
 mod java;
@@ -48,8 +48,8 @@ mod motion;
 pub mod phone;
 mod photos;
 pub mod reminders;
-mod share;
-mod sign_in;
+pub mod share;
+pub mod sign_in;
 mod typing;
 pub mod unlock;
 pub mod video;
@@ -546,6 +546,15 @@ impl UiAdapter for AndroidWinitPrototypeUiAdapter {
         winit_native::drain_pointer_samples()
     }
 
+    /// Where the pointer is and whether it is held (krate:ui/pointer).
+    fn pointer(&self, window: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        winit_native::pointer_state(window)
+    }
+
+    fn take_pointer_motion(&self, window: WindowId) -> (f32, f32) {
+        winit_native::take_pointer_motion(window)
+    }
+
     /// A phone or tablet is touched, and its status bar, gesture bar and
     /// camera cutout cover its edges (K-1039): reported in points, so an app
     /// keeps its text out from under them.
@@ -658,6 +667,20 @@ impl UiAdapter for AndroidWinitPrototypeUiAdapter {
     /// An app that lays itself out for any screen follows the way the phone
     /// is held; any other keeps the shape of the window it asked for
     /// (IC-912).
+    #[cfg(target_os = "android")]
+    fn ask(&self, _window: WindowId, title: &str, body: &str, question: bool) -> Option<bool> {
+        if question {
+            Some(dialog::confirm(title, body))
+        } else {
+            dialog::message(title, body);
+            Some(false)
+        }
+    }
+
+    fn set_canvas_presses(&self, window: WindowId, widget: WidgetId, presses: bool) {
+        winit_native::set_canvas_presses(window, widget, presses);
+    }
+
     fn set_adapts(&self, adapts: bool) {
         winit_native::set_adapts(adapts);
     }

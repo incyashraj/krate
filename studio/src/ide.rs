@@ -929,7 +929,10 @@ fn pack_to(
     sink: Sink,
 ) -> Result<u64, String> {
     let mut cmd = silent_cmd(engine);
+    // Signed with the maker's own key, as a build from a request is
+    // (IC-983): a project made here is the person's app from its first file.
     cmd.arg("pack")
+        .arg("--sign")
         .arg("--manifest")
         .arg(project.join("manifest.toml"))
         .arg("--output")
@@ -2308,7 +2311,7 @@ fi"#
             assert_eq!(std::fs::read(&krate).unwrap(), b"PK-packed");
             let calls = t.calls();
             assert!(calls[0].starts_with("check-app ") && calls[0].contains("--no-run"));
-            assert!(calls[1].starts_with("pack --manifest "));
+            assert!(calls[1].starts_with("pack --sign --manifest "), "{calls:?}");
             let names: Vec<String> = std::fs::read_dir(&root)
                 .unwrap()
                 .flatten()

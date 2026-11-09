@@ -1566,6 +1566,7 @@ function appendLiveChip(version) {
   }
   $("thread").appendChild(el);
   $("thread").scrollTop = $("thread").scrollHeight;
+  markLatestReceipt();
   return el;
 }
 
@@ -1587,7 +1588,7 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
     : null;
   const open = document.createElement("button");
   open.className = "vact";
-  open.textContent = "Open";
+  open.textContent = "Run";
   open.addEventListener("click", () => openApp(mine, version));
   chip.appendChild(open);
   const share = document.createElement("button");
@@ -1595,6 +1596,17 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
   share.textContent = "Share";
   share.addEventListener("click", () => openSendSheet(mine, version, share));
   chip.appendChild(share);
+  markLatestReceipt();
+}
+
+/* The newest receipt in the conversation carries no buttons of its own:
+ * the app's card says the same things (Run, Share, Stop, Try again) next
+ * to the app itself, and the same action in two places reads as two
+ * actions. Older receipts keep theirs -- they are the only way back to
+ * that version. */
+function markLatestReceipt() {
+  const all = [...document.querySelectorAll("#thread .msg.vlive, #thread .msg.vok, #thread .msg.vbad")];
+  all.forEach((m, i) => m.classList.toggle("vlatest", i === all.length - 1));
 }
 
 function settleChipBad(el, version, retry, stopped) {
@@ -1616,6 +1628,7 @@ function settleChipBad(el, version, retry, stopped) {
     fix.addEventListener("click", retry);
     el.querySelector(".vchip").appendChild(fix);
   }
+  markLatestReceipt();
 }
 
 function say(who, body, files, extra) {
@@ -2693,7 +2706,12 @@ function failBuild(why, request) {
   // brand the sentence about the NEW build as the failure.
   const redirecting = why === "stopped" && state.replacing;
   if (!redirecting) {
-    sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
+    // The reason goes in the conversation too. On a phone the conversation
+    // and the app are two screens, and the line here was the only thing on
+    // the Chat side: "that build didn't come together", with the why only
+    // on the App side, a tap away that nothing pointed at. The words start
+    // the same, so older readers of the line still recognise a failure.
+    sayTo(built, "KRATE", why === "stopped" ? "stopped" : `That build didn't come together. ${why}`);
     // The failure is a recorded FACT on the message too, so replay can see
     // it even in a session file saved before failedRequest survived disk.
     const last = built && built.messages[built.messages.length - 1];
@@ -2819,8 +2837,8 @@ function cardAsks(asks) {
 /* ---- the free-tier counter (stage 19) --------------------------------
  * Local, honest, soft: ONE free app EVER, and one free change to it. Only
  * a session's FIRST successful build counts -- failed builds and revisions
- * never do. In preview the sheet informs and lets them continue; the same
- * rail is where checkout attaches when Studio leaves preview.
+ * never do. It is the free allowance on Krate's own AI key in a browser,
+ * and nothing more: Krate has no paid plans (F-322).
  *
  * The number has drifted twice, in the same direction both times, and the
  * fix is the same each time: the HUB is the policy and this layer is the
@@ -2843,8 +2861,8 @@ function monthKey() {
 /* The counter of record lives in the shell, keyed to the machine's own
  * hardware identity (~/.krate/plan.json): the free app belongs to the
  * DEVICE, so a cleared cache or a fresh email does not mint another.
- * localStorage stays as the seed for upgrades and the fallback when the
- * shell cannot answer. */
+ * localStorage stays as the seed for an older record and the fallback
+ * when the shell cannot answer. */
 function makesLocal() {
   try {
     const rec = JSON.parse(localStorage.getItem("krateMakes") || "{}");
@@ -2882,9 +2900,8 @@ async function loadPlanMakes() {
     // person who had used their one free app was shown as still having it.
     //
     // Nothing was ever given away: the builder counts server-side and the
-    // hub is the authority. It is a trust bug rather than a money one, which
-    // is its own kind of bad on the screen where somebody decides whether to
-    // pay.
+    // hub is the authority. It is a trust bug rather than a money one, and
+    // a count that lies is a reason to stop trusting the rest.
     const made = typeof rec === "number" ? rec : Number(rec && rec.n) || 0;
     state.planMakes = typeof rec === "number" ? { n: rec } : rec;
     mirrorLocal(made);
@@ -2900,28 +2917,6 @@ function countMake() {
     .catch(() => {});
   renderFreeCount();
 }
-function planIsActiveSafe() {
-  return Boolean(state.billing && state.billing.active);
-}
-
-/// One painter for every place the plan shows: the title-bar chip, the
-/// plan sheet's Free row, and the settings row. They must never disagree
-/// about how many are left.
-/* FREE, FOR NOW (Yashraj, 2026-09-01).
- *
- * Krate is aimed at developers, and a developer evaluating a runtime who
- * meets "1 free app, then $12" reads it as a toy with a meter on it.
- * Nobody bets their distribution on something that might price them out
- * at app four. So the counter does not show and does not stop anyone.
- *
- * The machinery underneath is deliberately LEFT INTACT -- the account
- * key, the device key, the two-key wall in the worker, its tests. The day
- * we charge, the honest limit has to already work, and rebuilding it
- * later costs more than leaving it dormant. What changes is that nothing
- * displays it and nothing enforces it. See K-216.
- */
-const CHARGING = false;
-
 /* Was the allowance spent by this MACHINE rather than by this person?
  *
  * A fresh account on a second-hand or shared Mac starts with its free app
@@ -2938,8 +2933,8 @@ function machineSpentIt() {
   const p = state.planMakes;
   // A NUMBER, not something that coerces to one. `Number("1")` is 1, so a
   // coercing check would explain a wall on the strength of whatever the
-  // wire happened to carry -- and this decides what a person reads on the
-  // screen where they choose whether to pay.
+  // wire happened to carry -- and this decides what a person is told
+  // about their own free app.
   const machine = p && p.machine;
   if (typeof machine !== "number" || !Number.isFinite(machine) || machine <= 0) {
     return false;
@@ -2965,71 +2960,19 @@ function machineNote() {
     ? "This machine has already made its free app."
     : `This machine has already made ${machine} apps.`;
 }
+/// The one painter for the free app: the "What is free" sheet's first row,
+/// and the line that explains a free app this MACHINE already spent
+/// (K-807). Web only. A desktop build runs on the person's own machine with
+/// their own AI and costs Krate nothing, so there is no allowance to show.
+/// Krate has no paid plans (F-322): nothing here sells, it only tells.
 function renderFreeCount() {
-  const n = makesThisMonth();
-  // FREE_MAKES, not a literal 3. This said `3 - n` under a constant that
-  // is 1, so the day CHARGING flips the chip would read "2 of 1 free left"
-  // -- the same three-versus-one drift the rule has been corrected for
-  // more than once (K-216).
-  const left = Math.max(0, FREE_MAKES - n);
-  const chip = $("freeCount");
-  // Desktop has no allowance to report, so it gets no chip -- the same
-  // seam as maybeWelcome and the limit gate. A "3 free apps" badge on a
-  // machine whose builds cost us nothing is an upsell for something the
-  // person already has, and today it is hidden only because CHARGING is
-  // false rather than because anyone decided it should be.
-  if (chip && tauri) {
-    chip.classList.add("hidden");
-  } else if (chip && !CHARGING) {
-    // No count, no cap, no upsell dressed as a status.
-    chip.classList.add("hidden");
-  } else if (chip) {
-    chip.textContent =
-      planIsActiveSafe() ? "Studio plan"
-      : n === 0 ? (FREE_MAKES === 1 ? "1 free app" : `${FREE_MAKES} free apps`)
-      : n < FREE_MAKES ? `${left} of ${FREE_MAKES} free left`
-      : "Free plan";
-    // When billing is open and the person is on free, the chip is a door
-    // to the store -- dressed so it reads as one.
-    chip.classList.toggle(
-      "upsell",
-      !planIsActiveSafe() && Boolean(state.billing && state.billing.live),
-    );
+  if (tauri) return;
+  const tag = $("planUsed");
+  if (tag) tag.textContent = makesThisMonth() >= FREE_MAKES ? "used" : "free";
+  const note = $("planNote");
+  if (note && machineSpentIt()) {
+    note.textContent = `${machineNote()} The free app belongs to the machine rather than the account, so signing in with a new address does not bring another one.`;
   }
-  // While CHARGING is false there is no allowance to report, so nothing
-  // shows a count. The count itself keeps running underneath (K-216).
-  const used = CHARGING
-    ? (planIsActiveSafe()
-        ? `${n} made this month`
-        : n === 0 ? "none used yet"
-        : n <= FREE_MAKES ? `${n} of ${FREE_MAKES} used`
-        : `${n} made`)
-    : "free";
-  const sheetTag = $("planUsed");
-  if (sheetTag) sheetTag.textContent = used;
-  const setVal = $("setPlanUsed");
-  if (setVal) {
-    setVal.textContent = used;
-    setVal.classList.toggle("hidden", !CHARGING);
-  }
-  const setName = $("setPlanName");
-  if (setName) {
-    const active = planIsActiveSafe();
-    setName.textContent = !CHARGING ? "Free"
-      : active ? (state.billing.plan === "founding" ? "Founding 200" : "Studio")
-      : "Free";
-    const hint = $("setPlanHint");
-    if (hint) hint.textContent = !CHARGING
-      ? "One free app, and one free change to it. After that, your own API key keeps you making here, or Krate Studio on your own machine is free and unlimited with your own AI."
-      : active
-        ? "Unlimited apps. Every one is a file that is yours forever."
-        : machineSpentIt()
-          ? `${machineNote()} The free app belongs to the machine, so a new account does not bring another one.`
-          : "One free app, plus one free change to it. Failed builds never count.";
-  }
-}
-function limitAcked() {
-  try { return lsGet("krateLimitAck") === monthKey(); } catch (e) { return false; }
 }
 
 async function make(request, opts) {
@@ -3066,41 +3009,11 @@ async function make(request, opts) {
       return;
     }
   }
-  // The gate: at the free limit, the sheet says what the deal is.
-  // It never fires for revisions (the session already has a result).
-  // CHARGING is false while Krate is free (see renderFreeCount): the
-  // count still runs and still records, so the day this flips the numbers
-  // are already right. It simply does not stop anyone today.
-  // The WEB only, for the same reason the welcome sheet is (see
-  // maybeWelcome). A desktop build runs on the person's own machine with
-  // their own AI: it costs us nothing, so there is nothing to meter and a
-  // "that's your free app" wall with checkout buttons would be
-  // charging for something we do not provide.
-  //
-  // CHARGING is false today, so this cannot fire yet either way. Guarding
-  // it now rather than the day it flips, because that is the day nobody
-  // will be looking at this line.
-  let overCap = !tauri
-    && CHARGING
-    && makesThisMonth() >= FREE_MAKES
-    && !(state.session && state.session.result)
-    && !(opts && opts.pastLimit)
-    && !planIsActive();
-  // Before blocking, ask the hub once more. This is what unlocks the
-  // person whose checkout finished after the poll gave up, and the one
-  // whose plan landed on another machine -- the wall never runs on stale
-  // knowledge when fresh knowledge is one request away.
-  if (overCap) {
-    await loadBilling();
-    overCap = !planIsActive();
-  }
-  if (overCap && ((state.billing && state.billing.live) || !limitAcked())) {
-    // Billing live: a real wall with a checkout door, every time past
-    // the limit. Preview: the soft sheet, once.
-    state.pendingMake = { request, opts };
-    openLimitSheet();
-    return;
-  }
+  // No gate here. The free allowance on Krate's AI key is the hub's to
+  // enforce (CASE_LIMIT_FREE, the tries and spend limits), and its wall
+  // arrives as the build's answer, naming the two free ways on: your own
+  // API key, or Krate Studio on your computer with your own AI. There is
+  // no paid plan to sell at the limit (F-322).
   // Two builds at once would leave the first unstoppable; the backend
   // refuses it too, but stopping here keeps the UI honest. Keyed on the
   // building session, not the visible phase -- browsing away changes the
@@ -3209,6 +3122,7 @@ async function openReportSheet() {
       "workspace/src/lib.rs": "the app code the AI had written",
       "workspace/Cargo.toml": "the app's build setup",
       "workspace/manifest.toml": "the permissions the app declared",
+      "build.json": "the build service's record of this build",
     };
     $("repList").innerHTML = "";
     for (const f of info.files) {
@@ -3236,12 +3150,12 @@ async function sendReport() {
       note: $("repNote").value.trim(),
     });
     $("reportSheet").classList.add("hidden");
-    say("KRATE", `Sent to Krate support (${said}). Thank you. This is how the next person avoids it.`, null, { variant: "ask" });
+    say("KRATE", `Report sent (${said}). Thank you: this is how the next person avoids it.`, null, { variant: "ask" });
   } catch (err) {
     $("repResult").textContent = `It did not send: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Try again, or save it and email it.`;
     $("repSend").disabled = false;
   } finally {
-    $("repSend").textContent = "Send to support";
+    $("repSend").textContent = "Send report";
   }
 }
 
@@ -3386,6 +3300,17 @@ function planAnsweredAway(S, P, answer, err) {
   let body = "";
   if (!err && answer && answer.agent_session) P.agentSession = answer.agent_session;
   if (!err && answer && answer.shape) P.shape = String(answer.shape);
+  if (!err && answer && answer.cannot) {
+    // Nothing waits to be built, so nothing is kept to resume and no
+    // Build it comes back when the session is reopened (K-1243).
+    const m = cannotMessage(answer);
+    S.messages.push({ who: "KRATE", body: m.body, files: [], when: Math.floor(Date.now() / 1000) });
+    S.planningSaved = null;
+    persistSession(S);
+    if (window.krToast) window.krToast(`${S.planName || S.title || "Your app"}: Krate cannot build that one`);
+    if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+    return;
+  }
   if (!err && answer && answer.ask && answer.ask.length && P.rounds < 1) {
     P.rounds += 1;
     P.lastQuestions = answer.ask;
@@ -3406,6 +3331,41 @@ function planAnsweredAway(S, P, answer, err) {
   persistSession(S);
   if (window.krToast) window.krToast(`${S.planName || S.title || "Your app"}: ${body.startsWith("1.") ? "a question is waiting" : "the plan is ready"}`);
   if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+}
+
+/* `krate plan`'s refusal (K-1243): {"cannot": "Krate cannot build that:
+ * <reason>. Try instead: <instead>.", "instead", "reason", "limit"}. The
+ * suggestion is offered as a button, so the words stop before it rather
+ * than saying it twice. */
+function cannotMessage(answer) {
+  const line = String((answer && answer.cannot) || "").replace(/\s+/g, " ").trim();
+  const instead = String((answer && answer.instead) || "").replace(/\s+/g, " ").trim().replace(/[.]$/, "");
+  const said = (instead ? line.replace(/\s*Try instead:.*$/i, "") : line).trim() || "Krate cannot build that.";
+  return {
+    said,
+    instead,
+    body: instead ? `${said}\n\nWhat Krate can make instead: ${instead}.` : said,
+  };
+}
+
+/* Said as its own answer, calmly: the reason, and the one thing that can
+ * be made instead as a single tap. No Build it -- there is nothing here
+ * Krate would build. */
+function showCannot(answer) {
+  const m = cannotMessage(answer);
+  clearAnsweredActions();
+  say("KRATE", m.body, null, {
+    variant: "ask",
+    actions: m.instead
+      ? [{ label: "Make this instead", primary: true, run: () => { const box = $("prompt"); if (!box) return; box.value = m.instead; submitInSession(); } }]
+      : [],
+  });
+  state.planning = null;
+  setIdleNote("");
+  show("idle");
+  unlockComposer("Describe something else to make…");
+  $("send").disabled = false;
+  persist();
 }
 
 /* The plan as the card shows it: the sentence, short points, the name, and
@@ -3457,6 +3417,13 @@ async function runPlanInner() {
     // The model's own pick of the working shape the build starts from --
     // the universal matcher (no keywords): it read the request, it chose.
     if (answer.shape) state.planning.shape = String(answer.shape);
+    // The plan's third answer (K-1243): Krate will not build this. It is
+    // neither a question nor a plan, and it used to fall through to the
+    // build -- which `create` refused a second later, in Plan mode too.
+    if (answer.cannot) {
+      showCannot(answer);
+      return;
+    }
     if (answer.ask && answer.ask.length && state.planning.rounds < 1) {
       // ONE round of questions, ever. The first live session got two
       // rounds and called it what it is: frustrating.
@@ -3637,6 +3604,23 @@ async function runPlanInner() {
     // plainly, and nothing is built (K-904).
     if (/over the 10 MB attachment limit|a folder cannot be attached|attached file .* does not exist/i.test(String(err && err.message ? err.message : err))) {
       say("KRATE", plainWords(err));
+      state.planning = null;
+      setIdleNote("");
+      show("idle");
+      $("send").disabled = false;
+      return;
+    }
+    // No connection is not a planning hiccup either: the build needs the
+    // same connection, so "I'll skip the questions and build right away"
+    // was followed, seconds later, by a failed build saying the connection
+    // dropped. Said once, nothing built, and Try again asks again.
+    if (/failed to fetch|networkerror|load failed|err_internet|err_network|\bnetwork\b|offline|could not connect|connection (refused|reset|dropped)/i
+      .test(String(err && err.message ? err.message : err))) {
+      const kept = state.planning;
+      say("KRATE", "The connection dropped before I could read your request. Nothing was built, and your words are kept.", null, {
+        variant: "ask",
+        actions: [{ label: "Try again", primary: true, run: () => { state.planning = kept; runPlan(); } }],
+      });
       state.planning = null;
       setIdleNote("");
       show("idle");
@@ -4175,8 +4159,35 @@ function plainWords(err) {
   // Already plain words (the build service's own sentence for a build it
   // stopped or let expire): said as they are, not as "the build failed".
   if (err && err.plain) return raw;
+  // A port that stopped names what stopped it on its last line ("Blocked on
+  // primary-task: case `total` printed ... Workspace: ..."), and exits 8
+  // (IC-120). Every such ending read "The build failed. Press Details" --
+  // the engine had said exactly what was wrong and the card hid it
+  // (K-1237). Said in words here, the raw line stays under Details.
+  const blocked = /^Blocked on ([a-z-]+): (.*?)\.? Workspace: .*$/m.exec(raw);
+  if (blocked) {
+    const [, need, reason] = blocked;
+    // Try again starts the port from its plan again (studio/src/main.rs
+    // port_project): the stopped attempt stays on disk, it is not resumed.
+    const kept = "Your project was not changed.";
+    if (need === "primary-task")
+      return `The port runs, but it did not do what your original does: ${reason}. ${kept}`;
+    if (need === "build")
+      return `The port would not build, even after it tried to repair itself. ${kept} Press Details for the compiler output.`;
+    if (need === "agent")
+      return `The AI tool stopped before the port was finished. Check it is signed in and working, then try again. ${kept}`;
+    if (need === "source-unchanged")
+      return "Your project changed while it was being ported. Let it settle, then try again.";
+    return `The port stopped: ${reason}. ${kept}`;
+  }
   // Classify on what the PROVIDER said, never on what Krate said about it.
-  const text = providerWords(raw);
+  // Krate's own advice under a failure goes too: check-app ends a compile
+  // failure with "Fix: ... The build uses rustup's toolchain and the
+  // wasm32-wasip1 target; run `krate doctor` ...", and matching THAT told a
+  // person with seven compile errors that the build tools were not set up,
+  // and to press Try again (K-756). The advice runs from a "Fix:" line to
+  // the next `error:` line or the end; Details still shows all of it.
+  const text = providerWords(raw).replace(/^\s*Fix:[\s\S]*?(?=^\s*error:|(?![\s\S]))/gm, "");
   // The engine's summary when it gave one, else everything. The keyword
   // rules below read `judged`; only the compiler rule reads the whole log.
   const judged = engineVerdict(text) || text;
@@ -4194,6 +4205,35 @@ function plainWords(err) {
   if (/over the 10 MB attachment limit|a folder cannot be attached/i.test(judged)) return judged;
   if (/no space left on device|disk (is )?full/i.test(judged))
     return "The disk is full. Free some space, then try again.";
+  // What kind of failure it was, as the engine now says it (K-1243, from
+  // check-app's FailureKind in crates/cli/src/main.rs): `krate create`
+  // leads with the kind's own sentence, check-app's text output with its
+  // headline, and --json with `"kind"`. Read before the guesses below: a
+  // sandbox refusing the build cache says "permission denied" too, and was
+  // told to pick another folder in Settings.
+  {
+    const web = typeof tauri === "undefined" || !tauri;
+    const KINDS = [
+      ["environment", /This computer stopped Krate from building the app|This computer refused the build/i,
+        web
+          ? "The build service could not build the app just now. That is on Krate's side, not in your app's code. Try again in a few minutes."
+          : "This computer stopped Krate from building the app: a permission, a sandbox or a missing tool, not your app's code. Press Details for what refused it."],
+      ["imports", /reaches for parts of the computer Krate does not give apps|reaches for host APIs Krate does not provide/i,
+        "The app builds, but it reaches for parts of the computer Krate does not give apps. Try again, and the AI takes them out."],
+      ["capability", /builds, but it does not ask for what it uses|and its manifest\.toml disagree about what it may touch/i,
+        "The app builds, but it does not ask permission for what it uses. Try again, and the AI fixes what it asks for."],
+      ["test", /builds and opens, but it did not work when Krate tried it|fails when Krate uses it/i,
+        "The app builds and opens, but it did not work when Krate tried it. Press Details for what went wrong."],
+      ["timeout", /builds, but it ran too long when Krate tried it/i,
+        "The app builds, but it ran too long when Krate tried it. Press Details for where it got stuck."],
+      ["compile", /The app the AI wrote does not build yet|^The code does not compile\.|manifest\.toml says about them, are wrong/im,
+        "The generated code did not compile. Press Details for the compiler output."],
+    ];
+    const named = /"kind"\s*:\s*"(project|compile|environment|imports|capability|test|timeout)"/.exec(raw);
+    const want = named ? (named[1] === "project" ? "compile" : named[1]) : "";
+    const hit = KINDS.find(([k, re]) => (want ? k === want : re.test(raw)));
+    if (hit) return hit[2];
+  }
   if (/read-only file system|permission denied|cannot write to|could not write/i.test(judged))
     return "Krate cannot save into that folder. Pick another folder in Settings, then try again.";
   if (/is not there any more/i.test(judged)) return judged;
@@ -4205,7 +4245,14 @@ function plainWords(err) {
   // Specific before general: a rustup install log mentions authentication
   // incidentally, and matching the sign-in guess first told a person with a
   // PATH problem to go sign in -- a wrong door with a confident sign on it.
-  if (/rustup|wasm32-wasip1 target|toolchain|cargo-component is not|build tools/i.test(judged))
+  //
+  // The shapes that MEAN a missing toolchain, never a bare mention of one:
+  // "rustup" or "toolchain" turn up in plenty of failures that have nothing
+  // to do with the install (K-756).
+  // rustc's "can't find crate for `core`" is read from the whole log: it is
+  // the compiler's line, under an engine summary that does not repeat it.
+  if (/can't find crate for `?(core|std)\b/i.test(text) ||
+      /rustup target add|target (is |may )?(be )?not installed|target looks missing|rustup:? (is )?(not found|command not found|not available)|no such command|cargo-component is not|toolchain [^.\n]*(not installed|is missing|was not found)|build tools/i.test(judged))
     return "The build tools aren't set up yet. Trying again lets Krate install them.";
   if (/quota|rate.?limit/i.test(judged)) return "Your AI is out of quota right now. It usually comes back within the hour.";
   // The AI's own sandbox broke: its words, not a guess. Seen live with
@@ -6645,6 +6692,10 @@ async function publishFromSheet() {
     // version is current, so the link sent today opens tomorrow's update.
     state.session.result.share_url = url;
     if (out.version) state.session.result.published_version = out.version;
+    // In the gallery once it was published listed. A later link-only share
+    // does not take it off the shelf (the hub keeps an updated listed app
+    // listed), so this is never turned back to false.
+    if ($("pubListed").checked) state.session.result.listed = true;
     state.lastPublish = out;
     forgetVersions(app);
     $("publishSheet").classList.add("hidden");
@@ -6919,19 +6970,17 @@ function setPane(name) {
   if (name !== "preview") fillPane(name);
 }
 
-/* Run and Share in the panel's header: the finished app's two verbs,
- * shown only when there is a finished app. They press the card's own
- * buttons, so everything those do -- the web's download, the send sheet,
- * a version's own file -- stays in one place. */
+/* Run and Share live on the app's own card, under the preview, and
+ * nowhere else. The panel's header used to carry them too, as "Run it"
+ * and "Share" beside the card's Run and Share and the receipt's Open and
+ * Share: one app, two actions, three names. The header buttons stay in
+ * the page, hidden, because older doors still press them by id. */
 function paintPanelBar() {
   const run = $("barRun");
   const share = $("barShare");
   if (!run || !share) return;
-  const ready = state.phase === "done" && !!currentApp();
-  run.classList.toggle("hidden", !ready);
-  share.classList.toggle("hidden", !ready);
-  const label = $("openBtn") && $("openBtn").textContent.trim();
-  if (label) run.textContent = label;
+  run.classList.add("hidden");
+  share.classList.add("hidden");
 }
 
 async function appContents(app) {
@@ -7036,8 +7085,11 @@ function group(label, rows) {
 async function fillFiles(app) {
   const host = $("filesList");
   host.replaceChildren();
-  $("filesSave").classList.toggle("hidden", !app);
-  $("filesSave").textContent = tauri ? "Show in folder" : "Download the app";
+  // The header's own Download (or Show in folder) did what the app's row
+  // below does, one above the other. The row keeps it; the header button
+  // stays in the page, hidden, because Share and the card's menu press it.
+  $("filesSave").classList.add("hidden");
+  $("filesSave").textContent = tauri ? "Show in folder" : "Download the file";
   // What the person handed the AI, from their own messages.
   const given = [];
   for (const m of (state.session && state.session.messages) || []) {
@@ -7053,7 +7105,7 @@ async function fillFiles(app) {
   }
   host.appendChild(group("Your app", [
     fileRow(ICON_KRATE, app.name || baseName(app.path), "Opens on macOS, Windows and Linux", {
-      label: tauri ? "Show" : "Download",
+      label: tauri ? "Show in folder" : "Download",
       run: () => invoke("reveal", { path: app.path }).catch((e) => toastish(e)),
     }, app.size || ""),
   ]));
@@ -7068,7 +7120,15 @@ async function fillFiles(app) {
       run: () => setPane("code"),
     }, prettyBytes(bytes)));
   }
-  host.appendChild(group("Inside the krate", rows));
+  // A file that could not be opened read as a heading with nothing under
+  // it, which looks like an app with nothing inside. Say it instead.
+  if (rows.length) host.appendChild(group("Inside the krate", rows));
+  else {
+    const none = document.createElement("p");
+    none.className = "pane-empty";
+    none.textContent = "Krate could not read what is inside this file here. Press Download to keep it and open it.";
+    host.appendChild(none);
+  }
   if (given.length) host.appendChild(group("You gave the AI", given.map((f) => fileRow(ICON_CLIP, baseName(f)))));
 }
 
@@ -7337,7 +7397,7 @@ async function fillDetails(app) {
   host.replaceChildren();
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   if (!app) {
-    host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, where it is, and how to build it again from a terminal."));
+    host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, its version and where it runs."));
     return;
   }
   const copyBtn = (label, text, cls) => {
@@ -7382,28 +7442,25 @@ async function fillDetails(app) {
     if (m) version = m[1];
   } catch (e) {}
   const display = (app.name || "").replace(/\.krate$/, "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  // What a person asks first: what it is, which version, how big, where it
+  // runs and what it may touch. Who built it, the file and the developer's
+  // commands come after.
   row("Name", display || "Your app");
-  row("File", app.name || baseName(info.path || app.path), "mono");
-  // The builds made in this session, not published versions: those are
-  // the Versions list below (IC-976), so this row never says "v2" beside it.
-  row("Built", [builds ? `${builds} time${builds === 1 ? "" : "s"} in this session` : "", version ? `manifest ${version}` : ""].filter(Boolean).join(" · ") || "once");
-  row("Size", `${kb} KB · needs the Krate runtime, installed once`);
-  // Which AI wrote it: the session's own record when it has one.
-  const agentId = (state.session && state.session.agent) || state.agent || "";
-  const agentName = (AGENT_ORDER.find((x) => x.name === agentId) || {}).label || agentLabel();
-  const by = el("span", "dt2-by");
-  const mark = el("span", "dt2-mk"); mark.innerHTML = aiLogo(agentId); by.appendChild(mark);
-  by.appendChild(document.createTextNode(`${agentName}, ${tauri ? "on this computer" : "on Krate's build service"}`));
-  row("Built by", by);
+  if (version) row("Version", version);
+  row("Size", `${kb} KB · opens with Krate, installed once`);
+  // A link opens it in a browser, on a phone too (the web Player), so a
+  // phone is one of the places it runs.
   const os = el("span", "dt2-os");
-  for (const n of ["macOS", "Windows", "Linux"]) { const i = el("span", "", n); os.appendChild(i); }
+  for (const n of ["macOS", "Windows", "Linux", "Any browser, by link"]) { const i = el("span", "", n); os.appendChild(i); }
   row("Runs on", os);
-  // What it may touch, in words, and what it may not.
+  // What it may touch, in words, and what it may not. Every app has its
+  // window, said once (the window's own capability read "open a window"
+  // beside it: "A window, open a window, and ...").
   const words = [];
   for (const c of caps) {
     if (ASK_PLUMBING.test(c)) continue;
     const w = friendlyAsk(c);
-    if (w && !words.includes(w)) words.push(w);
+    if (w && !/\bwindow\b/i.test(w) && !words.includes(w)) words.push(w);
   }
   const may = ["A window", ...words.map((w) => (w === "save your data on this computer" ? "its own saved data" : w))];
   const list = (a) => (a.length > 1 ? a.slice(0, -1).join(", ") + ", and " + a[a.length - 1] : a[0]);
@@ -7414,11 +7471,26 @@ async function fillDetails(app) {
   if (!caps.some((c) => c.startsWith("audio.capture"))) not.push("the microphone");
   if (!caps.some((c) => c.startsWith("fs."))) not.push("your other files");
   if (not.length) row("May not touch", (not[0].charAt(0).toUpperCase() + not[0].slice(1)) + (not.length > 1 ? ", " + not.slice(1).join(", ") : ""));
+  // Which AI wrote it: the session's own record when it has one.
+  const agentId = (state.session && state.session.agent) || state.agent || "";
+  const agentName = (AGENT_ORDER.find((x) => x.name === agentId) || {}).label || agentLabel();
+  const by = el("span", "dt2-by");
+  // Krate's own AI wears Krate's mark, not the empty ring kept for a tool
+  // with no logo of its own.
+  const mark = el("span", "dt2-mk");
+  mark.innerHTML = !AI_LOGOS[agentId] && /krate/i.test(agentName) ? '<img src="krate-logo.png" alt="" width="16" height="16">' : aiLogo(agentId);
+  by.appendChild(mark);
+  by.appendChild(document.createTextNode(`${agentName}, ${tauri ? "on this computer" : "on Krate's build service"}`));
+  row("Built by", by);
+  // The builds made in this session, not published versions: those are
+  // the Versions list below (IC-976), so this row never says "v2" beside it.
+  if (builds) row("Builds", `${builds} in this session`);
+  row("File", app.name || baseName(info.path || app.path), "mono");
   // Where it is, and where its source is.
   if (tauri && info.path) {
     const w = el("span", "dt2-act");
     w.appendChild(el("span", "mono dt2-path", info.path));
-    const show = el("button", "dt2-link", "Show"); show.type = "button";
+    const show = el("button", "dt2-link", "Show in folder"); show.type = "button";
     show.addEventListener("click", () => invoke("reveal", { path: info.path }).catch((e) => toastish(e)));
     w.appendChild(show);
     row("Where", w);
@@ -7459,17 +7531,29 @@ async function fillDetails(app) {
     };
     renderVersions(vers, line, paint);
   });
-  // The header's one action: run it from a terminal. Building it again is
-  // a second, smaller one beside it.
-  const run = `krate launch ${shellWord(tauri && info.path ? info.path : app.name || "app.krate")}`;
-  const runBtn = copyBtn("Copy the run command", run, "btn btn-sm dt2-run");
-  runBtn.title = run;
-  head.appendChild(runBtn);
-  const build = buildCommandFor(state.session, app);
-  if (build) {
-    const bb = copyBtn("Copy the build command", build, "btn btn-sm dt2-run ghost");
-    bb.title = build;
-    head.insertBefore(bb, runBtn);
+  // The terminal commands, for a developer, at the foot and folded: they
+  // led the pane as its two white buttons, on the web and on phones too,
+  // where there is no terminal to paste them into. Only on a computer with
+  // Krate installed (the desktop Studio) are they offered at all.
+  if (tauri) {
+    const dev = el("details", "dt2-dev");
+    dev.appendChild(el("summary", "", "Terminal commands"));
+    const cmds = el("dl", "dt2-rows");
+    const cmd = (k, text) => {
+      cmds.appendChild(el("dt", "", k));
+      const d = el("dd", "");
+      const w = el("span", "dt2-act");
+      const code = el("span", "mono dt2-path", text); code.title = text;
+      w.appendChild(code);
+      w.appendChild(copyBtn("Copy", text, "dt2-link"));
+      d.appendChild(w);
+      cmds.appendChild(d);
+    };
+    cmd("Run", `krate launch ${shellWord(info.path || app.name || "app.krate")}`);
+    const build = buildCommandFor(state.session, app);
+    if (build) cmd("Build again", build);
+    dev.appendChild(cmds);
+    wrap.appendChild(dev);
   }
 }
 
@@ -8547,93 +8631,19 @@ $("welcomeGo")?.addEventListener("click", () => {
   }
 });
 
-$("limitGo").addEventListener("click", () => {
-  try { lsSet("krateLimitAck", monthKey()); } catch (e) {}
-  $("limitSheet").classList.add("hidden");
-  const p = state.pendingMake;
-  state.pendingMake = null;
-  if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
-});
-$("limitFounding")?.addEventListener("click", () => {
-  invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
-});
-// The plan sheet. While CHARGING is false it is a one-line statement that
-// nothing costs anything; the tier rows and their checkout buttons are not
-// in the markup at all. The paid dressing below is kept for the day the
-// rows come back (K-216) and is unreachable until then.
-function dressPlanSheet() {
-  if (!CHARGING) return;
-  const b = state.billing || {};
-  const studio = $("planStudioAct");
-  const founding = $("planFoundingAct");
-  if (!studio || !founding) return;
-  document.querySelectorAll("#planSheet .plan-row").forEach((r) => {
-    r.classList.remove("current", "hidden");
-  });
-  if (planIsActiveSafe()) {
-    const onFounding = b.plan === "founding";
-    (onFounding ? $("planRowFounding") : $("planRowStudio")).classList.add("current");
-    (onFounding ? founding : studio).innerHTML = '<span class="plan-tag">active</span>';
-    (onFounding ? studio : founding).innerHTML = "";
-    $("planSub").textContent =
-      "Your plan is active. No cap. Every app you make is a file that is yours forever.";
-    return;
-  }
-  $("planRowFree").classList.add("current");
-  $("planSub").textContent =
-    "Every app you make is a file that is yours forever, whatever happens to your plan.";
-  if (b.live) {
-    studio.innerHTML =
-      '<button class="btn btn-primary" id="planBuyMonthly">$12/month</button>' +
-      '<button class="btn" id="planBuyYearly">$96/year</button>';
-    $("planBuyMonthly").addEventListener("click", () => startCheckout("monthly", "planNote"));
-    $("planBuyYearly").addEventListener("click", () => startCheckout("yearly", "planNote"));
-    // The renewal terms sit beside the buttons, before anyone pays: a plan
-    // renews by itself, so the person has to see that, how often, and how
-    // to stop it at the moment they decide (California's automatic renewal
-    // law, and the plain decent thing). Stripe repeats it at checkout.
-    $("planNote").textContent =
-      "Renews automatically every month or year at the same price until you cancel. " +
-      "Cancel any time from your account; your plan stays active to the end of the period you paid for.";
-    if (b.founding) {
-      founding.innerHTML =
-        '<button class="btn btn-primary" id="planBuyFounding">Join for $79/year</button>';
-      $("planBuyFounding").addEventListener("click", () => startCheckout("founding", "planNote"));
-    } else {
-      $("planRowFounding").classList.add("hidden");
-    }
-  } else {
-    // The hub is unreachable: show the list, without doors.
-    studio.innerHTML = '<span class="plan-tag">offline</span>';
-    founding.innerHTML = '<button class="btn" id="planFoundingList">Join the list</button>';
-    $("planFoundingList").addEventListener("click", () => {
-      invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
-    });
-  }
-}
 async function openPlanSheet() {
-  // Never a checkout on the desktop. Builds here run on the person's own
-  // machine with their own AI and cost us nothing, so there is nothing to
-  // sell -- the allowance and its wall are a web rule (see maybeWelcome
-  // and the cap in make()). Today dressPlanSheet returns early because
-  // CHARGING is false, which means this sheet is harmless by accident
-  // rather than by decision; the day that flag flips, two sidebar buttons
-  // would put "$12/month" in front of someone who already has it all for
-  // free. Guarding at the seam instead of relying on the flag.
-  //
-  // The referral block is the part worth keeping, so on desktop the sheet
-  // still opens -- with the prices structurally unreachable.
+  // The desktop has no free-app allowance -- builds there run on the
+  // person's own machine with their own AI -- so the "What is free" rows
+  // are the browser's alone. On the desktop the sheet is only the sharing
+  // part.
   if (tauri) {
     openShareOnly();
     return;
   }
-  renderFreeCount();
   $("planNote").textContent = "";
-  dressPlanSheet();
+  renderFreeCount();
   $("planSheet").classList.remove("hidden");
   fillReferral();
-  await loadBilling();
-  dressPlanSheet();
 }
 
 /* Share Krate on a desktop: only the sharing part. The free-app rows are the
@@ -8652,8 +8662,8 @@ function openShareOnly() {
   fillReferral();
 }
 
-/// The referral corner of the plan sheet: your link, and how far you are
-/// to the next free month. Needs a signed-in account; hides otherwise.
+/// The referral corner of the plan sheet: your link, and how many people
+/// joined through it. Needs a signed-in account; hides otherwise.
 async function fillReferral() {
   try {
     const me = await invoke("me_info");
@@ -8673,9 +8683,6 @@ $("refCopy")?.addEventListener("click", () => {
   $("refCopy").textContent = "Copied";
   setTimeout(() => { $("refCopy").textContent = "Copy"; }, 1500);
 });
-$("freeCount")?.addEventListener("click", openPlanSheet);
-$("setPlanBtn")?.addEventListener("click", openPlanSheet);
-renderFreeCount();
 loadPlanMakes();
 
 // The three painters the browser shell repaints with when ANOTHER TAB
@@ -8693,166 +8700,6 @@ loadPlanMakes();
 window.renderSessions = renderSessions;
 window.renderShelf = renderShelf;
 window.renderFreeCount = renderFreeCount;
-
-/* ---- the paid plan ---------------------------------------------------- */
-// One truth from the hub: is billing live, and is THIS person's plan
-// active. Until billing is live the limit stays the soft preview sheet;
-// the moment it is live, the fourth make is a wall with a checkout door.
-state.billing = { live: false, active: false };
-try {
-  // The last truth the hub told us, surviving restarts: a paying person
-  // stays unlocked through a hub blip, and the wall stays a wall for
-  // everyone who has ever seen billing live -- going dark does not
-  // reopen the free tap.
-  const cached = JSON.parse(lsGet("krateBilling") || "null");
-  if (cached && cached.live !== undefined) state.billing = cached;
-} catch (e) {}
-async function loadBilling() {
-  try {
-    state.billing = await invoke("billing_info");
-    try { localStorage.setItem("krateBilling", JSON.stringify(state.billing)); } catch (e) {}
-  } catch (e) { /* unreachable hub: the cached truth above stands */ }
-  renderFreeCount();
-}
-loadBilling();
-
-function planIsActive() {
-  return Boolean(state.billing && state.billing.active);
-}
-
-/// Open a checkout in the browser, then watch for the plan to land. The
-/// person pays on stripe.com; Studio just notices.
-async function startCheckout(plan, noteId) {
-  const note = $(noteId || "limitNote");
-  note.textContent = "Opening checkout in your browser…";
-  try {
-    const url = await invoke("billing_checkout", { plan });
-    await invoke("open_external", { url });
-    note.textContent = "Finish in the browser. This unlocks by itself.";
-    let rounds = 0;
-    clearInterval(state.billPoll);
-    state.billPoll = setInterval(async () => {
-      rounds += 1;
-      await loadBilling();
-      if (planIsActive()) {
-        clearInterval(state.billPoll);
-        $("limitSheet").classList.add("hidden");
-        $("planSheet").classList.add("hidden");
-        celebrate();
-        say("KRATE", "Welcome to the studio. The cap is gone, your tickets go to the front of the support queue, and our promise stands: every app you make is a file that is yours forever. A plan can lapse, the file cannot.", null, { variant: "ask" });
-        renderFreeCount();
-        const p = state.pendingMake;
-        state.pendingMake = null;
-        if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
-      }
-      if (rounds > 90) {
-        clearInterval(state.billPoll);
-        note.textContent =
-          "Still not seeing the payment. If you finished in the browser, just hit Make again. It re-checks. If not, reopen this sheet to retry.";
-      }
-    }, 5000);
-  } catch (err) {
-    if (String(err).includes("Sign in")) {
-      // The browser sign-in, not the code flow: the code would be written
-      // into the gate, which is not on screen here (K-971).
-      note.textContent = "Sign in in the browser page that just opened, then hit the plan again.";
-      beginBrowserSignIn().catch(() => {});
-    } else {
-      note.textContent = String(err);
-    }
-  }
-}
-
-/// A short, quiet burst of confetti over the whole window -- celebration,
-/// not a casino. Used once, when a plan lands.
-function celebrate() {
-  const c = document.createElement("canvas");
-  c.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:9999";
-  document.body.appendChild(c);
-  const x = c.getContext("2d");
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const W = window.innerWidth, H = window.innerHeight;
-  c.width = W * dpr; c.height = H * dpr;
-  x.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const colors = ["#ffffff", "#7ee2a8", "#8ab8ff", "#e7c766", "#f2a2c0"];
-  const bits = [];
-  for (let i = 0; i < 110; i++) {
-    bits.push({
-      px: W / 2 + (Math.random() - 0.5) * 80, py: H * 0.4,
-      vx: (Math.random() - 0.5) * 11, vy: -(4 + Math.random() * 9),
-      s: 3 + Math.random() * 4, r: Math.random() * Math.PI,
-      vr: (Math.random() - 0.5) * 0.25, col: colors[i % colors.length], life: 1,
-    });
-  }
-  const t0 = performance.now();
-  function tick(t) {
-    x.clearRect(0, 0, W, H);
-    let alive = false;
-    for (const b of bits) {
-      b.vy += 0.22; b.px += b.vx; b.py += b.vy; b.r += b.vr; b.vx *= 0.99;
-      if (t - t0 > 1600) b.life -= 0.02;
-      if (b.life <= 0 || b.py > H + 20) continue;
-      alive = true;
-      x.save();
-      x.globalAlpha = Math.max(0, b.life) * 0.9;
-      x.translate(b.px, b.py); x.rotate(b.r);
-      x.fillStyle = b.col;
-      x.fillRect(-b.s / 2, -b.s / 2, b.s, b.s * 0.6);
-      x.restore();
-    }
-    if (alive) requestAnimationFrame(tick);
-    else c.remove();
-  }
-  requestAnimationFrame(tick);
-}
-
-/// Dress the limit sheet for whichever world we are in: soft preview, or
-/// the real wall with checkout doors.
-function openLimitSheet() {
-  // A fresh look at the hub every time the wall shows: if the plan landed
-  // since, the sheet closes itself and the held make runs.
-  loadBilling().then(() => {
-    if (planIsActive() && !$("limitSheet").classList.contains("hidden")) {
-      $("limitSheet").classList.add("hidden");
-      const p = state.pendingMake;
-      state.pendingMake = null;
-      if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
-    }
-  });
-  const live = state.billing && state.billing.live;
-  // A wall the person did not walk into has to say so (K-807). On a
-  // second-hand or shared machine the free app is already spent before
-  // they have made anything, because it belongs to the device -- and
-  // without this line the refusal reads as a bug, on the screen where
-  // somebody decides whether to trust us with money.
-  $("limitNote").textContent = machineSpentIt()
-    ? `${machineNote()} The free app belongs to the machine rather than the account, so signing in with a new address does not bring another one.`
-    : "";
-  // Only dress this as a paywall once we actually charge. Until then the
-  // markup's own copy stands: nothing is metered, so reaching here is a
-  // bug on our side rather than a limit the person hit.
-  if (CHARGING && live) {
-    $("limitTitle").textContent = "That's your free app";
-    // Worded to match what the hub actually enforces -- one app ever, plus
-    // one change to it (CASE_LIMIT_FREE / EDIT_LIMIT_FREE). A sheet that
-    // promises a monthly reset the server will never give is how the last
-    // two drifts were noticed, by people the product refused.
-    $("limitSub").textContent =
-      "The free plan is one app, and one change to it. Failed builds never count. Unlimited making is the Studio plan. Krate Studio on your own machine is free and unlimited with your own AI.";
-    $("limitSub2").classList.remove("hidden");
-    $("limitSub2").textContent = state.billing.founding
-      ? "The founding 200 lock it at $79 a year instead of $96."
-      : "";
-    $("limitActions").innerHTML =
-      '<button class="btn btn-primary" id="buyMonthly">Upgrade for $12/month</button>' +
-      '<button class="btn" id="buyYearly">$96/year</button>' +
-      (state.billing.founding ? '<button class="btn" id="buyFounding">Founding at $79/year</button>' : "");
-    $("buyMonthly").addEventListener("click", () => startCheckout("monthly"));
-    $("buyYearly").addEventListener("click", () => startCheckout("yearly"));
-    $("buyFounding")?.addEventListener("click", () => startCheckout("founding"));
-  }
-  $("limitSheet").classList.remove("hidden");
-}
 
 /* ---- support: a real conversation ------------------------------------ */
 function supKeys() {
@@ -8880,12 +8727,6 @@ async function openSupportSheet() {
   $("supIntro").textContent = signedIn
     ? "A real person answers, in this same thread. Replies show up right here."
     : "A real person answers. Replies show up right here and go to your email as well.";
-  const paid = planIsActiveSafe();
-  $("supPriorityTag")?.classList.toggle("hidden", !paid);
-  if (paid) {
-    $("supIntro").textContent =
-      "A real person answers, in this same thread, and your tickets go to the front of the queue.";
-  }
   $("supportSheet").classList.remove("hidden");
   renderSupportTickets();
 }
@@ -9780,7 +9621,6 @@ function setShelfOpen(open) {
     // Clear the unread mark once it has been looked at.
     $("sideBellDot")?.classList.add("hidden");
   });
-  $("sideUpgrade")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
   $("sideDocs")?.addEventListener("click", () => {
     setOpen(false);
     invoke("open_external", { url: "https://krate.tech/docs/" }).catch(() => {});
@@ -10306,7 +10146,7 @@ async function loadProfilePage() {
     // a try and survived, the signed-out one was not. The pane rendered
     // correctly either way, so nothing looked wrong while an unhandled
     // rejection was logged on every load, ready to bury a real error the
-    // day somebody debugs the paid path (K-813).
+    // day somebody debugs the signed-out path (K-813).
     const ghSub = $("connGhSub");
     if (ghSub) ghSub.textContent = "Used when you publish a link";
     const ghAct = $("connGhAct");
