@@ -18,9 +18,15 @@ import { spawn } from "node:child_process";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer as probeServer } from "node:net";
 
-const HUB_PORT = 8941;
-const BUILDER_PORT = 8942;
+// An OS-chosen free port for a child process to listen on.
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
+const BUILDER_PORT = await freePort();
 const BUILDER = `http://127.0.0.1:${BUILDER_PORT}`;
 
 const TOKENS = { "alice-token": "alice", "bob-token": "bob", "carol-token": "carol", "dan-token": "dan" };
@@ -33,7 +39,8 @@ const hub = createServer((req, res) => {
   res.statusCode = req.url === "/me" ? 401 : 404;
   res.end("no");
 });
-await new Promise((r) => hub.listen(HUB_PORT, "127.0.0.1", r));
+await new Promise((r) => hub.listen(0, "127.0.0.1", r));
+const HUB_PORT = hub.address().port;
 
 const work = await mkdtemp(join(tmpdir(), "krate-plan-ledger-"));
 const krate = join(work, "krate");
