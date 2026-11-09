@@ -110,6 +110,36 @@ assert.ok(!/[0-9a-f]{64}/.test(stored), "no hex seed at rest");
   assert.strictEqual(unset.status, 503, "no wrapping secret: nothing made, nothing signed");
 }
 
+/* ---- the line that names the maker: their GitHub login, never an address -- */
+{
+  const get = async (path) => {
+    const res = await worker.fetch(new Request(`https://hub.test${path}`), env, { waitUntil() {} });
+    return { status: res.status, body: await res.json().catch(() => null) };
+  };
+  const carol = "3f2b8c1e-7a4d-4e5f-9b6a-1c2d3e4f5a6b"; // real ids are random UUIDs
+  KV.set("session:krs_carol", carol);
+  KV.set(`user:${carol}`, JSON.stringify({ id: carol, login: "carol-gh", providers: ["github"] }));
+  KV.set("ghlogin:carol-gh", carol);
+  assert.strictEqual((await get(`/made-for/${carol}`)).status, 404, "no web build yet: names no one");
+  const built = await sign("krs_carol");
+  assert.strictEqual(built.namespace.split("/")[1], carol, "the signature names the account by id");
+  const named = await get(`/made-for/${carol}`);
+  assert.strictEqual(named.status, 200);
+  assert.deepStrictEqual(named.body, { login: "carol-gh" });
+
+  // An email sign-in's "login" is the start of its address: never shown.
+  const dave = "8e7d6c5b-4a39-4281-8f7e-6d5c4b3a2918";
+  KV.set("session:krs_dave", dave);
+  KV.set(`user:${dave}`, JSON.stringify({ id: dave, login: "dave.smith", providers: ["email"] }));
+  assert.strictEqual((await sign("krs_dave")).status, 200);
+  assert.strictEqual((await get(`/made-for/${dave}`)).status, 404, "an email account is not named");
+  // Nor a GitHub login that now signs in to someone else.
+  KV.set("ghlogin:carol-gh", dave);
+  assert.strictEqual((await get(`/made-for/${carol}`)).status, 404, "a login another account holds is not this one's");
+  KV.set("ghlogin:carol-gh", carol);
+  assert.strictEqual((await get("/made-for/not-an-id")).status, 404);
+}
+
 /* ---- not a bundle -------------------------------------------------------- */
 assert.strictEqual((await sign("krs_alice", AS_BUILDER, new Uint8Array(0))).status, 400);
 assert.strictEqual((await sign("krs_alice", AS_BUILDER, new TextEncoder().encode("not a zip"))).status, 422);

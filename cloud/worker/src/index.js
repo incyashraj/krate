@@ -742,6 +742,9 @@ export default {
         // NOT cors(), as /keys/use: the build service's door only.
         return signWebBuild(request, env);
       }
+      if (request.method === "GET" && /^\/made-for\/[0-9a-f-]{36}$/.test(pathname)) {
+        return cors(await madeFor(pathname.slice("/made-for/".length), env));
+      }
       if (request.method === "POST" && pathname === "/keys/use") {
         // NOT cors(): only the build service calls this, server to server.
         // Without the header a browser cannot read the answer, so a script
@@ -6496,6 +6499,26 @@ async function accountSigningSeed(env, userId) {
   if (!sealed) return null;
   await env.APPS.put(key, JSON.stringify(sealed));
   return seed;
+}
+
+/// GET /made-for/<account id>: whose app a krate.tech-signed bundle is, by
+/// name, for the line that says "Made on krate.tech for <login>" (IC-983).
+/// The signature names the account by its id (`krate.tech/<id>/<app id>`),
+/// which is random and means nothing to a person.
+///
+/// Answers only for an account the hub signs web builds for, and only with
+/// a GitHub login that this account signed in as: an email sign-in's
+/// "login" is the start of its address, which is not for every app's
+/// opener to read. Anything else is 404, and the line names no one.
+async function madeFor(account, env) {
+  const notFound = () => json({ error: "not-found" }, 404);
+  if (!(await env.APPS.get(`signkey:${account}`))) return notFound();
+  const user = JSON.parse((await env.APPS.get(`user:${account}`)) || "null");
+  const login = user && typeof user.login === "string" ? user.login : "";
+  if (!login || (await env.APPS.get(`ghlogin:${login.toLowerCase()}`)) !== account) return notFound();
+  const res = json({ login });
+  res.headers.set("cache-control", "public, max-age=3600");
+  return res;
 }
 
 /// POST /sign/web-build: the bundle a person's build just made, from the
