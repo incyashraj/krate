@@ -52,6 +52,8 @@ const BUILD_TIMEOUT_MS = Number(process.env.KRATE_BUILD_TIMEOUT_MS || 15 * 60 * 
 // 0 (the default, and every test that does not set it) never exits.
 const IDLE_EXIT_MS = Number(process.env.KRATE_IDLE_EXIT_MS || 0);
 let lastActivity = Date.now();
+// What a person or the hub asks for: a build, a plan, a port, a judging.
+const DOORS = /^\/(build|plan|port|judge)(\/|$)/;
 let leaving = false; // set once a shutdown starts (a signal, or idle)
 const PLAN_TIMEOUT_MS = Number(process.env.KRATE_PLAN_TIMEOUT_MS || 90 * 1000);
 
@@ -1400,8 +1402,12 @@ function prettySize(bytes) {
 /* ---- the doors ----------------------------------------------------------- */
 
 const server = createServer(async (req, res) => {
-  lastActivity = Date.now();
   const url = new URL(req.url, `http://${req.headers.host}`);
+  // Only the builder's own doors are activity. Fly's health check asks
+  // /health every 30 seconds and scanners ask for anything, and while every
+  // request reset this clock the machine never once stopped: billed around
+  // the clock for nobody (2026-11-09).
+  if (DOORS.test(url.pathname)) lastActivity = Date.now();
   const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
 
   // The page and the service are on different origins by design: the
