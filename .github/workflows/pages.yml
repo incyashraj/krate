@@ -584,7 +584,12 @@ jobs:
             || { echo "::error::_site/.well-known/security.txt is missing"; exit 1; }
           tar --dereference --hard-dereference --directory _site \
             -cvf "$RUNNER_TEMP/artifact.tar" --exclude=.git --exclude=.github .
-          tar -tf "$RUNNER_TEMP/artifact.tar" | grep -qx './.well-known/security.txt' \
+          # The listing goes to a file, then grep reads it. Piped straight into
+          # `grep -q`, grep exits at the first match, tar dies writing the rest
+          # ("stdout: write error"), and pipefail failed an archive that did
+          # carry the file (2026-11-09).
+          tar -tf "$RUNNER_TEMP/artifact.tar" > "$RUNNER_TEMP/artifact.list"
+          grep -qx './.well-known/security.txt' "$RUNNER_TEMP/artifact.list" \
             || { echo "::error::the Pages archive does not carry .well-known/security.txt"; exit 1; }
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
