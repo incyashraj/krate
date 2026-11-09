@@ -104,8 +104,13 @@ fn start_line(label: &str, program: &str, cwd: &str) -> String {
     }
 }
 
-/// What a terminal's output says as lines of text: ESC [ ... sequences and
-/// carriage returns dropped.
+/// What a terminal's output says as lines of text: ESC [ ... and ESC ] ...
+/// sequences and carriage returns dropped.
+///
+/// ESC ] is an operating-system command, ended by BEL or ESC \. Newer Ubuntu
+/// has bash mark every command with one (systemd's OSC 3008 context), on the
+/// same line as the command's output, so `hi` read as `]3008;start=...\hi`
+/// (CI, 2026-11-09).
 fn plain_lines(bytes: &[u8]) -> Vec<String> {
     let text = String::from_utf8_lossy(bytes);
     let mut out = String::new();
@@ -117,6 +122,17 @@ fn plain_lines(bytes: &[u8]) -> Vec<String> {
                 // Parameters, then one final letter or `~`.
                 for d in chars.by_ref() {
                     if d.is_ascii_alphabetic() || d == '~' {
+                        break;
+                    }
+                }
+            } else if chars.peek() == Some(&']') {
+                chars.next();
+                while let Some(d) = chars.next() {
+                    if d == '\u{7}' {
+                        break;
+                    }
+                    if d == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
                         break;
                     }
                 }
