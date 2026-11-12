@@ -17412,7 +17412,7 @@ fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
 }
 
 /// A folder removed when this goes out of scope: a check run's one-off
-/// profile.
+/// profile, an install's staging directory.
 struct RemoveOnDrop(PathBuf);
 
 impl Drop for RemoveOnDrop {
@@ -19237,20 +19237,43 @@ fn installed_app_for(bundle_path: &Path) -> Option<PathBuf> {
         home_dir().map(|home| home.join("Applications")),
         Some(PathBuf::from("/Applications")),
     ];
-    for root in roots.into_iter().flatten() {
-        let candidate = root.join(format!("{name}.app"));
-        let payload = candidate.join("Contents/Resources/app.krate");
-        if !payload.is_file() {
-            continue;
-        }
-        let matches = krate_bundle::read_manifest(&payload)
+    roots
+        .into_iter()
+        .flatten()
+        .find_map(|root| installed_app_under(&root, &name, &id))
+}
+
+/// An installed wrapper under `root` for the app called `name` with this id
+/// (IC-278).
+///
+/// Installs are named "<name> (<lineage tag>).app" since K-292, and this
+/// looked only for "<name>.app" -- so it found nothing an install of the
+/// last two months made, and a double-clicked file ran under the Krate name
+/// beside the installed copy. Both forms are looked for; the tag needs the
+/// signature to compute, and this path reads the manifest alone (K-1075),
+/// so the id read from each candidate's own payload is what decides.
+#[cfg(target_os = "macos")]
+fn installed_app_under(root: &Path, name: &str, id: &str) -> Option<PathBuf> {
+    let tagged = format!("{} (", install_name_part(name));
+    let entries = fs::read_dir(root).ok()?;
+    let mut candidates: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|file| file.to_str())
+                .is_some_and(|file| {
+                    file == format!("{name}.app")
+                        || (file.starts_with(&tagged) && file.ends_with(").app"))
+                })
+        })
+        .collect();
+    candidates.sort();
+    candidates.into_iter().find(|candidate| {
+        krate_bundle::read_manifest(&candidate.join("Contents/Resources/app.krate"))
             .map(|installed| installed.app.id == id)
-            .unwrap_or(false);
-        if matches {
-            return Some(candidate);
-        }
-    }
-    None
+            .unwrap_or(false)
+    })
 }
 
 /// Wrap and open: the launch path behind double-click and the studio.
@@ -19564,13 +19587,25 @@ fn launch_app(bundle_path: &Path) -> Result<u8> {
     // booting, and it died with SIGABRT and nothing on screen -- read
     // straight out of the crash log. Now: identical payload, reuse; changed
     // payload, build beside and swap.
-    let name = krate_bundle::open(bundle_path)?
-        .manifest()
-        .app
-        .name
-        .trim()
-        .to_string();
-    let app_dir = launchers.join(format!("{name}.app"));
+    let opened = krate_bundle::open(bundle_path)?;
+    let name = opened.manifest().app.name.trim().to_string();
+    // Lineage, as `krate install` names it (IC-278). Keyed on the display
+    // name alone, two different "Notes" shared one wrapper: opening one
+    // rebuilt it over the other, and a name with a slash in it made a path
+    // that could not be created, so the app never opened.
+    let app_dir = launchers.join(format!("{}.app", install_directory_name(&opened)));
+    drop(opened);
+    // The wrapper a launch before this change left under the bare name.
+    // Only ever inside Krate's own launchers folder, and only a wrapper
+    // Krate made: one component, holding a payload.
+    let legacy = launchers.join(format!("{name}.app"));
+    if !name.contains('/')
+        && !name.starts_with('.')
+        && legacy != app_dir
+        && legacy.join("Contents/Resources/app.krate").is_file()
+    {
+        let _ = fs::remove_dir_all(&legacy);
+    }
     let payload = app_dir.join("Contents/Resources/app.krate");
     let same_app = fs::read(&payload)
         .ok()
@@ -19729,6 +19764,11 @@ fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
     let mut found = Vec::new();
+    // On Linux the installer writes only under krate/apps, so only that is
+    // read: a folder elsewhere in ~/.local/share that happens to hold an
+    // app.krate is not Krate's to list, or to remove (IC-278).
+    #[cfg(target_os = "linux")]
+    let root = &root.join("krate/apps");
     let Ok(entries) = fs::read_dir(root) else {
         return found;
     };
@@ -19749,14 +19789,6 @@ fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
                 manifest.app.name.clone(),
                 path.clone(),
             ));
-        }
-    }
-    // On Linux the wrappers sit under krate/apps/<slug>, one level down.
-    #[cfg(target_os = "linux")]
-    {
-        let apps = root.join("krate/apps");
-        if apps.is_dir() && apps != *root {
-            found.extend(installed_apps(&apps));
         }
     }
     found.sort();
@@ -19882,6 +19914,13 @@ fn uninstall_app(
         }
 
         for (id, name, path) in &matches {
+            // What else the install made, before the app it points at goes.
+            #[cfg(target_os = "macos")]
+            unregister_from_launch_services(path);
+            #[cfg(target_os = "linux")]
+            if let Some(entry) = owned_desktop_entry(&root, path) {
+                let _ = fs::remove_file(entry);
+            }
             fs::remove_dir_all(path).with_context(|| format!("removing {}", path.display()))?;
             println!("Removed {name} ({id}).");
         }
@@ -19903,6 +19942,39 @@ fn uninstall_app(
         }
         Ok(0)
     }
+}
+
+/// Tell Launch Services an app is going, so Spotlight and the Open With
+/// menu stop offering a path that is about to be empty (IC-278).
+#[cfg(target_os = "macos")]
+fn unregister_from_launch_services(app: &Path) {
+    let lsregister = "/System/Library/Frameworks/CoreServices.framework/\
+                      Frameworks/LaunchServices.framework/Support/lsregister";
+    let _ = std::process::Command::new(lsregister)
+        .args(["-u".as_ref(), app.as_os_str()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// The menu entry `krate install` wrote for the app installed at `app`,
+/// when it is still that app's (IC-278).
+///
+/// Uninstall removed the app's folder and left this behind, so the app
+/// stayed in the menu and did nothing when clicked. It is removed only
+/// when its Exec line still names this app's payload: an entry somebody
+/// edited to run something else is theirs now.
+#[cfg(target_os = "linux")]
+fn owned_desktop_entry(root: &Path, app: &Path) -> Option<PathBuf> {
+    let slug = app.file_name()?.to_str()?;
+    let entry = root
+        .join("applications")
+        .join(format!("krate-{slug}.desktop"));
+    let text = fs::read_to_string(&entry).ok()?;
+    let payload = desktop_exec(&[installed_payload_path(app).display().to_string()]);
+    text.lines()
+        .any(|line| line.starts_with("Exec=") && line.contains(&payload))
+        .then_some(entry)
 }
 
 /// The bundle an installed app runs, inside its installed object.
@@ -20464,6 +20536,22 @@ fn install_name_part(name: &str) -> String {
     }
 }
 
+/// The wrapper's executable file name (IC-278): the app's own name, which
+/// is what the dock shows, wherever that is one safe file name.
+///
+/// A display name may hold a slash ("AC/DC") or be "..", and joined onto
+/// Contents/MacOS those made a path that could not be created -- the
+/// install failed outright. Those, a leading dot, and a name too long for
+/// a file name take the cleaned form the install folder already uses.
+#[cfg(target_os = "macos")]
+fn launcher_file_name(name: &str) -> String {
+    if name.contains('/') || name.starts_with('.') || name.len() > 200 {
+        install_name_part(name)
+    } else {
+        name.to_string()
+    }
+}
+
 /// Swap a finished install into place (IC-278): the old app exists until
 /// this moment and is replaced by a complete one, so there is no instant at
 /// which the person has neither.
@@ -20522,6 +20610,9 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     // different one.
     let staging = prefix.join(format!(".{}.installing", install_directory_name(&opened)));
     let _ = fs::remove_dir_all(&staging);
+    // Gone with this install: published, it was renamed and this finds
+    // nothing; failed halfway, no hidden half-built app is left behind.
+    let _cleanup = RemoveOnDrop(staging.clone());
     let macos_dir = staging.join("Contents/MacOS");
     let resources = staging.join("Contents/Resources");
     fs::create_dir_all(&macos_dir).with_context(|| format!("creating {}", macos_dir.display()))?;
@@ -20542,7 +20633,8 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     //
     // A hard link keeps this from costing 20 MB per installed app; it falls
     // back to a copy across filesystems, where linking cannot work.
-    let launcher = macos_dir.join(name);
+    let executable = launcher_file_name(name);
+    let launcher = macos_dir.join(&executable);
     let engine = current_engine_path()?;
     if fs::hard_link(&engine, &launcher).is_err() {
         fs::copy(&engine, &launcher)
@@ -20593,7 +20685,7 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <key>CFBundleDisplayName</key>
     <string>{name}</string>
     <key>CFBundleExecutable</key>
-    <string>{name}</string>
+    <string>{executable}</string>
     <key>CFBundleIdentifier</key>
     <string>{ident}</string>
     <key>CFBundleVersion</key>
@@ -20622,6 +20714,7 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
 </plist>
 "#,
             name = xml_escape(name),
+            executable = xml_escape(&executable),
             ident = xml_escape(&ident),
             version = xml_escape(&manifest.app.version),
         ),
@@ -20721,6 +20814,9 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     let apps = data.join("krate/apps");
     let staging = apps.join(format!(".{slug}.installing"));
     let _ = fs::remove_dir_all(&staging);
+    // Gone with this install: published, it was renamed and this finds
+    // nothing; failed halfway, no hidden half-built app is left behind.
+    let _cleanup = RemoveOnDrop(staging.clone());
     fs::create_dir_all(&staging)?;
     fs::copy(bundle_path, staging.join("app.krate"))
         .with_context(|| format!("copying the app into {}", staging.display()))?;
@@ -20813,7 +20909,11 @@ fn desktop_exec(args: &[String]) -> String {
                 .replace('\\', "\\\\")
                 .replace('"', "\\\"")
                 .replace('`', "\\`")
-                .replace('$', "\\$");
+                .replace('$', "\\$")
+                // A literal percent is "%%" even inside quotes: a bare one
+                // reads as a field code, and a path holding "%f" would be
+                // replaced by whatever file the menu was handed.
+                .replace('%', "%%");
             format!("\"{}\"", desktop_value(&escaped))
         })
         .collect::<Vec<_>>()
@@ -20903,6 +21003,13 @@ mod desktop_entry_tests {
                 "{ch} must be escaped so the launcher does not expand it: {escaped}"
             );
         }
+
+        // A percent is a field code unless doubled: "%f" in a path would
+        // be replaced by a file the menu was handed.
+        assert_eq!(
+            desktop_exec(&["/home/50%off/%f.krate".to_string()]),
+            "\"/home/50%%off/%%f.krate\""
+        );
     }
 }
 
@@ -33406,5 +33513,64 @@ mod launcher_plist_tests {
             );
         }
         assert!(plist.contains("Heart Rate asked to reach a Bluetooth device"));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod installed_app_lookup_tests {
+    use super::installed_app_under;
+    use std::fs;
+    use std::path::Path;
+
+    fn installed(root: &Path, folder: &str, id: &str) {
+        let src = tempfile::tempdir().unwrap();
+        let manifest = src.path().join("manifest.toml");
+        fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{id}\"\nname = \"Notes\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ),
+        )
+        .unwrap();
+        let code = src.path().join("code.wasm");
+        fs::write(
+            &code,
+            include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+        )
+        .unwrap();
+        let resources = root.join(folder).join("Contents/Resources");
+        fs::create_dir_all(&resources).unwrap();
+        krate_bundle::pack(&manifest, &code, &resources.join("app.krate")).unwrap();
+    }
+
+    /// A double-clicked file finds the copy `krate install` made (IC-278).
+    ///
+    /// Installs have been "<name> (<tag>).app" since K-292 and the lookup
+    /// still asked for "<name>.app", so it found none of them.
+    #[test]
+    fn a_lineage_named_install_is_found_by_its_id() {
+        let root = tempfile::tempdir().unwrap();
+        installed(root.path(), "Notes (1a2b3c4d).app", "dev.acme.notes");
+        assert_eq!(
+            installed_app_under(root.path(), "Notes", "dev.acme.notes"),
+            Some(root.path().join("Notes (1a2b3c4d).app"))
+        );
+        // Another app sharing the name is never launched in its place.
+        assert_eq!(
+            installed_app_under(root.path(), "Notes", "dev.other.notes"),
+            None
+        );
+    }
+
+    /// A wrapper from before K-292, under the bare name, is still found.
+    #[test]
+    fn an_older_bare_named_install_is_still_found() {
+        let root = tempfile::tempdir().unwrap();
+        installed(root.path(), "Notes.app", "dev.acme.notes");
+        assert_eq!(
+            installed_app_under(root.path(), "Notes", "dev.acme.notes"),
+            Some(root.path().join("Notes.app"))
+        );
     }
 }

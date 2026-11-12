@@ -9163,6 +9163,26 @@ fn uninstalling_removes_the_app_and_keeps_the_data_unless_told_otherwise() {
         "uninstalling must not take the person's data with it"
     );
 
+    // On Linux the menu entry goes with it, and only its own (IC-278):
+    // uninstall used to leave it, so the app stayed in the menu and did
+    // nothing when clicked.
+    #[cfg(target_os = "linux")]
+    {
+        let entries: Vec<String> = std::fs::read_dir(prefix.path().join("applications"))
+            .expect("applications")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            entries.iter().any(|e| e.contains("keep")),
+            "the other app's entry stays: {entries:?}"
+        );
+        assert!(
+            !entries.iter().any(|e| e.contains("drop")),
+            "the removed app's entry goes: {entries:?}"
+        );
+    }
+
     let listed = krate()
         .arg("installed")
         .arg("--prefix")
@@ -9402,6 +9422,153 @@ fn reinstalling_an_app_leaves_no_moment_with_neither_copy() {
             .any(|n| n.contains(".installing") || n.contains(".replaced")),
         "no half-finished wrapper may survive: {after:?}"
     );
+}
+
+/// Any name a manifest allows installs, and reads back as itself (IC-278).
+///
+/// The wrapper's executable was the display name joined onto
+/// Contents/MacOS, so "AC/DC" asked for a folder that did not exist and
+/// ".." named the folder above: both failed to install, and each left a
+/// hidden half-built wrapper behind in the person's Applications folder.
+#[test]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let home = tempfile::tempdir().expect("home");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let long = "Long name ".repeat(30);
+    let names = [
+        "AC/DC",
+        "..",
+        ".hidden",
+        "Quote \"x\" & <y> 'z'",
+        "50% Off %f",
+        "Back\\slash",
+        "Café ☕ 日本",
+        long.trim(),
+    ];
+    for (i, name) in names.iter().enumerate() {
+        let id = format!("dev.krate.names{i}");
+        let manifest = dir.path().join(format!("{i}.toml"));
+        let toml_name = name.replace('\\', "\\\\").replace('"', "\\\"");
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{id}\"\nname = \"{toml_name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{i}.krate"));
+        let packed = krate()
+            .args(["pack"])
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(
+            packed.status.success(),
+            "{name:?} must pack: {}",
+            String::from_utf8_lossy(&packed.stderr)
+        );
+        let out = krate()
+            .arg("install")
+            .arg(&bundle)
+            .arg("--prefix")
+            .arg(prefix.path())
+            .env("HOME", home.path())
+            .output()
+            .expect("install");
+        assert!(
+            out.status.success(),
+            "{name:?} must install: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let mut left: Vec<String> = Vec::new();
+    for root in [
+        prefix.path().to_path_buf(),
+        prefix.path().join("krate/apps"),
+    ] {
+        if let Ok(entries) = std::fs::read_dir(&root) {
+            left.extend(
+                entries
+                    .flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned()),
+            );
+        }
+    }
+    assert!(
+        !left
+            .iter()
+            .any(|n| n.ends_with(".installing") || n.ends_with(".replaced")),
+        "no half-built wrapper may be left: {left:?}"
+    );
+
+    // Each wrapper names its own executable, which exists, and keeps the
+    // app's own name for the dock and Finder.
+    #[cfg(target_os = "macos")]
+    {
+        let apps: Vec<_> = std::fs::read_dir(prefix.path())
+            .expect("prefix")
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "app"))
+            .collect();
+        assert_eq!(apps.len(), names.len(), "one wrapper each: {apps:?}");
+        let mut shown = Vec::new();
+        for app in &apps {
+            let plist = app.join("Contents/Info.plist");
+            let read = |key: &str| {
+                let out = std::process::Command::new("plutil")
+                    .args(["-extract", key, "raw", "-o", "-"])
+                    .arg(&plist)
+                    .output()
+                    .expect("plutil");
+                assert!(out.status.success(), "{} has no {key}", plist.display());
+                String::from_utf8_lossy(&out.stdout).trim_end().to_string()
+            };
+            let executable = read("CFBundleExecutable");
+            assert!(
+                app.join("Contents/MacOS").join(&executable).is_file(),
+                "{}: CFBundleExecutable {executable:?} must exist",
+                app.display()
+            );
+            shown.push(read("CFBundleName"));
+        }
+        for name in names {
+            assert!(
+                shown.iter().any(|s| s == name.trim()),
+                "{name:?} must read back as itself: {shown:?}"
+            );
+        }
+    }
+
+    // And every one of them uninstalls by id.
+    for i in 0..names.len() {
+        let out = krate()
+            .args(["uninstall", &format!("dev.krate.names{i}")])
+            .arg("--prefix")
+            .arg(prefix.path())
+            .env("HOME", home.path())
+            .output()
+            .expect("uninstall");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }
 
 /// A person can see what they have allowed, and take it back (IC-017).
