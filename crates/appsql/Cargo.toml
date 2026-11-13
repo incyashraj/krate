@@ -1,0 +1,19 @@
+[package]
+name = "krate-appsql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "The rules behind krate:store/sql, shared by the desktop runtime and the browser tab"
+
+# `engine` is SQLite itself (rusqlite, bundled C). The rules alone -- the
+# types and the statement filter -- build anywhere, including the wasm32
+# runtime build that has no C compiler behind it.
+[features]
+default = ["engine"]
+engine = ["dep:rusqlite"]
+
+[dependencies]
+rusqlite = { workspace = true, optional = true }

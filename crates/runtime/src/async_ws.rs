@@ -190,6 +190,30 @@ impl AsyncWs {
 /// (IC-949 N): through the proxy that applies to this URL, and over TLS that
 /// trusts the computer's own store, so an app's websocket works on a company
 /// network that inspects or proxies traffic.
+/// A WebSocket to `url` offering `protocols` (Sec-WebSocket-Protocol), on
+/// the same trust store and proxy as every other connection: the team
+/// data's live socket (org_live.rs) offers its protocol and its ticket.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn connect_with_protocols(
+    url: &str,
+    protocols: &[&str],
+) -> std::result::Result<
+    (
+        tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+        tungstenite::handshake::client::Response,
+    ),
+    String,
+> {
+    use tungstenite::client::IntoClientRequest;
+    let mut request = url.into_client_request().map_err(|err| err.to_string())?;
+    let offered = tungstenite::http::HeaderValue::from_str(&protocols.join(", "))
+        .map_err(|err| err.to_string())?;
+    request
+        .headers_mut()
+        .insert("sec-websocket-protocol", offered);
+    connect_request(url, request)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn connect(
     url: &str,
@@ -202,6 +226,20 @@ fn connect(
 > {
     use tungstenite::client::IntoClientRequest;
     let request = url.into_client_request().map_err(|err| err.to_string())?;
+    connect_request(url, request)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn connect_request(
+    url: &str,
+    request: tungstenite::handshake::client::Request,
+) -> std::result::Result<
+    (
+        tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+        tungstenite::handshake::client::Response,
+    ),
+    String,
+> {
     let uri = request.uri();
     let host = uri
         .host()

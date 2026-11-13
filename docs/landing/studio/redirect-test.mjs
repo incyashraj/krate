@@ -65,6 +65,7 @@ if (!hasGuard) bad++;
       const tooLong = () => null;
       const deviceId = () => "dev";
       const attachmentsFor = () => [];
+      const withConnections = async (_text, names) => names;
       const localSessions = () => [];
       COMMANDS.session_save = async () => {};
       return ({\n${grab(name)}\n});

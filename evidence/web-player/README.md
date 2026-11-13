@@ -149,7 +149,8 @@ under the 3 MB free-plan and 10 MB paid limits.
 - **Firefox**: Playwright's Firefox still does not launch on this macOS 27
   beta ("Failed to launch the browser process"); run `phase1.mjs` on a
   released OS.
-- Interfaces answered "open it in Krate" in a tab: audio, camera, speech,
+- Interfaces answered "open it in Krate" in a tab: the microphone (sound
+  out plays since K-1134, `player/audio-proof.mjs`), camera, speech,
   gpu, scene3d, video, files (fs), store.sql/secret/shared/group/org,
   net/ws and sockets, resources/assets, dialogs, notifications, reminders,
   print, menus, location, bluetooth, photos, share, sign-in, web-page.

@@ -85,6 +85,15 @@ zone_name = "krate.tech"
 
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"
+# The gallery's "Start here" shelf, in order (id prefixes): Aurora, Krate
+# Nova, Calculator, Track Dash, Diff. Each looks good and works fully in a
+# browser tab, so a stranger's first tap shows the whole app. Calculator
+# replaced Weather, whose hourly row overlaps on a phone (K-1147).
+GALLERY_PICKS = "cab0ce2d8c,5042343660,eb1d5bdeac,8801996a2c,f631ea50f4"
+# The founder's welcome to each new account, 21 to 31 minutes after it signs
+# up (sendDueWelcomes, on the ten-minute run). Through his Gmail when
+# GMAIL_APP_PASSWORD is set (lands in Primary), else Resend from krate.tech.
+WELCOME_AUTO = "1"
 # The account whose Analytics Engine dataset /stats reads. Not a secret --
 # it is already in `account_id` above -- but the worker cannot see that field
 # at runtime, so without this the SQL URL becomes /accounts/undefined/... and
@@ -148,3 +157,17 @@ class_name = "Org"
 tag = "v3-orgs"
 new_sqlite_classes = ["Org"]
 
+# A person's own app data on every device (IC-981): one SQLite-backed
+# object per account, named "acct:<account id>", holding the account's
+# device keys, sealed key envelopes, recovery envelope and every app's
+# sealed buckets. Every sync is one transaction in it and nothing in KV:
+# an open app syncs every 30 s, which in KV would spend the free plan's
+# 1,000 daily writes the way the rate counter once did (K-912). The file
+# bodies it names stay in R2 (BUNDLES).
+[[durable_objects.bindings]]
+name = "SYNC_ACCOUNTS"
+class_name = "SyncAccount"
+
+[[migrations]]
+tag = "v4-sync-accounts"
+new_sqlite_classes = ["SyncAccount"]

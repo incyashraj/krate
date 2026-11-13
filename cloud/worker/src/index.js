@@ -32,13 +32,16 @@ const MAX_REPORT_BYTES = 12 * 1024 * 1024;
 // is re-read on every call because it can grow.
 import * as validatorImport from "./validator.wasm";
 import { Org, SLUG, EMAIL, chainOk, messageFor } from "./org.js";
-// Organisation lifecycle, billing, mail and the refused-attempt limit
+// Organisation lifecycle, mail and the refused-attempt limit
 // (IC-948), each in its own module; importing the store's half registers
 // its commands with the Org class.
 import "./org-lifecycle-store.js";
 import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
-import { orgBillingRoute, orgBillingEvent, orgBillingAlerts } from "./org-billing.js";
+import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
+import { tellPublished, tellMade } from "./mail.js";
+import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
+import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
@@ -46,11 +49,15 @@ import { leaseRoute, leaseKeyRoute } from "./org-lease.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
+import { LINE_ID, advanceLine, currentHash, dropVersion, linesRoute, settleRows, storeTagOf, versionOf } from "./lines.js";
+// Staged rollout: a pilot group first, pinned groups (G10).
+import { orgRolloutRoute } from "./org-rollout.js";
 // What an approver sees and must confirm (IC-950); after release control.
 import { judgementCaps } from "./org-review.js";
 // Company connections (IC-952). After org-releases.js, whose checks a
 // credential fetch reuses.
 import { connectionRoute, connectionsAsked } from "./org-connections.js";
+import { jwksRoute } from "./org-identity-token.js";
 // SCIM 2.0 provisioning (IC-955); after release control, whose groups it fills.
 import { scimRoute, orgScimRoute } from "./org-scim.js";
 // Audit export over a signed webhook (IC-955).
@@ -64,17 +71,41 @@ import { orgKeysRoute } from "./org-keys.js";
 // approved in the background, solo release.
 import { orgSigningRoute } from "./org-signing.js";
 import { orgDataRoute } from "./org-data.js";
+import { orgLiveRoute } from "./org-data-live.js";
 // Inventory, provenance and ownership (IC-954), after release control and review.
 import { inventoryRoute, provenanceArg } from "./org-inventory.js";
 // The browser Player (IC-956): the web pack made at publish, the route that
 // serves it behind /a/'s own checks, and the cross-origin-isolated page.
-import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack } from "./web-player.js";
+import { playerPage, playerAsset, validatorFile, webPackRoute, ensureWebPack, webPackKey, RUN_PATH, FILE_PAGE, fileShareFallback } from "./web-player.js";
+// The receive loop (F-320): the link card, the open counted per person, a
+// stranger's report (receive.js).
+import { isPreviewer, viaOf, viaQuery, linkCard, tabEvent, appReport, appReportsList, appReportState, newerVersionLine } from "./receive.js";
 // Insights (IC-959), after everything whose counts it reads.
 import { insightsRoute } from "./org-insights.js";
 // The organisation's own day (F-319): its time zone, set by an owner or admin.
 import { orgTimeRoute } from "./org-time.js";
 // The organisation's logo, kept small and only as a picture.
 import { orgBrandRoute } from "./org-brand.js";
+// Declining a version with a reason, release notes, app requests and
+// notifications: after everything whose commands they wrap.
+import { orgDeclineRoute } from "./org-decline.js";
+import { orgNotesRoute, noteHeader } from "./org-notes.js";
+import { orgRequestsRoute } from "./org-requests.js";
+import { orgNotifyRoute, sendNotices } from "./org-notify.js";
+// Slack and Teams channels (G12).
+import { orgChatRoute, chatSweep } from "./org-chat.js";
+// Approval rules, and the code behind each approval: after everything
+// whose approving and candidates list they wrap.
+import { orgApprovalsRoute } from "./org-approvals.js";
+// Signed-in sessions, and signing out everywhere.
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, sessionId, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+// Deleting an account, and its export (K-1245).
+import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./account-delete.js";
+// A signed-in person's own app data on every device (IC-981), kept in one
+// SQLite-backed Durable Object per account; wrangler.toml binds it as
+// SYNC_ACCOUNTS.
+import { accountSyncRoute, SyncAccount } from "./account-sync.js";
+export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
 export { Org };
@@ -106,30 +137,62 @@ function readRevocations(bytes) {
 /// The component of a bundle exactly as the validator judged it, for the
 /// web pack (IC-956): `{ ok: true, bytes }` or `{ ok: false, problem }`.
 function judgedComponent(bytes) {
-  const v = validator();
-  const input = v.krate_alloc(bytes.length);
-  new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
-  const out = v.krate_judged_component(input, bytes.length);
-  const length = new DataView(v.memory.buffer).getUint32(out, true);
-  const body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
-  v.krate_free(out, 4 + length);
-  v.krate_free(input, bytes.length);
-  return body[0] === 1
-    ? { ok: true, bytes: body.subarray(1) }
-    : { ok: false, problem: new TextDecoder().decode(body.subarray(1)) };
+  try {
+    const v = validator();
+    const input = v.krate_alloc(bytes.length);
+    new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
+    const out = v.krate_judged_component(input, bytes.length);
+    const length = new DataView(v.memory.buffer).getUint32(out, true);
+    const body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
+    v.krate_free(out, 4 + length);
+    v.krate_free(input, bytes.length);
+    return body[0] === 1
+      ? { ok: true, bytes: body.subarray(1) }
+      : { ok: false, problem: new TextDecoder().decode(body.subarray(1)) };
+  } catch (err) {
+    return validatorCrashed("krate_judged_component", err);
+  }
 }
 
 function callValidator(name, bytes) {
-  const v = validator();
-  const input = v.krate_alloc(bytes.length);
-  new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
-  const out = v[name](input, bytes.length);
-  const view = new DataView(v.memory.buffer);
-  const length = view.getUint32(out, true);
-  const json = new TextDecoder().decode(new Uint8Array(v.memory.buffer, out + 4, length));
-  v.krate_free(out, 4 + length);
-  v.krate_free(input, bytes.length);
-  return JSON.parse(json);
+  try {
+    const v = validator();
+    const input = v.krate_alloc(bytes.length);
+    new Uint8Array(v.memory.buffer, input, bytes.length).set(bytes);
+    const out = v[name](input, bytes.length);
+    const view = new DataView(v.memory.buffer);
+    const length = view.getUint32(out, true);
+    const json = new TextDecoder().decode(new Uint8Array(v.memory.buffer, out + 4, length));
+    v.krate_free(out, 4 + length);
+    v.krate_free(input, bytes.length);
+    return JSON.parse(json);
+  } catch (err) {
+    return validatorCrashed(name, err);
+  }
+}
+
+/// The validator trapped or answered nothing readable (IC-833, test 1839).
+/// Nothing it was judging is admitted -- a judgement that did not finish is
+/// a refusal -- and the instance is dropped, since a trap leaves its memory
+/// in a state no later call should trust; the next call starts a fresh one.
+/// It cannot have run the app: the validator imports nothing, so it has no
+/// way to call out of its own memory.
+function validatorCrashed(name, err) {
+  console.error(`validator ${name} failed: ${err && err.stack ? err.stack : err}`);
+  if (validatorImport.default instanceof WebAssembly.Module) validatorExports = null;
+  return {
+    ok: false,
+    crashed: true,
+    problem: "Krate could not finish checking this bundle, so nothing was published. Try again in a moment.",
+  };
+}
+
+/// Tests only: answer with another validator, so a crash can be made on
+/// purpose (test 1839). Returns the one it replaced.
+export function __validatorForTests(replacement) {
+  const before = validator();
+  validatorExports = replacement || null;
+  return before;
 }
 
 /// What the archive may declare, judged from the central directory before
@@ -191,16 +254,33 @@ const RATE_WINDOW_SECONDS = 60;
 /// action, so it gets the loosest ceiling.
 const RATE_LIMITS = {
   report: 5,
+  // A stranger's report on an app from the Player (receive.js). One person
+  // sends one; the record itself takes one per person per app per day.
+  "report/app": 5,
+  // The Player's open and "Make your own" beacons: one each per app opened.
+  tab: 30,
+  // Choosing an app's current version (IC-976): 1 to 3 KV writes each, and
+  // the free plan's daily writes are shared with sign-in.
+  "lines/current": 30,
   "share/new": 10,
   usage: 60,
-  founding: 5,
   makeit: 5,
   "support/new": 5,
+  // A person's whole export reads everything the hub keeps about them;
+  // deleting reads and removes it. Nobody needs either more than a few
+  // times a minute (K-1245).
+  "me/export": 5,
+  "me/delete": 60,
   // Requests with no session to an organisation's routes or private
   // links (IC-946). They never reach the organisation's store -- so they
   // cannot grow its audit -- and this bounds what they cost. A person
   // opening a private link before signing in sends one.
   "org/anonymous": 20,
+  // Live team-data sockets opening (org-data-live.js): each carries a
+  // ticket a signed-in sync gave, so this only bounds a flood of made-up
+  // ones. Generous, because a whole office behind one address reconnects
+  // together after a hub deploy.
+  "org/live": 240,
   // Requests to /scim/v2/ with no token or a wrong one (IC-955). They are
   // never audited, so this is what bounds them.
   "scim/refused": 20,
@@ -337,13 +417,20 @@ export default {
       // Only while the automatic welcome is switched on; the founder writes
       // them himself otherwise, from the desk.
       if (env.WELCOME_AUTO === "1") await sendDueWelcomes(env);
+      // An announcement larger than one run, or than the day's mail,
+      // carries on here (mail-announce.js). One KV read when none waits.
+      await runQueuedAnnouncements(env).catch((e) => console.error(`queued announcement: ${e}`));
       return;
     }
+    // An account deletion a request left part-way (account-delete.js).
+    await resumeAccountDeletions(env, accountDeleteDeps()).catch((e) => console.error(`account deletions: ${e}`));
     await runScrub(env, { repair: false });
     // Closed organisations past their export window (IC-948 D).
     await sweepOrgs(env, orgAsk);
+    // Security items for organisations with a Slack or Teams channel (G12).
+    await chatSweep(env, orgAsk, siteBase(env));
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -376,10 +463,6 @@ export default {
       }
       if (request.method === "POST" && pathname === "/admin/scrub") {
         return cors(await scrubRoute(request, env, true));
-      }
-      if (request.method === "GET" && pathname === "/admin/org-billing-alerts") {
-        if (!(await isAdmin(request, env))) return cors(text("not found", 404));
-        return cors(json(await orgBillingAlerts(env)));
       }
       if (request.method === "GET" && pathname === "/admin/scrub/last") {
         return cors(await lastScrub(request, env));
@@ -422,27 +505,27 @@ export default {
         return noteStep(env, "signin", "github-start", loginStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/callback") {
-        return noteStep(env, "signin", "github-done", loginCallback(url, env));
+        return noteStep(env, "signin", "github-done", loginCallback(url, env, request));
       }
       if (request.method === "GET" && pathname === "/login/google/start") {
         return noteStep(env, "signin", "google-start", googleStart(url, env));
       }
       if (request.method === "GET" && pathname === "/login/google/callback") {
-        return noteStep(env, "signin", "google-done", googleCallback(url, env));
+        return noteStep(env, "signin", "google-done", googleCallback(url, env, request));
       }
       // Company sign-in for an organisation (IC-948, F).
       if (request.method === "GET" && pathname === "/login/oidc/start") {
         return noteStep(env, "signin", "oidc-start", oidcStart(url, env, signInDeps()));
       }
       if (request.method === "GET" && pathname === "/login/oidc/callback") {
-        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps()));
+        return noteStep(env, "signin", "oidc-done", oidcCallback(url, env, signInDeps(request)));
       }
       // ... and by SAML 2.0 (IC-955): SP-initiated, the Response posted back.
       if (request.method === "GET" && pathname === "/login/saml/start") {
         return noteStep(env, "signin", "saml-start", samlStart(url, env, signInDeps()));
       }
       if (request.method === "POST" && /^\/login\/saml\/acs\/[a-z0-9-]+$/.test(pathname)) {
-        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(), readBounded }));
+        return noteStep(env, "signin", "saml-done", samlAcs(request, url, env, { ...signInDeps(request), readBounded }));
       }
       if (request.method === "GET" && /^\/saml\/[a-z0-9-]+$/.test(pathname)) {
         return samlMetadata(url, env, signInDeps());
@@ -451,6 +534,11 @@ export default {
       if (request.method === "GET" && pathname === "/lease-key") {
         return cors(await leaseKeyRoute(env));
       }
+      // The public keys a company API checks a Krate-Identity token with
+      // (org-identity-token.js): an empty set on a hub with no lease key.
+      if (request.method === "GET" && pathname === "/.well-known/jwks.json") {
+        return cors(await jwksRoute(env));
+      }
       if (request.method === "POST" && pathname === "/login/email") {
         // Fetched from page scripts on krate.tech, unlike the login
         // redirects around it, so the answer must carry CORS headers or
@@ -458,7 +546,7 @@ export default {
         return cors(await noteStep(env, "signin", "email-start", emailStart(request, env)));
       }
       if (request.method === "GET" && pathname === "/login/email/verify") {
-        return noteStep(env, "signin", "email-done", emailVerify(url, env));
+        return noteStep(env, "signin", "email-done", emailVerify(url, env, request));
       }
       if (request.method === "POST" && pathname === "/auth/start") {
         return cors(await noteStep(env, "signin", "desktop-start", authStart(env)));
@@ -466,13 +554,10 @@ export default {
       if (request.method === "POST" && pathname === "/auth/poll") {
         return cors(await authPoll(request, env));
       }
-      if (request.method === "POST" && pathname === "/founding") {
-        // The founding 200: an email and a timestamp, nothing else. No
-        // checkout here -- this is the list that gets the $79/yr lock when
-        // Studio leaves preview.
-        const over = await rateLimited(request, env, "founding");
-        if (over) return cors(over);
-        return cors(await founding(request, env));
+      if (pathname === "/founding") {
+        // The founding-200 list was a waiting list for a paid plan. Krate
+        // has no paid plans (F-322), so the door is closed, in words.
+        return cors(noPaidPlans());
       }
       if (request.method === "POST" && pathname === "/makeit") {
         // A failed build, sent to us. Studio used to offer this as "a
@@ -569,6 +654,19 @@ export default {
       if (request.method === "GET" && pathname.startsWith("/icon/")) {
         return cors(await getIcon(pathname.slice(6), env));
       }
+      // The Player: an app opened in a tab, or "Make your own" pressed
+      // (K-1132). Counted in Analytics Engine only, never KV.
+      if (request.method === "POST" && pathname === "/tab") {
+        const over = await rateLimited(request, env, "tab");
+        if (over) return cors(over);
+        return cors(await tabEvent(request, env, { verifyGitHub, ownerOf, ownerOfRecord, netOf, isBot, visitorHash }));
+      }
+      // A report on an app from anyone who opened it, no account needed.
+      if (request.method === "POST" && /^\/report\/app\/[0-9a-f]{64}$/.test(pathname)) {
+        const over = await rateLimited(request, env, "report/app");
+        if (over) return cors(over);
+        return cors(await appReport(request, env, pathname.slice("/report/app/".length), { verifyGitHub, netOf, visitorHash, json }));
+      }
       if (request.method === "POST" && pathname === "/report") {
         const over = await rateLimited(request, env, "report");
         if (over) return cors(over);
@@ -595,18 +693,12 @@ export default {
       if (request.method === "GET" && pathname === "/admin/reports") {
         return cors(await listReports(request, env));
       }
-      // ---- billing: the paid plan, end to end -------------------------
-      if (request.method === "GET" && pathname === "/billing/config") {
-        return cors(await billingConfig(env));
-      }
-      if (request.method === "POST" && pathname === "/billing/checkout") {
-        return cors(await billingCheckout(request, env));
-      }
-      if (request.method === "POST" && pathname === "/billing/webhook") {
-        return await billingWebhook(request, env);
-      }
-      if (request.method === "GET" && pathname === "/billing/status") {
-        return cors(await billingStatus(request, env));
+      // ---- billing: there is none (F-322) -----------------------------
+      // Krate has no paid plans. Every /billing/ door -- config, checkout,
+      // status, portal and the Stripe webhook -- answers 410 in words, so
+      // an old Studio or a stale link meets a sentence, not a payment page.
+      if (pathname === "/billing" || pathname.startsWith("/billing/")) {
+        return cors(noPaidPlans());
       }
       // ---- the free-tier device counter -------------------------------
       // The three-a-month wall is device-bound. The device keeps its own
@@ -646,6 +738,10 @@ export default {
       if (request.method === "POST" && pathname === "/keys/forget") {
         return cors(await forgetKey(request, env));
       }
+      if (request.method === "POST" && pathname === "/sign/web-build") {
+        // NOT cors(), as /keys/use: the build service's door only.
+        return signWebBuild(request, env);
+      }
       if (request.method === "POST" && pathname === "/keys/use") {
         // NOT cors(): only the build service calls this, server to server.
         // Without the header a browser cannot read the answer, so a script
@@ -661,6 +757,24 @@ export default {
       }
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
+      }
+      // Delete my account, and download my data (account-delete.js).
+      if (pathname === "/me/delete" || pathname === "/me/export") {
+        const over = await rateLimited(request, env, pathname.slice(1));
+        if (over) return cors(over);
+        const res = await accountDeleteRoute(request, url, env, accountDeleteDeps());
+        if (res) return cors(res);
+      }
+      // Krate's non-essential mail: the person's own switch, and the
+      // one-click way out that every such mail links to (mail-prefs.js).
+      if ((request.method === "GET" || request.method === "PUT") && pathname === "/me/mail") {
+        return cors(await meMailRoute(request, env, authedUser));
+      }
+      if ((request.method === "GET" || request.method === "POST") && pathname === "/mail/unsubscribe") {
+        return await unsubscribeRoute(request, url, env);
+      }
+      if (request.method === "POST" && pathname === "/admin/mail/announce") {
+        return await announceRoute(request, env, { isAdmin });
       }
       if (request.method === "POST" && pathname === "/me/onboarded") {
         return cors(await markAccountOnboarded(request, env));
@@ -686,9 +800,6 @@ export default {
       }
       if (request.method === "POST" && pathname === "/referral/claim") {
         return cors(await referralClaim(request, env));
-      }
-      if (request.method === "POST" && pathname === "/billing/portal") {
-        return cors(await billingPortal(request, env));
       }
       // ---- support: tickets with real conversations -------------------
       if (request.method === "POST" && pathname === "/support/new") {
@@ -727,7 +838,18 @@ export default {
       // The browser Player (IC-956): its page, cross-origin isolated, and
       // the files it is made of. Not wrapped in CORS: nothing but this
       // origin loads them.
+      // A file shared to the installed Player is the page's own (file-sw.js
+      // takes it in the browser); one that reaches the hub is not read.
+      if (request.method === "POST" && pathname === FILE_PAGE) {
+        return await fileShareFallback(request);
+      }
       if (request.method === "GET" && pathname.startsWith("/run/")) {
+        // A chat app showing a /run/ link gets the app's card, as for /a/.
+        const run = RUN_PATH.exec(pathname);
+        if (run && run[1] && !run[4] && isPreviewer(request)) {
+          const card = await previewCard(run[1], env);
+          if (card) return card;
+        }
         const page = await playerPage(request, url, env);
         if (page) return page;
       }
@@ -740,6 +862,10 @@ export default {
           lookup: (h) => bundleObject(h, env),
           access: (object, slug) => privateRefusal(request, hash, object, slug, env),
           judgedComponent,
+          storeTag: async () => {
+            const raw = (await env.APPS.get(`app:${hash}`)) || (await env.APPS.get(`owner:${hash}`));
+            return storeTagOf(raw ? ownerOfRecord(JSON.parse(raw)) : null);
+          },
         }));
       }
       // HEAD answers exactly like GET, minus the body (K-798). Link
@@ -759,6 +885,18 @@ export default {
           ? new Response(null, { status: res.status, headers: res.headers })
           : res);
       }
+      // An app's versions (IC-976): its current one, and for its owner every
+      // one and the choice of which is current.
+      if (pathname === "/lines" || pathname.startsWith("/lines/")) {
+        if (request.method === "POST") {
+          const over = await rateLimited(request, env, "lines/current");
+          if (over) return cors(over);
+        }
+        const identity = request.headers.get("authorization") ? await verifyGitHub(request, env).catch(() => null) : null;
+        const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+        const answer = await linesRoute(request, url, env, { ownerOf, identity, base });
+        return cors(json(answer.body, answer.status));
+      }
       if (request.method === "GET" && pathname.startsWith("/c/")) {
         return cors(await resolveChannel(request, url, pathname.slice(3), env));
       }
@@ -766,9 +904,40 @@ export default {
       if (pathname.startsWith("/scim/v2/")) {
         return await scimRoute(request, url, env, { orgAsk, readBounded, noteOrgOf, rateLimited, slugOk: (s) => SLUG.test(s) });
       }
+      // Signed-in sessions: list them, sign one out, sign out the others.
+      if (pathname.startsWith("/account/sessions")) {
+        const res = await accountSessionsRoute(request, url, env, { verifyGitHub, testIdentity, githubClientId: GITHUB_CLIENT_ID });
+        if (res) return cors(res);
+      }
+      // An app's own data on every device a person signs in on (IC-981,
+      // account-sync.js): end-to-end sealed, the hub holds ciphertext only.
+      if (pathname === "/account/sync" || pathname.startsWith("/account/sync/")) {
+        const res = await accountSyncRoute(request, url, env, { authedUser });
+        if (res) return cors(res);
+      }
+      // A live team-data socket (org-data-live.js): handed to the
+      // organisation's object as it came, and its 101 handed back as it
+      // is -- CORS would rebuild the response and drop the socket.
+      if (pathname.startsWith("/orgs/") && (request.headers.get("upgrade") || "").toLowerCase() === "websocket") {
+        const live = await orgLiveRoute(request, url, env, { rateLimited });
+        if (live) return live;
+      }
+      // An org app's link opened by a person's browser (K-1166): the app's
+      // page, which signs them in and opens the version it is on now, not
+      // the JSON the CLI and the console read here. The same rule as /a/:
+      // a page navigation is text/html with no Authorization.
+      {
+        const orgApp = /^\/orgs\/([a-z][a-z0-9-]{1,38})\/apps\/([a-z0-9][a-z0-9._-]{0,127})\/current\/?$/.exec(pathname);
+        if (orgApp && request.method === "GET" && (request.headers.get("accept") || "").includes("text/html") && !request.headers.get("authorization")) {
+          return new Response(null, {
+            status: 303,
+            headers: { location: `/run/org/${orgApp[1]}/${orgApp[2]}`, "cache-control": "no-store", vary: "accept, authorization" },
+          });
+        }
+      }
       // Organisations (IC-946).
       if (pathname === "/orgs" || pathname.startsWith("/orgs/")) {
-        return cors(await orgRoute(request, url, env));
+        return cors(await orgRoute(request, url, env, ctx));
       }
       return cors(text("not found", 404));
     } catch (err) {
@@ -941,6 +1110,11 @@ async function publish(request, env) {
   // The listing's permissions, identities and release come from this
   // judgement, never from a header (1835).
   const judged = judgeBundle(body);
+  // A judgement that did not finish is not the bundle's fault: said as
+  // "try again", and nothing stored (test 1839).
+  if (judged.crashed) {
+    return new Response(judged.problem, { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "5" } });
+  }
   if (!judged.ok) {
     return text(`not a valid .krate bundle: ${judged.problem}`, 422);
   }
@@ -964,6 +1138,10 @@ async function publish(request, env) {
 function listingFields(request) {
   return {
     unlisted: header(request, "x-krate-unlisted") === "1",
+    // A publish that only opens an app in a tab mails nobody.
+    // `?quiet=1` rather than a header only, so a browser can send it without
+    // a preflight the hub would have to allow first.
+    quiet: header(request, "x-krate-quiet") === "1" || new URL(request.url).searchParams.get("quiet") === "1",
     name: textHeader(request, "x-krate-name") || "",
     description: textHeader(request, "x-krate-description") || "",
     category: shelfOf(header(request, "x-krate-category")),
@@ -1118,6 +1296,42 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     ...(extra || {}),
   };
 
+  // Whether these bytes were already listed: only a new app is announced.
+  const fresh = !(await env.APPS.get(`app:${hash}`).catch(() => null));
+
+  // The app's line (IC-976): the same owner publishing the same app id is
+  // its next version, not another app. An "open it here" publish only
+  // opens a tab and is no version. A quota day leaves the publish working
+  // at its own address, unversioned.
+  let line = null;
+  const manifestApp = (judgement.manifest && judgement.manifest.app) || {};
+  if (!fields.quiet && manifestApp.id) {
+    try {
+      line = await advanceLine(env, {
+        owner,
+        appId: manifestApp.id,
+        name: meta.name,
+        hash,
+        version: manifestApp.version,
+        size,
+      });
+    } catch (_) {
+      line = null;
+    }
+    if (line) {
+      meta.line = line.id;
+      meta.version_n = line.n;
+      // An update of an app in the gallery stays in the gallery, however it
+      // was published: Studio's Link pane publishes unlisted, and sharing v3
+      // by link must not take a public app off the shelf (IC-976).
+      if (meta.unlisted && line.added && line.previous) {
+        const was = line.line.versions.find((v) => v.n === line.previous);
+        const prior = was ? await env.APPS.get(`app:${was.hash}`).catch(() => null) : null;
+        if (prior && JSON.parse(prior).unlisted === false) meta.unlisted = false;
+      }
+    }
+  }
+
   // Keyed so KV's own lexicographic listing comes back newest-first when
   // reversed, which saves sorting the whole set on every page load.
   let listed = true;
@@ -1130,10 +1344,21 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     listed = false;
   }
 
+  // The line's other versions keep their rows, with their links and names,
+  // marked superseded so the gallery shows one row per app (IC-976).
+  if (line && line.added) {
+    try {
+      await settleRows(env, line.line);
+    } catch (_) {
+      // A quota day: the gallery may show an older row until the next publish.
+    }
+  }
+
   // The same person republishing the same app is a new version, not a new
   // app: retire every older listing that shares this author and name, so
   // the gallery shows one row per app. The old bundles and aliases stay --
   // every link already sent keeps working -- only the gallery rows go.
+  // Rows that belong to a line are its versions and are left to it.
   try {
     const listing = await env.APPS.list({ prefix: "app:", limit: 200 });
     for (const key of listing.keys) {
@@ -1142,6 +1367,17 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
       const raw = await env.APPS.get(key.name);
       if (!raw) continue;
       const other = JSON.parse(raw);
+      if (other.line) continue;
+      if (line && ownerOfRecord(other) === owner && other.name === meta.name) {
+        // Published before apps had versions: it becomes this app's earlier
+        // version (v0) rather than vanishing, so its link says a newer one
+        // exists and a pick naming it follows the app (IC-976).
+        other.line = line.id;
+        other.version_n = 0;
+        other.superseded = true;
+        await env.APPS.put(key.name, JSON.stringify(other));
+        continue;
+      }
       if (ownerOfRecord(other) === owner && other.name === meta.name) {
         await env.APPS.delete(key.name);
         // A retired release's bytes are anyone's to re-publish (see
@@ -1178,9 +1414,14 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     // Alias minting is a nicety; quota trouble must not fail a publish.
   }
   const result = {
-    url: `${base}/a/${short}`,
+    // The link to share is the app's own (IC-976): it opens whatever
+    // version is current, so a link sent today opens the update tomorrow.
+    // This build's own link is version_url.
+    url: line ? `${base}/a/${line.id}` : `${base}/a/${short}`,
+    version_url: `${base}/a/${short}`,
     full_url: `${base}/a/${hash}`,
     id: hash,
+    ...(line ? { line: line.id, version: line.n, updated: line.n > 1 } : {}),
     // The receipt: what the store holds, read back, not what was sent.
     stored: { size: stored.size, sha256: stored.sha256 },
   };
@@ -1200,6 +1441,11 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     result.note =
       "published and runnable at the URL, but the gallery listing is " +
       "delayed -- republishing tomorrow will list it";
+  }
+  // The publisher hears it is live, with the link, once per new app. A
+  // publish that is only there to open an app in a tab says it is quiet.
+  if (fresh && !fields.quiet && (!line || line.n === 1)) {
+    await tellPublished(env, owner, { name: meta.name, url: result.url, listed: listed && !meta.unlisted });
   }
   return json(result);
 }
@@ -1316,6 +1562,9 @@ async function putReport(request, env) {
   const meta = {
     id,
     from: identity ? identity.login : "anonymous",
+    // Whose it is, as a principal nobody can choose (K-1085): what account
+    // deletion finds it by (K-1245). `from` is display only.
+    ...(identity && ownerOf(identity) ? { owner: ownerOf(identity) } : {}),
     name: identity ? identity.name || identity.login : "anonymous",
     session: header(request, "x-krate-session") || "",
     krate: header(request, "x-krate-version") || "",
@@ -1370,9 +1619,10 @@ async function getReport(request, id, env) {
   });
 }
 
-/// Take an app off the gallery. Only its author can; the bundle and every
-/// link already shared keep working -- unpublishing removes the listing,
-/// not the content people were sent.
+/// Take an app down. Only its author can. The listing, the bytes at this
+/// address, its screenshot, icon and short links all go; the app's own link
+/// (/a/v...) falls back to its newest earlier version, and is removed with
+/// the last one.
 async function unpublish(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
@@ -1400,6 +1650,8 @@ async function unpublish(request, hash, env) {
   await env.BUNDLES.delete(hash);
   await env.BUNDLES.delete(`shot:${hash}`);
   await env.BUNDLES.delete(`icon:${hash}`);
+  // The tab Player's copy, made the first time someone opened it in a tab.
+  await env.BUNDLES.delete(webPackKey(hash));
   // The alias is keyed by prefix, so clear every prefix length a short link
   // could have used.
   for (let length = 8; length <= 32; length += 1) {
@@ -1411,6 +1663,8 @@ async function unpublish(request, hash, env) {
   // Only a listed publish ever moved a channel, so an app that never got
   // its listing has none to retreat.
   if (meta && ownerOf(identity).startsWith("github:")) await retreatChannel(env, identity.login, meta.name, hash);
+  // And its app's link falls back the same way (IC-976).
+  await dropVersion(env, hash, meta).catch(() => {});
   return json({ ok: true });
 }
 
@@ -1827,6 +2081,8 @@ async function getShot(hash, env) {
 /// This is the M0 measurement from the mobile plan: what fraction of
 /// shared-link opens land on a device that cannot run the app today.
 function classifyClient(request) {
+  // A chat app drawing a card for the link: not a person, not a runtime.
+  if (isPreviewer(request)) return "preview";
   const accept = request.headers.get("accept") || "";
   if (!accept.includes("text/html")) return "tool";
   const ua = request.headers.get("user-agent") || "";
@@ -1836,10 +2092,32 @@ function classifyClient(request) {
   return "desktop-browser";
 }
 
+/// Let go of a stored object's body that will not be sent.
+async function dropBody(object) {
+  try {
+    if (object && object.body && typeof object.body.cancel === "function") await object.body.cancel();
+  } catch (_) {}
+}
+
+/// The card for a /run/<hash> link, behind /a/'s own checks: a takedown
+/// answers 451, a private release gets the card that names nothing.
+async function previewCard(hash, env) {
+  const found = await bundleObject(hash, env);
+  if (found.response) return found.response;
+  await dropBody(found.object);
+  return linkCard(env, hash, { privateOrg: found.privateOrg });
+}
+
 async function fetchBundle(request, url, hash, env) {
   // A short link is the hash's own prefix; resolve it to the full content
   // address first. The strict hex checks stay -- they are the guard that
   // closes off every path-traversal shape at once.
+  // The app's own link: whichever version is current now (IC-976).
+  if (LINE_ID.test(hash)) {
+    const now = await currentHash(env, hash);
+    if (!now) return text("not found", 404);
+    hash = now;
+  }
   if (/^[0-9a-f]{8,32}$/.test(hash)) {
     const full = await env.APPS.get(`alias:${hash}`);
     if (!full) {
@@ -1875,7 +2153,14 @@ async function fetchBundle(request, url, hash, env) {
   // bytes are: there is no moment at which the object exists and the
   // check does not. The organisation's store is asked on every fetch.
   const privateOrg = object.customMetadata && object.customMetadata.org;
+  const wantsBytes = url.searchParams.has("dl");
   if (privateOrg) {
+    // The card for a private release names nothing: no app, no
+    // organisation, no picture -- no more than the link itself says.
+    if (!wantsBytes && isPreviewer(request)) {
+      await dropBody(object);
+      return linkCard(env, hash, { privateOrg });
+    }
     return await fetchPrivate(request, url, hash, object, privateOrg, big, env);
   }
 
@@ -1886,7 +2171,7 @@ async function fetchBundle(request, url, hash, env) {
   // "landing" is a person being walked to the receive page first -- the
   // number that tells us whether first-click is working.
   const client = classifyClient(request);
-  const wantsBytes = url.searchParams.has("dl");
+  const via = viaOf(url.searchParams.get("via"));
   const landing = wantsBytes
     ? null
     : client.startsWith("mobile-")
@@ -1896,6 +2181,11 @@ async function fetchBundle(request, url, hash, env) {
         : null;
   // A HEAD is a link checker or an unfurler looking, not a person or a
   // runtime fetching; it is answered but not counted as a hit.
+  //
+  // blob7 is the post's tag (`?via=`), blob8 the app and blob9 home|cloud,
+  // the slots the opens use, and index1 the daily visitor hash: a hit is a
+  // tap, and the visitor says how many people tapped (K-1132). A previewer
+  // drawing a card is client "preview", so a chat's card is not a tap.
   if (env.USAGE && request.method !== "HEAD") {
     env.USAGE.writeDataPoint({
       blobs: [
@@ -1905,17 +2195,28 @@ async function fetchBundle(request, url, hash, env) {
         "ok",
         landing ? "landing" : "direct",
         new Date().toISOString().slice(0, 10),
+        via,
+        hash,
+        netOf(request),
       ],
       doubles: [1],
-      indexes: [hash],
+      indexes: [await visitorHash(request, env)],
     });
+  }
+
+  // A chat app asking for the link draws its card from this: the app's
+  // name, one line on what it is, and its picture. `?dl=1` still gets bytes.
+  if (client === "preview" && !wantsBytes) {
+    await dropBody(object);
+    return linkCard(env, hash);
   }
 
   // A phone browser gets a small page instead of a file the phone cannot
   // open -- the soft landing from the mobile plan. `?dl=1` still hands the
   // raw bytes to anyone who insists.
   if (landing === "mobile") {
-    return await mobileLanding(hash, env);
+    await dropBody(object);
+    return await mobileLanding(hash, env, via);
   }
 
   // A desktop browser holding this link is a person, not a runtime -- the
@@ -1925,9 +2226,10 @@ async function fetchBundle(request, url, hash, env) {
   // button comes back here with `?dl=1`, so the two can never loop, and
   // `krate run <url>` never sees this branch (it does not ask for HTML).
   if (landing === "desktop") {
+    await dropBody(object);
     return new Response(null, {
       status: 302,
-      headers: { location: `https://krate.tech/open/?a=${hash}` },
+      headers: { location: `https://krate.tech/open/?a=${hash}${viaQuery(via, "&")}` },
     });
   }
 
@@ -1935,6 +2237,17 @@ async function fetchBundle(request, url, hash, env) {
   // the person nothing, sorts meaninglessly in a downloads folder, and looks
   // like something went wrong -- the app already knows what it is called.
   const meta = await env.APPS.get(`app:${hash}`);
+  // Whose app this is, as the hub knows it from the publisher's sign-in:
+  // the tag the tab keys storage by (K-1159), sent with the bytes too, so a
+  // computer or a phone opening the link keys an unsigned app's data by
+  // its publisher as the tab does (K-1172). Fixed per hash, like the bytes.
+  let storeTag = null;
+  try {
+    const raw = meta || (await env.APPS.get(`owner:${hash}`));
+    storeTag = await storeTagOf(raw ? ownerOfRecord(JSON.parse(raw)) : null);
+  } catch (_) {
+    // A bad record must not stop the download; the app keys by its id.
+  }
   let filename = `${hash.slice(0, 12)}.krate`;
   if (meta) {
     try {
@@ -1962,6 +2275,7 @@ async function fetchBundle(request, url, hash, env) {
     // tier, so `krate run` knows to save a big app to a file first.
     "content-length": String(object.size),
     ...(big ? { "x-krate-tier": "big" } : {}),
+    ...(storeTag ? { "x-krate-store": storeTag } : {}),
   };
   if (request.method === "HEAD") {
     // The size is the one thing a HEAD is usually asked for, and the
@@ -1974,7 +2288,7 @@ async function fetchBundle(request, url, hash, env) {
 /// The page a phone sees when it taps a shared app link. Honest about
 /// today's boundary, and it keeps the link alive instead of dumping a file
 /// the phone cannot open: copy the link, open it on a computer, done.
-async function mobileLanding(hash, env) {
+async function mobileLanding(hash, env, via = "-") {
   let name = "A Krate app";
   let author = "";
   const meta = await env.APPS.get(`app:${hash}`);
@@ -1988,7 +2302,6 @@ async function mobileLanding(hash, env) {
     }
   }
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-  const link = `${base}/a/${hash}`;
   const shot = (await env.BUNDLES.head(`shot:${hash}`))
     ? `${base}/shot/${hash}`
     : null;
@@ -2012,8 +2325,9 @@ async function mobileLanding(hash, env) {
   h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
   .by { color: rgba(255,255,255,0.45); font-size: 14px; margin: 0 0 18px; }
   p { color: rgba(255,255,255,0.6); font-size: 15px; line-height: 1.55; margin: 0 0 24px; }
-  button { width: 100%; padding: 14px; border: 0; border-radius: 999px; background: #fff;
-           color: #0a0a0a; font-size: 15.5px; font-weight: 600; margin-bottom: 14px; }
+  .go { display: block; box-sizing: border-box; width: 100%; padding: 14px; border-radius: 999px;
+         background: #fff; color: #0a0a0a; font-size: 15.5px; font-weight: 600; text-decoration: none;
+         margin-bottom: 10px; }
   a { color: rgba(255,255,255,0.5); font-size: 13px; }
 </style>
 </head>
@@ -2022,9 +2336,10 @@ async function mobileLanding(hash, env) {
   ${shot ? `<div class="card"><img src="${shot}" alt=""></div>` : ""}
   <h1>${esc(name)}</h1>
   ${author ? `<p class="by">by ${esc(author)}</p>` : ""}
-  <p>Someone made this and shared it. It runs on computers today: open this link on your Mac, Windows, or Linux machine, install Krate once (small and free), and it opens -- after showing you what it may touch.</p>
-  <button onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link</button>
-  <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file anyway</a>
+  ${await newerVersionLine(env, hash, base)}
+  <p>Someone made this and sent it to you. It opens right here, with nothing to install, and shows you first what it may touch.</p>
+  <a class="go" href="${base}/run/${hash}${viaQuery(via)}">Open it</a>
+  <a href="https://krate.tech">What is Krate?</a>
 </main>
 </body>
 </html>`;
@@ -2036,25 +2351,6 @@ async function mobileLanding(hash, env) {
       vary: "accept, user-agent",
     },
   });
-}
-
-async function founding(request, env) {
-  let email = "";
-  try {
-    const body = await request.json();
-    email = String(body.email || "").trim().toLowerCase();
-  } catch (_) {
-    return text("bad request", 400);
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254) {
-    return text("that does not look like an email address", 400);
-  }
-  const key = `founding:${email}`;
-  const existing = await env.APPS.get(key);
-  if (!existing) {
-    await env.APPS.put(key, JSON.stringify({ at: Math.floor(Date.now() / 1000) }));
-  }
-  return json({ ok: true });
 }
 
 async function makeit(request, env) {
@@ -2082,6 +2378,12 @@ async function makeit(request, env) {
 }
 
 async function meta(hash, env) {
+  // The app's own link: whichever version is current now (IC-976).
+  if (LINE_ID.test(hash)) {
+    const now = await currentHash(env, hash);
+    if (!now) return text("not found", 404);
+    hash = now;
+  }
   if (/^[0-9a-f]{8,32}$/.test(hash)) {
     const full = await env.APPS.get(`alias:${hash}`);
     if (!full) return text("not found", 404);
@@ -2117,7 +2419,17 @@ async function meta(hash, env) {
       // an absent list and an empty one mean very different things.
       capabilities: Array.isArray(m.capabilities) ? m.capabilities : null,
     },
+    // Which version of its app this build is, and the app's own link
+    // (IC-976): a page holding an older build can say a newer one exists.
+    version: await versionInfo(env, hash, base),
   });
+}
+
+/// { n, current, newer, app_url } for a build on a line, else null.
+async function versionInfo(env, hash, base) {
+  const v = await versionOf(env, hash).catch(() => null);
+  if (!v) return null;
+  return { n: v.n, current: v.current, newer: v.current > v.n, versions: v.versions, app_url: `${base}/a/${v.line}` };
 }
 
 /// The gallery.
@@ -2159,7 +2471,10 @@ async function list(env, url) {
     }),
   );
 
-  let apps = records.filter(Boolean);
+  // A version an update replaced has no row of its own (IC-976); it is
+  // kept aside only so a pick naming it can follow its app.
+  const everyRow = records.filter(Boolean);
+  let apps = everyRow.filter((a) => !a.meta.superseded);
 
   // Search and category filtering happen HERE, before any R2 work, so a
   // search for one app does not cost a thousand head requests.
@@ -2196,8 +2511,27 @@ async function list(env, url) {
       const c = a.meta.category || "apps";
       (cats[c] ||= []).push(a);
     }
+    // "Start here": the apps chosen to show first (GALLERY_PICKS in
+    // wrangler.toml, comma-separated id prefixes, in order), so a stranger's
+    // first look is the best of the gallery, not whatever came last.
+    const picks = String(env.GALLERY_PICKS || "")
+      .split(",")
+      .map((p) => p.trim().toLowerCase())
+      .filter((p) => /^[0-9a-f]{6,64}$/.test(p))
+      .map((p) => {
+        const named = everyRow.find((a) => a.id.startsWith(p));
+        if (!named || !named.meta.superseded) return named;
+        // A pick names a build; after an update the shelf shows the app's
+        // current version, not a gap (IC-976).
+        return apps.find((a) => a.meta.line && a.meta.line === named.meta.line);
+      })
+      .filter(Boolean);
+    // "New this week" only when it is: an older newest app is just newest.
+    const weekAgo = Date.now() - 7 * 86400_000;
+    const fresh = byNew.length && (byNew[0].meta.published || 0) >= weekAgo;
     const shelves = [
-      { id: "new", label: "New this week", apps: take(byNew, SHELF) },
+      ...(picks.length ? [{ id: "picks", label: "Start here", apps: take(picks, SHELF) }] : []),
+      { id: "new", label: fresh ? "New this week" : "Newest", apps: take(byNew, SHELF) },
     ];
     // Only when there is something to rank. Before any opens are recorded,
     // "most opened" would be an arbitrary order wearing a confident label.
@@ -2240,7 +2574,8 @@ async function list(env, url) {
     const a = chosen.get(id);
     return {
       id,
-      url: `${base}/a/${id}`,
+      // A versioned app's own link, which follows its updates (IC-976).
+      url: a.meta.line ? `${base}/a/${a.meta.line}` : `${base}/a/${id}`,
       ...images.get(id),
       opens: opens.get(id) || 0,
       // The owner principal is for the hub's checks, not the gallery: an
@@ -2565,19 +2900,25 @@ async function usage(request, env) {
 /// Returns a Map of app id -> opens in the window. Empty on any failure --
 /// the gallery must still render when the analytics API is unreachable, and
 /// a shelf that quietly falls back to "newest" is better than an error page.
-async function openCounts(env, days = 30) {
-  if (!env.ACCOUNT_ID || !env.ANALYTICS_TOKEN) return new Map();
+export async function openCounts(env, days = 30) {
+  // The same names every other analytics read uses. This one read
+  // ACCOUNT_ID and ANALYTICS_TOKEN, which the hub never had, so every
+  // gallery app showed 0 opens.
+  if (!env.CF_ACCOUNT_ID || !env.CF_ANALYTICS_TOKEN) return new Map();
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
-  // blob1 is the action and blob8 is the app id; see writeDataPoint above.
+  // blob1 is the action, blob8 the app id and blob9 the network; see
+  // writeDataPoint above. CI and build farms (cloud) are not people, nor
+  // crawlers or the Player's own proof runs (blob13, receive.js tabEvent;
+  // a desktop open leaves it empty and counts).
   const sql = `
     SELECT blob8 AS app, SUM(_sample_interval) AS opens
     FROM krate_usage
-    WHERE blob1 = 'open' AND blob8 != '-' AND timestamp >= toDateTime('${since} 00:00:00')
+    WHERE blob1 = 'open' AND blob8 != '-' AND blob9 != 'cloud' AND blob13 != 'bot' AND blob13 != 'probe' AND timestamp >= toDateTime('${since} 00:00:00')
     GROUP BY app ORDER BY opens DESC LIMIT 200`;
   try {
     const r = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.ACCOUNT_ID}/analytics_engine/sql`,
-      { method: "POST", headers: { Authorization: `Bearer ${env.ANALYTICS_TOKEN}` }, body: sql },
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+      { method: "POST", headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` }, body: sql },
     );
     if (!r.ok) return new Map();
     const out = await r.json();
@@ -2820,7 +3161,7 @@ async function ensureUser(env, provider, stableId, profile) {
       console.error(`could not tell the founder about a new account: ${error}`),
     );
     // The automatic welcome, only when switched on (WELCOME_AUTO = "1"):
-    // ten to twenty minutes from now, from the next ten-minute run.
+    // 21 to 31 minutes from now, from the ten-minute run.
     if (env.WELCOME_AUTO === "1" && record.email && (env.RESEND_API_KEY || env.GMAIL_APP_PASSWORD)) {
       await env.APPS.put(`welcome-due:${userId}`, String(record.created), {
         expirationTtl: 7 * 24 * 3600,
@@ -2870,7 +3211,9 @@ async function ensureUser(env, provider, stableId, profile) {
 // that Gmail did not send is refused or binned.
 
 const WELCOME_CRON = "*/10 * * * *";
-const WELCOME_AFTER_MS = 10 * 60 * 1000;
+// Twenty-one minutes after sign-up; the ten-minute run sends it, so it
+// lands 21 to 31 minutes in.
+const WELCOME_AFTER_MS = 21 * 60 * 1000;
 const WELCOME_FROM = "Yashraj Pardeshi <yashraj@krate.tech>";
 const WELCOME_REPLY_TO = "incyashraj@gmail.com";
 const WELCOME_SUBJECT = "You\u2019re in. One question from me";
@@ -2883,7 +3226,7 @@ function welcomeText(name) {
 
 I\u2019m Yashraj, the person who builds Krate. Thanks for signing up.
 
-I\u2019ll keep this short. Krate exists for one reason: making an app and sharing it should be as easy as sending a document. If it doesn\u2019t feel that way to you yet, I want to know.
+I\u2019ll keep this short. Krate exists for one reason: making an app and sharing it should be as easy as sending a picture. If it doesn\u2019t feel that way to you yet, I want to know.
 
 So I have one question:
 
@@ -2932,6 +3275,8 @@ function founderInboxes(env) {
 
 /// The moment an account is made: who, how, when, and the welcome ready
 /// to send. Plain text so it reads at a glance on a phone.
+///
+/// ESSENTIAL (to the founder only, never a user): no unsubscribe switch.
 async function notifyFounderOfSignup(env, user) {
   if (!env.RESEND_API_KEY) return;
   const who = user.name || user.login || user.email || "Someone";
@@ -2971,6 +3316,10 @@ async function notifyFounderOfSignup(env, user) {
 
 /// Send one welcome; null when it went, else why not.
 ///
+/// NON-ESSENTIAL (mail-prefs.js): nobody asked for it, so it ends with the
+/// unsubscribe line and carries the one-click headers, and an account that
+/// turned Krate's emails off is never sent one (sendDueWelcomes asks).
+///
 /// Through Gmail itself when the founder's app password is set
 /// (GMAIL_APP_PASSWORD): From his own Gmail, Cc his krate.tech address.
 /// Sent through Resend, the same note was filed under Promotions -- the
@@ -2979,7 +3328,9 @@ async function notifyFounderOfSignup(env, user) {
 /// Otherwise through Resend, from his krate.tech address (it cannot claim
 /// the Gmail address: Gmail's DMARC policy is reject).
 async function sendWelcome(env, user) {
-  const text = welcomeText(user.name);
+  const news = await newsMail(env, user.id, user, "the welcome");
+  if (news.skip) return news.skip;
+  const text = welcomeText(user.name) + news.footer + "\n";
   if (env.GMAIL_APP_PASSWORD) {
     const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
     return smtpSend(connect, {
@@ -2990,6 +3341,7 @@ async function sendWelcome(env, user) {
       cc: WELCOME_CC,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     });
   }
   const res = await fetch("https://api.resend.com/emails", {
@@ -3004,6 +3356,7 @@ async function sendWelcome(env, user) {
       reply_to: WELCOME_REPLY_TO,
       subject: WELCOME_SUBJECT,
       text,
+      headers: news.headers,
     }),
   });
   if (res.ok) return null;
@@ -3071,6 +3424,8 @@ async function smtpSend(connect, msg) {
       "MIME-Version: 1.0",
       "Content-Type: text/plain; charset=UTF-8",
       "Content-Transfer-Encoding: base64",
+      // The one-click unsubscribe pair on a non-essential mail (RFC 8058).
+      ...Object.entries(msg.headers || {}).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, "")}`),
     ].filter(Boolean);
     await say(`${headers.join("\r\n")}\r\n\r\n${body}.`);
     const accepted = await reply();
@@ -3107,6 +3462,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
       await env.APPS.delete(key);
       continue;
     }
+    // Turned Krate's emails off before the welcome was due: never sent.
+    if (!wantsNews(user)) {
+      console.log("the welcome was not sent: the account turned Krate's emails off");
+      await env.APPS.delete(key);
+      continue;
+    }
+    if (!user.id) user.id = userId;
     const failed = await sendWelcome(env, user);
     if (failed) {
       // Left due: the next run tries again, until the mark expires in a week.
@@ -3121,11 +3483,13 @@ async function sendDueWelcomes(env, now = Date.now()) {
   return { sent };
 }
 
-async function newSession(env, userId) {
+async function newSession(env, userId, meta = {}) {
   const token = `krs_${crypto.randomUUID().replaceAll("-", "")}`;
   await env.APPS.put(`session:${token}`, userId, { expirationTtl: 90 * 24 * 3600 });
-  // Indexed per user so support can revoke a person's sessions.
-  await env.APPS.put(`usess:${userId}:${token}`, "1", { expirationTtl: 90 * 24 * 3600 });
+  // Indexed per user so support can revoke a person's sessions, and so the
+  // person can see and sign out their own (account-sessions.js): the entry
+  // holds the kind and the browser it came from, in the same write.
+  await recordSession(env, userId, token, meta);
   return token;
 }
 
@@ -3153,14 +3517,19 @@ function signInStart(from, nonce, appNonce) {
   // `player:<hash>`: the browser Player asking for an organisation's app it
   // is about to open in this tab (IC-956). It comes back to that app's page
   // on this hub, never anywhere a caller names.
-  const player = /^player:[0-9a-f]{64}$/.test(from || "") ? from : null;
+  // `player:org/<slug>/<app-id>`: the same for an organisation's app as it
+  // is now (the address a phone keeps on its home screen).
+  const player = /^player:(?:[0-9a-f]{64}|org\/[a-z][a-z0-9-]{1,38}\/[a-z0-9][a-z0-9._-]{0,127})$/.test(from || "") ? from : null;
   return { from: from === "app" ? "app" : player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
 }
 
 /// What the company sign-in routes (org-sso.js) borrow from here: the same
 /// accounts, sessions and K-909 delivery every other sign-in uses.
-function signInDeps() {
-  return { SLUG, signInStart, deliver, ensureUser, newSession, orgAsk, noteOrgOf };
+function signInDeps(request) {
+  const label = sessionLabel(request && request.headers.get("user-agent"));
+  // Company sign-in's sessions say so in the session list.
+  const companySession = (env, userId, meta) => newSession(env, userId, meta || { kind: "company", label });
+  return { SLUG, signInStart, deliver, ensureUser, newSession: companySession, orgAsk, noteOrgOf };
 }
 
 /// Read a stored start. Before K-909 the record was the bare word "app" or
@@ -3219,7 +3588,7 @@ async function googleStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function googleCallback(url, env) {
+async function googleCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const stored = await env.APPS.get(`login:${state}`);
   if (!stored) return signInFailed(url, "expired");
@@ -3258,7 +3627,7 @@ async function googleCallback(url, env) {
     name: claims.name,
     avatar_url: claims.picture,
   });
-  return deliver(start, user, await newSession(env, user.id));
+  return deliver(start, user, await newSession(env, user.id, { kind: "google", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // -------------------------------------------------------------------- email
@@ -3434,6 +3803,8 @@ function signInEmailHtml(link) {
 </html>`;
 }
 
+/// ESSENTIAL mail (mail-prefs.js): the person asked for this link, so the
+/// switch for Krate's emails never stops it and it carries no unsubscribe.
 async function emailStart(request, env) {
   if (!env.RESEND_API_KEY) {
     return text("Email sign-in is not configured on this hub yet.", 503);
@@ -3505,7 +3876,7 @@ async function emailStart(request, env) {
   return json({ sent: true });
 }
 
-async function emailVerify(url, env) {
+async function emailVerify(url, env, request) {
   const token = url.searchParams.get("t") || "";
   const stored = await env.APPS.get(`email:${token}`);
   if (!stored) return signInFailed(url, "used");
@@ -3513,7 +3884,8 @@ async function emailVerify(url, env) {
   const record = JSON.parse(stored);
   // The link reached this inbox, so the inbox is proved (IC-947).
   const user = await ensureUser(env, "email", record.email, { email: record.email, verified_email: record.email });
-  return deliver(signInStart(record.from, record.nonce, record.app_nonce), user, await newSession(env, user.id));
+  const start = signInStart(record.from, record.nonce, record.app_nonce);
+  return deliver(start, user, await newSession(env, user.id, { kind: "email", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
 }
 
 // --------------------------------------------------------------- web sign-in
@@ -3553,7 +3925,7 @@ async function loginStart(url, env) {
   return Response.redirect(auth.toString(), 302);
 }
 
-async function loginCallback(url, env) {
+async function loginCallback(url, env, request) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
   const stored = await env.APPS.get(`login:${state}`);
@@ -3594,7 +3966,18 @@ async function loginCallback(url, env) {
   // The GitHub token itself is handed over (not a krs_ session): the engine
   // already publishes with it and the hub already verifies it. The account
   // record exists either way, so a later Google or email sign-in with the
-  // same address lands on this same user.
+  // same address lands on this same user. Indexed once, so the person can
+  // see this sign-in and sign it out (account-sessions.js): the one write a
+  // GitHub sign-in adds.
+  try {
+    await recordSession(env, account.id, result.access_token, {
+      kind: "github",
+      label: sessionLabel(request && request.headers.get("user-agent"), start.from),
+      ttl: GITHUB_INDEX_TTL_SECONDS,
+    });
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
   return deliver(start, { ...account, login: profile.login }, result.access_token);
 }
 
@@ -3650,6 +4033,21 @@ async function authPoll(request, env) {
   });
   if (!user.ok) return text("signed in, but the profile could not be read", 502);
   const profile = await user.json();
+  // Indexed for the person's session list when their account is known
+  // (one write per sign-in; account-sessions.js). A first-ever sign-in from
+  // the desktop has no account yet, and is listed only while it is in use.
+  try {
+    const userId = profile.login ? await env.APPS.get(`ghlogin:${String(profile.login).toLowerCase()}`) : null;
+    if (userId) {
+      await recordSession(env, userId, result.access_token, {
+        kind: "github",
+        label: sessionLabel(request.headers.get("user-agent"), "app"),
+        ttl: GITHUB_INDEX_TTL_SECONDS,
+      });
+    }
+  } catch (e) {
+    // The list is a convenience; the sign-in must not fail on it.
+  }
 
   return json({
     identity: {
@@ -4228,6 +4626,7 @@ function bigStatus(record, env) {
   }
   if (record.problem) out.problem = record.problem;
   if (record.url) out.url = record.url;
+  for (const k of ["version_url", "line", "version", "updated"]) if (record[k] !== undefined) out[k] = record[k];
   if (record.status === "uploading") out.parts = record.parts;
   return out;
 }
@@ -4366,6 +4765,8 @@ async function bigVerdict(request, env, id) {
     }
     record.status = "listed";
     record.url = answer.url;
+    // An app's version (IC-976), carried to the uploader as the small door does.
+    for (const k of ["version_url", "line", "version", "updated"]) if (answer[k] !== undefined) record[k] = answer[k];
     await writeBigRecord(env, record);
     return json(bigStatus(record, env));
   }
@@ -4941,7 +5342,7 @@ async function developerDirectApps(env, login, seen) {
       }
       // <login>.krate.tech shows only what github:<login> owns (K-1085).
       if (!meta || !ownedByGitHubLogin(meta, login)) return null;
-      if (meta.unlisted) return null;
+      if (meta.unlisted || meta.superseded) return null;
       if (await env.APPS.get(`takedown:${hash}`)) return null;
       return {
         // No channel, so the app answers at its content address. The
@@ -5200,12 +5601,14 @@ function json(value, status = 200) {
 }
 
 function cors(response) {
+  // A WebSocket's 101 carries the socket itself; rebuilt, it would not.
+  if (response.status === 101 || response.webSocket) return response;
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
   headers.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
   headers.set(
     "access-control-allow-headers",
-    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted, x-krate-encoding, idempotency-key",
+    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted, x-krate-quiet, x-krate-encoding, idempotency-key",
   );
   // A page script cannot read a response header it was not shown. The 429
   // from the anonymous wall (K-767) carries `retry-after`, and without this
@@ -5275,58 +5678,37 @@ export class Room {
   }
 }
 
-// ===================================================================== paid
+// ================================================================= no paid plans
 //
-// The paid plan, end to end. Stripe is the processor; the worker never sees
-// a card. Entitlements live in KV (`ent:{userId}`) and are written ONLY by
-// verified Stripe webhooks or an admin override -- the client can ask, never
-// tell. Everything is gated on the Stripe secrets existing, so this whole
-// surface is dormant until they are set and the studio's limit stays soft.
-
-// Personal pricing is frozen (IC-640, IC-402).
-//
-// The founder's decision is that individual use stays free during adoption,
-// and that no price is set before buyer, usage and cost are measured. The
-// live surface said otherwise: `/billing/config` returned live:true with
-// $12/month, $96/year and $79/year, and a checkout that took money for them.
-// A policy that the product contradicts is not a policy.
-//
-// So this is an explicit switch rather than deleted code. The Stripe
-// integration is real work and will be needed when a price is actually
-// decided -- CP8 revisits it with measured data. Removing it would mean
-// rebuilding it; leaving it live would mean charging people against the
-// stated policy. `KRATE_BILLING_UNFROZEN` is the deliberate act that turns
-// it back on, and it is not set anywhere.
-function billingFrozen(env) {
-  return env.KRATE_BILLING_UNFROZEN !== "1";
+// Krate has no paid plans (F-322, 2026-11-07). The Stripe integration that
+// lived here -- config, checkout, the webhook, the customer portal, the
+// founding-200 seat count -- is removed, and every door it had answers this.
+// What stays: `ent:` records, read by entitlementActive, because the desk's
+// "lift free limits" override writes them and an entitlement paid for before
+// the decision runs out on its own date; and the `pay:` receipts already
+// written, which a person's export and deletion still read (account-delete.js).
+function noPaidPlans() {
+  return text(
+    "Krate has no paid plans, so there is nothing to buy or manage here. Making apps is free: in Krate Studio on your computer with your own AI, or in the browser with your own API key after the free app.",
+    410,
+  );
 }
 
-function billingLive(env) {
-  if (billingFrozen(env)) return false;
-  return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_MONTHLY && env.STRIPE_PRICE_YEARLY);
-}
-
-const FOUNDING_SEATS = 200;
-
-async function foundingSold(env) {
-  return parseInt((await env.APPS.get("foundingSold")) || "0", 10);
-}
-
-async function billingConfig(env) {
-  // While frozen, say so plainly and quote no price. A page that renders
-  // "$12/month" next to a button that cannot charge is worse than a page
-  // with no prices on it.
-  if (billingFrozen(env)) {
-    return json({ live: false, founding: false, frozen: true, prices: {} });
-  }
-  const sold = await foundingSold(env);
-  return json({
-    live: billingLive(env),
-    // The founding door closes itself the moment the 200th seat is taken:
-    // every buy button keyed on this flag disappears with it.
-    founding: Boolean(env.STRIPE_PRICE_FOUNDING) && sold < FOUNDING_SEATS,
-    prices: { monthly: "$12/month", yearly: "$96/year", founding: "$79/year" },
-  });
+/// What account-delete.js needs from the hub, in one place.
+function accountDeleteDeps() {
+  return {
+    authedUser,
+    verifyGitHub,
+    ownerOfRecord,
+    orgAsk,
+    deleteBigParts,
+    sessionOwner,
+    sessionId,
+    wantsNews,
+    siteBase,
+    hubBase: (env) => String(env.PUBLIC_BASE || "").replace(/\/$/, ""),
+    githubClientId: GITHUB_CLIENT_ID,
+  };
 }
 
 /// The signed-in user behind a request: a Krate session or a GitHub token.
@@ -5355,193 +5737,6 @@ async function authedUser(request, env) {
     email: (p.email || "").toLowerCase() || undefined,
   });
 }
-
-function planForPrice(env, priceId) {
-  if (priceId === env.STRIPE_PRICE_MONTHLY) return "monthly";
-  if (priceId === env.STRIPE_PRICE_YEARLY) return "yearly";
-  if (priceId === env.STRIPE_PRICE_FOUNDING) return "founding";
-  return "unknown";
-}
-
-async function stripe(env, path, form) {
-  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: form ? "POST" : "GET",
-    headers: {
-      authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      ...(form ? { "content-type": "application/x-www-form-urlencoded" } : {}),
-    },
-    body: form ? new URLSearchParams(form) : undefined,
-  });
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error((body.error && body.error.message) || `stripe ${path} failed`);
-  }
-  return body;
-}
-
-async function billingCheckout(request, env) {
-  if (!billingLive(env)) return text("Billing is not open yet.", 503);
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const { plan } = await request.json().catch(() => ({}));
-  if (plan === "founding" && (await foundingSold(env)) >= FOUNDING_SEATS) {
-    return text("The founding 200 is full. The monthly and yearly plans are open.", 409);
-  }
-  const price =
-    plan === "monthly" ? env.STRIPE_PRICE_MONTHLY
-    : plan === "yearly" ? env.STRIPE_PRICE_YEARLY
-    : plan === "founding" ? env.STRIPE_PRICE_FOUNDING
-    : null;
-  if (!price) return text("Unknown plan.", 400);
-  try {
-    const session = await stripe(env, "checkout/sessions", {
-      mode: "subscription",
-      "line_items[0][price]": price,
-      "line_items[0][quantity]": "1",
-      client_reference_id: user.id,
-      ...(user.email ? { customer_email: user.email } : {}),
-      "subscription_data[metadata][krate_user]": user.id,
-      allow_promotion_codes: "true",
-      success_url: "https://krate.tech/billing/done/",
-      cancel_url: "https://krate.tech/studio/#pricing",
-    });
-    return json({ url: session.url });
-  } catch (err) {
-    return text(`Checkout could not start: ${err.message}`, 502);
-  }
-}
-
-/// Verify a Stripe webhook signature: HMAC-SHA256 of `t.payload`.
-async function stripeSignatureValid(request, payload, env) {
-  const header = request.headers.get("stripe-signature") || "";
-  const parts = Object.fromEntries(
-    header.split(",").map((p) => p.split("=")).filter((p) => p.length === 2),
-  );
-  if (!parts.t || !parts.v1) return false;
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(env.STRIPE_WEBHOOK_SECRET || ""),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const mac = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${parts.t}.${payload}`),
-  );
-  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return hex === parts.v1;
-}
-
-async function writeEntitlementFromSubscription(env, sub) {
-  const userId =
-    (sub.metadata && sub.metadata.krate_user) || (await env.APPS.get(`cust:${sub.customer}`));
-  if (!userId) return;
-  const priceId =
-    sub.items && sub.items.data && sub.items.data[0] ? sub.items.data[0].price.id : "";
-  await env.APPS.put(`cust:${sub.customer}`, userId);
-  // The founding seat count follows real transitions: taken when a founding
-  // subscription becomes active, freed when that subscription ends. The evt
-  // replay guard upstream keeps retries from double-counting.
-  {
-    const plan = planForPrice(env, priceId);
-    const active = sub.status === "active" || sub.status === "trialing";
-    const prior = JSON.parse((await env.APPS.get(`ent:${userId}`)) || "null");
-    const priorFounding = Boolean(prior && prior.plan === "founding" && entitlementActive(prior));
-    const nowFounding = plan === "founding" && active;
-    if (nowFounding && !priorFounding) {
-      await env.APPS.put("foundingSold", String((await foundingSold(env)) + 1));
-    } else if (priorFounding && !nowFounding) {
-      await env.APPS.put("foundingSold", String(Math.max(0, (await foundingSold(env)) - 1)));
-    }
-  }
-  await env.APPS.put(
-    `ent:${userId}`,
-    JSON.stringify({
-      plan: planForPrice(env, priceId),
-      status: sub.status,
-      until: (sub.current_period_end || 0) * 1000,
-      sub: sub.id,
-      customer: sub.customer,
-      at: Date.now(),
-    }),
-  );
-}
-
-async function billingWebhook(request, env) {
-  const payload = await request.text();
-  if (!env.STRIPE_WEBHOOK_SECRET || !(await stripeSignatureValid(request, payload, env))) {
-    return text("bad signature", 400);
-  }
-  let event;
-  try {
-    event = JSON.parse(payload);
-  } catch (_) {
-    return text("bad payload", 400);
-  }
-  // Stripe retries; process each event once.
-  //
-  // The marker is written AFTER the work, not before it (IC-409).
-  //
-  // It used to be written here, first. If the entitlement write then failed,
-  // Stripe's retry found the event already marked processed and returned
-  // success -- so Stripe believed delivery had worked while a paying
-  // customer never received access, permanently and silently. Reproduced in
-  // a controlled test before this change.
-  //
-  // Marking afterwards means a crash mid-way leaves the event unmarked and
-  // Stripe retries it. That can process an event twice, which is the safe
-  // direction: every write below is idempotent -- entitlements are derived
-  // from the subscription's current state, not incremented -- so a repeat
-  // lands on the same answer. Losing a payment is not recoverable; repeating
-  // one is.
-  if (await env.APPS.get(`evt:${event.id}`)) return json({ ok: true });
-
-  // An organisation's event (IC-948 E): its store decides, failing closed.
-  if (await orgBillingEvent(env, event, orgAsk)) {
-    await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
-    return json({ ok: true });
-  }
-
-  const obj = event.data && event.data.object;
-  if (event.type === "checkout.session.completed" && obj) {
-    if (obj.client_reference_id && obj.customer) {
-      await env.APPS.put(`cust:${obj.customer}`, obj.client_reference_id);
-    }
-    if (obj.subscription) {
-      try {
-        const sub = await stripe(env, `subscriptions/${obj.subscription}`);
-        await writeEntitlementFromSubscription(env, sub);
-      } catch (_) { /* the subscription.updated event will carry it */ }
-    }
-  } else if (
-    (event.type === "customer.subscription.updated"
-      || event.type === "customer.subscription.deleted"
-      || event.type === "customer.subscription.created") && obj
-  ) {
-    await writeEntitlementFromSubscription(env, obj);
-  } else if (event.type === "invoice.payment_succeeded" && obj) {
-    const userId = await env.APPS.get(`cust:${obj.customer}`);
-    await env.APPS.put(
-      `pay:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`,
-      JSON.stringify({
-        userId: userId || "",
-        email: obj.customer_email || "",
-        amount: obj.amount_paid,
-        currency: obj.currency,
-        invoice: obj.id,
-        at: Date.now(),
-      }),
-    );
-  }
-
-  // Only now: the work above completed without throwing, so this event is
-  // genuinely done and Stripe need not send it again.
-  await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
-  return json({ ok: true });
-}
-
 
 // ================================================================ free tier
 
@@ -5762,7 +5957,8 @@ async function caseOpen(request, env) {
   // never the one they want.
   const isEdit = Boolean(body.edit);
 
-  // The wall. A paid plan lifts it; the free allowance is counted in cases
+  // The wall. Only the desk's override lifts it (there is no paid plan,
+  // F-322); the free allowance is counted in cases
   // that produced a file, so a person whose attempts all failed for our
   // reasons has spent nothing.
   const made = await consumedCount(env, user, device, byId);
@@ -5785,7 +5981,7 @@ async function caseOpen(request, env) {
   // What a free person's tries may cost us, whatever they produced
   // (2026-10-06). The allowance counts only "made", so failed tries were
   // unlimited, and one person's builds took about $5 of the Krate key in
-  // half an hour without an app. Two limits, both lifted by a paid plan and
+  // half an hour without an app. Two limits, both lifted only by the desk's override and
   // neither touching a build on the person's own key (those open no case):
   //   - FREE_TRIES_PER_DAY cases opened in 24 hours that made nothing
   //     (5: four failures on a bad provider afternoon must still leave room
@@ -5863,7 +6059,7 @@ async function loadOwnCase(env, prefixes, id) {
 
 async function caseAttempt(request, env) {
   const body = await request.json().catch(() => ({}));
-  const { prefixes } = await caseIdentity(request, env, body);
+  const { user: asker, prefixes } = await caseIdentity(request, env, body);
   if (!prefixes.length) return text("Sign in first, or send a device id.", 400);
 
   const outcome = String(body.outcome || "");
@@ -5883,8 +6079,12 @@ async function caseAttempt(request, env) {
     outcome,
     note: String(body.note || "").slice(0, 200) || undefined,
   });
+  const firstMade = outcome === "made" && !record.made;
   if (outcome === "made") record.made = true;
   await writeCase(env, prefixes, record);
+  // A build takes minutes and people leave the tab: the first file a case
+  // makes is mailed to the person who asked for it.
+  if (firstMade && asker) await tellMade(env, asker, record);
 
   // The legacy counters mirror every consumption, whichever route consumed
   // it. planCount mirrors its own writes; without this, a made-attempt
@@ -5971,9 +6171,10 @@ async function planCount(request, env, increment) {
   // change when the account does.
   //
   // Neither is airtight on its own and neither needs to be. Together they
-  // mean getting a fourth free app costs either a new machine or real
+  // mean getting a second free app costs either a new machine or real
   // effort, which is the honest bar for a free tier: enough friction that
-  // it is easier to pay $12 than to cheat.
+  // it is easier to bring your own key, or your own AI on the desktop,
+  // than to cheat.
   const keys = [];
   if (user) keys.push(`mkacct:${user.id}`);
   if (/^[0-9a-f]{64}$/.test(device)) keys.push(`mkdev:${device}`);
@@ -6068,8 +6269,8 @@ async function planCount(request, env, increment) {
 // ================================================================ account
 //
 // One profile call for the website's account page and the studio: who you
-// are, what plan you are on, how your referrals stand. Referrals: send
-// three people who actually sign up and you get a month of Studio on us.
+// are and how many people joined through your link. A referral earns
+// nothing to pay for: Krate has no paid plans (F-322).
 
 async function getOrMakeRefCode(env, user) {
   if (user.refcode) return user.refcode;
@@ -6262,6 +6463,104 @@ async function useKey(request, env) {
   return json({ vendor, key });
 }
 
+/* ---- signing a person's web builds (IC-983, option B) -------------------
+ *
+ * An app made on a computer is signed there with the maker's own key. An
+ * app made on krate.tech is built on the Fly builder, which runs an AI
+ * agent and so must never hold a key. It hands the finished bundle here
+ * instead, and the hub signs it with a key it keeps for that account alone:
+ * made on the account's first web build, sealed under KEY_WRAP_SECRET like
+ * a person's API keys, never sent anywhere. Every web build of theirs is
+ * then the same publisher's, so its data stays theirs across rebuilds.
+ */
+
+/// The PKCS#8 wrapper for an Ed25519 seed: a fixed prefix, then the seed.
+const ED25519_PKCS8_PREFIX = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+const WEB_SIGN_MAX_BYTES = 64 * 1024 * 1024;
+
+/// The account's signing seed (32 bytes), made the first time. Null when
+/// the hub cannot seal one (no KEY_WRAP_SECRET) or the one it holds does
+/// not open: a second key would be a second publisher, so it never makes
+/// another over one it cannot read.
+async function accountSigningSeed(env, userId) {
+  const key = `signkey:${userId}`;
+  const held = await env.APPS.get(key);
+  const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const fromHex = (h) => Uint8Array.from(h.match(/../g) || [], (b) => parseInt(b, 16));
+  if (held) {
+    const seed = await openKey(env, JSON.parse(held));
+    return seed && /^[0-9a-f]{64}$/.test(seed) ? fromHex(seed) : null;
+  }
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const sealed = await sealKey(env, toHex(seed));
+  if (!sealed) return null;
+  await env.APPS.put(key, JSON.stringify(sealed));
+  return seed;
+}
+
+/// POST /sign/web-build: the bundle a person's build just made, from the
+/// build service (its secret) for that person (their session), answered
+/// signed as their account. Refused, the builder hands the bundle over
+/// unsigned, as before.
+async function signWebBuild(request, env) {
+  if (!(await fromBuilder(request, env))) {
+    return text("Only the build service may ask for this.", 403);
+  }
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const bundle = new Uint8Array(await request.arrayBuffer());
+  if (!bundle.length || bundle.length > WEB_SIGN_MAX_BYTES) return text("expected a .krate", 400);
+  const seed = await accountSigningSeed(env, user.id);
+  if (!seed) return text("this account's signing key is not available", 503);
+  // The validator takes the seed with its public half (ring checks the
+  // pair); WebCrypto derives that half from the seed.
+  const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const pkcs8 = new Uint8Array([...ED25519_PKCS8_PREFIX, ...seed]);
+  const imported = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, true, ["sign"]);
+  pkcs8.fill(0);
+  const { x } = await crypto.subtle.exportKey("jwk", imported);
+  const publicKey = Uint8Array.from(atob(x.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const header = new TextEncoder().encode(
+    JSON.stringify({
+      account: user.id,
+      signed_at: Math.floor(Date.now() / 1000),
+      seed: toHex(seed),
+      public: toHex(publicKey),
+    }),
+  );
+  seed.fill(0);
+  const frame = new Uint8Array(4 + header.length + bundle.length);
+  new DataView(frame.buffer).setUint32(0, header.length, true);
+  frame.set(header, 4);
+  frame.set(bundle, 4 + header.length);
+  let body;
+  try {
+    const v = validator();
+    const input = v.krate_alloc(frame.length);
+    new Uint8Array(v.memory.buffer, input, frame.length).set(frame);
+    const out = v.krate_sign(input, frame.length);
+    const length = new DataView(v.memory.buffer).getUint32(out, true);
+    body = new Uint8Array(v.memory.buffer, out + 4, length).slice();
+    // The key went into the module's memory: wipe it before freeing.
+    new Uint8Array(v.memory.buffer, input, 4 + header.length).fill(0);
+    v.krate_free(out, 4 + length);
+    v.krate_free(input, frame.length);
+  } catch (err) {
+    return text("the signing code stopped", 500);
+  }
+  frame.fill(0, 0, 4 + header.length);
+  const metaLength = new DataView(body.buffer).getUint32(0, true);
+  const meta = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + metaLength)));
+  if (!meta.ok) return text(meta.problem || "the app could not be signed", 422);
+  return new Response(body.subarray(4 + metaLength), {
+    headers: {
+      "content-type": "application/vnd.krate",
+      "x-krate-publisher": meta.public_key,
+      "x-krate-namespace": meta.namespace,
+    },
+  });
+}
+
 /* ---- what the builds cost ----------------------------------------------
  *
  * Anybody spending their own money on inference is owed the number, per
@@ -6344,13 +6643,11 @@ async function meProfile(request, env) {
       // Studio's welcome has been seen on this account, on any device.
       onboarded: Boolean(user.onboarded),
     },
-    plan: {
-      plan: ent ? ent.plan : "free",
-      active: entitlementActive(ent),
-      until: ent ? ent.until : 0,
-      via: (ent && ent.via) || "",
-      portal: Boolean(ent && ent.customer),
-    },
+    // Krate's non-essential mail is on unless the person turned it off.
+    mail: { news: wantsNews(user) },
+    // Whether Krate's free limits are lifted on this account (the desk's
+    // override). There is no plan to buy (F-322).
+    limits_lifted: entitlementActive(ent),
     referral: { code: await getOrMakeRefCode(env, user), count: refs.length, awards },
   });
 }
@@ -6510,41 +6807,11 @@ async function referralClaim(request, env) {
   const refs = JSON.parse((await env.APPS.get(`refs:${ownerId}`)) || "[]");
   if (!refs.includes(user.id)) refs.push(user.id);
   await env.APPS.put(`refs:${ownerId}`, JSON.stringify(refs.slice(0, 500)));
-  const awards = parseInt((await env.APPS.get(`refawards:${ownerId}`)) || "0", 10);
-  const due = Math.floor(refs.length / 3);
-  if (due > awards) {
-    // A month of Studio on us, stacked on whatever time is already there.
-    // If a paid subscription event later overwrites this record the person
-    // is paying anyway; the credit mostly serves free accounts, which is
-    // exactly who referrals recruit.
-    await env.APPS.put(`refawards:${ownerId}`, String(due));
-    const ent = JSON.parse((await env.APPS.get(`ent:${ownerId}`)) || "null");
-    const base = ent && ent.until && ent.until > Date.now() ? ent.until : Date.now();
-    await env.APPS.put(`ent:${ownerId}`, JSON.stringify({
-      plan: ent && entitlementActive(ent) && ent.via !== "referral" ? ent.plan : "studio",
-      status: "active",
-      until: base + (due - awards) * 30 * 24 * 3600 * 1000,
-      via: "referral",
-      sub: (ent && ent.sub) || "",
-      customer: (ent && ent.customer) || "",
-      at: Date.now(),
-    }));
-  }
+  // Counted, and nothing more. This used to award "a month of Studio" for
+  // every three, as an `ent:` record that also lifted the free limits on
+  // Krate's own AI key -- a paid plan given away, and a way round the spend
+  // limits. There is no plan (F-322), so a referral is a count.
   return json({ ok: true, counted: true });
-}
-
-// Stripe's own customer portal: change card, switch plan, cancel. We never
-// touch any of it; the person manages their money on stripe.com.
-async function billingPortal(request, env) {
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
-  if (!ent || !ent.customer) return text("No subscription on this account yet.", 404);
-  const session = await stripe(env, "billing_portal/sessions", {
-    customer: ent.customer,
-    return_url: "https://krate.tech/account/",
-  });
-  return json({ url: session.url });
 }
 
 function entitlementActive(ent) {
@@ -6553,18 +6820,6 @@ function entitlementActive(ent) {
   const okStatus = ent.status === "active" || ent.status === "trialing";
   const grace = 3 * 24 * 3600 * 1000;
   return okStatus && (!ent.until || ent.until + grace > Date.now());
-}
-
-async function billingStatus(request, env) {
-  const user = await authedUser(request, env);
-  if (!user) return text("Sign in first.", 401);
-  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
-  return json({
-    live: billingLive(env),
-    plan: ent ? ent.plan : "free",
-    active: entitlementActive(ent),
-    until: ent ? ent.until : 0,
-  });
 }
 
 // ================================================================== support
@@ -6595,9 +6850,6 @@ async function supportNew(request, env) {
   }
   const id = crypto.randomUUID().slice(0, 8);
   const key = crypto.randomUUID().replaceAll("-", "");
-  // Paying people are promised the front of the queue; the stamp travels
-  // with the ticket so the desk can honor that without a lookup per row.
-  const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
   const ticket = {
     id,
     key,
@@ -6606,7 +6858,6 @@ async function supportNew(request, env) {
     email,
     subject,
     session,
-    priority: entitlementActive(ent),
     status: "open",
     created: Date.now(),
     updated: Date.now(),
@@ -6664,7 +6915,7 @@ async function supportReply(request, env) {
 // ==================================================================== admin
 //
 // The support desk: one page, the same verified-GitHub-login gate as
-// /admin/reports (KRATE_ADMINS). Users, plans, payments, tickets, the
+// /admin/reports (KRATE_ADMINS). Users, tickets, the
 // make-it-for-me queue, and session revocation.
 
 async function adminApi(request, pathname, env) {
@@ -6672,18 +6923,22 @@ async function adminApi(request, pathname, env) {
   if (!admin) return text("not found", 404);
   const route = pathname.slice("/admin/api/".length);
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+  // The Mail section: compose, preview, pick people, send, history.
+  if (route.startsWith("mail/")) {
+    const answer = await deskMailApi(request, route, env, body, admin);
+    if (answer) return answer;
+  }
 
   if (route === "overview") {
     const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
     const ticks = await env.APPS.list({ prefix: "tick:", limit: 1000 });
-    const pays = await env.APPS.list({ prefix: "pay:", limit: 1000 });
     const reps = await env.APPS.list({ prefix: "report:", limit: 1000 });
+    const appReps = await env.APPS.list({ prefix: "app-report:", limit: 1000 });
     return json({
       users: users.keys.length,
       tickets: ticks.keys.length,
       reports: reps.keys.length,
-      payments: pays.keys.length,
-      billing_live: billingLive(env),
+      app_reports: appReps.keys.length,
     });
   }
   if (route === "welcomes") {
@@ -6702,7 +6957,9 @@ async function adminApi(request, pathname, env) {
         providers: u.providers || [],
         created: u.created || 0,
         welcomed: u.welcomed || 0,
-        compose: u.email ? welcomeComposeUrl(u) : null,
+        // Turned Krate's emails off: no welcome by hand either.
+        unsubscribed: !wantsNews(u),
+        compose: u.email && wantsNews(u) ? welcomeComposeUrl(u) : null,
       });
     }
     out.sort((a, b) => b.created - a.created);
@@ -6737,23 +6994,29 @@ async function adminApi(request, pathname, env) {
     out.sort((a, b) => (b.created || 0) - (a.created || 0));
     return json({ users: out.slice(0, 200) });
   }
-  if (route === "user/plan" && request.method === "POST") {
-    // The support override: comp a user, or clear an override.
-    if (body.plan === "comp") {
+  if (route === "user/limits" && request.method === "POST") {
+    // The support override: lift the free limits on Krate's AI key for one
+    // person (a friend testing, someone a failure of ours cost), or put
+    // them back. Nothing is sold (F-322); the record keeps its old name.
+    if (body.lifted) {
       await env.APPS.put(`ent:${body.id}`, JSON.stringify({ plan: "comp", status: "active", until: 0, at: Date.now(), by: admin.login }));
     } else {
       await env.APPS.delete(`ent:${body.id}`);
     }
     return json({ ok: true });
   }
+  // Deleting an account for someone who asked support (account-delete.js):
+  // first what it would do, then -- with the account's email typed in --
+  // the deletion itself, which carries on a part-way one.
+  if (route === "user/delete-preview" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: true });
+  }
+  if (route === "user/delete" && request.method === "POST") {
+    return deskDelete(env, accountDeleteDeps(), body, admin, { dryRun: false });
+  }
   if (route === "user/logout" && request.method === "POST") {
-    const sess = await env.APPS.list({ prefix: `usess:${body.id}:`, limit: 1000 });
-    for (const k of sess.keys) {
-      const token = k.name.split(":").pop();
-      await env.APPS.delete(`session:${token}`);
-      await env.APPS.delete(k.name);
-    }
-    return json({ revoked: sess.keys.length });
+    // Krate sessions, and GitHub sign-ins the hub indexed (account-sessions.js).
+    return json({ revoked: await endEverySession(env, String(body.id || ""), GITHUB_CLIENT_ID) });
   }
   if (route === "tickets") {
     const listing = await env.APPS.list({ prefix: "tick:", limit: 1000 });
@@ -6762,10 +7025,9 @@ async function adminApi(request, pathname, env) {
       const t = JSON.parse((await env.APPS.get(k.name)) || "null");
       if (t) out.push(t);
     }
-    // Open before closed, paying people first within open, newest first.
+    // Open before closed, newest first.
     out.sort((a, b) =>
       (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1)
-      || (b.priority ? 1 : 0) - (a.priority ? 1 : 0)
       || b.updated - a.updated);
     return json({ tickets: out });
   }
@@ -6784,15 +7046,6 @@ async function adminApi(request, pathname, env) {
     t.updated = Date.now();
     await env.APPS.put(`tick:${t.id}`, JSON.stringify(t));
     return json({ ok: true });
-  }
-  if (route === "payments") {
-    const listing = await env.APPS.list({ prefix: "pay:", limit: 1000 });
-    const out = [];
-    for (const k of listing.keys.reverse()) {
-      const p = JSON.parse((await env.APPS.get(k.name)) || "null");
-      if (p) out.push(p);
-    }
-    return json({ payments: out });
   }
   if (route === "makeit") {
     const listing = await env.APPS.list({ prefix: "makeit:", limit: 1000 });
@@ -6820,6 +7073,15 @@ async function adminApi(request, pathname, env) {
     }
     reports.sort((a, b) => (b.received || 0) - (a.received || 0));
     return json({ reports });
+  }
+  // Reports on apps from the people who opened them (receive.js), one
+  // record per app, with the takedown beside each (POST /admin/takedown/).
+  if (route === "app-reports") {
+    return json({ apps: await appReportsList(env, listAllKeys) });
+  }
+  if (route === "app-report/state" && request.method === "POST") {
+    const done = await appReportState(env, body.hash, body.state);
+    return done.status === 200 ? json(done.body) : text(done.body, done.status);
   }
   if (route === "report/state" && request.method === "POST") {
     const id = String(body.id || "");
@@ -7016,6 +7278,7 @@ textarea{min-height:70px;resize:vertical}
 .pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--mut)}
 .pill.open{color:var(--warn);border-color:#5a4636}.pill.active{color:var(--ok);border-color:#2c5243}
 #login{max-width:420px}
+${DESK_MAIL_STYLE}
 </style>
 <h1>Krate desk</h1><p class="sub" id="who">signing in&hellip;</p>
 <div id="login" class="card" style="display:none">
@@ -7028,8 +7291,10 @@ textarea{min-height:70px;resize:vertical}
   <button data-t="people">People</button>
   <button data-t="tickets">Tickets</button>
   <button data-t="reports">Reports</button>
+  <button data-t="apps">App reports</button>
   <button data-t="users">Users</button>
   <button data-t="makeit">Make-it queue</button>
+  <button data-t="mail">Mail</button>
 </nav>
 <div id="view"></div>
 </div>
@@ -7043,7 +7308,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports\`;el("#app").style.display="";const first=location.hash==="#people"?"people":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -7068,7 +7333,7 @@ async function show(tab){
     const badge=el("#waiting");badge.textContent=W.waiting;badge.style.display=W.waiting?"":"none";
     const waiting=W.people.filter(p=>!p.welcomed&&p.email),done=W.people.filter(p=>p.welcomed),none=W.people.filter(p=>!p.email);
     const row=p=>'<div class="card row" data-id="'+esc(p.id)+'"><div class="grow"><b>'+esc(p.name||p.login||p.email)+'</b> <span class="mut">'+esc(p.email)+' · '+esc(p.providers.join(", "))+' · joined '+ago(p.created)+'</span>'
-      +(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
+      +(p.unsubscribed?' <span class="pill">unsubscribed</span>':'')+(p.welcomed?'<div class="mut">welcomed '+ago(p.welcomed)+'</div>':'')+'</div>'
       +(p.compose&&!p.welcomed?'<a class="act" style="text-decoration:none;padding:7px 13px;border-radius:8px;background:var(--acc);color:#fff;font-size:12.5px" target="_blank" rel="noopener" href="'+esc(p.compose)+'">Write the welcome</a>':'')
       +(p.email?'<button class="ghost mark">'+(p.welcomed?"Not welcomed":"Mark welcomed")+'</button>':'')+'</div>';
     v.innerHTML='<p class="mut" style="margin-bottom:10px">Everyone who made an account, newest first. "Write the welcome" opens Gmail as you, the note written; send it, then mark them welcomed. You also get an email the moment someone signs up.</p>'
@@ -7115,7 +7380,7 @@ async function show(tab){
       // words Studio adds: "[Studio web · ... · session s-123]".
       if(!t.session){const m=/session ([A-Za-z0-9_-]{1,64})\]/.exec((t.messages[0]||{}).text||"");if(m)t.session=m[1];}
       const d=document.createElement("div");d.className="card";
-      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b>\${t.priority?'<span class="pill" style="border-color:#5a4a17;background:#2b2410;color:#e7c766">priority</span>':''}<span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
+      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b><span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
       <div>\${t.messages.map(m=>\`<div class="msg \${m.who}">\${esc(m.text)}<div class="mut">\${m.who==="krate"?"you":"them"} · \${when(m.at)}</div></div>\`).join("")}</div>
       <div class="row" style="margin-top:8px"><textarea placeholder="Reply…"></textarea></div>
       <div class="row" style="margin-top:8px"><button class="act">Send reply</button><button class="ghost">\${t.status==="open"?"Close":"Reopen"}</button><button class="ghost sbtn">\${t.session?"Open the session":"Their sessions"}</button>\${t.session?'<span class="mut">session '+esc(t.session)+'</span>':''}</div>
@@ -7141,6 +7406,22 @@ async function show(tab){
       v.appendChild(d);
     }
   }
+  if(tab==="apps"){
+    const {apps}=await api("app-reports");
+    v.innerHTML=apps.length?'<p class="mut" style="margin-bottom:10px">Sent from the Player by people who opened the app, no account needed. One card per app, most recently reported first.</p>':'<p class="mut">No app has been reported.</p>';
+    for(const a of apps){
+      const d=document.createElement("div");d.className="card";
+      const why=Object.entries(a.reasons||{}).map(([k,n])=>esc(k)+" "+n).join(" · ");
+      d.innerHTML='<div class="row"><b>'+esc(a.name||"(no listing)")+'</b> <span class="mut">'+esc(a.hash.slice(0,12))+' · '+esc(a.scope||"")+'</span><span class="pill '+(a.state==="done"?"closed":"open")+'">'+esc(a.state||"new")+'</span>'+(a.taken_down?'<span class="pill">taken down</span>':'')+'<span class="grow"></span><span class="mut">'+when((a.last||0)*1000)+'</span></div>'
+        +'<div class="mut" style="margin:6px 0">'+a.count+' report'+(a.count===1?'':'s')+' · '+why+'</div>'
+        +(a.reports||[]).filter(r=>r.note).slice(-5).map(r=>'<div class="msg user">'+esc(r.why)+': '+esc(r.note)+' <span class="mut">'+esc(r.country||"")+(r.login?' @'+esc(r.login):'')+'</span></div>').join("")
+        +'<div class="row" style="margin-top:8px"><a class="ghost" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px" href="'+HUB+'/run/'+esc(a.hash)+'" target="_blank" rel="noopener">Open it</a>'+(a.taken_down?'':'<button class="act td">Take it down</button>')+'<button class="ghost st">'+(a.state==="done"?"Reopen":"Mark done")+'</button></div>';
+      const td=d.querySelector(".td");
+      if(td)td.onclick=async()=>{const reason=prompt("The reason the notice shows to anyone who opens it:","It broke Krate's rules after a report.");if(!reason)return;const res=await fetch(HUB+"/admin/takedown/"+a.hash,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify({reason,scope:"listing"})});if(!res.ok){alert("Takedown failed: "+res.status+" "+await res.text());return;}await api("app-report/state",{method:"POST",body:JSON.stringify({hash:a.hash,state:"done"})});show("apps");};
+      d.querySelector(".st").onclick=async()=>{await api("app-report/state",{method:"POST",body:JSON.stringify({hash:a.hash,state:a.state==="done"?"seen":"done"})});show("apps");};
+      v.appendChild(d);
+    }
+  }
   if(tab==="users"){
     v.innerHTML='<div class="card row"><input id="q" placeholder="Search email, login, name…"><button class="act" id="go">Search</button></div><div id="ulist"></div>';
     const load=async()=>{
@@ -7149,16 +7430,33 @@ async function show(tab){
       for(const x of users){
         const d=document.createElement("div");d.className="card row";
         d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
-        <span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
-        <button class="ghost" data-a="plan">\${x.ent&&x.ent.plan==="comp"?"Remove comp":"Comp plan"}</button>
-        <button class="ghost" data-a="out">Sign out everywhere</button>\`;
-        d.querySelector('[data-a=plan]').onclick=async()=>{await api("user/plan",{method:"POST",body:JSON.stringify({id:x.id,plan:x.ent&&x.ent.plan==="comp"?"none":"comp"})});load();};
+        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}\${x.active?'<span class="pill active">limits lifted</span>':''}
+        <button class="ghost" data-a="limits">\${x.active?"Restore free limits":"Lift free limits"}</button>
+        <button class="ghost" data-a="out">Sign out everywhere</button>
+        <button class="ghost" data-a="del">Delete account</button>\`;
+        d.querySelector('[data-a=limits]').onclick=async()=>{await api("user/limits",{method:"POST",body:JSON.stringify({id:x.id,lifted:!x.active})});load();};
         d.querySelector('[data-a=out]').onclick=async()=>{const r=await api("user/logout",{method:"POST",body:JSON.stringify({id:x.id})});alert(r.revoked+" sessions revoked");};
+        d.querySelector('[data-a=del]').onclick=async()=>{
+          const call=(r,b)=>fetch(HUB+"/admin/api/"+r,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify(b)}).then(async res=>({status:res.status,body:await res.json().catch(()=>({}))}));
+          const p=await call("user/delete-preview",{id:x.id});
+          if(p.status!==200){alert(p.body.message||("Failed: "+p.status));return;}
+          const v=p.body;
+          if(v.blocked){alert(v.blocked.message);return;}
+          if(v.subscription&&!v.subscription.cancels){alert(v.subscription.message);return;}
+          let apps="remove";
+          if(v.app_builds){apps=confirm("Published apps:\\n"+((v.apps||[]).map(a=>"  "+a.name).join("\\n")||"  (earlier builds only)")+"\\n\\nOK removes them with the account. Cancel leaves them up.")?"remove":"keep";}
+          const typed=prompt("Delete "+(x.email||x.id)+" for good?\\n\\nGoes: "+v.deletes.join("; ")+".\\n\\nType the account's "+(x.email?"email address":"id")+" to confirm:");
+          if(!typed)return;
+          let r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          for(let i=0;r.status===202&&i<50;i++)r=await call("user/delete",{id:x.id,confirm:typed,apps});
+          alert(r.body.state==="done"?"Deleted.":(r.body.message||("Failed: "+r.status)));load();
+        };
         u.appendChild(d);
       }
     };
     el("#go").onclick=load;el("#q").onkeydown=e=>{if(e.key==="Enter")load()};load();
   }
+  if(tab==="mail"){await deskMail(v);}
   if(tab==="makeit"){
     const {requests}=await api("makeit");
     v.innerHTML=requests.length?"":'<p class="mut">Queue is empty.</p>';
@@ -7171,6 +7469,7 @@ async function show(tab){
     }
   }
 }
+${deskMailScript()}
 boot();
 </script>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
@@ -7196,6 +7495,10 @@ boot();
 //   POST   /orgs/<slug>/candidates                (bundle bytes)
 //   GET    /orgs/<slug>/candidates                (history, for members who publish or approve)
 //   POST   /orgs/<slug>/candidates/<digest>/approve
+//   POST   /orgs/<slug>/candidates/<digest>/decline {reason}      (org-decline.js)
+//   PUT    /orgs/<slug>/candidates/<digest>/note    {note}        (org-notes.js)
+//   GET    /orgs/<slug>/requests, POST {text}, PUT /<id>          (org-requests.js)
+//   GET    /orgs/<slug>/notifications, GET/PUT /me/notify         (org-notify.js)
 //   GET    /orgs/<slug>/releases
 //   GET    /orgs/<slug>/audit
 //   GET    /a/<hash>                              (a private release: see fetchPrivate)
@@ -7335,16 +7638,16 @@ async function noteOrgOf(env, principal, slug, name, role) {
 /// Every organisation route, behind the refused-attempt limit (IC-948 B):
 /// a principal with 30 refusals this minute gets 429 before any store is
 /// asked, and each refusal the store gives is counted.
-async function orgRoute(request, url, env) {
+async function orgRoute(request, url, env, ctx) {
   const identity = await verifyGitHub(request, env);
   const principals = principalsOf(identity);
   if (principals.length && (await refusalsExhausted(env, principals))) return rateLimitedAnswer();
-  const res = await orgRouteCore(request, url, env, identity);
+  const res = await orgRouteCore(request, url, env, identity, ctx);
   if (principals.length && isRefusal(res.status)) await noteRefusal(env, principals);
   return res;
 }
 
-async function orgRouteCore(request, url, env, identity) {
+async function orgRouteCore(request, url, env, identity, ctx) {
   if (!env.ORGS) {
     return json({ error: "orgs-off", message: "organisations are not switched on on this hub" }, 503);
   }
@@ -7436,6 +7739,19 @@ async function orgRouteCore(request, url, env, identity) {
     return askRaw(op, argsOf(body.value), idempotency);
   };
   const mutate = async (op, argsOf) => orgAnswer(await mutateRaw(op, argsOf));
+  // Work that must not hold up or fail the answer -- notification mail --
+  // runs after it when the platform allows; a test, with no context, waits.
+  const later = (pending) => {
+    const safe = Promise.resolve(pending).catch((e) => console.error("after the answer:", e && e.message ? e.message : String(e)));
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(safe);
+      return Promise.resolve();
+    }
+    return safe;
+  };
+  const notices = { env, smtpSend, askRaw, site };
+  // One committed event's mail and channel posts, after the answer.
+  const notify = (event) => later(sendNotices(notices, event));
 
   // Company sign-in and offline access (IC-948, F and G).
   {
@@ -7489,7 +7805,11 @@ async function orgRouteCore(request, url, env, identity) {
     }
     if (method === "DELETE") {
       const answer = await mutateRaw("remove", () => ({ principal: target }));
-      if (answer.status === 204) await noteOrgOf(env, String(target).toLowerCase(), slug, null, null);
+      if (answer.status === 204) {
+        await noteOrgOf(env, String(target).toLowerCase(), slug, null, null);
+        // A removal can leave the team data key due for renewing.
+        await notify({ event: "security" });
+      }
       return orgAnswer(answer);
     }
   }
@@ -7512,7 +7832,15 @@ async function orgRouteCore(request, url, env, identity) {
     return ask("set-root", { public_key: publicKey, revocations }, idempotency);
   }
   if (rest[0] === "candidates") {
-    if (rest.length === 1 && method === "POST") return orgCandidate(request, env, slug, principals, url.pathname, base);
+    if (rest.length === 1 && method === "POST") {
+      const res = await orgCandidate(request, env, slug, principals, url.pathname, base);
+      // A new version waits: the people who may approve it hear (org-notify.js).
+      if (res.status === 201) {
+        const made = await res.clone().json().catch(() => null);
+        if (made && made.digest && made.state === "waiting-for-approval") await later(sendNotices(notices, { event: "waiting", digest: made.digest }));
+      }
+      return res;
+    }
     if (rest.length === 1 && method === "GET") return ask("candidates");
     if (rest.length === 3 && rest[2] === "approve" && method === "POST") {
       const digest = String(rest[1]).toLowerCase();
@@ -7520,7 +7848,10 @@ async function orgRouteCore(request, url, env, identity) {
         return orgError(404, "digest-mismatch", slug, "a digest is the candidate's 64-hex sha256");
       }
       // `accept`: the new capabilities the approver confirmed (IC-950).
-      return mutate("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      const answer = await mutateRaw("approve", (b) => ({ digest, base, accept: Array.isArray(b && b.accept) ? b.accept.slice(0, 200).map(String) : [] }));
+      // Its sender hears it is out; never holds up or fails the approval.
+      if (answer.status === 200 && !answer.replayed) await later(sendNotices(notices, { event: "approved", digest }));
+      return orgAnswer(answer);
     }
   }
   if (rest[0] === "releases" && rest.length === 1 && method === "GET") return ask("releases", { base });
@@ -7535,13 +7866,16 @@ async function orgRouteCore(request, url, env, identity) {
   const h = {
     request, url, env, slug, rest, method, principals, identity, site, base,
     askRaw, mutateRaw, orgAsk, orgAnswer, json, readBody, readBounded, isAdmin, smtpSend, fetchBundle, idempotencyOf,
-    validate: callValidator,
+    validate: callValidator, later, notices, notify,
   };
   const routed =
-    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) || (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
+    (await orgLifecycleRoute(h)) || (await orgBillingRoute(h)) || (await inventoryRoute(h)) || (await insightsRoute(h)) || (await orgTimeRoute(h)) || (await orgBrandRoute(h)) ||
+    (await orgDeclineRoute(h)) || (await orgNotesRoute(h)) || (await orgRequestsRoute(h)) || (await orgNotifyRoute(h)) || (await orgApprovalsRoute(h)) ||
+    (await orgRolloutRoute(h)) || (await orgReleaseRoute(h)) || (await connectionRoute(h)) ||
     (await orgScimRoute(h)) || (await auditExportRoute(h)) || (await orgSamlRoute(h)) ||
     (await orgKeysRoute(h)) ||
     (await orgSigningRoute(h)) ||
+    (await orgChatRoute(h)) ||
     (await orgDataRoute(h));
   if (routed) return routed;
   return text("not found", 404);
@@ -7570,15 +7904,19 @@ async function orgCandidate(request, env, slug, principals, path, base) {
     );
   }
   const body = read.body;
+  const note = noteHeader(request.headers.get("x-krate-note"));
+  if (note.bad) return json({ error: "bad-request", message: note.bad }, 400);
   const invalid = (problem) => json({ error: "invalid-bundle", message: `not a valid .krate bundle: ${problem}` }, 422);
   if (body.length === 0) return invalid("the body is empty");
   const problem = archiveProblem(body);
   if (problem) return invalid(problem);
   const judged = judgeBundle(body);
+  if (judged.crashed) return json({ error: "try-again", message: judged.problem }, 503);
   if (!judged.ok) return invalid(judged.problem);
   const digest = await sha256Hex(body);
   const idempotency = await idempotencyOf(request, path, digest);
   const args = candidateArgs(judged.judgement, digest, body.length, base);
+  if (note.value) args.note = note.value;
 
   const check = await orgAsk(env, slug, { op: "check-candidate", principals, args, idempotency });
   if (check.replayed || check.status !== 200) return orgAnswer(check);
@@ -7649,6 +7987,9 @@ async function fetchPrivate(request, url, hash, object, slug, big, env) {
         size: object.size,
         org: { slug, name: answer.body.org_name },
         offline: answer.body.offline,
+        // The version this person should have now (staged rollout,
+        // org-rollout.js): a check-in on another one hears it.
+        ...(answer.body.for_you ? { for_you: answer.body.for_you } : {}),
       }),
       { headers: { "content-type": "application/json", ...noStore } },
     );

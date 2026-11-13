@@ -147,6 +147,44 @@ If you use a different agent, `--author-cmd` runs any command you like
 inside the workspace with `KRATE_PORT_SOURCE`, `KRATE_PORT_PLAN`,
 `KRATE_PORT_CANDIDATE` and `KRATE_PORT_TASK` set.
 
+## Check it against the original
+
+Give Krate inputs you ran through your original app and exactly what it
+printed, and the port is checked against them before you get the file:
+
+```json
+{
+  "schema": "krate.port.oracle.v1",
+  "cases": [
+    {
+      "id": "invoice-total",
+      "args": ["input/qty.txt"],
+      "files": { "input/qty.txt": "2\n3\n5\n" },
+      "stdout": "total=100\n"
+    }
+  ]
+}
+```
+
+```sh
+krate port ./my-project --agent claude --oracle cases.json --to my-app.krate
+```
+
+Each case runs in its own folder with its files written in. Stdout and the
+exit code (`exit`, default 0) must match exactly. A case that differs is
+handed to the agent as a repair, with what was expected and what came out.
+
+Every port ends with one line saying how it ended and where its workspace
+is. `--json` prints the same ending as JSON on the last line.
+
+| Ending | Exit | What you have |
+|---|---|---|
+| `Ported` | 0 | the `.krate`, and the evidence it was judged on in the workspace |
+| `Not verified` | 7 | a `.krate` that builds and runs, but nothing compared it with your original |
+| `Blocked on <requirement>` | 8 | no `.krate`; the requirement that failed, and the workspace to pick up from |
+
+Without `--prepare`, the workspace is kept under `~/.krate/ports/`.
+
 ## What ports well
 
 The work is mostly at the edges. Pure logic moves across almost

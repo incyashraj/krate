@@ -2566,7 +2566,12 @@ echo '   '"#,
             Some(true),
         ))
         .unwrap();
-        assert_eq!(link, "https://krate.tech/r/abc123");
+        assert_eq!(link["url"], "https://krate.tech/r/abc123");
+        assert_eq!(
+            link["version"],
+            serde_json::Value::Null,
+            "an engine from before versions names none"
+        );
         let p = app.display().to_string();
         assert_eq!(
             t.args(),
@@ -2596,6 +2601,165 @@ echo '   '"#,
             block(publish(path, None, None, None, None, None)).unwrap_err(),
             "published, but no link came back"
         );
+    }
+
+    #[test]
+    fn publishing_an_update_says_which_version_and_hands_back_the_apps_link() {
+        let t = TestHome::new();
+        let app = t.root().join("tip.krate");
+        std::fs::write(&app, "x").unwrap();
+        let path = app.display().to_string();
+        // What `krate publish` prints for a second version (IC-976): a note
+        // with a link of its own above, the app's link, the build's own.
+        t.engine(
+            "echo 'note: see https://hub.example/help for the gallery'; \
+             echo 'Updated to v3. Everyone with the link gets this version:'; \
+             echo '  krate run https://hub.example/a/v0123456789a'; \
+             echo '  this version alone, unchanged by later updates: https://hub.example/a/abcdef012345'",
+        );
+        let out = block(publish(path.clone(), None, None, None, None, None)).unwrap();
+        assert_eq!(
+            out["url"], "https://hub.example/a/v0123456789a",
+            "the app's link, not the note's"
+        );
+        assert_eq!(out["version"], 3);
+        assert_eq!(out["updated"], true);
+        assert_eq!(out["version_url"], "https://hub.example/a/abcdef012345");
+        // A first publish is v1 and not an update.
+        t.engine(
+            "echo 'Published (v1). Anyone can run it with:'; echo '  krate run https://hub.example/a/v0123456789a'",
+        );
+        let out = block(publish(path, None, None, None, None, None)).unwrap();
+        assert_eq!(
+            (out["version"].as_u64(), out["updated"].as_bool()),
+            (Some(1), Some(false))
+        );
+    }
+
+    #[test]
+    fn an_apps_versions_are_asked_for_by_its_manifest_id_and_name_this_file() {
+        use sha2::{Digest, Sha256};
+        let t = TestHome::new();
+        let app = t.root().join("notes.krate");
+        // An id-looking line in another table first: only [app]'s counts.
+        zip_with(
+            &app,
+            &[(
+                "manifest.toml",
+                b"[package]\nid = \"not-this\"\n\n[app]\nname = \"Notes\"\nid = \"dev.krate.notes.k3x9qa\" # kept\n",
+            )],
+        );
+        let hash: String = Sha256::digest(std::fs::read(&app).unwrap())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let path = app.display().to_string();
+        // Signed out: nothing to ask, and the hub is not asked.
+        assert_eq!(
+            block(app_versions(path.clone())).unwrap(),
+            serde_json::Value::Null
+        );
+
+        let mine = hash.clone();
+        let hub = Hub::start(move |req| {
+            if req.path.starts_with("/lines?app=dev.krate.notes.k3x9qa")
+                && req.header("authorization").as_deref() == Some("Bearer tok")
+            {
+                let body = serde_json::json!({
+                    "id": "v0123456789a", "name": "Notes", "url": "https://hub.example/a/v0123456789a",
+                    "current": 2, "versions": 2,
+                    "history": [
+                        { "n": 1, "at": 1, "size": 10, "hash": "a".repeat(64), "url": "u1", "current": false },
+                        { "n": 2, "at": 2, "size": 11, "hash": mine, "url": "u2", "current": true },
+                    ],
+                });
+                (200, body.to_string().into_bytes())
+            } else {
+                (404, br#"{"error":"not published yet"}"#.to_vec())
+            }
+        });
+        t.hub(&hub);
+        t.sign_in("tok");
+        let v = block(app_versions(path.clone())).unwrap();
+        assert_eq!(v["id"], "v0123456789a");
+        assert_eq!(v["this_version"], 2, "this very file is v2");
+        assert_eq!(v["next"], 3, "a change would become v3");
+
+        // Another build of it is not published yet; the next is still v3.
+        zip_with(
+            &app,
+            &[(
+                "manifest.toml",
+                b"[app]\nid = \"dev.krate.notes.k3x9qa\"\nversion = \"0.2.0\"\n",
+            )],
+        );
+        let v = block(app_versions(path.clone())).unwrap();
+        assert_eq!(
+            (v["this_version"].clone(), v["next"].clone()),
+            (serde_json::Value::Null, 3.into())
+        );
+
+        // An app this person never published: no versions, no update.
+        zip_with(
+            &app,
+            &[("manifest.toml", b"[app]\nid = \"dev.krate.other\"\n")],
+        );
+        assert_eq!(
+            block(app_versions(path.clone())).unwrap(),
+            serde_json::Value::Null
+        );
+
+        // A file that is not an app says so in words.
+        std::fs::write(&app, "not a zip").unwrap();
+        assert_eq!(
+            block(app_versions(path)).unwrap_err(),
+            "that file could not be read as a Krate app"
+        );
+    }
+
+    #[test]
+    fn making_a_version_current_asks_the_hub_as_the_owner_and_says_its_refusal() {
+        let t = TestHome::new();
+        let hub = Hub::start(|req| {
+            if req.method == "POST"
+                && req.path == "/lines/v0123456789a/current"
+                && req.body.contains("\"version\":1")
+            {
+                (200, br#"{"id":"v0123456789a","current":1}"#.to_vec())
+            } else {
+                (
+                    403,
+                    br#"{"error":"only the app's publisher can choose its current version"}"#
+                        .to_vec(),
+                )
+            }
+        });
+        t.hub(&hub);
+        assert_eq!(
+            block(app_make_current("v0123456789a".into(), 1)).unwrap_err(),
+            "Sign in first."
+        );
+        t.sign_in("tok");
+        let v = block(app_make_current("v0123456789a".into(), 1)).unwrap();
+        assert_eq!(v["current"], 1);
+        assert_eq!(
+            hub.seen()
+                .last()
+                .and_then(|s| s.header("authorization"))
+                .as_deref(),
+            Some("Bearer tok")
+        );
+        assert_eq!(
+            block(app_make_current("v0123456789a".into(), 2)).unwrap_err(),
+            "only the app's publisher can choose its current version"
+        );
+        // Anything that is not an app's id never reaches the hub.
+        let before = hub.seen().len();
+        assert_eq!(
+            block(app_make_current("../admin".into(), 1)).unwrap_err(),
+            "that is not one of your apps"
+        );
+        assert_eq!(hub.seen().len(), before);
     }
 
     const DUMP_CAPS: &str = "printf 'Identity\\n  - sha256:abcd\\nEffective capabilities\\n  - gui.window\\n  - store.kv\\nThis app will ask for\\n  - save its own settings and data (store.kv)\\n  - something plain\\n'";

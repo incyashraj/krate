@@ -80,6 +80,18 @@ FIXTURES = [
      "scripts/build-phase2-language-variant-fixtures.sh with KRATE_LANGUAGE_VARIANTS_MODE=go"),
     ("TypeScript fixture", "optional",
      "scripts/build-phase2-language-variant-fixtures.sh with KRATE_LANGUAGE_VARIANTS_MODE=ts"),
+    # A crate that compiles C (K-1072) needs wasi-sdk, which the full lane
+    # does not install; doctor names how to get it.
+    ("no wasi-sdk on this machine", "optional",
+     "wasi-sdk at ~/opt/wasi-sdk or WASI_SDK_PATH (`krate doctor` says how); not installed on CI runners"),
+    # The pinned-toolchain build check reads the stable toolchain's wasip1
+    # target, which a runner with only the pinned toolchain lacks.
+    ("stable has no wasm32-wasip1 target", "optional",
+     "rustup target add wasm32-wasip1 --toolchain stable"),
+    # The org review comparison is the hub's own test; through the CLI it
+    # needs a local hub.
+    ("set KRATE_ORG_E2E_HUB", "optional",
+     "a local hub at KRATE_ORG_E2E_HUB; cloud/worker/test/org-review.test.mjs runs the comparison itself"),
     ("KRATE_WINIT_NATIVE_SMOKE", "optional",
      "a real display; run by hand with KRATE_WINIT_NATIVE_SMOKE=1"),
     ("system fonts", "optional",
@@ -95,6 +107,9 @@ FIXTURES = [
     # "classify me", which is exactly what happened (K-744).
     ("no usable GPU", "optional",
      "a GPU the shared presenter device can open; a headless runner has none"),
+    # The same absence, worded by the GPU app test through the CLI.
+    ("this machine has no GPU", "optional",
+     "a GPU the app's renderer can open; a headless runner has none"),
 ]
 
 # Reasons that are not a fixture at all: a platform the test does not cover,

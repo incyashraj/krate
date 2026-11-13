@@ -9,7 +9,7 @@
 <meta property="og:title" content="Download Krate Studio for Mac, Windows and Linux" />
 <meta property="og:description" content="Download Krate Studio, the Krate Player or the krate command line for macOS, Windows and Linux. Free, with every file from the latest release." />
 <meta property="og:url" content="https://krate.tech/download/" />
-<meta property="og:image" content="https://krate.tech/og-v4.png" />
+<meta property="og:image" content="https://krate.tech/og-v5.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="/krate-favicon.png" />
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -34,6 +34,7 @@
 .term .cp { position: absolute; top: 50%; right: 7px; width: 34px; height: 34px; margin-top: -17px; display: grid; place-items: center; border-radius: 9px; color: #9a9aa6; transition: color .2s, background .2s; }
 .term .cp:hover { color: #fff; background: rgba(255,255,255,.09); }
 .term .cp svg { width: 15px; height: 15px; }
+@media (pointer: coarse) { .term .cp::after { content: ""; position: absolute; inset: -5px; } }
 @media (max-width: 480px) { .term pre.k { font-size: 11px; padding-right: 46px; } .term .cp { right: 5px; } .term pre.k .u { white-space: nowrap; } }
 @media (max-width: 360px) { .term pre.k .u { white-space: inherit; } }
 .term .cp .ok { display: none; color: #4ade80; }
@@ -67,7 +68,7 @@
     <div class="drawer" id="drawer" role="menu">
       <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
       <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
-      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
       <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
     </div>
   </nav>
@@ -79,7 +80,7 @@
   </div>
 </header>
 <nav class="mnav" id="mnav" aria-label="Menu">
-  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
   <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
 </nav>
 
@@ -87,7 +88,7 @@
 <section class="ph wrap n">
   <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Download</span>
   <h1>Download Krate.</h1>
-  <p class="lede">Krate Studio makes apps with the AI you already have, opens them and shares them. It is free, and it runs on Mac, Windows and Linux.</p>
+  <p class="lede">Krate Studio makes apps with the AI you already have, runs them natively and sends them as a file or a link. It is free, and it runs on Mac, Windows and Linux.</p>
   <div class="acts">
     <a class="btn dark" id="dlBest" href="https://github.com/incyashraj/krate/releases/latest">Download Krate Studio</a>
   </div>
@@ -113,7 +114,7 @@
       <div class="lead">
         <span class="eye">Open only</span>
         <h2>Krate Player</h2>
-        <p>Only opens .krate files somebody sent you. Smaller. <a href="/open/">How opening works.</a></p>
+        <p>Opens .krate files somebody sent you, natively. Smaller. Got a link instead? It opens in your browser with nothing to download. <a href="/open/">How opening works.</a></p>
       </div>
       <ul class="files">
         <li data-asset="^krate-app-.*-aarch64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest"><span class="dli"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v8M3.5 6.5L7 10l3.5-3.5M2.5 12.5h9"/></svg></span>macOS, Apple Silicon</a><span class="dlSize"></span></li>
@@ -152,12 +153,12 @@
 
 <footer class="foot">
   <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
-  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
   <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
-  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 <script>

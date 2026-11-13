@@ -50,10 +50,13 @@ thread_local! {
 
 /// How many measured runs to keep.
 ///
-/// A screenful of a dense table is a few hundred distinct strings; a thousand
-/// covers that with room for the headers, chrome and a scroll's worth of
-/// churn. Small enough that the whole thing is a few tens of KB.
-const MEASURE_CACHE_CAP: usize = 1024;
+/// Layout measures every label in a widget tree, not just the ones on
+/// screen, and asks again on every pass. At 1,024 a list of 2,000 rows
+/// cleared the cache every pass and missed on every label, ~80us each, and
+/// its layout cost 18x what 1,000 rows did (K-1135). 16,384 holds a very
+/// long list; an entry is about a hundred bytes, so a full cache is under
+/// 2 MB.
+const MEASURE_CACHE_CAP: usize = 16_384;
 
 /// The part of a measurement request that determines its answer.
 ///
@@ -243,6 +246,22 @@ struct GlyphKey {
     /// Horizontal sub-pixel position, in sixteenths. There is no vertical
     /// one: hinting puts every glyph on a whole-pixel baseline.
     fx: u8,
+    /// The run's variation coordinates (a variable font's weight), hashed:
+    /// one file can draw every weight, and each is its own glyph.
+    coords: u64,
+}
+
+/// A run's variation coordinates as vello takes them, and their hash for
+/// the glyph cache. Without them a variable font -- Android's Roboto is one
+/// file for every weight -- drew every weight as its default, so bold
+/// titles came out regular on phones.
+fn run_coords(run: &parley::Run<'_, ()>) -> (Vec<i16>, u64) {
+    let raw = run.normalized_coords();
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for c in raw {
+        hash = (hash ^ (*c as u16 as u64)).wrapping_mul(0x0100_0000_01b3);
+    }
+    (raw.to_vec(), hash)
 }
 
 /// A glyph's coverage, cropped to its ink, and where that crop sits
@@ -391,6 +410,7 @@ impl TextEngine {
                 let run = glyph_run.run();
                 let font = run.font().clone();
                 let font_size = run.font_size();
+                let (coords, coords_hash) = run_coords(run);
                 let mut run_x = glyph_run.offset();
                 let run_y = glyph_run.baseline();
                 for g in glyph_run.glyphs() {
@@ -406,8 +426,9 @@ impl TextEngine {
                         glyph: g.id,
                         size_bits: font_size.to_bits(),
                         fx,
+                        coords: coords_hash,
                     };
-                    let glyph = self.glyph_coverage(key, &font, font_size);
+                    let glyph = self.glyph_coverage(key, &font, font_size, &coords);
                     blit_over(out, out_w, out_h, &glyph, ix, iy);
                 }
             }
@@ -421,11 +442,12 @@ impl TextEngine {
         key: GlyphKey,
         font: &parley::FontData,
         font_size: f32,
+        coords: &[i16],
     ) -> std::rc::Rc<GlyphCoverage> {
         if let Some(hit) = self.glyphs.get(&key) {
             return hit.clone();
         }
-        let glyph = std::rc::Rc::new(rasterise_glyph(key, font, font_size));
+        let glyph = std::rc::Rc::new(rasterise_glyph(key, font, font_size, coords));
         // Bounded like the run cache: a guest sweeping every size of every
         // glyph must not grow the host without limit. Clearing costs one
         // frame of re-rasterising the glyphs actually on screen.
@@ -493,8 +515,12 @@ impl TextEngine {
             // Prefer the platform's screen-oriented coding faces. The generic
             // mapping can select a typewriter face such as Courier on macOS.
             // Keep a generic fallback for installations without these fonts.
+            // Android names its own: Droid Sans Mono (every release) and
+            // Cutive Mono; none of the others is there, and its generic
+            // monospace did not resolve, so fixed-width text was drawn in
+            // the sans face.
             CanvasFontFamily::Mono => builder.push_default(parley::FontFamily::from(
-                "Menlo, Consolas, 'DejaVu Sans Mono', monospace",
+                "Menlo, Consolas, 'DejaVu Sans Mono', 'Droid Sans Mono', 'Cutive Mono', monospace",
             )),
         };
         builder.push_default(StyleProperty::FontSize(font_size));
@@ -1075,7 +1101,12 @@ fn sub_pixel(v: f32, steps: f32) -> (i64, u8) {
 /// room for every outline a text face draws: descenders, accents above
 /// capitals, and glyphs wider than their advance. The origin's integer part
 /// is what `left`/`top` are measured from.
-fn rasterise_glyph(key: GlyphKey, font: &parley::FontData, font_size: f32) -> GlyphCoverage {
+fn rasterise_glyph(
+    key: GlyphKey,
+    font: &parley::FontData,
+    font_size: f32,
+    coords: &[i16],
+) -> GlyphCoverage {
     let empty = GlyphCoverage {
         left: 0,
         top: 0,
@@ -1091,6 +1122,7 @@ fn rasterise_glyph(key: GlyphKey, font: &parley::FontData, font_size: f32) -> Gl
     ctx.set_paint(argb(0xFFFF_FFFF));
     ctx.glyph_run(&mut resources, font)
         .font_size(font_size)
+        .normalized_coords(coords)
         .hint(true)
         .fill_glyphs(std::iter::once(Glyph {
             id: key.glyph,
@@ -1191,9 +1223,11 @@ fn draw_layout(
                 let run = glyph_run.run();
                 let font = run.font();
                 let font_size = run.font_size();
+                let (coords, _) = run_coords(run);
                 ctx.set_paint(argb(color));
                 ctx.glyph_run(resources, font)
                     .font_size(font_size)
+                    .normalized_coords(&coords)
                     .hint(true)
                     .fill_glyphs(glyphs.into_iter());
             }
@@ -1935,6 +1969,29 @@ mod glyph_cache_tests {
 
 #[cfg(test)]
 mod tests {
+
+    /// A long list's labels all stay measured between layout passes
+    /// (K-1135).
+    ///
+    /// Layout measures every label in the tree on every pass. With room for
+    /// 1,024, a 2,000-row list cleared the cache partway through each pass
+    /// and re-shaped every label every time, so its layout cost 18x what
+    /// 1,000 rows did. Counted, not timed: after measuring 2,000 labels,
+    /// all 2,000 are still there to be hit.
+    #[test]
+    fn a_long_lists_labels_all_stay_measured() {
+        const LABELS: usize = 2_000;
+        super::clear_measure_cache();
+        for row in 0..LABELS {
+            let _ = super::measure_canvas_text(&format!("Row {}", row + 1), 14.0);
+        }
+        let kept = super::MEASURE_CACHE.with(|cache| cache.borrow().entries.len());
+        assert_eq!(
+            kept, LABELS,
+            "the measure cache dropped labels a single layout pass of {LABELS} rows needs"
+        );
+        super::clear_measure_cache();
+    }
 
     #[test]
     fn canvas_mono_has_equal_advances_at_retina_and_logical_sizes() {

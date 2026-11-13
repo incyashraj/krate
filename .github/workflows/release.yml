@@ -283,7 +283,7 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: ${{ matrix.target }}
 
@@ -1175,7 +1175,7 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Write the SBOMs
         shell: bash
         env:

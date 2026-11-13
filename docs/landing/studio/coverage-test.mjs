@@ -60,8 +60,6 @@ const DESKTOP_ONLY = {
   // Sending to an organisation signs with this machine's delegated release
   // key, which a tab does not hold (IC-948 I); in a tab the Send menu has
   // no organisation rows.
-  org_targets: "lists organisations for signing with a release key kept on this machine",
-  send_to_org: "signs with a release key kept on this machine",
   // The signing ring's background share and an organisation's setup on this
   // computer (IC-958): in a tab the browser is its own device, and the
   // organisation dashboard does both through kit/org-device.js, so web
@@ -400,10 +398,14 @@ assert.match(app, /askMidBuild\(text\);/,
 // the person had just told us to throw away, and failedRequest kept
 // pointing at the replaced request.
 assert.match(app, /state\.replacing = true;/, "a replacement says so");
-const fail = app.slice(app.indexOf("function failBuild(why, request)"));
-assert.match(fail.slice(0, 2600), /const redirecting = why === "stopped" && state\.replacing;/,
+// The whole of failBuild, to its closing brace at the start of a line: a
+// fixed-length slice stopped covering it the day a comment was added.
+const failBuildAt = app.indexOf("function failBuild(why, request)");
+assert.ok(failBuildAt >= 0, "failBuild is in app.js");
+const fail = app.slice(failBuildAt, app.indexOf("\n}\n", failBuildAt) + 3);
+assert.match(fail, /const redirecting = why === "stopped" && state\.replacing;/,
   "and failBuild knows a redirect from an ending");
-assert.match(fail.slice(0, 2600), /if \(redirecting\) return;/,
+assert.match(fail, /if \(redirecting\) return;/,
   "so no Stopped card paints over the build that is replacing it");
 
 // The question expires with the build it asks about. If the build
@@ -469,6 +471,7 @@ console.log("ok  browser back goes up one screen");
 assert.match(html, /id="firstRunSheet"/, "the question has somewhere to appear");
 assert.match(html, /id="frHaveBtn"/, "I already have Krate");
 assert.match(html, /id="frNeedBtn"/, "I do not have Krate yet");
+assert.match(html, /id="frHereBtn"/, "Open it here: the app runs in a tab, on a phone too");
 const open = bridge.slice(bridge.indexOf("async open_app("));
 assert.match(open.slice(0, 900), /if \(!hasKrateAlready\(\)\) \{\s*askFirstRun\(app\);/,
   "Run it asks before handing over a file that may not open");
@@ -507,12 +510,24 @@ assert.match(
 // The person who does not have it gets their app AND the player, in that
 // order, so the file is already waiting when the install finishes.
 const wire = bridge.slice(bridge.indexOf("function wireFirstRun()"));
-assert.match(wire.slice(0, 2000), /krate\.tech\/open\//,
+// Read from the "need it" answer itself, not a fixed window of the function:
+// a new answer added above it pushed this out of a 2000-character slice.
+const need = wire.slice(wire.indexOf('getElementById("frNeedBtn")'));
+assert.ok(wire.indexOf('getElementById("frNeedBtn")') > 0, "the need-it answer is wired");
+assert.match(need.slice(0, 1500), /krate\.tech\/open\//,
   "and is sent to the page that already picks the right build for their OS");
-// A phone gets no download at all: nothing there can open it, and a file
-// that cannot open is worse than a sentence saying so.
-assert.match(wire.slice(0, 2000), /thisSystem\(\) !== "phone"/,
-  "a phone is told, not handed a file it can never open");
+// Open it here publishes unlisted and runs the app in the tab Player.
+const here = wire.slice(wire.indexOf('getElementById("frHereBtn")'));
+assert.ok(wire.indexOf('getElementById("frHereBtn")') > 0, "the open-it-here answer is wired");
+assert.match(here.slice(0, 1600), /unlisted: true/, "open it here publishes unlisted, so nothing is listed by opening");
+assert.match(here.slice(0, 1600), /quiet: true/, "and quietly, so opening a tab mails nobody that it is live");
+assert.match(bridge, /\/publish\$\{quiet \? "\?quiet=1" : ""\}/, "quiet rides on the URL, needing no preflight");
+assert.match(here.slice(0, 1600), /\/run\/\$\{hash\}/, "and runs the app in the tab Player");
+// A phone gets no download at all: it opens the app here instead, so the
+// native answers are hidden there, and the need-it answer never downloads.
+assert.match(need.slice(0, 1500), /thisSystem\(\) !== "phone"/,
+  "a phone is not handed a file it cannot open natively");
+assert.match(bridge, /btn\.hidden = phone/, "a phone sees only Open it here");
 assert.match(bridge, /function thisSystem\(\)/, "which computer this is");
 
 console.log("ok  a first-time person is asked, not dead-ended");
@@ -766,11 +781,15 @@ console.log("ok  a dropped connection is not blamed on the app");
 // not on whatever is newest when the row is pressed: the menu resolves the
 // app once and every row closes over it.
 {
-  const menu = app.slice(app.indexOf("function openSendSheet("));
+  // The whole function, not a fixed window: rows added above the gift
+  // pushed it past a 2,600-character slice once already.
+  const from = app.indexOf("function openSendSheet(");
+  const menu = app.slice(from, app.indexOf("\n}\n", from));
   assert.match(menu.slice(0, 600), /const app = \(which && which\.path\) \? which : currentApp\(\);/,
     "the share menu pins the version it was opened for");
-  assert.match(menu.slice(0, 2600), /sendCard\(app, label\)/, "Send the file sends the pinned version");
-  assert.match(menu.slice(0, 2600), /makeWrap\(app, os, label\)/, "and so does the gift");
+  assert.match(menu, /sendCard\(app, label\)/, "Send the file sends the pinned version");
+  assert.match(menu, /makeWrap\(app, os, label\)/, "and so does the gift");
+  assert.match(menu, /sendToOrg\(app, org, row, label\)|openOrgNote\(app, org, row, label\)/, "and so does Send to an organisation");
   assert.match(app, /async function sendCard\(app, label\)/, "sendCard takes the version it is given");
   assert.match(app, /async function makeWrap\(app, os, label\)/, "makeWrap takes the version it is given");
 }

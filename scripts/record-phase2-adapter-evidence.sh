@@ -157,6 +157,14 @@ if [ "$STRICT" = "1" ] && {
   [ "$COMMON_TEST_CODE" -ne 0 ] ||
   [ "$OS_TEST_CODE" -ne 0 ];
 }; then
+  # Say why in the job log itself: the evidence file is only an artifact,
+  # and a red step that prints nothing sent people digging for it.
+  for log in "$CHECK_LOG" "$COMMON_TEST_LOG" "$OS_TEST_LOG"; do
+    if grep -qE 'FAILED|panicked|^error' "$log" 2>/dev/null; then
+      echo "---- $log (tail)" >&2
+      tail -n 80 "$log" >&2
+    fi
+  done
   exit 1
 fi
 

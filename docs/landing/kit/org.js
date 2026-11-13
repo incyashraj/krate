@@ -95,7 +95,9 @@
       return base;
     }
     var s = String(p || "");
-    // Who acts for Krate itself in the audit (Addendum 3 D, E).
+    // Who acts for Krate itself in the audit (Addendum 3 D). "stripe"
+    // appears only on billing events from before organisations stopped
+    // being billed (2026-11-07), kept readable as history.
     if (s === "system:krate") return { principal: s, kind: "krate", display: "Krate", label: "Krate" };
     if (s === "stripe") return { principal: s, kind: "stripe", display: "Stripe", label: "Stripe" };
     // The company's directory, acting through SCIM (IC-955).
@@ -110,7 +112,7 @@
   // ------------------------------------------------------------- roles
 
   var ROLES = ["owner", "admin", "developer", "reviewer", "recipient"];
-  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Recipient" };
+  var ROLE_NAME = { owner: "Owner", admin: "Admin", developer: "Developer", reviewer: "Reviewer", recipient: "Member" };
   /// What each role is for, in one line (the same words as docs/book's
   /// organisations page).
   var ROLE_SAYS = {
@@ -145,12 +147,10 @@
     "candidate.approve": { owner: "yes", reviewer: "yes" },
     "release.download": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
     "audit.read": { owner: "yes", admin: "yes" },
-    // Addendum 3: the organisation's lifecycle, billing, SSO and offline
-    // access are an owner's; admins read billing.
+    // Addendum 3: the organisation's lifecycle, SSO and offline access are
+    // an owner's.
     "org.close": { owner: "yes" },
     "org.export": { owner: "yes" },
-    "billing.read": { owner: "yes", admin: "yes" },
-    "billing.checkout": { owner: "yes" },
     "sso.set": { owner: "yes" },
     "offline.set": { owner: "yes" },
     // Release control and groups (IC-949, FLEET-CONTRACT.md R).
@@ -185,6 +185,20 @@
     // F-319: the organisation's time zone (org-time.js).
     "org.time-zone": { owner: "yes", admin: "yes" },
     "org.logo": { owner: "yes", admin: "yes" },
+    // App requests (org-requests.js): anyone asks; owners, admins and
+    // developers see and answer them all; everyone else sees their own.
+    "request.create": { owner: "yes", admin: "yes", developer: "yes", reviewer: "yes", recipient: "yes" },
+    "request.view": { owner: "yes", admin: "yes", developer: "yes", reviewer: "own", recipient: "own" },
+    "request.manage": { owner: "yes", admin: "yes", developer: "yes" },
+    // Approval rules and the code behind an approval (org-approvals.js):
+    // the people who approve, and a version's own sender, read its code;
+    // an owner sets the rules.
+    "candidate.changes": { owner: "yes", reviewer: "yes", developer: "own" },
+    "approval.policy": { owner: "yes" },
+    // Staged rollout (org-rollout.js): a pilot group first, pinned groups.
+    "release.rollout": { owner: "yes", admin: "yes" },
+    // Slack and Teams channels (org-chat.js).
+    "chat.manage": { owner: "yes", admin: "yes" },
   };
 
   function can(role, action) {
@@ -193,22 +207,28 @@
   }
 
   /// The tabs a role sees on /org/, in order.
+  /// Each role's console: the sections it came for, in its order (the
+  /// org console by role, approved 2026-10-16). Owners and admins run the
+  /// organisation; developers make its apps; reviewers clear the queue;
+  /// members open what was released.
   function tabsFor(role) {
-    // The Dashboard first, for everyone: where an organisation starts.
-    var out = ["home", "releases"];
-    // Every app the organisation has, with its record (IC-954).
-    if (can(role, "inventory.view")) out.push("apps");
-    // The numbers each role's decisions need (IC-959).
-    if (can(role, "insights.view")) out.push("insights");
-    // The candidates list is for the people who send, approve or run the
-    // organisation; a recipient only ever opens what was released.
-    if (can(role, "candidate.publish") || can(role, "candidate.approve") || can(role, "audit.read")) out.push("waiting");
-    out.push("people");
-    if (can(role, "audit.read")) out.push("activity");
-    // Billing is the owners' and admins' (Addendum 3 E: GET billing).
-    if (can(role, "billing.read")) out.push("billing");
-    if (role && role !== "recipient") out.push("settings");
-    return out;
+    var out;
+    if (role === "owner" || role === "admin") {
+      out = ["home", "apps", "waiting", "requests", "releases", "people", "computers", "security", "connections", "insights", "activity", "settings"];
+    } else if (role === "developer") {
+      out = ["home", "myapps", "build", "requests", "releases", "connections", "insights", "people", "settings"];
+    } else if (role === "reviewer") {
+      out = ["home", "waiting", "apps", "releases", "insights", "people", "settings"];
+    } else {
+      out = ["home", "requests", "help"];
+    }
+    return out.filter(function (id) {
+      if (id === "connections") return can(role, "connection.view");
+      if (id === "apps") return can(role, "inventory.view");
+      if (id === "insights") return can(role, "insights.view");
+      if (id === "activity") return can(role, "audit.read");
+      return true;
+    });
   }
 
   /// The roles `role` may invite, in order.
@@ -277,7 +297,7 @@
       case "digest-mismatch":
         return { title: "That version is not waiting any more", body: "It was approved, replaced or never sent here. The list below is fresh.", action: null };
       case "not-signed-for-this-org":
-        return { title: "This app is not signed for " + org, body: "It needs the organisation's root key, or a release key that root delegated and has not withdrawn. Sign it again and send it again.", action: null };
+        return { title: "This app is not signed by " + org + " yet", body: "Send it from this page or from Krate Studio: either signs it for " + org + " on the way. Nothing was sent.", action: null };
       case "invite-expired":
         return { title: "This invitation has expired", body: "Invitations last 7 days. Ask " + (ctx.inviter || "the person who invited you") + " for a new one.", action: null };
       case "invite-used":
@@ -304,16 +324,12 @@
         return { title: org + " is closing", body: "Its apps still open until it closes, but nothing new can be sent or approved. An owner can cancel the closing in Settings.", action: null };
       case "org-closed":
         return { title: org + " is closed", body: "Its apps no longer open. Former owners can still download its export from Settings until the export window ends.", action: mine };
-      case "org-suspended":
-        return { title: org + " is paused for billing", body: "Apps already released still open. Sending new apps, extra seats and company sign-in come back when an owner settles billing.", action: null };
       case "close-statement-mismatch":
         return { title: "The closing changed while you were looking", body: "Nothing was approved. Look at the closing again and approve what it says now.", action: null };
       case "close-confirm-mismatch":
         return { title: "That is not the short name", body: "Nothing changed. Type " + (ctx.slug || "the organisation's short name") + " exactly to close it.", action: null };
       case "export-not-ready":
         return { title: "The export is still being built", body: "It is usually ready in a minute. This list refreshes by itself.", action: null };
-      case "billing-not-open":
-        return { title: "Card billing is not open yet", body: "Krate invoices pilot organisations directly: write to yashraj@krate.tech.", action: { label: "Write to yashraj@krate.tech", href: "mailto:yashraj@krate.tech" } };
       case "sso-required":
         return {
           title: org + " requires company sign-in",
@@ -354,6 +370,28 @@
           body: "You are in " + org + ", but this app was sent only to certain groups, and you are not in them. Ask an admin of " + org + " to add you.",
           action: null,
         };
+      // Staged rollout (org-rollout.js).
+      case "in-pilot":
+        return {
+          title: "This version goes to a pilot group first",
+          body: (ctx.message ? String(ctx.message).split(" -- ")[0].replace(/\.?$/, ". ") : "") + "You get it when it is released to everyone in " + org + "." + (ctx.for_you && ctx.for_you.version ? " Your version now is " + ctx.for_you.version + "." : ""),
+          action: null,
+        };
+      case "pilot-out":
+        return { title: "A version is still with the pilot group", body: "Release it to everyone, or withdraw it, first. Nothing changed.", action: null };
+      case "no-pilot":
+        return { title: "No version is with the pilot group now", body: "It was released to everyone or withdrawn already. The page below is fresh.", action: null };
+      // Slack and Teams channels (org-chat.js).
+      case "no-such-channel":
+        return { title: "That channel is not connected any more", body: "Someone removed it. The list below is fresh.", action: null };
+      case "too-many-channels":
+        return { title: org + " already posts to 5 channels", body: "Remove one first, then add this one.", action: null };
+      case "chat-off":
+        return { title: "Slack and Teams posts are not switched on on this hub yet", body: "Nothing changed.", action: null };
+      case "chat-failed":
+        return { title: "The test did not arrive", body: (ctx.message ? String(ctx.message).replace(/^the test did not arrive: /, "").replace(/^./, function (c) { return c.toUpperCase(); }).replace(/\.?$/, ".") : "") + " Check the channel's webhook in Slack or Teams, then try again.", action: null };
+      case "chat-full":
+        return { title: org + " has posted 50 times today", body: "That is the most in one day. Posts start again tomorrow.", action: null };
       case "reason-required":
         return { title: "Say why it is withdrawn", body: "The people who had it are shown the reason. Write a few words, up to 300 characters.", action: null };
       case "no-such-group":
@@ -388,7 +426,7 @@
         return { title: "Connections are not switched on on this hub yet", body: "Nothing changed.", action: null };
       // The organisation keyring (F-316): a credential is sealed to it.
       case "no-org-key":
-        return { title: org + " needs one setup step first", body: "Credentials are encrypted so that only " + org + "'s computers can read them, never Krate. An owner turns that on once, on their computer: krate org keys init. Nothing was sent.", action: null };
+        return { title: org + " needs one setup step first", body: "Credentials are encrypted so that only " + org + "'s computers can read them, never Krate. An owner turns that on once, by releasing " + org + "'s first app from this page or from Krate Studio. Nothing was sent.", action: null };
       case "key-rotated":
         return { title: "Save once more", body: org + "'s encryption was just renewed after someone left. Nothing was saved: save again and it is encrypted the new way.", action: null };
       case "credential-needs-entry":
@@ -397,6 +435,14 @@
       case "app-not-allowed":
       case "connection-not-requested":
         return { title: "This app cannot use that connection", body: (ctx.message ? String(ctx.message).split(" -- ")[0] + ". " : "") + "Ask an admin of " + org + ".", action: null };
+      // Approval rules (org-approvals.js): the hub's sentence says whose
+      // approval is needed; this says it as the next step.
+      case "approval-policy":
+        return { title: "Someone else's approval is needed", body: (ctx.message ? String(ctx.message).split(" -- ")[0].replace(/\.?$/, ". ") : "") + "Nothing was approved.", action: null };
+      case "already-approved":
+        return { title: "You approved this already", body: (ctx.message ? "It " + String(ctx.message).split(" -- it ")[1].replace(/\.?$/, ". ") : "") + "It is released once the rest are in.", action: null };
+      case "policy-invalid":
+        return { title: "Those rules will not work", body: (ctx.message ? String(ctx.message).replace(/ -- /g, ". ").replace(/\.?$/, ". ") : "") + "Nothing changed.", action: null };
       default:
         return { title: "That did not work", body: (ctx.message ? String(ctx.message) + ". " : "") + "Nothing changed. Try again in a moment.", action: null };
     }
@@ -444,7 +490,6 @@
     "idempotency-key-reused": "a reused request",
     "org-closing": "the organisation is closing",
     "org-closed": "the organisation is closed",
-    "org-suspended": "paused for billing",
     "close-statement-mismatch": "the closing had changed",
     "close-confirm-mismatch": "the short name did not match",
     "sso-required": "company sign-in required",
@@ -452,6 +497,11 @@
     "release-withdrawn": "it was withdrawn",
     "not-in-audience": "it is not for their groups",
     "reason-required": "no reason was given",
+    "in-pilot": "it is with a pilot group first",
+    "pilot-out": "a version was still with the pilot group",
+    "no-pilot": "no version was with the pilot group",
+    "no-such-channel": "no such channel",
+    "too-many-channels": "too many channels",
     "no-such-group": "no such group",
     "group-taken": "the group exists already",
     "group-invalid": "not a group name",
@@ -464,6 +514,16 @@
     "app-not-allowed": "the connection does not allow that app",
     "connection-not-requested": "that version did not ask for it",
     "credential-needs-entry": "its credential must be entered again",
+    // Declining, release notes and app requests.
+    declined: "it was declined",
+    "not-waiting": "it was not waiting for approval",
+    "note-closed": "a declined or withdrawn version keeps its note",
+    "no-such-request": "no such request",
+    "requests-full": "too many open requests",
+    // Approval rules.
+    "approval-policy": "the approval rules need someone else",
+    "already-approved": "they approved it already",
+    "policy-invalid": "the rules were not complete",
   };
 
   /// One audit event as a sentence. `names` maps a digest to "Ledger 1.2".
@@ -496,8 +556,8 @@
         "release.list": "see the releases",
         "release.download": "open " + app(),
         "audit.read": "read the activity",
-        // The store's own command names, which a lifecycle or billing gate
-        // refuses before the command runs (Addendum 3 D).
+        // The store's own command names, which a lifecycle gate refuses
+        // before the command runs (Addendum 3 D).
         approve: "approve " + app(),
         "add-candidate": "send an app for approval",
         "check-candidate": "send an app for approval",
@@ -510,7 +570,6 @@
         "close-approve": "approve the closing",
         "close-cancel": "cancel the closing",
         export: "build an export",
-        "billing-checkout": "open checkout",
         "recover-object": "object to a recovery",
         // Release control and groups (IC-949, R).
         "release.withdraw": "withdraw " + app(),
@@ -531,6 +590,20 @@
         "usage.view": "see how the apps are used",
         "org.logo": "change the organisation's logo",
         "org.time-zone": "change the organisation's time zone",
+        // Declining, release notes and app requests.
+        "candidate.decline": "decline " + app(),
+        decline: "decline " + app(),
+        "candidate.note": "write the release note on " + app(),
+        "note-set": "write a release note",
+        "request.create": "ask for an app",
+        "request-create": "ask for an app",
+        "request.view": "see the app requests",
+        "request.manage": "answer an app request",
+        "request-update": "answer an app request",
+        "notify-prefs-set": "change their notifications",
+        "candidate.changes": "read the code of " + app(),
+        "approval.policy": "change the approval rules",
+        "approval-policy-set": "change the approval rules",
       }[ev.action] || "do " + ev.action;
       // Shown beside a Refused badge, so the sentence says why, not "refused" again.
       return a + " tried to " + tried + ": " + (SHORT_WHY[ev.reason] || ev.reason || "not allowed") + ".";
@@ -601,6 +674,20 @@
       case "root-key.rotate": return a + " replaced the root key with " + fingerprint(t.value) + ".";
       case "release-key.revoke": return a + " withdrew the release key " + fingerprint(t.value) + ".";
       case "candidate.publish": return a + " sent " + app() + " for approval.";
+      case "candidate.decline": return a + " declined " + app() + (ev.reason ? ": " + ev.reason : "") + ".";
+      // Approval rules: an approval that does not release yet, and the rules changing.
+      case "candidate.approve.partial": {
+        var still = String(ev.reason || "").split(" -- ")[1];
+        return a + " approved " + app() + ". It " + (still || "waits for more approvals") + ".";
+      }
+      case "settings.approvals": return a + " changed the approval rules: " + (ev.reason || "see Settings") + ".";
+      case "candidate.note": return a + (ev.reason === "cleared" ? " cleared the release note on " : " wrote the release note on ") + app() + ".";
+      case "request.create": return a + " asked for an app.";
+      case "request.update": {
+        var rs = String(ev.reason || "").split(",")[0];
+        var rw = { open: "open again", planned: "planned", done: "done", declined: "declined" }[rs] || rs;
+        return a + " marked an app request " + rw + (/replied/.test(ev.reason || "") ? ", with a reply." : ".");
+      }
       // Solo release (IC-958 addendum): the hub marks a release its sender
       // made while nobody else could approve with the reason "solo".
       case "candidate.approve":
@@ -608,7 +695,7 @@
           ? a + " released " + app() + " themselves, with no second approver yet."
           : a + " approved " + app() + ". It is released.";
       case "release.download": return a + " opened " + app() + ".";
-      // Addendum 3: closing, export, recovery, billing, SSO, offline.
+      // Addendum 3: closing, export, recovery, SSO, offline.
       case "org.close":
         return /second owner/.test(ev.reason || "") ? a + " asked to close the organisation. It waits for a second owner." : a + " scheduled the organisation to close.";
       case "org.close.approve": return a + " approved closing the organisation. The window has started.";
@@ -622,6 +709,8 @@
       case "member.recover.request": return a + " asked to make " + who(t.value).label + " an owner, because: " + (ev.reason || "no reason given") + ".";
       case "member.recover": return "Krate support restored ownership to " + who(t.value).label + ", by " + who(ev.actor).display + ", reason: " + (ev.reason || "none given") + ".";
       case "member.recover.object": return a + " objected. The ownership recovery is cancelled.";
+      // Billing events from before organisations stopped being billed
+      // (2026-11-07) stay readable in the activity history.
       case "billing.customer": return a + " set up billing with Stripe.";
       case "billing.checkout": return a + " opened checkout" + (ev.reason ? " for " + ev.reason : "") + ".";
       case "billing.update": return "Stripe updated billing" + (ev.reason ? ": " + ev.reason : "") + ".";
@@ -655,6 +744,38 @@
         var aud = String(ev.reason || "");
         return aud === "everyone" ? a + " opened " + app() + " to everyone." : a + " limited " + app() + " to " + groupsSaid(aud.replace(/^groups:/, "").split(",")) + ".";
       }
+      // Staged rollout (org-rollout.js): a pilot group, pinned groups.
+      case "release.pilot": {
+        var pr = String(ev.reason || "");
+        var pg = (pr.match(/group:([a-z0-9-]+)/) || [])[1];
+        var pd = (pr.match(/([0-9a-f]{64})/) || [])[1];
+        var pv = pd ? names[pd] || "version " + pd.slice(0, 12) : null;
+        var pApp = t.value || "the app";
+        if (/^ended: /.test(pr)) return "The pilot of " + (pv || "a version") + " ended: it was withdrawn.";
+        if (/approved$/.test(pr)) return (pv || "A new version") + " went to the " + pg + " group first; everyone else stays where they are.";
+        if (pd) return a + " gave " + pv + " to the " + pg + " group first.";
+        return a + " set new versions of " + pApp + " to go to the " + pg + " group first.";
+      }
+      case "release.pilot.release": {
+        var rd = String(ev.reason || "");
+        return a + " released " + (names[rd] || "the pilot's version") + " to everyone.";
+      }
+      case "release.pilot.off": return a + " set new versions of " + (t.value || "the app") + " to go to everyone at once.";
+      case "release.pin":
+      case "release.unpin": {
+        var ps = t.value.lastIndexOf("/"), pinApp = ps > 0 ? t.value.slice(0, ps) : t.value, pinG = ps > 0 ? t.value.slice(ps + 1) : "a group";
+        var pinD = (String(ev.reason || "").match(/([0-9a-f]{64})/) || [])[1];
+        var pinV = pinD ? names[pinD] || "version " + pinD.slice(0, 12) : "a version";
+        if (ev.action === "release.pin") return a + " kept the " + pinG + " group on " + pinV + ".";
+        return /withdrawn$/.test(ev.reason || "")
+          ? "The " + pinG + " group is no longer kept on " + pinV + ": it was withdrawn."
+          : a + " let the " + pinG + " group get what everyone gets of " + pinApp + " again.";
+      }
+      // Slack and Teams channels (org-chat.js): the URL is never in an event.
+      case "chat.add": return a + " connected a channel at " + t.value + " for notices.";
+      case "chat.change": return a + " changed what is posted to the channel at " + t.value + ".";
+      case "chat.remove": return a + " disconnected the channel at " + t.value + ".";
+      case "chat.test": return a + " sent a test message to the channel at " + t.value + ".";
       case "group.create": return a + " made the group " + t.value + ".";
       case "group.add":
       case "group.remove": {
@@ -715,7 +836,7 @@
     return v ? n + " " + v : n;
   }
 
-  // ------------------------------------------------- offline, SSO, money
+  // -------------------------------------------------------- offline, SSO
 
   /// Offline classes (Addendum 3 G). Nothing longer than 30 days exists.
   var OFFLINE = [
@@ -764,13 +885,6 @@
     try { raw = store.getItem("krate_sso_notice"); store.removeItem("krate_sso_notice"); } catch (e) {}
     if (!raw) return "";
     try { var n = JSON.parse(raw); return n && n.state ? ssoNotice(n.state, name || n.org) : ""; } catch (e) { return ""; }
-  }
-
-  /// Money only as the hub sent it: Stripe's minor units and currency.
-  function money(amount, currency) {
-    if (typeof amount !== "number" || !currency) return "";
-    var c = String(currency).toUpperCase();
-    try { return new Intl.NumberFormat("en", { style: "currency", currency: c }).format(amount / 100); } catch (e) { return (amount / 100).toFixed(2) + " " + c; }
   }
 
   /// The join link for an invitation answer (`join_url`, Addendum 2).
@@ -828,9 +942,12 @@
   /// travels to /login/ in this tab's session storage, never in the link,
   /// and /login/ sends it at once, keeping the one place that knows how a
   /// sign-in comes back here.
-  function signInChoices(here) {
+  /// `opts.first`: "email" puts the email box first (an invitation sent to
+  /// an inbox); otherwise GitHub and Google lead.
+  function signInChoices(here, opts) {
+    var emailFirst = !!(opts && opts.first === "email");
     var input = el("input", { class: "inp", type: "email", placeholder: "you@company.com", "aria-label": "Work email", autocomplete: "email", required: "" });
-    var go = el("button", { class: "btn ghost", type: "submit", text: "Continue" });
+    var go = el("button", { class: "btn " + (emailFirst ? "dark" : "ghost"), type: "submit", text: "Continue" });
     var form = el("form", { class: "si-email" }, [input, go]);
     form.addEventListener("submit", function (e) {
       if (e && e.preventDefault) e.preventDefault();
@@ -839,14 +956,12 @@
       try { root.sessionStorage.setItem("krate-login-email", v); } catch (x) {}
       root.location.href = signInHref(here, "email");
     });
-    return el("div", { class: "si" }, [
-      el("div", { class: "si-row" }, [
-        el("a", { class: "btn dark si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
-        el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
-      ]),
-      el("div", { class: "or" }, [el("span", { text: "or" })]),
-      form,
+    var row = el("div", { class: "si-row" }, [
+      el("a", { class: "btn " + (emailFirst ? "ghost" : "dark") + " si-btn", href: signInHref(here, "github") }, [mark(GH_MARK, "0 0 16 16", "currentColor"), el("span", { text: "GitHub" })]),
+      el("a", { class: "btn ghost si-btn", href: signInHref(here, "google") }, [mark(G_MARK, "0 0 18 18"), el("span", { text: "Google" })]),
     ]);
+    var or = el("div", { class: "or" }, [el("span", { text: "or" })]);
+    return el("div", { class: "si" }, emailFirst ? [form, or, row] : [row, or, form]);
   }
 
   /// Copy text, with the button saying it worked.
@@ -901,6 +1016,20 @@
     return String(z).split("/").pop().replace(/_/g, " ") + " time";
   }
 
+  /// The address to send people for one of an organisation's apps: the
+  /// hub's answer (`share_url`) when it gave one, else the same address made
+  /// here (the Player's /run/org/<slug>/<app-id>). It opens the version that
+  /// is theirs now -- after an update, a rollback or a withdrawal too -- in
+  /// a browser tab on a phone or a computer, with "Open in Krate" beside it.
+  /// A version's own link stops when that version is withdrawn. Null when
+  /// the app id cannot be carried (then the caller keeps the version link).
+  function appLink(slug, appId, given) {
+    if (given) return given;
+    var id = String(appId || "").toLowerCase();
+    if (!/^[a-z][a-z0-9-]{1,38}$/.test(String(slug || "")) || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(id)) return null;
+    return hub() + "/run/org/" + slug + "/" + id;
+  }
+
   function fileName(name) {
     var s = String(name || "app").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     return (s || "app") + ".krate";
@@ -911,9 +1040,9 @@
     who: who, ROLES: ROLES, ROLE_NAME: ROLE_NAME, ROLE_SAYS: ROLE_SAYS, ROLE_PLAIN: ROLE_PLAIN, MATRIX: MATRIX,
     can: can, tabsFor: tabsFor, invitable: invitable, memberActions: memberActions,
     refusal: refusal, signInHref: signInHref, eventWords: eventWords, fingerprint: fingerprint,
-    day: day, moment: moment, zone: zone, zoneName: zoneName, appName: appName, joinUrl: joinUrl, fileName: fileName,
+    day: day, moment: moment, zone: zone, zoneName: zoneName, appName: appName, joinUrl: joinUrl, fileName: fileName, appLink: appLink,
     ssoNotice: ssoNotice, takeSsoNotice: takeSsoNotice,
-    OFFLINE: OFFLINE, offlineName: offlineName, offlineNotice: offlineNotice, PROVIDERS: PROVIDERS, money: money,
+    OFFLINE: OFFLINE, offlineName: offlineName, offlineNotice: offlineNotice, PROVIDERS: PROVIDERS,
     el: el, refusalBlock: refusalBlock, signInChoices: signInChoices, copy: copy, download: download,
     groupsSaid: groupsSaid,
     whyShort: function (reason) { return SHORT_WHY[reason] || ""; },

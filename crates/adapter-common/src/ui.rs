@@ -202,6 +202,37 @@ impl KeyEvent {
     }
 }
 
+static KEPT_FROM_CAPTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Keep the windows this process makes from now on out of screenshots,
+/// recordings and screen sharing, where the system allows it: what an
+/// organisation's `[apps] screen_capture = false` asks (G17). Set by the
+/// runtime before each window it creates.
+pub fn keep_windows_from_capture(kept: bool) {
+    KEPT_FROM_CAPTURE.store(kept, std::sync::atomic::Ordering::SeqCst);
+}
+
+static CLIPBOARD_KEPT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The organisation's clipboard rules for this process (G17), for what a
+/// native text control does on its own: a Mac's Edit menu then offers no
+/// Paste when reading is blocked and no Cut or Copy when writing is.
+pub fn keep_clipboard(read_blocked: bool, write_blocked: bool) {
+    let bits = u8::from(read_blocked) | (u8::from(write_blocked) << 1);
+    CLIPBOARD_KEPT.store(bits, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// (reading blocked, writing blocked).
+pub fn clipboard_kept() -> (bool, bool) {
+    let bits = CLIPBOARD_KEPT.load(std::sync::atomic::Ordering::SeqCst);
+    (bits & 1 != 0, bits & 2 != 0)
+}
+
+/// Whether a window made now is kept out of captures.
+pub fn windows_kept_from_capture() -> bool {
+    KEPT_FROM_CAPTURE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Text input after keyboard layout or IME commit processing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextInputEvent {
@@ -2137,6 +2168,12 @@ pub trait UiAdapter: WindowAdapter {
     /// Said once per run, before the app's first window.
     fn set_adapts(&self, _adapts: bool) {}
 
+    /// Whether a finger on `widget`, a canvas, presses it and drags (a game
+    /// drawn at a design size, which steers by the pointer held) rather than
+    /// scrolling it (a document that lays itself out for the screen). Said
+    /// when it changes; a canvas never named scrolls (K-1202).
+    fn set_canvas_presses(&self, _window: WindowId, _widget: WidgetId, _presses: bool) {}
+
     /// Show the platform's own picker for a file (`folder` false) or a folder
     /// and return the path the person picked, or None when they cancelled
     /// or the host has no picker. Hosts whose dialogs the runtime opens
@@ -2148,6 +2185,15 @@ pub trait UiAdapter: WindowAdapter {
         _folder: bool,
         _filter: &str,
     ) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    /// Show the platform's own dialog and wait until the person closes it:
+    /// a message with one button (`question` false), or a yes-or-no
+    /// question. Some(true) only for yes; anything else that closes it is
+    /// Some(false). None on hosts with no dialog of their own -- the
+    /// desktops, whose dialogs the runtime shows through rfd.
+    fn ask(&self, _window: WindowId, _title: &str, _body: &str, _question: bool) -> Option<bool> {
         None
     }
 
@@ -2183,7 +2229,10 @@ pub trait UiAdapter: WindowAdapter {
         _after_seconds: u64,
         _daily: bool,
     ) -> Result<(), String> {
-        Err("reminders that arrive with the app closed are on phones only, for now".to_string())
+        Err(
+            "this computer cannot deliver a reminder with the app closed: keep a timer in the app"
+                .to_string(),
+        )
     }
 
     /// Cancel one of the running app's reminders.

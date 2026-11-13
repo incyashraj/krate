@@ -37,7 +37,8 @@ pub mod behind;
 mod bluetooth;
 pub mod camera;
 mod clipboard;
-mod documents;
+pub mod dialog;
+pub mod documents;
 mod haptics;
 #[cfg(target_os = "android")]
 mod java;
@@ -47,8 +48,9 @@ mod motion;
 pub mod phone;
 mod photos;
 pub mod reminders;
-mod share;
-mod sign_in;
+pub mod share;
+pub mod sign_in;
+mod typing;
 pub mod unlock;
 pub mod video;
 mod web_page;
@@ -105,6 +107,8 @@ pub struct AndroidWinitPrototypeUiAdapter {
     headless: AndroidUiAdapter,
     sessions: Mutex<BTreeMap<WindowId, WinitWindowSession>>,
     collectors: Mutex<BTreeMap<WindowId, WinitWindowEventCollector>>,
+    /// The covered edges last seen, to notice the keyboard coming and going.
+    edges: Mutex<typing::EdgeWatch>,
 }
 
 impl AndroidWinitPrototypeUiAdapter {
@@ -447,6 +451,9 @@ impl WindowAdapter for AndroidWinitPrototypeUiAdapter {
         web_page::close_all();
         #[cfg(target_os = "android")]
         camera::close();
+        // The keyboard goes with the window it typed into.
+        #[cfg(target_os = "android")]
+        typing::set(id, false, false);
         self.remove_session(id);
         WindowAdapter::close_window(&self.headless, id)
     }
@@ -539,6 +546,15 @@ impl UiAdapter for AndroidWinitPrototypeUiAdapter {
         winit_native::drain_pointer_samples()
     }
 
+    /// Where the pointer is and whether it is held (krate:ui/pointer).
+    fn pointer(&self, window: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        winit_native::pointer_state(window)
+    }
+
+    fn take_pointer_motion(&self, window: WindowId) -> (f32, f32) {
+        winit_native::take_pointer_motion(window)
+    }
+
     /// A phone or tablet is touched, and its status bar, gesture bar and
     /// camera cutout cover its edges (K-1039): reported in points, so an app
     /// keeps its text out from under them.
@@ -620,7 +636,53 @@ impl UiAdapter for AndroidWinitPrototypeUiAdapter {
     }
 
     fn drain_raw_key_input(&self) -> Vec<krate_adapter_common::ui::RawKeySample> {
-        winit_native::drain_key_samples()
+        #[allow(unused_mut)]
+        let mut samples = winit_native::drain_key_samples();
+        // What the on-screen keyboard typed, after the hardware keys.
+        #[cfg(target_os = "android")]
+        samples.extend(typing::drain());
+        samples
+    }
+
+    /// The on-screen keyboard, for an app that draws its own text field
+    /// (krate:ui/text-entry, K-1024).
+    fn set_text_entry(&self, window: WindowId, on: bool) -> bool {
+        #[cfg(target_os = "android")]
+        {
+            typing::set(window, on, false)
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = (window, on);
+            false
+        }
+    }
+
+    /// Whether TalkBack (or another screen reader that explores by touch)
+    /// is on (IC-926).
+    fn screen_reader_on(&self) -> bool {
+        phone::screen_reader_on()
+    }
+
+    /// An app that lays itself out for any screen follows the way the phone
+    /// is held; any other keeps the shape of the window it asked for
+    /// (IC-912).
+    #[cfg(target_os = "android")]
+    fn ask(&self, _window: WindowId, title: &str, body: &str, question: bool) -> Option<bool> {
+        if question {
+            Some(dialog::confirm(title, body))
+        } else {
+            dialog::message(title, body);
+            Some(false)
+        }
+    }
+
+    fn set_canvas_presses(&self, window: WindowId, widget: WidgetId, presses: bool) {
+        winit_native::set_canvas_presses(window, widget, presses);
+    }
+
+    fn set_adapts(&self, adapts: bool) {
+        winit_native::set_adapts(adapts);
     }
 
     fn drain_raw_wheel_input(&self) -> Vec<krate_adapter_common::ui::RawWheelSample> {
@@ -651,7 +713,29 @@ impl UiAdapter for AndroidWinitPrototypeUiAdapter {
     }
 
     fn focus_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError> {
-        self.headless.focus_node(window, widget)
+        self.headless.focus_node(window, widget)?;
+        // Focus on a text field brings the phone's keyboard up; focus moving
+        // to anything else puts it away (K-1024).
+        #[cfg(target_os = "android")]
+        if winit_native::has_native_window(window).unwrap_or(false) {
+            let kind = self
+                .headless
+                .widget_tree(window)?
+                .and_then(|tree| tree.node(widget).map(|node| node.kind));
+            match kind {
+                Some(kind) if typing::takes_typing(kind) => {
+                    typing::set(
+                        window,
+                        true,
+                        kind == krate_adapter_common::ui::WidgetKind::TextArea,
+                    );
+                }
+                _ => {
+                    typing::set(window, false, false);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn widget_tree(&self, window: WindowId) -> Result<Option<WidgetTree>, UiAdapterError> {
@@ -896,6 +980,20 @@ impl UiAdapter for AndroidWinitPrototypeUiAdapter {
             // when it closes (K-1032).
             if winit_native::take_backgrounded() {
                 documents::put_back_folders();
+            }
+            // The keyboard sliding up (or the phone's bars changing) moves
+            // the edges an app must keep clear: lay the window out again
+            // above them, as a phone's own toolkit does, even though its
+            // size did not change.
+            if self
+                .edges
+                .lock()
+                .map(|mut watch| watch.changed(phone::covered_edges()))
+                .unwrap_or(false)
+            {
+                if let Some(record) = WindowAdapter::window(&self.headless, window)? {
+                    WindowAdapter::queue_host_resize(&self.headless, window, record.size)?;
+                }
             }
             winit_native::redraw_all()?;
         }

@@ -181,5 +181,43 @@
    "trust",
    "roots"
   ]
- ]
+ ],
+ "app_rules": [
+  {
+   "key": "clipboard_read",
+   "narrows": false,
+   "example": true,
+   "title": "Organisation apps: no reading the clipboard",
+   "help": "false: the app cannot read the clipboard, and a paste the person makes into it is refused too."
+  },
+  {
+   "key": "clipboard_write",
+   "narrows": false,
+   "example": false,
+   "title": "Organisation apps: no copying out",
+   "help": "false: nothing leaves the app by the clipboard."
+  },
+  {
+   "key": "printing",
+   "narrows": false,
+   "example": false,
+   "title": "Organisation apps: no printing",
+   "help": "false: the app cannot print, or save as PDF from the print dialog."
+  },
+  {
+   "key": "screen_capture",
+   "narrows": false,
+   "example": false,
+   "title": "Organisation apps: kept out of screenshots",
+   "help": "false: the app's windows are kept out of screenshots, screen recordings and screen sharing where the system allows it (macOS and Windows; not Linux), and Krate takes no picture of the app itself."
+  },
+  {
+   "key": "wipe_when_offline_ends",
+   "narrows": true,
+   "example": true,
+   "title": "Organisation apps: delete team data when offline access ends",
+   "help": "true: when the app's offline access runs out, the app's team data on this computer is deleted at the next open."
+  }
+ ],
+ "app_rules_example_id": "dev.acme.payroll"
 }

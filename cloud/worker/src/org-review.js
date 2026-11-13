@@ -124,6 +124,28 @@ function install(OrgClass) {
     return answer;
   };
 
+  /// The refusal for approving `c` without naming each capability it adds
+  /// that a person is asked for, or null. Approval rules (org-approvals.js)
+  /// ask it too, before they record an approval that does not release.
+  P.capsRefusal = function (ctx, c) {
+    const base = this.replacedBy(c);
+    if (!base) return null;
+    const confirmed = new Set(Array.isArray(ctx.args.accept) ? ctx.args.accept.map(String) : []);
+    const unconfirmed = changesOf(c, base).added.filter((x) => x.asks && !confirmed.has(x.cap));
+    if (!unconfirmed.length) return null;
+    const refusal = this.deny(
+      ctx,
+      "candidate.approve",
+      `candidate:${c.digest}`,
+      "new-capabilities",
+      `${c.name || "this app"} ${c.version || ""} asks for more than ${base.version || "the release it replaces"}: ${unconfirmed
+        .map((x) => x.words)
+        .join("; ")} -- confirm each to approve it`.replace(/ {2,}/g, " "),
+    );
+    refusal.body.added = unconfirmed;
+    return refusal;
+  };
+
   const approve = P.op_approve;
   P.op_approve = function (ctx) {
     const digest = String(ctx.args.digest || "");
@@ -138,24 +160,8 @@ function install(OrgClass) {
       !ctx.principals.includes(c.uploaded_by) &&
       allows(me.role, "candidate.approve") === "yes";
     if (decides) {
-      const base = this.replacedBy(c);
-      if (base) {
-        const confirmed = new Set(Array.isArray(ctx.args.accept) ? ctx.args.accept.map(String) : []);
-        const unconfirmed = changesOf(c, base).added.filter((x) => x.asks && !confirmed.has(x.cap));
-        if (unconfirmed.length) {
-          const refusal = this.deny(
-            ctx,
-            "candidate.approve",
-            `candidate:${digest}`,
-            "new-capabilities",
-            `${c.name || "this app"} ${c.version || ""} asks for more than ${base.version || "the release it replaces"}: ${unconfirmed
-              .map((x) => x.words)
-              .join("; ")} -- confirm each to approve it`.replace(/ {2,}/g, " "),
-          );
-          refusal.body.added = unconfirmed;
-          return refusal;
-        }
-      }
+      const refusal = this.capsRefusal(ctx, c);
+      if (refusal) return refusal;
     }
     return approve.call(this, ctx);
   };

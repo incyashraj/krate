@@ -215,7 +215,9 @@ async function publishBig(e, bytes, name = "Big") {
 
   const done = await (await verdict(e, up.id, { ok: true, sha256: hash, judgement: judgement() })).json();
   assert.strictEqual(done.status, "listed", JSON.stringify(done));
-  assert.match(done.url, /^https:\/\/hub\.example\/a\/[0-9a-f]{12}$/);
+  // The app's own link (IC-976), and this build's pinned short link.
+  assert.match(done.url, /^https:\/\/hub\.example\/a\/v[0-9a-f]{11}$/);
+  assert.match(done.version_url, /^https:\/\/hub\.example\/a\/[0-9a-f]{12}$/);
 
   const listing = JSON.parse(e._kv.get(`app:${hash}`));
   assert.strictEqual(listing.big, true);
@@ -229,11 +231,12 @@ async function publishBig(e, bytes, name = "Big") {
   assert.strictEqual(got.headers.get("content-length"), String(bytes.byteLength));
   assert.strictEqual(await sha256Hex(new Uint8Array(await got.arrayBuffer())), hash);
 
-  // Start 3 (the record, two day counters), finish 1, verdict 7 (owner,
-  // address, listing, alias, channel, versions, record): 11, against the
-  // free tier's 1,000 a day and the tier's 10 big publishes a day.
+  // Start 3 (the record, two day counters), finish 1, verdict 8 (owner,
+  // address, listing, alias, channel, versions, the app's line (IC-976),
+  // record): 12, against the free tier's 1,000 a day and the tier's 10 big
+  // publishes a day.
   const writes = e._ops.put - before.put;
-  assert.ok(writes <= 11, `a big publish costs at most 11 KV writes, not ${writes}`);
+  assert.ok(writes <= 12, `a big publish costs at most 12 KV writes, not ${writes}`);
 
   // The status says where it went, to the token's holder.
   const status = await worker.fetch(

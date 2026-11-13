@@ -69,9 +69,32 @@ async function create(p, name) {
   p.el("createForm").dispatch("submit");
   await settle();
   const body = p.el("wBody");
-  check(/Give Acme its first app/.test(textOf(body)) && /Team Notes/.test(textOf(body)) && /Expenses/.test(textOf(body)) && /Stock List/.test(textOf(body)) && !/Placeholder/.test(textOf(body)), "after Create comes the first app: the three real ready apps, none labelled a placeholder");
+  check(/Give Acme its first app/.test(textOf(body)) && STARTERS.starters.every((s) => textOf(body).includes(s.name)) && !/Placeholder/.test(textOf(body)), "after Create comes the first app: every real ready app, none labelled a placeholder");
   const radios = body.all((n) => n.attrs.role === "radio");
   check(radios.length === STARTERS.starters.length && radios[0].attrs["aria-checked"] === "true", "the first ready app is already picked");
+  // Fifteen ready apps (gap G7): every one real, with its picture and a
+  // kind, and a row of kinds and a search above them.
+  check(STARTERS.starters.length === 15 && STARTERS.starters.every((s) => !s.placeholder && s.shot && s.bundle && s.top && s.top.length === 3 && ["Everyday", "Operations", "People", "Finance"].includes(s.category)), "fifteen ready apps, each with a picture, three best things and one of the four kinds");
+  const chips = body.all((n) => n.tagName === "BUTTON" && n.classList.contains("chip"));
+  check(chips.map((c) => P(c.shown)).join("|") === "All 15|Everyday 4|Operations 5|People 4|Finance 2" && chips[0].attrs["aria-pressed"] === "true", "the kinds are chips with how many in each, All pressed");
+  const shownNames = () => radios.filter((r) => !r.hidden).map((r) => P(r.shown).split(" ").slice(0, 2).join(" "));
+  chips.find((c) => /^Finance/.test(P(c.shown))).click();
+  check(shownNames().length === 2 && /Expenses/.test(shownNames().join()) && /Purchase Orders/.test(shownNames().join()), "Finance shows the two money apps and hides the rest");
+  const shownRadios = radios.filter((r) => !r.hidden);
+  shownRadios[1].dispatch("keydown", { key: "ArrowRight" });
+  check(shownRadios[0].attrs["aria-checked"] === "true", "the arrow keys move only among the apps on show");
+  radios[0].click();
+  chips[0].click();
+  const find = body.all((n) => n.tagName === "INPUT" && n.attrs.type === "search")[0];
+  find.value = "swap";
+  find.dispatch("input");
+  check(shownNames().length === 1 && /Shift Rota/.test(shownNames()[0]), "a search finds an app by what it does, not only its name");
+  find.value = "zebra";
+  find.dispatch("input");
+  check(radios.every((r) => r.hidden) && /No ready app matches “zebra”/.test(textOf(body)), "nothing matching says so, and what to do");
+  find.value = "";
+  find.dispatch("input");
+  check(radios.every((r) => !r.hidden) && radios[0].attrs["aria-checked"] === "true", "clearing the search shows them all again, the pick unchanged");
   const go = button(body, "Release Team Notes to Acme");
   check(!!go && /not even Krate can read/.test(textOf(body)), "one button says exactly what happens, and the line that says why Krate is beside it");
   go.click();
@@ -242,7 +265,8 @@ const dashRoutes = (org, extra = {}) => ({
   const co = await page(base, JOIN, { routes: { "GET /orgs/acme/invites/abc123def/door": () => [200, { name: "Acme Labs", company_sign_in: true, kind: "email" }] } });
   check(co.el("jH").textContent === "You have an invitation to Acme Labs", "an open invitation names the organisation as the email did");
   const links = co.el("jBody").all((n) => n.tagName === "A").map((a) => a.href);
-  check(links[0] === "/login/?org=acme&next=%2Fjoin%2F%3Fo%3Dacme%26c%3Dabc123def" && links[1].endsWith("#email"), "an organisation with company sign-in offers it first, then email for an email invitation");
+  const order = co.el("jBody").all((n) => n.tagName === "FORM" || n.tagName === "A").map((n) => n.tagName === "FORM" ? "email" : n.href);
+  check(order[0] === "/login/?org=acme&next=%2Fjoin%2F%3Fo%3Dacme%26c%3Dabc123def" && order[1] === "email", "an organisation with company sign-in offers it first, then email for an email invitation");
   check(!co.sent[0].headers.authorization, "asking which way in carries no session");
   const sum = co.el("jBody").all((n) => n.tagName === "SUMMARY")[0];
   const trouble = sum && sum.parent;

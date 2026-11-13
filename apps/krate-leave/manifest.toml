@@ -1,0 +1,20 @@
+# Leave: days off booked, who is away this week, and the days each person has
+# left (a starter an organisation releases in its first minute on Krate). Its
+# data is the team's, kept with store.org, and it asks for nothing else.
+
+[app]
+id = "dev.krate.leave"
+name = "Leave"
+version = "1.0.0"
+entry = "target/wasm32-wasip1/release/krate_leave.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show your team's leave"
+required = true
+
+[[capabilities]]
+cap = "store.org"
+rationale = "Keep the leave calendar with your team, encrypted, so everyone in it sees who is away"
+required = true

@@ -78,20 +78,18 @@
         $("jTile").textContent = String(res.body.name).slice(0, 1).toUpperCase();
         document.title = "Join " + res.body.name;
       }
-      var ways = [];
-      var signIn = function (via, label, dark) { return el("a", { class: "btn " + (dark ? "dark" : "ghost"), href: K.signInHref(HERE, via), text: label }); };
-      if (res.body.company_sign_in) {
-        ways.push(el("a", { class: "btn dark", href: "/login/?org=" + encodeURIComponent(slug) + "&next=" + encodeURIComponent(HERE), text: "Continue with company sign-in" }));
-      }
-      var first = !ways.length;
-      if (res.body.kind === "email") {
-        ways.push(signIn("email", "Continue with email", first), signIn("google", "Continue with Google", false), signIn("github", "Continue with GitHub", false));
-      } else {
-        ways.push(signIn("github", "Continue with GitHub", first), signIn("google", "Continue with Google", false), signIn("email", "Continue with email", false));
-      }
+      // The same buttons and email box as every other sign-in, led by the
+      // kind of account the invitation names; the company's own sign-in
+      // above them all, when it has one.
       var box = $("jWays");
       box.textContent = "";
-      box.appendChild(el("div", { class: "stack" }, ways));
+      if (res.body.company_sign_in) {
+        box.appendChild(el("div", { class: "jcompany" }, [
+          el("a", { class: "btn dark", href: "/login/?org=" + encodeURIComponent(slug) + "&next=" + encodeURIComponent(HERE), text: "Continue with company sign-in" }),
+          el("div", { class: "or" }, [el("span", { text: "or" })]),
+        ]));
+      }
+      box.appendChild(K.signInChoices(HERE, { first: res.body.kind === "email" ? "email" : "github" }));
     });
     return;
   }

@@ -60,7 +60,10 @@ unsafe extern "Rust" fn __getrandom_v03_custom(
 /// The least a call that seals anything must bring.
 const MIN_ENTROPY: usize = 256;
 
-fn with_entropy<T>(input: &Value, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+pub(crate) fn with_entropy<T>(
+    input: &Value,
+    f: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
     let bytes = match input["entropy"].as_str() {
         Some(text) => b64_decode(text).ok_or("entropy is base64")?,
         None => Vec::new(),
@@ -88,14 +91,14 @@ fn needs_entropy(input: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn text<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
+pub(crate) fn text<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
     input[key]
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("{key} is required"))
 }
 
-fn org_of(input: &Value) -> Result<&str, String> {
+pub(crate) fn org_of(input: &Value) -> Result<&str, String> {
     let org = text(input, "org")?;
     if !krate_bundle::valid_org_slug(org) {
         return Err(format!("{org:?} is not an organisation's name"));
@@ -103,13 +106,13 @@ fn org_of(input: &Value) -> Result<&str, String> {
     Ok(org)
 }
 
-fn key32(input: &Value, key: &str) -> Result<[u8; 32], String> {
+pub(crate) fn key32(input: &Value, key: &str) -> Result<[u8; 32], String> {
     unhex(text(input, key)?)
         .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
         .ok_or_else(|| format!("{key} is 64 hex characters"))
 }
 
-fn device_of(input: &Value) -> Result<KeyPair, String> {
+pub(crate) fn device_of(input: &Value) -> Result<KeyPair, String> {
     let mut secret = key32(input, "device_secret")?;
     let pair = KeyPair::from_secret(&secret).map_err(|e| e.to_string());
     secret.zeroize();
@@ -247,9 +250,15 @@ fn keys_op(input: &Value) -> Result<Value, String> {
                 ),
                 None => None,
             };
+            // Every company connection's credential, sealed again to the new
+            // version: the hub refuses a renewal that leaves one behind, and
+            // this is the same code a computer runs (K-1120).
+            let credentials =
+                krate_orgkeys::reseal_credentials(&keyring, org, &input["credentials"]);
             Ok(json!({
                 "version": version, "public_key": keyring.current().1.public_hex(),
                 "envelopes": envelopes, "mine": mine, "recovery_blob": recovery_blob,
+                "credentials": credentials,
             }))
         }
         "keyring_recover" => {
@@ -360,6 +369,10 @@ fn keys_op(input: &Value) -> Result<Value, String> {
 ///   "key": <base64 PKCS#8 of a release key>, "delegation": {slip},
 ///   "ring": {"envelope": ..., "device_secret": <hex>}  (sign as the organisation)}`
 ///
+/// or, for a person's own app made on krate.tech (IC-983's option B), no
+/// organisation and no mark: `{"account": "<hub account id>", "signed_at",
+/// and the key as above}`, signed under `krate.tech/<account>/<app id>`.
+///
 /// The answer is the same frame: JSON (`{"ok":true,"digest","namespace",
 /// "public_key","signer"}` or `{"ok":false,"problem"}`), then the signed
 /// bundle's bytes.
@@ -397,6 +410,9 @@ fn frame_of(meta: &Value, bytes: &[u8]) -> Vec<u8> {
 }
 
 fn sign_op(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
+    if input["account"].is_string() {
+        return sign_for_account(input, bundle);
+    }
     let org = org_of(input)?;
     let signed_at = input["signed_at"]
         .as_u64()
@@ -405,18 +421,7 @@ fn sign_op(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
         let (_, key) = open_ring(&input["ring"], org)?;
         (key, None, "organisation")
     } else {
-        // A release key as PKCS#8, or as WebCrypto's JWK gives it (`seed`
-        // and `public`, hex).
-        let pkcs8 = if input["seed"].is_string() {
-            let mut seed = key32(input, "seed")?;
-            let doc = SigningKey::pkcs8_from_seed(&seed, &key32(input, "public")?)
-                .map_err(|_| "that public key is not the seed's".to_string());
-            seed.zeroize();
-            doc?
-        } else {
-            pkcs8_of(input, "key")?
-        };
-        let key = signing_key(&pkcs8)?;
+        let key = given_key(input)?;
         let delegation = match &input["delegation"] {
             Value::Null => None,
             slip => Some(
@@ -440,6 +445,64 @@ fn sign_op(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
         "namespace": signed.envelope.namespace,
         "public_key": signed.envelope.public_key,
         "signer": signer,
+    });
+    Ok((meta, signed.bytes))
+}
+
+/// A release key as PKCS#8 (`key`, base64), or as WebCrypto's JWK gives it
+/// (`seed` and `public`, hex).
+fn given_key(input: &Value) -> Result<SigningKey, String> {
+    let pkcs8 = if input["seed"].is_string() {
+        let mut seed = key32(input, "seed")?;
+        let doc = SigningKey::pkcs8_from_seed(&seed, &key32(input, "public")?)
+            .map_err(|_| "that public key is not the seed's".to_string());
+        seed.zeroize();
+        doc?
+    } else {
+        pkcs8_of(input, "key")?
+    };
+    signing_key(&pkcs8)
+}
+
+/// The namespace a person's web builds are signed under:
+/// `krate.tech/<account>/<app id>`. The account is the hub's id for the
+/// person, so it never changes when their name does.
+pub(crate) fn account_namespace(account: &str, app_id: &str) -> Result<String, String> {
+    let fits = !account.is_empty()
+        && account.len() <= 64
+        && account
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !fits {
+        return Err(format!("{account:?} is not a hub account"));
+    }
+    Ok(format!("krate.tech/{account}/{app_id}"))
+}
+
+/// Sign a person's own app with the key the hub keeps for their account
+/// (IC-983, option B): the app stays theirs across every rebuild, and its
+/// data stays keyed to them, without a key on the build machine. Nothing is
+/// marked; the bundle is signed as it was built.
+fn sign_for_account(input: &Value, bundle: &[u8]) -> Result<(Value, Vec<u8>), String> {
+    let account = text(input, "account")?;
+    let signed_at = input["signed_at"]
+        .as_u64()
+        .ok_or("signed_at is unix seconds")?;
+    let key = given_key(input)?;
+    let app_id = krate_bundle::judge_bytes(bundle, crate::MAX_EXPANDED_BYTES)
+        .map_err(|e| e.to_string())?
+        .manifest
+        .app
+        .id;
+    let namespace = account_namespace(account, &app_id)?;
+    let signed = krate_bundle::sign_bytes(bundle, &key, Some(&namespace), signed_at, None)
+        .map_err(|e| e.to_string())?;
+    let meta = json!({
+        "ok": true,
+        "digest": krate_bundle::sha256_hex(&signed.bytes),
+        "namespace": signed.envelope.namespace,
+        "public_key": signed.envelope.public_key,
+        "signer": "account",
     });
     Ok((meta, signed.bytes))
 }
@@ -641,6 +704,28 @@ mod tests {
             Some(hex(&root.public_key()))
         );
 
+        // A person's own web build: signed as their account, unmarked.
+        let person_pkcs8 = SigningKey::generate_pkcs8().unwrap();
+        let person = SigningKey::from_pkcs8(&person_pkcs8).unwrap();
+        let header = json!({ "account": "u_42", "signed_at": 1_760_000_100u64,
+            "key": b64_encode(&person_pkcs8) });
+        let mut frame = (header.to_string().len() as u32).to_le_bytes().to_vec();
+        frame.extend_from_slice(header.to_string().as_bytes());
+        frame.extend_from_slice(bounce);
+        let out = sign_frame(&frame);
+        let (meta, bytes) = split_frame(&out).unwrap();
+        let meta: Value = serde_json::from_slice(meta).unwrap();
+        assert_eq!(
+            (meta["signer"].as_str(), meta["namespace"].as_str()),
+            (Some("account"), Some("krate.tech/u_42/dev.krate.bounce")),
+            "{meta}"
+        );
+        assert_eq!(meta["public_key"], hex(&person.public_key()));
+        let judged = krate_bundle::judge_bytes(bytes, MAX).unwrap();
+        assert_eq!(judged.signature.state, "valid");
+        assert_eq!(judged.org_mark, None, "a person's app carries no mark");
+        assert!(account_namespace("../etc", "bounce").is_err());
+
         let refused = sign_frame(b"\x02\x00\x00\x00{}");
         let (meta, _) = split_frame(&refused).unwrap();
         assert!(String::from_utf8_lossy(meta).contains("org is required"));
@@ -650,6 +735,63 @@ mod tests {
 
     /// Without the page's randomness nothing is sealed: no silent, guessable
     /// fallback.
+    /// K-1120: a browser that renews the company key re-seals every
+    /// connection credential to the new version, as a computer does, so the
+    /// hub takes the renewal; one that does not open here is answered
+    /// unopened instead of being left on the old key.
+    #[test]
+    fn a_browser_renewal_reseals_the_company_connections() {
+        let device = KeyPair::generate();
+        let first = KeyPair::generate();
+        let made = call(json!({
+            "op": "keyring_create", "org": "acme", "secret": hex(first.secret()),
+            "device_public": device.public_hex(), "entropy": entropy(),
+        }));
+        assert_eq!(made["ok"], true, "{made}");
+        let context = krate_orgkeys::connection_context(
+            "acme",
+            "finance-api",
+            "authorization",
+            "https://api.acme.test/",
+        );
+        let sealed =
+            krate_orgkeys::seal_for_org(&first.public(), &context, b"Bearer s3cret").unwrap();
+        let elsewhere = krate_orgkeys::seal_for_org(
+            &first.public(),
+            &krate_orgkeys::connection_context(
+                "acme",
+                "hr",
+                "authorization",
+                "https://elsewhere.test/",
+            ),
+            b"Bearer other",
+        )
+        .unwrap();
+        let next = KeyPair::generate();
+        let rot = call(json!({
+            "op": "keyring_rotate", "org": "acme", "envelope": made["envelope"],
+            "device_secret": hex(device.secret()), "secret": hex(next.secret()), "to": [],
+            "entropy": entropy(),
+            "credentials": [
+                { "name": "finance-api", "base": "https://api.acme.test/", "header": "authorization", "v": 1, "sealed": sealed },
+                { "name": "hr", "base": "https://api.acme.test/hr/", "header": "authorization", "v": 1, "sealed": elsewhere },
+            ],
+        }));
+        assert_eq!(rot["ok"], true, "{rot}");
+        assert_eq!(rot["version"], 2, "{rot}");
+        let back = &rot["credentials"]["finance-api"];
+        assert_eq!(back["v"], 2, "sealed again to the new version: {rot}");
+        let renewed = Keyring::open(rot["mine"].as_str().unwrap(), &device, "acme").unwrap();
+        let opened =
+            krate_orgkeys::open_for_org(&renewed, 2, &context, back["sealed"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(opened, b"Bearer s3cret");
+        assert_eq!(
+            rot["credentials"]["hr"]["unopened"], true,
+            "one sealed for another address is not kept: {rot}"
+        );
+    }
+
     #[test]
     fn sealing_without_entropy_is_refused() {
         let device = KeyPair::generate();

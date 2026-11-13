@@ -18,7 +18,7 @@ const root = resolve(__dirname, '..');
     await page.evaluate(() => document.fonts.ready);
     const assetsReady = await page.evaluate(() => [...document.images].every(img => img.complete && img.naturalWidth > 0));
     if (!assetsReady || failures.length) throw new Error(JSON.stringify({assetsReady, failures}));
-    const output = resolve(root, 'docs/landing/og-v4.png');
+    const output = resolve(root, 'docs/landing/og-v5.png');
     await page.screenshot({path: output});
     console.log(`Rendered ${output} (1200 x 630)`);
   } finally {

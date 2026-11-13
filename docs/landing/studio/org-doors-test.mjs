@@ -17,7 +17,7 @@ const SECRET = "whsec_" + "B".repeat(43);
 const HUBB = "https://hub.krate.tech";
 const people = [member(ALICE, "owner"), member("github:erin", "admin"), member("github:bob", "reviewer"), member("github:carol", "developer")];
 const org = (me) => ({
-  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, suspended: false, billing_state: "pilot", recovery: null }, me: people.find((m) => m.principal === me), members: people }],
+  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, recovery: null }, me: people.find((m) => m.principal === me), members: people }],
   "GET /orgs/acme/exports": () => [200, []],
   "GET /orgs/acme/sso": () => [200, null],
 });
@@ -169,7 +169,7 @@ const settings = (me, extra = {}) => page("https://krate.tech/org/?o=acme&tab=se
   const p = await settings(ALICE);
   const K = p.win.KrateOrg;
   const say = (e) => K.eventWords({ actor: "scim", result: "allowed", ...e }, {});
-  check(say({ action: "member.add", target: "member:email:erin@acme.test", reason: "recipient; created by the directory" }) === "Your directory (SCIM) added erin@acme.test as recipient.", "a person the directory adds");
+  check(say({ action: "member.add", target: "member:email:erin@acme.test", reason: "recipient; created by the directory" }) === "Your directory (SCIM) added erin@acme.test as member.", "a person the directory adds");
   check(say({ action: "member.remove", target: "member:email:erin@acme.test", reason: "recipient; deactivated in the directory" }) === "Your directory (SCIM) removed erin@acme.test, deactivated in the directory.", "a person the directory deactivates");
   check(say({ action: "member.add", target: "member:email:erin@acme.test", reason: "developer; reactivated by the directory" }) === "Your directory (SCIM) brought back erin@acme.test as developer.", "a person the directory brings back");
   check(K.eventWords({ actor: ALICE, result: "allowed", action: "audit-export.set", target: "audit-export:siem.acme.test" }, {}) === "@alice started sending the activity to siem.acme.test.", "starting the export");

@@ -39,6 +39,14 @@
 // person's device, so the credential is on that device, in Krate's memory,
 // for the run. Someone who controls their own machine can read their own
 // memory. The guards here decide who gets it at all.
+//
+// A connection may also keep a short summary of its API (SMART-FIXES 4),
+// made in the admin's browser from the API's OpenAPI description: its
+// title, and each operation's method, path, id, a short summary and its
+// query parameters' names, at most MAX_API bytes. It is no secret: anyone
+// who may see the connection reads it (GET .../connections/<name>/api),
+// and Studio hands it to the AI that writes an app asking for the
+// connection, so the app's calls are written against the real API.
 
 import { Org, extendOrg, addReasons, allows } from "./org.js";
 // Release control first: a credential fetch reuses its audience and
@@ -48,6 +56,8 @@ import { GROUP, appOf } from "./org-releases.js";
 import "./org-keys.js";
 // Days are the organisation's own (org-time.js, F-319).
 import { dayBefore } from "./org-time.js";
+// Telling the API who is calling: the token, signed by the Worker.
+import { issueIdentity, IDENTITY_HEADER } from "./org-identity-token.js";
 
 export const CONNECTION = /^[a-z][a-z0-9-]{1,38}$/;
 export const METHODS = ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"];
@@ -66,6 +76,11 @@ const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const SEALED_MIN = 68;
 const SEALED_MAX = 8192;
 const DAY = 24 * 60 * 60;
+/// The most an API summary may be, as UTF-8 JSON (docs/landing/kit/
+/// connect.js MAX_API, the same number).
+export const MAX_API = 24 * 1024;
+const MAX_OPERATIONS = 2000;
+const CONTROL = /[\u0000-\u001f\u007f]/;
 
 const goodSealed = (s) => typeof s === "string" && s.length >= SEALED_MIN && s.length <= SEALED_MAX && s.length % 4 === 0 && B64.test(s);
 
@@ -119,7 +134,19 @@ const SCHEMA = [
 // version of the organisation key each credential is sealed to (F-316).
 // NULL is a credential kept the old way, sealed with this hub's own key;
 // 0 is one that must be entered again (the one-time migration below).
-const COLUMNS = [["candidates", "connections", "TEXT"], ["connections", "credential_v", "INTEGER"]];
+// `identity`: whether each request also tells the API who is calling (a
+// signed Krate-Identity token, org-identity-token.js). NULL, as every
+// connection made before the setting has, is on: the default.
+// And the API summary, as the JSON text normalApi made (null: none).
+const COLUMNS = [
+  ["candidates", "connections", "TEXT"],
+  ["connections", "credential_v", "INTEGER"],
+  ["connections", "identity", "INTEGER"],
+  ["connections", "api", "TEXT"],
+];
+
+/// The setting as kept: on unless an admin turned it off.
+const identityOn = (c) => c.identity !== 0;
 
 
 const list = (text) => {
@@ -204,6 +231,73 @@ export function normalAllow(raw) {
   return { allow: { methods: METHODS.filter((x) => m.includes(x)), paths: p.sort() } };
 }
 
+/// `api`: a summary of the connection's API, or null for none. Answers
+/// `{api: <JSON text> | null}` or `{problem}`. Only the fields Studio
+/// reads are kept, each one short and on one line, and the whole is at
+/// most MAX_API bytes: it goes into an AI's context, so it is refused
+/// rather than cut when it is more.
+export function normalApi(raw) {
+  if (raw === null) return { api: null };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { problem: "the API summary is an object with its operations" };
+  const text = (v, n, what) => {
+    if (v === undefined || v === null || v === "") return "";
+    if (typeof v !== "string" || v.length > n || CONTROL.test(v)) throw new Error(`${what} is one line of up to ${n} characters`);
+    return v;
+  };
+  try {
+    const source = text(raw.source, 300, "the summary's source");
+    if (source && !(source === "pasted" || /^preset:[a-z0-9-]{1,40}$/.test(source) || /^https:\/\/[^\s]+$/.test(source))) {
+      throw new Error("the summary's source is the https address it was read from, pasted, or a preset");
+    }
+    const ops = raw.operations === undefined ? [] : raw.operations;
+    if (!Array.isArray(ops) || ops.length > MAX_OPERATIONS) throw new Error(`the summary lists up to ${MAX_OPERATIONS} operations`);
+    const operations = ops.map((o) => {
+      if (!o || typeof o !== "object") throw new Error("each operation is an object");
+      const method = String(o.method || "").toUpperCase();
+      if (!METHODS.includes(method)) throw new Error(`an operation's method is one of ${METHODS.join(", ")}`);
+      const path = text(o.path, 200, "an operation's path");
+      if (!path.startsWith("/")) throw new Error("an operation's path starts with /");
+      const op = { method, path };
+      const id = text(o.id, 80, "an operation's id");
+      if (id) op.id = id;
+      const summary = text(o.summary, 160, "an operation's summary");
+      if (summary) op.summary = summary;
+      if (o.query !== undefined) {
+        if (!Array.isArray(o.query) || o.query.length > 12) throw new Error("an operation names up to 12 query parameters");
+        const q = o.query.map((x) => text(x, 60, "a parameter's name")).filter(Boolean);
+        if (q.length) op.query = q;
+      }
+      if (o.body === true) op.body = true;
+      return op;
+    });
+    const more = raw.more === undefined ? 0 : raw.more;
+    if (!Number.isInteger(more) || more < 0 || more > 1000000) throw new Error("the summary's count of operations left out is a whole number");
+    const api = { title: text(raw.title, 120, "the API's title") || "API", version: text(raw.version, 40, "the API's version"), source: source || "pasted" };
+    const notes = text(raw.notes, 600, "the API's notes");
+    if (notes) api.notes = notes;
+    api.operations = operations;
+    api.more = more;
+    const json = JSON.stringify(api);
+    if (new TextEncoder().encode(json).length > MAX_API) {
+      throw new Error(`the API summary is over ${MAX_API / 1024} KB: list fewer operations, and count the rest in more`);
+    }
+    return { api: json };
+  } catch (e) {
+    return { problem: e.message };
+  }
+}
+
+/// What the list shows of a kept summary: what it is, never the whole.
+function apiFacts(text) {
+  if (!text) return null;
+  try {
+    const a = JSON.parse(text);
+    return { title: a.title, version: a.version || "", source: a.source, operations: a.operations.length, more: a.more || 0 };
+  } catch (_) {
+    return null;
+  }
+}
+
 /// The sealed credential a create or replace carried: `{credential: {kind,
 /// header, v, sealed}}`, sealed where it was typed. Answers `{kind,
 /// header_name, v, sealed}`, `{problem}`, or null when it carried none. The
@@ -224,7 +318,7 @@ export function sealedCredentialOf(v) {
   if (!kind) return { problem: "the credential is one header, or a user and password" };
   const name = kind === "basic" ? "Authorization" : String(c.header || "").trim();
   if (!HEADER_NAME.test(name)) return { problem: "the header name is one word, such as Authorization or X-Api-Key" };
-  if (TRANSPORT_HEADERS.has(name.toLowerCase()) || name.toLowerCase().startsWith("proxy-")) {
+  if (TRANSPORT_HEADERS.has(name.toLowerCase()) || name.toLowerCase().startsWith("proxy-") || name.toLowerCase() === IDENTITY_HEADER.toLowerCase()) {
     return { problem: `${name} is a header the connection itself sets, so it cannot carry a credential` };
   }
   if (!Number.isInteger(c.v) || c.v < 1) return { problem: "the credential says which version of the organisation's key it is sealed to" };
@@ -251,9 +345,11 @@ const ops = {
       allow: { methods: JSON.parse(c.methods), paths: JSON.parse(c.paths) },
       audience: list(c.audience),
       apps: list(c.apps),
+      identity: identityOn(c),
       // `sealed`: to version `version` of the organisation key, so only
       // members' devices open it. `needs-entry`: it was kept the old way and
       // is gone; an owner or admin enters it again.
+      api: apiFacts(c.api),
       credential: {
         kind: c.kind, header: c.header_name, set_at: c.credential_at, set_by: c.credential_by,
         state: c.credential_v >= 1 ? "sealed" : "needs-entry", version: c.credential_v >= 1 ? c.credential_v : null,
@@ -360,11 +456,11 @@ const ops = {
     if (scope.refusal) return scope.refusal;
     this.sql.exec(
       `INSERT INTO connections (name, base, methods, paths, audience, apps, kind, header_name, sealed,
-         created_at, created_by, changed_at, changed_by, credential_at, credential_by, credential_v)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         created_at, created_by, changed_at, changed_by, credential_at, credential_by, credential_v, identity, api)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       name, a.base, JSON.stringify(a.allow.methods), JSON.stringify(a.allow.paths), scope.audience, scope.apps,
       a.kind, a.header_name, a.sealed,
-      ctx.now, me.principal, ctx.now, me.principal, ctx.now, me.principal, a.credential_v,
+      ctx.now, me.principal, ctx.now, me.principal, ctx.now, me.principal, a.credential_v, a.identity === false ? 0 : 1, a.api || null,
     );
     this.audit(me.principal, "connection.create", target, "allowed", a.base);
     return this.ok({ connection: this.connectionView(this.connectionRow(name), ctx.now) }, 201);
@@ -395,16 +491,41 @@ const ops = {
     if (methods !== c.methods || paths !== c.paths) said.push(`allow ${JSON.parse(methods).join(",")} ${JSON.parse(paths).join(",")}`);
     if (scope.audience !== c.audience) said.push(scope.audience ? `audience groups:${list(scope.audience).join(",")}` : "audience everyone");
     if (scope.apps !== c.apps) said.push(scope.apps ? `apps ${list(scope.apps).join(",")}` : "apps any");
+    const identity = a.identity === undefined ? identityOn(c) : a.identity === true;
+    if (identity !== identityOn(c)) said.push(identity ? "tells the API who is calling" : "does not tell the API who is calling");
     if (a.sealed) said.push("credential replaced");
+    const api = a.api === undefined ? c.api : a.api;
+    if (api !== c.api) {
+      const facts = apiFacts(api);
+      said.push(facts ? `API description ${facts.operations} operation${facts.operations === 1 ? "" : "s"}` : "API description removed");
+    }
     if (said.length) {
       this.sql.exec(
-        `UPDATE connections SET base = ?, methods = ?, paths = ?, audience = ?, apps = ?, changed_at = ?, changed_by = ? WHERE name = ?`,
-        base, methods, paths, scope.audience, scope.apps, ctx.now, me.principal, name,
+        `UPDATE connections SET base = ?, methods = ?, paths = ?, audience = ?, apps = ?, identity = ?, api = ?, changed_at = ?, changed_by = ? WHERE name = ?`,
+        base, methods, paths, scope.audience, scope.apps, identity ? 1 : 0, api, ctx.now, me.principal, name,
       );
       if (a.sealed) this.connectionNewCredential(name, a, me, ctx.now);
       this.audit(me.principal, "connection.change", target, "allowed", said.join("; "));
     }
     return this.ok({ connection: this.connectionView(this.connectionRow(name), ctx.now) });
+  },
+
+  /// GET /orgs/<slug>/connections/<name>/api: the connection's API
+  /// summary in full, for whoever may see connections (a developer's
+  /// Studio reads it to write an app against the real API).
+  op_connection_api(ctx) {
+    const name = String(ctx.args.name || "").toLowerCase();
+    const target = `connection:${name.slice(0, 40)}`;
+    const { refusal } = this.connectionMay(ctx, "connection.view", target, (r) => `a ${r} cannot see ${ctx.slug}'s connections`);
+    if (refusal) return refusal;
+    const c = this.connectionRow(name);
+    if (!c) return this.deny(ctx, "connection.view", target, "no-such-connection", `${ctx.slug} has no connection called ${name || "that"}`);
+    return this.ok({
+      name: c.name,
+      base: c.base,
+      allow: { methods: JSON.parse(c.methods), paths: JSON.parse(c.paths) },
+      api: c.api ? JSON.parse(c.api) : null,
+    });
   },
 
   connectionNewCredential(name, a, me, now) {
@@ -448,7 +569,12 @@ const ops = {
 
   /// GET /orgs/<slug>/connections/<name>/credential/<digest>: may this
   /// person's copy of this release use this connection now? Checked like a
-  /// lease, then counted. Answers the sealed credential for the Worker.
+  /// lease, then counted. Answers the sealed credential for the Worker, and,
+  /// when the connection tells the API who is calling, what the Worker signs
+  /// into the identity token. The token's refresh (.../identity/<digest>)
+  /// asks this same question, so it passes exactly the same checks; each
+  /// one is counted as a use, in the same daily count, never one audit line
+  /// per token.
   op_connection_use(ctx) {
     const name = String(ctx.args.name || "").toLowerCase();
     const digest = String(ctx.args.digest || "");
@@ -503,6 +629,9 @@ const ops = {
       header_name: conn.header_name,
       credential_v: conn.credential_v,
       sealed: conn.sealed,
+      identity: identityOn(conn)
+        ? { sub: me.principal, org: this.org().slug || ctx.slug, app, release: digest, connection: name, aud: conn.base, now: ctx.now }
+        : null,
     });
   },
 
@@ -702,6 +831,15 @@ export async function connectionRoute(h) {
     }
     if (v.audience !== undefined) args.audience = v.audience;
     if (v.apps !== undefined) args.apps = v.apps;
+    if (v.identity !== undefined) {
+      if (typeof v.identity !== "boolean") return { refusal: bad("identity is true (tell the API who is calling) or false") };
+      args.identity = v.identity;
+    }
+    if (v.api !== undefined) {
+      const api = normalApi(v.api);
+      if (api.problem) return { refusal: bad(api.problem) };
+      args.api = api.api;
+    }
     if (stored) {
       Object.assign(args, { sealed: stored.sealed, credential_v: stored.v, kind: stored.kind, header_name: stored.header_name });
     } else if (needsCredential) {
@@ -736,6 +874,9 @@ export async function connectionRoute(h) {
   if (rest.length === 2 && method === "DELETE") {
     return orgAnswer(await askRaw("connection-remove", { name }, await idempotencyOf(request, url.pathname, "")));
   }
+  if (rest.length === 3 && rest[2] === "api" && method === "GET") {
+    return orgAnswer(await askRaw("connection-api", { name }));
+  }
   if (rest.length === 3 && rest[2] === "credential" && method === "PUT") {
     const body = await readBody();
     if (body.tooLarge || body.bad) return bad("the body is JSON, under 64 KiB");
@@ -753,7 +894,22 @@ export async function connectionRoute(h) {
     const decided = await askRaw("connection-use", { name, digest });
     if (decided.status !== 200) return noStore(decided.body, decided.status);
     const d = decided.body;
-    return noStore({ name: d.name, base: d.base, allow: d.allow, ...credentialForDevice(d) });
+    const identity = d.identity ? await issueIdentity(env, d.identity) : null;
+    return noStore({ name: d.name, base: d.base, allow: d.allow, ...credentialForDevice(d), ...(identity ? { identity } : {}) });
+  }
+  // A fresh identity token for the same run: the same question as the
+  // credential fetch, so the same checks, answering only the token. A
+  // person removed since the app opened is refused here, so their name
+  // stops reaching the API within one token's life.
+  if (rest.length === 4 && rest[2] === "identity" && method === "GET") {
+    const digest = String(rest[3]).toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(digest)) {
+      return orgAnswer({ status: 404, body: { error: "digest-mismatch", message: "a digest is the release's 64-hex sha256" } });
+    }
+    const decided = await askRaw("connection-use", { name, digest });
+    if (decided.status !== 200) return noStore(decided.body, decided.status);
+    const d = decided.body;
+    return noStore({ name: d.name, identity: d.identity ? await issueIdentity(env, d.identity) : null });
   }
   return null;
 }

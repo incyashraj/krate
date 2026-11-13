@@ -35,6 +35,15 @@ pub mod winit_native;
 
 mod clipboard;
 
+/// Toasts attributed to the app (IC-271).
+pub mod toast;
+
+/// Windows Hello for `krate:ui/unlock` (IC-982).
+pub mod unlock;
+
+/// Where the computer is, for `krate:ui/location` (IC-982).
+pub mod location;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
@@ -326,6 +335,19 @@ impl WindowAdapter for WindowsUiAdapter {
 }
 
 impl UiAdapter for WindowsUiAdapter {
+    // A headless run (check-app, `--headless`, a machine with no display)
+    // keeps its clipboard in process, as macOS's headless run does: there
+    // may be no system clipboard at all, and a check task's paste must never
+    // reach the person's. This adapter had none, so a check task's paste
+    // step was "not implemented by this UI adapter" on Linux and Windows.
+    fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
+        self.draft.read_clipboard_text()
+    }
+
+    fn write_clipboard_text(&self, text: &str) -> Result<(), UiAdapterError> {
+        self.draft.write_clipboard_text(text)
+    }
+
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.draft.set_root(window, root)
     }
@@ -507,6 +529,17 @@ impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for WindowsWinitPrototypeUiAdapter {
+    #[cfg(windows)]
+    /// Where the computer is: Windows' Geolocator (IC-982).
+    fn location_available(&self) -> bool {
+        location::available()
+    }
+
+    #[cfg(windows)]
+    fn location(&self) -> krate_adapter_common::ui::LocationAnswer {
+        location::read()
+    }
+
     /// Physical pixels per logical pixel, from the live winit window. The
     /// trait default of 1.0 stood in here for months, so every canvas
     /// rasterized at logical resolution and was stretched across a HiDPI
@@ -1368,5 +1401,21 @@ mod tests {
     fn no_follow_hook_accepts_open_options() {
         let mut opts = OpenOptions::new();
         apply_no_follow_final_symlink(&mut opts);
+    }
+}
+
+#[cfg(test)]
+mod headless_clipboard_tests {
+    use super::*;
+
+    /// A headless run keeps its clipboard in process: what a check task's
+    /// paste step puts there is what the app's paste reads back. Without it
+    /// the step was "not implemented by this UI adapter" and check-app's
+    /// paste tasks failed on every Ubuntu runner.
+    #[test]
+    fn a_headless_run_has_a_clipboard_of_its_own() {
+        let adapter = WindowsUiAdapter::new();
+        adapter.write_clipboard_text("2027-03-09").expect("write");
+        assert_eq!(adapter.read_clipboard_text().expect("read"), "2027-03-09");
     }
 }

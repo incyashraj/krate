@@ -2,9 +2,12 @@
 
 ## Supported versions
 
-Krate is in early development. Current release: 0.5.4.
+Krate is in public beta. Current release: 0.5.4; see the
+[releases page](https://github.com/incyashraj/krate/releases/latest).
 
-TODO(Yashraj): which versions receive security fixes.
+Before 1.0, security fixes ship in the next release. The installer and the
+in-app updater always fetch the latest release, so updating is how you get
+a fix.
 
 When v1.0 ships, we will maintain the latest minor version with security
 patches. Older minor versions will receive patches for 12 months after the
@@ -43,19 +46,25 @@ Credit is given to reporters unless they request anonymity.
 ## Bug bounty
 
 No monetary bounty yet. We plan to add one when there is funding to do so
-responsibly (estimated: Phase 6, when the marketplace ships).
+responsibly.
 
 ## Scope
 
-**Phase 1** has runnable proof-of-concept code. The current threat surface is
-the `krate` CLI, the `krate-runtime` Wasmtime embedding, the temporary
-`krate:phase1/host` imports, release workflows, and dependency declarations.
+In scope: the `krate` command line and runtime, the `.krate` format and its
+validator, the permission wall (`crates/policy`, `crates/runtime`), the
+desktop and browser players, Krate Studio, the release and install scripts,
+and the hub at `hub.krate.tech` and `krate.tech`.
 
-Do not run untrusted WASM through `krate` in Phase 1. Treat
-`krate run foo.wasm` like running a local developer executable. The sandbox is
-real, but Krate is not adversarially hardened yet.
+The sandbox is real: an app reaches only the capabilities the person
+granted, and imports no operating-system calls of its own. Krate is not yet
+adversarially hardened, so treat an app from someone you do not know with
+the care you would give any program, and report anything that gets past the
+wall.
 
-See the Phase 1 threat model in `docs/book/src/phase1/threat-model.md`.
+How the wall works, written from the source:
+[krate.tech/security](https://krate.tech/security/). The written threat
+models are in [docs/book/src/phase2/threat-model-v0-2.md](docs/book/src/phase2/threat-model-v0-2.md)
+and [docs/book/src/phase1/threat-model.md](docs/book/src/phase1/threat-model.md).
 
 ## Out of scope
 

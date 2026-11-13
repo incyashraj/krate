@@ -11,19 +11,18 @@ written from memory.
 | Windows | One window, widgets, canvas, events, resize, DPI |
 | Drawing | 2D canvas, GPU rendering, a 3D scene graph, text measurement |
 | Audio | Playback and microphone capture |
-| Speech | Speech to text, on device, behind the microphone grant |
+| Speech | Speech to text, on device, behind the microphone grant; text to speech in the computer's own voices |
 | Camera | Frame capture, behind a permission prompt |
 | Files | A scoped folder the app owns, plus a file picker for anything else |
 | Network | HTTP and WebSockets, granted per host and port |
 | Storage | Key-value, SQL, a secret store, and a shared store across machines |
-| System | Clipboard, dialogs, notifications (macOS and Linux; Windows reports them unavailable for now), open-a-URL, locale, time, random |
+| System | Clipboard, dialogs, notifications (macOS, Windows and Linux; Windows says so when the person has switched an app's off), open-a-URL, locale, time, random |
 | Input | Keyboard, pointer, wheel |
 
 ## Not yet
 
 | Missing | What it blocks |
 |---|---|
-| Text to speech | The answering half of a voice app |
 | Printing | Invoices, labels, anything a business prints |
 | Multiple windows | A dashboard with a separate controls window |
 | File watching | Folder-driven tools that react to changes |
@@ -62,13 +61,15 @@ gallery, or ones you built.
   the tree, but they are early CLI-shaped work with no UI bindings, so
   nothing you can ship a window from. The guest is a WebAssembly
   component, so other languages are possible; none are finished.
-- **Desktop only.** Runtimes are published for macOS, Windows and Linux,
-  on Intel and ARM. The same ten ported `.krate` files passed automated
+- **Natively on desktops, from a link everywhere else.** Runtimes are
+  published for macOS, Windows and Linux, on Intel and ARM, and on a phone,
+  a tablet or any other computer the same app opens from its link in the
+  browser. The same ten ported `.krate` files passed automated
   replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows
   (x86_64) with runtime 0.5.4
   ([records](https://github.com/incyashraj/krate/tree/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3));
-  the other published targets are not in those checks yet. iOS and Android
-  exist in the tree as reference ports and are not shipping.
+  the other published targets are not in those checks yet. Native Android
+  and iPhone players exist in the tree and are not in the app stores yet.
 - **Heavy GPU work is early.** The renderer draws real scenes, but a
   demanding 3D game is not what this runs well today.
 

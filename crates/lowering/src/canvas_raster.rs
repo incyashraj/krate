@@ -40,6 +40,9 @@ pub struct CanvasSurface {
     /// Draw calls are mapped from here onto the real canvas: scaled
     /// uniformly and centred, so proportions survive any window (K-096).
     design: Option<(f32, f32)>,
+    /// The edges a phone covers, top, right, bottom, left (logical): the
+    /// design is fitted inside them.
+    design_inset: (f32, f32, f32, f32),
     /// `0xAARRGGBB`, row-major from the top — the drawn painter's format.
     buffer: Vec<u32>,
     /// A frame that is one opaque picture covering the whole canvas -- a
@@ -59,20 +62,49 @@ pub struct CanvasSurface {
 // milliseconds spent inside the hot canvas ops between two presents, taken
 // and printed with the publish stats when KRATE_FRAME_STATS=1.
 thread_local! {
-    static OP_MS: std::cell::Cell<(f32, f32, f32)> = const { std::cell::Cell::new((0.0, 0.0, 0.0)) };
+    static OP_MS: std::cell::Cell<(f32, f32, f32, f32)> = const { std::cell::Cell::new((0.0, 0.0, 0.0, 0.0)) };
 }
 
 fn add_op_ms(slot: u8, started: std::time::Instant) {
     let ms = started.elapsed().as_secs_f32() * 1000.0;
     OP_MS.with(|cell| {
-        let (mut fills, mut text, mut measure) = cell.get();
+        let (mut fills, mut text, mut measure, mut effects) = cell.get();
         match slot {
             0 => fills += ms,
             1 => text += ms,
-            _ => measure += ms,
+            2 => measure += ms,
+            _ => effects += ms,
         }
-        cell.set((fills, text, measure));
+        cell.set((fills, text, measure, effects));
     });
+    if slot >= 10 {
+        EFFECT_MS.with(|cell| {
+            let mut each = cell.get();
+            each[(slot - 10) as usize % 7] += ms;
+            cell.set(each);
+        });
+    }
+}
+
+thread_local! {
+    /// The effects' milliseconds one by one: shadow, gradient, radial,
+    /// vertical gradient, pixels, sprite, owned pixels.
+    static EFFECT_MS: std::cell::Cell<[f32; 7]> = const { std::cell::Cell::new([0.0; 7]) };
+}
+
+/// Take and reset the effects' milliseconds one by one, named.
+pub fn take_effect_millis() -> [(&'static str, f32); 7] {
+    let each = EFFECT_MS.with(|cell| cell.replace([0.0; 7]));
+    let names = [
+        "shadow",
+        "gradient",
+        "radial",
+        "vgradient",
+        "pixels",
+        "sprite",
+        "owned",
+    ];
+    core::array::from_fn(|i| (names[i], each[i]))
 }
 
 /// A hot op's timer. A browser's wasm32 has no clock `Instant` can read
@@ -99,9 +131,11 @@ impl Drop for OpTimer {
     }
 }
 
-/// Take and reset the accumulated (fills, text, measure) milliseconds.
-pub fn take_op_millis() -> (f32, f32, f32) {
-    OP_MS.with(|cell| cell.replace((0.0, 0.0, 0.0)))
+/// Take and reset the accumulated (fills, text, measure, effects)
+/// milliseconds. Effects are what cost by area: shadows, gradients and
+/// pictures drawn into the canvas.
+pub fn take_op_millis() -> (f32, f32, f32, f32) {
+    OP_MS.with(|cell| cell.replace((0.0, 0.0, 0.0, 0.0)))
 }
 
 /// A color in linear floats, packed to the painter's `0xAARRGGBB`.
@@ -186,6 +220,45 @@ fn lerp_color(a: u32, b: u32, t: f32) -> u32 {
 /// bands ("looks pixely, not HD" -- caught by eye on a purple-to-amber
 /// band and confirmed by 3-row color steps in the capture); a half-LSB
 /// Bayer offset trades the bands for noise the eye cannot see.
+/// Smoothstep of the distance, by squared distance (0 at the centre, 1 at
+/// the rim), as a 12-bit fraction: built once.
+fn radial_falloff() -> &'static [u16; 4097] {
+    static TABLE: std::sync::OnceLock<[u16; 4097]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut table = [0u16; 4097];
+        for (i, slot) in table.iter_mut().enumerate() {
+            let t = (i as f32 / 4096.0).sqrt();
+            let t = t * t * (3.0 - 2.0 * t);
+            *slot = (t * 4096.0).round().clamp(0.0, 4096.0) as u16;
+        }
+        table
+    })
+}
+
+/// `lerp_color_dithered` in fixed point: `t` a 12-bit fraction (0..=4096),
+/// the same ordered dither, the same rounding, for loops that mix millions of
+/// pixels a frame.
+fn channel_mixer(a: u32, b: u32) -> impl Fn(u16, u32, u32) -> u32 {
+    // Bayer thresholds, already in twelfths of a level: d = cell/16 - 0.5.
+    const BAYER: [[i32; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+    let channels = [24u32, 16, 8, 0].map(|shift| {
+        let ca = ((a >> shift) & 0xFF) as i32;
+        let cb = ((b >> shift) & 0xFF) as i32;
+        (shift, ca, cb - ca)
+    });
+    move |t: u16, px: u32, py: u32| {
+        let t = i32::from(t);
+        // (cell / 16 - 0.5) + 0.5, in 1/4096 of a level.
+        let offset = BAYER[(py & 3) as usize][(px & 3) as usize] * 256;
+        let mut out = 0u32;
+        for (shift, ca, delta) in channels {
+            let v = ((ca << 12) + delta * t + offset) >> 12;
+            out |= (v.clamp(0, 255) as u32) << shift;
+        }
+        out
+    }
+}
+
 fn lerp_color_dithered(a: u32, b: u32, t: f32, px: u32, py: u32) -> u32 {
     const BAYER: [[f32; 4]; 4] = [
         [0.0, 8.0, 2.0, 10.0],
@@ -278,6 +351,7 @@ impl CanvasSurface {
             logical_height: height,
             scale,
             design: None,
+            design_inset: (0.0, 0.0, 0.0, 0.0),
             // Made on first draw (see `materialize`): an app that only ever
             // hands over whole pictures never needs a window-sized raster,
             // which on a Retina window is 16 MB written white for nothing.
@@ -318,6 +392,7 @@ impl CanvasSurface {
         // design size, so an app that letterboxes correctly looked, one
         // frame later, exactly like an app that ignores the window (K-096).
         fitted.design = self.design;
+        fitted.design_inset = self.design_inset;
         *self = fitted;
         Ok(true)
     }
@@ -341,13 +416,30 @@ impl CanvasSurface {
     /// centred, letterboxed. `(1.0, 0.0, 0.0)` when no design size is set,
     /// so every draw path can apply it unconditionally.
     fn design_transform(&self) -> (f32, f32, f32) {
-        let Some((dw, dh)) = self.design else {
+        let Some(design) = self.design else {
             return (1.0, 0.0, 0.0);
         };
-        let (cw, ch) = (self.logical_width as f32, self.logical_height as f32);
-        // The smaller ratio is what fits both axes -- the larger would crop.
-        let k = (cw / dw).min(ch / dh);
-        ((k), (cw - dw * k) / 2.0, (ch - dh * k) / 2.0)
+        krate_adapter_common::canvas_list::fit_design(
+            (self.logical_width as f32, self.logical_height as f32),
+            design,
+            self.design_inset,
+        )
+    }
+
+    /// The edges a phone covers, for fitting a design inside them (top,
+    /// right, bottom, left, logical pixels).
+    pub fn set_design_inset(&mut self, inset: (f32, f32, f32, f32)) {
+        self.design_inset = inset;
+    }
+
+    pub fn design_inset(&self) -> (f32, f32, f32, f32) {
+        self.design_inset
+    }
+
+    /// The design's scale and offset onto this canvas, for mapping a point
+    /// back into the design: None without a design size.
+    pub fn design_fit(&self) -> Option<(f32, f32, f32)> {
+        self.design.map(|_| self.design_transform())
     }
 
     /// Paint the spare space around a letterboxed design with the colour
@@ -365,10 +457,16 @@ impl CanvasSurface {
         };
         let (w, h) = (self.width as usize, self.height as usize);
         let s = self.width as f32 / self.logical_width.max(1) as f32;
-        let x0 = ((ox * s).round() as usize).min(w);
-        let y0 = ((oy * s).round() as usize).min(h);
-        let x1 = (((ox + dw * k) * s).round() as usize).clamp(x0, w);
-        let y1 = (((oy + dh * k) * s).round() as usize).clamp(y0, h);
+        // The design's edges by fill_rect's own rule (an edge covers the
+        // pixel it falls in, so the far edge rounds down): the columns and
+        // rows sampled below are ones the app's fills actually painted.
+        // Rounded to nearest, the far edge at 2073.6 sampled column 2073,
+        // which no fill reached -- still white, and copied across the whole
+        // right side of a design-size game on a wide window (K-1155).
+        let x0 = ((ox * s).floor().max(0.0) as usize).min(w);
+        let y0 = ((oy * s).floor().max(0.0) as usize).min(h);
+        let x1 = (((ox + dw * k) * s).floor().max(0.0) as usize).clamp(x0, w);
+        let y1 = (((oy + dh * k) * s).floor().max(0.0) as usize).clamp(y0, h);
         if x1 <= x0 || y1 <= y0 || (x0 == 0 && y0 == 0 && x1 == w && y1 == h) {
             return;
         }
@@ -451,7 +549,8 @@ impl CanvasSurface {
         let k = self.scale;
         self.clip = rect.map(|(x, y, w, h)| {
             let (mx, my) = self.map_point(x, y);
-            (mx * k, my * k, self.map_len(w) * k, self.map_len(h) * k)
+            // To the edge, as fill_rect is (see `to_edges`).
+            self.to_edges(mx * k, my * k, self.map_len(w) * k, self.map_len(h) * k)
         });
     }
 
@@ -518,7 +617,7 @@ impl CanvasSurface {
         let (x, y) = self.map_point(x, y);
         let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
-        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
+        let (x, y, w, h) = self.to_edges(x * k, y * k, w * k, h * k);
         let Some((x, y, w, h)) = self.clipped(x, y, w, h) else {
             return;
         };
@@ -529,6 +628,32 @@ impl CanvasSurface {
             (x, y, w, h),
             color,
         );
+    }
+
+    /// A rectangle (device pixels) that ends within a pixel of the canvas's
+    /// right or bottom edge ends at it. A canvas is a whole number of points
+    /// on a screen that is not: 411 points at 2.625 is 1078.875 pixels of a
+    /// 1079-pixel canvas, so a background filled "to the edge" left its last
+    /// column part-painted each frame, keeping blends of earlier frames -- a
+    /// speckled sliver down the right of every app that lays out from the
+    /// screen. Only without a design size: a design is letterboxed on
+    /// purpose, and its edges are not the canvas's.
+    fn to_edges(&self, x: f32, y: f32, w: f32, h: f32) -> (f32, f32, f32, f32) {
+        if self.design.is_some() {
+            return (x, y, w, h);
+        }
+        let (cw, ch) = (self.width as f32, self.height as f32);
+        let w = if x + w >= cw - 1.0 && x + w < cw {
+            cw - x
+        } else {
+            w
+        };
+        let h = if y + h >= ch - 1.0 && y + h < ch {
+            ch - y
+        } else {
+            h
+        };
+        (x, y, w, h)
     }
 
     /// A filled circle with an anti-aliased edge, alpha-blended over the
@@ -685,6 +810,59 @@ impl CanvasSurface {
         }
     }
 
+    /// The pixel rows and columns a draw may touch, trimmed to the clip so
+    /// a card mostly hidden by it costs only what shows. Same pixels as
+    /// testing `allowed` on each: a pixel is in when `cx <= px < cx + cw`.
+    fn bounds_in_clip(&self, x0: u32, x1: u32, y0: u32, y1: u32) -> (u32, u32, u32, u32) {
+        let Some((cx, cy, cw, ch)) = self.clip else {
+            return (x0, x1, y0, y1);
+        };
+        let lo = |v: f32| v.ceil().max(0.0) as u32;
+        let (cx0, cx1, cy0, cy1) = (lo(cx), lo(cx + cw), lo(cy), lo(cy + ch));
+        (
+            x0.max(cx0),
+            x1.min(cx1).max(x0.max(cx0)),
+            y0.max(cy0),
+            y1.min(cy1).max(y0.max(cy0)),
+        )
+    }
+
+    /// For one pixel row of a rounded rectangle, the columns whose coverage
+    /// is surely full: centres at least `inset` inside every edge and clear
+    /// of the corner bands, by a small margin so the answer is exactly the
+    /// one the distance would give. `None` when no column is.
+    #[allow(clippy::too_many_arguments)]
+    fn full_span(
+        py: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        rmax: f32,
+        inset: f32,
+    ) -> Option<(u32, u32)> {
+        const EPS: f32 = 1e-3;
+        let (cx, cy, hw, hh) = (x + w * 0.5, y + h * 0.5, w * 0.5, h * 0.5);
+        let qy = (py as f32 + 0.5 - cy).abs();
+        let band = rmax.max(inset);
+        let half = if qy <= hh - band - EPS {
+            hw - inset - EPS
+        } else if qy <= hh - inset - EPS {
+            hw - band - EPS
+        } else {
+            return None;
+        };
+        if half <= 0.0 {
+            return None;
+        }
+        let first = (cx - half - 0.5).ceil();
+        let last = (cx + half - 0.5).floor();
+        if last < first || last < 0.0 {
+            return None;
+        }
+        Some((first.max(0.0) as u32, last as u32))
+    }
+
     /// A filled rounded rectangle with anti-aliased corners: the card
     /// primitive. Panels, buttons, chips and list rows are all this shape in
     /// any current design, and faking it from rects and circles never
@@ -712,12 +890,55 @@ impl CanvasSurface {
         let x1 = ((x + w).ceil().max(0.0) as u32).min(bw);
         let y0 = (y.floor().max(0.0) as u32).min(bh);
         let y1 = ((y + h).ceil().max(0.0) as u32).min(bh);
+        // Only what the clip shows, and inside the shape no distance at all:
+        // a phone card is mostly middle, and every pixel of its box used to
+        // pay for a square root (Query and Trace drew theirs in pieces to
+        // stay inside a phone's frame time, 2026-11-03). The pixels are the
+        // ones the distance gives, to the bit.
+        let (x0, x1, y0, y1) = self.bounds_in_clip(x0, x1, y0, y1);
+        let rmax = Self::max_radius(w, h, radii);
         for py in y0..y1 {
-            for px in x0..x1 {
+            let span = Self::full_span(py, x, y, w, h, rmax, 0.5);
+            let mut px = x0;
+            while px < x1 {
+                if let Some((a, b)) = span.filter(|&(a, b)| px >= a && px <= b) {
+                    // The row's full middle in one fill: the clip is already
+                    // in the bounds, so every pixel here may be written.
+                    let end = (b + 1).min(x1);
+                    self.fill_span(px, end, py, color);
+                    px = end.max(a + 1);
+                    continue;
+                }
                 let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
                 self.blend_coverage(px, py, color, (0.5 - d).clamp(0.0, 1.0));
+                px += 1;
             }
         }
+    }
+
+    /// Columns `x0..x1` of row `y` at full coverage: what `blend_coverage`
+    /// with coverage 1 does to each, a row at a time.
+    fn fill_span(&mut self, x0: u32, x1: u32, y: u32, color: u32) {
+        if x1 <= x0 {
+            return;
+        }
+        fill_rect(
+            &mut self.buffer,
+            self.width,
+            self.height,
+            (x0 as f32, y as f32, (x1 - x0) as f32, 1.0),
+            color,
+        );
+    }
+
+    /// The largest corner radius as the distance uses it (clamped to half
+    /// the shorter side).
+    fn max_radius(w: f32, h: f32, radii: (f32, f32, f32, f32)) -> f32 {
+        let cap = (w * 0.5).min(h * 0.5);
+        [radii.0, radii.1, radii.2, radii.3]
+            .into_iter()
+            .map(|r| r.clamp(0.0, cap))
+            .fold(0.0, f32::max)
     }
 
     /// Stroke a rounded rectangle's edge, `width` pixels thick, anti-aliased
@@ -752,6 +973,7 @@ impl CanvasSurface {
         let x1 = ((x + w + half).ceil().max(0.0) as u32).min(bw);
         let y0 = ((y - half).floor().max(0.0) as u32).min(bh);
         let y1 = ((y + h + half).ceil().max(0.0) as u32).min(bh);
+        let (x0, x1, y0, y1) = self.bounds_in_clip(x0, x1, y0, y1);
         for py in y0..y1 {
             for px in x0..x1 {
                 let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
@@ -780,6 +1002,7 @@ impl CanvasSurface {
         blur: f32,
         color: u32,
     ) {
+        let _effects_timer = OpTimer::start(10);
         self.materialize();
         if w <= 0.0 || h <= 0.0 {
             return;
@@ -794,11 +1017,35 @@ impl CanvasSurface {
         let x1 = ((x + w + blur).ceil().max(0.0) as u32).min(bw);
         let y0 = ((y - blur).floor().max(0.0) as u32).min(bh);
         let y1 = ((y + h + blur).ceil().max(0.0) as u32).min(bh);
+        // As fill_round_rect: only what the clip shows, and where the shadow
+        // is surely full strength (a blur's width inside) no distance.
+        let (x0, x1, y0, y1) = self.bounds_in_clip(x0, x1, y0, y1);
+        let rmax = Self::max_radius(w, h, radii);
         for py in y0..y1 {
-            for px in x0..x1 {
-                let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
+            let span = Self::full_span(py, x, y, w, h, rmax, blur);
+            let mut px = x0;
+            while px < x1 {
+                if let Some((a, b)) = span.filter(|&(a, b)| px >= a && px <= b) {
+                    let end = (b + 1).min(x1);
+                    self.fill_span(px, end, py, color);
+                    px = end.max(a + 1);
+                    continue;
+                }
+                let (fx, fy) = (px as f32 + 0.5, py as f32 + 0.5);
+                // Beside a straight edge -- away from the corners' squares --
+                // the distance to a rounded rectangle is the distance to that
+                // edge: one subtraction, not the corner maths. Most of a big
+                // card's soft edge is there (K-1212).
+                let d = if (fy >= y + rmax && fy <= y + h - rmax)
+                    || (fx >= x + rmax && fx <= x + w - rmax)
+                {
+                    (x - fx).max(fx - (x + w)).max(y - fy).max(fy - (y + h))
+                } else {
+                    Self::round_rect_sdf(fx, fy, x, y, w, h, radii)
+                };
                 let t = ((blur - d) / (2.0 * blur)).clamp(0.0, 1.0);
                 self.blend_coverage(px, py, color, t * t * (3.0 - 2.0 * t));
+                px += 1;
             }
         }
     }
@@ -816,6 +1063,7 @@ impl CanvasSurface {
         angle_degrees: f32,
         stops: &[(f32, u32)],
     ) {
+        let _effects_timer = OpTimer::start(11);
         self.materialize();
         if stops.is_empty() {
             return;
@@ -927,40 +1175,59 @@ impl CanvasSurface {
     /// primitive -- a soft light falloff instead of a flat disc, which is the
     /// single biggest difference between a modern look and a flat one.
     pub fn radial_gradient(&mut self, cx: f32, cy: f32, radius: f32, inner: u32, outer: u32) {
+        let _effects_timer = OpTimer::start(12);
         self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let radius = self.map_len(radius);
         let k = self.scale;
         let (cx, cy, radius) = (cx * k, cy * k, radius * k);
-        if radius <= 0.0 {
+        if radius <= 0.0 || !radius.is_finite() || !cx.is_finite() || !cy.is_finite() {
             return;
         }
         let (w, h) = (self.width, self.height);
-        let x0 = ((cx - radius).floor().max(0.0) as u32).min(w);
-        let x1 = (((cx + radius).ceil()).max(0.0) as u32).min(w);
-        let y0 = ((cy - radius).floor().max(0.0) as u32).min(h);
-        let y1 = (((cy + radius).ceil()).max(0.0) as u32).min(h);
+        let mut x0 = ((cx - radius).floor().max(0.0) as u32).min(w);
+        let mut x1 = (((cx + radius).ceil()).max(0.0) as u32).min(w);
+        let mut y0 = ((cy - radius).floor().max(0.0) as u32).min(h);
+        let mut y1 = (((cy + radius).ceil()).max(0.0) as u32).min(h);
+        // The clip once, as a range, rather than asked of every pixel.
+        if let Some((clx, cly, clw, clh)) = self.clip {
+            x0 = x0.max(clx.ceil().max(0.0) as u32);
+            y0 = y0.max(cly.ceil().max(0.0) as u32);
+            x1 = x1.min((clx + clw).ceil().max(0.0) as u32);
+            y1 = y1.min((cly + clh).ceil().max(0.0) as u32);
+        }
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        // Across a phone screen this is millions of pixels a frame: a full-
+        // screen glow behind Krate's permission sheet took 264 ms of every
+        // frame on a Galaxy S22 Ultra (K-1212). So the falloff -- smoothstep
+        // of the distance -- is read from a table indexed by the squared
+        // distance (no square root per pixel), and the colour is mixed in
+        // fixed point. Within one level of the float version per channel.
+        let falloff = radial_falloff();
+        let inv_r2 = 1.0 / (radius * radius);
+        let steps = (falloff.len() - 1) as f32;
+        let mix = channel_mixer(inner, outer);
         for py in y0..y1 {
+            let dy = py as f32 + 0.5 - cy;
+            let dy2 = dy * dy * inv_r2;
+            if dy2 > 1.0 {
+                continue;
+            }
+            let row = (py * w) as usize;
             for px in x0..x1 {
                 let dx = px as f32 + 0.5 - cx;
-                let dy = py as f32 + 0.5 - cy;
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist > radius {
+                let s2 = dx * dx * inv_r2 + dy2;
+                if s2 > 1.0 {
                     continue;
                 }
-                // Smoothstep the interpolation so the falloff looks like light,
-                // not a linear ramp.
-                let t = dist / radius;
-                let t = t * t * (3.0 - 2.0 * t);
-                let c = lerp_color_dithered(inner, outer, t, px, py);
+                let t = falloff[(s2 * steps) as usize];
+                let c = mix(t, px, py);
                 if (c >> 24) == 0 {
                     continue;
                 }
-                let idx = (py * w + px) as usize;
-                if !self.allowed(px, py) {
-                    continue;
-                }
-                if let Some(slot) = self.buffer.get_mut(idx) {
+                if let Some(slot) = self.buffer.get_mut(row + px as usize) {
                     *slot = krate_adapter_common::painter::blend_over(c, *slot);
                 }
             }
@@ -970,6 +1237,7 @@ impl CanvasSurface {
     /// A vertical linear gradient filling a rectangle: `top` color at `y`
     /// easing to `bottom` at `y + h`. For skies, panels, backdrops.
     pub fn linear_gradient_v(&mut self, x: f32, y: f32, w: f32, h: f32, top: u32, bottom: u32) {
+        let _effects_timer = OpTimer::start(13);
         self.materialize();
         // One band per device row, each handed to `fill_rect` in the app's
         // OWN coordinates, because `fill_rect` maps and scales itself. This
@@ -977,15 +1245,36 @@ impl CanvasSurface {
         // transform K-425 found in strokes -- so in a design-size app or on
         // a dense screen the gradient landed at the wrong place and size,
         // and the screen around a letterboxed design stayed blank.
-        let rows = (self.map_len(h) * self.scale).ceil() as i32;
-        if rows <= 0 || w <= 0.0 {
+        //
+        // The bands are cut in DEVICE rows, one fill per row. They used to be
+        // cut in app units (h / rows each) and mapped one by one, and after a
+        // fractional design scale the end of one band and the start of the
+        // next could round to different rows: a row with no band at all, the
+        // cleared colour showing through, every few rows -- horizontal
+        // stripes across Ice Climber's sky at 1280x800 (K-1152).
+        if w <= 0.0 || h <= 0.0 {
             return;
         }
-        let step = h / rows as f32;
-        for i in 0..rows {
-            let t = (i as f32 + 0.5) / rows as f32;
-            let c = lerp_color(top, bottom, t.clamp(0.0, 1.0));
-            self.fill_rect(x, y + i as f32 * step, w, step, c);
+        let k = self.scale;
+        let (x0, y0) = self.map_point(x, y);
+        let (x1, y1) = self.map_point(x + w, y + h);
+        let (x0, y0, x1, y1) = (x0 * k, y0 * k, x1 * k, y1 * k);
+        // fill_rect's own rule, which the letterbox shares: an edge covers
+        // the row it falls in, so a far edge at 1051.5 leaves row 1051 to
+        // the spare space, which is painted with the design's edge colour.
+        let (first, last) = (y0.floor(), y1.floor());
+        if last <= first {
+            return;
+        }
+        let span = (y1 - y0).max(f32::EPSILON);
+        let mut row = first;
+        while row < last {
+            let t = ((row + 0.5 - y0) / span).clamp(0.0, 1.0);
+            let c = lerp_color(top, bottom, t);
+            if let Some(band) = self.clipped(x0, row, x1 - x0, 1.0) {
+                fill_rect(&mut self.buffer, self.width, self.height, band, c);
+            }
+            row += 1.0;
         }
     }
 
@@ -1181,6 +1470,7 @@ impl CanvasSurface {
     /// and alpha blending on all three systems, and there is one place where
     /// that behaviour can ever drift.
     pub fn draw_pixels(&mut self, x: f32, y: f32, w: f32, h: f32, image: &ImagePixels) {
+        let _effects_timer = OpTimer::start(14);
         self.materialize();
         let (x, y) = self.map_point(x, y);
         let (w, h) = (self.map_len(w), self.map_len(h));
@@ -1290,6 +1580,7 @@ impl CanvasSurface {
         angle: f32,
         image: &ImagePixels,
     ) {
+        let _effects_timer = OpTimer::start(15);
         self.materialize();
         let (cx, cy) = self.map_point(cx, cy);
         let (dst_w, dst_h) = (self.map_len(dst_w), self.map_len(dst_h));
@@ -1380,6 +1671,7 @@ impl CanvasSurface {
     /// every pixel opaque (nothing beneath it can show through). Otherwise
     /// it is an ordinary `draw_pixels`.
     pub fn draw_pixels_owned(&mut self, x: f32, y: f32, w: f32, h: f32, image: ImagePixels) {
+        let _effects_timer = OpTimer::start(16);
         // Same proportions as the area, too: drawn, a picture keeps its
         // shape and letterboxes inside the area, while a display stretches a
         // frame to fit -- so only a picture that already fits may skip it.
@@ -1460,6 +1752,75 @@ impl CanvasSurface {
 mod tests {
     use super::*;
 
+    /// A background filled to the canvas's edge reaches its last pixel
+    /// column and row, though the canvas is a fraction of a point wider than
+    /// the whole points it was laid out in (2.625 pixels a point).
+    #[test]
+    fn a_fill_to_the_edge_reaches_the_last_pixel() {
+        let mut surface = CanvasSurface::new_scaled(411, 20, 2.625).expect("surface");
+        let (pw, ph) = (surface.width, surface.height);
+        surface.clear(0xFF_00_00_FF);
+        surface.fill_rect(0.0, 0.0, 411.0, 20.0, 0xFF_FF_FF_FF);
+        let image = surface.to_image().expect("image");
+        let last = ((ph as usize - 1) * pw as usize + pw as usize - 1) * 4;
+        assert_eq!(
+            &image.rgba[last..last + 4],
+            &[255, 255, 255, 255],
+            "the last pixel is filled"
+        );
+        // A fill well short of the edge stays where it was put.
+        surface.fill_rect(0.0, 0.0, 200.0, 20.0, 0xFF_00_FF_00);
+        let image = surface.to_image().expect("image");
+        assert_eq!(&image.rgba[last..last + 4], &[255, 255, 255, 255]);
+    }
+
+    /// K-1212: the table-driven radial gradient paints what the per-pixel
+    /// float version painted, within a couple of levels per channel, at
+    /// any clip, and draws nothing outside its circle.
+    #[test]
+    fn the_fast_radial_gradient_matches_the_float_one() {
+        let (w, h) = (97u32, 61u32);
+        let (cx, cy, r) = (40.3f32, 22.7f32, 37.5f32);
+        let (inner, outer) = (0xB0_3A_4D_F2u32, 0x00_3A_4D_F2u32);
+        let mut surface = CanvasSurface::new(w, h).expect("surface");
+        surface.clear(0xFF_F0_F1_F4);
+        surface.radial_gradient(cx, cy, r, inner, outer);
+        let fast = surface.to_image().expect("image").rgba;
+        // The float version, as it was.
+        let mut want = vec![0xFF_F0_F1_F4u32; (w * h) as usize];
+        for py in 0..h {
+            for px in 0..w {
+                let (dx, dy) = (px as f32 + 0.5 - cx, py as f32 + 0.5 - cy);
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist > r {
+                    continue;
+                }
+                let t = dist / r;
+                let t = t * t * (3.0 - 2.0 * t);
+                let c = lerp_color_dithered(inner, outer, t, px, py);
+                if (c >> 24) == 0 {
+                    continue;
+                }
+                let slot = &mut want[(py * w + px) as usize];
+                *slot = krate_adapter_common::painter::blend_over(c, *slot);
+            }
+        }
+        let mut worst = 0i32;
+        for (i, px) in want.iter().enumerate() {
+            for (c, shift) in [16u32, 8, 0].iter().enumerate() {
+                let a = ((px >> shift) & 0xFF) as i32;
+                let b = i32::from(fast[i * 4 + c]);
+                worst = worst.max((a - b).abs());
+            }
+        }
+        assert!(worst <= 2, "worst channel difference {worst}");
+        assert_ne!(
+            fast[(22 * w + 40) as usize * 4 + 2],
+            0xF4,
+            "the fixture must paint the centre"
+        );
+    }
+
     /// A stroked rectangle is closed, and stays inside the canvas at 2x.
     ///
     /// `stroke_rect` used to map and scale its own coordinates and then
@@ -1503,6 +1864,190 @@ mod tests {
     /// canvas does not sit between bars. The spare space above takes the
     /// colour along the design's top edge and the space below its bottom
     /// edge, on the CPU raster and in the list the iPhone's GPU draws from.
+    /// The rounded fill's and the shadow's fast inside path and clip bounds
+    /// paint exactly the pixels the per-pixel distance painted, for every
+    /// shape, radius, colour, clip and scale tried.
+    #[test]
+    fn rounded_cards_and_shadows_paint_the_same_pixels_faster() {
+        // A card: x, y, w, h, corner radii, blur, colour.
+        type Card = (f32, f32, f32, f32, (f32, f32, f32, f32), f32, u32);
+        // The old loops, kept here as the oracle.
+        fn reference(s: &mut CanvasSurface, shadow: bool, r: Card) {
+            let (x, y, w, h, radii, blur, color) = r;
+            s.materialize();
+            let (x, y) = s.map_point(x, y);
+            let k = s.scale;
+            let (x, y, w, h) = (x * k, y * k, s.map_len(w) * k, s.map_len(h) * k);
+            let blur = (s.map_len(blur) * k).max(0.5);
+            let radii = if shadow {
+                radii
+            } else {
+                (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k)
+            };
+            let pad = if shadow { blur } else { 0.0 };
+            let (bw, bh) = (s.width, s.height);
+            let x0 = ((x - pad).floor().max(0.0) as u32).min(bw);
+            let x1 = ((x + w + pad).ceil().max(0.0) as u32).min(bw);
+            let y0 = ((y - pad).floor().max(0.0) as u32).min(bh);
+            let y1 = ((y + h + pad).ceil().max(0.0) as u32).min(bh);
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    let d = CanvasSurface::round_rect_sdf(
+                        px as f32 + 0.5,
+                        py as f32 + 0.5,
+                        x,
+                        y,
+                        w,
+                        h,
+                        radii,
+                    );
+                    let c = if shadow {
+                        let t = ((blur - d) / (2.0 * blur)).clamp(0.0, 1.0);
+                        t * t * (3.0 - 2.0 * t)
+                    } else {
+                        (0.5 - d).clamp(0.0, 1.0)
+                    };
+                    s.blend_coverage(px, py, color, c);
+                }
+            }
+        }
+        let shapes = [
+            (
+                10.3,
+                7.7,
+                200.0,
+                120.0,
+                (12.0, 12.0, 12.0, 12.0),
+                8.0,
+                0xFF22_3344u32,
+            ),
+            (
+                0.0,
+                0.0,
+                320.0,
+                64.0,
+                (20.0, 4.0, 0.0, 30.0),
+                3.0,
+                0x8811_AA55,
+            ),
+            (
+                -30.0,
+                50.5,
+                120.0,
+                400.0,
+                (60.0, 60.0, 60.0, 60.0),
+                0.3,
+                0xFFFF_FFFF,
+            ),
+            (
+                40.25,
+                40.75,
+                3.0,
+                2.0,
+                (1.0, 1.0, 1.0, 1.0),
+                12.0,
+                0x40FF_0000,
+            ),
+            (
+                5.0,
+                5.0,
+                300.0,
+                300.0,
+                (0.0, 0.0, 0.0, 0.0),
+                1.0,
+                0xFF00_00FF,
+            ),
+        ];
+        for scale in [1.0f32, 1.5, 2.0] {
+            for clip in [None, Some((33.3, 21.0, 150.7, 90.2))] {
+                for shadow in [false, true] {
+                    for shape in shapes {
+                        let mut fast = CanvasSurface::new_scaled(360, 480, scale).expect("surface");
+                        let mut slow = CanvasSurface::new_scaled(360, 480, scale).expect("surface");
+                        for s in [&mut fast, &mut slow] {
+                            s.clear(0xFF10_1010);
+                            s.set_clip(clip);
+                        }
+                        let (x, y, w, h, radii, blur, color) = shape;
+                        if shadow {
+                            fast.drop_shadow_round_rect(x, y, w, h, radii, blur, color);
+                        } else {
+                            fast.fill_round_rect(x, y, w, h, radii, color);
+                        }
+                        reference(&mut slow, shadow, shape);
+                        let diff = fast
+                            .buffer
+                            .iter()
+                            .zip(&slow.buffer)
+                            .filter(|(a, b)| a != b)
+                            .count();
+                        assert_eq!(
+                            diff, 0,
+                            "scale {scale} clip {clip:?} shadow {shadow} shape {shape:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// K-1152: a sky drawn with linear_gradient_v under a fractional design
+    /// scale has no row left unpainted. Cut in app units and mapped band by
+    /// band, the cleared colour showed through every few rows: white stripes
+    /// across Ice Climber at 1280x800.
+    #[test]
+    fn a_scaled_gradient_paints_every_row() {
+        // (logical size, backing scale, design): Ice Climber's own 256x240
+        // on a 1280x744 window at 2x is the case that striped.
+        for (w, h, scale, dw, dh) in [
+            (1280, 744, 2.0, 256.0, 240.0),
+            (1280, 744, 1.0, 256.0, 240.0),
+            (1280, 800, 1.0, 420.0, 760.0),
+            (1003, 701, 1.5, 333.0, 517.0),
+        ] {
+            let mut surface = CanvasSurface::new_scaled(w, h, scale).expect("surface");
+            surface.clear(0xFFFF_FFFF);
+            surface.set_design_size(dw, dh);
+            surface.linear_gradient_v(0.0, 0.0, dw, dh, 0xFF10_2040, 0xFF20_4080);
+            let image = surface.to_image().expect("image");
+            let x = image.width / 2;
+            let white: Vec<u32> = (0..image.height)
+                .filter(|&y| {
+                    let i = ((y * image.width + x) * 4) as usize;
+                    image.rgba[i] == 255 && image.rgba[i + 1] == 255 && image.rgba[i + 2] == 255
+                })
+                .collect();
+            assert!(
+                white.is_empty(),
+                "{w}x{h} design {dw}x{dh}: unpainted rows {white:?}"
+            );
+        }
+    }
+
+    /// K-1155: a 256x240 design on a 1280x744 window at 2x fills its spare
+    /// space with the colour of its own edges on both sides, never with a
+    /// column no fill reached.
+    #[test]
+    fn both_sides_of_a_wide_letterbox_take_the_design_edge() {
+        let mut surface = CanvasSurface::new_scaled(1280, 744, 2.0).expect("surface");
+        surface.clear(0xFFFF_FFFF);
+        surface.set_design_size(256.0, 240.0);
+        surface.fill_rect(0.0, 0.0, 256.0, 240.0, 0xFF10_2040);
+        let image = surface.to_image().expect("image");
+        let px = |x: u32, y: u32| {
+            let i = ((y * image.width + x) * 4) as usize;
+            [image.rgba[i], image.rgba[i + 1], image.rgba[i + 2]]
+        };
+        for y in [10, image.height / 2, image.height - 10] {
+            assert_eq!(px(5, y), [0x10, 0x20, 0x40], "left of the design, row {y}");
+            assert_eq!(
+                px(image.width - 5, y),
+                [0x10, 0x20, 0x40],
+                "right of the design, row {y}"
+            );
+        }
+    }
+
     #[test]
     fn the_spare_space_around_a_design_takes_its_edge_colours() {
         let (top, bottom) = (0xFF13_1620u32, 0xFF0B_0D14u32);
@@ -1527,6 +2072,7 @@ mod tests {
             logical_width: 390,
             logical_height: 844,
             design: Some((320.0, 470.0)),
+            design_inset: (0.0, 0.0, 0.0, 0.0),
             ops: vec![
                 krate_adapter_common::canvas_list::CanvasOp::LinearGradient {
                     rect: (0.0, 0.0, 320.0, 470.0),
@@ -1546,10 +2092,13 @@ mod tests {
         for (canvas, design) in [((390, 844), (360.0, 560.0)), ((844, 390), (360.0, 560.0))] {
             let mut surface = CanvasSurface::new(canvas.0, canvas.1).expect("surface");
             surface.set_design_size(design.0, design.1);
+            // With covered edges too (K-1210): both paths fit inside them.
+            surface.set_design_inset((47.0, 0.0, 34.0, 12.0));
             let list = krate_adapter_common::canvas_list::CanvasList {
                 logical_width: canvas.0,
                 logical_height: canvas.1,
                 design: surface.design_size(),
+                design_inset: surface.design_inset(),
                 ops: Vec::new(),
             };
             assert_eq!(

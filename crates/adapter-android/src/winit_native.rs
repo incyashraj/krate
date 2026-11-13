@@ -29,6 +29,140 @@ use krate_adapter_common::ui::{
 /// Native events paired with the Krate window they belong to.
 pub type CollectedNativeEvents = Vec<(WindowId, WinitWindowNativeEvent)>;
 
+/// Whether the app about to open lays itself out for any screen (IC-912).
+static ADAPTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Say, before the app's first window, whether it adapts to any screen.
+pub fn set_adapts(adapts: bool) {
+    ADAPTS.store(adapts, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The orientation Android is asked to hold for a window the app asked for
+/// at `width` x `height`: an app that lays itself out for any screen turns
+/// with the phone (`-1`, SCREEN_ORIENTATION_UNSPECIFIED); a fixed design
+/// wider than tall holds landscape either way up (`6`,
+/// SCREEN_ORIENTATION_SENSOR_LANDSCAPE), so a 16:10 game is not shown in a
+/// strip across an upright phone; anything else is the phone's choice.
+///
+/// Every app was held to the shape of the window it asked for: a notes app
+/// that asked for 1024x768 and reads krate:ui/screen could never be used
+/// upright, though it lays out for a phone held either way.
+pub fn orientation_for(width: u32, height: u32, adapts: bool) -> i32 {
+    if !adapts && width > height {
+        6
+    } else {
+        -1
+    }
+}
+
+/// The picture of a placement that spans the window's width and draws
+/// nothing else -- no label, box, clip or selection -- so the picture alone
+/// is the frame, and the row it starts on. It need not start at the top: a
+/// widget-tree app is laid out below the status bar, and its canvas there
+/// was repainted through the vector painter every frame (9.5 ms of a 20 ms
+/// frame for Krate's home on a Galaxy S22 Ultra). A canvas laid out in whole
+/// points is a pixel or few narrower than the screen (411 points of 411.43
+/// is 1079 pixels of 1080); `copy_opaque` fills what it does not cover with
+/// its own edge rows and column.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn full_window_pixels(
+    placement: &WidgetPlacement,
+    width: u32,
+    height: u32,
+    scale: f32,
+) -> Option<(
+    &std::sync::Arc<krate_adapter_common::ui::ImagePixels>,
+    usize,
+)> {
+    let pixels = placement.pixels.as_ref()?;
+    let slack = scale.ceil().max(1.0) as u32;
+    let near = |have: u32, want: u32| have > 0 && have <= want && want - have <= slack;
+    let top = (placement.y * scale).round();
+    let fits = near(pixels.width, width)
+        && placement.x == 0.0
+        && placement.y >= 0.0
+        && top + pixels.height as f32 <= height as f32 + slack as f32
+        && near((placement.width * scale).floor() as u32, width)
+        && placement.clip.is_none()
+        && placement.r#box.is_none()
+        && placement.label.is_none()
+        && placement.selection.is_none()
+        && pixels.rgba.len() == pixels.width as usize * pixels.height as usize * 4;
+    fits.then_some((pixels, top as usize))
+}
+
+/// Write a straight-RGBA picture `width` pixels wide into a screen buffer
+/// `out_width` wide (0x00RRGGBB), its first row at row `top`, in one pass:
+/// the rows above take the picture's first row, the rows below its last,
+/// and the columns past it its last column -- the app's own edge colours,
+/// under the status bar too. False, leaving the rest for the full painter,
+/// at the first pixel that is not opaque: it would need blending.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn copy_opaque(
+    rgba: &[u8],
+    width: usize,
+    out: &mut [u32],
+    out_width: usize,
+    top: usize,
+) -> bool {
+    if width == 0 || out_width < width || !rgba.len().is_multiple_of(width * 4) {
+        return false;
+    }
+    let rows = rgba.len() / (width * 4);
+    let out_rows = out.len() / out_width;
+    if rows == 0 || out.len() != out_rows * out_width || top >= out_rows {
+        return false;
+    }
+    let shown = rows.min(out_rows - top);
+    let (above, rest) = out.split_at_mut(top * out_width);
+    let (body, below) = rest.split_at_mut(shown * out_width);
+    for (src, dst) in rgba
+        .chunks_exact(width * 4)
+        .zip(body.chunks_exact_mut(out_width))
+    {
+        for (px, slot) in src.chunks_exact(4).zip(dst.iter_mut()) {
+            if px[3] != 255 {
+                return false;
+            }
+            *slot = (u32::from(px[0]) << 16) | (u32::from(px[1]) << 8) | u32::from(px[2]);
+        }
+        let last = dst[width - 1];
+        dst[width..].fill(last);
+    }
+    let first_row = &body[..out_width];
+    for row in above.chunks_exact_mut(out_width) {
+        row.copy_from_slice(first_row);
+    }
+    let last_row = &body[(shown - 1) * out_width..];
+    for row in below.chunks_exact_mut(out_width) {
+        row.copy_from_slice(last_row);
+    }
+    true
+}
+
+/// Whether rows `y0..y1` of a screen buffer (0x00RRGGBB, `width` wide) are
+/// light enough that the bar over them needs dark icons. Sampled sparsely:
+/// it runs every frame.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn light_band(buffer: &[u32], width: usize, y0: usize, y1: usize) -> bool {
+    let (mut sum, mut n) = (0.0f32, 0u32);
+    let mut y = y0;
+    while y < y1 {
+        let row = y * width;
+        let mut x = width / 64;
+        while x < width {
+            if let Some(px) = buffer.get(row + x) {
+                let (r, g, b) = ((px >> 16) & 0xFF, (px >> 8) & 0xFF, px & 0xFF);
+                sum += 0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32;
+                n += 1;
+            }
+            x += (width / 32).max(1);
+        }
+        y += ((y1 - y0) / 6).max(1);
+    }
+    n > 0 && sum / n as f32 > 0.6 * 255.0
+}
+
 #[cfg(target_os = "android")]
 mod real {
     use super::*;
@@ -58,9 +192,7 @@ mod real {
     /// window wider than tall, and give the choice back to the phone for any
     /// other. A game drawn 16:10 was otherwise shown in a strip across an
     /// upright phone whenever the person happened to hold it that way.
-    fn request_orientation(landscape: bool) {
-        // ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE / _UNSPECIFIED.
-        let orientation: i32 = if landscape { 6 } else { -1 };
+    fn request_orientation(orientation: i32) {
         ANDROID_APP.with(|slot| {
             let Some(app) = slot.borrow().clone() else {
                 return;
@@ -158,15 +290,44 @@ mod real {
         *DESCRIBED.lock().expect("described lock") = elements.to_vec();
     }
 
+    /// The canvases a finger presses rather than scrolls, by Krate window
+    /// and widget: games drawn at a design size (K-1202).
+    static PRESSING: std::sync::Mutex<
+        std::collections::BTreeSet<(WindowId, krate_adapter_common::ui::WidgetId)>,
+    > = std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+    /// Note whether a finger on this canvas presses it (the runtime says).
+    pub fn set_canvas_presses(
+        window: WindowId,
+        widget: krate_adapter_common::ui::WidgetId,
+        presses: bool,
+    ) {
+        let mut pressing = PRESSING.lock().expect("pressing lock");
+        if presses {
+            pressing.insert((window, widget));
+        } else {
+            pressing.remove(&(window, widget));
+        }
+    }
+
     /// Whether a finger landing at (x, y) is on something that drags: a
-    /// slider Krate draws, or an element the app described as adjustable,
-    /// with 8 points to spare above and below -- the iPhone's rule.
-    fn drags_at(placements: &[WidgetPlacement], x: f32, y: f32) -> bool {
+    /// slider Krate draws, a game's canvas, or an element the app described
+    /// as adjustable, with 8 points to spare above and below -- the
+    /// iPhone's rule. A canvas that lays itself out for the screen is a
+    /// page, and scrolls.
+    fn drags_at(window: WindowId, placements: &[WidgetPlacement], x: f32, y: f32) -> bool {
         let inside =
             |px: f32, py: f32, w: f32, h: f32| x >= px && x < px + w && y >= py && y < py + h;
+        let pressing = PRESSING.lock().expect("pressing lock");
         placements.iter().any(|p| {
-            p.kind == krate_adapter_common::ui::WidgetKind::Slider
-                && inside(p.x, p.y, p.width, p.height)
+            let drags = match p.kind {
+                krate_adapter_common::ui::WidgetKind::Slider => true,
+                krate_adapter_common::ui::WidgetKind::Canvas => {
+                    pressing.contains(&(window, p.widget))
+                }
+                _ => false,
+            };
+            drags && inside(p.x, p.y, p.width, p.height)
         }) || DESCRIBED.lock().expect("described lock").iter().any(|e| {
             e.role == krate_adapter_common::ui::AccessRole::Adjustable
                 && inside(e.x, e.y - 8.0, e.width, e.height + 16.0)
@@ -180,6 +341,12 @@ mod real {
         /// Every finger on each window, by Krate window id then finger id,
         /// for apps that ask for all of them (krate:ui/touch).
         fingers: BTreeMap<u64, krate_adapter_common::ui::FingerTracker>,
+        /// Where each window's pointer is and whether it is held, for apps
+        /// that ask rather than wait for events (krate:ui/pointer): a game
+        /// steering by `button-held` and `position`. Fed from the presses
+        /// as they leave for the runtime; never fed, it said "not held"
+        /// forever, and no game could be steered by finger.
+        pointers: BTreeMap<u64, krate_adapter_common::ui::PointerTracker>,
         windows: BTreeMap<NativeWindowId, TrackedWindow>,
         events: CollectedNativeEvents,
         cursor: BTreeMap<NativeWindowId, (f32, f32)>,
@@ -262,7 +429,11 @@ mod real {
     impl PumpApp {
         fn drain_pending_creates(&mut self, event_loop: &ActiveEventLoop) {
             for pending in self.pending_creates.drain(..) {
-                request_orientation(pending.size.width > pending.size.height);
+                request_orientation(orientation_for(
+                    pending.size.width,
+                    pending.size.height,
+                    ADAPTS.load(std::sync::atomic::Ordering::Relaxed),
+                ));
                 let attributes = WindowAttributes::default()
                     .with_title(pending.title)
                     // Physical, not logical -- see the same note in the Windows
@@ -373,6 +544,9 @@ mod real {
                     if !focused {
                         // Lifted fingers never arrive once focus is gone.
                         self.fingers.remove(&krate.get());
+                        if let Some(pointer) = self.pointers.get_mut(&krate.get()) {
+                            pointer.focus_lost();
+                        }
                     }
                     Some(WinitWindowNativeEvent::Focused(focused))
                 }
@@ -438,7 +612,7 @@ mod real {
                                     && self
                                         .windows
                                         .get(&native)
-                                        .is_some_and(|t| drags_at(&t.placements, x, y));
+                                        .is_some_and(|t| drags_at(krate, &t.placements, x, y));
                                 self.touch = Some(TouchGesture {
                                     finger: touch.id,
                                     native,
@@ -558,6 +732,15 @@ mod real {
                                         pressed: false,
                                     });
                                     if let Some(tracked) = self.windows.get_mut(&native) {
+                                        // A tap on a text field brings the
+                                        // keyboard up, the same as on any
+                                        // phone -- a tap on the field it is
+                                        // already in too (K-1024).
+                                        if let Some(many_lines) =
+                                            crate::typing::field_at(&tracked.placements, x, y)
+                                        {
+                                            crate::typing::set(krate, true, many_lines);
+                                        }
                                         let hovered =
                                             krate_adapter_common::painter::topmost_interactive_at(
                                                 &tracked.placements,
@@ -734,6 +917,36 @@ mod real {
         if surface.resize(width, height).is_err() {
             return;
         }
+        // A window that is one opaque canvas the size of the screen -- a
+        // game, any app that draws itself -- needs no painting: its pixels
+        // go to the screen buffer in one pass. Repainting it through the
+        // vector painter as a full-screen picture, then copying that, cost
+        // 17 ms of a 26 ms frame on a Galaxy S22 Ultra, holding Nova at 38
+        // frames a second (K-1211).
+        if let [only] = tracked.placements.as_slice() {
+            if let Some((pixels, top)) = super::full_window_pixels(
+                only,
+                width.get(),
+                height.get(),
+                tracked.window.scale_factor() as f32,
+            ) {
+                let Ok(mut buffer) = surface.buffer_mut() else {
+                    return;
+                };
+                if super::copy_opaque(
+                    &pixels.rgba,
+                    pixels.width as usize,
+                    &mut buffer,
+                    width.get() as usize,
+                    top,
+                ) {
+                    colour_bars(&buffer, width.get() as usize, height.get() as usize);
+                    let _ = buffer.present();
+                    tracked.dirty = false;
+                    return;
+                }
+            }
+        }
         let pixel_count = width.get() as usize * height.get() as usize;
         tracked.staging.clear();
         tracked.staging.resize(pixel_count, 0);
@@ -752,8 +965,26 @@ mod real {
             return;
         };
         buffer.copy_from_slice(&tracked.staging);
+        colour_bars(&buffer, width.get() as usize, height.get() as usize);
         let _ = buffer.present();
         tracked.dirty = false;
+    }
+
+    /// Dark bar icons over a light top or bottom, light over dark: what the
+    /// app drew under the status bar and the navigation bar decides, each
+    /// frame, and Android is told only when it changes.
+    fn colour_bars(buffer: &[u32], width: usize, height: usize) {
+        static SAID: std::sync::Mutex<Option<(bool, bool)>> = std::sync::Mutex::new(None);
+        let (top, _, bottom, _) = crate::phone::covered_edges();
+        let band = |covered: f32| (covered.max(24.0) as usize).min(height / 4).max(1);
+        let light_top = super::light_band(buffer, width, 0, band(top));
+        let light_bottom =
+            super::light_band(buffer, width, height.saturating_sub(band(bottom)), height);
+        let mut said = SAID.lock().expect("bars lock");
+        if *said != Some((light_top, light_bottom)) {
+            *said = Some((light_top, light_bottom));
+            crate::phone::light_bars(light_top, light_bottom);
+        }
     }
 
     /// Store drawn-widget placements for a window and repaint it.
@@ -871,7 +1102,15 @@ mod real {
         }
         // Close (or Restart) in the menu: the app hears it as a desktop
         // close button, and Krate closes it anyway if it does not answer.
-        if crate::menu::chrome_on() && crate::menu::take_close() {
+        // Krate's own screen closes the same way for a link or file tapped
+        // while it shows, so the player can open that instead; a running
+        // app is never closed for one.
+        let close = if crate::menu::chrome_on() {
+            crate::menu::take_close()
+        } else {
+            crate::menu::take_opened_meanwhile()
+        };
+        if close {
             for tracked in app.windows.values() {
                 app.events
                     .push((tracked.krate, WinitWindowNativeEvent::CloseRequested));
@@ -1079,7 +1318,45 @@ mod real {
         WINIT_HOST.with(|slot| {
             slot.borrow_mut()
                 .as_mut()
-                .map(|host| std::mem::take(&mut host.app.pointer_samples))
+                .map(|host| {
+                    let samples = std::mem::take(&mut host.app.pointer_samples);
+                    for sample in &samples {
+                        let pointer = host.app.pointers.entry(sample.window.get()).or_default();
+                        pointer.moved_to(sample.x, sample.y);
+                        pointer.button(
+                            krate_adapter_common::ui::PointerButton::Primary,
+                            sample.pressed,
+                        );
+                    }
+                    samples
+                })
+                .unwrap_or_default()
+        })
+    }
+
+    /// A window's pointer as the presses so far leave it (krate:ui/pointer).
+    pub fn pointer_state(id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        if !host_initialized() {
+            return Default::default();
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .and_then(|host| host.app.pointers.get(&id.get()).copied())
+                .unwrap_or_default()
+        })
+    }
+
+    /// Hand over a window's pointer motion since the last call.
+    pub fn take_pointer_motion(id: WindowId) -> (f32, f32) {
+        if !host_initialized() {
+            return (0.0, 0.0);
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow_mut()
+                .as_mut()
+                .and_then(|host| host.app.pointers.get_mut(&id.get()))
+                .map(|pointer| pointer.take_motion())
                 .unwrap_or_default()
         })
     }
@@ -1195,6 +1472,13 @@ mod stub {
     /// No touch screen to drag on off Android.
     pub fn set_described(_elements: &[krate_adapter_common::ui::AccessElement]) {}
 
+    pub fn set_canvas_presses(
+        _window: WindowId,
+        _widget: krate_adapter_common::ui::WidgetId,
+        _presses: bool,
+    ) {
+    }
+
     /// Winit windows are only available in Linux builds.
     pub fn show_native_window(_krate: WindowId) -> Result<bool, UiAdapterError> {
         unsupported()
@@ -1243,6 +1527,14 @@ mod stub {
         Vec::new()
     }
 
+    pub fn pointer_state(_id: WindowId) -> krate_adapter_common::ui::PointerTracker {
+        Default::default()
+    }
+
+    pub fn take_pointer_motion(_id: WindowId) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
     /// Winit windows are only available in Android builds.
     pub fn touches(_id: WindowId) -> Vec<(u64, f32, f32)> {
         Vec::new()
@@ -1256,5 +1548,108 @@ mod stub {
     /// Winit windows are only available in Linux builds.
     pub fn drain_wheel_samples() -> Vec<RawWheelSample> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod bar_tests {
+    use super::light_band;
+
+    #[test]
+    fn a_light_top_wants_dark_icons_and_a_dark_one_light() {
+        let (w, h) = (90usize, 40usize);
+        let mut buf = vec![0x00F5_F5F7u32; w * h];
+        assert!(light_band(&buf, w, 0, 10), "Krate's own light home");
+        for px in &mut buf[..w * 10] {
+            *px = 0x0008_080A;
+        }
+        assert!(!light_band(&buf, w, 0, 10), "a dark game");
+        assert!(light_band(&buf, w, 30, 40), "the bottom is still light");
+    }
+}
+
+#[cfg(test)]
+mod full_window_tests {
+    use super::*;
+    use krate_adapter_common::ui::{ImagePixels, WidgetId, WidgetKind};
+
+    fn canvas(w: u32, h: u32, scale: f32, rgba: Vec<u8>) -> WidgetPlacement {
+        WidgetPlacement {
+            widget: WidgetId::new(2).expect("id"),
+            kind: WidgetKind::Canvas,
+            width: w as f32 / scale,
+            height: h as f32 / scale,
+            pixels: Some(std::sync::Arc::new(ImagePixels {
+                width: w,
+                height: h,
+                rgba,
+            })),
+            ..Default::default()
+        }
+    }
+
+    /// K-1211: a full-window opaque canvas is copied straight to the screen
+    /// buffer, byte for byte as 0x00RRGGBB; anything else is painted.
+    #[test]
+    fn a_full_window_canvas_goes_straight_to_the_screen() {
+        let rgba: Vec<u8> = (0..4 * 6)
+            .map(|i| if i % 4 == 3 { 255 } else { i as u8 })
+            .collect();
+        let p = canvas(3, 2, 1.5, rgba.clone());
+        let (pixels, top) = full_window_pixels(&p, 3, 2, 1.5).expect("covers the window");
+        assert_eq!(top, 0);
+        let mut out = vec![0u32; 6];
+        assert!(copy_opaque(&pixels.rgba, 3, &mut out, 3, 0));
+        assert_eq!(out[1], (4 << 16) | (5 << 8) | 6);
+        // A pixel short each way (whole points at a fractional scale).
+        assert!(
+            full_window_pixels(&p, 4, 3, 1.5).is_some(),
+            "one pixel short counts"
+        );
+        let mut wide = vec![0u32; 12];
+        assert!(copy_opaque(&pixels.rgba, 3, &mut wide, 4, 0));
+        assert_eq!(wide[3], wide[2], "the last column is repeated");
+        assert_eq!(wide[8..12], wide[4..8], "the last row is repeated");
+        assert!(
+            full_window_pixels(&p, 9, 2, 1.5).is_none(),
+            "far narrower is painted"
+        );
+        // Below the status bar: the rows above take the canvas's first row.
+        let mut below_bar = p.clone();
+        below_bar.y = 2.0;
+        let (_, top) = full_window_pixels(&below_bar, 3, 5, 1.5).expect("a canvas under the bar");
+        assert_eq!(top, 3);
+        let mut tall = vec![0u32; 15];
+        assert!(copy_opaque(&pixels.rgba, 3, &mut tall, 3, top));
+        assert_eq!(tall[0..3], tall[9..12], "above the canvas is its first row");
+        assert_eq!(tall[9], (1 << 8) | 2, "red 0, green 1, blue 2");
+        let mut labelled = p.clone();
+        labelled.label = Some("x".into());
+        assert!(
+            full_window_pixels(&labelled, 3, 2, 1.5).is_none(),
+            "a label is painted"
+        );
+        let mut see_through = rgba;
+        see_through[7] = 128;
+        assert!(
+            !copy_opaque(&see_through, 3, &mut out, 3, 0),
+            "a clear pixel needs blending"
+        );
+    }
+}
+
+#[cfg(test)]
+mod orientation_tests {
+    use super::orientation_for;
+
+    #[test]
+    fn an_app_that_adapts_turns_with_the_phone_and_a_wide_design_holds_landscape() {
+        // A fixed 16:10 game holds landscape.
+        assert_eq!(orientation_for(1280, 800, false), 6);
+        // The same window from an app that reads krate:ui/screen turns.
+        assert_eq!(orientation_for(1280, 800, true), -1);
+        // Taller than wide, or square: the phone decides.
+        assert_eq!(orientation_for(390, 844, false), -1);
+        assert_eq!(orientation_for(600, 600, false), -1);
     }
 }

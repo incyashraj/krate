@@ -202,8 +202,13 @@ key = \"Enter\"\n\
 expect_text = \"milk\"   # a label containing this must now be on screen\n\
 ```\n\
 \n\
-Steps: `click`, `type`, `key`, `wait_ms`, `expect_text`, `expect_no_text`,\n\
-one per step. A task with no expectation is refused: completing it has to\n\
+Steps: `click`, `type`, `key`, `paste`, `pick`, `wait_ms`, `expect_text`,\n\
+`expect_no_text`, one per step; `key = \"Shift+ArrowLeft\"` or\n\
+`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord,\n\
+`paste = \"text\"` pastes it as a person would, and `pick = \"notes.txt\"`\n\
+(before the click that opens a picker) answers the app's next file or\n\
+folder picker with an empty file or folder of that name, made for the\n\
+check. A task with no expectation is refused: completing it has to\n\
 mean something. In an app drawn on a canvas, `click` and `expect_text`\n\
 find what the app tells the screen reader (`krate::layout::Said`), at the\n\
 place it said. `krate run <app> --task steps.toml` does the steps alone\n\
@@ -233,6 +238,8 @@ capability. Believe this table over your instinct:
   runs with no fs grant at all. A `store.kv` value holds up to 1 MiB and
   `set` returns an error past it -- check the result and say so on screen.
   A document the person writes goes in a file (`ui.dialog:file-save`).
+  What an app keeps in `store.kv` or its own files follows a signed-in
+  person to every device they use, end-to-end encrypted, with no code.
 - **Working on the person's own files IS real.** Declare
   `ui.dialog:open-folder`; their pick is the grant.
 
@@ -279,6 +286,24 @@ once, then `krate::fs::watch::changes(w)?` from the event loop: a list of \
 with `path` ready to pass to `fs::read`. It looks at most four times a \
 second (asking sooner returns an empty list), so calling it every frame is \
 fine. Allowed wherever listing the folder is; no extra capability.\n\n\
+To run a program on the computer -- an editor building with `cargo`, \
+formatting with `rustfmt`, talking to `rust-analyzer` -- declare each one by \
+its bare name, `process.run:cargo` (no path, no `*`), and `process.terminal` \
+for a terminal; the person is asked about each, in words that say a program \
+can do what they can. `let p = krate::process::Process::start(\"cargo\", \
+&[\"build\", \"--message-format=json\"], \"picked/<token>\")?` runs it in the \
+picked folder (or `\".\"`, the app's own); then from the event loop \
+`p.read_stdout(65536)?` and `p.read_stderr(65536)?` (never wait: empty when \
+nothing new, `ended` when done) and `p.wait(0)?` (`Some(status)` once it \
+ended). `p.write(bytes)` feeds stdin (a language server's requests). \
+`Process::terminal(\"picked/<token>\", cols, rows)` opens the person's shell: \
+type with `write`, draw what `read_stdout` returns (escape sequences \
+included), `resize` when the panel changes. Dropping a `Process` kills it, \
+and every one ends with the app. A command-line app may call \
+`krate::process::run(\"cargo\", &[\"--version\"], \".\")?` and get the whole \
+output. On a refusal show `krate::process::words(&err)`: \"the app did not ask \
+to run X\", \"X is not installed on this computer\". A computer only: a \
+browser tab and a phone refuse every call in words.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \
@@ -454,10 +479,30 @@ A window wider than tall plays in landscape on a phone. A text field \
 the app draws itself (a name box in a game, a canvas editor) calls \
 `krate::ui::text_entry::start(win)` when it takes focus and `stop(win)` \
 when it loses it: a phone shows its keyboard, and the typing arrives as \
-the usual `TextInput` and key events. A game that reads keys and never \
-reads touch gets an on-screen pad on a phone by itself, built from the \
-keys it asks `key_held` about (Space or Enter is the big button): do not \
-draw one too. On a phone the game should also tap back: \
+the usual `TextInput` and key events. Every Krate host (Mac, Windows, \
+Linux, a phone, a browser tab) sends a typed letter as BOTH a key event \
+and a `TextInput`: take characters only from `TextInput`, and use key \
+events for Backspace, Enter, Tab and the arrows. Taking letters from both \
+types every letter twice (a generated co-op game's room code did). Keep \
+such a field in a \
+`krate::layout::Field`: `insert` the `TextInput` text, pass keys to \
+`key_with(&k.key, k.modifiers.shift, k.modifiers.meta || \
+k.modifiers.control)`, draw `selection()` behind the text. It selects with \
+Shift and Cmd/Ctrl+A, copies and cuts with Cmd/Ctrl+C and X, and the \
+person's own Cmd+V or Ctrl+V arrives as `TextInput`, all with no clipboard \
+permission: never ask for `ui.clipboard:read` just to paste or \
+`ui.clipboard:write` just to copy. A game takes touch itself: most \
+people open a sent link on a phone, where there are no arrow keys, and a \
+browser tab shows no pad. The simplest that always works: each frame, \
+`if pointer::button_held(PointerButton::Primary) { pointer::position(win) }` \
+is where the finger is (the mouse on a computer), in the game's own \
+coordinates when it set a design size -- steer toward a point a little \
+above it so the finger never hides the player, act while it is held \
+(fire, thrust, jump), and let a press event (`Event::Pointer` with \
+`pressed`) start again after game over. `apps/krate-nova` does exactly \
+this beside its keys. (Krate's own phone app also lays a pad over a game \
+that never reads the pointer or touch; do not rely on it.) On a phone the \
+game should also tap back: \
 `krate::ui::haptics::play(Feel::Light)` on a button press, `Selection` as \
 a choice changes, `Success`/`Warning`/`Error` for outcomes, and \
 `impact(strength)` (0 to 1) for a hit or a landing. No capability; a \
@@ -475,7 +520,8 @@ is wanted -- the first call answers `Err(Finding)` while the phone looks \
 and asks the person; keep calling (twice a second is plenty) and draw \
 \"Finding where you are\" meanwhile. `Err(NotAllowed)` means they said no: \
 say so plainly and keep the rest of the app working; `Err(Unavailable)` \
-is a computer or location switched off. A position carries `accuracy` in \
+is location switched off, or a computer with no way to tell (Linux for \
+now) -- a Mac and a Windows PC ask and answer as a phone does. A position carries `accuracy` in \
 metres -- show it, never pretend a fix is exact. \
 Bluetooth LE devices (a heart-rate strap, a sensor, a light): declare \
 `bluetooth.connect`, then `krate::ui::bluetooth::choose(win, \"180D\", \
@@ -485,23 +531,29 @@ answers the one they pick (`None` if they cancel). The app never scans. \
 Then `read`, `write` and `subscribe` by service and characteristic UUID, \
 and drain `notifications(device)` each frame; on `Err(Disconnected)` or \
 `connected()` false, offer to choose again. `Err(NotFound)` from choose \
-means nothing nearby offers the service: say so. A Share button: \
+means nothing nearby offers the service: say so. A Mac shows the same \
+list; Windows and Linux answer `available()` false for now, so keep a way \
+to type the reading in there. A Share button: \
 `krate::ui::share::share(win, Some(text), Some(url), &[SharedFile { name, \
 data }])` opens the system's share sheet (Messages, Mail, AirDrop, Notes) \
 and answers `Ok(true)` when sent, `Ok(false)` when cancelled; no \
-capability. A computer answers `Err(Unavailable)` for now: offer \
-save-file or Copy there instead. Photos: `krate::ui::photos::pick(win, \
+capability. It works on every computer too: a Mac opens its share \
+picker, and Windows and Linux, which have none, save the files where the \
+person picks and copy the text on their OK -- the same answers. Photos: `krate::ui::photos::pick(win, \
 3)` opens the system's photo picker and returns the picks as chosen \
-files (read them with `fs::files::open_chosen(&f.token, Read)`); empty \
+files (read them with `krate::fs::read_chosen(&f.token)`); empty \
 means cancelled, no capability. To add a picture: declare `photos.add` \
 and call `photos::save(win, &png_or_jpeg_bytes)`. On a computer pick \
-opens the file dialog for pictures. A reminder that comes with the app \
+opens the file dialog for pictures, and save adds to Photos on a Mac and \
+to the Pictures folder on Windows and Linux. A reminder that comes with the app \
 closed (a timer, a habit, a meeting): with `ui.notify`, \
 `krate::ui::reminders::schedule(\"tea\", \"Tea is ready\", \"Four minutes \
 are up.\", 240, false)` -- the same id replaces it, `true` repeats it \
 daily at that time, `cancel(id)` takes it back, `pending()` lists this \
-app's own; tapping it opens the app. A computer answers \
-`Err(Unavailable)` for now: keep an in-app timer there. Signing the \
+app's own; tapping it opens the app. A Mac and Windows deliver them \
+too (Windows sets a daily one a year ahead: schedule it again each time \
+the app opens); Linux answers `Err(Unavailable)`: keep an in-app timer \
+there. Signing the \
 person in to a service (GitHub, Google, your own backend): never draw a \
 password field. `let (verifier, challenge) = krate::ui::sign_in::pkce();` \
 then `sign_in::start(win, &authorize_url, \"krate-signin\")` with the service's \
@@ -524,7 +576,8 @@ refused and said in `problem`), keeps nothing between openings and \
 cannot reach the app. Something private (a vault, a diary, a \
 banking screen): show it only after `krate::ui::unlock::check(\"Unlock your \
 vault\")` answers `UnlockAnswer::Yes` -- Face ID or the passcode on an \
-iPhone, Touch ID or the password on a Mac, in the system's own sheet. \
+iPhone, Touch ID or the password on a Mac, Windows Hello on a PC, in \
+the system's own sheet. \
 `No` keeps it locked; `Unavailable(why)` means this device cannot check: \
 say so rather than opening it. Keep what it guards in `store.secret`, and \
 lock again when the app goes to the background. No capability. A picture that does not change \
@@ -608,8 +661,9 @@ never moves -- so they are listed here in full rather than guessed at:\n\n\
 - **Function keys**: `F1` to `F12`.\n\n\
 A run-and-gun game therefore reads: \
 `key_held(\"ArrowLeft\")`, `key_held(\"Space\")` to jump, \
-`key_held(\"z\")` to shoot. `apps/krate-nova` and `apps/krate-bounce` \
-are shipped examples doing exactly this.\n\n\
+`key_held(\"z\")` to shoot, and the finger as above for a phone. \
+`apps/krate-nova` and `apps/krate-bounce` are shipped examples of the \
+keys; Nova takes the finger too.\n\n\
 ## The clock is real: dates, daily resets, elapsed time\n\n\
 `time.clock` gives wall-clock time (milliseconds since the Unix epoch) and \
 it IS granted -- do not talk yourself out of it. \"Show today's date\", \
@@ -764,14 +818,20 @@ pub(crate) fn capability_catalog_section() -> String {
          name outside this list is refused when the app is packed. The ones marked\n\
          *default* are granted to every app and must NOT be declared -- declaring one\n\
          is an error. Scoped names (`<path-glob>`, `<host>:<port>`) must be narrowed\n\
-         to exactly what the app needs, e.g. `fs.read:notes/**`.\n\n",
+         to exactly what the app needs, e.g. `fs.read:notes/**`.\n\n\
+         People open a shared app from a link in any browser, phones included.\n\
+         *Opens from a link?* says which capabilities work there; the rest work in\n\
+         Krate on Mac, Windows and Linux, and from a link the app opens and says so\n\
+         when it reaches one. When a request does not need a computer-only\n\
+         capability, do not use one: an app that fully opens from a link is the one\n\
+         people can send. check-app ends with a note naming any it found.\n\n",
     );
 
     // Group by phase so a CLI author sees the phase-2 set first and a GUI author
     // sees the windowing set clearly separated.
     out.push_str("## Available to every app (CLI and GUI)\n\n");
-    out.push_str("| capability | default-granted? | notes |\n");
-    out.push_str("|---|---|---|\n");
+    out.push_str("| capability | default-granted? | opens from a link? | notes |\n");
+    out.push_str("|---|---|---|---|\n");
     for spec in krate_manifest::supported_capability_specs() {
         if !matches!(spec.phase(), krate_manifest::CapabilityPhase::Phase2) {
             continue;
@@ -780,8 +840,8 @@ pub(crate) fn capability_catalog_section() -> String {
     }
 
     out.push_str("\n## GUI apps only (a window, drawing, sound)\n\n");
-    out.push_str("| capability | default-granted? | notes |\n");
-    out.push_str("|---|---|---|\n");
+    out.push_str("| capability | default-granted? | opens from a link? | notes |\n");
+    out.push_str("|---|---|---|---|\n");
     for spec in krate_manifest::supported_capability_specs() {
         if !matches!(spec.phase(), krate_manifest::CapabilityPhase::Phase3) {
             continue;
@@ -818,13 +878,23 @@ pub(crate) fn capability_catalog_section() -> String {
 
 fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
     let default = if spec.default_granted() { "yes" } else { "no" };
-    let note = capability_note(&spec.display_pattern());
-    format!(
-        "| `{}` | {} | {} |\n",
-        spec.display_pattern(),
-        default,
-        note
-    )
+    // From the Player's own list, so the pack cannot promise a phone what
+    // the tab refuses (IC-974).
+    // A concrete pattern (`ui.dialog:open-folder`) is judged with its
+    // resource, as the consent card judges it; a placeholder pattern by its
+    // module and action.
+    let pattern = spec.display_pattern();
+    let tab = match pattern.parse::<krate_manifest::Capability>() {
+        Ok(cap) if !pattern.contains('<') => cap.works_in_a_tab(),
+        _ => krate_manifest::works_in_a_tab(spec.module(), spec.action()),
+    };
+    let link = match (tab, pattern.as_str()) {
+        (true, "ui.dialog:*") => "yes, except `open-folder`",
+        (true, _) => "yes",
+        (false, _) => "computer only",
+    };
+    let note = capability_note(&pattern);
+    format!("| `{}` | {} | {} | {} |\n", pattern, default, link, note)
 }
 
 /// A one-line human note for a capability, keyed by its `module.action` name.
@@ -902,6 +972,8 @@ fn capability_note(pattern: &str) -> &'static str {
         "location.read" => "where the phone is; the person is asked on Krate's sheet and by the phone itself",
         "bluetooth.connect" => "Bluetooth devices the person picks in Krate's own list; only the picked one is reachable",
         "photos.add" => "add pictures to the person's photo library (add-only: the app never sees the library)",
+        "process.run" => "run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can",
+        "process.terminal" => "the person's own shell in a terminal the app draws",
         _ => "",
     }
 }
@@ -1046,12 +1118,19 @@ bytes, a record up to 64 KiB, the app's data up to 50 MiB.\n\n\
 cursor. `org::text(&entry, \"note\")` and `org::field(&entry, name)` read a \
 field; `entry.changed_by` names who changed it last, so the app can say \
 \"added by dana\". `org::who()` is the signed-in person and their role, \
-once a sync has reached the organisation.\n\n\
-3. **Sync on launch, after writes, and every ten seconds.** `org::sync()` \
-returns `changed` (redraw) and `online`; offline is not an error, the \
-writes wait and go up later, and the runtime also syncs in the background \
-and when the app closes. Show a quiet \"offline -- will sync\" note, never \
-an error.\n\n\
+once a sync has reached the organisation. `org::members()` is everyone \
+the app is released to, by sign-in name and role, kept from the last sync: \
+offer them in any field that names a person (who approves, who does it), \
+and store the sign-in name, never a short form.\n\n\
+3. **The runtime syncs; the app shows where it stands.** The runtime \
+exchanges changes in the background every five seconds and when the app \
+closes. `org::status()` answers at once, from this device, with `link` -- \
+`Synced`, `Syncing`, `Offline` or `WaitingForKey` -- plus `pending`, \
+`reached_at` and the organisation's name; `org::status_words(&s)` is the \
+calm line for it. Offline is not an error: the writes wait and go up \
+later. `org::sync()` asks for an exchange now; in a window it never waits \
+and a later call says `changed` (read again) once the exchange brought \
+something.\n\n\
 4. **A refusal is the organisation's answer.** `OrgError::Refused(r)` \
 means the person was removed, is outside the release's audience, or the \
 version was withdrawn: show `r.message` (plain words, with what to do) and \
@@ -1061,15 +1140,15 @@ the hub holds ciphertext only, and only the organisation's members' \
 devices hold the key -- a new member's computer gets it from another \
 member's in the background, so the first sync on a new computer can show \
 `pending` until then. Never add encryption of your own on top.\n\n\
-5. **In a window, `sync` is not free.** It can wait on the network (and on \
-the runtime's own background sync), so a GUI app reads with `org::records` \
-from a kept cursor every second -- local, instant -- and calls `sync` only \
-after the first frame is on screen and then every twenty seconds or so \
-while nobody is typing. Never after each write: the runtime sends writes \
-by itself within seconds and again on close. After an online sync, \
-`org::who()` still `None` means this computer is waiting for a teammate's \
-computer to let it in: say \"waiting to be let in\" and keep accepting \
-input, never show an empty list as if the team had nothing.\n\n\
+5. **In a window, read every second, never wait.** A GUI app reads with \
+`org::records` from a kept cursor every second -- local, instant -- and \
+asks `org::status()` for its status line as often as it draws. Never call \
+`sync` after each write: the runtime sends writes by itself within seconds \
+and again on close. `Link::WaitingForKey` means this computer is new to \
+the team and its key has not arrived yet: show the line `status_words` \
+gives (\"Waiting for your team's key: someone in Acme opens Krate and it \
+arrives\") and keep accepting input, never an empty list as if the team \
+had nothing. `org::who()` fills once the key has arrived.\n\n\
 6. **Model the data so two people never overwrite each other.** Who made \
 a record is a field you write (`spent_by`, `made_by`), never \
 `changed_by`, which moves to whoever touched it last; an edit writes only \
@@ -1403,10 +1482,20 @@ damage, a 100-150 ms screen shake on big hits, particles on destruction \
 (eight 2px squares with velocity and gravity are plenty).\n\n\
 7. **Title, pause, game over.** Title screen: name, one-line goal, \
 controls, \"press space\". Esc pauses. Game over shows the score and \
-restarts on space, keeping the high score in `store.kv`.\n\n\
+restarts on space, showing the best score (rule 9).\n\n\
 8. **Ramp the difficulty.** Start winnable for thirty seconds, then speed \
 up or add hazards on a schedule. The first death should teach, not \
-ambush.\n\n";
+ambush.\n\n\
+9. **Keep what the player earned.** Best score, level reached, unlocks and \
+settings (sound, difficulty) go in `store.kv` when they change -- on game \
+over, level up, a setting flipped; never every frame -- and are read back at \
+start: declare `store.kv`, then `krate::store::get` / `krate::store::set`. \
+Krate then carries them to every device the person signs in on, with no \
+code of yours. Never keep them only in memory: a best score that is gone \
+when the window closes is a bug. Before saving a best, read the stored one \
+and write only if it is beaten, so a better score from their other device \
+is never lowered. `apps/krate-nova` and `apps/krate-bounce` do exactly \
+this.\n\n";
 
 /// Section 3: the no_std discipline. Authored, because it is the reasoning
 /// behind the rules, not a list that can be scraped. The concrete facts it
@@ -1519,7 +1608,8 @@ never a path, and the token is good for this run only.\n\n\
 **Drag and drop** (`ui.dropzone:<mime-type>`, an explicit ask). Declare it \
 and the window receives `Event::FileDropped(chosen)` when a file lands on \
 it -- `chosen.name` to show, `chosen.token` to open with \
-`fs::files::open_chosen(&token, OpenMode::Read)`. While something is being \
+`krate::fs::read_chosen(&token)` (or `krate::fs::open_chosen(&token, \
+OpenMode::Read)` to read in pieces). While something is being \
 dragged over the window, `Event::FileHovering(true)` arrives, then \
 `FileHovering(false)` when it leaves or drops: use it to highlight the \
 target, and nothing more -- a hover is not consent, and the app learns \
@@ -1530,7 +1620,8 @@ files and will not.\n\n\
 `ui::dialog::save_file(window, \"Save as\", \"notes.txt\", \"txt\")` shows the \
 system's save dialog and returns `Ok(None)` when they cancel -- a normal \
 outcome, not an error -- or `Ok(Some(chosen))`, whose token you pass to \
-`fs::files::open_chosen` with a writing mode. The token names a file the \
+`krate::fs::write_chosen(&token, &bytes)` (in a browser tab the person \
+gets it as a download of that name). The token names a file the \
 person nominated; it creates nothing by itself, so asking and then not \
 writing leaves nothing behind. An editor that can open a document and not \
 save one is not an editor: any app that reads a file the person chose \
@@ -2548,7 +2639,7 @@ fn curated_shape(name: &str) -> Option<&'static str> {
         "krate-checklist" => "GUI checkbox list that saves; the simplest GUI+store shape",
         "krate-contacts" => "GUI over a real SQL database (no_std)",
         "krate-keyvault" => "GUI key-value store over store.kv (persistence)",
-        "krate-notes-clip" | "krate-clip" => "GUI using the clipboard",
+        "krate-clip" => "GUI using the clipboard",
         "krate-paint" => "GUI freehand canvas drawing",
         "krate-chart" => "GUI drawing a chart on a canvas",
         "krate-nova" => "GUI canvas game: fills, circles, gradients (no sprites)",
@@ -3248,6 +3339,12 @@ interface api {
         // Game feel rides only on a game, and must still be there for one.
         let game = inline_essentials("a snake game");
         assert!(game.contains("# 2f."), "a game gets game feel");
+        // A game's progress is kept, so it follows the person (IC-981).
+        assert!(
+            game.contains("Keep what the player earned")
+                && game.contains("Never keep them only in memory"),
+            "a game is not told to keep its best score and settings in store.kv"
+        );
         assert!(
             game.contains("# 2g. What the app should look like"),
             "a game is told how it should look too"

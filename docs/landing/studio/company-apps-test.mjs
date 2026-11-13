@@ -206,6 +206,23 @@ for (const answer of [{ orgs: [] }, { v: 1, signed_in: false, policy_org: null, 
 
 /* ---- in a tab --------------------------------------------------------- */
 check(/async org_apps\(\)/.test(bridge) && /async org_app_open\(/.test(bridge), "the web bridge answers both commands");
+{
+  // The bridge's own org_app_open, run: a company app opens in a new tab at
+  // its own address on the hub (K-1166), never as a file to download.
+  const at = bridge.indexOf("  async org_app_open(");
+  const body = bridge.slice(at, bridge.indexOf("\n  },", at) + "\n  }".length).replace(/^ {2}async /, "async function ");
+  const opened = [];
+  const run = (token) => new Function("bridge", "refuse", "HUB", "window", `${body}; return org_app_open;`)(
+    { token }, (m) => { throw new Error(m); }, "https://hub.krate.tech", { open: (...a) => opened.push(a) },
+  );
+  await run("gho_dan")({ slug: "acme", appId: "com.acme.expenses" });
+  check(opened.length === 1 && opened[0][0] === "https://hub.krate.tech/run/org/acme/com.acme.expenses" && opened[0][1] === "_blank",
+    "in a tab, Open opens the app at its own address in a new tab", opened);
+  const refused = await run("gho_dan")({ slug: "acme", appId: "../../evil" }).then(() => null, (e) => e.message);
+  check(opened.length === 1 && /not one Krate opens/.test(refused || ""), "an address that is not an app's is refused, nothing opened", refused);
+  const out = await run(null)({ slug: "acme", appId: "com.acme.expenses" }).then(() => null, (e) => e.message);
+  check(opened.length === 1 && /Sign in first/.test(out || ""), "signed out, it asks for sign-in first", out);
+}
 
 console.log(bad ? `${bad} check(s) failed` : "ok  company apps on Studio's Home");
 process.exit(bad ? 1 : 0);

@@ -153,11 +153,14 @@ const rowOf = (p, text) => p.el("pane").querySelectorAll(".rw").find((r) => r.qu
   const bob = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: as("github:bob") });
   const b = rowOf(bob, "Bounce 1.0.1");
   check(button(b, "Withdraw") && !button(b, "Make current") && !button(b, "Who can open it"), "a reviewer withdraws, and does not choose current or audience");
-  for (const who of ["github:carol", "github:dan"]) {
-    const x = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: as(who) });
-    const r = rowOf(x, "Bounce 1.0.2");
-    check(button(r, "Open in Krate") && !button(r, "Withdraw") && !button(r, "Make current") && !button(r, "Who can open it"), `a ${who === "github:dan" ? "recipient" : "developer"} opens and copies, nothing else`);
-  }
+  const carol = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: as("github:carol") });
+  const c = rowOf(carol, "Bounce 1.0.2");
+  check(button(c, "Open in Krate") && !button(c, "Withdraw") && !button(c, "Make current") && !button(c, "Who can open it"), "a developer opens and copies, nothing else");
+  // A member lands on their apps, each ready to open, and nothing to manage.
+  const dan = await page("https://krate.tech/org/?o=acme", DASH, { token: "t", routes: as("github:dan") });
+  const card = dan.el("pane").querySelectorAll(".lcard").find((n) => n.querySelector("b") && n.querySelector("b").textContent === "Bounce");
+  check(card && button(card, "Open in Krate") && button(card, "Copy link") && !button(dan.el("pane"), "Withdraw") && !button(dan.el("pane"), "Make current"), "a recipient opens and copies from their apps, nothing else");
+  check(button(dan.el("pane"), "Ask for it"), "and can ask for an app that is not there");
   // A hub without release control: the flat list, as before.
   const flat = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: { ...as(ALICE), "GET /orgs/acme/apps": () => [404, { error: "hub-error", message: "" }] } });
   check(button(flat.el("pane"), "Open in Krate") && !button(flat.el("pane"), "Withdraw") && /Sent by @carol/.test(flat.el("pane").shown), "a hub without /apps still shows the flat releases list");
@@ -198,7 +201,7 @@ const rowOf = (p, text) => p.el("pane").querySelectorAll(".rw").find((r) => r.qu
   const carol = await page("https://krate.tech/org/?o=acme&tab=people", DASH, { token: "t", routes: as("github:carol") });
   const cc = carol.el("groupsCard");
   check(/finance/.test(cc.shown) && !carol.el("pane").querySelectorAll(".gform").length && !cc.all((n) => n.tagName === "BUTTON").length, "a developer reads the groups and changes nothing");
-  const dan = await page("https://krate.tech/org/?o=acme&tab=people", DASH, { token: "t", routes: as("github:dan") });
+  const dan = await page("https://krate.tech/org/?o=acme&tab=help", DASH, { token: "t", routes: as("github:dan") });
   check(/groups of Acme you are in/.test(dan.el("groupsCard").shown) && !/ops/.test(dan.el("groupsCard").shown), "a recipient sees only the groups they are in");
   const old = await page("https://krate.tech/org/?o=acme&tab=people", DASH, { token: "t", routes: { ...as(ALICE), "GET /orgs/acme/groups": () => [404, { error: "hub-error", message: "" }] } });
   check(!old.el("pane").querySelectorAll("#groupsCard").length, "a hub without groups shows no Groups card");

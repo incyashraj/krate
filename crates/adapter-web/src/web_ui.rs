@@ -24,8 +24,8 @@ use krate_adapter_common::ui::DraftUiAdapter;
 use krate_adapter_common::ui::{
     Appearance, BoxStyle, Color, ImagePixels, KeyEvent, Modifiers, Placement, PointerButton,
     PointerEvent, TextInputEvent, TextStyle, Theme, UiAdapter, UiAdapterError, UiEvent, WheelEvent,
-    WidgetId, WidgetKind, WidgetNode, WidgetStyle, WindowAdapter, WindowId, WindowOptions,
-    WindowSize,
+    WidgetId, WidgetKind, WidgetNode, WidgetPlacement, WidgetStyle, WindowAdapter, WindowId,
+    WindowOptions, WindowSize,
 };
 use krate_layout::{hit_test, LayoutPoint, LayoutSnapshot, LayoutViewport};
 use serde::Deserialize;
@@ -353,6 +353,13 @@ struct Frame {
     argb: Vec<u32>,
     rgba: Vec<u8>,
     dirty: bool,
+    /// What the frame shows now: the placements and the pointer state it
+    /// was painted from, so the next paint can redo only what changed.
+    shown: Option<(Vec<WidgetPlacement>, PaintInteraction)>,
+    /// The band a partial paint is drawn into, kept between frames.
+    band: Vec<u32>,
+    /// The rows the last paint redid, `[top, bottom)`.
+    painted: (u32, u32),
 }
 
 impl Frame {
@@ -364,8 +371,231 @@ impl Frame {
             argb: vec![0; len],
             rgba: vec![0; len * 4],
             dirty: true,
+            shown: None,
+            band: Vec::new(),
+            painted: (0, 0),
         }
     }
+}
+
+/// Logical pixels added above and below a changed widget: text outlines,
+/// descenders and accents can reach a little past the widget's own box.
+const DAMAGE_MARGIN: f32 = 8.0;
+
+/// The physical rows `[top, bottom)` a new paint has to redo, or `None`
+/// when the whole frame must be painted (IC-290: a tab paints on the CPU,
+/// and a full repaint of a 13 MB frame cost 9 to 13 ms, measured, for a
+/// tap that changed one button).
+///
+/// Whole rows, never a rectangle: a label may run past its widget's width,
+/// and a full-width band cannot cut it. Anything this cannot reason about
+/// asks for the whole frame -- a placement list that changed length, a
+/// change that moved no placement (the theme), a band over most of the
+/// frame, or a scale whose rows do not land on whole logical pixels.
+fn damaged_rows(
+    shown: &(Vec<WidgetPlacement>, PaintInteraction),
+    placements: &[WidgetPlacement],
+    interaction: PaintInteraction,
+    scale: f32,
+    height: u32,
+) -> Option<(u32, u32)> {
+    let (old, old_hot) = shown;
+    if old.len() != placements.len() {
+        return None;
+    }
+    let mut span: Option<(f32, f32)> = None;
+    let mut add = |p: &WidgetPlacement| {
+        let (top, bottom) = (p.y - DAMAGE_MARGIN, p.y + p.height + DAMAGE_MARGIN);
+        span = Some(match span {
+            Some((t, b)) => (t.min(top), b.max(bottom)),
+            None => (top, bottom),
+        });
+    };
+    for (was, now) in old.iter().zip(placements) {
+        if !same_look(was, now) {
+            add(was);
+            add(now);
+        }
+    }
+    if *old_hot != interaction {
+        let hot = [
+            old_hot.hovered,
+            old_hot.pressed,
+            interaction.hovered,
+            interaction.pressed,
+        ];
+        for p in placements.iter().filter(|p| hot.contains(&Some(p.widget))) {
+            add(p);
+        }
+    }
+    let (top, bottom) = span?;
+    // The band starts on a row that is a whole logical pixel AND the top of
+    // one of the painter's 4-row strips, so the shifted paint is the same
+    // arithmetic as a full one.
+    let whole = (1..=8u32)
+        .map(|q| q as f32 * scale)
+        .find(|rows| (rows - rows.round()).abs() < 1e-4)?
+        .round() as u32;
+    let step = (1..=4u32).map(|k| whole * k).find(|rows| rows % 4 == 0)?;
+    let top = (((top * scale).floor().max(0.0) as u32) / step) * step;
+    let bottom = ((bottom * scale).ceil().max(0.0) as u32).min(height);
+    if bottom <= top || (bottom - top) as f32 > height as f32 * 0.6 {
+        return None;
+    }
+    Some((top, bottom))
+}
+
+/// Whether two placements paint the same pixels. Image pixels compare by
+/// identity: a canvas that drew again arrives as a new buffer, and
+/// comparing megabytes per frame to find that out would cost what this
+/// saves.
+fn same_look(a: &WidgetPlacement, b: &WidgetPlacement) -> bool {
+    let pixels = match (&a.pixels, &b.pixels) {
+        (None, None) => true,
+        (Some(x), Some(y)) => Arc::ptr_eq(x, y),
+        _ => false,
+    };
+    pixels
+        && a.widget == b.widget
+        && a.kind == b.kind
+        && a.label == b.label
+        && a.checked == b.checked
+        && a.value == b.value
+        && a.selection == b.selection
+        && a.text_cursor == b.text_cursor
+        && a.clip == b.clip
+        && (a.x, a.y, a.width, a.height) == (b.x, b.y, b.width, b.height)
+        && a.text == b.text
+        && a.r#box == b.r#box
+}
+
+/// `placement` moved up by `dy` logical pixels, for painting a band whose
+/// top row is `dy` down the window.
+fn shifted(placement: &WidgetPlacement, dy: f32) -> WidgetPlacement {
+    let mut p = placement.clone();
+    p.y -= dy;
+    if let Some(sel) = p.selection.as_mut() {
+        sel.1 -= dy;
+    }
+    if let Some(clip) = p.clip.as_mut() {
+        clip.1 -= dy;
+    }
+    p
+}
+
+/// Nothing on screen would change: the same placements, looking the same,
+/// under the same pointer. Input and redraw requests mark a frame dirty
+/// whether or not the app changed anything, and a canvas app repainted all
+/// 13 MB of its window for each of them (measured: every paint logged in a
+/// session of taps changed nothing).
+fn unchanged(
+    shown: &(Vec<WidgetPlacement>, PaintInteraction),
+    placements: &[WidgetPlacement],
+    interaction: PaintInteraction,
+) -> bool {
+    shown.1 == interaction
+        && shown.0.len() == placements.len()
+        && shown.0.iter().zip(placements).all(|(a, b)| same_look(a, b))
+}
+
+/// A window that is one opaque canvas at exactly its own pixel size: write
+/// the canvas into the frame's RGBA in one pass, which is what the painter
+/// would have produced after a background fill, a layer copy, an identity
+/// blit and a conversion. Returns false, having written nothing that
+/// matters, when the window is anything else or a pixel is not opaque;
+/// translucent pixels are the painter's to sample.
+fn paint_full_window_canvas(frame: &mut Frame, scale: f32, placements: &[WidgetPlacement]) -> bool {
+    let [p] = placements else {
+        return false;
+    };
+    let Some(pixels) = p.pixels.as_ref() else {
+        return false;
+    };
+    let fits = pixels.width == frame.width
+        && pixels.height == frame.height
+        && p.x == 0.0
+        && p.y == 0.0
+        && (p.width * scale).round() as u32 == frame.width
+        && (p.height * scale).round() as u32 == frame.height
+        && p.clip.is_none()
+        && p.r#box.is_none()
+        && p.label.is_none()
+        && p.selection.is_none()
+        && pixels.rgba.len() == frame.rgba.len();
+    if !fits || pixels.rgba.chunks_exact(4).any(|px| px[3] != 255) {
+        return false;
+    }
+    frame.rgba.copy_from_slice(&pixels.rgba);
+    true
+}
+
+/// What a paint did, so `render` converts only the rows it must.
+enum Painted {
+    /// Nothing changed; the frame on screen is still right.
+    Nothing,
+    /// These rows of `argb` were painted and need converting to RGBA.
+    Rows(u32, u32),
+    /// The RGBA was written directly; nothing to convert.
+    Direct,
+}
+
+/// Paint `placements` into `frame`: nothing when nothing changed, a full
+/// window canvas by direct copy, only the rows that changed when that is
+/// safe, the whole frame otherwise.
+fn repaint(
+    frame: &mut Frame,
+    scale: f32,
+    placements: Vec<WidgetPlacement>,
+    interaction: PaintInteraction,
+) -> Painted {
+    let (width, height) = (frame.width, frame.height);
+    if frame
+        .shown
+        .as_ref()
+        .is_some_and(|shown| unchanged(shown, &placements, interaction))
+    {
+        frame.painted = (0, 0);
+        return Painted::Nothing;
+    }
+    if paint_full_window_canvas(frame, scale, &placements) {
+        frame.shown = Some((placements, interaction));
+        frame.painted = (0, height);
+        return Painted::Direct;
+    }
+    let rows = frame
+        .shown
+        .as_ref()
+        .and_then(|shown| damaged_rows(shown, &placements, interaction, scale, height));
+    match rows {
+        Some((top, bottom)) => {
+            let dy = top as f32 / scale;
+            let (band_top, band_bottom) =
+                (dy - DAMAGE_MARGIN, bottom as f32 / scale + DAMAGE_MARGIN);
+            // Only what can reach the band, shifted to its top row.
+            let local: Vec<WidgetPlacement> = placements
+                .iter()
+                .filter(|p| p.y + p.height >= band_top && p.y <= band_bottom)
+                .map(|p| shifted(p, dy))
+                .collect();
+            let rows = bottom - top;
+            frame.band.clear();
+            frame.band.resize(width as usize * rows as usize, 0);
+            painter::paint_placements(&mut frame.band, width, rows, scale, &local, interaction);
+            let start = top as usize * width as usize;
+            frame.argb[start..start + frame.band.len()].copy_from_slice(&frame.band);
+        }
+        None => painter::paint_placements(
+            &mut frame.argb,
+            width,
+            height,
+            scale,
+            &placements,
+            interaction,
+        ),
+    }
+    frame.shown = Some((placements, interaction));
+    frame.painted = rows.unwrap_or((0, height));
+    Painted::Rows(frame.painted.0, frame.painted.1)
 }
 
 /// Everything the `krate:ui` host holds for one app in a tab.
@@ -384,6 +614,28 @@ pub struct WebUi {
     /// The size each window asked for, before the tab fitted it.
     requested: BTreeMap<WindowId, (f32, f32)>,
     pub(crate) canvas: crate::web_canvas::Canvases,
+    /// The finger being followed on a touch screen, if any.
+    touch: Option<TouchGesture>,
+    /// An event taken off the queue while gathering scroll steps, handed
+    /// out next.
+    held_back: Option<UiEvent>,
+}
+
+/// Movement past this many logical pixels turns a touch from a tap into a
+/// scroll: the slop every phone toolkit uses, and the Android adapter's.
+pub const TOUCH_SLOP: f32 = 8.0;
+
+/// One finger on the screen, as the phone adapters follow it.
+#[derive(Debug, Clone, Copy)]
+struct TouchGesture {
+    window: u64,
+    finger: u64,
+    start: (f32, f32),
+    last: (f32, f32),
+    scrolling: bool,
+    /// It landed on something that follows the finger (a canvas, a
+    /// slider): pressed at once and held until it lifts.
+    drags: bool,
 }
 
 impl WebUi {
@@ -412,6 +664,8 @@ impl WebUi {
             pressed: None,
             requested: BTreeMap::new(),
             canvas: crate::web_canvas::Canvases::new(),
+            touch: None,
+            held_back: None,
         }
     }
 
@@ -451,6 +705,15 @@ impl WebUi {
             .copied()
             .find(|w| w.get() == raw)
             .ok_or_else(|| ui_error("invalid-window", None))
+    }
+
+    /// Whether `widget` is a canvas drawn at a design size: a game, whose
+    /// finger presses and drags rather than scrolls.
+    fn drawn_at_design(&self, window: WindowId, widget: WidgetId) -> bool {
+        self.canvas
+            .surfaces
+            .values()
+            .any(|(w, c, surface)| *w == window && *c == widget && surface.design_size().is_some())
     }
 
     fn physical(&self, logical: u32) -> u32 {
@@ -711,6 +974,136 @@ impl WebUi {
         }
     }
 
+    /// A finger on a touch screen, in logical pixels, mapped the way the
+    /// phone adapters map one (crates/adapter-android): a tap is one press
+    /// and release where it lifted, exactly what a click delivers; a finger
+    /// that moves past [`TOUCH_SLOP`] scrolls what is under it, content
+    /// following the finger; one that lands on a slider, or on a game's
+    /// canvas, presses it at once and the press follows the finger until it
+    /// lifts. Only the first finger is followed. `phase` is start, move,
+    /// end or cancel.
+    ///
+    /// A game's canvas is one drawn at a design size -- set by the app, or
+    /// given to one that never asked its size -- because a game steers by
+    /// the held finger (the pack teaches `button_held` and `position`). A
+    /// canvas that lays itself out for the screen is a document, a list or
+    /// a table, and a finger moving on it scrolls: every canvas used to
+    /// take the drag, and Trace, Query and Diff could not be scrolled at
+    /// all on a phone in a tab (measured: a finger drag drew no frame),
+    /// though they scroll by the same finger in the Android Player.
+    pub fn touch(&mut self, window: u64, phase: &str, finger: u64, x: f32, y: f32) {
+        let Ok(id) = self.window_id(window) else {
+            return;
+        };
+        match phase {
+            "start" => {
+                if self.touch.is_some() {
+                    return;
+                }
+                let drags = self.widget_at(id, x, y).is_some_and(|w| {
+                    self.adapter
+                        .widget_tree(id)
+                        .ok()
+                        .flatten()
+                        .and_then(|tree| tree.node(w).map(|n| n.kind))
+                        .is_some_and(|kind| match kind {
+                            WidgetKind::Slider => true,
+                            WidgetKind::Canvas => self.drawn_at_design(id, w),
+                            _ => false,
+                        })
+                });
+                self.touch = Some(TouchGesture {
+                    window,
+                    finger,
+                    start: (x, y),
+                    last: (x, y),
+                    scrolling: false,
+                    drags,
+                });
+                // The finger is the pointer: hit tests and hover read from here.
+                self.pointer_moved(window, x, y);
+                if drags {
+                    self.pointer(window, x, y, 0, true, 0);
+                }
+            }
+            "move" => {
+                let Some(mut g) = self
+                    .touch
+                    .filter(|g| g.finger == finger && g.window == window)
+                else {
+                    return;
+                };
+                if g.drags {
+                    g.last = (x, y);
+                    self.touch = Some(g);
+                    self.pointer_moved(window, x, y);
+                    return;
+                }
+                if !g.scrolling {
+                    let (sx, sy) = (x - g.start.0, y - g.start.1);
+                    g.scrolling = sx * sx + sy * sy > TOUCH_SLOP * TOUCH_SLOP;
+                }
+                let (dx, dy) = (x - g.last.0, y - g.last.1);
+                g.last = (x, y);
+                self.touch = Some(g);
+                if g.scrolling && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON) {
+                    // Content follows the finger: moving up scrolls deeper.
+                    self.wheel(window, g.start.0, g.start.1, -dx, -dy, 0);
+                }
+            }
+            "end" | "cancel" => {
+                let Some(g) = self
+                    .touch
+                    .filter(|g| g.finger == finger && g.window == window)
+                else {
+                    return;
+                };
+                self.touch = None;
+                if g.drags {
+                    self.pointer(window, x, y, 0, false, 0);
+                } else if phase == "end" && !g.scrolling {
+                    self.pointer(window, x, y, 0, true, 0);
+                    self.pointer(window, x, y, 0, false, 0);
+                }
+                // No hover is left behind a finger.
+                self.pointer_left(window);
+                self.mark(id);
+            }
+            _ => {}
+        }
+    }
+
+    /// Where the text fields and text areas are on screen in `window`, as
+    /// x, y, width, height in logical pixels, four numbers each: a tap on
+    /// one raises the phone's keyboard, which a browser only does inside
+    /// the tap itself.
+    pub fn text_rects(&self, window: u64) -> Vec<f32> {
+        let Ok(id) = self.window_id(window) else {
+            return Vec::new();
+        };
+        let Some((tree, layout)) = self.layout(id) else {
+            return Vec::new();
+        };
+        let offsets = &self.offsets;
+        krate_lowering::placements(
+            &tree,
+            &layout,
+            |s| offsets.get(&(id, s)).copied().unwrap_or(0.0),
+            |_| None,
+        )
+        .iter()
+        .filter(|p| matches!(p.kind, WidgetKind::TextField | WidgetKind::TextArea))
+        .flat_map(|p| match p.clip {
+            Some((cx, cy, cw, ch)) => {
+                let (x0, y0) = (p.x.max(cx), p.y.max(cy));
+                let (x1, y1) = ((p.x + p.width).min(cx + cw), (p.y + p.height).min(cy + ch));
+                [x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0)]
+            }
+            None => [p.x, p.y, p.width, p.height],
+        })
+        .collect()
+    }
+
     /// A key, with the DOM's name for it. `text` is what it typed, when it
     /// typed something; it arrives as `text-input` after the key, as on
     /// desktop.
@@ -773,6 +1166,11 @@ impl WebUi {
         let _ = self
             .adapter
             .queue_theme_changed(if dark { Theme::Dark } else { Theme::Light });
+        // Every colour changes and no placement does: forget what is on
+        // screen, or the next paint would find nothing changed.
+        for frame in self.frames.values_mut() {
+            frame.shown = None;
+        }
         self.mark_all();
     }
 
@@ -790,7 +1188,10 @@ impl WebUi {
 
     pub fn position(&self, window: u64) -> Option<(f32, f32)> {
         let id = self.window_id(window).ok()?;
-        self.position.get(&id).copied()
+        let (x, y) = self.position.get(&id).copied()?;
+        // In the app's own coordinates when it fixed them, as its pointer
+        // events are (K-1176): a game asking where the finger is.
+        Some(self.to_design(x, y).map_or((x, y), |(x, y, _)| (x, y)))
     }
 
     pub fn focused(&self, window: u64) -> Option<u64> {
@@ -828,7 +1229,43 @@ impl WebUi {
     /// first, then a press and release at the control's centre, exactly as
     /// the desktop delivers them (`krate_lowering::activation_point`).
     pub fn next_event(&mut self) -> Option<String> {
-        while let Ok(Some(event)) = self.adapter.poll_event() {
+        while let Some(event) = self
+            .held_back
+            .take()
+            .or_else(|| self.adapter.poll_event().ok().flatten())
+        {
+            // Scroll steps waiting behind this one, for the same widget,
+            // arrive as one. A finger queues a wheel event per move, up to
+            // 120 a second, and an app that handles one event per frame
+            // then draws falls further behind for as long as the finger
+            // moves -- measured on a real iPhone, "the screen falls seconds
+            // behind the thumb" (the authoring pack's lesson on draining).
+            // The pack teaches apps to drain; summing here keeps the ones
+            // that do not from lagging, as the Android Player already does.
+            let event = match event {
+                UiEvent::Wheel(mut w) => {
+                    while let Ok(Some(next)) = self.adapter.poll_event() {
+                        match next {
+                            UiEvent::Wheel(n)
+                                if n.window == w.window
+                                    && n.widget == w.widget
+                                    && n.modifiers == w.modifiers =>
+                            {
+                                w.dx += n.dx;
+                                w.dy += n.dy;
+                                w.x = n.x;
+                                w.y = n.y;
+                            }
+                            other => {
+                                self.held_back = Some(other);
+                                break;
+                            }
+                        }
+                    }
+                    UiEvent::Wheel(w)
+                }
+                other => other,
+            };
             if let UiEvent::Key(key) = &event {
                 if key.pressed {
                     if let Some(widget) = key.widget {
@@ -916,15 +1353,19 @@ impl WebUi {
             return false;
         };
         frame.dirty = false;
-        painter::paint_placements(
-            &mut frame.argb,
-            frame.width,
-            frame.height,
-            scale,
-            &placements,
-            interaction,
+        let (top, bottom) = match repaint(frame, scale, placements, interaction) {
+            Painted::Nothing => return false,
+            Painted::Direct => return true,
+            Painted::Rows(top, bottom) => (top, bottom),
+        };
+        let (start, end) = (
+            top as usize * frame.width as usize,
+            bottom as usize * frame.width as usize,
         );
-        for (chunk, word) in frame.rgba.chunks_exact_mut(4).zip(frame.argb.iter()) {
+        for (chunk, word) in frame.rgba[start * 4..end * 4]
+            .chunks_exact_mut(4)
+            .zip(frame.argb[start..end].iter())
+        {
             chunk[0] = (word >> 16) as u8;
             chunk[1] = (word >> 8) as u8;
             chunk[2] = *word as u8;
@@ -942,6 +1383,13 @@ impl WebUi {
     pub fn frame_size(&self, window: u64) -> Option<(u32, u32)> {
         let id = self.window_id(window).ok()?;
         self.frames.get(&id).map(|f| (f.width, f.height))
+    }
+
+    /// The rows `[top, bottom)` of the RGBA frame the last paint changed,
+    /// so the tab copies those rows and not the whole window.
+    pub fn painted_rows(&self, window: u64) -> Option<(u32, u32)> {
+        let id = self.window_id(window).ok()?;
+        self.frames.get(&id).map(|f| f.painted)
     }
 
     /// The window's size in logical pixels, as the app sees it.
@@ -1024,6 +1472,260 @@ mod tests {
         v.to_string()
     }
 
+    /// The painter's look (light or dark, text size) is process-wide, so a
+    /// test that switches it and a test that compares pixels must not run at
+    /// once: they did, and the pixel test failed at random.
+    static LOOK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A window of many rows, so one row's change is a small band of it.
+    fn rows_window(ui: &mut WebUi) -> u64 {
+        let win = ui.create_window("Rows", 360, 640, (360, 640)).unwrap();
+        ui.show_window(win).unwrap();
+        ui.set_root(
+            win,
+            &node(
+                1,
+                None,
+                "stack",
+                json!({ "style": { "grow": 0.0, "padding": 12.0 } }),
+            ),
+        )
+        .unwrap();
+        ui.upsert(
+            win,
+            &node(
+                2,
+                Some(1),
+                "text-field",
+                json!({ "label": "", "style": { "height": 32.0, "grow": 0.0, "padding": 0.0 } }),
+            ),
+        )
+        .unwrap();
+        for n in 3..15u64 {
+            let (kind, label) = if n % 3 == 0 {
+                ("button", format!("Button {n}"))
+            } else {
+                ("text", format!("Row {n}: gjpqy ÀÉÎ"))
+            };
+            ui.upsert(win, &node(n, Some(1), kind,
+                json!({ "label": label, "style": { "height": 36.0, "grow": 0.0, "padding": 0.0 } }))).unwrap();
+        }
+        win
+    }
+
+    /// Paint `win` again from nothing and say whether it matches what the
+    /// partial paint left on screen.
+    ///
+    /// Matches means: no pixel off by more than 2 in any channel, and no
+    /// more than one in 10,000 off at all. Not bit-exact, by measurement:
+    /// the painter flattens curves from absolute coordinates, so a button's
+    /// rounded corner drawn 132 rows down a band and 780 rows down the
+    /// window rounds its edge coverage one step apart (3 pixels at scale 3,
+    /// each off by 1). A seam, a missing widget or a stale row is thousands
+    /// of pixels off by tens or hundreds, which this still fails on.
+    fn matches_a_full_paint(ui: &mut WebUi, win: u64) -> Result<(), String> {
+        let id = ui.window_id(win).unwrap();
+        let partial = ui.frames[&id].rgba.clone();
+        let frame = ui.frames.get_mut(&id).unwrap();
+        frame.shown = None;
+        frame.dirty = true;
+        assert!(ui.render(win));
+        let full = &ui.frames[&id].rgba;
+        let (mut differ, mut worst) = (0usize, 0u8);
+        for (a, b) in partial.chunks_exact(4).zip(full.chunks_exact(4)) {
+            if a != b {
+                differ += 1;
+                worst = worst.max(
+                    a.iter()
+                        .zip(b)
+                        .map(|(x, y)| x.abs_diff(*y))
+                        .max()
+                        .unwrap_or(0),
+                );
+            }
+        }
+        let pixels = full.len() / 4;
+        if worst <= 2 && differ * 10_000 <= pixels {
+            Ok(())
+        } else {
+            Err(format!(
+                "{differ} of {pixels} pixels differ from a full paint, by up to {worst}"
+            ))
+        }
+    }
+
+    fn painted(ui: &WebUi, win: u64) -> (u32, u32) {
+        ui.frames[&ui.window_id(win).unwrap()].painted
+    }
+
+    /// One row changing repaints a band of the window, not all of it, and
+    /// the band leaves exactly the pixels a full paint would (IC-290).
+    #[test]
+    fn a_change_to_one_row_repaints_a_band_that_matches_a_full_paint() {
+        let _look = LOOK.lock().unwrap_or_else(|e| e.into_inner());
+        for scale in [1.0, 2.0, 3.0, 1.5] {
+            let mut ui = WebUi::new(scale, false);
+            let win = rows_window(&mut ui);
+            assert!(ui.render(win));
+            let (_, height) = ui.frame_size(win).unwrap();
+            assert_eq!(painted(&ui, win), (0, height), "the first paint is whole");
+
+            // A label changes in the middle of the window.
+            ui.upsert(win, &node(8, Some(1), "text",
+                json!({ "label": "Row 8: changed", "style": { "height": 36.0, "grow": 0.0, "padding": 0.0 } }))).unwrap();
+            assert!(ui.render(win));
+            let (top, bottom) = painted(&ui, win);
+            assert!(top > 0 && bottom < height && (bottom - top) * 5 < height,
+                "scale {scale}: one row should be a small band, painted {top}..{bottom} of {height}");
+            matches_a_full_paint(&mut ui, win)
+                .unwrap_or_else(|e| panic!("scale {scale}, label: {e}"));
+
+            // The pointer comes onto a button: its hover look, a band again.
+            let (x, y, w, h) = ui.widget_rect(win, 9).unwrap();
+            ui.pointer_moved(win, x + w / 2.0, y + h / 2.0);
+            assert!(ui.render(win));
+            let (top, bottom) = painted(&ui, win);
+            assert!(
+                bottom - top < height,
+                "scale {scale}: hover repainted the whole window"
+            );
+            matches_a_full_paint(&mut ui, win)
+                .unwrap_or_else(|e| panic!("scale {scale}, hover: {e}"));
+
+            // Typing into the field at the top.
+            ui.focus(win, 2).unwrap();
+            ui.text(win, "hello");
+            if ui.render(win) {
+                matches_a_full_paint(&mut ui, win)
+                    .unwrap_or_else(|e| panic!("scale {scale}, typing: {e}"));
+            }
+        }
+    }
+
+    /// What a band cannot see is painted whole: a theme change moves no
+    /// placement but changes every pixel, and a widget appearing changes
+    /// the list's length.
+    #[test]
+    fn a_theme_change_or_a_new_widget_repaints_the_whole_window() {
+        let _look = LOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut ui = WebUi::new(2.0, false);
+        let win = rows_window(&mut ui);
+        assert!(ui.render(win));
+        let (_, height) = ui.frame_size(win).unwrap();
+        ui.theme(true);
+        assert!(ui.render(win));
+        assert_eq!(painted(&ui, win), (0, height), "theme");
+        ui.upsert(
+            win,
+            &node(
+                40,
+                Some(1),
+                "text",
+                json!({ "label": "new", "style": { "height": 36.0, "grow": 0.0, "padding": 0.0 } }),
+            ),
+        )
+        .unwrap();
+        assert!(ui.render(win));
+        assert_eq!(painted(&ui, win), (0, height), "a new widget");
+    }
+
+    /// A window that is one canvas, with `rgba` at the window's own pixels.
+    fn canvas_window(ui: &mut WebUi, rgba: impl Fn(u32, u32) -> [u8; 4]) -> u64 {
+        let win = ui.create_window("Canvas", 200, 100, (200, 100)).unwrap();
+        ui.show_window(win).unwrap();
+        ui.set_root(
+            win,
+            &node(
+                1,
+                None,
+                "canvas",
+                json!({ "style": { "grow": 1.0, "padding": 0.0 } }),
+            ),
+        )
+        .unwrap();
+        let (w, h) = ui.frame_size(win).unwrap();
+        let bytes: Vec<u8> = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .flat_map(|(x, y)| rgba(x, y))
+            .collect();
+        ui.set_image(win, 1, w, h, bytes).unwrap();
+        win
+    }
+
+    /// What the painter itself makes of the frame now on screen.
+    fn painter_rgba(ui: &WebUi, win: u64) -> Vec<u8> {
+        let frame = &ui.frames[&ui.window_id(win).unwrap()];
+        let (placements, interaction) = frame.shown.as_ref().unwrap();
+        let mut argb = vec![0u32; frame.argb.len()];
+        painter::paint_placements(
+            &mut argb,
+            frame.width,
+            frame.height,
+            ui.scale,
+            placements,
+            *interaction,
+        );
+        argb.iter()
+            .flat_map(|w| [(w >> 16) as u8, (w >> 8) as u8, *w as u8, (w >> 24) as u8])
+            .collect()
+    }
+
+    /// A window that is one opaque canvas goes to the screen by direct copy,
+    /// and the copy is exactly what the painter would have made of it.
+    #[test]
+    fn a_full_window_canvas_is_copied_and_matches_the_painter() {
+        let _look = LOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut ui = WebUi::new(2.0, false);
+        let win = canvas_window(&mut ui, |x, y| [(x % 256) as u8, (y % 256) as u8, 77, 255]);
+        assert!(ui.render(win));
+        let id = ui.window_id(win).unwrap();
+        assert!(
+            ui.frames[&id].argb.iter().all(|w| *w == 0),
+            "the painter ran: the copy path was not taken"
+        );
+        assert!(
+            ui.frames[&id].rgba == painter_rgba(&ui, win),
+            "the copy differs from the painter's frame"
+        );
+
+        // One translucent pixel: the painter's, because it samples those.
+        let win = canvas_window(&mut ui, |x, y| {
+            [10, 20, 30, if (x, y) == (5, 5) { 128 } else { 255 }]
+        });
+        assert!(ui.render(win));
+        let id = ui.window_id(win).unwrap();
+        assert!(
+            ui.frames[&id].argb.iter().any(|w| *w != 0),
+            "a translucent canvas skipped the painter"
+        );
+    }
+
+    /// Input and redraw requests that change nothing on screen paint
+    /// nothing, and a change after them still paints.
+    #[test]
+    fn a_frame_nothing_changed_is_not_painted_again() {
+        let _look = LOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut ui = WebUi::new(2.0, false);
+        let win = rows_window(&mut ui);
+        assert!(ui.render(win));
+        ui.request_redraw(win).unwrap();
+        assert!(
+            !ui.render(win),
+            "a redraw with nothing changed repainted the window"
+        );
+        ui.wheel(win, 20.0, 600.0, 0.0, 5.0, 0);
+        let _ = ui.render(win);
+        ui.request_redraw(win).unwrap();
+        assert!(
+            !ui.render(win),
+            "a second redraw with nothing changed repainted the window"
+        );
+        ui.upsert(win, &node(8, Some(1), "text",
+            json!({ "label": "Row 8: changed", "style": { "height": 36.0, "grow": 0.0, "padding": 0.0 } }))).unwrap();
+        assert!(ui.render(win), "a real change after them was not painted");
+        matches_a_full_paint(&mut ui, win).unwrap();
+    }
+
     fn drain(ui: &mut WebUi) -> Vec<Value> {
         let mut out = Vec::new();
         while let Some(e) = ui.next_event() {
@@ -1098,6 +1800,186 @@ mod tests {
         assert!(!ui.render(win), "a clean frame does not repaint");
     }
 
+    /// A tap is a press and a release where the finger lifted; a finger
+    /// that moves past the slop scrolls and presses nothing; the text
+    /// field's rectangle is there for the page to raise the keyboard.
+    #[test]
+    fn a_tap_presses_and_a_drag_scrolls() {
+        let mut ui = WebUi::new(1.0, false);
+        let win = form(&mut ui);
+        let (x, y, w, h) = ui.widget_rect(win, 3).expect("button");
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        ui.touch(win, "start", 7, cx, cy);
+        assert!(drain(&mut ui).is_empty(), "nothing until it lifts");
+        ui.touch(win, "move", 7, cx + 3.0, cy);
+        ui.touch(win, "end", 7, cx + 3.0, cy);
+        let events = drain(&mut ui);
+        let pressed: Vec<_> = events
+            .iter()
+            .filter(|e| e["tag"] == "pointer")
+            .map(|e| (e["val"]["widget"].clone(), e["val"]["pressed"].clone()))
+            .collect();
+        assert_eq!(
+            pressed,
+            [(json!("3"), json!(true)), (json!("3"), json!(false))],
+            "{events:?}"
+        );
+
+        ui.touch(win, "start", 8, cx, cy);
+        ui.touch(win, "move", 8, cx, cy - 20.0);
+        ui.touch(win, "end", 8, cx, cy - 20.0);
+        let events = drain(&mut ui);
+        assert!(events.iter().all(|e| e["tag"] != "pointer"), "{events:?}");
+        let wheel = events
+            .iter()
+            .find(|e| e["tag"] == "wheel")
+            .expect("a scroll");
+        assert_eq!(
+            wheel["val"]["dy"],
+            json!(20.0),
+            "content follows the finger"
+        );
+
+        let rects = ui.text_rects(win);
+        let (fx, fy, fw, fh) = ui.widget_rect(win, 2).unwrap();
+        assert_eq!(rects, vec![fx, fy, fw, fh]);
+    }
+
+    /// On a canvas that lays itself out for the screen (a list, a table) a
+    /// finger that moves scrolls, as it does in the Android Player; on a
+    /// game's canvas, drawn at a design size, the same finger presses and
+    /// drags, held, so the game can steer by it.
+    #[test]
+    fn a_finger_scrolls_a_document_canvas_and_drags_a_game_s() {
+        for design in [false, true] {
+            let mut ui = WebUi::new(1.0, false);
+            let win = ui.create_window("Canvas", 390, 844, (390, 844)).unwrap();
+            ui.show_window(win).unwrap();
+            ui.set_root(
+                win,
+                &node(
+                    1,
+                    None,
+                    "canvas",
+                    json!({ "style": { "grow": 1.0, "padding": 0.0 } }),
+                ),
+            )
+            .unwrap();
+            let canvas = ui.canvas_bind(win, 1).unwrap();
+            if design {
+                ui.canvas_set_design(canvas, 480.0, 640.0).unwrap();
+            } else {
+                // A document asks its size and lays out for it: no design.
+                ui.canvas_size(canvas).unwrap();
+            }
+            drain(&mut ui);
+            ui.touch(win, "start", 7, 195.0, 600.0);
+            for step in 1..=10 {
+                ui.touch(win, "move", 7, 195.0, 600.0 - step as f32 * 30.0);
+            }
+            ui.touch(win, "end", 7, 195.0, 300.0);
+            let events = drain(&mut ui);
+            let wheel: f64 = events
+                .iter()
+                .filter(|e| e["tag"] == "wheel")
+                .filter_map(|e| e["val"]["dy"].as_f64())
+                .sum();
+            let presses = events
+                .iter()
+                .filter(|e| e["tag"] == "pointer" && e["val"]["pressed"] == json!(true))
+                .count();
+            if design {
+                assert_eq!(wheel, 0.0, "a game's drag scrolled: {events:?}");
+                assert_eq!(presses, 1, "a game's finger presses at once: {events:?}");
+                assert!(
+                    ui.button_held(0)
+                        || events
+                            .iter()
+                            .any(|e| e["tag"] == "pointer" && e["val"]["pressed"] == json!(false))
+                );
+            } else {
+                assert!(
+                    wheel > 250.0,
+                    "the document did not scroll with the finger ({wheel}): {events:?}"
+                );
+                assert_eq!(presses, 0, "a scroll pressed the document: {events:?}");
+            }
+        }
+    }
+
+    /// Scroll steps queued behind each other reach the app as one, summed,
+    /// and the event after them still arrives, in order.
+    #[test]
+    fn scroll_steps_waiting_together_arrive_as_one() {
+        let mut ui = WebUi::new(1.0, false);
+        let win = rows_window(&mut ui);
+        drain(&mut ui);
+        for _ in 0..5 {
+            ui.wheel(win, 100.0, 300.0, 0.0, 12.0, 0);
+        }
+        ui.key(win, "a", true, 0, None);
+        ui.wheel(win, 100.0, 300.0, 0.0, 7.0, 0);
+        let events = drain(&mut ui);
+        let tags: Vec<_> = events
+            .iter()
+            .map(|e| e["tag"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(tags, ["wheel", "key", "wheel"], "{events:?}");
+        assert_eq!(
+            events[0]["val"]["dy"],
+            json!(60.0),
+            "five steps of 12, summed"
+        );
+        assert_eq!(
+            events[2]["val"]["dy"],
+            json!(7.0),
+            "a step after another event stays its own"
+        );
+    }
+
+    /// A game that fixed its coordinates asks where the pointer is in those
+    /// coordinates, the same numbers its pointer events carry (K-1176): a
+    /// 480x640 game on a 390x844 phone is scaled by 0.8125 and centred.
+    #[test]
+    fn the_pointer_position_is_in_the_game_s_own_coordinates() {
+        let mut ui = WebUi::new(1.0, false);
+        let win = ui.create_window("Game", 390, 844, (390, 844)).unwrap();
+        ui.show_window(win).unwrap();
+        ui.set_root(
+            win,
+            &node(
+                1,
+                None,
+                "canvas",
+                json!({ "style": { "grow": 1.0, "padding": 0.0 } }),
+            ),
+        )
+        .unwrap();
+        drain(&mut ui);
+        let canvas = ui.canvas_bind(win, 1).unwrap();
+        let (cw, ch) = ui.canvas_size(canvas).unwrap();
+        assert_eq!((cw, ch), (390.0, 844.0), "the canvas fills the phone");
+        ui.canvas_set_design(canvas, 480.0, 640.0).unwrap();
+        let k = 390.0 / 480.0;
+        let oy = (844.0 - 640.0 * k) / 2.0;
+        ui.pointer_moved(win, 195.0, oy + 320.0 * k);
+        let (x, y) = ui.position(win).expect("over the window");
+        assert!(
+            (x - 240.0).abs() < 0.01 && (y - 320.0).abs() < 0.01,
+            "({x}, {y})"
+        );
+        // The pointer event at the same place says the same.
+        ui.pointer(win, 195.0, oy + 320.0 * k, 0, true, 0);
+        let pressed = drain(&mut ui)
+            .into_iter()
+            .find(|e| e["tag"] == "pointer")
+            .expect("a press");
+        assert_eq!(
+            (pressed["val"]["x"].as_f64(), pressed["val"]["y"].as_f64()),
+            (Some(x as f64), Some(y as f64))
+        );
+    }
+
     /// Enter on a focused button presses it, after the key.
     #[test]
     fn enter_on_a_focused_button_presses_it() {
@@ -1153,6 +2035,7 @@ mod tests {
     /// hears `theme-changed`.
     #[test]
     fn dark_mode_follows_the_browser() {
+        let _look = LOOK.lock().unwrap_or_else(|e| e.into_inner());
         let mut ui = WebUi::new(1.0, false);
         let win = form(&mut ui);
         ui.render(win);

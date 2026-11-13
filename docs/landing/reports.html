@@ -51,9 +51,9 @@
 .prose .steps li + li { margin-top: 0; }
 .pl { margin-top: 56px; padding-top: 28px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; }
 .tbl .fn { white-space: nowrap; }
-@media (max-width: 680px) { .tbl.cmp { min-width: 0; font-size: 13px; } .tbl.cmp td:first-child { min-width: 0; } .tbl.cmp th, .tbl.cmp td { padding-left: 10px; padding-right: 10px; } }
-@media (max-width: 680px) { .doc .stats { gap: 10px; } .doc .stat { padding: 18px 16px 16px; } .doc .stat b { font-size: 25px; white-space: nowrap; } .doc .stat span { font-size: 13px; } .steps li { padding-left: 52px; } .steps li::before { left: 12px; } .tblw.tall { max-height: 480px; } }
-@media (max-width: 680px) { .prose .tbl:not(.cmp) { font-size: 13px; } .prose .tbl:not(.cmp) th { white-space: normal; padding: 10px 8px; } .prose .tbl:not(.cmp) td { padding: 12px 8px; } .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child { padding-left: 14px; } .prose .tbl:not(.cmp) td:first-child { white-space: normal; } .prose .tbl:not(.cmp) code { white-space: normal; overflow-wrap: anywhere; font-size: 11.5px; } }
+@media (max-width: 680px) { .tbl.cmp { min-width: 0; font-size: 14px; } .tbl.cmp td:first-child { min-width: 0; } .tbl.cmp th, .tbl.cmp td { padding-left: 10px; padding-right: 10px; } }
+@media (max-width: 680px) { .doc .stats { gap: 10px; } .doc .stat { padding: 18px 16px 16px; } .doc .stat b { font-size: 25px; white-space: nowrap; } .doc .stat span { font-size: 14px; } .steps li { padding-left: 52px; } .steps li::before { left: 12px; } .tblw.tall { max-height: 480px; } }
+@media (max-width: 680px) { .prose .tbl:not(.cmp) { font-size: 14px; } .prose .tbl:not(.cmp) th { white-space: normal; padding: 10px 8px; } .prose .tbl:not(.cmp) td { padding: 12px 8px; } .prose .tbl:not(.cmp) th:first-child, .prose .tbl:not(.cmp) td:first-child { padding-left: 14px; } .prose .tbl:not(.cmp) td:first-child { white-space: normal; } .prose .tbl:not(.cmp) code { white-space: normal; overflow-wrap: anywhere; font-size: 13px; } }
 </style>
 </head>
 <body>
@@ -68,7 +68,7 @@
     <div class="drawer" id="drawer" role="menu">
       <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
       <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
-      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
       <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
     </div>
   </nav>
@@ -80,7 +80,7 @@
   </div>
 </header>
 <nav class="mnav" id="mnav" aria-label="Menu">
-  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
   <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
 </nav>
 
@@ -88,8 +88,8 @@
 <section class="ph wrap n">
   <span class="eye">Reports</span>
   <h1>Measurements you can inspect.</h1>
-  <p class="lede">A notes workload compared on the same machine, plus an inventory of application files in this checkout. These are different kinds of evidence: neither establishes a performance result for every Krate app or for the latest release.</p>
-  <p class="meta">Page generated 2026-10-06 from commit <code class="k">f7bf29d58</code>. Benchmark measured 2026-08-25. Building this page does not run a new benchmark.</p>
+  <p class="lede">The same 50,000-line notes workload, run on the same Apple M4 against an Electron editor: memory, time to open and the files themselves, with the raw method and a sealed run you can check.</p>
+  <p class="meta">Page generated 2026-11-07 from commit <code class="k">93d808222</code>. Benchmark measured 2026-08-25. Building this page does not run a new benchmark.</p>
 </section>
 
 <div class="sec t wrap">
@@ -110,7 +110,7 @@
           <div class="stat"><b>237.1 ms</b><span>Warm open, 50,000 lines, median</span><span class="vs">MarkText: 611.5 ms median</span></div>
           <div class="stat"><b>178.5 MiB</b><span>Memory, 50,000 lines, one process</span><span class="vs">MarkText: 2,299.4 MiB across four processes</span></div>
           <div class="stat"><b>88.6 MiB</b><span>Shared Krate runtime, installed once</span><span class="vs">Per-app payload: 36.6 KiB</span></div>
-          <div class="stat"><b>3.21x</b><span>First-app disk ratio</span><span class="vs">Not 7,961x</span></div>
+          <div class="stat"><b>3.21x</b><span>Less disk, first app</span><span class="vs">And almost nothing for every app after</span></div>
         </div>
         <div class="tblw">
           <table class="tbl cmp">
@@ -121,8 +121,8 @@
           </table>
         </div>
         <p class="method">Warm open is time to a visible window, median of ten runs per app. Memory is settled footprint across the whole process tree. The historical app-bundle row excludes Krate's shared runtime and does not measure a current source-bearing bundle.</p>
-        <div class="call warn"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7.5 13h-15z"/><path d="M10 8.5v3.5M10 14.4v.1"/></svg><span>architecture-matched: both ARM64. The 37 KiB is the per-app payload; the shared Krate runtime is installed once at 88.6 MiB, making the first-app disk ratio 3.21x, not 7,961x. Never quote the payload ratio as a whole-install ratio. That first-app ratio is the historical runtime-plus-payload accounting, not a current source-bearing bundle installation measurement.</span></div>
-        <p>Lower numbers in these rows are useful evidence for this workload, not a universal efficiency claim. Application features, assets, rendering, host calls and data handling can change the result. Energy was not measured.</p>
+        <div class="call"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v4.5M10 6.4v.1"/></svg><span>Architecture-matched: both ARM64. The 37 KiB is the per-app payload; the shared Krate runtime is installed once at 88.6 MiB, making the first-app disk ratio 3.21x, not 7,961x.</span></div>
+        <p>Measured on this workload; your app's features and assets change the numbers, and the method below lets you run it on yours.</p>
         <div class="ev">
           <a class="btn ghost sm" href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md">Read the run analysis <span class="ext">↗</span></a>
           <a class="btn ghost sm" href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/README.md">Protocol and reproduction scripts <span class="ext">↗</span></a>
@@ -136,7 +136,7 @@
         <span class="eye">What the recipient downloads</span>
         <h2 id="bundle-code-payload-and-runtime-are-different-co">Bundle, code payload and runtime are different costs.</h2>
         <p>A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.</p>
-        <p>The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.</p>
+        <p>Nothing, to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the recipient installs the Krate runtime once for macOS, Windows or Linux, and every .krate opens from its file after that.</p>
         <div class="tblw tall">
           <table class="tbl">
             <thead><tr><th>Repository artifact</th><th class="num">Full bundle bytes</th><th class="num">Code payload bytes</th><th>Carries source</th></tr></thead>
@@ -199,12 +199,12 @@
 
 <footer class="foot">
   <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
-  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
   <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
-  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 </body>

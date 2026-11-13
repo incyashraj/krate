@@ -8,7 +8,39 @@ use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 
 fn krate() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_krate"));
+    krate_at(std::path::Path::new(env!("CARGO_BIN_EXE_krate")))
+}
+
+/// `krate` for a test whose engine puts ITSELF into a file: a Linux gift
+/// carries the player that made it.
+///
+/// The engine a person has is a stripped release build of about 30 MB. This
+/// test binary is a debug build, and on Linux its debug info makes it several
+/// hundred MB or more; gzip -9 and a SHA-256 over that outran the full lane's
+/// 90 s watchdog, so `krate wrap --for linux` was shot before it finished
+/// (K-1128). On Linux the test runs a copy with the debug info stripped: the
+/// same program, at the size a person ships. Where `strip` is missing the
+/// whole binary is used, which is slower and still correct. macOS keeps its
+/// debug info outside the binary, so there is nothing to strip there.
+fn krate_to_carry(dir: &std::path::Path) -> Command {
+    let engine = std::path::PathBuf::from(env!("CARGO_BIN_EXE_krate"));
+    if cfg!(target_os = "linux") {
+        let copy = dir.join("krate-stripped");
+        let stripped = std::fs::copy(&engine, &copy).is_ok()
+            && Command::new("strip")
+                .arg("--strip-debug")
+                .arg(&copy)
+                .status()
+                .is_ok_and(|status| status.success());
+        if stripped {
+            return krate_at(&copy);
+        }
+    }
+    krate_at(&engine)
+}
+
+fn krate_at(engine: &std::path::Path) -> Command {
+    let mut command = Command::new(engine);
     // A hung child must name itself rather than eat the run.
     //
     // This suite makes 200-odd unbounded `.output()` calls. On Windows one
@@ -647,16 +679,20 @@ fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
     std::fs::write(source.join("src/main.rs"), "fn main() {}\n").expect("write source");
     let bundle = root.path().join("must-not-exist.krate");
 
-    let output = krate()
+    // No --prepare, so the kept workspace goes under a temporary HOME.
+    let home = root.path().join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let mut command = krate();
+    command
         .arg("port")
         .arg(&source)
         .arg("--author-cmd")
         .arg("printf 'fn changed() {}\\n' > \"$KRATE_PORT_SOURCE/src/main.rs\"")
         .arg("--to")
         .arg(&bundle)
-        .arg("--no-install")
-        .output()
-        .expect("run source integrity test");
+        .arg("--no-install");
+    with_temp_home(&mut command, &home);
+    let output = command.output().expect("run source integrity test");
 
     assert!(!output.status.success());
     assert!(!bundle.exists());
@@ -670,6 +706,737 @@ fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
         "unexpected stderr:\n{stderr}\nstdout:\n{}",
         String::from_utf8_lossy(&output.stdout)
     );
+}
+
+/// IC-120's stand-in authors. Each test below drives a full port with a
+/// deterministic author command -- no AI is involved -- and checks how the
+/// one initiation ends: ported with evidence, not verified, or blocked on a
+/// named requirement, always with the workspace kept and named.
+///
+/// The original is the E5 invoice: 2 + 3 + 5 at a unit price of 10 prints
+/// `total=100`. The authors copy one of these into the candidate from the
+/// source snapshot, so the command holds no host path (a Windows temp path
+/// is full of backslashes a shell reads as escapes).
+const INVOICE_PORT: &str = r#"//! Invoice: sums the quantities in a file at a unit price of 10.
+#![no_std]
+extern crate alloc;
+
+use krate::{
+    fs::{self, OpenMode},
+    io::{args, stdio},
+    Guest,
+};
+
+const UNIT_PRICE: i64 = 10;
+
+struct Component;
+
+impl Guest for Component {
+    fn run() -> i32 {
+        let raw = args::raw();
+        let Some(path) = raw.split('\n').find(|arg| !arg.is_empty()) else {
+            let _ = stdio::eprintln("usage: invoice <file>");
+            return 2;
+        };
+        if path == "quick" {
+            let _ = stdio::println("total=0");
+            return 0;
+        }
+        let Ok(file) = fs::open(path, OpenMode::Read) else {
+            let _ = stdio::eprintln("invoice: could not read the file");
+            return 5;
+        };
+        let mut sum: i64 = 0;
+        let mut current: i64 = 0;
+        loop {
+            let Ok(chunk) = file.read(8192) else { return 22 };
+            if chunk.is_empty() {
+                break;
+            }
+            for byte in &chunk {
+                if byte.is_ascii_digit() {
+                    current = current.saturating_mul(10).saturating_add(i64::from(*byte - b'0'));
+                } else {
+                    sum = sum.saturating_add(current);
+                    current = 0;
+                }
+            }
+        }
+        sum = sum.saturating_add(current);
+        let mut line = [0u8; 32];
+        let mut len = 0usize;
+        for b in b"total=" {
+            if let Some(slot) = line.get_mut(len) {
+                *slot = *b;
+                len += 1;
+            }
+        }
+        let mut digits = [0u8; 20];
+        let mut n = 0usize;
+        let mut value = sum.saturating_mul(UNIT_PRICE).unsigned_abs();
+        loop {
+            if let Some(slot) = digits.get_mut(n) {
+                *slot = b'0' + (value % 10) as u8;
+                n += 1;
+            }
+            value /= 10;
+            if value == 0 {
+                break;
+            }
+        }
+        for i in (0..n).rev() {
+            if let (Some(src), Some(dst)) = (digits.get(i), line.get_mut(len)) {
+                *dst = *src;
+                len += 1;
+            }
+        }
+        if let Ok(text) = core::str::from_utf8(line.get(..len).unwrap_or(&[])) {
+            let _ = stdio::println(text);
+        }
+        0
+    }
+}
+
+krate::export!(Component);
+"#;
+
+/// The invoice source, the port variants inside it (read by the author from
+/// the snapshot), and the recorded cases beside it. Returns (source, oracle).
+fn invoice_port_fixture(root: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let source = root.join("invoice");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::create_dir_all(source.join("port-fixtures")).expect("create fixtures");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"invoice\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(
+        source.join("src/main.rs"),
+        r#"use std::{env, fs};
+fn main() {
+    let path = env::args().nth(1).unwrap_or_else(|| "qty.txt".to_string());
+    let text = fs::read_to_string(&path).expect("read quantities");
+    let sum: i64 = text.split_whitespace().filter_map(|w| w.parse::<i64>().ok()).sum();
+    println!("total={}", sum * 10);
+}
+"#,
+    )
+    .expect("write source");
+    std::fs::write(source.join("qty.txt"), "2\n3\n5\n").expect("write input");
+    // The right port, and one that opens, runs and charges 9 a unit.
+    std::fs::write(source.join("port-fixtures/good.rs.txt"), INVOICE_PORT).expect("good");
+    let wrong = INVOICE_PORT.replace("UNIT_PRICE: i64 = 10", "UNIT_PRICE: i64 = 9");
+    assert_ne!(wrong, INVOICE_PORT, "the wrong port must really differ");
+    std::fs::write(source.join("port-fixtures/wrong.rs.txt"), wrong).expect("wrong");
+    let oracle = root.join("cases.json");
+    std::fs::write(
+        &oracle,
+        r#"{
+  "schema": "krate.port.oracle.v1",
+  "cases": [
+    {"id": "invoice-total", "args": ["input/qty.txt"],
+     "files": {"input/qty.txt": "2\n3\n5\n"}, "stdout": "total=100\n"},
+    {"id": "empty-invoice", "args": ["input/empty.txt"],
+     "files": {"input/empty.txt": ""}, "stdout": "total=0\n"}
+  ]
+}
+"#,
+    )
+    .expect("write oracle");
+    (source, oracle)
+}
+
+/// Copy one port variant from the snapshot into the candidate.
+fn copy_port(variant: &str) -> String {
+    format!(
+        "cp \"$KRATE_PORT_SOURCE/port-fixtures/{variant}.rs.txt\" \"$KRATE_PORT_CANDIDATE/src/lib.rs\""
+    )
+}
+
+fn last_line(text: &str) -> &str {
+    text.lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+}
+
+fn port_outcome(workspace: &std::path::Path) -> serde_json::Value {
+    serde_json::from_slice(
+        &std::fs::read(workspace.join("port-outcome.json")).expect("read port-outcome.json"),
+    )
+    .expect("parse port-outcome.json")
+}
+
+/// A port is run against a temporary HOME when it gets no --prepare, so the
+/// workspace it keeps lands there and not in the person's own ~/.krate. The
+/// toolchain stays the real one.
+fn with_temp_home(command: &mut Command, home: &std::path::Path) {
+    let real_home = std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .expect("a home directory");
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".cargo"));
+    let rustup_home = std::env::var_os("RUSTUP_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".rustup"));
+    command
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("CARGO_HOME", cargo_home)
+        .env("RUSTUP_HOME", rustup_home);
+}
+
+/// IC-120: a port that prints what the original printed on every recorded
+/// case ends ported -- the .krate at the requested path, the evidence it was
+/// judged on in the workspace, one closing line, and the same verdict as
+/// JSON. Run from a relative --prepare, which used to hand the author a
+/// candidate path that did not exist from inside the workspace (K-1233).
+#[test]
+fn a_port_that_matches_the_recorded_cases_ends_ported_with_its_evidence() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+
+    let output = krate()
+        .current_dir(root.path())
+        .arg("port")
+        .arg(&source)
+        .args(["--prepare", "port-work"])
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && printf 'Ported the invoice total.\\n' > PORT_RESULT.md",
+            copy_port("good")
+        ))
+        .args(["--to", "invoice.krate", "--no-install", "--json"])
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a port that matches every recorded case is ported\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    assert!(
+        bundle.is_file(),
+        "the verified .krate is at the requested path"
+    );
+
+    // --json: the last line of stdout is the ending.
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    assert_eq!(outcome["schema"], "krate.port.outcome.v1");
+    assert_eq!(outcome["verdict"], "ported");
+    assert_eq!(outcome["exit_code"], 0);
+    assert!(outcome["requirement"].is_null());
+    let named = std::path::PathBuf::from(outcome["workspace"].as_str().expect("workspace"));
+    assert!(named.is_absolute() && named.join("candidate").is_dir());
+    assert_eq!(
+        port_outcome(&workspace),
+        outcome,
+        "the file and the JSON agree"
+    );
+    // And the plain line, on stderr under --json.
+    let line = last_line(&stderr);
+    assert!(line.starts_with("Ported: "), "closing line: {line}");
+    assert!(line.contains("Workspace: "), "closing line: {line}");
+
+    // The evidence the verdict rests on.
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("journey results"),
+    )
+    .expect("parse");
+    let primary = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "primary-task")
+        .expect("primary-task");
+    assert_eq!(primary["status"], "passed");
+    assert_eq!(primary["cases"].as_array().map(Vec::len), Some(2));
+    assert_eq!(primary["cases"][0]["stdout"], "total=100\n");
+    let journeys: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(workspace.join("journeys.json")).expect("journeys"))
+            .expect("parse");
+    assert!(journeys["journeys"]
+        .as_array()
+        .expect("journeys")
+        .iter()
+        .any(|j| j["id"] == "primary-task" && j["kind"] == "recorded-io"));
+    assert!(workspace.join("oracle.json").is_file());
+    let task = std::fs::read_to_string(workspace.join("AGENT_TASK.md")).expect("task");
+    assert!(
+        task.contains("invoice-total"),
+        "the agent is shown the cases"
+    );
+    let result: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("port-result.json")).expect("port result"),
+    )
+    .expect("parse");
+    assert_eq!(result["verdict"], "ported");
+    assert_eq!(result["bundle_sha256"], results["bundle_sha256"]);
+}
+
+/// IC-120's build-only false positive: a candidate that compiles, packs,
+/// imports only krate:*, runs and keeps its permission wall -- and is a
+/// different program. With recorded cases it is blocked on the journey it
+/// fails, never ported, and nothing is written to the requested path.
+#[test]
+fn a_port_that_builds_but_does_something_else_is_blocked_on_its_journey() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    // A working line counter, as in E5.
+    let author = "printf '//! A line counter.\\n#![no_std]\\nextern crate alloc;\\n\
+                  use krate::{io::stdio, Guest};\\nstruct Component;\\n\
+                  impl Guest for Component {\\n    fn run() -> i32 {\\n        \
+                  let _ = stdio::print(\"lines=3\\\\n\");\\n        0\\n    }\\n}\\n\
+                  krate::export!(Component);\\n' > \"$KRATE_PORT_CANDIDATE/src/lib.rs\"";
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(author)
+        .args(["--repair-attempts", "0", "--no-install", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "a line counter is not a port of an invoice app\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!bundle.exists(), "nothing at the requested path");
+    assert!(
+        workspace.join("candidate.krate").is_file(),
+        "the candidate that was judged is kept in the workspace"
+    );
+    let line = last_line(&stdout);
+    assert!(
+        line.starts_with("Blocked on primary-task: ") && line.contains("\"lines=3\""),
+        "the closing line names the journey and what came out: {line}"
+    );
+    assert!(line.contains(&format!("Workspace: {}", workspace.display())));
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "blocked");
+    assert_eq!(outcome["requirement"], "primary-task");
+    assert!(outcome["bundle"].is_null());
+    assert!(
+        stderr.contains("This port failed: different behavior"),
+        "{stderr}"
+    );
+    let report =
+        std::fs::read_to_string(workspace.join("FAILURE-REPORT.md")).expect("failure report");
+    assert!(
+        report.contains("total=100") && report.contains("lines=3"),
+        "{report}"
+    );
+}
+
+/// IC-120's opens-but-wrong behavior and repair exhaustion: an author whose
+/// port opens and prints the wrong total, and whose repairs never fix it,
+/// gets exactly its repair budget -- each attempt handed the difference --
+/// and then ends blocked on the failed journey.
+#[test]
+fn a_port_that_never_prints_the_right_answer_stops_after_its_repair_budget() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(copy_port("wrong"))
+        .args(["--repair-attempts", "2", "--no-install", "--json", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!bundle.exists());
+    for attempt in 1..=2 {
+        let log = std::fs::read_to_string(workspace.join(format!("repair/behavior-{attempt}.txt")))
+            .expect("each repair is handed the difference");
+        assert!(
+            log.contains("total=100") && log.contains("total=90"),
+            "attempt {attempt}: {log}"
+        );
+    }
+    assert!(
+        !workspace.join("repair/behavior-3.txt").exists(),
+        "no third attempt"
+    );
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    assert_eq!(outcome["verdict"], "blocked");
+    assert_eq!(outcome["exit_code"], 8);
+    assert_eq!(outcome["requirement"], "primary-task");
+    assert_eq!(outcome["repair_attempts_used"], 2);
+    assert!(outcome["reason"]
+        .as_str()
+        .expect("reason")
+        .contains("\"total=90\" where the original printed \"total=100\""));
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("journey results"),
+    )
+    .expect("parse");
+    let primary = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "primary-task")
+        .expect("primary-task");
+    assert_eq!(primary["status"], "failed");
+    assert!(last_line(&stderr).starts_with("Blocked on primary-task: "));
+}
+
+/// IC-120's repair success: the first port prints the wrong total, the
+/// repair attempt is handed the difference and fixes it, and the port ends
+/// verified.
+#[test]
+fn a_repair_that_fixes_the_behavior_ends_ported() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    // The repair copies the right port only when the log it was handed names
+    // the wrong total -- proof the difference reached it.
+    let author = format!(
+        "if [ -n \"$KRATE_PORT_REPAIR_LOG\" ]; then \
+         grep -q 'total=90' \"$KRATE_PORT_REPAIR_LOG\" && {good}; \
+         else {wrong}; fi",
+        good = copy_port("good"),
+        wrong = copy_port("wrong")
+    );
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(author)
+        .args(["--repair-attempts", "2", "--no-install", "--to"])
+        .arg(&bundle)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(bundle.is_file());
+    assert!(workspace.join("repair/behavior-1.txt").is_file());
+    assert!(!workspace.join("repair/behavior-2.txt").exists());
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "ported");
+    assert_eq!(outcome["repair_attempts_used"], 1);
+    assert!(last_line(&stdout).starts_with("Ported: "));
+}
+
+/// IC-120's agent failure: an author that crashes, one that never returns,
+/// and one that changes nothing each end blocked on `agent`, in words, with
+/// the workspace kept and named -- including a port started without
+/// --prepare, whose workspace used to be a temporary directory deleted on
+/// the way out.
+#[test]
+fn an_author_that_crashes_hangs_or_does_nothing_is_a_named_blocker() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, _oracle) = invoice_port_fixture(root.path());
+
+    for (name, author, says) in [
+        (
+            "crash",
+            "echo 'agent crashed' >&2; exit 3",
+            "exited with code 3",
+        ),
+        // Two commands, so the shell keeps the sleep as a child of its own
+        // on every system (Ubuntu's dash does that even for one command):
+        // only stopping the author's whole process group ends it.
+        ("hang", "sleep 120; true", "did not finish within 2 seconds"),
+        ("nothing", "true", "without changing the candidate"),
+    ] {
+        let workspace = root.path().join(format!("ws-{name}"));
+        let bundle = root.path().join(format!("{name}.krate"));
+        let started = std::time::Instant::now();
+        let output = krate()
+            .arg("port")
+            .arg(&source)
+            .arg("--prepare")
+            .arg(&workspace)
+            .arg("--author-cmd")
+            .arg(author)
+            .args(["--no-install", "--to"])
+            .arg(&bundle)
+            .env("KRATE_AUTHOR_TIMEOUT_SECS", "2")
+            .output()
+            .expect("run port");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            output.status.code(),
+            Some(8),
+            "{name}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "{name}: the author must be stopped at its deadline, not waited on"
+        );
+        assert!(!bundle.exists(), "{name}: no bundle");
+        let line = last_line(&stdout);
+        assert!(
+            line.starts_with("Blocked on agent: ") && line.contains(says),
+            "{name}: closing line: {line}"
+        );
+        assert!(line.contains(&format!("Workspace: {}", workspace.display())));
+        assert!(
+            workspace.join("candidate/src/lib.rs").is_file(),
+            "{name}: kept"
+        );
+        let outcome = port_outcome(&workspace);
+        assert_eq!(outcome["requirement"], "agent", "{name}");
+        assert!(
+            stderr.contains("This port failed: the AI tool stopped"),
+            "{name}: {stderr}"
+        );
+    }
+
+    // No --prepare: the workspace is kept under ~/.krate/ports and named.
+    let home = root.path().join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let mut command = krate();
+    command
+        .arg("port")
+        .arg(&source)
+        .args(["--author-cmd", "exit 3", "--no-install", "--json", "--to"])
+        .arg(root.path().join("unprepared.krate"));
+    with_temp_home(&mut command, &home);
+    let output = command.output().expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let outcome: serde_json::Value =
+        serde_json::from_str(last_line(&stdout)).expect("the last stdout line is JSON");
+    let workspace = std::path::PathBuf::from(outcome["workspace"].as_str().expect("workspace"));
+    assert!(
+        workspace.starts_with(home.join(".krate").join("ports")),
+        "kept under ~/.krate/ports: {}",
+        workspace.display()
+    );
+    assert!(workspace.join("candidate/src/lib.rs").is_file());
+    assert!(workspace.join("FAILURE-REPORT.md").is_file());
+    assert_eq!(port_outcome(&workspace), outcome);
+}
+
+/// The recorded cases are criteria like the journeys: an agent that rewrites
+/// `oracle.json` to match what its port prints is marking its own exam, and
+/// the port stops before anything is built.
+#[test]
+fn an_agent_cannot_rewrite_the_recorded_cases() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && sed -i.bak 's/total=100/total=90/' oracle.json",
+            copy_port("wrong")
+        ))
+        .args(["--no-install", "--to"])
+        .arg(&bundle)
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stderr.contains("marking its own exam"), "{stderr}");
+    assert!(!bundle.exists());
+    assert!(
+        !workspace.join("candidate.krate").exists(),
+        "stopped before packaging"
+    );
+    assert_eq!(
+        port_outcome(&workspace)["requirement"],
+        "criteria-unchanged"
+    );
+}
+
+/// IC-120's original-source drift: the person's own project changing while
+/// the agent runs ends the port blocked on `source-unchanged`, before
+/// anything is built, so a port never silently races their edits.
+#[test]
+fn the_original_changing_during_a_port_is_a_named_blocker() {
+    if cfg!(windows) {
+        // The author names the original by its host path, and a Windows temp
+        // path is full of backslashes the shell reads as escapes.
+        eprintln!("skipping the source-drift check on Windows: the author names a host path");
+        return;
+    }
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, oracle) = invoice_port_fixture(root.path());
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("invoice.krate");
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--oracle")
+        .arg(&oracle)
+        .arg("--author-cmd")
+        .arg(format!(
+            "{} && printf '// edited by the person\\n' >> '{}'",
+            copy_port("good"),
+            source.join("src/main.rs").display()
+        ))
+        .args(["--no-install", "--to"])
+        .arg(&bundle)
+        .output()
+        .expect("run port");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(8),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        std::fs::read_to_string(source.join("src/main.rs"))
+            .expect("read original")
+            .contains("edited by the person"),
+        "the fixture really changed the original"
+    );
+    assert!(stderr.contains("original source changed"), "{stderr}");
+    assert!(last_line(&stdout).starts_with("Blocked on source-unchanged: "));
+    assert!(!bundle.exists());
+    assert!(
+        !workspace.join("candidate.krate").exists(),
+        "stopped before packaging"
+    );
+    assert_eq!(port_outcome(&workspace)["requirement"], "source-unchanged");
+}
+
+/// A case file Krate cannot use is refused before anything is prepared or
+/// any author runs: finding a typo after the agent's time is spent is the
+/// most expensive way to find it.
+#[test]
+fn a_case_file_krate_cannot_use_is_refused_before_the_port_starts() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let (source, _oracle) = invoice_port_fixture(root.path());
+    for (name, text) in [
+        (
+            "misspelt",
+            r#"{"schema":"krate.port.oracle.v1","cases":[{"id":"a","expected_stdout":"x"}]}"#,
+        ),
+        ("empty", r#"{"schema":"krate.port.oracle.v1","cases":[]}"#),
+        (
+            "escapes",
+            r#"{"schema":"krate.port.oracle.v1","cases":[{"id":"a","stdout":"x","files":{"../x":""}}]}"#,
+        ),
+    ] {
+        let oracle = root.path().join(format!("{name}.json"));
+        std::fs::write(&oracle, text).expect("write oracle");
+        let workspace = root.path().join(format!("ws-{name}"));
+        let output = krate()
+            .arg("port")
+            .arg(&source)
+            .arg("--prepare")
+            .arg(&workspace)
+            .arg("--oracle")
+            .arg(&oracle)
+            .args(["--author-cmd", "touch ran-anyway", "--no-install", "--to"])
+            .arg(root.path().join(format!("{name}.krate")))
+            .output()
+            .expect("run port");
+        assert!(!output.status.success(), "{name} was accepted");
+        assert!(!workspace.exists(), "{name}: nothing is prepared");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(&format!("{name}.json")),
+            "{name}: the refusal names the file: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[test]
@@ -3916,6 +4683,58 @@ fn check_app_passes_a_known_good_app_and_emits_json() {
 }
 
 #[test]
+fn a_second_full_check_of_the_same_bytes_reuses_the_pass() {
+    // Measured on 34 real Studio builds: the engine's closing check re-judged
+    // bytes the agent's own last check had just passed in 27 of 29, about 19
+    // seconds each. The second check of unchanged bytes must say it reused
+    // the pass, name the same stages, and leave the first one's verdict as
+    // the answer; a check that never ran in full must not be reused.
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let app_dir = workspace_path(PathBuf::from("apps/krate-diceroll"));
+    let record = app_dir.join("target/.krate-check-pass.json");
+    let _ = std::fs::remove_file(&record);
+    let check = |extra: &[&str]| -> serde_json::Value {
+        let output = krate()
+            .arg("check-app")
+            .arg(&app_dir)
+            .args(extra)
+            .arg("--json")
+            .output()
+            .expect("run check-app");
+        assert!(
+            output.status.success(),
+            "check-app must pass: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).expect("json")
+    };
+    let quick = check(&["--no-run"]);
+    assert!(quick["reused_pass_secs"].is_null());
+    assert!(
+        !record.exists(),
+        "a --no-run check proves nothing about running"
+    );
+
+    let first = check(&[]);
+    assert!(
+        first["reused_pass_secs"].is_null(),
+        "the first full check runs the app"
+    );
+    assert!(record.is_file(), "a full pass is remembered");
+    let second = check(&[]);
+    assert!(
+        second["reused_pass_secs"].as_u64().is_some(),
+        "the same bytes reuse the pass: {second}"
+    );
+    assert_eq!(first["stages"], second["stages"]);
+    let _ = std::fs::remove_file(&record);
+}
+
+#[test]
 fn check_app_passes_a_cli_app_that_needs_an_argument() {
     // Regression: a CLI app that requires an argument must pass check-app. It
     // used to fail at the run stage because check-app gave CLI apps no argument
@@ -4176,7 +4995,7 @@ fn rewrite_bundle_entry(
         .compression_method(zip::CompressionMethod::Deflated);
     for index in 0..archive.len() {
         let mut existing = archive.by_index(index).expect("entry");
-        let name = existing.name().to_string();
+        let name = existing.name().expect("entry name").to_string();
         let mut bytes = Vec::new();
         existing.read_to_end(&mut bytes).expect("read entry");
         writer.start_file(name.clone(), options).expect("start");
@@ -6185,6 +7004,200 @@ fn a_watch_reports_what_changed_in_a_folder_and_nothing_outside_its_grant() {
     );
 }
 
+/// An app runs a program on the computer only when its manifest names it
+/// and the person allowed it, in its own folder, and nothing it started
+/// outlives it (krate:process, IC-977).
+///
+/// `process-probe.wasm` is apps/krate-process-probe built. Its manifest here
+/// names `cargo`, `sh` and a terminal, all optional, so a run with only the
+/// basics is the person saying no.
+#[test]
+fn an_app_runs_only_the_programs_it_names_and_they_end_with_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/process-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.process-probe\"\nname = \"process-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"process.run:cargo\"\nrationale = \"build\"\nrequired = false\n\n\
+         [[capabilities]]\ncap = \"process.run:sh\"\nrationale = \"a child\"\nrequired = false\n\n\
+         [[capabilities]]\ncap = \"process.terminal\"\nrationale = \"a terminal\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("process.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let run = |grants: &[&str], check: &str| {
+        let out = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .args(grants)
+            .args(["--", check])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let all = ["--auto-grant"];
+
+    // Runs, and the app reads what it printed.
+    let version = run(&all, "version");
+    assert!(
+        version.starts_with("version: cargo 1.") && version.ends_with(" code=0"),
+        "{version}"
+    );
+    // Not named in the manifest: refused in words, whatever was granted.
+    assert_eq!(
+        run(&all, "undeclared"),
+        "undeclared: not-declared: the app did not ask to run rustc"
+    );
+    assert!(
+        run(&all, "path").starts_with("path: not-declared: the app did not ask to run `/bin/sh`"),
+        "a path is never a program name"
+    );
+    // Named, and the person did not allow it.
+    assert_eq!(
+        run(&["--grant", "io.stdout", "--grant", "io.args"], "version"),
+        "version: refused-by-person: you did not allow this app to run cargo"
+    );
+    // A folder on the computer, or out of one by `..`: never.
+    assert_eq!(
+        run(&all, "raw-cwd"),
+        "raw-cwd: bad-folder: there is no folder `/tmp`"
+    );
+    assert!(
+        run(&all, "escape").starts_with("escape: bad-folder: "),
+        "`..` leaves no folder"
+    );
+
+    if cfg!(unix) {
+        // A terminal: typed input reaches the shell and its output comes
+        // back; it resizes and ends when killed.
+        assert_eq!(run(&all, "terminal"), "terminal: saw hi, resized, ended");
+        // Without the grant, no terminal.
+        assert!(
+            run(&["--grant", "io.stdout", "--grant", "io.args"], "terminal")
+                .starts_with("terminal: refused-by-person: ")
+        );
+
+        // The app forgets a running program and exits: it ends with the app.
+        let orphan = run(&all, "orphan");
+        let pid = orphan
+            .strip_prefix("orphan pid=")
+            .unwrap_or_else(|| panic!("{orphan}"))
+            .to_string();
+        assert!(pid.parse::<u32>().is_ok(), "{orphan}");
+        let alive = std::process::Command::new("ps")
+            .args(["-p", &pid])
+            .output()
+            .expect("ps");
+        assert!(
+            !alive.status.success(),
+            "pid {pid} outlived its app: {}",
+            String::from_utf8_lossy(&alive.stdout)
+        );
+    }
+}
+
+/// A program ends with Krate however Krate is stopped (krate:process,
+/// IC-977): `kill` and the terminal closing. A program leads its own process
+/// group, so a signal sent to Krate never reaches it; Krate has to end it on
+/// the way out. (Ctrl-C is Krate's own handler's: the run ends as it would,
+/// and dropping the run ends its programs.)
+#[cfg(unix)]
+#[test]
+fn a_program_ends_when_krate_is_interrupted_or_killed() {
+    use std::io::BufRead;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/process-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.process-probe\"\nname = \"process-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"process.run:sh\"\nrationale = \"a child\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("process.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    for signal in ["-TERM", "-HUP"] {
+        let mut running = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .args(["--", "hold"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("run");
+        let mut line = String::new();
+        std::io::BufReader::new(running.stdout.take().expect("stdout"))
+            .read_line(&mut line)
+            .expect("the program's pid");
+        let pid = line
+            .trim()
+            .strip_prefix("orphan pid=")
+            .unwrap_or_else(|| panic!("{line}"))
+            .to_string();
+        assert!(pid.parse::<u32>().is_ok(), "{line}");
+        let alive = |pid: &str| {
+            std::process::Command::new("ps")
+                .args(["-p", pid])
+                .output()
+                .expect("ps")
+                .status
+                .success()
+        };
+        assert!(alive(&pid), "the program runs while the app does");
+        assert!(std::process::Command::new("kill")
+            .args([signal, &running.id().to_string()])
+            .status()
+            .expect("kill")
+            .success());
+        let status = running.wait().expect("krate ended");
+        assert!(!status.success(), "{signal} ended Krate as it always did");
+        let mut gone = false;
+        for _ in 0..100 {
+            if !alive(&pid) {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(gone, "pid {pid} outlived Krate stopped with {signal}");
+    }
+}
+
 /// Krate's own logs never land in an app's output (K-884).
 ///
 /// The log writer defaulted to stdout, so on a Windows runner a wgpu driver
@@ -7320,6 +8333,85 @@ fn noisy_bundle(dir: &std::path::Path, noise_bytes: usize, seed: u64) -> PathBuf
     bundle
 }
 
+/// Publishing an app again says it was an update and which version, keeps
+/// the app's own link in front, and names the build's own link (IC-976).
+#[test]
+fn publishing_an_app_again_says_it_updated_and_to_which_version() {
+    use std::sync::{Arc, Mutex};
+    let home = tempfile::tempdir().expect("home");
+    std::fs::create_dir_all(home.path().join(".krate")).expect("krate home");
+    std::fs::write(
+        home.path().join(".krate/github.json"),
+        r#"{"login":"alice","name":"Alice","avatar_url":null,"token":"krs_alice"}"#,
+    )
+    .expect("sign-in");
+    // A copy: publishing signs an unsigned file as its maker, in place
+    // (IC-983), and the repository's evidence must stay as it was.
+    let kept = tempfile::tempdir().expect("copy dir");
+    let bundle = kept.path().join("bounce.krate");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/ported/bounce.krate"),
+        &bundle,
+    )
+    .expect("copy bounce");
+    let answer = Arc::new(Mutex::new(serde_json::json!({})));
+    let state = answer.clone();
+    let Some((addr, stop)) =
+        spawn_fake_hub(Arc::new(move |method, path, _headers, _body| {
+            match (method, path) {
+                ("POST", "/publish") => {
+                    (200, vec![], state.lock().unwrap().to_string().into_bytes())
+                }
+                _ => (404, vec![], b"not found".to_vec()),
+            }
+        }))
+    else {
+        eprintln!("skipping publishing_an_app_again_says_it_updated_and_to_which_version: no local port for the fake hub");
+        return;
+    };
+    let publish = || {
+        let out = krate()
+            .arg("publish")
+            .arg(&bundle)
+            .args(["--hub", &format!("http://{addr}")])
+            .args(["--shot", "/nonexistent.png"])
+            .env("HOME", home.path())
+            .output()
+            .expect("publish");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+    *answer.lock().unwrap() = serde_json::json!({
+        "id": "a".repeat(64), "url": "http://hub.example/a/v0123456789a",
+        "version_url": "http://hub.example/a/aaaaaaaaaaaa", "line": "v0123456789a", "version": 1, "updated": false
+    });
+    let first = publish();
+    assert!(first.contains("Published (v1)"), "{first}");
+    assert!(
+        first.contains("krate run http://hub.example/a/v0123456789a"),
+        "{first}"
+    );
+    *answer.lock().unwrap() = serde_json::json!({
+        "id": "b".repeat(64), "url": "http://hub.example/a/v0123456789a",
+        "version_url": "http://hub.example/a/bbbbbbbbbbbb", "line": "v0123456789a", "version": 3, "updated": true
+    });
+    let update = publish();
+    assert!(
+        update.contains("Updated to v3. Everyone with the link gets this version"),
+        "{update}"
+    );
+    assert!(
+        update.contains(
+            "this version alone, unchanged by later updates: http://hub.example/a/bbbbbbbbbbbb"
+        ),
+        "{update}"
+    );
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// `krate publish` sends an app over the publish door's 5 MiB through the
 /// big-file path (IC-945): started, sent in parts, finished, and the hub's
 /// verdict waited for -- and a publish cut off part way resumes, sending
@@ -7336,6 +8428,23 @@ fn a_big_app_is_published_in_parts_and_a_cut_off_publish_resumes() {
     )
     .expect("sign-in");
     let bundle = noisy_bundle(dir.path(), 12 * 1024 * 1024, 7);
+    // Signed before it is measured: an unsigned file is signed as its maker
+    // when it goes out (IC-983), and these bytes must be what goes out.
+    let signed = krate()
+        .arg("sign")
+        .arg(&bundle)
+        .arg("--key")
+        .arg(dir.path().join("publisher.key"))
+        .arg("--generate-key")
+        .args(["--namespace", "alice/bigpub"])
+        .env("HOME", home.path())
+        .output()
+        .expect("sign");
+    assert!(
+        signed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&signed.stderr)
+    );
     let bytes = std::fs::read(&bundle).expect("bundle");
     let sha = format!("{:x}", Sha256::digest(&bytes));
     let part_size = 5 * 1024 * 1024usize;
@@ -7875,6 +8984,13 @@ fn an_installed_apps_files_live_outside_it_and_survive_reinstall() {
     let old = app.join("Contents/Resources/probe-dir");
     std::fs::create_dir_all(&old).expect("old dir");
     std::fs::write(old.join("from-before.txt"), "kept").expect("old file");
+    // And one in the folder an older Krate named by the id alone, before a
+    // folder was keyed by who the app is (K-1253): the installed app it was
+    // made for takes it.
+    let apps = home.path().join("Library/Application Support/Krate/apps");
+    let id_folder = apps.join("com.acme.keeps-files");
+    std::fs::create_dir_all(&id_folder).expect("id folder");
+    std::fs::write(id_folder.join("from-the-id-folder.txt"), "kept").expect("id file");
 
     let double_click = |app: &std::path::Path| {
         let exe = std::fs::read_dir(app.join("Contents/MacOS"))
@@ -7899,12 +9015,18 @@ fn an_installed_apps_files_live_outside_it_and_survive_reinstall() {
     };
     double_click(&app);
 
-    let data = home
-        .path()
-        .join("Library/Application Support/Krate/apps/com.acme.keeps-files");
+    let data = apps.join(&principal);
     assert!(
         data.join("probe-dir/hello.txt").is_file(),
         "the app's file is in its data folder"
+    );
+    assert!(
+        data.join("from-the-id-folder.txt").is_file(),
+        "the id-named folder moved to the app's own"
+    );
+    assert!(
+        !apps.join("com.acme.keeps-files").exists(),
+        "moved, not copied"
     );
     assert_eq!(
         std::fs::read_to_string(data.join("probe-dir/from-before.txt"))
@@ -8648,6 +9770,38 @@ fn a_removed_app_is_refused_offline_by_the_held_blocklist() {
             && text.contains(&hash[..12])
             && text.contains("(emergency)"),
         "{text}"
+    );
+}
+
+/// K-1126: `krate check-app apps/x`, the folder given relative as a
+/// person types it, runs the app's own task. Before, the task path was
+/// handed on relative to a run that starts inside the folder, so the task
+/// never ran and check-app still said OK.
+#[test]
+fn check_app_runs_the_task_when_given_a_relative_folder() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = krate()
+        .current_dir(&repo)
+        .args(["check-app", "apps/krate-leave", "--json"])
+        .output()
+        .expect("check-app");
+    let text = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&text).unwrap_or_else(|_| {
+        panic!(
+            "no json: {text}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    assert_eq!(report["ok"], true, "{report}");
+    let notes = report["usability_notes"].to_string();
+    assert!(
+        notes.contains("completes its task: book a week of holiday"),
+        "the task ran: {notes}"
     );
 }
 
@@ -9554,7 +10708,7 @@ fn saved_data_exports_and_imports_to_the_app_it_came_from() {
         let options = zip::write::SimpleFileOptions::default();
         for index in 0..source.len() {
             let mut entry = source.by_index(index).unwrap();
-            let name = entry.name().to_string();
+            let name = entry.name().expect("entry name").to_string();
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
             if name == "data/dev.krate.notes.sqlite" {
@@ -9841,7 +10995,7 @@ fn an_editable_bundle_rebuilds_locked_from_what_it_carries() {
         let mut archive = zip::ZipArchive::new(std::fs::File::open(&bundle).unwrap()).expect("zip");
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index).unwrap();
-            let name = entry.name().to_string();
+            let name = entry.name().expect("entry name").to_string();
             if !(name.starts_with("source/") || name.starts_with("sdk/")) {
                 continue;
             }
@@ -10334,6 +11488,58 @@ fn smoke_component() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// A development manifest's entry is its build output, and pack writes the
+/// bundle's copy as `code.wasm` -- whatever the app is called. Krate Code's
+/// `krate_code.wasm` was mistaken for `code.wasm` (the line contained it) and
+/// the pack was refused.
+#[test]
+fn pack_takes_a_build_path_whose_name_ends_in_code_wasm() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(component) = smoke_component() else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let built = dir
+        .path()
+        .join("target/wasm32-wasip1/release/krate_code.wasm");
+    std::fs::create_dir_all(built.parent().unwrap()).unwrap();
+    std::fs::copy(&component, &built).expect("copy component");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        BUNDLE_MANIFEST.replace(
+            "entry = \"code.wasm\"",
+            "entry = \"target/wasm32-wasip1/release/krate_code.wasm\"",
+        ),
+    )
+    .unwrap();
+    let bundle = dir.path().join("Code.krate");
+    let out = krate()
+        .args(["pack"])
+        .arg(&built)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .output()
+        .expect("pack");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&bundle).unwrap()).unwrap();
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("manifest.toml").unwrap(), &mut text).unwrap();
+    assert!(text.contains("entry = \"code.wasm\""), "{text}");
+    assert!(
+        std::fs::read_to_string(&manifest)
+            .unwrap()
+            .contains("krate_code.wasm"),
+        "the developer's own manifest is untouched"
+    );
+}
+
 fn pack_fixture(dir: &std::path::Path) -> Option<PathBuf> {
     let component = smoke_component()?;
     let manifest = dir.join("manifest.toml");
@@ -10474,7 +11680,7 @@ fn a_linux_wrap_is_one_file_that_is_still_a_bundle() {
         return;
     };
     let out = dir.path().join("gift.sh");
-    let status = krate()
+    let status = krate_to_carry(dir.path())
         .args(["wrap", "--for", "linux"])
         .arg(&bundle)
         .arg("-o")
@@ -10508,6 +11714,28 @@ fn a_linux_wrap_is_one_file_that_is_still_a_bundle() {
 /// `krate player-install` puts the player where the person owns it and
 /// declares `.krate` for it -- the step a gift's first open runs. A second
 /// run keeps what is there.
+/// Windows has no gift player yet (it waits for a signing certificate):
+/// `krate player-install` says so in words and installs nothing.
+#[cfg(windows)]
+#[test]
+fn player_install_on_windows_says_it_is_not_there_yet() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let out = krate()
+        .arg("player-install")
+        .arg("--home")
+        .arg(home.path())
+        .env("KRATE_PLAYER_NO_REGISTER", "1")
+        .output()
+        .expect("run krate player-install");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("not available on this system yet"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[cfg(not(windows))]
 #[test]
 fn player_install_puts_a_registered_player_in_the_home_folder() {
     let home = tempfile::tempdir().expect("tempdir");
@@ -10773,7 +12001,13 @@ fn a_mac_gift_from_named_parts_is_one_zip_with_a_player_per_architecture() {
     );
     let mut zip = zip::ZipArchive::new(std::fs::File::open(&zip_path).unwrap()).expect("a zip");
     let names: Vec<String> = (0..zip.len())
-        .map(|i| zip.by_index(i).unwrap().name().to_string())
+        .map(|i| {
+            zip.by_index(i)
+                .unwrap()
+                .name()
+                .expect("entry name")
+                .to_string()
+        })
         .collect();
     let top: std::collections::BTreeSet<&str> =
         names.iter().map(|n| n.split('/').next().unwrap()).collect();
@@ -10829,7 +12063,7 @@ fn a_linux_gift_installs_the_player_it_carries_then_opens_the_app() {
         return;
     };
     let gift = dir.path().join("gift.sh");
-    let out = krate()
+    let out = krate_to_carry(dir.path())
         .args(["wrap", "--for", "linux"])
         .arg(&bundle)
         .arg("-o")
@@ -11322,6 +12556,53 @@ fn create_without_an_agent_builds_a_real_app_from_a_template() {
     }
 }
 
+/// K-967, K-1036: a developer with CARGO_TARGET_DIR set (a shared target
+/// is a common Rust setup) gets a built app, not "the build produced no
+/// <name>.wasm". Cargo honours the variable, so the artifact lands there;
+/// Krate looked only under the app's own target/. Both forms: a directory
+/// outside the app, and the relative `./target` the sandbox advice names.
+#[test]
+fn create_builds_with_the_persons_own_cargo_target_dir() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let elsewhere = work.path().join("my-shared-target");
+    for (target, label) in [
+        (
+            elsewhere.clone().into_os_string(),
+            "a directory outside the app",
+        ),
+        (std::ffi::OsString::from("./target"), "./target"),
+    ] {
+        let run = tempfile::tempdir().expect("temp dir");
+        let out = run.path().join("made.krate");
+        let output = krate()
+            .arg("create")
+            .arg("a grocery list app")
+            .arg("--output")
+            .arg(&out)
+            .arg("--work-dir")
+            .arg(run.path().join("inspect"))
+            .env("CARGO_TARGET_DIR", &target)
+            .output()
+            .expect("run create");
+        assert!(
+            output.status.success(),
+            "with CARGO_TARGET_DIR={label}, create must build:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(out.is_file(), "{label}: the .krate was written");
+    }
+    // The first build really did go to the person's directory.
+    assert!(
+        elsewhere.join("wasm32-wasip1/release").is_dir(),
+        "cargo built into CARGO_TARGET_DIR"
+    );
+}
+
 /// An unrecognized `--agent` must list the providers that do exist.
 ///
 /// The failure this prevents is a dead end: someone tries the AI they actually
@@ -11733,6 +13014,17 @@ fn main() {
         stdout.contains("primary-task"),
         "the unfinished journey must be named: {stdout}"
     );
+    // One closing line and one recorded ending, naming the unchecked journey
+    // and the kept workspace (IC-120).
+    let line = last_line(&stdout);
+    assert!(
+        line.starts_with("Not verified: ") && line.contains("primary-task"),
+        "closing line: {line}"
+    );
+    let outcome = port_outcome(&workspace);
+    assert_eq!(outcome["verdict"], "unverified");
+    assert_eq!(outcome["exit_code"], 7);
+    assert_eq!(outcome["requirement"], "primary-task");
     assert!(
         bundle.is_file(),
         "the bundle is still written: it built and runs, it is just not proven \
@@ -12280,8 +13572,15 @@ fn an_app_plays_a_video_from_its_assets() {
         );
         bundle
     };
+    // The probe plays for about three seconds after the clip loads: 4.4 s
+    // end to end on an M-series Mac, against a headless budget of 5 s. On a
+    // loaded CI runner the budget ran out first, the runtime closed the
+    // window, and the app was gone before it printed its line -- an empty
+    // stdout and a clean exit (K-1128). The probe bounds itself, so the
+    // budget here is only a ceiling.
     let run = |bundle: &std::path::Path| -> String {
         let out = krate()
+            .env("KRATE_HEADLESS_SECS", "30")
             .arg("run")
             .arg("--headless")
             .arg(bundle)
@@ -12359,7 +13658,13 @@ fn an_app_draws_and_computes_on_the_gpu_and_a_bad_shader_is_refused() {
         .expect("run");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if stdout.starts_with("adapter=Unsupported") {
+    // The probe prints the error's Debug form, which the bindings write as
+    // `GpuError::Unsupported(..)`; older bindings wrote `Unsupported(..)`.
+    // Either one means there is no GPU here, and only then does this stand
+    // down (K-1128: the shorter prefix alone missed a GPU-less CI runner).
+    if stdout.starts_with("adapter=Unsupported")
+        || stdout.starts_with("adapter=GpuError::Unsupported")
+    {
         eprintln!("skipping: this machine has no GPU: {stdout}");
         return;
     }
@@ -12843,6 +14148,78 @@ fn a_widget_app_is_drawn_in_the_persons_look() {
     let dark = shoot("dark,text=1.35");
     assert!(light > 0.8, "a light window by default: {light:.2}");
     assert!(dark < 0.3, "the same app goes dark in dark mode: {dark:.2}");
+}
+
+/// A game drawn at a design size fits inside the edges a phone covers from
+/// its very first frame (K-1217).
+///
+/// `nova.wasm` is apps/krate-nova built: it sets its design size from the
+/// screen and draws a dark starfield to every edge of it. The covered edges
+/// used to reach the canvas only at present, after the first frame was
+/// drawn, so that frame landed centred on the whole phone; the bands filled
+/// at publish, from the fit with the edges, then painted over its top (the
+/// score) and copied a blank white row across the bottom 62 points. Every
+/// check-app phone picture is a first frame, and showed exactly that.
+#[test]
+fn a_design_size_game_fits_the_phone_from_its_first_frame() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/nova.wasm")).expect("nova");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../apps/krate-nova/manifest.toml"
+        ),
+        &manifest,
+    )
+    .expect("manifest");
+    let text = std::fs::read_to_string(&manifest).expect("read manifest");
+    let entry = text
+        .lines()
+        .find(|l| l.starts_with("entry"))
+        .expect("entry line")
+        .to_string();
+    std::fs::write(&manifest, text.replace(&entry, "entry = \"code.wasm\"")).expect("manifest");
+    let png = dir.path().join("phone.png");
+    let out = krate()
+        .arg("run")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .args(["--auto-grant", "--shoot"])
+        .arg(&png)
+        .args(["--shoot-scale", "1", "--", "quick"])
+        .env("KRATE_SCREEN", "390x844")
+        .output()
+        .expect("run");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let decoder = png::Decoder::new(std::io::BufReader::new(
+        std::fs::File::open(&png).expect("shot"),
+    ));
+    let mut reader = decoder.read_info().expect("png");
+    let mut buf = vec![0; reader.output_buffer_size().expect("size")];
+    let info = reader.next_frame(&mut buf).expect("frame");
+    let channels = info.color_type.samples();
+    let (w, h) = (info.width as usize, info.height as usize);
+    assert_eq!((w, h), (390, 844));
+    let bright_rows: Vec<usize> = (0..h)
+        .filter(|&y| {
+            let row = &buf[y * w * channels..(y + 1) * w * channels];
+            row.chunks_exact(channels)
+                .all(|p| p[0] > 240 && p[1] > 240 && p[2] > 240)
+        })
+        .collect();
+    assert!(
+        bright_rows.is_empty(),
+        "rows {:?}..={:?} of the phone are blank white: the first frame was not fitted inside the covered edges",
+        bright_rows.first(),
+        bright_rows.last()
+    );
 }
 
 /// An app that draws itself tells the screen reader what it drew
@@ -14386,6 +15763,9 @@ struct FakeOrgHub {
     connections_down: bool,
     /// The per-app data quota (store.org); 0 is the hub's 50 MiB.
     data_quota: u64,
+    /// The hub's SITE_BASE: where its join links point. `None` is the
+    /// hub's default, krate.tech.
+    site: Option<String>,
     /// While true every request answers 503: the hub is out of reach, as
     /// on a train. A private app then opens on its lease, offline.
     down: bool,
@@ -15164,6 +16544,25 @@ impl FakeOrgHub {
             .split_once(':')
             .map_or(who.as_str(), |(_, v)| v)
             .to_string();
+        // The people this release reaches, as org-releases.js names them
+        // (IC-979): active members inside its audience, by name and role.
+        let mut people: Vec<(String, String)> = org
+            .members
+            .iter()
+            .filter(|(_, (_, state))| state == "active")
+            .filter(|(p, (r, _))| org.in_audience(p, r, &audience))
+            .map(|(p, (r, _))| {
+                (
+                    p.split_once(':').map_or(p.as_str(), |(_, v)| v).to_string(),
+                    r.clone(),
+                )
+            })
+            .collect();
+        people.sort();
+        let people: Vec<serde_json::Value> = people
+            .into_iter()
+            .map(|(name, role)| serde_json::json!({ "name": name, "role": role }))
+            .collect();
         fake_json(
             200,
             serde_json::json!({
@@ -15172,6 +16571,7 @@ impl FakeOrgHub {
                 "me": { "name": display, "role": role },
                 "org": { "slug": slug, "name": org.name },
                 "quota": { "used": used, "limit": quota },
+                "people": people,
             }),
         )
     }
@@ -15663,7 +17063,10 @@ impl FakeOrgHub {
                     serde_json::json!({
                         "code": code, "expires_at": expires, "principal": principal,
                         "role": invited,
-                        "join_url": format!("https://krate.tech/join/?o={slug}&c={code}"),
+                        "join_url": format!(
+                            "{}/join/?o={slug}&c={code}",
+                            self.site.as_deref().unwrap_or("https://krate.tech")
+                        ),
                     }),
                 )
             }
@@ -16906,9 +18309,12 @@ impl OrgWorld {
             .unwrap_or_else(|| panic!("no join line: {said}"))
             .trim()
             .to_string();
+        // This hub is on this machine and names no site of its own, so no
+        // link is offered: krate.tech's join page talks to another hub
+        // (K-1105).
         assert!(
-            said.contains(&format!("or open https://krate.tech/join/?o=acme&c={code}")),
-            "the join link is printed beside the command: {said}"
+            !said.contains("krate.tech/join"),
+            "a local invitation links to krate.tech: {said}"
         );
         code
     }
@@ -17248,6 +18654,20 @@ fn org_invite_prints_the_join_command_and_an_admin_cannot_invite_an_owner() {
     );
     assert!(
         said.contains("invited erin (GitHub) to acme as developer."),
+        "{said}"
+    );
+    // This hub is on this machine and names no site: no krate.tech link,
+    // whose join page talks to another hub (K-1105). Once it names the site
+    // on this machine (SITE_BASE), that is the link.
+    assert!(!said.contains("krate.tech/join"), "{said}");
+    world.hub.lock().unwrap().site = Some("http://127.0.0.1:8000".into());
+    let said = world.says(
+        "alice",
+        &["org", "invite", "acme", "Dan", "--role", "developer"],
+        true,
+    );
+    assert!(
+        said.contains("or open http://127.0.0.1:8000/join/?o=acme&c="),
         "{said}"
     );
 }
@@ -18642,7 +20062,7 @@ fn strip_mark(bundle: &std::path::Path, out: &std::path::Path) {
     let mut writer = zip::ZipWriter::new(std::fs::File::create(out).unwrap());
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).unwrap();
-        let name = entry.name().to_string();
+        let name = entry.name().expect("entry name").to_string();
         let mut body = Vec::new();
         entry.read_to_end(&mut body).unwrap();
         if name == krate_bundle::ORG_MARK_ENTRY {
@@ -19010,6 +20430,94 @@ fn the_mcp_door_fetches_a_private_link_with_the_session() {
         text.contains("you are not signed in") && text.contains("krate account login"),
         "{text}"
     );
+}
+
+/// K-1102: an organisation's app opened through the MCP door gets its team
+/// data as `krate run` gives it -- the same gate, the same grant -- rather
+/// than answering not-an-org-app; without the store.org grant it is denied.
+#[test]
+fn the_mcp_door_gives_an_org_app_its_team_data() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping the_mcp_door_gives_an_org_app_its_team_data: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (bundle, _) = released_probe(&world, &root, "1.0.0");
+    let copy = world.homes["carol"].path().join("Acme Tasks.krate");
+    std::fs::copy(&bundle, &copy).expect("copy");
+    let run = |grants: &[&str], steps: &[&str]| -> serde_json::Value {
+        let root_dir = world.homes["carol"].path().join("mcp");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        let mut child = org_command(&world, "carol", &["mcp"])
+            .env("KRATE_MCP_ROOT", &root_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("krate mcp");
+        {
+            let mut stdin = child.stdin.take().unwrap();
+            for message in [
+                serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": { "protocolVersion": "2024-11-05", "capabilities": {},
+                                "clientInfo": { "name": "test", "version": "0" } } }),
+                serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+                serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                    "params": { "name": "run_component",
+                                "arguments": { "bundle": copy.to_str().unwrap(),
+                                               "grants": grants, "app_args": steps } } }),
+            ] {
+                writeln!(stdin, "{message}").unwrap();
+            }
+        }
+        let output = child.wait_with_output().expect("mcp output");
+        let answer = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|answer| answer["id"] == 2)
+            .expect("an answer to the tool call");
+        let text = answer["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("");
+        serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!({ "said": text }))
+    };
+    let all = ["io.stdout", "io.args", "store.org"];
+    let report = run(
+        &all,
+        &[
+            "put",
+            "tasks",
+            "m1",
+            "title=from mcp",
+            "then",
+            "sync",
+            "then",
+            "who",
+        ],
+    );
+    let out = report["stdout"].as_str().unwrap_or_default();
+    assert!(out.contains("put m1 ok"), "{out}");
+    assert!(
+        out.contains("sync online=true changed=false pending=0"),
+        "{out}"
+    );
+    assert!(out.contains("who carol developer Acme"), "{out}");
+    // The write reached the team: the same app through `krate run` reads it.
+    let (lines, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["sync", "then", "get", "tasks", "m1"],
+        &[],
+    );
+    assert!(
+        lines[1].starts_with("get m1 title=from mcp"),
+        "{lines:?} {err}"
+    );
+    // Without the grant it is denied, as everywhere.
+    let denied = run(&["io.stdout", "io.args"], &["get", "tasks", "m1"]);
+    assert_eq!(denied["exit"]["class"], "permission-denied", "{denied}");
+    assert_eq!(denied["capabilities"]["denied"][0], "store.org", "{denied}");
 }
 
 /// I (the CLI half Studio drives): `krate org release-key` makes a release
@@ -19579,7 +21087,9 @@ fn the_policy_is_read_from_each_source_and_shown() {
     let file_at = if cfg!(target_os = "macos") {
         root.join("Library/Application Support/Krate/policy.toml")
     } else if cfg!(windows) {
-        root.join("ProgramData/Krate/policy.toml")
+        // One part at a time: Windows writes this path with backslashes,
+        // and a `/` joined in would never equal what krate shows.
+        root.join("ProgramData").join("Krate").join("policy.toml")
     } else {
         root.join("etc/krate/policy.toml")
     };
@@ -19893,6 +21403,12 @@ fn an_unusable_policy_refuses_to_open_apps() {
     let fleet = Fleet::new();
     let app = fleet.app("any", &[]);
     let policy = fleet.path("policy.toml");
+    // The organisation's default record place is %ProgramData% on Windows,
+    // which a CI runner can write: point it at a path that cannot be made
+    // (under a file), so the record falls back to this person's own, as it
+    // does on macOS and Linux, and the test never writes the real one.
+    let blocked = fleet.path("program-data-is-a-file");
+    std::fs::write(&blocked, b"").unwrap();
     for (body, names) in [
         ("version = 2\n", "`version` is 2"),
         (
@@ -19912,6 +21428,7 @@ fn an_unusable_policy_refuses_to_open_apps() {
         std::fs::write(&policy, body).unwrap();
         let run = fleet
             .krate()
+            .env("ProgramData", &blocked)
             .arg("run")
             .arg(&app)
             .args(["--headless"])
@@ -19937,6 +21454,7 @@ fn an_unusable_policy_refuses_to_open_apps() {
     std::fs::create_dir(&policy).unwrap();
     let run = fleet
         .krate()
+        .env("ProgramData", &blocked)
         .arg("run")
         .arg(&app)
         .args(["--headless"])
@@ -21331,8 +22849,8 @@ fn a_company_connection_reaches_the_api_and_the_app_never_holds_the_credential()
 // ---------------------------------------------------------------------------
 // store.org (IC-951), end to end encrypted (F-316): an organisation's team
 // data, through the binary. The probe is apps/krate-orgstore-probe built
-// (fixtures/orgstore-probe.wasm): `put`, `get`, `delete`, `list`, `sync` and
-// `who` steps joined by `then`, one line each. The fake hub answers
+// (fixtures/orgstore-probe.wasm): `put`, `get`, `delete`, `list`, `sync`,
+// `who` and `status` steps joined by `then`, one line each. The fake hub answers
 // /orgs/<slug>/keys and /orgs/<slug>/data/<digest>/sync the way
 // cloud/worker/src/org-keys.js and org-data.js do, holding only what the
 // devices send; with KRATE_ORG_E2E_HUB set, the online test runs against a
@@ -21425,6 +22943,180 @@ fn probe(
 /// the keyring (registers, takes the key, passes it on) and says so.
 fn keys_show(world: &OrgWorld, who: &str) -> String {
     world.says(who, &["org", "keys", "show", "acme"], true)
+}
+
+/// G17: the machine policy's per-app rules are shown by `krate policy`, and
+/// a required capability one of them blocks stops the app it names from
+/// opening -- only that app.
+#[test]
+fn per_app_rules_are_shown_and_stop_only_the_app_they_name() {
+    let fleet = Fleet::new();
+    fleet.policy(
+        "[apps.\"*\"]\nwipe_when_offline_ends = true\n\
+         [apps.\"com.acme.copier\"]\nclipboard_write = false\nprinting = false\n",
+    );
+    let shown = fleet.krate().arg("policy").output().expect("policy");
+    let words = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        words.contains("com.acme.copier: no copying out by the clipboard; no printing."),
+        "{words}"
+    );
+    assert!(
+        words.contains(
+            "Every organisation app: team data deleted from this computer when offline access ends."
+        ),
+        "{words}"
+    );
+    let json = fleet
+        .krate()
+        .args(["policy", "--json"])
+        .output()
+        .expect("policy --json");
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).expect("json");
+    let rules = &json["policy"]["apps"]["com.acme.copier"];
+    assert_eq!(rules["clipboard_write"], false, "{json}");
+    assert_eq!(rules["printing"], false, "{json}");
+    assert_eq!(rules["clipboard_read"], true, "{json}");
+    // Windowed apps that need to copy out: the same bytes under two ids.
+    let windowed = |name: &str| -> PathBuf {
+        let wasm = fleet.path("code.wasm");
+        std::fs::write(
+            &wasm,
+            include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+        )
+        .expect("component");
+        let manifest = fleet.path(&format!("{name}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+                 [[capabilities]]\ncap = \"ui.clipboard:write\"\nrationale = \"copy\"\nrequired = true\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = fleet.path(&format!("{name}.krate"));
+        let out = krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(out.status.success(), "pack: {}", stderr_of(&out));
+        bundle
+    };
+    let copier = windowed("copier");
+    let other = windowed("other");
+    let refused = fleet
+        .krate()
+        .args(["policy", "check"])
+        .arg(&copier)
+        .output()
+        .expect("check");
+    assert_eq!(refused.status.code(), Some(1), "{}", stderr_of(&refused));
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        stderr_of(&refused)
+    );
+    assert!(
+        said.contains("which your organisation (Acme Labs) blocks"),
+        "{said}"
+    );
+    let opens = fleet
+        .krate()
+        .args(["policy", "check"])
+        .arg(&other)
+        .output()
+        .expect("check");
+    assert_eq!(opens.status.code(), Some(0), "{}", stderr_of(&opens));
+}
+
+/// G17: under `[apps."*"] wipe_when_offline_ends = true`, an organisation
+/// app whose offline access has run out leaves no team data on the
+/// computer; without the rule the data stays (the app still does not open).
+#[test]
+fn team_data_goes_when_offline_access_ends_where_the_policy_says() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping team_data_goes_when_offline_access_ends_...: no local port");
+        return;
+    };
+    if world.real_hub().is_some() {
+        eprintln!("skipping team_data_goes_when_offline_access_ends_...: it stops the hub");
+        return;
+    }
+    let root = world.acme();
+    let (bundle, digest) = released_probe(&world, &root, "1.0.0");
+    let (out, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["put", "tasks", "t1", "title=kept here", "then", "sync"],
+        &[],
+    );
+    assert_eq!(out[0], "put t1 ok", "{err}");
+    assert!(
+        !org_data_files(&world, "carol").is_empty(),
+        "the copy is here"
+    );
+    // Offline, and the lease ran out a day ago.
+    world.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(100));
+    let lease_file = world.homes["carol"]
+        .path()
+        .join(".krate/leases")
+        .join(format!("{digest}.json"));
+    let mut record: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&lease_file).expect("a lease")).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut body = record["answer"]["lease"].clone();
+    body["issued_at"] = serde_json::json!(now - 8 * 86_400);
+    body["expires_at"] = serde_json::json!(now - 86_400);
+    let pkcs8 = world.hub.lock().unwrap().lease_pkcs8.clone();
+    record["answer"] = krate_lease::sign(&body, &pkcs8).unwrap();
+    std::fs::write(&lease_file, record.to_string()).unwrap();
+    let keep = world.dir.path().join("keep.toml");
+    std::fs::write(&keep, "version = 1\n").unwrap();
+    let wipe = world.dir.path().join("wipe.toml");
+    std::fs::write(
+        &wipe,
+        "version = 1\nname = \"Acme\"\n[apps.\"*\"]\nwipe_when_offline_ends = true\n",
+    )
+    .unwrap();
+    let keep_s = keep.to_str().unwrap();
+    let (_, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["list", "tasks"],
+        &[("KRATE_TEST_POLICY", keep_s)],
+    );
+    assert!(err.contains("its offline access ran out on"), "{err}");
+    assert!(!org_data_files(&world, "carol").is_empty(), "no rule: kept");
+    let wipe_s = wipe.to_str().unwrap();
+    let (_, err) = probe(
+        &world,
+        "carol",
+        &bundle,
+        &["list", "tasks"],
+        &[("KRATE_TEST_POLICY", wipe_s)],
+    );
+    assert!(err.contains("its offline access ran out on"), "{err}");
+    assert!(
+        err.contains("team data for this app was deleted from this computer"),
+        "{err}"
+    );
+    assert!(
+        org_data_files(&world, "carol").is_empty(),
+        "{:?}",
+        org_data_files(&world, "carol")
+    );
 }
 
 /// The organisation-data files on `who`'s machine.
@@ -21690,6 +23382,35 @@ fn org_team_data_is_sealed_shared_by_two_members_and_its_key_travels_device_to_d
         "{out:?} {err}"
     );
 
+    // Before that, the laptop is new to acme and holds no key: it says it is
+    // waiting for the key, by the organisation's name, keeps the write, and
+    // who() is none (K-1108).
+    let (out, err) = probe(
+        &world,
+        "alice-laptop",
+        &v2,
+        &[
+            "put",
+            "notes",
+            "n-wait",
+            "title=kept",
+            "then",
+            "sync",
+            "then",
+            "status",
+            "then",
+            "who",
+        ],
+        &[],
+    );
+    assert_eq!(out[0], "put n-wait ok", "{err}");
+    assert_eq!(out[1], "sync online=true changed=false pending=1", "{err}");
+    assert_eq!(
+        out[2], "status waiting-for-key pending=1 reached=true org=Acme",
+        "{err}"
+    );
+    assert_eq!(out[3], "who none", "{err}");
+
     // Alice's new laptop: the recovery code restores her key, and she
     // reads the data with no other device involved.
     let restored = world.says(
@@ -21722,12 +23443,21 @@ fn org_team_data_is_sealed_shared_by_two_members_and_its_key_travels_device_to_d
         &world,
         "alice-laptop",
         &v2,
-        &["sync", "then", "get", "tasks", id],
+        &[
+            "sync", "then", "get", "tasks", id, "then", "who", "then", "status",
+        ],
         &[],
     );
     assert_eq!(
         out[1],
         format!("get {id} done=true;title={title} by=dan@acme.example"),
+        "{out:?} {err}"
+    );
+    // The key arrived: who() fills on the same sync, and the write made
+    // while waiting went up with it.
+    assert_eq!(out[2], "who alice owner Acme", "{out:?} {err}");
+    assert_eq!(
+        out[3], "status synced pending=0 reached=true org=Acme",
         "{out:?} {err}"
     );
 
@@ -22835,14 +24565,30 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
         None,
         &[
             ("expect_text", "Your team's notes are on their way"),
+            // The calm line, by the organisation's name (K-1108).
+            ("expect_text", "someone in Acme opens Krate and it"),
             ("shoot", "team-notes-waiting.png"),
             ("click", "Write a note"),
             ("type", title),
             ("key", "Enter"),
-            ("type", "Twelve, stackable. Bob has the budget."),
+            // A paste with no clipboard permission, over a selection
+            // (K-1109): typed text, all of it selected, replaced by what
+            // the person pasted; then Shift+Home selects the last line and
+            // typing replaces it.
+            ("type", "a first draft"),
+            ("key", "Primary+a"),
+            ("paste", "Twelve, stackable.\nBob has the budget."),
+            ("expect_text", "Twelve, stackable."),
+            ("expect_no_text", "a first draft"),
+            ("key", "Shift+Home"),
+            ("shoot", "team-notes-selected.png"),
+            ("type", "Bob pays."),
+            ("expect_text", "Bob pays."),
+            ("expect_no_text", "Bob has the budget"),
+            ("shoot", "team-notes-pasted.png"),
             ("wait_ms", "900"),
             ("expect_text", title),
-            ("expect_text", "Waiting to be let in"),
+            ("expect_text", "Waiting for your team's key"),
         ],
     );
     keys_show(&world, "alice");
@@ -22979,6 +24725,51 @@ fn starter_team_notes_is_shared_by_two_people_through_its_window() {
     );
 }
 
+/// A person copies and cuts in a field the app draws with their own
+/// keystrokes, though Team Notes holds no clipboard permission (K-1190):
+/// Cmd/Ctrl+X takes the note's text out, and Cmd/Ctrl+V puts it back, so
+/// the cut really reached the clipboard before the text went.
+#[test]
+fn starter_team_notes_cuts_and_pastes_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol"]) else {
+        eprintln!("skipping starter_team_notes_cuts_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (notes, _) = released_starter(&world, &root, "team-notes.krate");
+    new_laptop(&world, "carol");
+    use_starter(
+        &world,
+        "carol",
+        &notes,
+        None,
+        &[
+            ("click", "Write a note"),
+            ("type", "Chairs"),
+            ("key", "Enter"),
+            ("type", "Twelve, stackable."),
+            ("expect_text", "Twelve, stackable."),
+            ("key", "Primary+a"),
+            ("key", "Primary+x"),
+            // The app answers the cut in its next frame; a person's Cmd+V
+            // comes later than that, and so does this one.
+            ("wait_ms", "600"),
+            ("expect_no_text", "Twelve, stackable."),
+            ("key", "Primary+v"),
+            ("expect_text", "Twelve, stackable."),
+            ("key", "Primary+a"),
+            ("key", "Primary+c"),
+            ("wait_ms", "600"),
+            ("key", "End"),
+            // A key and a paste in one frame can reach the field in either
+            // order (K-1192); a person's are never that close.
+            ("wait_ms", "300"),
+            ("key", "Primary+v"),
+            ("expect_text", "Twelve, stackable.Twelve, stackable."),
+        ],
+    );
+}
+
 /// Expenses, two people: a form that says what is missing; Carol's expense
 /// reaches Dan with who is owed; Dan logs his own and marks Carol's paid
 /// back; Carol sees both, corrects Dan's amount, and a delete comes back
@@ -23006,11 +24797,15 @@ fn starter_expenses_is_shared_by_two_people_through_its_window() {
             ("type", "42.50"),
             ("click", "EUR"),
             ("click", "What was it for"),
+            // Typing over a selection replaces it (K-1109, the SDK's Field).
+            ("type", "a first draft"),
+            ("key", "Primary+a"),
             ("type", "Train to Leeds"),
             ("click", "Receipt note"),
             ("type", "Client visit"),
             ("click", "Save expense"),
             ("expect_text", "Train to Leeds, \u{20ac}42.50"),
+            ("expect_no_text", "a first draft"),
         ],
     );
     keys_show(&world, "alice");
@@ -23124,6 +24919,11 @@ fn starter_stock_list_is_shared_by_two_people_through_its_window() {
             ("click", "Printer paper"),
             ("expect_text", "Add an item"),
             ("type", "1"),
+            // The suggestion filled the count with 3: select it and type 3
+            // over it. Without selection (K-1109) this reads 33.
+            ("click", "How many there are"),
+            ("key", "Primary+a"),
+            ("type", "3"),
             ("shoot", "stock-list-form.png"),
             ("click", "Add item"),
             ("expect_text", "Printer paper, 3 left"),
@@ -23217,5 +25017,2547 @@ fn starter_stock_list_is_shared_by_two_people_through_its_window() {
             ("expect_text", "Coffee beans, 7 left"),
             ("expect_text", "Synced"),
         ],
+    );
+}
+
+/// Requests, two people: Carol's form says what is missing, then she asks
+/// Dan for a second monitor; Dan sees it waiting for him with who asked,
+/// is told a no needs a reason, and declines it with one; Carol reads his
+/// note, asks again, and Dan approves; Carol finds it by search, and a
+/// delete comes back with Undo. On a phone, the request fills the screen.
+#[test]
+fn starter_requests_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_requests_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (requests, _) = released_starter(&world, &root, "requests.krate");
+    use_starter(
+        &world,
+        "carol",
+        &requests,
+        None,
+        &[
+            ("expect_text", "Ask, and get a clear yes or no"),
+            ("click", "Make the first request"),
+            ("click", "Send request"),
+            ("expect_text", "Fill this in: what do you need."),
+            ("type", "A second monitor"),
+            ("click", "Why"),
+            ("type", "For the design reviews, about 180 euros."),
+            ("click", "Send request"),
+            ("expect_text", "Say who: who approves it."),
+            ("shoot", "requests-form-error.png"),
+            ("click", "Who approves it"),
+            // Just "dan": the one person the app is released to by that
+            // name, so the request is his to decide (IC-979, K-1189).
+            ("type", "dan"),
+            ("click", "Send request"),
+            ("expect_text", "Waiting for dan"),
+            ("expect_text", "Asked dan"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &requests,
+        Some("dark"),
+        &[
+            ("expect_text", "For me (1)"),
+            ("expect_text", "from carol to you"),
+            ("expect_text", "Needs you"),
+            ("click", "A second monitor"),
+            ("expect_text", "Waiting for you"),
+            ("expect_text", "Carol changed it"),
+            ("click", "Decline"),
+            ("expect_text", "Carol sees this note with your answer."),
+            ("click", "Decline"),
+            ("expect_text", "Say why, so they know what to do next."),
+            ("type", "We have two spare ones in the store room."),
+            ("click", "Decline"),
+            ("expect_text", "Declined by you"),
+            ("expect_text", "Nothing is waiting for you to decide."),
+            ("shoot", "requests-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &requests,
+        None,
+        &[
+            ("click", "Decided"),
+            ("click", "A second monitor"),
+            ("expect_text", "Declined by dan"),
+            ("expect_text", "We have two spare ones in the store room."),
+            ("click", "Ask again"),
+            ("expect_text", "Waiting for dan"),
+            ("expect_text", "Asked again"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &requests,
+        None,
+        &[
+            ("click", "A second monitor"),
+            ("click", "Approve"),
+            ("type", "Fine, the spares are taken."),
+            ("click", "Approve"),
+            ("expect_text", "Approved by you"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &requests,
+        None,
+        &[
+            ("click", "Decided"),
+            ("expect_text", "Approved"),
+            ("click", "Search requests"),
+            ("type", "monitor"),
+            ("click", "A second monitor"),
+            ("expect_text", "Approved by dan"),
+            ("expect_text", "Fine, the spares are taken."),
+            ("expect_text", "Dan changed it"),
+            ("shoot", "requests-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"A second monitor\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &requests,
+        Some("phone"),
+        &[
+            ("click", "Decided"),
+            ("click", "A second monitor"),
+            ("expect_text", "Back"),
+            ("expect_text", "Approved by dan"),
+            ("shoot", "requests-phone.png"),
+            ("click", "Back"),
+            ("click", "New"),
+            ("expect_text", "Send request"),
+            ("click", "Cancel"),
+            ("expect_text", "Decided"),
+        ],
+    );
+}
+
+/// Help Desk, two people: Carol's form says what is missing, then she files
+/// an urgent ticket; Dan sees it at the top with who filed it and that
+/// nobody has it, takes it, asks a question in a comment and marks it
+/// waiting on a reply; Carol reads the question and answers; Dan marks it
+/// solved; Carol finds it among the solved, and a delete comes back with
+/// Undo. On a phone, the ticket fills the screen.
+#[test]
+fn starter_help_desk_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_help_desk_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (desk, _) = released_starter(&world, &root, "help-desk.krate");
+    let title = "The printer on floor 2 jams";
+    use_starter(
+        &world,
+        "carol",
+        &desk,
+        None,
+        &[
+            ("expect_text", "When something breaks, file it here"),
+            ("click", "File the first ticket"),
+            ("click", "File ticket"),
+            ("expect_text", "Fill this in: what is wrong."),
+            ("shoot", "help-desk-form-error.png"),
+            ("type", title),
+            ("click", "What happened"),
+            ("type", "Every second page, since this morning."),
+            ("click", "Urgent"),
+            ("click", "File ticket"),
+            ("expect_text", "Open, urgent"),
+            ("expect_text", "Filed the ticket"),
+            ("expect_text", "nobody has it yet"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &desk,
+        Some("dark"),
+        &[
+            ("expect_text", "Open (1)"),
+            ("expect_text", "Urgent: 1 open"),
+            ("expect_text", "From carol"),
+            ("click", title),
+            ("expect_text", "Every second page, since this morning."),
+            ("click", "Take it"),
+            ("expect_text", "Who has it: You"),
+            ("expect_text", "Took the ticket"),
+            ("click", "Add a comment"),
+            ("type", "Which tray do you print from?"),
+            ("key", "Enter"),
+            ("expect_text", "Which tray do you print from?"),
+            ("click", "Waiting on a reply"),
+            ("expect_text", "Back to open"),
+            ("expect_text", "Mine (1)"),
+            ("shoot", "help-desk-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &desk,
+        None,
+        &[
+            ("expect_text", "dan has it"),
+            ("click", title),
+            ("expect_text", "Waiting on a reply"),
+            (
+                "expect_text",
+                "Dan \u{b7} just now: Which tray do you print from?",
+            ),
+            ("click", "Add a comment"),
+            ("type", "The bottom one."),
+            ("click", "Add"),
+            ("expect_text", "The bottom one."),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &desk,
+        None,
+        &[
+            ("click", title),
+            ("expect_text", "Carol \u{b7} just now: The bottom one."),
+            ("click", "Mark solved"),
+            ("expect_text", "Marked it solved"),
+            ("expect_text", "Nothing is open. The team is all caught up."),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &desk,
+        None,
+        &[
+            ("expect_text", "Nothing is open"),
+            ("click", "Solved (1)"),
+            ("click", "Search tickets"),
+            ("type", "printer"),
+            ("click", title),
+            ("expect_text", "Solved"),
+            ("expect_text", "Dan changed it"),
+            ("expect_text", "Reopen"),
+            ("shoot", "help-desk-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"The printer on floor 2 jams\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &desk,
+        Some("phone"),
+        &[
+            ("click", "Solved (1)"),
+            ("click", title),
+            ("expect_text", "Back"),
+            ("click", "Reopen"),
+            ("expect_text", "Open, urgent"),
+            ("shoot", "help-desk-phone.png"),
+            ("click", "Back"),
+            ("click", "Open (1)"),
+            ("expect_text", title),
+        ],
+    );
+}
+
+/// Contacts, two people: Carol's form says what is missing, then she adds
+/// a company she is talking to with a next step for tomorrow and the person
+/// she deals with there; Dan sees it with who looks after it, is told a
+/// contact needs what was said, logs his call and moves the next step on;
+/// Carol reads his call and marks the next step done; she finds the company
+/// by the person's name, and a delete comes back with Undo. On a phone,
+/// the company fills the screen.
+#[test]
+fn starter_team_contacts_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_team_contacts_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (contacts, _) = released_starter(&world, &root, "team-contacts.krate");
+    let company = "Northwind Trading";
+    use_starter(
+        &world,
+        "carol",
+        &contacts,
+        None,
+        &[
+            ("expect_text", "Everyone you work with, in one place"),
+            ("click", "Add the first company"),
+            ("click", "Add company"),
+            ("expect_text", "Fill this in: company."),
+            ("shoot", "team-contacts-form-error.png"),
+            ("type", company),
+            ("click", "Talking"),
+            ("click", "Next step"),
+            ("type", "Send the quote"),
+            ("click", "Tomorrow"),
+            ("click", "Add company"),
+            ("expect_text", "Added the company"),
+            ("expect_text", "Next steps (1)"),
+            ("click", "Add a person"),
+            ("type", "Priya Shah"),
+            ("click", "Role"),
+            ("type", "Head of buying"),
+            ("click", "Add person"),
+            ("expect_text", "Priya Shah, Head of buying"),
+            ("expect_text", "Added Priya Shah"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &contacts,
+        Some("dark"),
+        &[
+            ("expect_text", "Northwind Trading, Send the quote"),
+            ("click", company),
+            ("expect_text", "Who looks after them: Carol"),
+            ("expect_text", "Carol changed it"),
+            ("expect_text", "Priya Shah, Head of buying"),
+            ("click", "Log a contact"),
+            ("click", "Save contact"),
+            ("expect_text", "Fill this in: what was said."),
+            ("type", "Called Priya, she wants it in euros."),
+            ("click", "Next step"),
+            ("key", "Primary+a"),
+            ("type", "Send the quote in euros"),
+            ("click", "Save contact"),
+            (
+                "expect_text",
+                "Contact: Called Priya, she wants it in euros.",
+            ),
+            ("expect_text", "Next step: Send the quote in euros"),
+            ("shoot", "team-contacts-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &contacts,
+        None,
+        &[
+            ("expect_text", "Send the quote in euros"),
+            ("click", company),
+            ("expect_text", "Called Priya, she wants it in euros."),
+            ("expect_text", "Dan changed it"),
+            ("click", "Next step done"),
+            ("expect_text", "Done: Send the quote in euros"),
+            (
+                "expect_text",
+                "No next steps. Add one when you log a contact.",
+            ),
+            ("click", "All (1)"),
+            ("click", "Search companies and people"),
+            ("type", "priya"),
+            ("click", company),
+            ("expect_text", "Talking"),
+            ("shoot", "team-contacts-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Northwind Trading\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+            ("expect_text", "Priya Shah, Head of buying"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &contacts,
+        Some("phone"),
+        &[
+            ("click", "All (1)"),
+            ("click", company),
+            ("expect_text", "Back"),
+            ("expect_text", "Done: Send the quote in euros"),
+            ("shoot", "team-contacts-phone.png"),
+            ("click", "Back"),
+            ("click", "Add"),
+            ("expect_text", "Add company"),
+            ("click", "Cancel"),
+        ],
+    );
+}
+
+/// Assets, two people: Carol's form says what is missing, then she adds a
+/// laptop into store and, told a hand-over needs a name, hands it to Dan;
+/// Dan sees he has it, from Carol, and sends it for repair; Carol sees it
+/// away for repair, takes it back from repair to Dan, finds it by its
+/// serial number, and a delete comes back with Undo. On a phone, Dan puts
+/// it back in store.
+#[test]
+fn starter_assets_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_assets_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (assets, _) = released_starter(&world, &root, "assets.krate");
+    let laptop = "MacBook Air 13 inch";
+    // The row, not the summary's line naming what is away for repair.
+    let row = "MacBook Air 13 inch, C02XL0GZJGH5";
+    use_starter(
+        &world,
+        "carol",
+        &assets,
+        None,
+        &[
+            ("expect_text", "Know who has what"),
+            ("click", "Add the first asset"),
+            ("click", "Add asset"),
+            ("expect_text", "Fill this in: what is it."),
+            ("shoot", "assets-form-error.png"),
+            ("type", laptop),
+            ("click", "Serial number"),
+            ("type", "C02XL0GZJGH5"),
+            ("click", "Where it is kept"),
+            ("type", "Office, top drawer"),
+            ("click", "Add asset"),
+            ("expect_text", "Added it, in store"),
+            (
+                "expect_text",
+                "C02XL0GZJGH5 \u{b7} in store, Office, top drawer",
+            ),
+            ("click", "Hand to someone"),
+            ("expect_text", "It is in store now."),
+            ("click", "Hand over"),
+            ("expect_text", "Say who: hand it to."),
+            ("type", "dan@acme.example"),
+            ("click", "Hand over"),
+            ("expect_text", "With dan"),
+            ("expect_text", "Handed it to dan"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &assets,
+        Some("dark"),
+        &[
+            ("expect_text", "In use (1)"),
+            ("expect_text", "C02XL0GZJGH5 \u{b7} you have it"),
+            ("click", row),
+            ("expect_text", "With you"),
+            ("expect_text", "Carol changed it"),
+            ("click", "Send for repair"),
+            ("expect_text", "Sent for repair"),
+            ("expect_text", "Repair (1)"),
+            ("shoot", "assets-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &assets,
+        None,
+        &[
+            ("expect_text", "Away for repair"),
+            ("click", "Repair (1)"),
+            ("click", row),
+            ("expect_text", "Dan changed it"),
+            ("expect_text", "Who has it: Dan"),
+            ("click", "Back from repair"),
+            ("expect_text", "Nothing is away for repair."),
+            ("click", "All (1)"),
+            ("click", "Search name, serial, person"),
+            ("type", "JGH5"),
+            ("click", row),
+            ("expect_text", "With dan"),
+            ("shoot", "assets-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"MacBook Air 13 inch\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &assets,
+        Some("phone"),
+        &[
+            ("click", row),
+            ("expect_text", "Back"),
+            ("expect_text", "Back from repair"),
+            ("click", "Back in store"),
+            // Kept in the history, which Carol reads too: Dan by name, never
+            // "you" (K-1186).
+            ("expect_text", "Back in store from dan"),
+            ("expect_no_text", "Back in store from you"),
+            ("shoot", "assets-phone.png"),
+            ("click", "Back"),
+            ("click", "In store (1)"),
+            ("expect_text", laptop),
+        ],
+    );
+}
+
+/// Inspections, two people: Carol's checklist form says what is missing,
+/// then she makes a three-item checklist, starts an inspection with it and
+/// passes the first item; Dan is told a checklist that does not exist
+/// cannot be run, opens Carol's inspection with who started it, passes one
+/// item, fails one with a note, and finishes it; Carol sees what failed,
+/// finds the inspection by search, and a delete comes back with Undo. On a
+/// phone, Dan reopens it.
+#[test]
+fn starter_inspections_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_inspections_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (inspections, _) = released_starter(&world, &root, "inspections.krate");
+    use_starter(
+        &world,
+        "carol",
+        &inspections,
+        None,
+        &[
+            ("expect_text", "Check the same things the same way"),
+            ("expect_text", "Fire safety"),
+            ("click", "Make a checklist"),
+            ("click", "Save checklist"),
+            ("expect_text", "Fill this in: name."),
+            ("shoot", "inspections-form-error.png"),
+            ("type", "Kitchen close"),
+            ("click", "What to check, one per line"),
+            ("type", "Fridge is below 5 degrees"),
+            ("key", "Enter"),
+            ("type", "Hob is off"),
+            ("key", "Enter"),
+            ("type", "Back door is locked"),
+            ("click", "Save checklist"),
+            ("expect_text", "Start inspection"),
+            ("type", "Main office"),
+            ("click", "Start inspection"),
+            ("expect_text", "Started the Kitchen close inspection"),
+            ("expect_text", "0 of 3 checked"),
+            ("click", "Pass: Fridge is below 5 degrees"),
+            ("expect_text", "1 of 3 checked"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &inspections,
+        Some("dark"),
+        &[
+            ("expect_text", "To finish (1)"),
+            (
+                "expect_text",
+                "Kitchen close, 3 things to check \u{b7} run once",
+            ),
+            ("click", "New inspection"),
+            ("type", "Fire drill"),
+            ("click", "Start inspection"),
+            (
+                "expect_text",
+                "There is no checklist called Fire drill yet.",
+            ),
+            ("click", "Cancel"),
+            ("click", "Kitchen close, Main office"),
+            ("expect_text", "Inspector: Carol"),
+            ("expect_text", "Carol changed it"),
+            ("click", "Pass: Hob is off"),
+            ("click", "Fail: Back door is locked"),
+            ("expect_text", "3 of 3 checked, 1 failed"),
+            ("click", "Add a note, like what failed and why"),
+            ("type", "The lock sticks, it needs a locksmith."),
+            ("key", "Enter"),
+            ("click", "Finish"),
+            ("expect_text", "Finished: 2 passed, 1 failed"),
+            ("expect_text", "Finished. Reopen it to change a result."),
+            ("shoot", "inspections-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &inspections,
+        None,
+        &[
+            ("expect_text", "Nothing to finish."),
+            ("expect_text", "Failed: Back door is locked, Kitchen close"),
+            ("click", "Failed something (1)"),
+            ("click", "Search inspections"),
+            ("type", "kitchen"),
+            ("click", "Kitchen close, Main office"),
+            ("expect_text", "Finished, 1 failed"),
+            ("expect_text", "Dan changed it"),
+            ("expect_text", "The lock sticks, it needs a locksmith."),
+            ("shoot", "inspections-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Kitchen close"),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &inspections,
+        Some("phone"),
+        &[
+            ("click", "All (1)"),
+            ("click", "Kitchen close, Main office"),
+            ("expect_text", "Back"),
+            ("click", "Reopen"),
+            ("expect_text", "Reopened it"),
+            ("shoot", "inspections-phone.png"),
+            ("click", "Back"),
+            ("expect_text", "To finish (1)"),
+        ],
+    );
+}
+
+/// Visitors, two people: Carol at reception is told a visitor needs a name
+/// and someone to see, then signs Sam Lee in to see Dan with a badge; Dan
+/// sees Sam on site, seeing him, with who signed Sam in, and signs Sam out
+/// from the list; Carol sees Sam has left, finds the visit by the company,
+/// and a delete comes back with Undo. On a phone, Carol signs the next
+/// visitor in and is back at the list.
+#[test]
+fn starter_visitors_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_visitors_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (visitors, _) = released_starter(&world, &root, "visitors.krate");
+    use_starter(
+        &world,
+        "carol",
+        &visitors,
+        None,
+        &[
+            ("expect_text", "Know who is in the building"),
+            // The count line is said, not only drawn (K-1185).
+            ("expect_text", "Nobody on site"),
+            ("click", "Sign the first visitor in"),
+            (
+                "expect_text",
+                "They are signed in now. Sign them out when they leave.",
+            ),
+            ("click", "Sign in"),
+            ("expect_text", "Fill this in: visitor's name."),
+            ("type", "Sam Lee"),
+            ("click", "From"),
+            ("type", "Northwind Trading"),
+            ("click", "Badge number"),
+            ("type", "12"),
+            ("click", "Sign in"),
+            ("expect_text", "Say who: here to see."),
+            ("shoot", "visitors-form-error.png"),
+            ("click", "Here to see"),
+            ("type", "dan@acme.example"),
+            ("click", "Sign in"),
+            ("expect_text", "Signed in to see dan"),
+            ("click", "Close"),
+            ("expect_text", "1 visitor on site now"),
+            ("expect_text", "Badges out: 12"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &visitors,
+        Some("dark"),
+        &[
+            ("expect_text", "On site (1)"),
+            (
+                "expect_text",
+                "Sam Lee, From Northwind Trading \u{b7} seeing you \u{b7} badge 12",
+            ),
+            ("click", "Sam Lee"),
+            ("expect_text", "On site since"),
+            ("expect_text", "Carol changed it"),
+            ("expect_text", "Here to see: You"),
+            ("click", "Sign out"),
+            ("expect_text", "Nobody is on site."),
+            ("click", "Close"),
+            ("expect_text", "0 visitors on site now"),
+            ("shoot", "visitors-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &visitors,
+        None,
+        &[
+            ("expect_text", "On site (0)"),
+            ("click", "Today (1)"),
+            ("expect_text", "Sam Lee, From Northwind Trading"),
+            ("expect_text", "Left"),
+            ("click", "Search visitors"),
+            ("type", "northwind"),
+            ("click", "Sam Lee"),
+            ("expect_text", "Left at"),
+            ("expect_text", "Dan changed it"),
+            ("expect_text", "Signed out"),
+            ("shoot", "visitors-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Sam Lee\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &visitors,
+        Some("phone"),
+        &[
+            ("click", "Sign in"),
+            ("type", "Ana Ruiz"),
+            ("click", "Here to see"),
+            ("type", "dan@acme.example"),
+            ("click", "Sign in"),
+            ("expect_text", "On site (1)"),
+            ("expect_text", "Ana Ruiz"),
+            ("expect_no_text", "Back"),
+            ("shoot", "visitors-phone.png"),
+            ("click", "Sign out"),
+            ("expect_text", "Nobody is on site."),
+        ],
+    );
+}
+
+/// Incidents, two people: Carol's form says what is missing, then she
+/// reports a high leak for Dan to follow up and, told an action needs what
+/// to do, adds one for him; Dan sees it among the high and critical with
+/// who reported it, ticks the action done and closes the incident; Carol
+/// sees it closed with who did the action, finds it by search, and a delete
+/// comes back with Undo. On a phone, Dan reopens it.
+#[test]
+fn starter_incidents_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_incidents_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (incidents, _) = released_starter(&world, &root, "incidents.krate");
+    let leak = "Water leak in the server room";
+    use_starter(
+        &world,
+        "carol",
+        &incidents,
+        None,
+        &[
+            ("expect_text", "When something goes wrong, write it down"),
+            ("click", "Report the first incident"),
+            ("click", "Report it"),
+            ("expect_text", "Fill this in: what happened."),
+            ("shoot", "incidents-form-error.png"),
+            ("type", leak),
+            ("click", "High"),
+            ("click", "Where"),
+            ("type", "Server room, floor 1"),
+            ("click", "Who follows it up"),
+            ("type", "dan@acme.example"),
+            ("click", "Report it"),
+            ("expect_text", "Reported it, high"),
+            ("expect_text", "Open, high"),
+            ("click", "Add an action"),
+            ("click", "Add action"),
+            ("expect_text", "Fill this in: what needs doing."),
+            ("type", "Call the plumber"),
+            ("click", "Who does it"),
+            ("type", "dan@acme.example"),
+            ("click", "Add action"),
+            ("expect_text", "Added an action for dan: Call the plumber"),
+            ("expect_text", "Open, high, 0 of 1 actions done"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &incidents,
+        Some("dark"),
+        &[
+            ("expect_text", "High and critical"),
+            (
+                "expect_text",
+                "Server room, floor 1 \u{b7} 0 of 1 actions done",
+            ),
+            // An action with no day says no "due" (K-1188).
+            ("expect_text", "Call the plumber"),
+            ("expect_no_text", "Call the plumber, due"),
+            ("click", leak),
+            ("expect_text", "Reported by: Carol"),
+            ("expect_text", "Who follows it up: You"),
+            ("expect_text", "Carol changed it"),
+            ("click", "Done: Call the plumber"),
+            ("expect_text", "Open, high, 1 of 1 actions done"),
+            ("expect_text", "done by you"),
+            ("click", "Close incident"),
+            ("expect_text", "Closed it"),
+            ("expect_text", "Nothing is open."),
+            ("shoot", "incidents-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &incidents,
+        None,
+        &[
+            ("expect_text", "Closed (1)"),
+            ("click", "Closed (1)"),
+            ("click", "Search incidents"),
+            ("type", "leak"),
+            ("click", leak),
+            ("expect_text", "Closed"),
+            ("expect_text", "Dan changed it"),
+            ("expect_text", "Call the plumber, Dan"),
+            ("expect_text", "done by dan"),
+            ("shoot", "incidents-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Water leak in the server room\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &incidents,
+        Some("phone"),
+        &[
+            ("click", "Closed (1)"),
+            ("click", leak),
+            ("expect_text", "Back"),
+            ("click", "Reopen"),
+            ("expect_text", "Reopened it"),
+            ("shoot", "incidents-phone.png"),
+            ("click", "Back"),
+            ("click", "Open (1)"),
+            ("expect_text", leak),
+            ("click", "Report"),
+            ("expect_text", "Report it"),
+            ("click", "Cancel"),
+        ],
+    );
+}
+
+/// The calendar day `offset` days from today in UTC, as `YYYY-MM-DD`. A
+/// starter counts days in the person's own time zone, which is at most a
+/// day either side of this, so a step that types one leaves that day of
+/// slack.
+fn utc_day(offset: i64) -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs() as i64;
+    let z = secs / 86_400 + offset + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Leave, two people: Carol's form says what is missing and that her last
+/// day is before her first, then she books a holiday starting in a week;
+/// Dan sees it coming up with who booked it, is told Carol already has
+/// that time off when he tries to book it again for her, books his own
+/// days over the same week, sees both of them away on next week's board,
+/// and raises the team's allowance; Carol sees Dan's days and the new
+/// allowance, finds her booking by its note, and a delete comes back with
+/// Undo. On a phone, the week reads as one line per day.
+#[test]
+fn starter_leave_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_leave_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (leave, _) = released_starter(&world, &root, "leave.krate");
+    // "In a week" is the first day off; these are the last.
+    let (before, carol_to, dan_to) = (utc_day(0), utc_day(11), utc_day(9));
+    use_starter(
+        &world,
+        "carol",
+        &leave,
+        None,
+        &[
+            ("expect_text", "See who is away, before you plan"),
+            ("click", "Book the first time off"),
+            ("click", "Book it"),
+            ("expect_text", "Pick a day: first day off."),
+            ("click", "In a week"),
+            ("click", "Last day off"),
+            ("type", &before),
+            ("click", "Book it"),
+            (
+                "expect_text",
+                "The last day off is before the first. Swap them round.",
+            ),
+            ("shoot", "leave-form-error.png"),
+            ("click", "Last day off"),
+            ("key", "Primary+a"),
+            ("type", &carol_to),
+            ("click", "Note"),
+            ("type", "Lisbon, back on Monday"),
+            ("click", "Book it"),
+            ("expect_text", "working days of holiday"),
+            ("expect_text", "You, coming up"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &leave,
+        Some("dark"),
+        &[
+            ("click", "Coming up (1)"),
+            ("expect_text", "Carol, holiday"),
+            ("click", "Carol, holiday"),
+            ("expect_text", "Carol, coming up"),
+            ("expect_text", "Carol changed it"),
+            ("expect_text", "Note: Lisbon, back on Monday"),
+            ("click", "Book time off"),
+            ("click", "Who"),
+            ("key", "Primary+a"),
+            ("type", "carol"),
+            ("click", "In a week"),
+            ("click", "Last day off"),
+            ("type", &dan_to),
+            ("click", "Book it"),
+            ("expect_text", "Carol already has time off from"),
+            ("click", "Who"),
+            ("key", "Primary+a"),
+            ("type", "dan@acme.example"),
+            ("click", "Book it"),
+            ("expect_text", "You, coming up"),
+            ("click", "Week"),
+            ("click", "Later"),
+            ("expect_text", "Next week"),
+            ("expect_text", "Carol, holiday from"),
+            ("expect_text", "You, holiday from"),
+            ("shoot", "leave-dark.png"),
+            ("click", "Close"),
+            ("click", "Change the allowance"),
+            ("click", "Days of holiday each person gets a year"),
+            ("key", "Primary+a"),
+            ("type", "28"),
+            ("click", "Save allowance"),
+            ("expect_text", "Holiday left this year, of 28"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &leave,
+        None,
+        &[
+            ("expect_text", "Holiday left this year, of 28"),
+            ("click", "Coming up (2)"),
+            ("expect_text", "Dan, holiday"),
+            ("click", "Search by name"),
+            ("type", "lisbon"),
+            ("expect_no_text", "Dan, holiday"),
+            ("click", "You, holiday"),
+            ("expect_text", "You, coming up"),
+            ("shoot", "leave-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Holiday,"),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &leave,
+        Some("phone"),
+        &[
+            ("click", "Later"),
+            ("expect_text", "Carol (holiday), You (holiday)"),
+            ("shoot", "leave-phone.png"),
+            ("click", "Coming up (2)"),
+            ("click", "Carol, holiday"),
+            ("expect_text", "Back"),
+            ("click", "Back"),
+            ("click", "Book"),
+            ("expect_text", "Book it"),
+            ("click", "Cancel"),
+        ],
+    );
+}
+
+/// Onboarding, two people: Carol's form says what is missing, then she
+/// adds Priya, joining in a week with Dan as her buddy, and Priya gets the
+/// usual eight tasks; Dan sees the tour is his to do, opens Priya with who
+/// added her, ticks it, is told a task needs what to do and adds one; Carol
+/// sees his tick and his task, finds Priya by her role, and a delete comes
+/// back with Undo, the tasks with it. On a phone, Priya fills the screen.
+#[test]
+fn starter_onboarding_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_onboarding_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (onboarding, _) = released_starter(&world, &root, "onboarding.krate");
+    use_starter(
+        &world,
+        "carol",
+        &onboarding,
+        None,
+        &[
+            ("expect_text", "Give every new joiner a good first week"),
+            ("click", "Add the first joiner"),
+            ("expect_text", "They get the usual eight tasks"),
+            ("click", "Add joiner"),
+            ("expect_text", "Fill this in: who is joining."),
+            ("shoot", "onboarding-form-error.png"),
+            ("type", "Priya Shah"),
+            ("click", "Their role"),
+            ("type", "Designer"),
+            ("click", "Buddy"),
+            ("type", "dan@acme.example"),
+            ("click", "Add joiner"),
+            ("expect_text", "Added them, first day"),
+            ("expect_text", "0 of 8 done \u{b7} Starts in 7 days"),
+            ("expect_text", "Checklist, 0 of 8 done"),
+            ("expect_text", "Coffee and a tour of the place, Dan"),
+            ("expect_text", "Order the laptop and phone, You"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &onboarding,
+        Some("dark"),
+        &[
+            ("expect_text", "Starting soon"),
+            ("expect_text", "Priya Shah, Designer"),
+            (
+                "expect_text",
+                "Coffee and a tour of the place, Priya Shah \u{b7} you",
+            ),
+            ("click", "Priya Shah"),
+            ("expect_text", "Buddy: You"),
+            ("expect_text", "Carol changed it"),
+            ("click", "Done: Coffee and a tour of the place"),
+            ("expect_text", "Checklist, 1 of 8 done"),
+            ("expect_text", "done by you"),
+            ("click", "Add a task"),
+            ("click", "Add task"),
+            ("expect_text", "Fill this in: what needs doing."),
+            ("type", "Lunch on the first Friday"),
+            ("click", "Who does it"),
+            ("type", "dan@acme.example"),
+            ("click", "Add task"),
+            (
+                "expect_text",
+                "Added a task for dan: Lunch on the first Friday",
+            ),
+            ("expect_text", "Checklist, 1 of 9 done"),
+            ("shoot", "onboarding-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &onboarding,
+        None,
+        &[
+            ("expect_text", "Priya Shah, Designer"),
+            ("click", "Search joiners"),
+            ("type", "designer"),
+            ("click", "Priya Shah"),
+            ("expect_text", "1 of 9 done"),
+            ("expect_text", "Lunch on the first Friday, Dan"),
+            ("expect_text", "done by dan"),
+            ("expect_text", "Done: Coffee and a tour of the place"),
+            ("shoot", "onboarding-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Priya Shah\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+            ("expect_text", "Checklist, 1 of 9 done"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &onboarding,
+        Some("phone"),
+        &[
+            // The row: the summary above it names Priya beside a task.
+            ("click", "Priya Shah, Designer"),
+            ("expect_text", "Back"),
+            ("expect_text", "Checklist, 1 of 9 done"),
+            ("click", "Done: Lunch on the first Friday"),
+            ("expect_text", "Checklist, 2 of 9 done"),
+            ("shoot", "onboarding-phone.png"),
+            ("click", "Back"),
+            ("click", "Add"),
+            ("expect_text", "Add joiner"),
+            ("click", "Cancel"),
+        ],
+    );
+}
+
+/// Shift Rota, two people: Carol's form says a time must look like one,
+/// then she puts herself on tomorrow's late shift, is told she already has
+/// it when she adds it twice, and asks for a swap with a reason; Dan sees
+/// the shift up for grabs with who asked and why, and takes it; Carol sees
+/// it is Dan's now, finds it by search, and a delete comes back with Undo.
+/// On a phone, Dan's coming shifts read one under the other.
+#[test]
+fn starter_shift_rota_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_shift_rota_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (rota, _) = released_starter(&world, &root, "shift-rota.krate");
+    use_starter(
+        &world,
+        "carol",
+        &rota,
+        None,
+        &[
+            ("expect_text", "Who works when, for the whole week"),
+            ("click", "Add the first shift"),
+            ("click", "Tomorrow"),
+            ("click", "Late"),
+            ("click", "Starts"),
+            ("type", "25"),
+            ("click", "Add shift"),
+            ("expect_text", "Write the time like 09:30."),
+            ("shoot", "shift-rota-form-error.png"),
+            ("key", "Backspace"),
+            ("key", "Backspace"),
+            ("type", "14"),
+            ("click", "Add shift"),
+            // History is said the same to everyone, so Dan will not read
+            // "Put you on the late shift" for Carol's shift (K-1186).
+            ("expect_text", "Put carol on the late shift"),
+            ("expect_text", "You, 14:00 to 22:00"),
+            ("click", "Add a shift"),
+            ("click", "Tomorrow"),
+            ("click", "Late"),
+            ("click", "Add shift"),
+            // In the app's words for the person it names.
+            ("expect_text", "a late shift on"),
+            ("click", "Cancel"),
+            ("click", "Ask for a swap"),
+            ("click", "Why, for whoever takes it"),
+            ("type", "Hospital appointment"),
+            ("click", "Ask for a swap"),
+            ("expect_text", "Asked for a swap: Hospital appointment"),
+            ("expect_text", "You, swap asked"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &rota,
+        Some("dark"),
+        &[
+            ("expect_text", "Swaps (1)"),
+            ("expect_text", "Carol, late"),
+            ("expect_text", "up for grabs"),
+            ("click", "Swaps (1)"),
+            (
+                "expect_text",
+                "Wants someone to take it: Hospital appointment",
+            ),
+            ("click", "Carol, late"),
+            ("expect_text", "Carol, swap asked"),
+            ("expect_text", "Why they want to swap: Hospital appointment"),
+            ("expect_text", "Carol changed it"),
+            ("click", "Take this shift"),
+            ("expect_text", "Took the shift from carol"),
+            ("expect_text", "Nobody wants to swap a shift."),
+            ("shoot", "shift-rota-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &rota,
+        None,
+        &[
+            ("expect_text", "Swaps (0)"),
+            ("click", "Coming up"),
+            ("click", "Search by name or shift"),
+            ("type", "late"),
+            ("click", "Dan, late"),
+            ("expect_text", "Dan, 14:00 to 22:00"),
+            ("expect_text", "Dan changed it"),
+            ("expect_text", "Who: Dan"),
+            ("expect_no_text", "Take this shift"),
+            ("shoot", "shift-rota-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Late shift,"),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &rota,
+        Some("phone"),
+        &[
+            ("click", "Coming up"),
+            ("expect_text", "You, late"),
+            ("click", "You, late"),
+            ("expect_text", "Back"),
+            ("expect_text", "Ask for a swap"),
+            ("shoot", "shift-rota-phone.png"),
+            ("click", "Back"),
+            ("click", "Add"),
+            ("expect_text", "Add shift"),
+            ("click", "Cancel"),
+        ],
+    );
+}
+
+/// Timesheets, two people: Carol's form says a project is needed and that
+/// hours run from a quarter to 24, then she logs a day on the website;
+/// Dan picks the same project from what the team wrote before, is told
+/// twenty more hours would make his day longer than a day, logs six, and
+/// sees the week add up by project and by person, then only Carol's week;
+/// Carol sees Dan's hours, finds hers by what she did, and a delete comes
+/// back with Undo. On a phone, the week reads as one line per day.
+#[test]
+fn starter_timesheets_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_timesheets_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (timesheets, _) = released_starter(&world, &root, "timesheets.krate");
+    use_starter(
+        &world,
+        "carol",
+        &timesheets,
+        None,
+        &[
+            ("expect_text", "Where the week went"),
+            ("click", "Log the first hours"),
+            ("click", "Save hours"),
+            ("expect_text", "Fill this in: project."),
+            ("type", "Website"),
+            ("click", "Hours"),
+            ("type", "30"),
+            ("click", "Save hours"),
+            ("expect_text", "Hours are between 0.25 and 24, like 7.5."),
+            ("shoot", "timesheets-form-error.png"),
+            ("key", "Primary+a"),
+            ("type", "7.5"),
+            ("click", "What you did"),
+            ("type", "Home page layout"),
+            ("click", "Save hours"),
+            ("expect_text", "Logged 7.5 h on Website"),
+            ("expect_text", "Website: 7.5 h this week"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &timesheets,
+        Some("dark"),
+        &[
+            ("expect_text", "Website: 7.5 h this week"),
+            ("expect_text", "Carol: 7.5 h"),
+            ("click", "Log hours"),
+            // What the team wrote in this field before, one click away.
+            ("click", "Website"),
+            ("click", "Hours"),
+            ("type", "6"),
+            ("click", "What you did"),
+            ("type", "Contact form"),
+            ("click", "Save hours"),
+            ("expect_text", "Logged 6 h on Website"),
+            ("expect_text", "Website: 13.5 h this week"),
+            ("click", "Log hours"),
+            ("click", "Hours"),
+            ("type", "20"),
+            ("click", "Save hours"),
+            ("expect_text", "That makes 26 h on"),
+            ("expect_text", "A day has 24."),
+            ("click", "Cancel"),
+            ("click", "Close"),
+            ("expect_text", "13.5 h for the team"),
+            ("expect_text", "You: 6 h"),
+            ("click", "Carol"),
+            ("expect_text", "Website: 7.5 h this week"),
+            ("shoot", "timesheets-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &timesheets,
+        None,
+        &[
+            ("expect_text", "Dan: 6 h"),
+            ("expect_text", "Website: 13.5 h this week"),
+            ("click", "Entries"),
+            ("expect_text", "Website, Dan \u{b7} Contact form"),
+            ("click", "Search projects, people, notes"),
+            ("type", "layout"),
+            ("expect_no_text", "Contact form"),
+            ("click", "Website, You"),
+            ("expect_text", "Website, 7.5 h"),
+            ("shoot", "timesheets-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Website, 7.5 h\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &timesheets,
+        Some("phone"),
+        &[
+            ("expect_text", "13.5 h, Website 13.5"),
+            ("shoot", "timesheets-phone.png"),
+            ("click", "Entries"),
+            ("click", "Website, You"),
+            ("expect_text", "Back"),
+            ("expect_text", "Hours: 6 h"),
+            ("click", "Back"),
+            ("click", "Log"),
+            ("expect_text", "Save hours"),
+            ("click", "Cancel"),
+        ],
+    );
+}
+
+/// Purchase Orders, two people: Carol's form says what is missing and that
+/// a currency is three letters, then she asks Dan to approve six chairs;
+/// Dan sees the order waiting for him with who asked and what is waiting
+/// in total, and approves it with a note; Carol reads his note, sees it in
+/// the month's approved total, marks it ordered, finds it by supplier, and
+/// a delete comes back with Undo. On a phone, Dan marks it received.
+#[test]
+fn starter_purchase_orders_is_shared_by_two_people_through_its_window() {
+    let Some(world) = OrgWorld::new(&["alice", "bob", "carol", "dan"]) else {
+        eprintln!("skipping starter_purchase_orders_...: no local port");
+        return;
+    };
+    let root = world.acme();
+    let (orders, _) = released_starter(&world, &root, "purchase-orders.krate");
+    let chairs = "Six office chairs";
+    use_starter(
+        &world,
+        "carol",
+        &orders,
+        None,
+        &[
+            ("expect_text", "Ask before you buy"),
+            ("click", "Make the first order"),
+            ("click", "Send for approval"),
+            ("expect_text", "Fill this in: what to buy."),
+            ("type", chairs),
+            ("click", "From"),
+            ("type", "Chair Co"),
+            ("click", "Amount"),
+            ("type", "480"),
+            ("click", "Currency"),
+            ("key", "Primary+a"),
+            ("type", "euro"),
+            ("click", "Who approves it"),
+            ("type", "dan@acme.example"),
+            ("click", "Send for approval"),
+            (
+                "expect_text",
+                "Use a three-letter currency code, like EUR or USD.",
+            ),
+            ("shoot", "purchase-orders-form-error.png"),
+            ("key", "Primary+a"),
+            ("type", "eur"),
+            ("click", "Send for approval"),
+            ("expect_text", "Asked dan to approve \u{20ac}480.00"),
+            ("expect_text", "Waiting for dan"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &orders,
+        Some("dark"),
+        &[
+            ("expect_text", "To approve (1)"),
+            (
+                "expect_text",
+                "Waiting for approval: \u{20ac}480.00, 1 order",
+            ),
+            (
+                "expect_text",
+                "Chair Co \u{b7} asked by carol, Needs you, \u{20ac}480.00",
+            ),
+            ("click", chairs),
+            ("expect_text", "Waiting for you"),
+            ("expect_text", "Carol changed it"),
+            ("click", "Approve"),
+            (
+                "expect_text",
+                "\u{20ac}480.00 for Six office chairs. Carol sees your note.",
+            ),
+            ("type", "Go ahead, the grey ones."),
+            ("click", "Approve"),
+            ("expect_text", "Approved by you"),
+            ("expect_text", "Nothing is waiting for you to approve."),
+            ("shoot", "purchase-orders-dark.png"),
+        ],
+    );
+    use_starter(
+        &world,
+        "carol",
+        &orders,
+        None,
+        &[
+            ("expect_text", "\u{20ac}480.00, 1 order"),
+            ("click", "Open (1)"),
+            ("expect_text", "Approved, to order"),
+            ("click", chairs),
+            ("expect_text", "Approved by dan"),
+            ("expect_text", "Their answer: Go ahead, the grey ones."),
+            ("expect_text", "Dan changed it"),
+            ("click", "Mark ordered"),
+            ("expect_text", "Ordered it"),
+            ("expect_text", "Ordered, on the way"),
+            ("click", "All"),
+            ("click", "Search orders, suppliers"),
+            ("type", "chair co"),
+            ("click", chairs),
+            ("shoot", "purchase-orders-two-people.png"),
+            ("click", "Edit"),
+            ("click", "Delete"),
+            ("expect_text", "Deleted \"Six office chairs\""),
+            ("click", "Undo"),
+            ("expect_text", "Brought back after a delete"),
+        ],
+    );
+    use_starter(
+        &world,
+        "dan",
+        &orders,
+        Some("phone"),
+        &[
+            ("click", "Open (1)"),
+            ("click", chairs),
+            ("expect_text", "Back"),
+            ("click", "Mark received"),
+            ("expect_text", "Received it"),
+            ("shoot", "purchase-orders-phone.png"),
+            ("click", "Back"),
+            ("click", "Received (1)"),
+            ("expect_text", chairs),
+        ],
+    );
+}
+
+/// K-764: the door that starts the conversation never offers what the door
+/// that builds refuses.
+///
+/// `plan` is Studio's first answer to a person; `create` is what builds.
+/// They disagreed on one sentence three ways: a refusal printed as a
+/// `{"plan": ...}` (shown as "Here's what I'll build:" with a Build it
+/// button `create` then refused), a wall plan offered for words `create`
+/// refuses, and an agreed plan whose own prose ("nothing is uploaded to the
+/// cloud") made `create` refuse the app it described. This walks every
+/// request through both doors exactly as Studio does -- `create` gets the
+/// request plus "(The agreed plan: ...)" -- with a stand-in planning AI, so
+/// no AI is spent. `create` is stopped at the toolchain check (an empty
+/// HOME and PATH), which runs after the refusal screen and before any build.
+#[cfg(unix)]
+#[test]
+fn plan_never_offers_what_create_refuses() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let bin = dir.path().join("bin");
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    // The stand-in AI answers every plan with a private journal whose prose
+    // mentions the cloud, plus two needs `create` would refuse.
+    let answer = dir.path().join("answer.json");
+    std::fs::write(
+        &answer,
+        r#"{"name":"Journal","plan":"A private journal: entries stay on this computer and nothing is uploaded to the cloud.","points":["Write an entry","Browse past entries"],"needs":["store.kv","fs.write:<chosen-folder>/**","ui.window"],"shape":"krate-checklist"}"#,
+    )
+    .unwrap();
+    let fake = bin.join("claude");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '2.0.0 (Claude Code)'; exit 0; }}\ncat '{}'\n",
+            answer.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let run = |args: &[&str]| -> serde_json::Value {
+        let out = krate()
+            .env("PATH", &path)
+            .env("HOME", &home)
+            .env_remove("CARGO_HOME")
+            .env_remove("RUSTUP_HOME")
+            .env("KRATE_TEST_POLICY", "none")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .expect("run krate");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let line = stdout
+            .lines()
+            .rev()
+            .find(|l| l.trim_start().starts_with('{'))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no JSON from {args:?}: {stdout}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                )
+            });
+        serde_json::from_str(line).expect("json")
+    };
+    let output = dir.path().join("out.krate");
+    let output = output.to_str().unwrap();
+
+    let cases = [
+        // The screen refuses it: plan must say so, in create's words.
+        "an app that reads my Gmail inbox",
+        // A wall AND a refusal: the refusal wins in both doors.
+        "a pomodoro timer that keeps running in the background and pings me",
+        // A wall only: plan offers the substitute, create builds it.
+        "a background timer that keeps running after I close the window",
+        // Goes to the AI, whose plan mentions the cloud.
+        "a private journal for my evening notes",
+    ];
+    let (mut refused, mut planned) = (0, 0);
+    for request in cases {
+        let plan = run(&["plan", request, "--agent", "claude"]);
+        if let Some(cannot) = plan.get("cannot").and_then(|c| c.as_str()) {
+            refused += 1;
+            assert!(
+                plan.get("plan").is_none(),
+                "a refusal must not ride as a plan: {plan}"
+            );
+            let create = run(&[
+                "create",
+                request,
+                "--output",
+                output,
+                "--json",
+                "--no-install",
+            ]);
+            assert_eq!(
+                create["error"], "cannot-build",
+                "plan refused {request:?}, so create must too: {create}"
+            );
+            assert!(
+                cannot.contains(create["reason"].as_str().unwrap_or("?")),
+                "both doors give the same reason: {cannot} / {create}"
+            );
+            continue;
+        }
+        planned += 1;
+        let said = plan["plan"].as_str().unwrap_or_default();
+        assert!(!said.is_empty(), "{request:?}: {plan}");
+        for need in plan["needs"].as_array().cloned().unwrap_or_default() {
+            let need = need.as_str().unwrap_or_default().to_string();
+            assert!(
+                !need.contains('<') && need != "ui.window",
+                "plan offered a permission create refuses: {need}"
+            );
+        }
+        // Exactly what Studio sends once the plan is agreed.
+        let agreed = format!("{request}\n\n(The agreed plan: {said})");
+        let create = run(&[
+            "create",
+            &agreed,
+            "--output",
+            output,
+            "--json",
+            "--no-install",
+        ]);
+        assert_ne!(
+            create["error"], "cannot-build",
+            "plan offered {said:?} for {request:?}, and create refused it: {create}"
+        );
+    }
+    assert!(refused >= 2 && planned >= 2, "both arms were walked");
+}
+
+/// K-763: a failure is classified by who can fix it, and the words follow.
+///
+/// Two failures that came back to the agent dressed as something they are
+/// not. A build the machine refused -- here a target folder it may not
+/// write -- was "Fix the compiler errors above" unless the folder happened
+/// to be named `cache`. And a manifest whose `entry` names another file (what
+/// every app seeded from an example starts with) was refused at the door as
+/// "exit 5 means a capability it needs is not declared", which real Studio
+/// agents then chased. Each must say what it is.
+#[cfg(unix)]
+#[test]
+fn check_app_says_what_kind_of_failure_it_found() {
+    use std::os::unix::fs::PermissionsExt;
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let check = |dir: &std::path::Path, extra: &[&str], target: Option<&std::path::Path>| {
+        let mut command = krate();
+        command.arg("check-app").arg(dir).args(extra).arg("--json");
+        if let Some(target) = target {
+            command.env("CARGO_TARGET_DIR", target);
+        }
+        let out = command.output().expect("run check-app");
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let line = stdout.lines().last().unwrap_or_default().to_string();
+        serde_json::from_str::<serde_json::Value>(&line)
+            .unwrap_or_else(|_| panic!("one JSON object: {stdout}"))
+    };
+    let diceroll = workspace_path(PathBuf::from("apps/krate-diceroll"));
+
+    // 1. A build this machine refuses: a target folder that may not be
+    //    written, named nothing like `cache`.
+    let locked = tempfile::tempdir().expect("temp dir");
+    std::fs::set_permissions(locked.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(locked.path().join("probe"), b"").is_ok() {
+        eprintln!("skipping the refused-build half: this user can write a read-only folder");
+    } else {
+        let report = check(&diceroll, &["--no-run"], Some(&locked.path().join("t")));
+        std::fs::set_permissions(locked.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(report["stage"], "build", "{report}");
+        assert_eq!(report["kind"], "environment", "{report}");
+        let fix = report["fix"].as_str().unwrap_or_default();
+        assert!(
+            !fix.contains("Fix the compiler errors") && fix.contains("not a compiler error"),
+            "a refused build is not a compile error: {fix}"
+        );
+    }
+
+    // 2. A manifest whose entry names another app's file.
+    let copy = tempfile::tempdir().expect("temp dir");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().unwrap_or(root);
+    let cargo = std::fs::read_to_string(diceroll.join("Cargo.toml"))
+        .unwrap()
+        .replace("\"../../", &format!("\"{}/", root.display()));
+    std::fs::write(copy.path().join("Cargo.toml"), cargo).unwrap();
+    for file in [
+        "Cargo.lock",
+        "src/lib.rs",
+        "src/bindings.rs",
+        ".cargo/config.toml",
+    ] {
+        let from = diceroll.join(file);
+        if from.exists() {
+            let to = copy.path().join(file);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::copy(&from, &to).unwrap();
+        }
+    }
+    let manifest = std::fs::read_to_string(diceroll.join("manifest.toml"))
+        .unwrap()
+        .replace("krate_diceroll.wasm", "krate_checklist.wasm");
+    assert!(
+        manifest.contains("krate_checklist.wasm"),
+        "the fixture carries the hazard"
+    );
+    std::fs::write(copy.path().join("manifest.toml"), manifest).unwrap();
+    let report = check(copy.path(), &[], None);
+    assert_eq!(report["stage"], "run", "{report}");
+    assert_eq!(report["kind"], "project", "{report}");
+    let fix = report["fix"].as_str().unwrap_or_default();
+    assert!(
+        fix.contains("entry = \"target/wasm32-wasip1/release/krate_diceroll.wasm\""),
+        "the fix names the file this crate builds: {fix}"
+    );
+    assert!(
+        !report["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("capability it needs is not declared"),
+        "an entry mismatch is not a missing capability: {report}"
+    );
+}
+
+/// K-1241: an app seeded from an example passes its first full check
+/// untouched.
+///
+/// The model-starter seed rewrote the example's id and name but kept its
+/// `entry`, so a tip calculator seeded from krate-checklist named
+/// krate_checklist.wasm while its crate built tip_calculator.wasm. Its first
+/// full `check-app` was refused at the door (exit 5), and every seeded Studio
+/// build paid an agent repair round to change that one line. The author here
+/// is `true`: it changes nothing, so the check judges the seed itself.
+#[test]
+fn a_seeded_starter_passes_its_first_full_check() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let out = work.path().join("out.krate");
+    let created = krate()
+        .args(["create", "a tip calculator that splits the bill"])
+        .args(["--name", "tip-calculator", "--author-cmd", "true"])
+        .arg("--work-dir")
+        .arg(work.path().join("w"))
+        .arg("--output")
+        .arg(&out)
+        .arg("--no-install")
+        .env("KRATE_STARTER_SHAPE", "krate-checklist")
+        .stdin(Stdio::null())
+        .output()
+        .expect("run create");
+    assert!(
+        created.status.success(),
+        "create: {}{}",
+        String::from_utf8_lossy(&created.stdout),
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let app = work.path().join("w/tip-calculator");
+    let mode = std::fs::read_to_string(app.join(".starter-mode")).unwrap_or_default();
+    assert!(
+        mode.starts_with("model:krate-checklist"),
+        "the fixture carries the hazard: the app was seeded from an example ({mode:?})"
+    );
+    let manifest = std::fs::read_to_string(app.join("manifest.toml")).unwrap();
+    assert!(
+        manifest.contains("entry = \"target/wasm32-wasip1/release/tip_calculator.wasm\""),
+        "the seeded entry names the file this crate builds:\n{manifest}"
+    );
+    let check = krate()
+        .arg("check-app")
+        .arg(&app)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run check-app");
+    assert!(
+        check.status.success(),
+        "a seeded starter's first full check passes: {}{}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+}
+
+/// K-1242: an automatic repair runs every round it is allowed, and a repair
+/// that changes nothing is reported as that.
+///
+/// A stand-in `gemini` on PATH (no AI is spent) writes an app that does not
+/// compile, then answers each repair task without fixing it -- once by
+/// changing a line, once by changing nothing. Before the fix the repair's
+/// own failing check ended the loop after one round (two agent calls, never
+/// "2 of 2"), and a repair that changed nothing was "byte-identical to the
+/// starter ... as if it were" Krate's own repair task, quoted as the
+/// person's request.
+#[cfg(unix)]
+#[test]
+fn an_automatic_repair_gets_every_round_and_says_when_it_changed_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fake = bin.join("gemini");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\n\
+         [ \"$1\" = --version ] && { echo 0.9.0; exit 0; }\n\
+         n=$(cat \"$FAKE_STATE/calls\" 2>/dev/null || echo 0); n=$((n+1)); echo $n > \"$FAKE_STATE/calls\"\n\
+         if [ \"$n\" = 1 ]; then printf '\\ncompile_error!(\"still broken\");\\n' >> src/lib.rs\n\
+         elif [ \"$FAKE_MODE\" = edit ]; then printf '\\nconst _ROUND_%s: u8 = %s;\\n' $n $n >> src/lib.rs\n\
+         fi\n\
+         exit 0\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    for mode in ["edit", "none"] {
+        let state = dir.path().join(format!("state-{mode}"));
+        std::fs::create_dir_all(&state).unwrap();
+        let out = krate()
+            .args(["create", "a tip calculator that splits the bill"])
+            .args([
+                "--name",
+                "tip-calculator",
+                "--agent",
+                "gemini",
+                "--no-install",
+            ])
+            .arg("--work-dir")
+            .arg(dir.path().join(format!("w-{mode}")))
+            .arg("--output")
+            .arg(dir.path().join(format!("{mode}.krate")))
+            .env("PATH", &path)
+            .env("FAKE_STATE", &state)
+            .env("FAKE_MODE", mode)
+            .env("KRATE_STARTER_SHAPE", "none")
+            .stdin(Stdio::null())
+            .output()
+            .expect("run create");
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !out.status.success(),
+            "{mode}: the app never builds: {said}"
+        );
+        assert!(
+            said.contains("still broken"),
+            "{mode}: the fixture carries the hazard (a compile error): {said}"
+        );
+        let calls = std::fs::read_to_string(state.join("calls")).unwrap_or_default();
+        assert_eq!(
+            calls.trim(),
+            "3",
+            "{mode}: one authoring run and both repair rounds: {said}"
+        );
+        assert!(said.contains("(2 of 2)"), "{mode}: round two ran: {said}");
+        if mode == "none" {
+            assert!(
+                said.contains("The AI looked at the failure and changed nothing."),
+                "a repair that changed nothing says so: {said}"
+            );
+            for wrong in [
+                "byte-identical",
+                "explained the app",
+                "krate-change",
+                "\u{1}",
+                "The app you just wrote for",
+            ] {
+                assert!(
+                    !said.contains(wrong),
+                    "a no-change repair must not say {wrong:?}: {said}"
+                );
+            }
+        }
+    }
+}
+
+/// K-1181: Ctrl-C stops a running command-line app.
+///
+/// `loop-probe.wasm` is apps/krate-loop-probe built (`cargo component build
+/// --release` there): it prints "started", writes "still here" with no
+/// newline and no flush, and loops forever -- `spin` never calls the host,
+/// `sleep` sleeps in it. Before the fix the press was recorded for a window
+/// that a command-line app never opens, and the app ran on through any
+/// number of presses. Now one press ends it with 130, what it wrote reaches
+/// the terminal, and one line says why; a run without epoch checks
+/// (`--headless`) ends a moment later, or at once on a second press.
+///
+/// Unix only: the test sends SIGINT. On Windows the console's own Ctrl-C
+/// still ends the process the way it always has.
+#[cfg(unix)]
+#[test]
+fn ctrl_c_stops_a_running_command_line_app() {
+    use std::io::BufRead;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/loop-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.loop-probe\"\nname = \"loop-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"say\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"mode\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("loop.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+
+    // Start the app, wait until it is looping, press Ctrl-C `presses` times,
+    // and say how long after the first press it ended.
+    let press = |extra: &[&str], mode: &str, presses: u32| {
+        let mut child = krate()
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .args(extra)
+            .args(["--", mode])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run");
+        let mut stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut first = String::new();
+        stdout.read_line(&mut first).expect("read");
+        assert_eq!(first, "started\n", "the app is running before the press");
+        // In the loop, not still on its way there.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let pressed = std::time::Instant::now();
+        for n in 0..presses {
+            if n > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            assert!(Command::new("kill")
+                .args(["-INT", &child.id().to_string()])
+                .status()
+                .expect("kill")
+                .success());
+        }
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("wait") {
+                break status;
+            }
+            if pressed.elapsed() > std::time::Duration::from_secs(5) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{extra:?} {mode}: still running 5 s after Ctrl-C");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        let took = pressed.elapsed();
+        let mut rest = String::new();
+        stdout.read_to_string(&mut rest).expect("stdout");
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .expect("stderr");
+        assert_eq!(
+            status.code(),
+            Some(130),
+            "{extra:?} {mode}: ends with 130 ({status:?}): {stderr}"
+        );
+        assert_eq!(
+            rest, "still here",
+            "{extra:?} {mode}: what the app wrote reaches the terminal"
+        );
+        assert_eq!(
+            stderr.trim(),
+            "stopped: you pressed Ctrl-C",
+            "{extra:?} {mode}: one line says why"
+        );
+        took
+    };
+
+    // A loop that never calls the host, ended by the runtime's interrupt --
+    // well inside the second the watcher would wait before ending it.
+    let took = press(&[], "spin", 1);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "the guest itself is interrupted, not left to the watcher: spin ended {took:?} after Ctrl-C"
+    );
+    // A loop that sleeps in the host.
+    let took = press(&[], "sleep", 1);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "sleep ended {took:?} after Ctrl-C"
+    );
+    // No epoch checks: the watcher ends it a moment later...
+    let took = press(&["--headless"], "spin", 1);
+    assert!(
+        took.as_secs_f32() < 2.5,
+        "headless ended {took:?} after Ctrl-C"
+    );
+    // ...or at once on a second press.
+    let took = press(&["--headless"], "spin", 2);
+    assert!(
+        took.as_secs_f32() < 0.9,
+        "a second Ctrl-C ends it at once, not after the grace: {took:?}"
+    );
+}
+
+/// A minimal app packed under `id` (unsigned), for the maker-key tests.
+fn pack_minimal(
+    dir: &std::path::Path,
+    home: &std::path::Path,
+    id: &str,
+    name: &str,
+    sign: bool,
+) -> PathBuf {
+    let wasm = dir.join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let manifest = dir.join(format!("{name}.toml"));
+    std::fs::write(&manifest, BUNDLE_MANIFEST.replace("com.example.bundle", id)).expect("manifest");
+    let bundle = dir.join(format!("{name}.krate"));
+    let mut pack = krate();
+    pack.arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .env("HOME", home);
+    if sign {
+        pack.arg("--sign");
+    }
+    let out = pack.output().expect("pack");
+    assert!(
+        out.status.success(),
+        "pack: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    bundle
+}
+
+/// The public key a bundle's signature names, or None when unsigned.
+fn signer_of(bundle: &std::path::Path) -> Option<String> {
+    let opened = krate_bundle::open(bundle).expect("open");
+    let verdict = opened
+        .full_verdict(&krate_bundle::delegation::RevocationState::Unknown {
+            last_known: Vec::new(),
+        })
+        .expect("verdict")?;
+    assert!(
+        verdict.is_trustworthy(),
+        "{bundle:?} carries a signature that does not verify"
+    );
+    opened.signing_authority().expect("authority")
+}
+
+fn maker_public(home: &std::path::Path) -> String {
+    std::fs::read_to_string(home.join(".krate/keys/maker.pub"))
+        .expect("maker.pub")
+        .lines()
+        .next()
+        .unwrap()
+        .to_string()
+}
+
+fn run_headless(bundle: &std::path::Path, home: &std::path::Path) -> std::process::Output {
+    krate()
+        .arg("run")
+        .arg(bundle)
+        .args(["--headless", "--auto-grant"])
+        .env("HOME", home)
+        .output()
+        .expect("run")
+}
+
+/// IC-983, K-247: a fresh home's first signed make gets a publisher key
+/// nobody was asked about, kept on this computer; the app's unsigned data
+/// moves to the key on its first signed open; a rebuild keeps the publisher
+/// and the data; an app signed by another key takes nothing; and signing
+/// sends nothing anywhere and puts nothing private in the bundle.
+#[test]
+fn the_makers_key_signs_a_make_and_keeps_its_data_through_a_rebuild() {
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    let store = home.path().join(".krate/store");
+    std::fs::create_dir_all(&store).expect("store");
+    // What the app's unsigned builds wrote, before signing was the default.
+    std::fs::write(store.join("dev.krate.mine.kv"), b"my notes").expect("old data");
+    assert!(!home.path().join(".krate/keys/maker.pub").exists());
+
+    // Signing reaches no hub and sends no usage: every request would land here.
+    let (url, count) = counting_listener();
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let manifest = dir.path().join("mine.toml");
+    std::fs::write(
+        &manifest,
+        BUNDLE_MANIFEST.replace("com.example.bundle", "dev.krate.mine"),
+    )
+    .expect("manifest");
+    let first = dir.path().join("mine.krate");
+    let out = krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&first)
+        .arg("--sign")
+        .env("HOME", home.path())
+        .env("KRATE_HUB_URL", &url)
+        .env("KRATE_USAGE_URL", format!("{url}/usage"))
+        .output()
+        .expect("pack --sign");
+    let said =
+        String::from_utf8_lossy(&out.stderr).to_string() + &String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains("Made your publisher key"),
+        "told once: {said}"
+    );
+    assert!(said.contains("signed it as you"), "{said}");
+    let public = maker_public(home.path());
+    assert_eq!(
+        signer_of(&first).as_deref(),
+        Some(public.as_str()),
+        "signed by the maker key"
+    );
+    thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        count.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "signing sent nothing"
+    );
+
+    // The private half: on this computer, owner-only, and nowhere in the bundle.
+    let private = std::fs::read(home.path().join(".krate/keys/maker.key")).expect("maker.key");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(home.path().join(".krate/keys/maker.key"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0, "only the person reads the key: {mode:o}");
+    }
+    let shipped = std::fs::read(&first).expect("bundle");
+    // The seed is the 32 bytes after ring's PKCS#8 v2 prefix (16 bytes).
+    let seed = &private[16..48];
+    assert!(
+        !shipped.windows(seed.len()).any(|w| w == seed),
+        "the private key must never be inside the bundle"
+    );
+    assert!(
+        !shipped
+            .windows(private.len())
+            .any(|w| w == private.as_slice()),
+        "the key document must never be inside the bundle"
+    );
+
+    // First signed open: the unsigned data moves to the maker's store.
+    let ran = run_headless(&first, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let signed_store = store.join(format!("dev.krate.mine@{}.kv", &public[..16]));
+    assert_eq!(std::fs::read(&signed_store).expect("moved"), b"my notes");
+    assert!(
+        !store.join("dev.krate.mine.kv").exists(),
+        "nothing left at the bare id"
+    );
+    assert!(store.join("dev.krate.mine.moved").exists());
+
+    // A rebuild: the same publisher, the same data, nothing moves again.
+    let second = pack_minimal(
+        dir.path(),
+        home.path(),
+        "dev.krate.mine",
+        "mine-again",
+        true,
+    );
+    assert_eq!(
+        signer_of(&second).as_deref(),
+        Some(public.as_str()),
+        "a rebuild keeps its publisher"
+    );
+    std::fs::write(store.join("dev.krate.mine.kv"), b"an unsigned file's").unwrap();
+    let ran = run_headless(&second, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert_eq!(std::fs::read(&signed_store).unwrap(), b"my notes");
+    assert_eq!(
+        std::fs::read(store.join("dev.krate.mine.kv")).unwrap(),
+        b"an unsigned file's"
+    );
+
+    // Another publisher's app with an id this computer has data for takes none of it.
+    std::fs::write(store.join("dev.krate.theirs.kv"), b"mine, not theirs").unwrap();
+    let theirs = pack_minimal(dir.path(), home.path(), "dev.krate.theirs", "theirs", false);
+    let other_key = dir.path().join("other.key");
+    let out = krate()
+        .arg("sign")
+        .arg(&theirs)
+        .arg("--key")
+        .arg(&other_key)
+        .arg("--generate-key")
+        .args(["--namespace", "someone/theirs"])
+        .env("HOME", home.path())
+        .output()
+        .expect("sign");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let ran = run_headless(&theirs, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert_eq!(
+        std::fs::read(store.join("dev.krate.theirs.kv")).unwrap(),
+        b"mine, not theirs"
+    );
+    assert!(!store.join("dev.krate.theirs.moved").exists());
+
+    // `krate pack` without --sign stays byte for byte what it was.
+    let a = pack_minimal(dir.path(), home.path(), "dev.krate.plain", "plain-a", false);
+    let b = pack_minimal(dir.path(), home.path(), "dev.krate.plain", "plain-b", false);
+    assert_eq!(std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
+    assert_eq!(signer_of(&a), None);
+}
+
+/// IC-983: an older unsigned file is signed as its maker the moment it goes
+/// out -- published here -- in place, so publishing it again sends the same
+/// bytes; an already-signed file is sent exactly as it is.
+#[test]
+fn publishing_an_unsigned_older_app_signs_it_first() {
+    use std::sync::{Arc, Mutex};
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    std::fs::create_dir_all(home.path().join(".krate")).expect("krate home");
+    std::fs::write(
+        home.path().join(".krate/github.json"),
+        r#"{"login":"alice","name":"Alice","avatar_url":null,"token":"krs_alice"}"#,
+    )
+    .expect("sign-in");
+    let older = pack_minimal(dir.path(), home.path(), "dev.krate.older", "older", false);
+    assert_eq!(
+        signer_of(&older),
+        None,
+        "made before signing was the default"
+    );
+
+    let uploads: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
+    let seen = uploads.clone();
+    let Some((addr, stop)) = spawn_fake_hub(Arc::new(move |method, path, _headers, body| {
+        match (method, path) {
+            ("POST", "/publish") => {
+                seen.lock().unwrap().push(body.to_vec());
+                let id = krate_bundle::sha256_hex(body);
+                (
+                    200,
+                    vec![],
+                    serde_json::json!({"id": id, "url": format!("http://hub.example/a/{id}")})
+                        .to_string()
+                        .into_bytes(),
+                )
+            }
+            _ => (404, vec![], b"not found".to_vec()),
+        }
+    })) else {
+        eprintln!("skipping: no local port for the fake hub");
+        return;
+    };
+    let publish = || {
+        krate()
+            .arg("publish")
+            .arg(&older)
+            .args(["--hub", &format!("http://{addr}")])
+            .args(["--shot", "/nonexistent.png"])
+            .env("HOME", home.path())
+            .output()
+            .expect("publish")
+    };
+    let out = publish();
+    let said =
+        String::from_utf8_lossy(&out.stderr).to_string() + &String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{said}");
+    assert!(said.contains("before it goes out"), "{said}");
+    let public = maker_public(home.path());
+    assert_eq!(
+        signer_of(&older).as_deref(),
+        Some(public.as_str()),
+        "signed in place"
+    );
+    let out = publish();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let sent = uploads.lock().unwrap().clone();
+    assert_eq!(sent.len(), 2, "two publishes");
+    assert_eq!(
+        sent[0],
+        std::fs::read(&older).unwrap(),
+        "what went out is the signed file"
+    );
+    assert_eq!(sent[0], sent[1], "publishing again sends the same bytes");
+}
+
+/// The bytes of `bundle` served by a stand-in hub at `/a/<sha>`, naming
+/// `tag` as the publishing account (`x-krate-store`).
+fn serve_app_with_tag(
+    apps: Vec<(Vec<u8>, &'static str)>,
+) -> Option<(SocketAddr, std::sync::Arc<std::sync::atomic::AtomicBool>)> {
+    let apps: Vec<(String, Vec<u8>, &'static str)> = apps
+        .into_iter()
+        .map(|(bytes, tag)| (krate_bundle::sha256_hex(&bytes), bytes, tag))
+        .collect();
+    spawn_fake_hub(std::sync::Arc::new(move |method, path, _headers, _body| {
+        for (sha, bytes, tag) in &apps {
+            if method == "GET" && path == format!("/a/{sha}") {
+                return (
+                    200,
+                    vec![
+                        (
+                            "content-type".to_string(),
+                            "application/octet-stream".to_string(),
+                        ),
+                        ("x-krate-store".to_string(), tag.to_string()),
+                    ],
+                    bytes.clone(),
+                );
+            }
+        }
+        (404, vec![], b"not found".to_vec())
+    }))
+}
+
+/// K-1172 on a computer: an unsigned app opened from a Krate hub's link is
+/// keyed by its id AND the account that published it, and gets a copy of
+/// what its id kept, once; another account publishing the same id gets
+/// another store; a server that is not the hub names nobody; and a file
+/// opened from disk keeps the id-keyed path it always had.
+#[test]
+fn a_linked_unsigned_app_is_keyed_by_the_account_that_published_it() {
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    let store = home.path().join(".krate/store");
+    std::fs::create_dir_all(&store).expect("store");
+    std::fs::write(store.join("dev.krate.linked.kv"), b"shared by id").expect("old data");
+    let alices = pack_minimal(dir.path(), home.path(), "dev.krate.linked", "alice", false);
+    // Mallory's app declares the same id; different bytes, another account.
+    let mallorys_manifest = dir.path().join("mallory.toml");
+    std::fs::write(
+        &mallorys_manifest,
+        BUNDLE_MANIFEST
+            .replace("com.example.bundle", "dev.krate.linked")
+            .replace("version = \"0.1.0\"", "version = \"6.6.6\""),
+    )
+    .unwrap();
+    let mallorys = dir.path().join("mallory.krate");
+    let out = krate()
+        .arg("pack")
+        .arg(dir.path().join("code.wasm"))
+        .arg("--manifest")
+        .arg(&mallorys_manifest)
+        .arg("-o")
+        .arg(&mallorys)
+        .env("HOME", home.path())
+        .output()
+        .expect("pack");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let alice_bytes = std::fs::read(&alices).unwrap();
+    let mallory_bytes = std::fs::read(&mallorys).unwrap();
+    let (alice_sha, mallory_sha) = (
+        krate_bundle::sha256_hex(&alice_bytes),
+        krate_bundle::sha256_hex(&mallory_bytes),
+    );
+    const ALICE: &str = "k0123456789abcdef";
+    const MALLORY: &str = "kfedcba9876543210";
+    let Some((addr, stop)) =
+        serve_app_with_tag(vec![(alice_bytes, ALICE), (mallory_bytes, MALLORY)])
+    else {
+        eprintln!("skipping: no local port for the fake hub");
+        return;
+    };
+    let hub = format!("http://{addr}");
+    let open_link = |sha: &str, hub_url: &str| {
+        let out = krate()
+            .arg("run")
+            .arg(format!("{hub}/a/{sha}"))
+            .args(["--headless", "--auto-grant", "--insecure-http"])
+            .env("HOME", home.path())
+            .env("KRATE_HUB_URL", hub_url)
+            .output()
+            .expect("run link");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+
+    open_link(&alice_sha, &hub);
+    let alice_store = store.join(format!("dev.krate.linked~{ALICE}.kv"));
+    assert_eq!(
+        std::fs::read(&alice_store).expect("alice's copy"),
+        b"shared by id"
+    );
+    assert_eq!(
+        std::fs::read(store.join("dev.krate.linked.kv")).unwrap(),
+        b"shared by id",
+        "a copy takes nothing from the id's own store"
+    );
+
+    // Alice's app writes; the id's store changes; her store is never
+    // overwritten by a later open.
+    std::fs::write(&alice_store, b"alice's own").unwrap();
+    std::fs::write(store.join("dev.krate.linked.kv"), b"newer, by id").unwrap();
+    open_link(&alice_sha, &hub);
+    assert_eq!(std::fs::read(&alice_store).unwrap(), b"alice's own");
+
+    // Another account's app with the same id: another store.
+    open_link(&mallory_sha, &hub);
+    let mallory_store = store.join(format!("dev.krate.linked~{MALLORY}.kv"));
+    assert_eq!(std::fs::read(&mallory_store).unwrap(), b"newer, by id");
+    assert_eq!(
+        std::fs::read(&alice_store).unwrap(),
+        b"alice's own",
+        "never alice's"
+    );
+
+    // A server that is not this computer's hub names nobody.
+    let before: Vec<_> = std::fs::read_dir(&store)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    std::fs::remove_file(&alice_store).unwrap();
+    std::fs::remove_file(store.join(format!("dev.krate.linked~{ALICE}.from-id"))).unwrap();
+    open_link(&alice_sha, "https://hub.example");
+    assert!(
+        !alice_store.exists(),
+        "a tag from a server that is not the hub keys nothing"
+    );
+
+    // A file opened from disk: the id's own store, as always.
+    let ran = run_headless(&alices, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let after: Vec<_> = std::fs::read_dir(&store)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert!(
+        after.iter().all(|name| before.contains(name)),
+        "a file makes no new store: {after:?}"
+    );
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// IC-983: on a fresh home, the first `krate create` -- the command the
+/// website tells people to run -- makes a signed app with a publisher key
+/// nobody was asked about, and the app passes every check signed (the bytes
+/// checked are the bytes that go out).
+#[test]
+fn a_fresh_homes_first_create_is_signed_with_its_own_key() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let home = tempfile::tempdir().expect("home");
+    let real_home = std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME is set"));
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".cargo"));
+    let rustup_home = std::env::var_os("RUSTUP_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| real_home.join(".rustup"));
+    // A fresh Krate home, with the compiled SDK borrowed so the build takes
+    // seconds: what is fresh here is the KEY, not the compiler's cache.
+    let real_build = real_home.join(".cache/krate/build");
+    #[cfg(unix)]
+    if real_build.is_dir() {
+        std::fs::create_dir_all(home.path().join(".cache/krate")).unwrap();
+        std::os::unix::fs::symlink(&real_build, home.path().join(".cache/krate/build")).unwrap();
+    }
+    let work = tempfile::tempdir().expect("work");
+    let out = work.path().join("made.krate");
+    let made = krate()
+        .arg("create")
+        .arg("a grocery list app")
+        .arg("--output")
+        .arg(&out)
+        .arg("--work-dir")
+        .arg(work.path().join("inspect"))
+        .env("HOME", home.path())
+        .env("CARGO_HOME", &cargo_home)
+        .env("RUSTUP_HOME", &rustup_home)
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .expect("run create");
+    let said =
+        String::from_utf8_lossy(&made.stdout).to_string() + &String::from_utf8_lossy(&made.stderr);
+    assert!(made.status.success(), "{said}");
+    assert!(said.contains("Made your publisher key"), "{said}");
+    assert!(said.contains("signed as you"), "{said}");
+    let public = maker_public(home.path());
+    assert_eq!(signer_of(&out).as_deref(), Some(public.as_str()), "{said}");
+    assert!(
+        home.path().join(".krate/keys/maker.key").is_file(),
+        "kept on this computer"
     );
 }

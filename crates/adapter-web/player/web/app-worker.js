@@ -11,6 +11,7 @@ import init, { Ui, Grants, Kv } from './krate_web.js';
 import { buildImports, AppStopped } from './hosts.js';
 import { workerBridge } from './bridge.js';
 import { workerRing } from './ring.js';
+import { openSqlDatabase } from './sqldb.js';
 
 const post = (msg, transfer) => self.postMessage(msg, transfer || []);
 const now = () => performance.timeOrigin + performance.now();
@@ -19,6 +20,13 @@ self.onmessage = async ({ data }) => {
   if (data.t !== 'start') return;
   const marks = { workerStart: now() };
   try {
+    // An app with its own database starts downloading SQLite now, beside
+    // the Player module, rather than after it: on a phone the download is
+    // nearly all of the wait.
+    const wantsSql = (data.meta.imports || []).some((n) => /^krate:store\/sql(@|$)/.test(n));
+    const sqlUrl = new URL('./sql.wasm', import.meta.url);
+    const sqlFetch = wantsSql ? fetch(sqlUrl) : null;
+    if (sqlFetch) sqlFetch.catch(() => {});
     const player = await init({ module_or_path: data.playerModule });
     marks.playerReady = now();
     const ui = new Ui(data.scale, data.dark);
@@ -26,7 +34,27 @@ self.onmessage = async ({ data }) => {
     const kv = new Kv(grants.allows('store.kv'));
     for (const [key, value] of data.kv || []) kv.load(key, value);
 
+    // store.sql: only for an app that imports it, so no other app fetches
+    // SQLite. Opened before the app runs; a database that cannot start is
+    // said on each call rather than leaving the app without the interface.
+    const sql = wantsSql
+      ? await openSqlDatabase({ url: sqlUrl, granted: grants.allows('store.sql'), image: data.sqlImage, fetched: sqlFetch })
+        .catch((e) => ({ startFailed: `the database could not start in this tab (${(e && e.message) || e})` }))
+      : null;
+    marks.sqlReady = now();
+
     const ring = workerRing(data.ring);
+    // No rows waiting: top past any frame, bottom at 0.
+    const ROWS_EMPTY = 0x7fff0000;
+    const mergeRows = (cell, top, bottom, height) => {
+      // A frame taller than 16 bits of rows is copied whole every time.
+      if (height > 0x7fff) { top = 0; bottom = 0xffff; }
+      for (;;) {
+        const was = Atomics.load(cell, 0);
+        const t = Math.min(top, (was >>> 16) & 0x7fff), b = Math.max(bottom, was & 0xffff);
+        if (Atomics.compareExchange(cell, 0, was, (t << 16) | b) === was) return;
+      }
+    };
     const bridge = workerBridge(data.bridge, post);
     const windows = new Map();
     const signal = data.signal ? new Int32Array(data.signal) : null;
@@ -35,20 +63,29 @@ self.onmessage = async ({ data }) => {
 
     // A window's frame goes to the page through shared memory: a blocked
     // worker's OffscreenCanvas never reaches the screen (measured in Phase 0).
+    //
+    // Only the rows a paint changed are copied, and the rows changed since
+    // the page last took them ride in one shared word (top << 16 | bottom),
+    // merged here and taken there in single atomic steps, so a frame the
+    // page never saw still has its rows copied by the one it does see.
     const attachFrame = (id) => {
       const size = ui.frame_size(id);
       if (!size.length) return;
       const [pw, ph, lw, lh] = size;
       const frame = new SharedArrayBuffer(pw * ph * 4);
-      windows.set(id, { ...(windows.get(id) || {}), frame, pw, ph });
-      post({ t: 'window', id, frame, pw, ph, lw, lh });
+      const rows = new SharedArrayBuffer(4);
+      new Int32Array(rows)[0] = ROWS_EMPTY;
+      windows.set(id, { ...(windows.get(id) || {}), frame, pw, ph, rows: new Int32Array(rows) });
+      post({ t: 'window', id, frame, pw, ph, lw, lh, rows });
     };
     const present = () => {
       for (const [id, w] of windows) {
         if (!ui.render(id)) continue;
-        const len = ui.frame_len(id);
-        const view = new Uint8Array(player.memory.buffer, ui.frame_ptr(id), len);
-        new Uint8Array(w.frame).set(view);
+        const [top = 0, bottom = w.ph] = ui.frame_rows(id);
+        const start = top * w.pw * 4;
+        const view = new Uint8Array(player.memory.buffer, ui.frame_ptr(id) + start, (bottom - top) * w.pw * 4);
+        new Uint8Array(w.frame, start, view.length).set(view);
+        mergeRows(w.rows, top, bottom, w.ph);
         // The page wakes on this counter (Atomics.waitAsync) rather than on
         // the message below, which Chromium hands the page only at its next
         // rendering opportunity: ~9 ms of every click (measured).
@@ -60,17 +97,34 @@ self.onmessage = async ({ data }) => {
         }
         // ?probe=1 (the proofs): what is on screen rides with the frame.
         const screen = data.probe ? ui.on_screen(id) : undefined;
-        post({ t: 'frame', id, seq, inputAt: pendingInputAt, paintedAt: now(), screen });
+        // On a touch screen, where the text fields are, when that changed:
+        // the page raises the keyboard inside the tap that lands on one.
+        let fields;
+        if (data.touch) {
+          const r = Array.from(ui.text_rects(id));
+          const key = r.join(',');
+          if (key !== w.fieldsKey) { w.fieldsKey = key; fields = r; }
+        }
+        post({ t: 'frame', id, seq, inputAt: pendingInputAt, paintedAt: now(), screen, fields });
         pendingInputAt = undefined;
       }
     };
 
-    const imports = buildImports({
+    const host = {
       meta: data.meta,
-      ui, grants, kv, ring, bridge,
+      ui, grants, kv, ring, bridge, sql,
       args: data.args,
       storeKey: data.storeKey,
+      // store.org: on, not-org or unsupported, as the page found it.
+      org: data.org,
+      // What this browser has of the device's senses (IC-974), as the page
+      // found it: a worker cannot see geolocation itself.
+      senses: data.senses,
       sleepCell: new Int32Array(new SharedArrayBuffer(4)),
+      // Sound: the page's shared stats and command ring (audio.js), and the
+      // streams and sounds this run makes, posted to the page.
+      audio: data.audio,
+      audioPost: (msg, transfer) => post({ t: 'audio', ...msg }, transfer),
       output: (fd, text) => post({ t: 'out', fd, text }),
       notice: (iface, fname) => {
         const key = `${iface}#${fname}`;
@@ -110,7 +164,8 @@ self.onmessage = async ({ data }) => {
         return { width: size[2] || data.avail.width, height: size[3] || data.avail.height, touch: data.touch };
       },
       textEntry: (on) => post({ t: 'text-entry', on }),
-    });
+    };
+    const imports = buildImports(host);
 
     // The glue the hub made at publish, and the core modules the page
     // checked against the judgement; nothing else is compiled.
@@ -129,6 +184,8 @@ self.onmessage = async ({ data }) => {
     post({ t: 'marks', marks });
     const run = app.run || (app['krate:app/run'] && app['krate:app/run'].run);
     const code = run();
+    // A file the app wrote and still held is let go of with the app.
+    host.closeFiles();
     present();
     post({ t: 'exit', code });
   } catch (e) {

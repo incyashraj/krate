@@ -115,6 +115,24 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // person reading the permission list learns that this app draws random
     // numbers, which is worth knowing for anything that generates keys or ids.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "random", "bytes", false),
+    // Running a program on the computer the app opens on (IC-977): a
+    // compiler, a formatter, a language server, a debugger. Scoped to one
+    // program by its bare name -- `process.run:cargo` -- so the person is
+    // asked about exactly what will run, and a name with a folder, a
+    // wildcard or a shell character is refused right here. Never
+    // default-granted, never in a tab or on a phone: a program has the
+    // person's own power, which is what the consent line says.
+    CapabilitySpec::resource_scoped(
+        CapabilityPhase::Phase2,
+        "process",
+        "run",
+        "<program>",
+        false,
+    ),
+    // The person's own shell in a terminal (IC-977). The widest grant
+    // Krate has -- a shell can do anything the person can -- so it is its
+    // own line on the card, never implied by any `process.run`.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "process", "terminal", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",
@@ -543,6 +561,61 @@ pub struct Capability {
     resource: Option<String>,
 }
 
+/// [`Capability::works_in_a_tab`] by module and action, for a spec in the
+/// catalog (the authoring pack's "opens from a link" column).
+pub fn works_in_a_tab(module: &str, action: &str) -> bool {
+    matches!(
+        (module, action),
+        ("io", "stdout" | "stderr" | "args" | "log")
+            | ("random", "bytes")
+            | ("time", _)
+            | ("locale", _)
+            | ("ui", "window" | "clipboard" | "open-url")
+            // net.ws rides the same grant (IC-974).
+            | ("net", "connect")
+            | ("store", "kv")
+            // The app's own database (K-1149): the desktop's SQLite and
+            // rules (crates/appsql) compiled for the tab (crates/sql-web),
+            // kept per app in the browser's storage.
+            | ("store", "sql")
+            // An organisation's team data (G1): the copy, merge and
+            // sealing are crates/orgdata in the validator module, the
+            // page keeps the copy and syncs it (player/web/org-data.js).
+            | ("store", "org")
+            // The shared store and secrets (IC-974): the desktop's
+            // local-first copy, merge and limits, synced with the hub the
+            // Player came from (player/web/shared-store.js); secrets sealed
+            // with a non-extractable WebCrypto key (secret-store.js).
+            | ("store", "shared" | "secret")
+            // Sound out (K-1134): Web Audio, an AudioWorklet fed from the
+            // app's own buffers (player/web/audio-worklet.js), heard from
+            // the person's first tap or key, as browsers require.
+            | ("audio", "playback")
+            // The device's senses (IC-974), each behind the same grant as
+            // on desktop and then the browser's own prompt, whose "no" is
+            // the desktop's refusal (player/web/hosts.js, player.js,
+            // senses-proof.mjs): notifications (the Notification API),
+            // where the device is (Geolocation), the camera and the
+            // microphone (getUserMedia; the microphone through an
+            // AudioWorklet into the app's own buffer). Share and speaking
+            // aloud need no capability of their own.
+            | ("ui", "notify")
+            | ("location", "read")
+            | ("camera", "capture")
+            | ("audio", "capture")
+            // The dialogs (IC-974): message and confirm as a sheet in the
+            // page, open-file through the browser's file picker, save-file
+            // as a download once the app lets go of what it wrote
+            // (player/web/hosts.js, player.js). The folder dialog is the one
+            // a tab still answers with "works in Krate on a computer"
+            // (Capability::works_in_a_tab, which knows the resource).
+            | ("ui", "dialog")
+            // A file dropped on the app, judged by the desktop's own media
+            // type table (krate_adapter_common::mime).
+            | ("ui", "dropzone")
+    )
+}
+
 impl Capability {
     pub fn new(module: &str, action: &str, resource: Option<&str>) -> Result<Self> {
         validate_ident("capability module", module)?;
@@ -678,6 +751,22 @@ impl Capability {
         default_granted_capabilities().contains(self)
     }
 
+    /// Whether a browser tab can give this capability (IC-956, IC-974): the
+    /// one list the Player's consent card (crates/adapter-web web_policy.rs)
+    /// and check-app's note for an app shared as a link both read.
+    ///
+    /// The rest work in Krate on a computer; the Player says so in those
+    /// words rather than pretending, and a call to one is refused the same way.
+    pub fn works_in_a_tab(&self) -> bool {
+        // The folder dialog is the one dialog a tab cannot give: a browser
+        // hands a page files, not a folder it can write into.
+        if (self.module(), self.action(), self.resource()) == ("ui", "dialog", Some("open-folder"))
+        {
+            return false;
+        }
+        works_in_a_tab(self.module(), self.action())
+    }
+
     /// Render a capability as a short plain phrase for a person, e.g.
     /// `fs.write:./checklist/**` -> "save files in ./checklist". Falls back to the
     /// technical form for anything without a friendly phrasing, so the label is
@@ -768,6 +857,22 @@ impl Capability {
             ("location", "read") => "know where you are".to_string(),
             ("bluetooth", "connect") => "connect to Bluetooth devices".to_string(),
             ("photos", "add") => "add pictures to your photo library".to_string(),
+            // IC-977: what a program can do, said plainly. A build runs the
+            // project's own code (build scripts, macros, tests), so cargo
+            // gets the sentence that is true of it.
+            ("process", "run") => match resource {
+                Some("cargo") => {
+                    "run cargo on this computer: a project's build can run any code it contains"
+                        .to_string()
+                }
+                Some(program) => {
+                    format!("run {program} on this computer: it can do what you can")
+                }
+                None => "run programs on this computer: they can do what you can".to_string(),
+            },
+            ("process", "terminal") => {
+                "open a terminal on this computer: it can do anything you can".to_string()
+            }
             ("gfx", "gpu") => "draw with your graphics card".to_string(),
             ("ui", "menu") => "show its own menus".to_string(),
             ("ui", "dialog") => "show you dialogs and file pickers".to_string(),
@@ -775,6 +880,54 @@ impl Capability {
             _ => cap.to_string(),
         }
     }
+}
+
+/// The longest program name `process.run` takes.
+pub const MAX_PROGRAM_NAME_BYTES: usize = 64;
+
+/// Is `name` a program `process.run:<program>` may name (IC-977)?
+///
+/// A bare name only -- `cargo`, `rust-analyzer`, `lldb-dap`, `python3.12`:
+/// letters, digits, `-`, `_`, `.` and `+`, starting with a letter or digit.
+/// The host finds it on the person's PATH, so the manifest says WHICH
+/// program and never WHERE: a folder (`/usr/bin/cargo`, `../x`), a wildcard
+/// (`*`), or a shell character (`;`, `|`, `$`, a space) would make the line
+/// on the consent card mean something other than what it reads as, and is
+/// refused here, where the fix is one line in a manifest. The runtime holds
+/// a program name an app passes at run time to the same rule.
+pub fn validate_program_name(name: &str) -> std::result::Result<(), String> {
+    if name.is_empty() {
+        return Err("a program is named by its bare name, like `cargo`".to_string());
+    }
+    if name.len() > MAX_PROGRAM_NAME_BYTES {
+        return Err(format!(
+            "a program name is at most {MAX_PROGRAM_NAME_BYTES} bytes"
+        ));
+    }
+    if let Some(bad) = name
+        .chars()
+        .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '+')))
+    {
+        let what = match bad {
+            '/' | '\\' => "a folder",
+            '*' | '?' | '[' | ']' => "a wildcard",
+            c if c.is_whitespace() => "a space",
+            _ => "a shell character",
+        };
+        return Err(format!(
+            "`{name}` has {what} (`{}`): name a program by its bare name, like `cargo` -- \
+             Krate finds it on the person's PATH, so there is no folder, no wildcard and \
+             no shell to name",
+            bad.escape_default()
+        ));
+    }
+    if !name.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return Err(format!(
+            "`{name}` must start with a letter or digit: name a program by its bare name, \
+             like `cargo`"
+        ));
+    }
+    Ok(())
 }
 
 /// Trim a filesystem capability resource to something readable: drop a trailing
@@ -1063,6 +1216,10 @@ fn validate_capability_resource(
 
     if module == "memory" && action == "budget" {
         return validate_memory_budget(resource).map(|_| ());
+    }
+
+    if module == "process" && action == "run" {
+        return validate_program_name(resource);
     }
 
     if module == "gfx" && action == "gpu" {
@@ -1499,6 +1656,75 @@ mod tests {
 
         // Long enough to be unreadable on the screen a person decides from.
         assert!(validate_group_name(&"a".repeat(65)).is_err());
+    }
+
+    /// `process.run` names one program by its bare name (IC-977): a folder,
+    /// a wildcard or a shell character is refused where it is written, with
+    /// words, and the consent line says what a program can do.
+    #[test]
+    fn a_program_is_named_bare_and_its_consent_line_is_plain() {
+        for good in [
+            "cargo",
+            "rustc",
+            "rustfmt",
+            "rust-analyzer",
+            "lldb-dap",
+            "python3.12",
+            "g++",
+        ] {
+            let cap: Capability = format!("process.run:{good}")
+                .parse()
+                .unwrap_or_else(|err| panic!("{good} is a bare program name: {err}"));
+            assert_eq!(cap.resource(), Some(good));
+            assert!(!cap.is_default_granted(), "never granted without asking");
+            assert!(!cap.works_in_a_tab(), "a tab cannot run a program");
+        }
+        for (hostile, says) in [
+            ("/usr/bin/cargo", "a folder"),
+            ("../cargo", "a folder"),
+            ("bin\\cargo", "a folder"),
+            ("*", "a wildcard"),
+            ("cargo*", "a wildcard"),
+            ("cargo;rm", "a shell character"),
+            ("cargo|sh", "a shell character"),
+            ("$SHELL", "a shell character"),
+            ("cargo build", "a space"),
+            ("`id`", "a shell character"),
+            ("-rf", "must start with a letter or digit"),
+            (".hidden", "must start with a letter or digit"),
+        ] {
+            let err = format!("process.run:{hostile}")
+                .parse::<Capability>()
+                .expect_err(hostile)
+                .to_string();
+            assert!(err.contains(says), "{hostile}: {err}");
+        }
+        assert!(
+            "process.run".parse::<Capability>().is_err(),
+            "a program must be named"
+        );
+        assert!("process.run:a:b".parse::<Capability>().is_err());
+        assert!(format!("process.run:{}", "a".repeat(65))
+            .parse::<Capability>()
+            .is_err());
+
+        let terminal: Capability = "process.terminal".parse().expect("terminal");
+        assert!(!terminal.is_default_granted() && !terminal.works_in_a_tab());
+        assert!("process.terminal:bash".parse::<Capability>().is_err());
+
+        let words = |cap: &str| cap.parse::<Capability>().expect(cap).plain();
+        assert_eq!(
+            words("process.run:cargo"),
+            "run cargo on this computer: a project's build can run any code it contains"
+        );
+        assert_eq!(
+            words("process.run:rust-analyzer"),
+            "run rust-analyzer on this computer: it can do what you can"
+        );
+        assert_eq!(
+            words("process.terminal"),
+            "open a terminal on this computer: it can do anything you can"
+        );
     }
 
     /// The check must not become a filter on what an app may call itself.

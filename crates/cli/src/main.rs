@@ -23,14 +23,15 @@ mod api_author;
 mod api_key;
 mod audit;
 mod authoring_context;
-mod connections;
 mod fleet;
 mod github_auth;
 mod krate_mode;
 mod lineedit;
+mod maker_key;
 mod mcp;
 mod org;
 mod player;
+mod port_oracle;
 mod port_report;
 mod progress;
 mod sdk;
@@ -217,9 +218,11 @@ enum Command {
         #[arg(long, default_value_t = DEFAULT_HTTP_TIMEOUT_MILLIS)]
         http_timeout_millis: u32,
 
-        /// Root directory used for relative Phase 2 filesystem paths.
-        #[arg(long, default_value = ".")]
-        sandbox_root: PathBuf,
+        /// Root directory used for relative Phase 2 filesystem paths. Without
+        /// it, a `.krate` opened by a person (`--consent`) keeps its files in
+        /// its own folder (K-1222), and anything else in the current folder.
+        #[arg(long)]
+        sandbox_root: Option<PathBuf>,
 
         /// Path to a Phase 2 manifest.toml. If omitted, Krate checks next to the .wasm file.
         #[arg(long)]
@@ -827,6 +830,13 @@ enum Command {
         /// Repeatable.
         #[arg(long = "extension", value_name = "OWNER/NAME@VERSION=DIR")]
         extensions: Vec<String>,
+
+        /// Sign the bundle with your own publisher key (made the first time,
+        /// kept on this computer), as `krate create` does. Without it the
+        /// bundle is byte for byte the same on every machine; it is signed
+        /// when it is published, wrapped or made into a card.
+        #[arg(long)]
+        sign: bool,
     },
 
     /// Send a report file to Krate support.
@@ -869,11 +879,14 @@ enum Command {
         output: Option<PathBuf>,
     },
 
-    /// Look at a request BEFORE building: answer with either up to three
-    /// short questions (when answering them would change what gets built)
-    /// or a one-paragraph plan of what will be made and what it needs.
-    /// Prints one JSON object -- {"ask":[...]} or {"plan":"...","needs":[...]}
-    /// -- and never builds anything. This is the Studio's conversation door.
+    /// Look at a request BEFORE building: answer with up to three short
+    /// questions (when answering them would change what gets built), a
+    /// one-paragraph plan of what will be made and what it needs, or -- when
+    /// `create` would refuse the request -- why not and what Krate can build
+    /// instead. Prints one JSON object -- {"ask":[...]},
+    /// {"plan":"...","needs":[...]} or {"cannot":"...","instead":"..."} --
+    /// and never builds anything. A plan only offers what `create` will
+    /// build. This is the Studio's conversation door.
     Plan {
         /// What the person asked for, in their own words.
         request: String,
@@ -1209,6 +1222,23 @@ enum Command {
         /// Do not offer to install missing build tools.
         #[arg(long)]
         no_install: bool,
+
+        /// Recorded cases the port must reproduce: a `krate.port.oracle.v1`
+        /// JSON file of inputs and the exact output the original gave for
+        /// each. With it a port can end verified; without it a port that
+        /// builds and runs ends "not verified" (exit 7), because nothing
+        /// compared it with the original. The cases are copied into the
+        /// workspace as `oracle.json`, shown to the agent, and guarded like
+        /// the other criteria.
+        #[arg(long, value_name = "FILE")]
+        oracle: Option<PathBuf>,
+
+        /// Print how the port ended as one JSON object on the last line of
+        /// stdout (`krate.port.outcome.v1`): the same verdict, requirement
+        /// and workspace the closing line names. The plain line goes to
+        /// stderr instead.
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show the organisation policy in force on this computer, or check
@@ -1543,6 +1573,53 @@ enum AccountAction {
     Adopt,
     /// Forget the stored sign-in on this machine.
     Logout,
+    /// Your apps' data, the same on every device you sign in on: this
+    /// device, the devices waiting for your yes, the recovery code.
+    Sync {
+        #[command(subcommand)]
+        action: Option<SyncAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SyncAction {
+    /// Let a waiting device read your apps' data.
+    Approve {
+        /// The device's id, as `krate account sync` lists it.
+        device: String,
+    },
+    /// No other device at hand: type the recovery code (read from stdin).
+    Recover,
+    /// Stop syncing on this computer: every app, or the one with this id.
+    Off { app: Option<String> },
+    /// Sync again: every app, or the one with this id.
+    On { app: Option<String> },
+    /// What changed on two of your devices and waits for your choice.
+    Conflicts,
+    /// Answer one: keep this computer's, the other device's, both, or a merge.
+    ///
+    /// Close the app first: an app that is open keeps its own copy of what
+    /// waits, and answers its own way.
+    Resolve {
+        /// The app's id, as `krate account sync conflicts` lists it.
+        app: String,
+        /// The entry -- or the app's file, by its path in the app's
+        /// folder -- that changed on two devices.
+        key: String,
+        /// this: keep this computer's. other: keep the other device's.
+        /// both: keep both, the other's under its device's name. merge: put
+        /// two lists or records together.
+        choice: SyncChoice,
+    },
+}
+
+/// An answer to a change made on two devices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SyncChoice {
+    This,
+    Other,
+    Both,
+    Merge,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1988,7 +2065,9 @@ fn run() -> Result<u8> {
             task,
             app_args,
         } => run_component(RunRequest {
-            target,
+            // Cloned: the folder a person's run keeps its files in is
+            // decided from it below.
+            target: target.clone(),
             file: PathBuf::new(),
             insecure_http,
             // An explicit --fuel wins; otherwise --untrusted applies the default
@@ -2001,7 +2080,7 @@ fn run() -> Result<u8> {
             mem_limit,
             max_http_response_bytes,
             http_timeout_millis,
-            sandbox_root,
+            sandbox_root: sandbox_root.unwrap_or_else(|| default_sandbox_root(&target, consent)),
             assets_root: assets.map(PathBuf::from),
             manifest_path: manifest,
             grants: grant,
@@ -2047,7 +2126,22 @@ fn run() -> Result<u8> {
             manifest,
             output,
             extensions,
-        } => pack_bundle(&file, &manifest, &output, &extensions),
+            sign,
+        } => {
+            let code = pack_bundle(&file, &manifest, &output, &extensions)?;
+            if code == 0 && sign {
+                match maker_key::sign_if_unsigned(&output)? {
+                    maker_key::Signed::Now { public } => {
+                        println!("signed it as you ({}...)", &public[..12])
+                    }
+                    maker_key::Signed::Already => {}
+                    maker_key::Signed::Off => {
+                        println!("not signed: signing as a maker is off on this machine")
+                    }
+                }
+            }
+            Ok(code)
+        }
         Command::Sign {
             file,
             key,
@@ -2339,6 +2433,8 @@ fn run() -> Result<u8> {
             repair_attempts,
             yes,
             no_install,
+            oracle,
+            json,
         } => {
             if author_cmd.is_some() {
                 fleet::ai_build(Some("author-cmd"))?;
@@ -2357,6 +2453,8 @@ fn run() -> Result<u8> {
                 repair_attempts,
                 yes,
                 no_install,
+                oracle,
+                json,
             })
         }
         Command::Mcp => mcp::serve().map(|()| 0),
@@ -2487,6 +2585,8 @@ struct PortRequest {
     repair_attempts: u8,
     yes: bool,
     no_install: bool,
+    oracle: Option<PathBuf>,
+    json: bool,
 }
 
 fn port_project(req: PortRequest) -> Result<u8> {
@@ -2515,22 +2615,52 @@ fn port_project(req: PortRequest) -> Result<u8> {
     if req.yes && req.no_install {
         anyhow::bail!("--yes and --no-install cannot be used together");
     }
-
-    let held_temp = if req.prepare.is_none() && wants_transform {
-        Some(tempfile::tempdir().context("create port work dir")?)
-    } else {
-        None
+    // Which author, settled before anything is written: an agent Krate
+    // cannot port with is the person's to change, and finding that out after
+    // a workspace exists leaves a folder behind for nothing.
+    let author = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
+        (None, None) => None,
+        (Some(name), None) => Some(if let Some(vendor) = api_key::ApiVendor::parse(name) {
+            PortAuthor::Api(vendor)
+        } else {
+            let provider = resolve_agent(name)?;
+            match provider.name() {
+                "claude" => PortAuthor::Claude,
+                // Porting drives the agent with its own prompts and repair
+                // loop, which have only been built for Claude so far. Say
+                // that plainly rather than silently doing something else.
+                other => anyhow::bail!(
+                    "--agent {other} cannot port yet; porting supports `claude`, `anthropic` \
+                     and `openai` today. Use --author-cmd <command> to drive {other} yourself."
+                ),
+            }
+        }),
+        (None, Some(command)) => Some(PortAuthor::Command(command)),
+        _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
     };
-    let workspace_path = req.prepare.clone().unwrap_or_else(|| {
-        held_temp
-            .as_ref()
-            .map(|temp| temp.path().join("workspace"))
-            .unwrap_or_default()
-    });
+    // The recorded cases, read and checked before anything runs: a typo in
+    // the file is the person's to fix, and finding it after an agent has
+    // spent its time is the most expensive way to find it.
+    let oracle = req.oracle.as_deref().map(port_oracle::load).transpose()?;
+
+    // Every ending names this directory, so it has to outlive the run
+    // (IC-120). Without --prepare it used to be a temporary directory that
+    // was deleted on the way out -- so a port that failed took its
+    // candidate, its repair logs and its failure report with it, and the
+    // person was left with an error and nothing to look at. The path is
+    // absolute because the author command runs inside it: a relative
+    // --prepare handed it KRATE_PORT_CANDIDATE=work/candidate, which from
+    // inside `work/` names a folder that does not exist (K-1233).
+    let workspace_path = match req.prepare.as_deref() {
+        Some(dir) => std::path::absolute(dir)
+            .with_context(|| format!("resolve the workspace path {}", dir.display()))?,
+        None if wants_transform => fresh_port_workspace(Path::new(&report.source)),
+        None => PathBuf::new(),
+    };
     let workspace = workspace_path.as_path();
 
     if req.prepare.is_some() || wants_transform {
-        prepare_port_workspace(&report, workspace)?;
+        prepare_port_workspace(&report, workspace, oracle.as_ref())?;
     }
 
     match req.plan_format {
@@ -2544,47 +2674,285 @@ fn port_project(req: PortRequest) -> Result<u8> {
         println!("  review: {}", workspace.join("PORTING.md").display());
         println!("  AI task: {}", workspace.join("AGENT_TASK.md").display());
         println!("  candidate: {}", workspace.join("candidate").display());
+        if oracle.is_some() {
+            println!(
+                "  recorded cases: {}",
+                workspace.join("oracle.json").display()
+            );
+        }
         println!();
         println!("The original source was not changed.");
     }
 
-    if let Some(output) = req.to.as_deref() {
-        preflight_toolchain(req.yes, req.no_install)?;
-        let command = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
-            (Some(name), None) => {
-                if let Some(vendor) = api_key::ApiVendor::parse(name) {
-                    PortAuthor::Api(vendor)
-                } else {
-                    let provider = resolve_agent(name)?;
-                    match provider.name() {
-                        "claude" => PortAuthor::Claude,
-                        // Porting drives the agent with its own prompts and repair
-                        // loop, which have only been built for Claude so far. Say
-                        // that plainly rather than silently doing something else.
-                        other => anyhow::bail!(
-                        "--agent {other} cannot port yet; porting supports `claude`, `anthropic` \
-                         and `openai` today. Use --author-cmd <command> to drive {other} yourself."
-                    ),
-                    }
-                }
-            }
-            (None, Some(command)) => PortAuthor::Command(command),
-            _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
+    if let (Some(output), Some(author)) = (req.to.as_deref(), author) {
+        let mut progress = PortProgress::default();
+        let ran = preflight_toolchain(req.yes, req.no_install)
+            .map_err(|err| port_blocker("toolchain", format!("{err:#}")))
+            .and_then(|()| {
+                complete_port(
+                    PortRun {
+                        plan: &report,
+                        workspace,
+                        output,
+                        author,
+                        transcript: req.transcript.as_deref(),
+                        repair_attempts: req.repair_attempts,
+                        oracle: oracle.as_ref(),
+                    },
+                    &mut progress,
+                )
+            });
+        // One ending per initiation, whatever happened inside it: the port's
+        // own exit code, a closing line that names the verdict and the
+        // workspace, and the same thing as JSON. A bundle that was never
+        // compared against the original is not a finished port, and saying
+        // so in the exit status is what stops a script shipping it.
+        let ending = match ran {
+            Ok(ending) => ending,
+            Err(err) => PortEnding::blocked(err, &progress),
         };
-        // The port's own exit code, not a blanket 0: a bundle that was never
-        // compared against the original is not a finished port, and saying so
-        // in the exit status is what stops a script shipping it.
-        return complete_port(
-            &report,
-            workspace,
-            output,
-            command,
-            req.transcript.as_deref(),
-            req.repair_attempts,
-        );
+        return Ok(finish_port(ending, workspace, &report.source, req.json));
     }
 
     Ok(0)
+}
+
+/// A durable workspace for a port started without `--prepare`, under
+/// `~/.krate/ports/`. Named for the source and the moment, so two ports of
+/// the same project never share one and the newest sorts last.
+fn fresh_port_workspace(source: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    krate_home().join("ports").join(format!(
+        "{}-{stamp}-{}",
+        port_candidate_name(source),
+        std::process::id()
+    ))
+}
+
+/// How one port initiation ended (IC-120). Every run ends in exactly one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PortVerdict {
+    /// A `.krate` at the requested path that matched the original on every
+    /// recorded case, plus the evidence it was judged on.
+    Ported,
+    /// A `.krate` that builds, runs and keeps its permission wall, and that
+    /// nothing compared with the original. Exit 7.
+    Unverified,
+    /// No `.krate` at the requested path: a named requirement failed.
+    Blocked,
+}
+
+impl PortVerdict {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ported => "ported",
+            Self::Unverified => "unverified",
+            Self::Blocked => "blocked",
+        }
+    }
+
+    /// 0 ported, 7 unverified (Studio reads it as "a file with a note on
+    /// it"), 8 blocked. Blocked is its own code rather than 1 so a script can
+    /// tell "this port stopped on a named requirement" from "Krate itself
+    /// could not run".
+    fn exit_code(self) -> u8 {
+        match self {
+            Self::Ported => 0,
+            Self::Unverified => 7,
+            Self::Blocked => 8,
+        }
+    }
+}
+
+/// What the closing line, the outcome file and `--json` all report.
+struct PortEnding {
+    verdict: PortVerdict,
+    /// The requirement that decided the ending: the journey that failed or
+    /// was never checked, or the stage that stopped the run.
+    requirement: Option<String>,
+    /// One plain sentence.
+    reason: String,
+    /// The full error behind a blocker, for the terminal and the report.
+    detail: Option<String>,
+    bundle: Option<PathBuf>,
+    repairs_used: u8,
+    journey_results: Option<PathBuf>,
+}
+
+impl PortEnding {
+    fn blocked(err: anyhow::Error, progress: &PortProgress) -> Self {
+        let (requirement, reason, detail) = match err.downcast_ref::<PortBlocker>() {
+            Some(blocker) => (
+                blocker.requirement.clone(),
+                blocker.summary.clone(),
+                blocker.detail.clone(),
+            ),
+            None => {
+                let detail = format!("{err:#}");
+                (
+                    "port".to_string(),
+                    first_error_line(&detail).to_string(),
+                    detail,
+                )
+            }
+        };
+        Self {
+            verdict: PortVerdict::Blocked,
+            requirement: Some(requirement),
+            reason,
+            detail: Some(detail),
+            bundle: None,
+            repairs_used: progress.repairs_used,
+            journey_results: progress.journey_results.clone(),
+        }
+    }
+}
+
+/// What a run has done so far, kept outside the run so a blocker can still
+/// report it.
+#[derive(Default)]
+struct PortProgress {
+    repairs_used: u8,
+    journey_results: Option<PathBuf>,
+}
+
+/// A port that stopped on a named requirement. Carried as an error so `?`
+/// still works inside the run; the ending reads the requirement back out.
+#[derive(Debug)]
+struct PortBlocker {
+    requirement: String,
+    summary: String,
+    detail: String,
+}
+
+impl std::fmt::Display for PortBlocker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+impl std::error::Error for PortBlocker {}
+
+fn port_blocker(requirement: &str, detail: impl Into<String>) -> anyhow::Error {
+    let detail = detail.into();
+    PortBlocker {
+        requirement: requirement.to_string(),
+        summary: first_error_line(&detail).to_string(),
+        detail,
+    }
+    .into()
+}
+
+/// Any failure of the author itself -- it crashed, ran out of time, could not
+/// start -- is the `agent` requirement, whatever it printed.
+fn agent_failed(err: anyhow::Error) -> anyhow::Error {
+    if err.downcast_ref::<PortBlocker>().is_some() {
+        return err;
+    }
+    port_blocker("agent", format!("{err:#}"))
+}
+
+/// Print the ending and return the exit code. The last line a person sees
+/// names the verdict, what decided it, and the preserved workspace; the same
+/// classification is written to `port-outcome.json` and, under `--json`,
+/// printed as the last line of stdout.
+fn finish_port(ending: PortEnding, workspace: &Path, source: &str, json: bool) -> u8 {
+    let mut failure_report = None;
+    if ending.verdict == PortVerdict::Blocked {
+        let requirement = ending.requirement.as_deref().unwrap_or("port");
+        let detail = ending.detail.as_deref().unwrap_or(&ending.reason);
+        // Before the error goes to the terminal and is lost, say what kind of
+        // failure it was and write the report the person can choose to send.
+        // Nothing leaves this machine here. Not for an ending that already
+        // said exactly what to do -- a missing compiler, a path that exists,
+        // a criterion or source that changed -- where "send us the report"
+        // would ask for something that tells us nothing.
+        let reportable = !matches!(
+            requirement,
+            "toolchain"
+                | "output-path"
+                | "supported-source"
+                | "criteria-unchanged"
+                | "source-unchanged"
+        );
+        if reportable && workspace.is_dir() {
+            let failure = port_report::classify_for(requirement, detail);
+            failure_report =
+                write_port_failure_report(workspace, &failure, detail, Path::new(source));
+            print_port_failure_guidance(&failure, failure_report.as_deref());
+        }
+        eprintln!("error: {detail}");
+        let staged = workspace.join("candidate.krate");
+        if staged.is_file() {
+            // The failed candidate stays in the workspace as diagnostics.
+            // Nothing was written to the requested path (IC-785).
+            eprintln!(
+                "  the failed candidate is kept at {} -- the requested path was not touched",
+                staged.display()
+            );
+        }
+    }
+
+    let workspace_text = workspace.display().to_string();
+    let bundle = ending
+        .bundle
+        .as_deref()
+        .map(|b| std::path::absolute(b).unwrap_or_else(|_| b.to_path_buf()));
+    let line = match ending.verdict {
+        PortVerdict::Ported => format!(
+            "Ported: {} -- {}. Workspace: {workspace_text}",
+            bundle
+                .as_deref()
+                .map(|b| b.display().to_string())
+                .unwrap_or_default(),
+            ending.reason.trim_end_matches('.')
+        ),
+        PortVerdict::Unverified => format!(
+            "Not verified: {} -- {}. Workspace: {workspace_text}",
+            bundle
+                .as_deref()
+                .map(|b| b.display().to_string())
+                .unwrap_or_default(),
+            ending.reason.trim_end_matches('.')
+        ),
+        PortVerdict::Blocked => format!(
+            "Blocked on {}: {}. Workspace: {workspace_text}",
+            ending.requirement.as_deref().unwrap_or("port"),
+            ending.reason.trim_end_matches('.')
+        ),
+    };
+
+    let outcome = serde_json::json!({
+        "schema": "krate.port.outcome.v1",
+        "verdict": ending.verdict.as_str(),
+        "exit_code": ending.verdict.exit_code(),
+        "requirement": ending.requirement,
+        "reason": ending.reason,
+        "workspace": workspace_text,
+        "bundle": bundle.as_deref().map(|b| b.display().to_string()),
+        "repair_attempts_used": ending.repairs_used,
+        "journey_results": ending.journey_results.as_deref().map(|p| p.display().to_string()),
+        "failure_report": failure_report.as_deref().map(|p| p.display().to_string()),
+    });
+    let outcome_text = serde_json::to_string(&outcome).unwrap_or_default();
+    if workspace.is_dir() {
+        let _ = fs::write(
+            workspace.join("port-outcome.json"),
+            format!("{outcome_text}\n"),
+        );
+    }
+
+    if json {
+        eprintln!("{line}");
+        println!("{outcome_text}");
+    } else {
+        println!();
+        println!("{line}");
+    }
+    ending.verdict.exit_code()
 }
 
 #[derive(Clone, Copy)]
@@ -2604,7 +2972,11 @@ enum PortAuthor<'a> {
 /// Krate's strict component rules, and a task that forbids silent feature
 /// deletion. A later agent run edits only `candidate/`; the original project
 /// remains outside the workspace and untouched.
-fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Result<()> {
+fn prepare_port_workspace(
+    plan: &krate_port::PortPlan,
+    workspace: &Path,
+    oracle: Option<&port_oracle::PortOracle>,
+) -> Result<()> {
     use krate_author::{generate, AppKind, AppRequest};
 
     if workspace.exists() {
@@ -2677,11 +3049,19 @@ fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Resu
         serde_json::to_string_pretty(&snapshot)? + "\n",
     )?;
     fs::write(workspace.join("PORTING.md"), porting_readme(plan, &name))?;
-    fs::write(
-        workspace.join("AGENT_TASK.md"),
-        port_agent_task(&workspace_plan, &name),
-    )?;
-    let journeys = port_behavior_journeys(&workspace_plan);
+    let mut task = port_agent_task(&workspace_plan, &name);
+    if let Some(oracle) = oracle {
+        fs::write(
+            workspace.join("oracle.json"),
+            serde_json::to_string_pretty(oracle)? + "\n",
+        )?;
+        task.push_str(&port_oracle::task_section(oracle));
+    }
+    fs::write(workspace.join("AGENT_TASK.md"), task)?;
+    let mut journeys = port_behavior_journeys(&workspace_plan);
+    if let Some(oracle) = oracle {
+        port_oracle::mark_journeys(&mut journeys, oracle);
+    }
     fs::write(
         workspace.join("journeys.json"),
         serde_json::to_string_pretty(&journeys)? + "\n",
@@ -3011,25 +3391,49 @@ capability. Do not try to run or embed the original.\n",
     )
 }
 
-fn complete_port(
-    original_plan: &krate_port::PortPlan,
-    workspace: &Path,
-    output: &Path,
-    author: PortAuthor<'_>,
-    transcript_path: Option<&Path>,
+/// Everything one port run is handed.
+struct PortRun<'a> {
+    plan: &'a krate_port::PortPlan,
+    workspace: &'a Path,
+    output: &'a Path,
+    author: PortAuthor<'a>,
+    transcript: Option<&'a Path>,
     repair_attempts: u8,
-) -> Result<u8> {
+    oracle: Option<&'a port_oracle::PortOracle>,
+}
+
+/// Carry one accepted port request from transformation to a verdict.
+///
+/// Returns the ending for a bundle that exists (ported or unverified); every
+/// other way out is an error the caller turns into a blocked ending, and a
+/// [`PortBlocker`] among them names the requirement that stopped it.
+fn complete_port(run: PortRun<'_>, progress: &mut PortProgress) -> Result<PortEnding> {
+    let PortRun {
+        plan: original_plan,
+        workspace,
+        output,
+        author,
+        transcript: transcript_path,
+        repair_attempts,
+        oracle,
+    } = run;
     if original_plan.verdict == krate_port::Verdict::Unsupported {
-        anyhow::bail!(
-            "this source has blocking behavior; review {} before attempting a port",
-            workspace.join("PORTING.md").display()
-        );
+        return Err(port_blocker(
+            "supported-source",
+            format!(
+                "this source has blocking behavior; review {} before attempting a port",
+                workspace.join("PORTING.md").display()
+            ),
+        ));
     }
     if output.exists() {
-        anyhow::bail!(
-            "{} already exists; choose another --to path",
-            output.display()
-        );
+        return Err(port_blocker(
+            "output-path",
+            format!(
+                "{} already exists; choose another --to path",
+                output.display()
+            ),
+        ));
     }
 
     let candidate = workspace.join("candidate");
@@ -3054,11 +3458,13 @@ fn complete_port(
     let criteria = AcceptanceCriteria::capture(workspace)?;
     let author_name = match author {
         PortAuthor::Claude => {
-            run_claude_port(workspace, &source_snapshot, &candidate, &task_path)?;
+            run_claude_port(workspace, &source_snapshot, &candidate, &task_path)
+                .map_err(agent_failed)?;
             "claude"
         }
         PortAuthor::Api(vendor) => {
-            run_api_port(vendor, &source_snapshot, &candidate, &task_path, None)?;
+            run_api_port(vendor, &source_snapshot, &candidate, &task_path, None)
+                .map_err(agent_failed)?;
             match vendor {
                 api_key::ApiVendor::Anthropic => "anthropic",
                 api_key::ApiVendor::OpenAi => "openai",
@@ -3073,7 +3479,8 @@ fn complete_port(
                 &plan_path,
                 &task_path,
                 None,
-            )?;
+            )
+            .map_err(agent_failed)?;
             "external-command"
         }
     };
@@ -3086,175 +3493,173 @@ fn complete_port(
     // The agent receives read access to the source in order to understand it,
     // but it must edit only the isolated candidate. Re-analyze the source and
     // compare the complete deterministic plan before building anything.
-    let after_plan = krate_port::analyze(original_source)
-        .with_context(|| format!("re-check original source {}", original_source.display()))?;
-    if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
-        anyhow::bail!(
-            "the original source changed while the port agent was running; \
-             Krate stopped before packaging. Review the source and workspace."
-        );
-    }
+    ensure_original_source_unchanged(original_plan, original_source)?;
 
-    let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
-    if lib_after == scaffold_lib {
-        anyhow::bail!(
-            "the port agent finished without changing the candidate: src/lib.rs is \
-             byte-identical to the starter, so this would package the scaffold as if \
-             it were the app. The agent's transcript is at {} -- it usually means the \
-             agent explained the port instead of performing it.",
-            workspace.join(".agent-transcript.txt").display()
-        );
-    }
-    if lib_after.contains("This is a starting point, not the ported app") {
-        anyhow::bail!(
-            "the candidate still carries the starter's own header, so the app body \
-             was not replaced. See the transcript at {}.",
-            workspace.join(".agent-transcript.txt").display()
-        );
-    }
-
-    let mut repairs_used = 0_u8;
-    let validated = loop {
-        println!("==> validating the port candidate");
-        match validate_port_candidate(&candidate) {
-            Ok(validated) => break validated,
-            Err(error) if repairs_used < repair_attempts => {
-                repairs_used += 1;
-                let repair_dir = workspace.join("repair");
-                fs::create_dir_all(&repair_dir)?;
-                let error_path = repair_dir.join(format!("attempt-{repairs_used}.txt"));
-                fs::write(&error_path, format!("{error}\n"))?;
-                println!(
-                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
-                    first_error_line(&error)
-                );
-                run_port_repair(
-                    author,
-                    workspace,
-                    &source_snapshot,
-                    &candidate,
-                    &plan_path,
-                    &task_path,
-                    PortRepair {
-                        attempt: repairs_used,
-                        error_path: &error_path,
-                    },
-                )?;
-                ensure_original_source_unchanged(original_plan, original_source)?;
-                // A repair is the place the register names: a test edit
-                // hidden inside a code fix. Re-check after every attempt.
-                criteria.ensure_unchanged(workspace)?;
-            }
-            Err(error) => {
-                // The port is over. Before the error goes to the terminal and
-                // is lost, say what kind of failure it was and what that means
-                // for the person waiting -- and write the report they can
-                // choose to send us. Nothing leaves this machine here.
-                let report_path = write_port_failure_report(workspace, &error, original_source);
-                print_port_failure_guidance(&error, report_path.as_deref());
-                anyhow::bail!(
-                    "the port candidate did not pass validation after {} repair attempt(s):\n{}",
-                    repairs_used,
-                    error
-                )
-            }
+    let transcript_note = {
+        let transcript = workspace.join(".agent-transcript.txt");
+        if transcript.is_file() {
+            format!(" The agent's transcript is at {}.", transcript.display())
+        } else {
+            String::new()
         }
     };
-    let wasm = validated.wasm;
-    let manifest = validated.manifest;
+    let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
+    if lib_after == scaffold_lib {
+        return Err(port_blocker(
+            "agent",
+            format!(
+                "the port agent finished without changing the candidate: src/lib.rs is \
+                 byte-identical to the starter, so this would package the scaffold as if \
+                 it were the app. It usually means the agent explained the port instead \
+                 of performing it.{transcript_note}"
+            ),
+        ));
+    }
+    if lib_after.contains("This is a starting point, not the ported app") {
+        return Err(port_blocker(
+            "agent",
+            format!(
+                "the candidate still carries the starter's own header, so the app body \
+                 was not replaced.{transcript_note}"
+            ),
+        ));
+    }
 
-    println!("==> packing {}", output.display());
+    // One loop from build to behavior, with one repair budget across it.
+    //
+    // Verification used to sit outside the budget, so a candidate that
+    // compiled cleanly and computed the wrong answer got zero attempts while
+    // a build error got two -- backwards, because a failing check names the
+    // problem in one line and is the most repairable failure there is. A
+    // ported RSS reader stripped tags before decoding entities, said so in
+    // its own output, and was never asked to try again. And a repair that
+    // broke the build ended the port outright, with budget left.
     let manifest_src = candidate.join("manifest.toml");
     let pack_dir = tempfile::tempdir().context("create port pack dir")?;
     let code = pack_dir.path().join("code.wasm");
-    fs::copy(&wasm, &code)?;
     let packed_manifest = pack_dir.path().join("manifest.toml");
-    write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
     let assets = candidate.join("assets");
     // Packed into the run's own workspace, not the requested path (IC-785).
     // This used to pack straight to `output` and verify afterwards, so a
     // candidate that then failed verification left a plausible .krate at the
     // success path -- and had already replaced whatever the person kept
-    // there. The staged bundle is promoted only after the wall verdict.
+    // there. The staged bundle is promoted only after every check passed.
     let staged = workspace.join("candidate.krate");
-    let size = krate_bundle::pack_with_assets(
-        &packed_manifest,
-        &code,
-        assets.is_dir().then_some(assets.as_path()),
-        &staged,
-    )
-    .with_context(|| format!("pack {}", staged.display()))?;
-
-    println!("==> verifying the permission wall");
-    // Verification is inside the repair budget too. It used to sit outside it,
-    // so a candidate that compiled cleanly and computed the wrong answer got
-    // zero attempts while a build error got two -- backwards, because a failing
-    // self-check names the problem in one line and is the most repairable
-    // failure there is. A ported RSS reader stripped tags before decoding
-    // entities, said so in its own output, and was never asked to try again.
-    let gating = loop {
-        match verify_packed_app(&staged, &manifest) {
-            Ok(gating) => break gating,
-            Err(error) if repairs_used < repair_attempts => {
-                repairs_used += 1;
-                let repair_dir = workspace.join("repair");
-                fs::create_dir_all(&repair_dir)?;
-                let error_path = repair_dir.join(format!("verify-{repairs_used}.txt"));
-                fs::write(&error_path, format!("{error}\n"))?;
-                println!(
-                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
-                    first_error_line(&error.to_string())
-                );
-                run_port_repair(
-                    author,
-                    workspace,
-                    &source_snapshot,
-                    &candidate,
-                    &plan_path,
-                    &task_path,
-                    PortRepair {
-                        attempt: repairs_used,
-                        error_path: &error_path,
-                    },
-                )?;
-                ensure_original_source_unchanged(original_plan, original_source)?;
-                // A repair is the place the register names: a test edit
-                // hidden inside a code fix. Re-check after every attempt.
-                criteria.ensure_unchanged(workspace)?;
-                // The repair changed the source, so rebuild and repack before
-                // asking again -- otherwise the next attempt verifies the same
-                // bundle and fails identically.
-                let revalidated = validate_port_candidate(&candidate).map_err(|err| {
-                    anyhow::anyhow!("the repaired candidate no longer builds:\n{err}")
-                })?;
-                fs::copy(&revalidated.wasm, &code)?;
+    let (manifest, size, gating, behavior) = loop {
+        println!("==> validating the port candidate");
+        // (requirement, the exact error a repair is handed, repair log name)
+        let failed: (String, String, &str) = match validate_port_candidate(&candidate) {
+            Err(error) => ("build".to_string(), error, "attempt"),
+            Ok(validated) => {
+                println!("==> packing {}", staged.display());
+                fs::copy(&validated.wasm, &code)?;
                 write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
-                krate_bundle::pack_with_assets(
+                let size = krate_bundle::pack_with_assets(
                     &packed_manifest,
                     &code,
                     assets.is_dir().then_some(assets.as_path()),
                     &staged,
                 )
-                .with_context(|| format!("repack {}", staged.display()))?;
+                .with_context(|| format!("pack {}", staged.display()))?;
+                // Signed as its maker before it is judged (IC-983).
+                sign_as_maker(&staged, &mut Vec::new(), false);
+                println!("==> verifying the permission wall");
+                match verify_packed_app(&staged, &validated.manifest) {
+                    Err(error) => ("permission-wall".to_string(), error.to_string(), "verify"),
+                    Ok(gating) => match oracle {
+                        None => break (validated.manifest, size, gating, None),
+                        Some(oracle) => {
+                            println!(
+                                "==> comparing with the original on {} recorded case(s)",
+                                oracle.cases.len()
+                            );
+                            let checked =
+                                check_port_behavior(&staged, &validated.manifest, oracle)?;
+                            let failures = checked.failures();
+                            match failures.first() {
+                                None => break (validated.manifest, size, gating, Some(checked)),
+                                Some(first) => {
+                                    let requirement = first.case.journey.clone();
+                                    let summary = first.summary();
+                                    // The evidence of what failed outlives the run,
+                                    // whether a repair fixes it or not.
+                                    progress.journey_results = Some(write_journey_results(
+                                        workspace,
+                                        &sha256_file(&staged)?,
+                                        &gating,
+                                        Some(&checked),
+                                    )?);
+                                    if progress.repairs_used >= repair_attempts {
+                                        return Err(PortBlocker {
+                                            requirement,
+                                            summary: format!(
+                                                "{summary} ({} repair attempt(s) used)",
+                                                progress.repairs_used
+                                            ),
+                                            detail: checked.report(),
+                                        }
+                                        .into());
+                                    }
+                                    (requirement, checked.report(), "behavior")
+                                }
+                            }
+                        }
+                    },
+                }
             }
-            Err(error) => {
-                let report_path =
-                    write_port_failure_report(workspace, &error.to_string(), original_source);
-                print_port_failure_guidance(&error.to_string(), report_path.as_deref());
-                // The failed candidate stays in the workspace as diagnostics.
-                // Nothing was written to the requested path: whatever the
-                // person kept there is exactly as it was (IC-785).
-                println!(
-                    "  the failed candidate is kept at {} -- {} was not touched",
-                    staged.display(),
-                    output.display()
-                );
-                return Err(error);
+        };
+        let (requirement, error, log_name) = failed;
+        if progress.repairs_used >= repair_attempts {
+            let what = if requirement == "build" {
+                "the port candidate did not pass validation"
+            } else {
+                "the packed candidate did not pass the permission wall"
+            };
+            return Err(PortBlocker {
+                summary: format!(
+                    "{} ({} repair attempt(s) used)",
+                    first_error_line(&error),
+                    progress.repairs_used
+                ),
+                detail: format!(
+                    "{what} after {} repair attempt(s):\n{error}",
+                    progress.repairs_used
+                ),
+                requirement,
             }
+            .into());
         }
+        progress.repairs_used += 1;
+        let attempt = progress.repairs_used;
+        let repair_dir = workspace.join("repair");
+        fs::create_dir_all(&repair_dir)?;
+        let error_path = repair_dir.join(format!("{log_name}-{attempt}.txt"));
+        fs::write(&error_path, format!("{error}\n"))?;
+        println!(
+            "==> repair attempt {attempt}/{repair_attempts} ({requirement}): {}",
+            first_error_line(&error)
+        );
+        run_port_repair(
+            author,
+            workspace,
+            &source_snapshot,
+            &candidate,
+            &plan_path,
+            &task_path,
+            PortRepair {
+                attempt,
+                error_path: &error_path,
+            },
+        )
+        .map_err(agent_failed)?;
+        ensure_original_source_unchanged(original_plan, original_source)?;
+        // A repair is the place the register names: a test edit hidden
+        // inside a code fix. Re-check after every attempt.
+        criteria.ensure_unchanged(workspace)?;
     };
+    let repairs_used = progress.repairs_used;
 
-    // Verification passed on the staged bytes; only now do they take the
+    // Every check passed on the staged bytes; only now do they take the
     // requested path, through a sibling-and-rename so an interruption leaves
     // the old file or the complete new one, never a torn half (IC-861's
     // discipline, applied to promotion).
@@ -3289,36 +3694,11 @@ fn complete_port(
     } else {
         None
     };
-    let journey_results = serde_json::json!({
-        "schema": "krate.port.journey-results.v1",
-        "bundle_sha256": bundle_sha256,
-        "results": [
-            {
-                "id": "launch",
-                "status": "passed",
-                "evidence": "bounded quick path exited with code 0"
-            },
-            {
-                "id": "permission-denial",
-                "status": "passed",
-                "evidence": format!("withholding {gating} exited with code 5")
-            },
-            {
-                "id": "primary-task",
-                "status": "not-verified",
-                "evidence": "manual comparison with the source application is required"
-            },
-            {
-                "id": "same-bundle-three-systems",
-                "status": "not-verified",
-                "evidence": "the exact bundle must run on macOS, Windows, and Linux"
-            }
-        ]
-    });
-    fs::write(
-        workspace.join("journey-results.json"),
-        serde_json::to_string_pretty(&journey_results)? + "\n",
-    )?;
+    let journey_results_path =
+        write_journey_results(workspace, &bundle_sha256, &gating, behavior.as_ref())?;
+    progress.journey_results = Some(journey_results_path.clone());
+    let journey_results: serde_json::Value =
+        serde_json::from_slice(&fs::read(&journey_results_path)?)?;
     let artifact = serde_json::json!({
         "schema": "krate.port.artifact.v1",
         "bundle": output.to_string_lossy(),
@@ -3333,8 +3713,47 @@ fn complete_port(
         workspace.join("artifact.json"),
         serde_json::to_string_pretty(&artifact)? + "\n",
     )?;
+
+    // The journeys this run did not settle. They are written down in the
+    // journey record, honestly, as `not-verified` -- what was missing was the
+    // pipeline reading its own record before declaring the port done.
+    //
+    // E5: an invoice application printing `total=100` was ported into an app
+    // printing a word-frequency table. It built, imported only krate:*, ran,
+    // refused without its capability, and was reported as a finished port with
+    // four passed checks, while `primary-task` sat at `not-verified` in the
+    // same output. A permission-denial pass is not a primary-task pass, and
+    // treating four green mechanical checks as a port is how the wrong app
+    // gets shipped under the right name.
+    let statuses: Vec<(String, String)> = journey_results["results"]
+        .as_array()
+        .map(|results| {
+            results
+                .iter()
+                .filter_map(|r| {
+                    Some((
+                        r["id"].as_str()?.to_string(),
+                        r["status"].as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let unverified: Vec<&str> = statuses
+        .iter()
+        .filter(|(_, status)| status == "not-verified")
+        .map(|(id, _)| id.as_str())
+        .collect();
+    let not_run: Vec<&str> = statuses
+        .iter()
+        .filter(|(_, status)| status == "not-run")
+        .map(|(id, _)| id.as_str())
+        .collect();
+    let cases_passed = behavior.as_ref().map(|b| b.results.len()).unwrap_or(0);
+
     let transcript = serde_json::json!({
         "schema": "krate.port.result.v1",
+        "verdict": if unverified.is_empty() { "ported" } else { "unverified" },
         "source": original_plan.source,
         "profile": original_plan.profile,
         "plan_verdict": original_plan.verdict,
@@ -3349,20 +3768,12 @@ fn complete_port(
         "requested_permissions": permissions,
         "gating_permission": gating,
         "agent_result": result_note,
-        "checks": [
-            "candidate built as a WebAssembly component",
-            "component imports only krate:* interfaces",
-            "bundle runs with all declared grants",
-            "bundle refuses when its required gating permission is withheld"
-        ],
+        "checks": port_checks(cases_passed),
         "behavior_journeys": workspace.join("journeys.json").to_string_lossy(),
-        "journey_results": workspace.join("journey-results.json").to_string_lossy(),
+        "journey_results": journey_results_path.to_string_lossy(),
         "artifact_evidence": workspace.join("artifact.json").to_string_lossy(),
-        "remaining_verification": [
-            "compare the original and ported user journeys",
-            "test interactive behavior and persistence",
-            "run the same bundle on Mac, Windows, and Linux"
-        ]
+        "recorded_cases": behavior.as_ref().map(|_| workspace.join("oracle.json").to_string_lossy().into_owned()),
+        "remaining_verification": unverified.iter().chain(not_run.iter()).collect::<Vec<_>>()
     });
     let transcript_json = serde_json::to_string_pretty(&transcript)? + "\n";
     fs::write(workspace.join("port-result.json"), &transcript_json)?;
@@ -3376,28 +3787,6 @@ fn complete_port(
         fs::write(path, &transcript_json).with_context(|| format!("write {}", path.display()))?;
     }
 
-    // The journeys this run did not settle. They are already written down
-    // above, honestly, as `not-verified` -- what was missing is the pipeline
-    // reading its own record before declaring the port done.
-    //
-    // E5: an invoice application printing `total=100` was ported into an app
-    // printing a word-frequency table. It built, imported only krate:*, ran,
-    // refused without its capability, and was reported as a finished port with
-    // four passed checks, while `primary-task` sat at `not-verified` in the
-    // same output. A permission-denial pass is not a primary-task pass, and
-    // treating four green mechanical checks as a port is how the wrong app
-    // gets shipped under the right name.
-    let unverified: Vec<&str> = journey_results["results"]
-        .as_array()
-        .map(|results| {
-            results
-                .iter()
-                .filter(|r| r["status"] == "not-verified")
-                .filter_map(|r| r["id"].as_str())
-                .collect()
-        })
-        .unwrap_or_default();
-
     println!();
     println!("Created {}", output.display());
     println!("  source unchanged: yes");
@@ -3410,8 +3799,22 @@ fn complete_port(
     println!();
 
     if unverified.is_empty() {
-        println!("Every journey passed. This is a port.");
-        return Ok(0);
+        println!(
+            "  checked:      the app builds, runs, refuses without its access, and \
+             printed what the original printed on {cases_passed} recorded case(s)"
+        );
+        for id in &not_run {
+            print_unchecked_journey(id, "not run here");
+        }
+        return Ok(PortEnding {
+            verdict: PortVerdict::Ported,
+            requirement: None,
+            reason: format!("it matched the original on all {cases_passed} recorded case(s)"),
+            detail: None,
+            bundle: Some(output.to_path_buf()),
+            repairs_used,
+            journey_results: progress.journey_results.clone(),
+        });
     }
 
     println!("This is not a finished port yet.");
@@ -3420,30 +3823,217 @@ fn complete_port(
     println!("  NOT checked:  whether it does what the original did");
     println!();
     println!("  still to check:");
-    for id in &unverified {
-        // Name them, so this is a list of work rather than a warning to skim.
-        match *id {
-            "primary-task" => println!(
-                "    - primary-task: run the original and the port on the same \
-                 input and compare what they print"
-            ),
-            "same-bundle-three-systems" => println!(
-                "    - same-bundle-three-systems: open this exact .krate on \
-                 macOS, Windows and Linux"
-            ),
-            other => println!("    - {other}"),
-        }
+    for id in unverified.iter().chain(not_run.iter()) {
+        print_unchecked_journey(id, "");
     }
     println!();
     println!(
-        "  Record what you find with `krate accept {}`.",
+        "  Record what you find with `krate accept {}`, or give the inputs and the",
         output.display()
     );
+    println!("  original's exact output with --oracle so the next port can check it.");
     // Exit 7: the bundle exists and is real, and the port is not established.
     // Not an error -- nothing went wrong and the file is on disk -- but not a
     // success either, so a script that treated the old exit 0 as "ported"
     // stops here instead of shipping it.
-    Ok(7)
+    let first = unverified.first().copied().unwrap_or("primary-task");
+    let why = match behavior.as_ref().and_then(|b| b.not_run_because.clone()) {
+        Some(why) => format!("{first} was not compared with the original: {why}"),
+        None => format!("{first} was never compared with the original"),
+    };
+    Ok(PortEnding {
+        verdict: PortVerdict::Unverified,
+        requirement: Some(first.to_string()),
+        reason: format!("it builds and runs, but {why}"),
+        detail: None,
+        bundle: Some(output.to_path_buf()),
+        repairs_used,
+        journey_results: progress.journey_results.clone(),
+    })
+}
+
+/// One line per journey a run did not settle, saying what settles it.
+fn print_unchecked_journey(id: &str, label: &str) {
+    let label = if label.is_empty() {
+        String::new()
+    } else {
+        format!("{label}: ")
+    };
+    match id {
+        "primary-task" => println!(
+            "    - {label}primary-task: run the original and the port on the same \
+             input and compare what they print"
+        ),
+        "same-bundle-three-systems" => println!(
+            "    - {label}same-bundle-three-systems: this run had only {}; open this \
+             exact .krate on macOS, Windows and Linux",
+            host_os_name()
+        ),
+        other => println!("    - {label}{other}"),
+    }
+}
+
+fn host_os_name() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        "linux" => "Linux",
+        other => other,
+    }
+}
+
+/// What a finished port was judged on, in the transcript's words.
+fn port_checks(cases: usize) -> Vec<String> {
+    let mut checks = vec![
+        "candidate built as a WebAssembly component".to_string(),
+        "component imports only krate:* interfaces".to_string(),
+        "bundle runs with all declared grants".to_string(),
+        "bundle refuses when its required gating permission is withheld".to_string(),
+    ];
+    if cases > 0 {
+        checks.push(format!(
+            "bundle printed exactly what the original printed on {cases} recorded case(s)"
+        ));
+    }
+    checks
+}
+
+/// Write `journey-results.json`: every journey, what settled it, and the
+/// evidence. Written for a blocked behavior check too, so the record of what
+/// differed survives the run.
+fn write_journey_results(
+    workspace: &Path,
+    bundle_sha256: &str,
+    gating: &str,
+    behavior: Option<&port_oracle::BehaviorCheck>,
+) -> Result<PathBuf> {
+    let mut results = vec![
+        serde_json::json!({
+            "id": "launch",
+            "status": "passed",
+            "evidence": "bounded quick path exited with code 0"
+        }),
+        serde_json::json!({
+            "id": "permission-denial",
+            "status": "passed",
+            "evidence": format!("withholding {gating} exited with code 5")
+        }),
+    ];
+    let mut journeys = behavior.map(|b| b.journeys()).unwrap_or_default();
+    if !journeys.iter().any(|j| j == port_oracle::PRIMARY_TASK) {
+        journeys.insert(0, port_oracle::PRIMARY_TASK.to_string());
+    }
+    for journey in journeys {
+        let cases: Vec<&port_oracle::CaseResult> = behavior
+            .map(|b| {
+                b.results
+                    .iter()
+                    .filter(|r| r.case.journey == journey)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let entry = if cases.is_empty() {
+            let evidence = match behavior.and_then(|b| b.not_run_because.as_deref()) {
+                Some(why) => format!("the recorded cases were not run: {why}"),
+                None => "no recorded case covers it; compare it with the original by hand, \
+                         or give one with --oracle"
+                    .to_string(),
+            };
+            serde_json::json!({"id": journey, "status": "not-verified", "evidence": evidence})
+        } else {
+            let passed = cases.iter().all(|r| r.passed());
+            serde_json::json!({
+                "id": journey,
+                "status": if passed { "passed" } else { "failed" },
+                "evidence": format!(
+                    "{} of {} recorded case(s) printed exactly what the original printed",
+                    cases.iter().filter(|r| r.passed()).count(),
+                    cases.len()
+                ),
+                "cases": cases.iter().map(|r| r.evidence()).collect::<Vec<_>>()
+            })
+        };
+        results.push(entry);
+    }
+    results.push(serde_json::json!({
+        "id": "same-bundle-three-systems",
+        "status": "not-run",
+        "evidence": format!(
+            "this run had only {}; the exact bundle must run on macOS, Windows, and Linux",
+            host_os_name()
+        )
+    }));
+    let record = serde_json::json!({
+        "schema": "krate.port.journey-results.v1",
+        "bundle_sha256": bundle_sha256,
+        "results": results
+    });
+    let path = workspace.join("journey-results.json");
+    fs::write(&path, serde_json::to_string_pretty(&record)? + "\n")?;
+    Ok(path)
+}
+
+/// Run the packed candidate on every recorded case and keep what it did.
+///
+/// Each case runs in its own empty folder with its files written in, with the
+/// same grants the permission wall's allow half used: everything that stays
+/// inside the run. A case whose app needs access an automated run may not
+/// grant is not run at all, because a refusal is not the app's behavior.
+fn check_port_behavior(
+    staged: &Path,
+    manifest: &krate_manifest::Manifest,
+    oracle: &port_oracle::PortOracle,
+) -> Result<port_oracle::BehaviorCheck> {
+    let (granted, required_withheld) = grants_inside_the_run(manifest)?;
+    if !required_withheld.is_empty() {
+        return Ok(port_oracle::BehaviorCheck {
+            results: Vec::new(),
+            not_run_because: Some(format!(
+                "the app requires {}, which an automated run may not grant",
+                required_withheld.join(", ")
+            )),
+        });
+    }
+    let bundle = absolute_output_path(staged)?;
+    let bundle_str = bundle.to_str().context("bundle path is not valid UTF-8")?;
+    let mut results = Vec::new();
+    for case in &oracle.cases {
+        let dir = tempfile::tempdir().context("create a folder for a recorded case")?;
+        for (name, contents) in &case.files {
+            let path = dir.path().join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, contents).with_context(|| format!("write {}", path.display()))?;
+        }
+        let mut args: Vec<String> = vec![
+            "run".into(),
+            // Krate is checking the app, not a person using it (IC-245).
+            "--profile".into(),
+            "analysis".into(),
+            bundle_str.into(),
+            "--untrusted".into(),
+            "--headless".into(),
+        ];
+        for cap in &granted {
+            args.push("--grant".into());
+            args.push(cap.clone());
+        }
+        args.push("--".into());
+        args.extend(case.args.iter().cloned());
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (exit, stdout, stderr) = run_self_captured(dir.path(), &refs)?;
+        results.push(port_oracle::CaseResult {
+            case: case.clone(),
+            stdout,
+            stderr,
+            exit,
+        });
+    }
+    Ok(port_oracle::BehaviorCheck {
+        results,
+        not_run_because: None,
+    })
 }
 
 /// Record a person's verdict on a built app.
@@ -3806,10 +4396,10 @@ fn requestable_capability_list() -> String {
 /// returns `None` rather than compounding one error with another.
 fn write_port_failure_report(
     workspace: &Path,
+    failure: &port_report::PortFailure,
     error: &str,
     source: &Path,
 ) -> Option<std::path::PathBuf> {
-    let failure = port_report::classify(error);
     let path = workspace.join("FAILURE-REPORT.md");
 
     let mut text = String::new();
@@ -3856,9 +4446,7 @@ fn write_port_failure_report(
 ///
 /// Printed before the error itself, because the error is long and the part they
 /// need -- is this our gap or their code, and how long -- is one line.
-fn print_port_failure_guidance(error: &str, report_path: Option<&Path>) {
-    let failure = port_report::classify(error);
-
+fn print_port_failure_guidance(failure: &port_report::PortFailure, report_path: Option<&Path>) {
     eprintln!();
     eprintln!("This port failed: {}.", failure.kind.label());
     eprintln!("{}", failure.kind.promise());
@@ -3911,11 +4499,14 @@ impl AcceptanceCriteria {
     /// A file that is not there is recorded as absent, so deleting one is a
     /// change like any other -- deletion is the simplest way to weaken a test.
     fn capture(workspace: &Path) -> Result<Self> {
-        const CRITERIA: [&str; 4] = [
+        const CRITERIA: [&str; 5] = [
             "journeys.json",
             "JOURNEYS.md",
             "port-plan.json",
             "AGENT_TASK.md",
+            // The recorded cases, when the person gave them. Absent is
+            // recorded too, so an agent that writes one of its own is caught.
+            "oracle.json",
         ];
         let mut digests = Vec::new();
         for name in CRITERIA {
@@ -3947,16 +4538,19 @@ impl AcceptanceCriteria {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                anyhow::bail!(
-                    "{name} changed while the port agent was running. That file \
-                     says what this port has to do, so an agent editing it is \
-                     an agent marking its own exam -- Krate stopped before \
-                     packaging.\n\n\
-                     If the requirement really is wrong, change it in {}, then \
-                     start the port again. A criterion is changed in the open, \
-                     before the run, never inside a repair.",
-                    workspace.display()
-                );
+                return Err(port_blocker(
+                    "criteria-unchanged",
+                    format!(
+                        "{name} changed while the port agent was running. That file \
+                         says what this port has to do, so an agent editing it is \
+                         an agent marking its own exam -- Krate stopped before \
+                         packaging.\n\n\
+                         If the requirement really is wrong, change it in {}, then \
+                         start the port again. A criterion is changed in the open, \
+                         before the run, never inside a repair.",
+                        workspace.display()
+                    ),
+                ));
             }
         }
         Ok(())
@@ -3970,10 +4564,11 @@ fn ensure_original_source_unchanged(
     let after_plan = krate_port::analyze(original_source)
         .with_context(|| format!("re-check original source {}", original_source.display()))?;
     if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
-        anyhow::bail!(
+        return Err(port_blocker(
+            "source-unchanged",
             "the original source changed while the port agent was running; \
-             Krate stopped before packaging. Review the source and workspace."
-        );
+             Krate stopped before packaging. Review the source and workspace.",
+        ));
     }
     Ok(())
 }
@@ -4047,11 +4642,116 @@ fn run_port_author_command(
             .env("KRATE_PORT_REPAIR_ATTEMPT", attempt.to_string())
             .env("KRATE_PORT_REPAIR_LOG", error_path);
     }
-    let status = child.status().context("run --author-cmd")?;
+    own_process_group(&mut child);
+    let mut child = child.spawn().context("start the --author-cmd command")?;
+    let status = wait_for_port_author(&mut child, "the port author command")?;
     if !status.success() {
-        anyhow::bail!("port author command failed");
+        let how = match status.code() {
+            // The shell's own "not found", which reads as the tool failing.
+            // The command runs inside the workspace, so a relative path to a
+            // script beside the person's project is the usual cause.
+            Some(127) => "it exited with code 127, which means the shell could not find \
+                          the command. It runs inside the port workspace, so give a script \
+                          by its absolute path"
+                .to_string(),
+            Some(code) => format!("it exited with code {code}"),
+            None => "it was ended by a signal".to_string(),
+        };
+        anyhow::bail!("the port author command failed: {how}");
     }
     Ok(())
+}
+
+/// How long a port's author may run before it is stopped. The same budget
+/// and override as `krate create`'s agent: generous, because a real port is
+/// many build cycles, and finite, because an author that never returns used
+/// to hold the port -- and the person's terminal -- for ever.
+fn port_author_timeout() -> std::time::Duration {
+    std::time::Duration::from_secs(
+        std::env::var("KRATE_AUTHOR_TIMEOUT_SECS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(AGENT_AUTHOR_TIMEOUT_SECS),
+    )
+}
+
+/// Start an author in a process group of its own (Unix), so that stopping
+/// it at its deadline stops everything it started too.
+///
+/// `sh -c "tool ..."` is the tool itself only where the shell execs its last
+/// command (bash, the Mac's sh). Ubuntu's sh is dash, which does not: killing
+/// the shell left the tool running, holding the output pipes, and the port
+/// waited on it after all (CI, 2026-11-07).
+fn own_process_group(command: &mut ProcessCommand) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(not(unix))]
+    let _ = command;
+}
+
+/// Stop an author and everything it started: its process group on Unix,
+/// its process tree on Windows (Git Bash's sh, like dash, keeps the tool as
+/// a child that holds the output pipes).
+fn stop_process_group(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    crate::winproc::kill_process_tree(child.id());
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // The group was made with the author as its leader
+        // (`own_process_group`), so its id is the author's pid.
+        // SAFETY: kill(2) with a negative pid signals that process group;
+        // it reads no memory of ours.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+}
+
+/// Wait for a port author, stopping it at the deadline.
+///
+/// The author runs in a process group of its own, and the whole group is
+/// stopped, so a tool started through a shell ends with it.
+fn wait_for_port_author(
+    child: &mut std::process::Child,
+    what: &str,
+) -> Result<std::process::ExitStatus> {
+    let budget = port_author_timeout();
+    let start = std::time::Instant::now();
+    // Windows has no process group to signal; a job is its equivalent.
+    #[cfg(windows)]
+    let job = crate::winproc::Job::holding(child);
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .with_context(|| format!("wait for {what}"))?
+        {
+            return Ok(status);
+        }
+        if start.elapsed() >= budget {
+            #[cfg(windows)]
+            if let Some(job) = &job {
+                job.terminate();
+            }
+            stop_process_group(child);
+            let _ = child.wait();
+            let secs = budget.as_secs();
+            let said = if secs >= 120 {
+                format!("{} minutes", secs / 60)
+            } else {
+                format!("{secs} seconds")
+            };
+            anyhow::bail!(
+                "{what} did not finish within {said} and was stopped. A large port can \
+                 need longer: set KRATE_AUTHOR_TIMEOUT_SECS to more seconds and start it \
+                 again."
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 /// This binary's path, for a prompt that tells the agent what to run.
@@ -4162,6 +4862,7 @@ port.",
         .arg("--permission-mode")
         .arg("bypassPermissions")
         .current_dir(workspace);
+    own_process_group(&mut command);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
             command.stdout(std::process::Stdio::from(clone));
@@ -4170,9 +4871,10 @@ port.",
             command.stderr(std::process::Stdio::from(clone));
         }
     }
-    let status = command
-        .status()
+    let mut child = command
+        .spawn()
         .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+    let status = wait_for_port_author(&mut child, "the Claude port agent")?;
     if !status.success() {
         anyhow::bail!(
             "the Claude port agent did not finish successfully: {}; see {}",
@@ -4242,6 +4944,7 @@ explain in chat. Make the smallest complete repair.",
         .arg("--permission-mode")
         .arg("bypassPermissions")
         .current_dir(workspace);
+    own_process_group(&mut command);
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
             command.stdout(std::process::Stdio::from(clone));
@@ -4250,9 +4953,10 @@ explain in chat. Make the smallest complete repair.",
             command.stderr(std::process::Stdio::from(clone));
         }
     }
-    let status = command
-        .status()
+    let mut child = command
+        .spawn()
         .context("run the `claude` CLI for a port repair")?;
+    let status = wait_for_port_author(&mut child, "the Claude repair attempt")?;
     if !status.success() {
         anyhow::bail!(
             "the Claude repair attempt did not finish successfully; see {}",
@@ -4793,6 +5497,7 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
         if text.contains(krate_bundle::SDK_PLACEHOLDER) {
             // The SDK inside the bundle wins: it is the one this source was
             // written against, so it compiles where the current one may not.
+            let mut current_sdk = false;
             let sdk = match opened.sdk_path() {
                 Some(bundled) => {
                     // A sibling of the app inside this call's own transaction
@@ -4808,16 +5513,90 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
                     copy_tree(bundled, &kept)?;
                     kept
                 }
-                None => sdk::ensure_materialized()?,
+                None => {
+                    current_sdk = true;
+                    sdk::ensure_materialized()?
+                }
             };
-            let resolved = text.replace(
+            let mut resolved = text.replace(
                 krate_bundle::SDK_PLACEHOLDER,
                 &sdk.to_string_lossy().replace('\\', "/"),
             );
+            // An app that carries no SDK of its own builds against this
+            // machine's, whose world may import interfaces that did not exist
+            // when the app was made (krate:gpu joined phase4 later). Its own
+            // dependency list then lacks them and the build fails before the
+            // app's code is reached (K-1132).
+            if current_sdk {
+                resolved = add_missing_wit_deps(&resolved);
+            }
             fs::write(&manifest, resolved)?;
         }
     }
     Ok(Some(target))
+}
+
+/// Add a `"krate:<name>"` entry for every interface in the SDK's world
+/// deps directory that an app's `[package.metadata.component.target
+/// .dependencies]` does not list yet, in the same shape as the entries it
+/// has. The deps directory is read from the first existing entry's path, so
+/// a Cargo.toml with none is returned unchanged.
+fn add_missing_wit_deps(cargo_toml: &str) -> String {
+    let entry = |line: &str| -> Option<(String, String)> {
+        let name = line
+            .strip_prefix("\"krate:")?
+            .split('"')
+            .next()?
+            .to_string();
+        let path = line
+            .split("path = \"")
+            .nth(1)?
+            .split('"')
+            .next()?
+            .to_string();
+        Some((name, path))
+    };
+    let lines: Vec<&str> = cargo_toml.lines().collect();
+    let found: Vec<(usize, String, String)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| entry(line.trim()).map(|(n, p)| (i, n, p)))
+        .collect();
+    let (Some((last, _, _)), Some((_, first_name, first_path))) = (found.last(), found.first())
+    else {
+        return cargo_toml.to_string();
+    };
+    let last = *last;
+    let Some(deps_dir) = first_path.strip_suffix(&format!("/{first_name}")) else {
+        return cargo_toml.to_string();
+    };
+    let have: std::collections::BTreeSet<&str> = found.iter().map(|(_, n, _)| n.as_str()).collect();
+    let mut missing: Vec<String> = fs::read_dir(deps_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| e.file_name().to_str().map(str::to_string))
+                .filter(|n| !have.contains(n.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+    if missing.is_empty() {
+        return cargo_toml.to_string();
+    }
+    missing.sort();
+    let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    for (k, name) in missing.into_iter().enumerate() {
+        out.insert(
+            last + 1 + k,
+            format!("\"krate:{name}\" = {{ path = \"{deps_dir}/{name}\" }}"),
+        );
+    }
+    let mut joined = out.join("\n");
+    if cargo_toml.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
@@ -5209,6 +5988,562 @@ fn account_command(action: Option<AccountAction>, json: bool) -> Result<u8> {
             } else {
                 println!("nobody was signed in");
             }
+            Ok(0)
+        }
+        Some(AccountAction::Sync { action }) => account_sync_command(action, json),
+    }
+}
+
+/// The stores on this computer of the app with id `app_id`, whoever
+/// published it: `<id>.kv`, `<id>@<publisher>.kv`, `<id>+<machine>.kv`.
+fn stores_of_app(app_id: &str) -> Vec<PathBuf> {
+    let legacy = app_store_path(app_id);
+    let Some(dir) = legacy.parent() else {
+        return Vec::new();
+    };
+    let stem = sanitize_storage_name(app_id);
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| store_of_entry(&entry.path()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            name.ends_with(".kv")
+                && (name == format!("{stem}.kv")
+                    || name.starts_with(&format!("{stem}@"))
+                    || name.starts_with(&format!("{stem}+")))
+        })
+        .collect();
+    if found.is_empty() {
+        found.push(legacy);
+    }
+    found
+}
+
+/// `krate account sync`: this computer and the account's data key, the
+/// devices waiting for a yes, the recovery code once, and the toggles
+/// (IC-981). Krate's home does the same with buttons (S2).
+fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
+    use krate_accountsync::device::{account_of, Account, KeyStatus};
+    use krate_runtime::account_sync_host::{global_toggle_path, set_app_sync};
+
+    let device_dir = account_sync_dir();
+    match &action {
+        Some(SyncAction::Off { app }) | Some(SyncAction::On { app }) => {
+            let on = matches!(action, Some(SyncAction::On { .. }));
+            match app {
+                None => {
+                    let path = global_toggle_path(&device_dir);
+                    if on {
+                        let _ = fs::remove_file(&path);
+                    } else {
+                        fs::create_dir_all(&device_dir)?;
+                        fs::write(&path, b"sync is off for every app on this computer\n")?;
+                    }
+                    println!(
+                        "{}",
+                        if on {
+                            "your apps' data syncs across your devices again"
+                        } else {
+                            "your apps' data stays on this computer: it keeps its copy and stops syncing"
+                        }
+                    );
+                }
+                Some(id) => {
+                    for store in stores_of_app(id) {
+                        set_app_sync(&store, on)?;
+                    }
+                    println!(
+                        "{id}: {}",
+                        if on {
+                            "syncs across your devices again"
+                        } else {
+                            "keeps its copy here and stops syncing"
+                        }
+                    );
+                }
+            }
+            return Ok(0);
+        }
+        _ => {}
+    }
+
+    let Some(identity) = github_auth::current() else {
+        eprintln!("not signed in -- `krate account login` first, and your apps' data follows you");
+        return Ok(1);
+    };
+    if let Some(SyncAction::Conflicts) | Some(SyncAction::Resolve { .. }) = &action {
+        return sync_conflicts_command(action, &identity, &device_dir, json);
+    }
+    let hub = krate_accountsync::hub::Hub::new(&shared_hub_url(), &identity.token);
+    let id = account_of(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let account = Account::load(
+        &device_dir,
+        &id,
+        &machine_key(),
+        &this_computers_name(identity.display_name()),
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let status = account.refresh(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+    match action {
+        Some(SyncAction::Approve { device }) => {
+            let KeyStatus::Holds(ring) = status else {
+                anyhow::bail!(
+                    "this computer cannot pass the key on: it is waiting for one of your devices \
+                     to approve it, or for `krate account sync recover`"
+                );
+            };
+            account
+                .approve(&hub, &ring, device.trim())
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("done: that device can now read your apps' data");
+            Ok(0)
+        }
+        Some(SyncAction::Recover) => {
+            eprint!("recovery code: ");
+            let mut code = String::new();
+            std::io::stdin().read_line(&mut code)?;
+            account
+                .recover(&hub, &code)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("this computer holds your apps' data key now");
+            Ok(0)
+        }
+        _ => {
+            let pending = account.pending(&hub).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let code = account.take_recovery_code();
+            let on = !global_toggle_path(&device_dir).exists();
+            let holds = matches!(status, KeyStatus::Holds(_));
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "on": on,
+                        "device": { "id": account.device.id(), "name": account.name, "holds_key": holds },
+                        "waiting": pending.iter().map(|d| serde_json::json!({ "id": d.device_id, "name": d.name })).collect::<Vec<_>>(),
+                        "recovery_code": code,
+                    })
+                );
+                return Ok(0);
+            }
+            println!(
+                "Sync across your devices: {}",
+                if on { "on" } else { "off on this computer" }
+            );
+            if holds {
+                println!(
+                    "This computer ({}) holds your apps' data key.",
+                    account.name
+                );
+            } else {
+                println!(
+                    "This computer ({}) is waiting: approve it on a device that syncs already \
+                     (`krate account sync approve {}`), or type your recovery code \
+                     (`krate account sync recover`).",
+                    account.name,
+                    account.device.id()
+                );
+            }
+            if let Some(code) = code {
+                println!();
+                println!("Your recovery code -- shown this once, so write it down:");
+                println!("  {code}");
+                println!(
+                    "With it, a new device reads your apps' data when none of your others is at hand."
+                );
+            }
+            for device in pending {
+                println!(
+                    "Waiting for your yes: {} -- `krate account sync approve {}`",
+                    if device.name.is_empty() {
+                        "a device"
+                    } else {
+                        &device.name
+                    },
+                    device.device_id
+                );
+            }
+            Ok(0)
+        }
+    }
+}
+
+/// The store a file in the stores folder belongs to: the `.kv` itself, or
+/// the `.kv.sync` folder beside it -- an app that keeps only files syncs
+/// with no `.kv` written (S3).
+fn store_of_entry(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    if let Some(store) = name.strip_suffix(".sync").filter(|s| s.ends_with(".kv")) {
+        return path.is_dir().then(|| path.with_file_name(store));
+    }
+    name.ends_with(".kv").then(|| path.to_path_buf())
+}
+
+/// Every store on this computer that syncs, with the id of the app it
+/// belongs to: `<id>.kv`, `<id>@<publisher>.kv`, `<id>+<machine>.kv` with a
+/// `.sync` folder beside it.
+fn synced_stores() -> Vec<(String, PathBuf)> {
+    let legacy = app_store_path("x");
+    let Some(dir) = legacy.parent() else {
+        return Vec::new();
+    };
+    let mut found: Vec<(String, PathBuf)> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| store_of_entry(&entry.path()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| krate_runtime::account_sync_host::sync_dir(path).is_dir())
+        .filter_map(|path| {
+            let name = path.file_stem()?.to_string_lossy().into_owned();
+            let id = name.split(['@', '+']).next().unwrap_or(&name).to_string();
+            Some((id, path))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// `krate account sync conflicts` and `resolve`: the same calls Krate's
+/// home makes on a phone (IC-981 S2), read from this computer's stores with
+/// no network needed -- the account and device names are the last ones the
+/// hub gave, refreshed when it answers.
+fn sync_conflicts_command(
+    action: Option<SyncAction>,
+    identity: &github_auth::Identity,
+    device_dir: &Path,
+    json: bool,
+) -> Result<u8> {
+    use krate_accountsync::overview::{look, Me};
+    use krate_accountsync::readable::preview;
+    use krate_accountsync::readable::{ago, size_in_words};
+    use krate_accountsync::Resolution;
+    use krate_runtime::account_sync_files::{file_conflicts_at, resolve_file_at, FileSide};
+    use krate_runtime::account_sync_host::{conflicts_at, resolve_at};
+    use krate_runtime::account_sync_sql::{resolve_row_at, row_conflicts_at, sql_waits_at};
+
+    let name = this_computers_name(identity.display_name());
+    let machine = machine_key();
+    let hub = shared_hub_url();
+    let me = Me {
+        device_dir,
+        hub: &hub,
+        token: &identity.token,
+        machine_key: &machine,
+        name: &name,
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let overview = look(&me, now);
+    let Some(account) = overview.account.clone() else {
+        if json {
+            println!("{}", serde_json::json!({ "conflicts": [] }));
+        } else {
+            println!("Nothing has synced on this computer yet, so nothing waits for your choice.");
+        }
+        return Ok(0);
+    };
+    let names = overview.names();
+    match action {
+        Some(SyncAction::Resolve { app, key, choice }) => {
+            let choice = match choice {
+                SyncChoice::This => Resolution::KeepMine,
+                SyncChoice::Other => Resolution::KeepOther(0),
+                SyncChoice::Both => Resolution::KeepBoth,
+                SyncChoice::Merge => Resolution::Merge,
+            };
+            let mut answered = false;
+            let mut files = false;
+            let mut rows = false;
+            for store in stores_of_app(&app) {
+                if conflicts_at(&store, &account, &names)
+                    .iter()
+                    .any(|c| c.key == key)
+                {
+                    resolve_at(&store, &account, &names, &key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                } else if file_conflicts_at(&store, &account, &names)
+                    .iter()
+                    .any(|c| c.path == key)
+                {
+                    resolve_file_at(&store, &account, &names, &key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                    files = true;
+                } else if let Some(row) = row_conflicts_at(&store, &account, &names)
+                    .into_iter()
+                    .find(|c| c.place == key || c.key == key)
+                {
+                    // A row is named the way the list shows it: "notes, id 3".
+                    resolve_row_at(&store, &account, &names, &row.key, &choice)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    answered = true;
+                    rows = true;
+                }
+            }
+            if !answered {
+                anyhow::bail!(
+                    "nothing waits for a choice on {key:?} in {app} -- `krate account sync conflicts` lists what does"
+                );
+            }
+            // Sent now, the app closed, so the other devices settle without
+            // it opening again; offline, it goes with the app's next run.
+            let context = krate_runtime::account_sync_host::AccountSyncContext {
+                hub: hub.clone(),
+                token: identity.token.clone(),
+                device_dir: device_dir.to_path_buf(),
+                device_name: name.clone(),
+                machine_key: machine.clone(),
+                app_id: String::new(),
+                publisher: String::new(),
+                enabled: true,
+                background: false,
+                files: None,
+            };
+            let sent = stores_of_app(&app).into_iter().any(|store| {
+                if files {
+                    krate_runtime::account_sync_files::sync_files_closed(
+                        &store,
+                        &account,
+                        context.clone(),
+                    )
+                    .is_ok()
+                } else if rows {
+                    krate_runtime::account_sync_sql::sync_sql_closed(
+                        &store,
+                        &account,
+                        context.clone(),
+                    )
+                    .is_ok()
+                } else {
+                    krate_runtime::account_sync_host::sync_closed(&store, &account, context.clone())
+                        .is_ok()
+                }
+            });
+            println!(
+                "done: {app} keeps {} -- {}",
+                match choice {
+                    Resolution::KeepMine => "this computer's",
+                    Resolution::KeepOther(_) => "the other device's",
+                    Resolution::KeepBoth => "both",
+                    Resolution::Merge => "the two put together",
+                },
+                if sent {
+                    "sent to your other devices"
+                } else {
+                    "your other devices take it the next time this app syncs here"
+                }
+            );
+            Ok(0)
+        }
+        _ => {
+            let mut listed = Vec::new();
+            let mut files = Vec::new();
+            let mut row_conflicts = Vec::new();
+            let mut waiting = Vec::new();
+            for (app, store) in synced_stores() {
+                for conflict in conflicts_at(&store, &account, &names) {
+                    listed.push((app.clone(), conflict));
+                }
+                for conflict in file_conflicts_at(&store, &account, &names) {
+                    files.push((app.clone(), conflict));
+                }
+                for conflict in row_conflicts_at(&store, &account, &names) {
+                    row_conflicts.push((app.clone(), conflict));
+                }
+                for wait in sql_waits_at(&store, &account) {
+                    let device = names
+                        .get(&wait.device)
+                        .cloned()
+                        .unwrap_or_else(|| "another device".to_string());
+                    let words = krate_accountsync::sql::wait_words(&app, &device, &wait);
+                    waiting.push((app.clone(), words));
+                }
+            }
+            let side = |side: &Option<FileSide>| match side {
+                None => "deleted".to_string(),
+                Some(side) => match side.at {
+                    Some(at) => format!("{}, changed {}", size_in_words(side.size), ago(now, at)),
+                    None => size_in_words(side.size),
+                },
+            };
+            if json {
+                let rows: Vec<serde_json::Value> = listed
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "key": c.key,
+                            "here": c.mine.as_deref().map(|v| preview(v, 120)),
+                            "others": c.others.iter().map(|(v, device)| serde_json::json!({
+                                "device": device,
+                                "value": v.as_deref().map(|v| preview(v, 120)),
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                        })
+                    })
+                    .collect();
+                let file_rows: Vec<serde_json::Value> = files
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "file": c.path,
+                            "here": c.mine.as_ref().map(|s| serde_json::json!({ "size": s.size, "at": s.at })),
+                            "others": c.others.iter().map(|(s, device)| serde_json::json!({
+                                "device": device,
+                                "file": s.as_ref().map(|s| serde_json::json!({ "size": s.size, "at": s.at })),
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                        })
+                    })
+                    .collect();
+                let row_rows: Vec<serde_json::Value> = row_conflicts
+                    .iter()
+                    .map(|(app, c)| {
+                        serde_json::json!({
+                            "app": app,
+                            "row": c.place,
+                            "table": c.table,
+                            "here": c.mine,
+                            "others": c.others.iter().map(|(v, device)| serde_json::json!({
+                                "device": device,
+                                "row": v,
+                            })).collect::<Vec<_>>(),
+                            "merge": c.mergeable,
+                            "both": c.both,
+                        })
+                    })
+                    .collect();
+                let waits: Vec<serde_json::Value> = waiting
+                    .iter()
+                    .map(|(app, words)| serde_json::json!({ "app": app, "words": words }))
+                    .collect();
+                println!(
+                    "{}",
+                    serde_json::json!({ "conflicts": rows, "files": file_rows, "rows": row_rows, "waiting": waits })
+                );
+                return Ok(0);
+            }
+            for (app, words) in &waiting {
+                println!("{app}: {words}");
+                println!();
+            }
+            if listed.is_empty() && files.is_empty() && row_conflicts.is_empty() {
+                println!("Nothing waits for your choice: every app agrees on all your devices.");
+                return Ok(0);
+            }
+            for (app, c) in &listed {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .map(|(v, d)| (v.clone(), d.clone()))
+                    .unwrap_or((None, "another device".to_string()));
+                let here = c.mine.as_deref().map(|v| preview(v, 100));
+                let there = other.as_deref().map(|v| preview(v, 100));
+                println!("{app}: {:?} changed on two devices", c.key);
+                println!(
+                    "  on this computer: {}",
+                    here.as_deref().unwrap_or("deleted")
+                );
+                println!("  on {device}: {}", there.as_deref().unwrap_or("deleted"));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.key,
+                    if here.is_some() && there.is_some() {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            for (app, c) in &files {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .cloned()
+                    .unwrap_or((None, "another device".to_string()));
+                let name = c.path.rsplit('/').next().unwrap_or(&c.path);
+                match (&c.mine, &other) {
+                    (Some(_), Some(_)) => println!("{app}: {name} changed on two devices"),
+                    (None, _) => println!("{app}: {name} was deleted here and changed on {device}"),
+                    (Some(_), None) => {
+                        println!("{app}: {name} was deleted on {device} and changed here")
+                    }
+                }
+                println!("  on this computer: {}", side(&c.mine));
+                println!("  on {device}: {}", side(&other));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.path,
+                    if c.mine.is_some() && other.is_some() {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            for (app, c) in &row_conflicts {
+                let (other, device) = c
+                    .others
+                    .first()
+                    .cloned()
+                    .unwrap_or((None, "another device".to_string()));
+                match (&c.mine, &other) {
+                    (Some(_), Some(_)) => {
+                        println!("{app}: a row in {} changed on two devices", c.table)
+                    }
+                    (None, _) => println!(
+                        "{app}: a row in {} was deleted here and changed on {device}",
+                        c.table
+                    ),
+                    (Some(_), None) => println!(
+                        "{app}: a row in {} was deleted on {device} and changed here",
+                        c.table
+                    ),
+                }
+                println!("  which: {}", c.place);
+                println!(
+                    "  on this computer: {}",
+                    c.mine.as_deref().unwrap_or("deleted")
+                );
+                println!("  on {device}: {}", other.as_deref().unwrap_or("deleted"));
+                if c.others.len() > 1 {
+                    println!("  and {} more devices", c.others.len() - 1);
+                }
+                println!(
+                    "  choose: krate account sync resolve {app} {:?} this|other{}{}",
+                    c.place,
+                    if c.mine.is_some() && other.is_some() && c.both {
+                        "|both"
+                    } else {
+                        ""
+                    },
+                    if c.mergeable { "|merge" } else { "" }
+                );
+                println!();
+            }
+            println!("Until you choose, both are kept and each device goes on reading its own.");
             Ok(0)
         }
     }
@@ -6025,6 +7360,21 @@ fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u
     println!();
     println!("This identity stays on this machine and proves nothing to anyone else.");
     println!("To make a claim others can check, sign the app: krate sign --help");
+
+    // The key every app made here is signed with (IC-983).
+    println!();
+    match (maker_key::public(), maker_key::kept()) {
+        (Some(public), Some(kept)) => {
+            println!("Your publisher key: {}...", &public[..16]);
+            println!("  kept {}; it never leaves this computer.", kept.describe());
+            println!("  Every app you make or share is signed with it, so its data stays");
+            println!("  yours through every rebuild and nothing else can claim it.");
+        }
+        _ => {
+            println!("Your publisher key: not made yet. It is made the first time you make");
+            println!("or share an app, and every app you make is signed with it.");
+        }
+    }
     Ok(0)
 }
 
@@ -6042,7 +7392,7 @@ fn sign_bundle_command(
         // an unrecoverable loss from a mistyped path.
         if key_path.exists() {
             anyhow::bail!(
-                "{} already exists. Signing keys are not overwritten: a lost                  key is a lost publisher identity, and every app signed with                  it becomes uncheckable.",
+                "{} already exists. Signing keys are not overwritten: a lost key is a lost publisher identity, and every app signed with it becomes uncheckable.",
                 key_path.display()
             );
         }
@@ -6183,9 +7533,11 @@ fn pack_bundle(
     // only the copy that goes into the bundle is touched.
     let manifest_text =
         fs::read_to_string(manifest).with_context(|| format!("read {}", manifest.display()))?;
-    let needs_entry_rewrite = manifest_text
-        .lines()
-        .any(|line| line.trim_start().starts_with("entry =") && !line.contains("code.wasm"));
+    // The value, not the line: `krate_code.wasm` contains "code.wasm", and
+    // Krate Code's build path was taken for the bundle's name and refused.
+    let needs_entry_rewrite = krate_manifest::Manifest::parse(&manifest_text)
+        .map(|m| m.app.entry.display().to_string() != "code.wasm")
+        .unwrap_or(false);
     let rewritten =
         std::env::temp_dir().join(format!("krate-pack-manifest-{}.toml", std::process::id()));
     let pack_manifest: &Path = if needs_entry_rewrite {
@@ -6330,8 +7682,11 @@ fn report_heavy_assets(bundle: &Path, assets_dir: &Path) {
         };
         let packed = entry.compressed_size();
         shipped = shipped.saturating_add(packed);
-        if entry.name().starts_with("assets/") && !entry.name().ends_with('/') {
-            entries.push((entry.name().to_string(), packed));
+        let Ok(name) = entry.name() else {
+            return;
+        };
+        if name.starts_with("assets/") && !name.ends_with('/') {
+            entries.push((name.to_string(), packed));
         }
     }
     if shipped == 0 {
@@ -7095,8 +8450,21 @@ fn wrap_mac_zip(
             };
             #[cfg(not(unix))]
             let mode = if path.is_dir() { 0o755 } else { 0o644 };
+            // What a Mac must start -- the app's launcher and the players --
+            // is runnable whatever built the gift: on Windows a file carries
+            // no run bit to copy, and a gift made there opened nothing.
+            let mode = if !path.is_dir()
+                && (name.contains("/Contents/MacOS/") || name.contains("/.player/"))
+            {
+                mode | 0o755
+            } else {
+                mode
+            };
+            // Said as Unix entries: on Windows the zip library writes DOS
+            // entries by default, and a DOS entry carries no mode at all.
             let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated)
+                .system(zip::System::Unix)
                 .unix_permissions(mode);
             if path.is_dir() {
                 zip.add_directory(format!("{name}/"), options)?;
@@ -7137,6 +8505,8 @@ fn wrap_bundle(
             bundle.display()
         );
     }
+    // Out for use: signed as its maker first when it is not yet (IC-983).
+    maker_key::sign_in_place_for_going_out(bundle)?;
     let opened = krate_bundle::open(bundle)
         .with_context(|| format!("could not open {}", bundle.display()))?;
     let app_name = opened.manifest().app.name.clone();
@@ -7824,6 +9194,8 @@ fn card_bundle(
             bundle.display()
         );
     }
+    // Out for use: signed as its maker first when it is not yet (IC-983).
+    maker_key::sign_in_place_for_going_out(bundle)?;
     let opened = krate_bundle::open(bundle)
         .with_context(|| format!("could not open {}", bundle.display()))?;
     let app_name = opened.manifest().app.name.clone();
@@ -8118,6 +9490,10 @@ fn publish_bundle(
             bundle.display()
         );
     }
+    // Out for use, so signed as its maker first when it is not signed yet
+    // (IC-983): the same bytes then go out every time it is published.
+    let going_out = maker_key::sign_for_going_out(bundle)?;
+    let bundle = going_out.path.as_path();
     let bytes =
         fs::read(bundle).with_context(|| format!("could not read bundle {}", bundle.display()))?;
     if bytes.is_empty() {
@@ -8401,8 +9777,25 @@ fn publish_bundle(
     if let Some(note) = extract_json_string(&body, "note") {
         println!("note: {note}");
     }
-    println!("Published. Anyone can run it with:");
+    // An app published before is updated, not added again (IC-976): its link
+    // stays the same and now opens this version.
+    let versioned: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    match (
+        versioned["version"].as_u64(),
+        versioned["updated"].as_bool(),
+    ) {
+        (Some(n), Some(true)) => {
+            println!("Updated to v{n}. Everyone with the link gets this version:");
+        }
+        (Some(_), _) => println!("Published (v1). Anyone can run it with:"),
+        _ => println!("Published. Anyone can run it with:"),
+    }
     println!("  krate run {url}");
+    if let Some(pinned) = versioned["version_url"].as_str() {
+        if versioned["version"].is_u64() {
+            println!("  this version alone, unchanged by later updates: {pinned}");
+        }
+    }
     // The moving name for this app: republishing under the same name
     // moves it, and it moves for nobody else (IC-389, test 470).
     if let Some(channel) = extract_json_string(&body, "channel") {
@@ -8608,7 +10001,7 @@ fn publish_big(
     while status["status"] == "judging" || status["status"] == "uploading" {
         if std::time::Instant::now() > deadline {
             anyhow::bail!(
-                "Krate Cloud is still checking it; it will be listed when the check passes                  (run the same publish again to ask)"
+                "Krate Cloud is still checking it; it will be listed when the check passes (run the same publish again to ask)"
             );
         }
         std::thread::sleep(std::time::Duration::from_secs(3));
@@ -9457,6 +10850,161 @@ fn wall_in_request(request: &str) -> Option<Wall> {
     None
 }
 
+/// What no Krate app can do under any grant, in the words both AIs are given.
+///
+/// `plan` and `create` each hand the request to an AI, and each AI used to
+/// get its own idea of the limits. The authoring prompt named these four and
+/// told the agent to refuse them; the planning prompt named only the sandbox
+/// and told the AI to plan "the closest thing". So on one sentence -- "an app
+/// that downloads all my email from gmail and deletes the spam folder" --
+/// plan promised an IMAP client with an app password and `create` refused it,
+/// three runs out of three (K-764). One list, read by both prompts.
+const OUT_OF_REACH: &str = "reading the mail, photos, contacts or messages already on \
+     this computer, signing in to somebody's Google/Spotify/Twitter account, reaching \
+     another person's device, or running while the app is closed";
+
+/// Krate's and the AI's own notes that Studio folds into a request, after
+/// the person's words. They are what was SAID about the request, not what
+/// was asked for, so they are never judged as the request.
+const STUDIO_NOTES: [&str; 3] = [
+    "(The agreed plan: ",
+    "(The person was asked ",
+    "(The app is called ",
+];
+
+/// The part of a request that is the person's: their words and their
+/// answers, without the questions, the agreed plan, or the name Studio adds.
+///
+/// Studio builds by sending `create` the request plus "(The agreed plan:
+/// ...)". The plan's own sentence was judged as if the person had typed it,
+/// so a plan that said "nothing is uploaded to the cloud" for a private
+/// journal was refused by `create` for asking for the cloud (K-764).
+fn request_to_judge(request: &str) -> String {
+    let person = person_words_only(request);
+    let cut = STUDIO_NOTES
+        .iter()
+        .filter_map(|note| person.find(note))
+        .min()
+        .unwrap_or(person.len());
+    person[..cut].trim_end().to_string()
+}
+
+/// Whether Krate will build a request: the ONE verdict `plan` and `create`
+/// both give, so the door that starts the conversation can never offer what
+/// the door that builds refuses (K-764).
+fn build_verdict(request: &str) -> krate_author::feasibility::Verdict {
+    krate_author::feasibility::screen(&request_to_judge(request))
+}
+
+/// `create`'s refusal, as the one line both doors say it in.
+fn cannot_build_line(reason: &str, instead: &str) -> String {
+    format!(
+        "Krate cannot build that: {}. Try instead: {}.",
+        reason.trim().trim_end_matches('.'),
+        instead.trim().trim_end_matches('.')
+    )
+}
+
+/// The plan's third answer: Krate will not build this, and what it can do
+/// instead. Its own arm, never a `plan` -- a refusal printed as
+/// `{"plan": ...}` was shown as "Here's what I'll build:" over a sentence
+/// saying it could not be built, with a Build it button that `create` then
+/// refused (K-764).
+fn plan_cannot_json(reason: &str, instead: &str, limit: Option<&str>) -> serde_json::Value {
+    serde_json::json!({
+        "cannot": cannot_build_line(reason, instead),
+        "reason": reason.trim().trim_end_matches('.'),
+        "instead": instead.trim().trim_end_matches('.'),
+        "limit": limit,
+    })
+}
+
+/// Whether a plan's "needs" entry is something `create` will let an app
+/// declare. The manifest's own parser decides, so the plan cannot offer a
+/// permission the build would refuse: an unknown name, a default every app
+/// already has (declaring one is an error), a pattern left unfilled
+/// (`fs.write:<chosen-folder>/**`), or a filesystem-wide glob, which
+/// check-app refuses (K-764).
+fn plan_need_is_buildable(need: &str) -> bool {
+    let Ok(cap) = need.trim().parse::<krate_manifest::Capability>() else {
+        return false;
+    };
+    if cap.is_default_granted() || need.contains('<') || need.contains('>') {
+        return false;
+    }
+    !fs_scope_reads_as_everything(need.trim())
+}
+
+/// An fs capability whose scope is everything (`fs.read:**`). The sandbox
+/// would contain it, but it reads as the whole disk to the person deciding,
+/// so check-app refuses it; the plan must not offer it either.
+fn fs_scope_reads_as_everything(cap: &str) -> bool {
+    let (family, scope) = match cap.split_once(':') {
+        Some((family, scope)) => (family, Some(scope)),
+        None => (cap, None),
+    };
+    if !family.starts_with("fs.") {
+        return false;
+    }
+    let bare = scope
+        .map(|s| s.trim_start_matches("./").trim_start_matches('/'))
+        .unwrap_or("");
+    bare == "**" || bare == "*" || bare.is_empty()
+}
+
+/// Hold an AI's plan to what `create` will build: an AI refusal becomes the
+/// `cannot` arm, needs `create` would refuse are left out (and said so on
+/// stderr), and a shape that is not one of the working examples is dropped
+/// rather than handed on. Anything else passes through untouched.
+fn plan_held_to_create(mut value: serde_json::Value) -> serde_json::Value {
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+    if let Some(reason) = object
+        .get("cannot")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_string)
+    {
+        let instead = object
+            .get("instead")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|i| !i.is_empty())
+            .unwrap_or("a version of the app that works on files you pick or data you type in")
+            .to_string();
+        let mut cannot = plan_cannot_json(&reason, &instead, None);
+        if let Some(session) = object.get("agent_session") {
+            cannot["agent_session"] = session.clone();
+        }
+        return cannot;
+    }
+    if let Some(needs) = object.get_mut("needs").and_then(|v| v.as_array_mut()) {
+        needs.retain(|need| {
+            let keep = need.as_str().is_some_and(plan_need_is_buildable);
+            if !keep {
+                eprintln!(
+                    "note: the plan named {need}, which is not a permission a Krate app can \
+                     ask for, so it was left out"
+                );
+            }
+            keep
+        });
+    }
+    let unknown_shape = object
+        .get("shape")
+        .and_then(|v| v.as_str())
+        .is_some_and(|shape| {
+            !shape.eq_ignore_ascii_case("none")
+                && authoring_context::example_by_name(shape).is_none()
+        });
+    if unknown_shape {
+        object.remove("shape");
+    }
+    value
+}
+
 fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> Result<u8> {
     // Deterministic thin gate. name_from_request already knows which words
     // carry meaning; a request it cannot name and that has no sentence
@@ -9488,53 +11036,41 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         return Ok(0);
     }
 
+    // The same verdict `create` gives, for the same request, from the same
+    // function -- and it runs FIRST, before anything that could offer a plan.
+    //
+    // It did not run here at first, and the two doors gave opposite answers
+    // to one sentence: asked for "an app that reads my Gmail inbox", `create`
+    // refused in plain words while `plan` sent the person off to obtain an
+    // OAuth credential. Then it ran, but printed its refusal as a "plan", so
+    // Studio said "Here's what I'll build:" over "Krate cannot build that"
+    // and offered a Build it button that `create` refused. And it ran AFTER
+    // the wall below, so "a timer that keeps running in the background"
+    // was promised a substitute that `create` then refused for the same
+    // words (K-764). A refusal is its own answer now, and it comes first.
+    //
+    // Nothing is spent either way -- deterministic, no AI, no network.
+    if let krate_author::feasibility::Verdict::Refuse(refusal) = build_verdict(request) {
+        let limit = serde_json::to_value(refusal.limit)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string));
+        println!(
+            "{}",
+            plan_cannot_json(&refusal.reason, &refusal.instead, limit.as_deref())
+        );
+        return Ok(0);
+    }
+
     // A wall the runtime genuinely cannot cross is worth naming in ten
     // seconds rather than discovering forty minutes into a build. This step
     // costs nothing -- no AI, no network -- and it runs before the provider
-    // is even resolved.
+    // is even resolved. What it offers is buildable: the request passed the
+    // verdict above, which is the one `create` applies to it.
     if let Some(wall) = wall_in_request(request) {
         println!(
             "{}",
             serde_json::json!({
                 "plan": wall.plan(),
-                "needs": Vec::<String>::new(),
-            })
-        );
-        return Ok(0);
-    }
-
-    // The same feasibility screen `create` runs, for the same request.
-    //
-    // It did not run here, and the two doors gave opposite answers to one
-    // sentence. Asked for "an app that reads my Gmail inbox", `create`
-    // refuses in plain words -- a Krate app cannot sign in to another
-    // company's account, there is no browser to redirect through and
-    // nowhere safe to keep a token. `plan` returned three confident
-    // questions instead, the first of which sends the person off to obtain
-    // an OAuth credential for an app that will then be refused.
-    //
-    // That is worst on the web, where planning IS the front door: a
-    // stranger's first interaction would be an errand, followed by a no.
-    //
-    // `create`'s refusal has an escape hatch (--force) and this one does
-    // not need its own, because the refusal is advisory here: it is
-    // returned as the plan, so the Studio shows it and the person can say
-    // something else. Nothing is spent either way -- this screen is
-    // deterministic, with no AI and no network.
-    if let krate_author::feasibility::Verdict::Refuse(refusal) =
-        krate_author::feasibility::screen(request)
-    {
-        // Both halves: the reason, and the nearest thing Krate CAN build,
-        // phrased so the person can paste it straight back. A refusal
-        // without the second half reads as a dead end, which is the whole
-        // point of `instead` existing on the type.
-        println!(
-            "{}",
-            serde_json::json!({
-                // The reason does not end in a full stop (it is written to be
-                // embedded), so one is added rather than running two
-                // sentences together.
-                "plan": format!("{}. Try instead: {}.", refusal.reason.trim_end_matches('.'), refusal.instead.trim_end_matches('.')),
                 "needs": Vec::<String>::new(),
             })
         );
@@ -9607,9 +11143,8 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          title-cased\", \"plan\": \"ONE short sentence, plain words: what will be \
          built\", \"points\": [\"three to five short points, each a fragment of \
          at most eight words: what it shows, what you can do, what data it keeps. \
-         No full sentences, no rules lists, never their answers read back to them\"], \"needs\": [\"things the person must \
-         supply or approve: a file to attach, a choice to make, a permission the app will \
-         request\"]}} -- needs may be empty.\n\n\
+         No full sentences, no rules lists, never their answers read back to them\"], \"needs\": [\"the permissions the app \
+         will ask for, each a name from the list below\"]}} -- needs may be empty.\n\n\
          Never ask about colors, fonts, or anything with a sensible default. A Krate app \
          runs on Mac, Windows and Linux automatically, so never ask about platforms. Ask \
          only when the answer changes the app.\n\n\
@@ -9617,6 +11152,12 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          clicks to other programs, read other apps' windows, or control the OS. If the \
          request needs that, do not ask questions about it -- reply with a plan for the \
          CLOSEST thing that can truly work, saying plainly what changed and why.\n\n\
+         Some things no Krate app can do under any permission: {OUT_OF_REACH}. The build \
+         refuses a request that needs one of them, so never plan around it. Reply instead:\n\
+         {{\"cannot\": \"one plain sentence saying what is out of reach\", \"instead\": \"the \
+         nearest app Krate CAN build, phrased as a request the person could send\"}}\n\
+         Only when you are certain: a request that could mean a local, offline or \
+         sample-data version gets a plan for that version.\n\n\
          WHICHEVER form you reply with, also include a top-level \"shape\" field: the \
          name of the working example whose SHAPE is closest to this request -- its \
          interaction and data pattern, never its topic -- or \"none\" if nothing fits. \
@@ -9731,16 +11272,26 @@ fn finish_plan(
         }
     }
 
-    let json = extract_plan_json(text).unwrap_or_else(|| {
-        if text.trim().is_empty() {
-            eprintln!("note: the planning AI returned nothing; building directly.");
-        } else {
-            eprintln!("note: could not read a plan from the AI; building directly.");
-        }
-        // An empty plan with no questions: the Studio reads this as "proceed to
-        // build", the same as an AI that decided the request was ready.
-        serde_json::json!({ "plan": "", "needs": [] }).to_string()
-    });
+    // Whatever the AI said, it is held to what `create` will build: its own
+    // refusal becomes the `cannot` arm, and a permission or shape `create`
+    // would refuse is not offered (K-764).
+    let json = extract_plan_json(text)
+        .map(
+            |json| match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(value) => plan_held_to_create(value).to_string(),
+                Err(_) => json,
+            },
+        )
+        .unwrap_or_else(|| {
+            if text.trim().is_empty() {
+                eprintln!("note: the planning AI returned nothing; building directly.");
+            } else {
+                eprintln!("note: could not read a plan from the AI; building directly.");
+            }
+            // An empty plan with no questions: the Studio reads this as "proceed to
+            // build", the same as an AI that decided the request was ready.
+            serde_json::json!({ "plan": "", "needs": [] }).to_string()
+        });
     // Ride the planning session's id along, tagged with the provider, so
     // the studio can hand it to create and the build resumes hot.
     let json = if wants_session {
@@ -9863,7 +11414,7 @@ fn explain_answer(text: &str, provider: &str) -> Result<String> {
 /// "plan" key. Agents wrap answers in prose and code fences no matter what
 /// the prompt says; the contract survives by extraction, not by trust.
 fn extract_plan_json(text: &str) -> Option<String> {
-    extract_json_with(text, &["ask", "plan"])
+    extract_json_with(text, &["ask", "plan", "cannot"])
 }
 
 /// The first JSON object in an AI's output that carries one of `keys`, in
@@ -9969,13 +11520,11 @@ fn balanced_json_objects(text: &str) -> Vec<String> {
                 }
                 depth += 1;
             }
-            b'}' => {
-                if depth > 0 {
-                    depth -= 1;
-                    if depth == 0 {
-                        out.push(text[start.unwrap()..=i].to_string());
-                        start = None;
-                    }
+            b'}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push(text[start.unwrap()..=i].to_string());
+                    start = None;
                 }
             }
             _ => {}
@@ -10294,6 +11843,38 @@ impl Drop for WorkspaceKeeper {
     }
 }
 
+/// Sign a freshly made bundle as its maker (IC-983), and say what happened.
+/// Never fails the make: a key that cannot be read leaves the app unsigned,
+/// said in words, and the door that sends it out signs it then.
+fn sign_as_maker(bundle: &Path, steps: &mut Vec<serde_json::Value>, json: bool) {
+    match maker_key::sign_if_unsigned(bundle) {
+        Ok(maker_key::Signed::Now { public }) => {
+            if !json {
+                println!("==> signed as you ({}...)", &public[..12]);
+            }
+            steps.push(serde_json::json!({
+                "step": "sign",
+                "detail": format!("signed with your publisher key {}", &public[..16]),
+            }));
+        }
+        Ok(maker_key::Signed::Already) => {}
+        Ok(maker_key::Signed::Off) => steps.push(serde_json::json!({
+            "step": "sign",
+            "detail": "not signed: signing as a maker is off on this machine",
+        })),
+        Err(err) => {
+            eprintln!(
+                "krate: the app was made but not signed: {err:#}\n\
+                 It works as it is; it is signed when you publish, wrap or share it."
+            );
+            steps.push(serde_json::json!({
+                "step": "sign",
+                "detail": format!("not signed: {err:#}"),
+            }));
+        }
+    }
+}
+
 fn create_krate(req: CreateRequest) -> Result<u8> {
     use krate_author::{generate, AppKind, AppRequest};
 
@@ -10340,7 +11921,11 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // The screen refuses only what is certainly impossible and says so in one
     // sentence; anything it is unsure about is built. A caveat is not a
     // refusal: the app is authored and the note is printed with it.
-    let feasibility = krate_author::feasibility::screen(&req.request);
+    //
+    // Judged on the person's words only, by the same function `plan` uses:
+    // the agreed plan Studio appends is the AI's prose, and judging it as a
+    // request refused plans `plan` had just offered (K-764).
+    let feasibility = build_verdict(&req.request);
     if let krate_author::feasibility::Verdict::Refuse(refusal) = &feasibility {
         if !req.force {
             return Err(report_refusal(&req, refusal));
@@ -10480,6 +12065,15 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     let mut steps: Vec<serde_json::Value> = Vec::new();
 
+    // A change keeps the app's id whatever the authoring step writes: the id
+    // is what makes the published result its next version rather than
+    // another app (IC-976), and where its saved data lives.
+    let kept_id = if is_change {
+        manifest_app_id(&app_dir)
+    } else {
+        None
+    };
+
     // Step 1: author. Either an agent command writes the source, or the
     // built-in generator does.
     if !req.json {
@@ -10535,6 +12129,24 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             "step": "asset",
             "detail": format!("verified local speech model: {}", model.display()),
         }));
+    }
+
+    // The app's id, settled before it is built (IC-976). A new app's id is
+    // made from its name (`dev.krate.timer`), so one person's two timers
+    // would be one app with two versions: it gains a short part made from
+    // the request, once, here. A change keeps the id it came with.
+    match &kept_id {
+        Some(id) => {
+            if manifest_app_id(&app_dir).as_deref() != Some(id.as_str()) {
+                set_manifest_app_id(&app_dir, id)?;
+            }
+        }
+        None => {
+            if let Some(id) = manifest_app_id(&app_dir) {
+                let person = person_words_only(&req.request);
+                set_manifest_app_id(&app_dir, &format!("{id}.{}", app_id_suffix(&person)))?;
+            }
+        }
     }
 
     // Step 2: build to a wasm component.
@@ -10619,6 +12231,13 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         req.changed_from.as_deref(),
     )?;
     steps.push(serde_json::json!({"step": "pack", "detail": format!("{} bytes", size)}));
+    // Signed as its maker, here, before anything judges it (IC-983): the
+    // bytes every check below runs on are the bytes that go out, and the
+    // app's data keys on the maker's key, so it survives every rebuild
+    // (K-247). A key that cannot be read leaves the app unsigned and says
+    // so -- the build is not thrown away for it, and a door that sends it
+    // out signs it then.
+    sign_as_maker(staged.path(), &mut steps, req.json);
 
     // Step 5: verify the permission wall by running the packed bundle with all
     // grants (must succeed) and without the gating capability (must refuse).
@@ -10869,17 +12488,46 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     println!();
     if acceptance.accepted {
         println!("Created {}", req.output.display());
+        // Served, with a word of the request not seen in the code: a note
+        // the person can act on ("not like this, make it like an input"),
+        // never a failure over an app that does what was asked.
+        let worth: Vec<&str> = acceptance
+            .requirements
+            .iter()
+            .filter_map(|v| v.detail.split_once("; worth checking: ").map(|(_, w)| w))
+            .collect();
+        if !worth.is_empty() {
+            println!("  Worth checking: it may be missing {}.", worth.join(", "));
+        }
     } else if committed {
         // The app exists and works. What it does not do is the thing that was
         // asked for, and that is the first thing to say -- not a footnote
         // under a "Created" line that reads as success.
-        println!(
-            "Built {}, but it is not what you asked for.",
-            req.output.display()
-        );
+        // Most of what was asked is there and something seems missing:
+        // say that, softly, and name it. Only an app about something else
+        // entirely is "not what you asked for".
+        let failures = acceptance.failures();
+        let partial = failures
+            .iter()
+            .all(|f| f.detail.starts_with("it may be missing"));
+        if partial {
+            println!(
+                "Built {}, but part of what you asked for may be missing.",
+                req.output.display()
+            );
+        } else {
+            println!(
+                "Built {}, but it is not what you asked for.",
+                req.output.display()
+            );
+        }
         println!();
-        for failure in acceptance.failures() {
-            println!("  asked for: {}", failure.text.trim());
+        for failure in &failures {
+            // One clause that is the whole request: echoing it back tells
+            // the person nothing they did not just type.
+            if failures.len() > 1 || failure.text.trim() != judged_request.trim() {
+                println!("  asked for: {}", failure.text.trim());
+            }
             println!("  but       {}", failure.detail);
         }
         println!();
@@ -11028,6 +12676,59 @@ fn read_app_source(app_dir: &Path) -> String {
     source
 }
 
+/// The `[app] id` of the manifest in `dir`, if it has one.
+fn manifest_app_id(dir: &Path) -> Option<String> {
+    let text = fs::read_to_string(dir.join("manifest.toml")).ok()?;
+    let value: toml::Value = toml::from_str(&text).ok()?;
+    value.get("app")?.get("id")?.as_str().map(str::to_string)
+}
+
+/// Rewrite the `id =` line of the manifest's `[app]` table, leaving every
+/// other line as it was.
+fn set_manifest_app_id(dir: &Path, id: &str) -> Result<()> {
+    let path = dir.join("manifest.toml");
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let mut in_app = false;
+    let mut done = false;
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            let t = line.trim_start();
+            if t.starts_with('[') {
+                in_app = t.starts_with("[app]");
+            } else if in_app && !done && (t.starts_with("id =") || t.starts_with("id=")) {
+                done = true;
+                return format!("id = \"{id}\"");
+            }
+            line.to_string()
+        })
+        .collect();
+    let mut out = lines.join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    fs::write(&path, out).with_context(|| format!("write {}", path.display()))
+}
+
+/// Six lowercase letters and digits from the person's request: the part of
+/// a new app's id that keeps two apps with one name apart. From the request
+/// rather than the clock, so making the same request twice still makes the
+/// same app, byte for byte.
+fn app_id_suffix(request: &str) -> String {
+    let digest = sha256_hex_of(request.trim().as_bytes());
+    let mut n = u64::from_str_radix(&digest[..15], 16).unwrap_or(0);
+    let digits = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut out = String::new();
+    // The first character is a letter: an id part reads better that way.
+    out.push(digits[(n % 26) as usize] as char);
+    n /= 26;
+    for _ in 0..5 {
+        out.push(digits[(n % 36) as usize] as char);
+        n /= 36;
+    }
+    out
+}
+
 /// The relative path from the app dir to the SDK root, for the generated
 /// Cargo.toml's path dependencies.
 fn relative_sdk_prefix(app_dir: &Path, sdk_root: &Path) -> Result<String> {
@@ -11166,15 +12867,33 @@ pub(crate) const CHANGE_MARKER: &str = "\u{1}krate-change\u{1}";
 /// reference stays available for a call it has not used before -- reading less
 /// is not the goal, doing less is.
 fn change_prompt(app_dir: &str, change: &str, krate_bin: &str) -> String {
+    // A repair is not a change to a working app, and saying it was told the
+    // agent "the app compiles, passes check-app" over a failure that said
+    // the opposite. The repair task itself says what kind of failure it is
+    // (K-763); this frame must not contradict it.
+    let (opening, state) = if change.starts_with(REPAIR_OPENING) {
+        (
+            "You are repairing a Krate app that does not pass `check-app` yet",
+            "This is a repair, not a rewrite. What failed, and what kind of failure it\n\
+             is, is said above; trust that over any guess. The rest of the app\n\
+             already demonstrates the no_std and krate:* discipline in its own\n\
+             source -- you do not need to re-derive any of that.",
+        )
+    } else {
+        (
+            "You are changing a Krate app that already works",
+            "This is an edit, not a rewrite. The app compiles, passes `check-app`, and\n\
+             already demonstrates the no_std and krate:* discipline in its own source --\n\
+             you do not need to re-derive any of that, and you do not need a worked\n\
+             example. Its code is the example.",
+        )
+    };
     format!(
-        "You are changing a Krate app that already works. It is in {app_dir}.\n\
+        "{opening}. It is in {app_dir}.\n\
 \n\
     {change}\n\
 \n\
-This is an edit, not a rewrite. The app compiles, passes `check-app`, and\n\
-already demonstrates the no_std and krate:* discipline in its own source --\n\
-you do not need to re-derive any of that, and you do not need a worked\n\
-example. Its code is the example.\n\
+{state}\n\
 \n\
 How to work:\n\
 1. Read src/lib.rs and find the one place this change belongs. Most changes\n\
@@ -11189,11 +12908,13 @@ How to work:\n\
 4. Check your edit with `{krate_bin} check-app . --no-run` from {app_dir}.\n\
    That builds it and confirms the imports in about two seconds.\n\
 5. Once that passes, run the full `{krate_bin} check-app .` once to prove it\n\
-   still opens and works. That takes around twenty seconds, so run it when\n\
-   you are done rather than after every edit. Do not stop until it prints OK.\n\
+   still opens and works. That takes about fifteen seconds (again on code you\n\
+   have not changed, it answers at once), so run it when you are done rather\n\
+   than after every edit. Do not stop until it prints OK.\n\
 \n\
 Keep the same crate name, the same package name, and the same manifest unless\n\
-the change genuinely needs a new capability. Changing them breaks the app's\n\
+the change genuinely needs a new capability, or the failure above is in the\n\
+manifest. Changing them otherwise breaks the app's\n\
 identity for somebody who already has it.\n\
 \n\
 Do not explain what you did; make the change until the check passes."
@@ -11203,6 +12924,43 @@ Do not explain what you did; make the change until the check passes."
 #[cfg(test)]
 fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String {
     claude_author_prompt_with(app_dir, request, krate_bin, false)
+}
+
+/// The longest single argument a launched program can be given: Linux's
+/// MAX_ARG_STRLEN is 128 KiB per argument, with room left for the rest.
+/// macOS limits only the total (about 1 MiB) and Windows is handled apart.
+const ARGV_ONE_ARG_MAX: usize = if cfg!(target_os = "linux") {
+    120 * 1024
+} else {
+    900 * 1024
+};
+
+/// Whether a prompt this long reaches the provider: any length on stdin,
+/// and on the command line only within one argument's limit.
+fn prompt_fits_its_door(len: usize, via_stdin: bool) -> bool {
+    via_stdin || len <= ARGV_ONE_ARG_MAX
+}
+
+#[cfg(test)]
+mod prompt_door_tests {
+    /// An inlined prompt past Linux's one-argument limit is not sent as an
+    /// argument: "Argument list too long" on CI's Ubuntu (2026-11-07).
+    #[test]
+    fn a_prompt_too_long_for_one_argument_is_not_sent_as_one() {
+        assert!(
+            super::prompt_fits_its_door(10_000_000, true),
+            "stdin takes any length"
+        );
+        assert!(super::prompt_fits_its_door(64 * 1024, false));
+        assert!(!super::prompt_fits_its_door(
+            super::ARGV_ONE_ARG_MAX + 1,
+            false
+        ));
+        #[cfg(target_os = "linux")]
+        const {
+            assert!(super::ARGV_ONE_ARG_MAX < 128 * 1024, "under MAX_ARG_STRLEN")
+        };
+    }
 }
 
 pub(crate) fn claude_author_prompt_with(
@@ -11293,7 +13051,8 @@ How to work:\n\
        {krate_bin} check-app .\n\
 \n\
    This also runs the app, resizes its window and clicks it, which takes\n\
-   around twenty seconds. It is the real verdict, so it has to pass -- but\n\
+   about fifteen seconds (again on code you have not changed, it answers at\n\
+   once). It is the real verdict, so it has to pass -- but\n\
    running it after every small edit is the single biggest waste of time in\n\
    authoring an app. Iterate with --no-run, prove with the full check.\n\
 \n\
@@ -11320,9 +13079,7 @@ Use the Read, Edit, Write, and Bash tools. Do not explain what you did; just\n\
 build the app until the check passes.\n\
 \n\
 One exception, and only one. If the request needs something no Krate app can\n\
-do -- reading the mail, photos, contacts or messages already on this computer,\n\
-signing in to somebody's Google/Spotify/Twitter account, reaching another\n\
-person's device, or running while the app is closed -- then do NOT build a\n\
+do -- {OUT_OF_REACH} -- then do NOT build a\n\
 convincing app over invented data and let check-app pass it. An app that looks\n\
 like a mail reader but can never read mail is worse than no app. Write the\n\
 single line\n\
@@ -11758,10 +13515,18 @@ fn run_provider_author(
     // stdin mode there gets the compact prompt and reads from disk as
     // before. KRATE_INLINE_PACK=0 is the escape hatch.
     let stdin_args = provider.author_args_stdin();
-    let inline = std::env::var("KRATE_INLINE_PACK").as_deref() != Ok("0")
+    let mut inline = std::env::var("KRATE_INLINE_PACK").as_deref() != Ok("0")
         && !request.starts_with(CHANGE_MARKER)
         && (stdin_args.is_some() || !cfg!(windows));
-    let prompt = claude_author_prompt_with(app_dir, request, &krate_bin, inline);
+    let mut prompt = claude_author_prompt_with(app_dir, request, &krate_bin, inline);
+    // Linux caps ONE argument at 128 KiB (MAX_ARG_STRLEN), whatever the
+    // total: an inlined prompt past it failed with "Argument list too long"
+    // for a provider that takes the prompt as an argument (gemini on CI's
+    // Ubuntu, 2026-11-07). Such a prompt goes compact, as on Windows.
+    if inline && !prompt_fits_its_door(prompt.len(), stdin_args.is_some()) {
+        inline = false;
+        prompt = claude_author_prompt_with(app_dir, request, &krate_bin, false);
+    }
     let prompt_via_stdin = inline && stdin_args.is_some() && prompt.len() > 6_000;
     let transcript = Path::new(app_dir).join(".agent-transcript.txt");
     // A snapshot of the skeleton, to detect an agent that answered in chat and
@@ -12441,6 +14206,15 @@ fn run_provider_author(
                 transcript.display()
             );
         }
+        // A change run that changed nothing is not an empty app: the code
+        // the run started from is still there. Say what happened, and never
+        // quote Krate's own task as if the person had written it (K-1242).
+        if let Some(change) = request.strip_prefix(CHANGE_MARKER) {
+            return Err(ChangeRunMiss::Unchanged {
+                message: unchanged_change_message(change, &transcript),
+            }
+            .into());
+        }
         anyhow::bail!(
             "the agent finished without changing the app: its source ({watched_file} and the \
              rest) is byte-identical to the starter, so this would package an empty app as if it were \
@@ -12467,7 +14241,7 @@ fn run_provider_author(
     // is the deep fix for "grok writes an app that panics/leaks and then stops":
     // the loop closes here, automatically, instead of on a person noticing the
     // error and running create again.
-    if let Err(failure) = check_app_verdict(app_dir) {
+    if let Err((kind, failure)) = check_app_verdict_kind(app_dir) {
         // Only a fresh authoring run drives the automatic repair loop. A
         // CHANGE_MARKER request IS a repair or an edit already -- auto-repairing
         // it here would nest run_provider_author inside auto_repair inside
@@ -12475,13 +14249,14 @@ fn run_provider_author(
         // change just reports; the outer loop (auto_repair, or the user's own
         // revise) decides what happens next.
         if request.starts_with(CHANGE_MARKER) {
-            anyhow::bail!(
-                "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
-                 The agent's transcript is at {}.",
-                transcript.display()
-            );
+            return Err(ChangeRunMiss::CheckFails {
+                message: failed_check_message(kind, &failure, &transcript),
+                kind,
+                failure,
+            }
+            .into());
         }
-        return auto_repair(provider, app_dir, request, &failure, &transcript);
+        return auto_repair(provider, app_dir, request, kind, &failure, &transcript);
     }
     // A fresh authoring run that passed its final check is a finished build.
     // A CHANGE_MARKER run is a repair/edit step inside a larger flow, so it is
@@ -12680,19 +14455,32 @@ fn auto_repair(
     provider: &'static dyn agent_provider::AgentProvider,
     app_dir: &str,
     request: &str,
+    first_kind: FailureKind,
     first_failure: &str,
     transcript: &Path,
 ) -> Result<u8> {
     const MAX_REPAIR_ROUNDS: u32 = 2;
+    let mut kind = first_kind;
     let mut failure = first_failure.to_string();
+    // Whether the last round left the code as it was.
+    let mut unchanged = false;
     for round in 1..=MAX_REPAIR_ROUNDS {
+        // A failure no edit can fix is not sent to the agent at all. The
+        // sandbox refusing the build cache came back as a code repair, the
+        // agent changed nothing -- correctly, the code compiled -- and the
+        // person was then told the agent "explained the app instead of
+        // writing it" (K-763). Stop, and say what it is.
+        let Some(instruction) = kind.agent_instruction() else {
+            break;
+        };
         trace::repair(round, MAX_REPAIR_ROUNDS, first_line(&failure));
         eprintln!(
             "    the app did not pass yet -- asking the AI to fix it ({round} of {MAX_REPAIR_ROUNDS})"
         );
         let task = format!(
-            "{CHANGE_MARKER}The app you just wrote for \"{request}\" does not pass \
-             `krate check-app` yet. Here is exactly what failed and how to fix it:\n\n\
+            "{CHANGE_MARKER}{REPAIR_OPENING} for \"{request}\" does not pass \
+             `krate check-app` yet. {instruction}\n\n\
+             Here is exactly what failed and how to fix it:\n\n\
              {failure}\n\n\
              Fix only what this names. Do not rewrite the app or start over -- the code \
              you already wrote is in src/lib.rs. Make the change, then run check-app \
@@ -12702,23 +14490,139 @@ fn auto_repair(
         // task -- run_provider_author dispatches that to the edit prompt, which
         // says "find the one place, change that, leave the rest alone" rather
         // than re-deriving the whole app.
-        run_provider_author(provider, app_dir, &task)?;
-        match check_app_verdict(app_dir) {
+        //
+        // A repair that still fails, or changes nothing, is this round's
+        // result, not the end of the loop. Propagating it with `?` ended
+        // every repair after one round, so round two never ran (K-1242).
+        // Only a run that could not happen at all -- the agent would not
+        // start, its account refused -- ends the loop here: no further
+        // round would fare better.
+        let verdict = match run_provider_author(provider, app_dir, &task) {
+            Ok(_) => {
+                unchanged = false;
+                check_app_verdict_kind(app_dir)
+            }
+            Err(error) => match error.downcast::<ChangeRunMiss>() {
+                Ok(ChangeRunMiss::CheckFails {
+                    kind: next_kind,
+                    failure: next,
+                    ..
+                }) => {
+                    unchanged = false;
+                    Err((next_kind, next))
+                }
+                // The code is as it was, so the verdict is too.
+                Ok(ChangeRunMiss::Unchanged { .. }) => {
+                    unchanged = true;
+                    eprintln!("    {REPAIR_UNCHANGED}");
+                    Err((kind, failure.clone()))
+                }
+                Err(error) => {
+                    trace::build_end("failed", Some(first_line(&error.to_string())));
+                    return Err(error);
+                }
+            },
+        };
+        match verdict {
             Ok(()) => {
                 eprintln!("    fixed.");
                 trace::build_end("ok", Some("fixed by auto-repair"));
                 return Ok(0);
             }
-            Err(next) => failure = next,
+            Err((next_kind, next)) => {
+                kind = next_kind;
+                failure = next;
+            }
         }
     }
     trace::build_end("failed", Some(first_line(&failure)));
-    anyhow::bail!(
-        "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
+    // The kind's plain sentence still leads: it is the line a reader, or
+    // Studio, takes as the verdict.
+    if unchanged {
+        anyhow::bail!(
+            "{} {REPAIR_UNCHANGED} `check-app` still does not pass:\n\n{failure}\n\n\
+             The agent's transcript is at {}.",
+            kind.person_words(),
+            transcript.display()
+        );
+    }
+    anyhow::bail!("{}", failed_check_message(kind, &failure, transcript));
+}
+
+/// What the person is told when a repair round left the code as it was.
+const REPAIR_UNCHANGED: &str = "The AI looked at the failure and changed nothing.";
+
+/// How a change run -- a repair round or a person's edit -- ended short of
+/// a pass, kept typed so the repair loop can go round again instead of
+/// stopping on the first miss (K-1242). Its words are the message the
+/// person reads when nothing goes round again.
+#[derive(Debug)]
+enum ChangeRunMiss {
+    /// The run's closing check still fails.
+    CheckFails {
+        kind: FailureKind,
+        failure: String,
+        message: String,
+    },
+    /// The agent left the app's source as it was.
+    Unchanged { message: String },
+}
+
+impl std::fmt::Display for ChangeRunMiss {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChangeRunMiss::CheckFails { message, .. } | ChangeRunMiss::Unchanged { message } => {
+                f.write_str(message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ChangeRunMiss {}
+
+/// What a change run that changed nothing says. A repair names no request at
+/// all -- its task is Krate's own words, not the person's; a person's edit
+/// names their change, without the files Krate attached to it.
+fn unchanged_change_message(change: &str, transcript: &Path) -> String {
+    let transcript = transcript.display();
+    if change.starts_with(REPAIR_OPENING) {
+        return format!("{REPAIR_UNCHANGED} The agent's transcript is at {transcript}.");
+    }
+    let asked = change
+        .split(ATTACHED_PREAMBLE)
+        .next()
+        .unwrap_or(change)
+        .trim();
+    format!(
+        "The AI finished without changing the app, so \"{asked}\" was not made. The app is \
+         as it was. The agent's transcript is at {transcript}."
+    )
+}
+
+/// How a repair task opens, so the edit prompt can tell a repair of a
+/// failing app from a change to a working one.
+const REPAIR_OPENING: &str = "The app you just wrote";
+
+/// What the person reads when a build ends on a failing check: the kind's
+/// plain sentence first -- the line a reader, or Studio, takes as the
+/// verdict -- then the check's own words.
+fn failed_check_message(kind: FailureKind, failure: &str, transcript: &Path) -> String {
+    if kind == FailureKind::Environment {
+        return format!(
+            "{}\n\n{failure}\n\n\
+             Put that right on this computer, then run the command again: the app's code \
+             is kept, and nothing in it needs to change. The agent's transcript is at {}.",
+            kind.person_words(),
+            transcript.display()
+        );
+    }
+    format!(
+        "{} The agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
          The agent's transcript is at {}. Running the command again often gets it \
          the rest of the way.",
+        kind.person_words(),
         transcript.display()
-    );
+    )
 }
 
 /// Pull the agent's own error sentence out of its transcript.
@@ -13571,7 +15475,23 @@ fn loop_bound_seconds(lib: &str, bound_name: &str) -> Option<u64> {
 }
 
 fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
-    match run_check_app(Path::new(app_dir), None, false) {
+    check_app_verdict_kind(app_dir).map_err(|(_, message)| message)
+}
+
+/// [`check_app_verdict`] with the failure's kind, which decides whether an
+/// agent is asked to repair it at all and what it is told (K-763).
+fn check_app_verdict_kind(app_dir: &str) -> std::result::Result<(), (FailureKind, String)> {
+    let outcome = run_check_app(Path::new(app_dir), None, false);
+    // Where the check's time went, beside its verdict, so a build's trace
+    // shows what the closing check cost and whether it was reused.
+    trace::check_stages(
+        &check_stage_times(),
+        outcome
+            .as_ref()
+            .ok()
+            .and_then(|summary| summary.reused_secs),
+    );
+    match outcome {
         Ok(_) => {
             trace::check_app(true, None, None);
             Ok(())
@@ -13583,7 +15503,7 @@ fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
                 message.push_str("\n\nFix: ");
                 message.push_str(&failure.fix);
             }
-            Err(message)
+            Err((failure.kind(), message))
         }
     }
 }
@@ -13657,6 +15577,12 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
                         format!("id = \"dev.krate.{snake}\"")
                     } else if t.starts_with("name =") || t.starts_with("name=") {
                         format!("name = \"{}\"", ctx.name)
+                    } else if t.starts_with("entry =") || t.starts_with("entry=") {
+                        // The file THIS crate builds. Kept as the example's,
+                        // every seeded app's first full check was refused at
+                        // the door (exit 5) and its build paid a repair
+                        // round to change one line (K-1241).
+                        format!("entry = \"target/wasm32-wasip1/release/{snake}.wasm\"")
                     } else {
                         line.to_string()
                     }
@@ -14260,6 +16186,10 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         // A fresh leaf starts with the dependencies a finished leaf already
         // compiled, so only this app's own crate is left to build (K-774).
         seed_leaf_from_a_finished_one(&shared, &per_app, app_dir);
+        // The cache would otherwise grow without end: a leaf per app
+        // directory ever built and a whole tree per SDK version (K-1125).
+        mark_leaf_used(&per_app, app_dir);
+        prune_build_cache(&shared, &per_app);
         command.env("CARGO_TARGET_DIR", &per_app);
     }
 
@@ -14416,7 +16346,7 @@ fn seed_leaf_from_a_finished_one(shared: &Path, leaf: &Path, app_dir: &Path) {
             Some((stamp, path))
         })
         .collect();
-    finished.sort_by(|a, b| b.0.cmp(&a.0));
+    finished.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     for (_, seed) in finished.into_iter().take(3) {
         let Ok(hold) = fs::OpenOptions::new()
             .read(true)
@@ -14456,6 +16386,195 @@ fn seed_leaf_from_a_finished_one(shared: &Path, leaf: &Path, app_dir: &Path) {
         }
         return;
     }
+}
+
+/// A cache tree an older Krate (another SDK fingerprint) built goes once it
+/// has gone unused this long. Long enough that a Studio carrying an older
+/// Krate, used this week, keeps its warm cache.
+const CACHE_OLD_SDK_UNUSED: std::time::Duration = std::time::Duration::from_secs(3 * 24 * 3600);
+/// A leaf nobody built in this long goes; the next build of that app is
+/// seeded warm again (K-774), so this costs seconds, not minutes.
+const CACHE_LEAF_UNUSED: std::time::Duration = std::time::Duration::from_secs(14 * 24 * 3600);
+/// A leaf whose app directory is gone (a test's or a made-and-moved app's
+/// temporary directory) goes after this.
+const CACHE_ORPHAN_AFTER: std::time::Duration = std::time::Duration::from_secs(3600);
+/// The least time between two prunes of the cache.
+const CACHE_PRUNE_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Note that this leaf was just used, and for which app directory, so a
+/// later prune can tell a live leaf from one whose app is gone.
+fn mark_leaf_used(leaf: &Path, app_dir: &Path) {
+    let _ = fs::create_dir_all(leaf);
+    // Absolute: a prune run from another directory must not read a
+    // relative `apps/x` as gone.
+    let absolute = app_dir
+        .canonicalize()
+        .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(app_dir)))
+        .unwrap_or_else(|_| app_dir.to_path_buf());
+    let _ = fs::write(
+        leaf.join(".krate-app-dir"),
+        absolute.to_string_lossy().as_bytes(),
+    );
+    if let Some(root) = leaf.parent() {
+        let _ = fs::write(root.join(".krate-used"), b"");
+    }
+}
+
+/// Prune the shared build cache, at most once an hour across every Krate
+/// on this machine. Never fails a build: every error is skipped.
+fn prune_build_cache(shared: &Path, building: &Path) {
+    let Some(root) = shared.parent() else {
+        return;
+    };
+    let stamp = root.join(".krate-pruned");
+    let recent = fs::metadata(&stamp)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|at| at.elapsed().ok())
+        .is_some_and(|age| age < CACHE_PRUNE_EVERY);
+    if recent {
+        return;
+    }
+    // Stamped first, so two builds starting together do not both prune.
+    let _ = fs::write(&stamp, b"");
+    let trash = prune_build_cache_at(shared, building, std::time::SystemTime::now());
+    // Moved aside already, so nothing can build in or seed from them; the
+    // deleting itself happens off the build's path.
+    if !trash.is_empty() {
+        let _ = std::thread::Builder::new()
+            .name("krate-cache-prune".into())
+            .spawn(move || {
+                for dir in trash {
+                    let _ = fs::remove_dir_all(dir);
+                }
+            });
+    }
+}
+
+/// When a leaf (or a whole cache tree) was last used: its own mark, its
+/// artifact directory (cargo rewrites it on every build, an older Krate's
+/// too), or the directory itself.
+fn cache_last_used(dir: &Path) -> Option<std::time::SystemTime> {
+    [
+        dir.join(".krate-app-dir"),
+        dir.join(".krate-used"),
+        dir.join("wasm32-wasip1/release"),
+        dir.to_path_buf(),
+    ]
+    .iter()
+    .filter_map(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok())
+    .max()
+}
+
+/// Whether some build holds this leaf now.
+fn leaf_in_use(leaf: &Path) -> bool {
+    let Ok(file) = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(leaf.join(".krate-build.lock"))
+    else {
+        return false;
+    };
+    file.try_lock().is_err()
+}
+
+/// Decide what goes and move it aside as `trash-*` (a rename, so it is
+/// instant and a half-deleted leaf can never be picked as a seed). Returns
+/// what to delete. Never touches the leaf being built, a leaf some build
+/// holds, or the newest finished leaf (the seed every new app starts from).
+fn prune_build_cache_at(
+    shared: &Path,
+    building: &Path,
+    now: std::time::SystemTime,
+) -> Vec<PathBuf> {
+    let age = |dir: &Path| {
+        cache_last_used(dir)
+            .and_then(|at| now.duration_since(at).ok())
+            .unwrap_or_default()
+    };
+    let mut trash = Vec::new();
+    let Some(root) = shared.parent() else {
+        return trash;
+    };
+    // Everything set aside lands in the cache root, where the next prune
+    // finds it again if this process ends before deleting it.
+    let mut counter = 0u32;
+    let mut set_aside = |dir: &Path, trash: &mut Vec<PathBuf>| {
+        counter += 1;
+        let stamp = now
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let aside = root.join(format!("trash-{stamp:x}-{}-{counter}", std::process::id()));
+        if fs::rename(dir, &aside).is_ok() {
+            trash.push(aside);
+        }
+    };
+    let leaves = |tree: &Path| -> Vec<PathBuf> {
+        fs::read_dir(tree)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| {
+                        path.is_dir()
+                            && path
+                                .file_name()
+                                .is_some_and(|name| name.to_string_lossy().starts_with("app-"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // Trees another SDK version built, and what an earlier prune left.
+    for entry in fs::read_dir(root).into_iter().flatten().flatten() {
+        let tree = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !tree.is_dir() || tree == shared {
+            continue;
+        }
+        if name.starts_with("trash-") {
+            trash.push(tree);
+            continue;
+        }
+        let tree_leaves = leaves(&tree);
+        if tree_leaves.iter().any(|leaf| leaf_in_use(leaf)) {
+            continue;
+        }
+        let newest = tree_leaves
+            .iter()
+            .map(|leaf| age(leaf))
+            .chain(std::iter::once(age(&tree)))
+            .min()
+            .unwrap_or_default();
+        if newest > CACHE_OLD_SDK_UNUSED {
+            set_aside(&tree, &mut trash);
+        }
+    }
+    // This SDK's leaves.
+    let all = leaves(shared);
+    let seed = all
+        .iter()
+        .filter_map(|leaf| {
+            let at = fs::metadata(leaf.join("wasm32-wasip1/release/.fingerprint"))
+                .and_then(|meta| meta.modified())
+                .ok()?;
+            Some((at, leaf.clone()))
+        })
+        .max_by_key(|(at, _)| *at)
+        .map(|(_, leaf)| leaf);
+    for leaf in all {
+        if leaf == building || Some(&leaf) == seed.as_ref() || leaf_in_use(&leaf) {
+            continue;
+        }
+        let unused = age(&leaf);
+        let orphan = fs::read_to_string(leaf.join(".krate-app-dir"))
+            .is_ok_and(|dir| !Path::new(dir.trim()).exists());
+        if unused > CACHE_LEAF_UNUSED || (orphan && unused > CACHE_ORPHAN_AFTER) {
+            set_aside(&leaf, &mut trash);
+        }
+    }
+    trash
 }
 
 /// Whether a target-dir entry belongs to the crate named `krate_name`
@@ -14539,12 +16658,33 @@ fn build_leaf_lock(app_dir: &Path) -> Option<fs::File> {
     Some(file)
 }
 
+/// The target directory the person chose with CARGO_TARGET_DIR, as cargo
+/// reads it for a build run in `app_dir`: a relative one is relative to
+/// there.
+fn person_target_dir(app_dir: &Path) -> Option<PathBuf> {
+    let dir = PathBuf::from(std::env::var_os("CARGO_TARGET_DIR")?);
+    Some(if dir.is_absolute() {
+        dir
+    } else {
+        app_dir.join(dir)
+    })
+}
+
 fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
+    // Look where cargo wrote it. A person's own CARGO_TARGET_DIR wins over
+    // the shared cache (the sandbox advice says to set one), and cargo
+    // honours it for this build, so the artifact is there and not under
+    // the app's target/ (K-967, K-1036).
     let target_root = match shared_build_dir() {
         Some(shared) => per_app_target_dir(&shared, app_dir),
-        None => app_dir.join("target"),
+        None => person_target_dir(app_dir).unwrap_or_else(|| app_dir.join("target")),
     };
     let release = target_root.join("wasm32-wasip1/release");
+    let local = app_dir.join("target/wasm32-wasip1/release");
+    let at_home = |dir: &Path| match (dir.canonicalize(), local.canonicalize()) {
+        (Ok(dir), Ok(local)) => dir == local,
+        _ => dir == local,
+    };
     // The shared cache holds every app's artifact side by side, so the match
     // must be by THIS crate's name, not "any wasm in the directory".
     let wanted = app_crate_name(app_dir).map(|name| format!("{name}.wasm"));
@@ -14554,9 +16694,9 @@ fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
             // The manifest's entry names target/wasm32-wasip1/release/<name>
             // relative to the app, and the permission wall verifies the file
             // RUN is the file DECLARED. The deps stay in the shared cache;
-            // the artifact itself always comes home to the declared path.
-            if shared_build_dir().is_some() {
-                let local = app_dir.join("target/wasm32-wasip1/release");
+            // the artifact itself always comes home to the declared path,
+            // from the shared cache and from a target dir of the person's.
+            if !at_home(&release) {
                 fs::create_dir_all(&local)?;
                 let home = local.join(name);
                 fs::copy(&exact, &home).with_context(|| format!("copying {}", exact.display()))?;
@@ -14711,6 +16851,16 @@ fn build_component(app_dir: &Path) -> Result<PathBuf> {
         );
         if let Some(missing) = wasi_sdk::explain_c_failure(&text) {
             anyhow::bail!("{missing}");
+        }
+        // The machine refused the build, not the compiler: this used to end
+        // "the compiler's message above is the cause" over a sandbox's
+        // "Operation not permitted" (K-763).
+        if build_refused_by_machine(&text) {
+            anyhow::bail!(
+                "{}\n\n{}",
+                FailureKind::Environment.headline(),
+                build_fix(&text)
+            );
         }
         if text.contains("wasm32-wasip1") {
             anyhow::bail!(
@@ -14888,6 +17038,95 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
     Ok(read_arg)
 }
 
+/// A manifest's declared capabilities, split into the ones an automated run
+/// may grant (their effects stay inside the run) and the ones only a person
+/// can (they reach the person or the world).
+fn split_grants(manifest: &krate_manifest::Manifest) -> Result<(Vec<String>, Vec<String>)> {
+    let mut granted: Vec<String> = Vec::new();
+    let mut withheld: Vec<String> = Vec::new();
+    for request in &manifest.capabilities {
+        let parsed: krate_manifest::Capability = request
+            .cap
+            .parse()
+            .with_context(|| format!("parse declared capability {}", request.cap))?;
+        if krate_policy::reaches_outside_the_run(&parsed) {
+            withheld.push(request.cap.clone());
+        } else {
+            granted.push(request.cap.clone());
+        }
+    }
+    Ok((granted, withheld))
+}
+
+/// The grants an automated run may give, and the required capabilities it
+/// may not (so the app cannot run here at all).
+fn grants_inside_the_run(
+    manifest: &krate_manifest::Manifest,
+) -> Result<(Vec<String>, Vec<String>)> {
+    let (granted, withheld) = split_grants(manifest)?;
+    let required_withheld = withheld
+        .into_iter()
+        .filter(|cap| {
+            manifest
+                .capabilities
+                .iter()
+                .any(|request| request.required && &request.cap == cap)
+        })
+        .collect();
+    Ok((granted, required_withheld))
+}
+
+/// Re-invoke this binary and keep what the app printed: (exit, stdout,
+/// stderr). Bounded by the verification timeout: a run that waits for ever
+/// is stopped and comes back as exit -1, so it is a failed case, not a hung
+/// port.
+fn run_self_captured(dir: &Path, args: &[&str]) -> Result<(i32, String, String)> {
+    use std::io::Read as _;
+    let exe = std::env::current_exe().context("locate self")?;
+    let mut child = std::process::Command::new(exe)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(dir)
+        .spawn()
+        .context("re-invoke krate for a recorded case")?;
+    let mut out_pipe = child.stdout.take().context("capture the app's stdout")?;
+    let mut err_pipe = child.stderr.take().context("capture the app's stderr")?;
+    let out_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = out_pipe.read_to_end(&mut bytes);
+        bytes
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = err_pipe.read_to_end(&mut bytes);
+        bytes
+    });
+    let start = std::time::Instant::now();
+    let code = loop {
+        if let Some(status) = child.try_wait().context("wait for a recorded case")? {
+            break status.code().unwrap_or(-1);
+        }
+        if start.elapsed() >= VERIFY_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            break -1;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let stdout = out_reader.join().unwrap_or_default();
+    let mut stderr = String::from_utf8_lossy(&err_reader.join().unwrap_or_default()).into_owned();
+    if code == -1 && start.elapsed() >= VERIFY_TIMEOUT {
+        // A case that never ends is a case the port failed, said as such.
+        stderr.push_str(&format!(
+            "\n[krate: stopped after {} seconds without finishing]",
+            VERIFY_TIMEOUT.as_secs()
+        ));
+    }
+    Ok((code, String::from_utf8_lossy(&stdout).into_owned(), stderr))
+}
+
 /// Re-invoke this same `krate` binary in `dir` with `args`, returning its exit
 /// code. Used to verify a packed bundle in isolation.
 /// How long the verification run may take before it is treated as hung and
@@ -15029,19 +17268,7 @@ fn verify_permission_wall(
     manifest: &krate_manifest::Manifest,
     verify_arg: &str,
 ) -> Result<WallEvidence> {
-    let mut granted: Vec<String> = Vec::new();
-    let mut withheld: Vec<String> = Vec::new();
-    for request in &manifest.capabilities {
-        let parsed: krate_manifest::Capability = request
-            .cap
-            .parse()
-            .with_context(|| format!("parse declared capability {}", request.cap))?;
-        if krate_policy::reaches_outside_the_run(&parsed) {
-            withheld.push(request.cap.clone());
-        } else {
-            granted.push(request.cap.clone());
-        }
-    }
+    let (granted, withheld) = split_grants(manifest)?;
     let required_withheld: Vec<&String> = withheld
         .iter()
         .filter(|cap| {
@@ -15181,6 +17408,64 @@ fn verify_permission_wall(
 }
 
 fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
+    run_self_env(dir, args, &[])
+}
+
+/// A folder removed when this goes out of scope: a check run's one-off
+/// profile.
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A private copy of an app's folder for one check run: everything but what
+/// building leaves behind, so the run reads the app's own data files (Notes'
+/// notes/, a game's levels) and writes only to the copy.
+fn private_sandbox(dir: &Path) -> Result<tempfile::TempDir> {
+    fn copy_tree(from: &Path, to: &Path, top: bool) -> std::io::Result<()> {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if top
+                && matches!(
+                    name_str.as_ref(),
+                    "target" | ".git" | "node_modules" | ".last-full-check"
+                )
+            {
+                continue;
+            }
+            let kind = entry.file_type()?;
+            let dest = to.join(&name);
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &dest, false)?;
+            } else if kind.is_file() {
+                std::fs::copy(entry.path(), &dest)?;
+            }
+            // Links are left out: a run must not reach through the copy.
+        }
+        Ok(())
+    }
+    let copy = tempfile::tempdir()?;
+    copy_tree(dir, copy.path(), true)?;
+    Ok(copy)
+}
+
+/// `run_self` with environment set (Some) or removed (None) for this one
+/// child only. check-app's stages used to say how a run should look --
+/// which screen, dark or light, the interpreter -- by setting variables on
+/// the whole process, which forced every stage to run one after another.
+/// Given to the child alone, two stages can run at once and neither sees
+/// the other's settings.
+fn run_self_env(
+    dir: &Path,
+    args: &[&str],
+    env: &[(&str, Option<std::ffi::OsString>)],
+) -> Result<i32> {
     let exe = std::env::current_exe().context("locate self")?;
     // Capture the child's output rather than inherit it: the verified app's own
     // stdout (e.g. its "saved" line) is noise to the create caller, and would
@@ -15211,8 +17496,49 @@ fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
         }
         None => (std::process::Stdio::null(), std::process::Stdio::null()),
     };
-    let mut child = std::process::Command::new(exe)
-        .args(args)
+    // Each run gets its own copy of the app's folder as its data folder:
+    // check-app runs several stages at once, and they all used the app's
+    // SOURCE folder -- Krate Notes saving a note in one run truncated the
+    // file another run was reading, so its task saw an empty "New Note"
+    // (CI, 2026-11-07), and every check rewrote the files a person keeps in
+    // git. A run that names its own --sandbox-root keeps it.
+    let private = if args.first() == Some(&"run") && !args.contains(&"--sandbox-root") {
+        Some(private_sandbox(dir).context("copy the app's folder for this run")?)
+    } else {
+        None
+    };
+    let mut args: Vec<std::ffi::OsString> = args.iter().map(std::ffi::OsString::from).collect();
+    if let Some(copy) = &private {
+        args.insert(1, "--sandbox-root".into());
+        args.insert(2, copy.path().as_os_str().to_owned());
+    }
+    // And its own store: the analysis profile's stores were shared by every
+    // check run on the machine, so an app that counts its runs (Keyvault)
+    // was judged on what earlier checks had left there. A one-off profile,
+    // removed when the run ends.
+    let _store = if private.is_some() {
+        args.iter()
+            .position(|a| a == "--profile")
+            .filter(|&i| args.get(i + 1).is_some_and(|p| p == "analysis"))
+            .map(|i| {
+                static RUNS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+                let n = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let name = format!("check-{}-{n}", std::process::id());
+                args[i + 1] = name.clone().into();
+                RemoveOnDrop(profile_home(&krate_home(), &name))
+            })
+    } else {
+        None
+    };
+    let mut command = std::process::Command::new(exe);
+    for (name, value) in env {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
+    let mut child = command
+        .args(&args)
         // Null stdin so the verification run is non-interactive. Otherwise it
         // inherits the caller's terminal, and the deny half — which withholds a
         // required capability — sees a TTY, shows the interactive "Grant
@@ -15243,7 +17569,10 @@ fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
                         VERIFY_TIMEOUT.as_secs()
                     );
                 }
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                // 10 ms, not 100: a full check-app makes eight or more of
+                // these runs, most finishing in 150-200 ms, and a 100 ms poll
+                // added half a poll to each one on average.
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
     }
@@ -15267,11 +17596,13 @@ fn write_manifest_with_entry(src: &Path, dest: &Path, entry: &str) -> Result<()>
 
 /// What a run target resolved to: the component, the bundle's manifest, the
 /// open bundle (held for the run), and -- for a download -- the sha256 of
-/// the bytes that arrived, which an organisation's check-in names them by.
+/// the bytes that arrived, which an organisation's check-in names them by,
+/// and the tag a Krate hub sent for the account that published it (K-1172).
 type RunTarget = (
     PathBuf,
     Option<PathBuf>,
     Option<krate_bundle::OpenBundle>,
+    Option<String>,
     Option<String>,
 );
 
@@ -15287,7 +17618,8 @@ type RunTarget = (
 /// make it trusted.
 fn resolve_run_target(target: &str, insecure_http: bool) -> Result<RunTarget> {
     if krate_bundle::is_url(target) {
-        return run_target_from_link(target, target, insecure_http);
+        // A Player address copied from a browser opens the same app here.
+        return run_target_from_link(&org::bundle_address(target), target, insecure_http);
     }
 
     let path = PathBuf::from(target);
@@ -15325,10 +17657,13 @@ fn resolve_run_target(target: &str, insecure_http: bool) -> Result<RunTarget> {
             Some(bundle.manifest_path().to_path_buf()),
             Some(bundle),
             None,
+            // A file names no hub account: an unsigned app from a file is
+            // keyed by its id (K-1172).
+            None,
         ));
     }
 
-    Ok((path, None, None, None))
+    Ok((path, None, None, None, None))
 }
 
 /// `krate judge`: the hub's own answer for a file, by a door's limits
@@ -15451,12 +17786,22 @@ fn run_target_from_link(url: &str, asked: &str, insecure_http: bool) -> Result<R
             org::download_refusal(url, reason, message, org.as_deref())
         );
     }
-    let (bundle, sha256) = match fetched.with_context(context)? {
+    let (bundle, sha256, store_tag, from) = match fetched.with_context(context)? {
         krate_bundle::FetchedForRun::Small(fetched) => {
             report_resolution(url, &fetched);
-            (fetched.bundle, fetched.sha256)
+            (
+                fetched.bundle,
+                fetched.sha256,
+                fetched.store_tag,
+                fetched.url,
+            )
         }
-        krate_bundle::FetchedForRun::Big { path, address, .. } => {
+        krate_bundle::FetchedForRun::Big {
+            path,
+            address,
+            store_tag,
+            url: from,
+        } => {
             // Saved as `<sha256>.krate`, checked as it streamed.
             let sha256 = path
                 .file_stem()
@@ -15474,14 +17819,21 @@ fn run_target_from_link(url: &str, asked: &str, insecure_http: bool) -> Result<R
                 .map(Ok)
                 .unwrap_or_else(|| krate_bundle::open(&path))
                 .with_context(context)?;
-            (bundle, sha256)
+            (bundle, sha256, store_tag, from)
         }
     };
+    // Whose app this is, as a Krate hub vouches (K-1172): taken only from a
+    // hub -- the bytes' final address, every redirect followed -- and only
+    // in the hub tag's shape, so no other server names whose data it gets.
+    let hub_tag = store_tag
+        .filter(|_| org::is_hub_link(&from))
+        .filter(|tag| krate_runtime::storage_key::is_hub_owner_tag(tag));
     Ok((
         bundle.component_path().to_path_buf(),
         Some(bundle.manifest_path().to_path_buf()),
         Some(bundle),
         Some(sha256),
+        hub_tag,
     ))
 }
 
@@ -15586,6 +17938,94 @@ fn run_component(request: RunRequest) -> Result<u8> {
         },
     );
     opened
+}
+
+/// How long a command-line app has to stop after Ctrl-C before Krate ends
+/// it: a loop blocked in a host call, or a run with no epoch checks
+/// (`--headless`), never reaches the runtime's interrupt.
+const CTRL_C_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The exit code of a run the person ended with Ctrl-C, as a shell gives one.
+const CTRL_C_EXIT: u8 = 130;
+
+/// Ctrl-C on a running command-line app (K-1181).
+///
+/// Before this the handler `run_component` installs recorded the press and
+/// only a window ever read it, so a looping CLI app ran on through any
+/// number of presses. Now the first press ends the guest at its next epoch
+/// check (the runtime's callback) and the run returns 130; if the guest has
+/// not stopped within [`CTRL_C_GRACE`], or the person presses again, this
+/// watcher ends the process. Either way the output written so far is
+/// flushed and one line on stderr says what happened.
+struct CtrlCWatch {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl CtrlCWatch {
+    fn start() -> Self {
+        use std::sync::atomic::Ordering::SeqCst;
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = done.clone();
+        let _ = std::thread::Builder::new()
+            .name("krate-ctrl-c".to_string())
+            .spawn(move || {
+                let presses = &krate_runtime::phase3_gui_host::INTERRUPT_PRESSES;
+                let mut first: Option<std::time::Instant> = None;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    if finished.load(SeqCst) {
+                        return;
+                    }
+                    let pressed = presses.load(SeqCst);
+                    if pressed == 0 {
+                        continue;
+                    }
+                    let since = *first.get_or_insert_with(std::time::Instant::now);
+                    if pressed >= 2 || since.elapsed() >= CTRL_C_GRACE {
+                        // The app may be stuck inside a write; never wait on
+                        // its lock for longer than a moment.
+                        let (said, flushed) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let _ = io::stdout().flush();
+                            let _ = said.send(());
+                        });
+                        let _ = flushed.recv_timeout(std::time::Duration::from_millis(200));
+                        say_stopped_by_ctrl_c();
+                        std::process::exit(CTRL_C_EXIT.into());
+                    }
+                }
+            });
+        Self { done }
+    }
+}
+
+impl Drop for CtrlCWatch {
+    fn drop(&mut self) {
+        self.done.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Whether the person pressed Ctrl-C during this run.
+fn pressed_ctrl_c() -> bool {
+    krate_runtime::phase3_gui_host::INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The one line a run ended by Ctrl-C leaves on stderr, said once.
+fn say_stopped_by_ctrl_c() {
+    static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !SAID.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // On its own line: the terminal has just echoed ^C, and the app may
+        // have stopped mid-line.
+        eprintln!("\nstopped: you pressed Ctrl-C");
+    }
+}
+
+/// End a run the person stopped with Ctrl-C: what the app wrote reaches the
+/// terminal first, then the note.
+fn stopped_by_ctrl_c() -> u8 {
+    let _ = io::stdout().flush();
+    say_stopped_by_ctrl_c();
+    CTRL_C_EXIT
 }
 
 /// Fail early, and in plain words, when the X11 keyboard library is absent.
@@ -15698,7 +18138,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     validate_app_args(&request.app_args)?;
 
     // Held for the whole run: dropping it removes the extracted bundle.
-    let (file, bundle_manifest, bundle, fetched_sha256) =
+    let (file, bundle_manifest, bundle, fetched_sha256, hub_tag) =
         resolve_run_target(&request.target, request.insecure_http)?;
     krate_runtime::stage_mark("cli: bundle opened");
 
@@ -15719,6 +18159,8 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     if !request.dump_caps {
         fleet::admit(&subject, door)?;
     }
+    // Who this app is for the policy's `[apps]` rules (G17).
+    let rules_app = subject.app_ref();
 
     // An organisation's private app opens only for a current member, and
     // offline only on a lease that holds (IC-948 G). A preview picture is
@@ -15935,7 +18377,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     };
     // Every policy this run builds carries the organisation's ceiling, so
     // what it blocks is refused however it was granted (IC-949 P4).
-    policy = fleet::narrow(policy);
+    policy = fleet::narrow(policy, &rules_app);
 
     // Before the wall, not after it: --dump-caps answers "what would this app
     // ask for?" without running a single instruction, and it is the safe way to
@@ -16008,7 +18450,12 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                                 .ok()
                         })
                         .flatten();
-                    storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
+                    storage_principal_from(
+                        manifest,
+                        envelope.as_ref(),
+                        verdict.as_ref(),
+                        hub_tag.as_deref(),
+                    )
                 }),
             },
         )?;
@@ -16032,12 +18479,38 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     .ok()
             })
             .flatten();
-        let principal = storage_principal(manifest, envelope.as_ref(), verdict.as_ref());
+        let principal = storage_principal_from(
+            manifest,
+            envelope.as_ref(),
+            verdict.as_ref(),
+            hub_tag.as_deref(),
+        );
         // Only a verified app's lists are learned: the principal is
         // Verified only when the signature and its chain held.
         learn_group_lists(&principal, envelope.as_ref());
         principal
     });
+    // The first open of an app signed by THIS computer's maker key takes
+    // what its id kept unsigned across, once (IC-983, K-247); the first open
+    // of an unsigned app a hub vouched for gets a copy of it, once (K-1172).
+    // Before anything reads a store, so the app never starts on a second,
+    // empty one beside its data.
+    if let Some(principal) = &storage {
+        match adopt_id_keyed_data_here(
+            &store_home,
+            principal,
+            maker_key::public().as_deref(),
+            &machine_key,
+        ) {
+            Ok(IdDataAdopted::Moved(pieces)) => eprintln!(
+                "krate: {} is signed as you now; its saved data ({}) moved with it",
+                manifest.map(|m| m.app.name.as_str()).unwrap_or("this app"),
+                pieces.join(", ")
+            ),
+            Ok(_) => {}
+            Err(words) => anyhow::bail!("{words}. Nothing was lost; open it again to finish."),
+        }
+    }
 
     if let Some(manifest) = manifest {
         // What this person already granted this app, carried across the
@@ -16057,9 +18530,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         if let Some(principal) = remembering {
             let remembered = load_remembered_grants(&store_home, principal);
             if !remembered.is_empty() {
-                policy = fleet::narrow(SessionPolicy::from_grants(
-                    policy.grants().iter().cloned().chain(remembered),
-                ));
+                policy = fleet::narrow(
+                    SessionPolicy::from_grants(policy.grants().iter().cloned().chain(remembered)),
+                    &rules_app,
+                );
             }
         }
         let missing = policy.missing_required_for_manifest(manifest)?;
@@ -16068,11 +18542,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             // asks in the terminal. The two paths fold the same grant set into
             // the same SessionPolicy, so enforcement downstream is identical.
             let before = policy.grants().clone();
-            policy = fleet::narrow(if request.consent {
-                consent_for_session_grants(manifest, &policy)?
-            } else {
-                prompt_for_session_grants(manifest, &policy)?
-            });
+            policy = fleet::narrow(
+                if request.consent {
+                    consent_for_session_grants(manifest, &policy)?
+                } else {
+                    prompt_for_session_grants(manifest, &policy)?
+                },
+                &rules_app,
+            );
             // Only what the person just said yes to, and only for an app
             // whose lineage can be checked again next time.
             if let Some(principal) = remembering {
@@ -16276,36 +18753,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // The organisation's team data (store.org, IC-951): only for the
     // private app the gate above just let through, as that release, for
     // the person signed in. Anything else is not an org app.
-    let app_org = Some(match (org_opened.as_ref(), manifest) {
-        (Some(opened), Some(manifest)) => krate_runtime::org_store::OrgAccess::Granted(Box::new(
-            krate_runtime::org_store::OrgGrant {
-                slug: opened.slug.clone(),
-                hub: opened.hub.clone(),
-                digest: opened.digest.clone(),
-                authorization: opened.authorization.clone(),
-                me: opened
-                    .principal
-                    .as_deref()
-                    .map(|p| p.split_once(':').map_or(p, |(_, v)| v).to_string()),
-                mirror: access::org_data_path(
-                    &opened.slug,
-                    &manifest.app.id.to_ascii_lowercase(),
-                    opened.principal.as_deref(),
-                ),
-                clock_skew_ms: org_clock_skew_ms(),
-                app_id: manifest.app.id.to_ascii_lowercase(),
-                device_secret: krate_runtime::org_store::DeviceSecret(
-                    *access::org_device_key()?.secret(),
-                ),
-                device_name: access::device_name(opened.principal.as_deref()),
-            },
-        )),
-        _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
-    });
+    let app_org = Some(org_run_access(org_opened.as_ref(), manifest)?);
     // The run starts now: the open record says so, with what the app was
     // given and what it was not (IC-949 A). A picture is Krate looking, not
     // a person opening.
-    let policy = fleet::narrow(policy);
+    let policy = fleet::narrow(policy, &rules_app);
     if !request.for_screenshot {
         fleet::opened(&subject, door, &policy);
     }
@@ -16337,18 +18789,35 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     let connections = if request.for_screenshot {
         krate_runtime::connections::Connections::default()
     } else {
-        connections::resolve(manifest, &policy, || {
-            let access::Mark::Signed(slug) = access::mark_of(bundle.as_ref()?) else {
-                return None;
-            };
-            let digest = match fetched_sha256.as_deref() {
+        run_connections(manifest, &policy, bundle.as_ref(), || {
+            Some(match fetched_sha256.as_deref() {
                 Some(sha256) => sha256.to_string(),
                 None => krate_bundle::sha256_hex(&std::fs::read(&request.target).ok()?),
-            };
-            Some((slug, digest))
+            })
         })
     };
+    // The person's own data on every device they sign in on (IC-981):
+    // only a person's run of the default profile, never a picture, a
+    // usability check or a scripted task.
+    let account_sync = if profile == "default"
+        && !request.for_screenshot
+        && request.usability_report.is_none()
+        && request.task.is_none()
+    {
+        storage.as_ref().and_then(|principal| {
+            account_sync_context(
+                manifest.map(|m| m.app.id.as_str()).unwrap_or_default(),
+                principal,
+                &principal_store_path_in(&store_home, principal),
+                &policy,
+                &request.sandbox_root,
+            )
+        })
+    } else {
+        None
+    };
     let config = Config {
+        account_sync,
         fuel: request.fuel,
         memory_bytes: memory_mib
             .checked_mul(1024 * 1024)
@@ -16423,6 +18892,9 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // `[runtime] interpreter = true` (IC-949): every app on the
         // portable interpreter, from the policy rather than an environment.
         interpreter: fleet::interpreter(),
+        // What the manifest names, so a program it does not name is refused
+        // as never asked for (krate:process, IC-977).
+        declared_capabilities: declared_set(manifest),
         usability_plan: match (request.usability_report.as_ref(), request.task.as_deref()) {
             (Some(path), task) => Some(krate_runtime::usability::UsabilityPlan {
                 report_path: path.clone(),
@@ -16454,6 +18926,8 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         Some(AppWorld::Phase3Gui) => RuntimeWorld::Gui,
         None => RuntimeWorld::Auto,
     };
+    // A command-line app has no window to hear Ctrl-C through (K-1181).
+    let _ctrl_c = (runtime_world == RuntimeWorld::Cli).then(CtrlCWatch::start);
 
     if request.json {
         let started = std::time::Instant::now();
@@ -16479,6 +18953,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     RunJsonExit::failure("no-matching-world", &message),
                     Vec::new(),
                     2,
+                ),
+                Err(RuntimeError::Trap(_)) if pressed_ctrl_c() => (
+                    RunJsonExit::failure("interrupted", "stopped: you pressed Ctrl-C"),
+                    Vec::new(),
+                    CTRL_C_EXIT,
                 ),
                 Err(RuntimeError::Trap(message)) => {
                     (RunJsonExit::failure("trap", &message), Vec::new(), 3)
@@ -16541,6 +19020,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             eprintln!("this component fits no Krate world: {message}");
             Ok(2)
         }
+        Err(RuntimeError::Trap(_)) if pressed_ctrl_c() => Ok(stopped_by_ctrl_c()),
         Err(RuntimeError::Trap(message)) => {
             eprintln!("trap: {message}");
             Ok(3)
@@ -16853,6 +19333,8 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
     if !krate_bundle::is_url(&raw) {
         return Ok(bundle.to_path_buf());
     }
+    // A Player address copied from a browser opens the same app (K-1166).
+    let raw = org::bundle_address(&raw).into_owned();
     let dir = home_dir()
         .map(|home| home.join(".krate/cloud"))
         .context("no home directory")?;
@@ -17591,6 +20073,7 @@ fn principal_kind(principal: &StoragePrincipal) -> &'static str {
         StoragePrincipal::Verified { .. } => "verified",
         StoragePrincipal::Unverified { .. } => "unverified",
         StoragePrincipal::Development { .. } => "development",
+        StoragePrincipal::HubOwned { .. } => "hub-account",
     }
 }
 
@@ -17981,6 +20464,36 @@ fn install_name_part(name: &str) -> String {
     }
 }
 
+/// Swap a finished install into place (IC-278): the old app exists until
+/// this moment and is replaced by a complete one, so there is no instant at
+/// which the person has neither.
+///
+/// The old directory is moved aside first rather than deleted, so a failed
+/// rename still leaves something to put back; it is removed only once the
+/// new one is in place. One function for the Mac wrapper and the Linux
+/// payload, so the two cannot drift: Linux used to copy straight over the
+/// installed app, and an interrupted update left it half-written.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn publish_staged(staging: &Path, target: &Path, previous: &Path) -> Result<()> {
+    let _ = fs::remove_dir_all(previous);
+    let had_previous = target.exists();
+    if had_previous {
+        fs::rename(target, previous)
+            .with_context(|| format!("setting aside the installed {}", target.display()))?;
+    }
+    if let Err(err) = fs::rename(staging, target) {
+        // Put the old one back before reporting, or a failure here would
+        // itself be the thing that loses the app.
+        if had_previous {
+            let _ = fs::rename(previous, target);
+        }
+        let _ = fs::remove_dir_all(staging);
+        return Err(err).with_context(|| format!("installing {}", target.display()));
+    }
+    let _ = fs::remove_dir_all(previous);
+    Ok(())
+}
+
 /// The wrapper builder `install` and `launch` share: returns the .app it
 /// made, prints nothing.
 #[cfg(target_os = "macos")]
@@ -18099,6 +20612,12 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <string>{name} asked to turn speech into text. Apple's recognizer does it, on this Mac where it can.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>{name} asked to add a picture to your Photos, and you allowed it in Krate's permission window.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>{name} asked to reach a Bluetooth device, and you allowed it in Krate's permission window. It reaches only the device you pick.</string>
 {icon_entry}</dict>
 </plist>
 "#,
@@ -18147,30 +20666,9 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
         .stderr(std::process::Stdio::null())
         .status();
 
-    // Everything is written. Swap the finished wrapper into place: the old
-    // app exists until this moment and is replaced by a complete one, so
-    // there is no instant at which the person has neither.
-    //
-    // The old directory is moved aside first rather than deleted, so a
-    // failed rename still leaves something to put back; it is removed only
-    // once the new one is in place.
+    // Everything is written. Swap the finished wrapper into place.
     let previous = prefix.join(format!(".{}.replaced", install_directory_name(&opened)));
-    let _ = fs::remove_dir_all(&previous);
-    let had_previous = app_dir.exists();
-    if had_previous {
-        fs::rename(&app_dir, &previous)
-            .with_context(|| format!("setting aside the installed {}", app_dir.display()))?;
-    }
-    if let Err(err) = fs::rename(&staging, &app_dir) {
-        // Put the old one back before reporting, or a failure here would
-        // itself be the thing that loses the app.
-        if had_previous {
-            let _ = fs::rename(&previous, &app_dir);
-        }
-        let _ = fs::remove_dir_all(&staging);
-        return Err(err).with_context(|| format!("installing {}", app_dir.display()));
-    }
-    let _ = fs::remove_dir_all(&previous);
+    publish_staged(&staging, &app_dir, &previous)?;
 
     // Tell Launch Services, so it appears in Launchpad and Spotlight now
     // rather than whenever the system next rescans.
@@ -18217,31 +20715,42 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
         println!("{}", desktop_path.display());
         return Ok(0);
     }
-    fs::create_dir_all(&app_dir)?;
-    let payload = app_dir.join("app.krate");
-    fs::copy(bundle_path, &payload)?;
+    // Built beside the installed app and swapped in, never written over it
+    // (IC-278): a full disk or a killed terminal halfway through an update
+    // used to leave a half-copied payload where a working app had been.
+    let apps = data.join("krate/apps");
+    let staging = apps.join(format!(".{slug}.installing"));
+    let _ = fs::remove_dir_all(&staging);
+    fs::create_dir_all(&staging)?;
+    fs::copy(bundle_path, staging.join("app.krate"))
+        .with_context(|| format!("copying the app into {}", staging.display()))?;
 
     // The app's own icon when it ships one, the Krate mark otherwise; the
     // desktop entry takes an absolute path, so no theme install is needed.
-    let icon_path = app_dir.join("icon.png");
     let mut have_icon = false;
     if let Some(icon) = opened
         .assets_path()
         .map(|assets| assets.join("icon.png"))
         .filter(|path| path.is_file())
     {
-        have_icon = fs::copy(&icon, &icon_path).is_ok();
+        have_icon = fs::copy(&icon, staging.join("icon.png")).is_ok();
     }
     if !have_icon {
         if let Some(mark) = krate_icon_png_source() {
-            have_icon = fs::copy(mark, &icon_path).is_ok();
+            have_icon = fs::copy(mark, staging.join("icon.png")).is_ok();
         }
     }
+    publish_staged(&staging, &app_dir, &apps.join(format!(".{slug}.replaced")))?;
+    let payload = app_dir.join("app.krate");
+    let icon_path = app_dir.join("icon.png");
 
     let engine = current_engine_path()?;
     fs::create_dir_all(desktop_path.parent().expect("applications dir"))?;
+    // Written whole and renamed into place, so the menu never reads half an
+    // entry. The temporary name does not end in .desktop, so no menu lists it.
+    let desktop_tmp = desktop_path.with_extension("desktop.tmp");
     fs::write(
-        &desktop_path,
+        &desktop_tmp,
         format!(
             "[Desktop Entry]\nType=Application\nName={name}\nComment=Made with Krate\nExec={exec}\nTerminal=false\nCategories=Utility;\n{icon}",
             name = desktop_value(&name),
@@ -18257,6 +20766,8 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
             },
         ),
     )?;
+    fs::rename(&desktop_tmp, &desktop_path)
+        .with_context(|| format!("adding {} to the app menu", desktop_path.display()))?;
     // Refresh the menu database where the tool exists; missing it only means
     // the entry appears after the next session.
     let _ = std::process::Command::new("update-desktop-database")
@@ -18502,6 +21013,22 @@ fn open_studio() -> bool {
         .unwrap_or(false)
 }
 
+/// The Info.plist keys macOS reads before an app may reach a piece of
+/// hardware (IC-982). Every bundle Krate writes for an app to run in carries
+/// all of them; the runtime and the macOS adapter check the one they need
+/// before touching the framework, and answer unavailable without it. The
+/// tests below hold every bundle writer to this list.
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) const HARDWARE_USAGE_KEYS: [&str; 7] = [
+    "NSCameraUsageDescription",
+    "NSMicrophoneUsageDescription",
+    "NSSpeechRecognitionUsageDescription",
+    "NSPhotoLibraryAddUsageDescription",
+    "NSLocationWhenInUseUsageDescription",
+    "NSLocationUsageDescription",
+    "NSBluetoothAlwaysUsageDescription",
+];
+
 /// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
 /// us to open, then run it through the ordinary consent + native-window flow.
 /// The sandbox root is the folder the `.krate` sits in, so an app that writes
@@ -18566,6 +21093,18 @@ fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Resu
          \u{20}   <key>NSSpeechRecognitionUsageDescription</key>\n\
          \u{20}   <string>{name} asked to turn speech into text. Apple's recognizer does \
          it, on this Mac where it can.</string>\n\
+         \u{20}   <key>NSPhotoLibraryAddUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to add a picture to your Photos, and you allowed it \
+         in Krate's permission window.</string>\n\
+         \u{20}   <key>NSLocationWhenInUseUsageDescription</key>\n\
+         \u{20}   <string>{name} asked where you are, and you allowed it in Krate's \
+         permission window. It is told only while it is open.</string>\n\
+         \u{20}   <key>NSLocationUsageDescription</key>\n\
+         \u{20}   <string>{name} asked where you are, and you allowed it in Krate's \
+         permission window. It is told only while it is open.</string>\n\
+         \u{20}   <key>NSBluetoothAlwaysUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to reach a Bluetooth device, and you allowed it \
+         in Krate's permission window. It reaches only the device you pick.</string>\n\
          </dict>\n</plist>\n"
     );
     fs::write(app.join("Contents/Info.plist"), plist)?;
@@ -18764,11 +21303,12 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
 
 /// Where an opened app's own files live.
 ///
-/// A loose `.krate` keeps the folder it sits in, as it always has. An
-/// installed app's payload sits inside its signed `.app`, and writing there
-/// broke the signature and lost everything on the next install, which swaps
-/// in a fresh `.app` (K-1076). Its files live in a folder of their own
+/// An installed app's payload sits inside its signed `.app`, and writing
+/// there broke the signature and lost everything on the next install, which
+/// swaps in a fresh `.app` (K-1076). Its files live in a folder of their own
 /// instead, keyed by the app's id so a newer version finds them (IC-943).
+/// A loose `.krate` someone opened gets the same folder (K-1222): the one
+/// beside it holds the person's other things too.
 #[cfg(target_os = "macos")]
 fn opened_app_sandbox_root(target: &Path) -> PathBuf {
     let beside = target
@@ -18776,31 +21316,500 @@ fn opened_app_sandbox_root(target: &Path) -> PathBuf {
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     let Some(resources) = installed_payload_resources(target) else {
+        return own_app_folder(target).unwrap_or(beside);
+    };
+    let (Some(home), Some(principal)) = (home_dir(), bundle_principal(target)) else {
         return beside;
     };
-    let (Some(home), Ok(manifest)) = (home_dir(), krate_bundle::read_manifest(target)) else {
-        return beside;
+    // The installed app is the one its id's folder was made for (IC-943),
+    // so a signed one takes it.
+    let data = match principal_data_folder(&home, &principal, true, maker_key::public().as_deref())
+    {
+        Ok((data, _)) => data,
+        Err(err) => {
+            eprintln!("krate: {err}; this app's files stay beside it");
+            return beside;
+        }
     };
-    let data = installed_app_data_dir(&home, &manifest.app.id);
-    if let Err(err) = fs::create_dir_all(&data) {
-        eprintln!(
-            "krate: could not make {} ({err}); this app's files stay beside it",
-            data.display()
-        );
-        return beside;
-    }
     move_app_files_out_of_the_bundle(resources, &data);
     data
 }
 
-/// The folder an installed app's own files live in (IC-943).
-#[cfg(target_os = "macos")]
-fn installed_app_data_dir(home: &Path, app_id: &str) -> PathBuf {
-    home.join("Library")
-        .join("Application Support")
-        .join("Krate")
-        .join("apps")
-        .join(sanitize_storage_name(app_id))
+/// Who a `.krate` on disk is, as its run will key its store: its publisher
+/// when the signature holds, its id otherwise (`None`: it cannot be read).
+fn bundle_principal(target: &Path) -> Option<StoragePrincipal> {
+    krate_bundle::open(target)
+        .ok()
+        .map(|opened| principal_of(&opened))
+}
+
+/// An app's own folder ([`app_data_dir`]), made if it is not there, and
+/// whether it was just made empty (the caller may bring files in).
+///
+/// A signed app's folder is named for its publisher, as its store is
+/// (K-1253): a file declaring its id under another key, or under none,
+/// opens to a folder of its own. The first time, a signed app takes the
+/// folder its id kept under an older Krate -- moved, once, never copied --
+/// when it is this computer's maker's own app (IC-983, as K-247 moves its
+/// store) or the installed app that folder was made for (IC-943); an
+/// installed unsigned app of this computer's own does the same. Any other
+/// app takes nothing, so a stranger's file reaches no one's files.
+fn principal_data_folder(
+    home: &Path,
+    principal: &StoragePrincipal,
+    installed: bool,
+    maker: Option<&str>,
+) -> std::result::Result<(PathBuf, bool), String> {
+    let data = app_data_dir(home, principal);
+    if data.is_dir() {
+        return Ok((data, false));
+    }
+    let said = |e: std::io::Error| format!("could not make {} ({e})", data.display());
+    // A development key is this computer's, not the author's: any unsigned
+    // file opened here gets it, so only the installed app the old folder
+    // was made for takes it.
+    let heir = match principal {
+        StoragePrincipal::Verified { publisher, app_id }
+            if installed || maker == Some(publisher.as_str()) =>
+        {
+            Some(app_id)
+        }
+        StoragePrincipal::Development { app_id, .. } if installed => Some(app_id),
+        _ => None,
+    };
+    if let Some(app_id) = heir {
+        let old = app_data_dir(
+            home,
+            &StoragePrincipal::Unverified {
+                app_id: app_id.clone(),
+            },
+        );
+        if old.is_dir() {
+            if let Some(parent) = data.parent() {
+                fs::create_dir_all(parent).map_err(said)?;
+            }
+            fs::rename(&old, &data).map_err(said)?;
+            eprintln!(
+                "krate: this app's files moved to {}, a folder only its publisher's apps open",
+                data.display()
+            );
+            return Ok((data, false));
+        }
+    }
+    fs::create_dir_all(&data).map_err(said)?;
+    Ok((data, true))
+}
+
+/// The folder an app's own files live in on this computer, the app's alone
+/// (IC-943, K-1222): `~/Library/Application Support/Krate/apps/<id>` on a
+/// Mac, `%APPDATA%\Krate\apps\<id>` on Windows, and
+/// `$XDG_DATA_HOME/krate/app-data/<id>` (`~/.local/share/...`) elsewhere --
+/// apart from `krate/apps`, where Linux keeps the installed apps themselves.
+/// Keyed by who the app is, as its store and a phone's folder are
+/// (K-1253): `<id>@<publisher>` for a signed app, its id for an unsigned one.
+/// So the same app finds its files whether it was opened from a file or
+/// installed, and its files can follow the person to their other devices
+/// (IC-981 S3).
+fn app_data_dir(home: &Path, principal: &StoragePrincipal) -> PathBuf {
+    // Already directory-safe: every principal's key is sanitized.
+    let id = principal.storage_key();
+    if cfg!(target_os = "macos") {
+        return home
+            .join("Library")
+            .join("Application Support")
+            .join("Krate")
+            .join("apps")
+            .join(id);
+    }
+    if cfg!(windows) {
+        let roaming = std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| home.join("AppData").join("Roaming"));
+        return roaming.join("Krate").join("apps").join(id);
+    }
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| home.join(".local").join("share"));
+    data.join("krate").join("app-data").join(id)
+}
+
+/// The folder an app opened from `target` (a `.krate`) keeps its files in:
+/// its own ([`app_data_dir`]), made the first time. That first time, the
+/// files it saved beside the `.krate` under an older Krate are copied in
+/// ([`bring_files_in`]) -- copied, never moved, so nothing of the person's is
+/// touched. `None` when the bundle cannot be read or the folder made: the
+/// caller keeps the old place, and says so.
+fn own_app_folder(target: &Path) -> Option<PathBuf> {
+    let manifest = krate_bundle::read_manifest(target).ok()?;
+    let principal = bundle_principal(target)?;
+    let home = home_dir()?;
+    let beside = target.parent().map(Path::to_path_buf)?;
+    let data = match principal_data_folder(&home, &principal, false, maker_key::public().as_deref())
+    {
+        Ok((data, false)) => return Some(data),
+        Ok((data, true)) => data,
+        Err(err) => {
+            eprintln!("krate: {err}; this app's files stay beside it");
+            return None;
+        }
+    };
+    let brought = bring_files_in(&beside, &data, &manifest);
+    if let Some(words) = brought.words(&manifest.app.name, &data, target) {
+        eprintln!("krate: {words}");
+    }
+    Some(data)
+}
+
+/// What [`bring_files_in`] did.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Brought {
+    copied: usize,
+    /// The app may write anywhere in the folder beside it: nothing there is
+    /// knowably its own, so nothing is copied.
+    whole_folder: bool,
+    /// Past the limits: the rest stay where they are.
+    left: usize,
+}
+
+impl Brought {
+    fn words(&self, name: &str, data: &Path, target: &Path) -> Option<String> {
+        let file = target
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if self.whole_folder {
+            return Some(format!(
+                "{name} now keeps its files in {}. Anything it saved beside {file} before stays \
+                 where it is.",
+                data.display()
+            ));
+        }
+        if self.copied == 0 {
+            return None;
+        }
+        let mut words = format!(
+            "{name} now keeps its files in {}. The {} it saved beside {file} {} copied there; \
+             the originals are where they were.",
+            data.display(),
+            if self.copied == 1 {
+                "file".to_string()
+            } else {
+                format!("{} files", self.copied)
+            },
+            if self.copied == 1 { "was" } else { "were" }
+        );
+        if self.left > 0 {
+            words.push_str(&format!(" {} more stay there only.", self.left));
+        }
+        Some(words)
+    }
+}
+
+/// The most files, and bytes, the first open copies in; and the most
+/// entries it looks at in the folder beside the app.
+const BRING_MAX_FILES: usize = 2000;
+const BRING_MAX_BYTES: u64 = 256 * 1024 * 1024;
+const BRING_MAX_LOOKED: usize = 20_000;
+
+/// Copy into `data` the files beside a `.krate` that the app could have
+/// written there: those its `fs.write` permissions cover, judged by the very
+/// rule the run uses. Regular files only (never a link), never over a file
+/// already in `data`. An app allowed to write anywhere in the folder brings
+/// nothing: the folder is the person's, and none of it is knowably the
+/// app's.
+fn bring_files_in(beside: &Path, data: &Path, manifest: &krate_manifest::Manifest) -> Brought {
+    let mut out = Brought::default();
+    let writes: Vec<krate_manifest::Capability> = manifest
+        .declared_capabilities()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| c.module() == "fs" && c.action() == "write")
+        .collect();
+    if writes.is_empty() {
+        return out;
+    }
+    let policy = krate_policy::SessionPolicy::from_grants(writes);
+    let may_write = |rel: &str| {
+        krate_manifest::Capability::new("fs", "write", Some(rel))
+            .is_ok_and(|capability| policy.allows(&capability))
+    };
+    // A name no app would choose: covered, the permission is the folder.
+    if may_write("krate-any-file-probe-2f9c.bin") {
+        out.whole_folder = true;
+        return out;
+    }
+    let mut bytes = 0u64;
+    let mut looked = 0usize;
+    let mut stack = vec![(beside.to_path_buf(), String::new(), 0usize)];
+    while let Some((dir, prefix, depth)) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            looked += 1;
+            if looked > BRING_MAX_LOOKED {
+                return out;
+            }
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            let rel = if prefix.is_empty() {
+                name
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let Ok(meta) = entry.path().symlink_metadata() else {
+                continue;
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                if depth < 16 && entry.path() != data {
+                    stack.push((entry.path(), rel, depth + 1));
+                }
+                continue;
+            }
+            if !meta.is_file() || !may_write(&rel) {
+                continue;
+            }
+            let destination = data.join(&rel);
+            if destination.symlink_metadata().is_ok() {
+                continue;
+            }
+            if out.copied >= BRING_MAX_FILES || bytes + meta.len() > BRING_MAX_BYTES {
+                out.left += 1;
+                continue;
+            }
+            let copied = destination
+                .parent()
+                .map(fs::create_dir_all)
+                .unwrap_or(Ok(()))
+                .and_then(|()| fs::copy(entry.path(), &destination));
+            match copied {
+                Ok(_) => {
+                    out.copied += 1;
+                    bytes += meta.len();
+                }
+                Err(err) => eprintln!(
+                    "krate: could not copy {} to {} ({err})",
+                    entry.path().display(),
+                    destination.display()
+                ),
+            }
+        }
+    }
+    out
+}
+
+/// The folder a person's run of `target` keeps its files in, when nobody
+/// named one: a `.krate` opened by a person (`--consent`: a double-click, a
+/// launcher, an installed app) gets its own folder on every OS (K-1222);
+/// anything else -- a developer's `krate run` of a project -- the current
+/// folder, as before.
+fn default_sandbox_root(target: &str, consent: bool) -> PathBuf {
+    let path = Path::new(target);
+    let opened_bundle =
+        consent && path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("krate");
+    if !opened_bundle {
+        return PathBuf::from(".");
+    }
+    #[cfg(target_os = "macos")]
+    {
+        opened_app_sandbox_root(path)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        own_app_folder(path).unwrap_or_else(|| {
+            path.parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+    }
+}
+
+#[cfg(test)]
+mod app_data_folder_tests {
+    use super::*;
+
+    fn manifest(writes: &str) -> krate_manifest::Manifest {
+        krate_manifest::Manifest::parse(&format!(
+            "[app]\nid = \"dev.krate.notes\"\nname = \"Notes\"\nversion = \"0.1.0\"\n\
+             entry = \"app.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+             [[capabilities]]\ncap = \"fs.write:{writes}\"\nrationale = \"Save\"\nrequired = true\n"
+        ))
+        .expect("a manifest")
+    }
+
+    fn write(dir: &Path, rel: &str, text: &str) {
+        let path = dir.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    /// The first open copies in what the app saved beside its file -- only
+    /// what its permission covers, never the person's other files, never
+    /// over a file already there -- and leaves every original in place.
+    #[test]
+    fn the_first_open_copies_in_only_the_apps_own_files() {
+        let root = tempfile::tempdir().unwrap();
+        let beside = root.path().join("Downloads");
+        write(&beside, "notes/today.md", "dear diary");
+        write(&beside, "notes/trips/rome.md", "colosseum");
+        write(&beside, "tax-return.pdf", "the person's own");
+        write(&beside, "other/notes/x.md", "not the app's");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(beside.join("tax-return.pdf"), beside.join("notes/link.md"))
+            .unwrap();
+        let data = root.path().join("data");
+        write(&data, "notes/today.md", "newer, already here");
+
+        let brought = bring_files_in(&beside, &data, &manifest("./notes/**"));
+        assert_eq!(
+            brought,
+            Brought {
+                copied: 1,
+                whole_folder: false,
+                left: 0
+            }
+        );
+        assert_eq!(
+            fs::read_to_string(data.join("notes/trips/rome.md")).unwrap(),
+            "colosseum"
+        );
+        assert_eq!(
+            fs::read_to_string(data.join("notes/today.md")).unwrap(),
+            "newer, already here",
+            "never over a file already there"
+        );
+        assert!(
+            !data.join("tax-return.pdf").exists(),
+            "the person's own stays"
+        );
+        assert!(!data.join("other").exists());
+        assert!(!data.join("notes/link.md").exists(), "never a link");
+        assert!(
+            beside.join("notes/trips/rome.md").exists(),
+            "copied, not moved"
+        );
+        let words = brought
+            .words("Notes", &data, &beside.join("notes.krate"))
+            .unwrap();
+        assert!(
+            words.contains("The file it saved beside notes.krate was copied there"),
+            "{words}"
+        );
+
+        // An app that may write anywhere in the folder brings nothing.
+        let fresh = root.path().join("fresh");
+        let brought = bring_files_in(&beside, &fresh, &manifest("./**"));
+        assert!(brought.whole_folder && brought.copied == 0);
+        assert!(!fresh.exists());
+        assert!(brought
+            .words("Notes", &fresh, &beside.join("notes.krate"))
+            .unwrap()
+            .contains("stays where it is"));
+    }
+
+    #[test]
+    fn every_desktop_os_names_a_folder_of_the_apps_own() {
+        let home = Path::new("/home/ada");
+        let unsigned = |app_id: &str| StoragePrincipal::Unverified {
+            app_id: app_id.to_string(),
+        };
+        let dir = app_data_dir(home, &unsigned("dev.krate.notes"));
+        assert!(dir.ends_with("dev.krate.notes"));
+        assert_eq!(
+            app_data_dir(home, &unsigned("../../etc")).parent(),
+            dir.parent(),
+            "an id is never a path"
+        );
+        let signed = StoragePrincipal::Verified {
+            publisher: "0123456789abcdef0123".to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert!(
+            app_data_dir(home, &signed).ends_with("dev.krate.notes@0123456789abcdef"),
+            "a signed app's folder is its publisher's (K-1253)"
+        );
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                dir,
+                home.join("Library/Application Support/Krate/apps/dev.krate.notes")
+            );
+        }
+        // A developer's run keeps the current folder; a file that is not a
+        // .krate, or a run nobody consented to, too.
+        assert_eq!(default_sandbox_root("app.wasm", true), PathBuf::from("."));
+        assert_eq!(
+            default_sandbox_root("missing.krate", true),
+            PathBuf::from(".")
+        );
+    }
+}
+
+#[cfg(test)]
+mod principal_folder_tests {
+    use super::*;
+
+    /// K-1253: a signed app's folder is keyed by its publisher. The folder
+    /// its id kept before goes to this computer's maker's own app, or to the
+    /// installed app it was made for, and to nobody else.
+    #[test]
+    fn only_the_apps_own_publisher_takes_the_folder_its_id_kept() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path();
+        // Windows and a Linux with XDG_DATA_HOME set place the folders
+        // outside `home`: a name nothing else uses, removed at the end.
+        let app_id = format!("dev.test.k1253-{}", std::process::id());
+        let unsigned = StoragePrincipal::Unverified {
+            app_id: app_id.clone(),
+        };
+        let signed_by = |publisher: &str| StoragePrincipal::Verified {
+            publisher: publisher.to_string(),
+            app_id: app_id.clone(),
+        };
+        let maker = "aaaaaaaaaaaaaaaa1111";
+        let stranger = "bbbbbbbbbbbbbbbb2222";
+        let id_folder = app_data_dir(home, &unsigned);
+        let fill = || {
+            fs::create_dir_all(&id_folder).unwrap();
+            fs::write(id_folder.join("diary.md"), "mine").unwrap();
+        };
+
+        // A stranger's signed file declaring the id takes nothing.
+        fill();
+        let (theirs, fresh) =
+            principal_data_folder(home, &signed_by(stranger), false, Some(maker)).unwrap();
+        assert!(fresh && !theirs.join("diary.md").exists());
+        assert!(id_folder.join("diary.md").exists(), "left where it was");
+
+        // The maker's own signed build moves it, once.
+        let (mine, fresh) =
+            principal_data_folder(home, &signed_by(maker), false, Some(maker)).unwrap();
+        assert!(!fresh);
+        assert_eq!(fs::read_to_string(mine.join("diary.md")).unwrap(), "mine");
+        assert!(!id_folder.exists(), "moved, not copied");
+
+        // An unsigned file declaring the id now opens to an empty folder.
+        let (bare, fresh) = principal_data_folder(home, &unsigned, false, Some(maker)).unwrap();
+        assert!(fresh && bare == id_folder && !bare.join("diary.md").exists());
+        fs::remove_dir_all(&bare).unwrap();
+
+        // The installed app the id's folder was made for takes it, signed
+        // by whoever published it.
+        let third = "cccccccccccccccc3333";
+        fill();
+        let (installed, fresh) =
+            principal_data_folder(home, &signed_by(third), true, None).unwrap();
+        assert!(!fresh && installed.join("diary.md").exists());
+
+        for folder in [theirs, mine, installed] {
+            let _ = fs::remove_dir_all(folder);
+        }
+    }
 }
 
 /// `<App>.app/Contents/Resources` when `target` is an installed payload,
@@ -18895,10 +21904,7 @@ fn spawn_open_run(path: &Path) {
         // not show than no attempt at all.
     }
 
-    let sandbox_root = path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let sandbox_root = opened_app_sandbox_root(path);
     let _ = ProcessCommand::new(exe)
         .arg("run")
         .arg(path)
@@ -19562,7 +22568,11 @@ fn print_effective_capabilities(
         println!("Signature");
         println!("  - none: nobody has signed this app");
         if let Some(principal) = &storage {
-            if principal.is_isolated() {
+            if let StoragePrincipal::HubOwned { .. } = principal {
+                println!(
+                    "  - its saved data is kept under the account that published it on the hub"
+                );
+            } else if principal.is_isolated() {
                 println!("  - its saved data is kept under this machine");
             } else {
                 println!("  - its saved data is shared with anything claiming the same app id");
@@ -20095,6 +23105,227 @@ struct CheckFailure {
     fix: String,
 }
 
+impl CheckFailure {
+    fn kind(&self) -> FailureKind {
+        failure_kind(self.stage, &self.detail)
+    }
+}
+
+/// What KIND of failure a check found. The stage says where it failed; the
+/// kind says who can fix it, and so what the agent is asked to do and what
+/// the person is told.
+///
+/// Without it every failure reached the agent framed as a code edit. A
+/// build the sandbox refused -- "Operation not permitted" writing the build
+/// cache -- went back to the agent as "fix the compiler errors above" when
+/// it compiled, and it spent a whole budget hunting for an override that
+/// could not work (K-763). A permission denial on any folder but one named
+/// `cache` still did, and a manifest entry that named the wrong file came
+/// back as "a capability it needs is not declared", which real Studio
+/// agents then chased.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FailureKind {
+    /// The app's files, or its manifest's shape, are not what a Krate app's
+    /// are.
+    Project,
+    /// The code does not compile.
+    Compile,
+    /// This computer refused the build: a sandbox or permission denied a
+    /// write, the disk is full, or a build tool is missing. Nothing in the
+    /// app causes it, so no edit to the app can fix it.
+    Environment,
+    /// It compiles, but the built app imports host APIs Krate does not give.
+    Imports,
+    /// The manifest and the code disagree about what the app may touch.
+    Capability,
+    /// It builds and starts, and fails when Krate uses it.
+    Test,
+    /// It ran past its time or work budget.
+    Timeout,
+}
+
+impl FailureKind {
+    /// The label machine readers get (`check-app --json`'s `kind`).
+    fn label(self) -> &'static str {
+        match self {
+            FailureKind::Project => "project",
+            FailureKind::Compile => "compile",
+            FailureKind::Environment => "environment",
+            FailureKind::Imports => "imports",
+            FailureKind::Capability => "capability",
+            FailureKind::Test => "test",
+            FailureKind::Timeout => "timeout",
+        }
+    }
+
+    /// One line under "FAILED at <stage>" saying what sort of problem this is.
+    fn headline(self) -> &'static str {
+        match self {
+            FailureKind::Project => {
+                "The app's files, or what manifest.toml says about them, are wrong -- not a \
+                 compiler error, and not a missing capability."
+            }
+            FailureKind::Compile => "The code does not compile.",
+            FailureKind::Environment => {
+                "This computer refused the build -- not a compiler error. Nothing in the \
+                 app's code causes it, and no edit to the code will fix it."
+            }
+            FailureKind::Imports => {
+                "The code compiles, but the built app reaches for host APIs Krate does not \
+                 provide. There are no compiler errors to fix."
+            }
+            FailureKind::Capability => {
+                "The code compiles, but the app and its manifest.toml disagree about what \
+                 it may touch."
+            }
+            FailureKind::Test => {
+                "The code compiles and the app starts; it fails when Krate uses it the way \
+                 a person would."
+            }
+            FailureKind::Timeout => "The code compiles; the app ran past its time or work budget.",
+        }
+    }
+
+    /// What the agent is told to do, ahead of the check's own detail and fix.
+    /// None for a failure no edit can fix: the agent is not asked at all.
+    fn agent_instruction(self) -> Option<&'static str> {
+        Some(match self {
+            FailureKind::Project => {
+                "The app's files or its manifest's shape are wrong. Put them right as the \
+                 fix says; the code itself may be fine."
+            }
+            FailureKind::Compile => {
+                "The code does not compile. Fix the compiler errors named below -- change \
+                 the lines they point at, nothing else."
+            }
+            FailureKind::Environment => return None,
+            FailureKind::Imports => {
+                "The code compiles. It fails because the built app imports host APIs Krate \
+                 does not provide, so there are NO compiler errors to fix: remove what pulls \
+                 those imports in, as the fix says."
+            }
+            FailureKind::Capability => {
+                "The code compiles. It fails because the app and its manifest.toml disagree \
+                 about what it may touch. The change is in manifest.toml (or in no longer \
+                 using that capability), not in how the app works, and not in compiler errors \
+                 -- there are none."
+            }
+            FailureKind::Test => {
+                "The code compiles and the app starts. It fails when Krate uses it the way a \
+                 person would. Fix the behaviour named below; the build itself is fine."
+            }
+            FailureKind::Timeout => {
+                "The code compiles. The app ran past its time or work budget: make it do less \
+                 work per frame, and do the work once and exit when it is started with `quick`."
+            }
+        })
+    }
+
+    /// The first thing the person reads when a build ends on this failure.
+    fn person_words(self) -> &'static str {
+        match self {
+            FailureKind::Project | FailureKind::Compile => {
+                "The app the AI wrote does not build yet."
+            }
+            FailureKind::Environment => {
+                "This computer stopped Krate from building the app. That is not a fault in \
+                 the app's code, so Krate did not ask the AI to change it."
+            }
+            FailureKind::Imports => {
+                "The app the AI wrote builds, but it reaches for parts of the computer Krate \
+                 does not give apps."
+            }
+            FailureKind::Capability => {
+                "The app the AI wrote builds, but it does not ask for what it uses."
+            }
+            FailureKind::Test => {
+                "The app the AI wrote builds and opens, but it did not work when Krate tried it."
+            }
+            FailureKind::Timeout => {
+                "The app the AI wrote builds, but it ran too long when Krate tried it."
+            }
+        }
+    }
+}
+
+/// Classify a check failure from its stage and its own words.
+fn failure_kind(stage: CheckStage, detail: &str) -> FailureKind {
+    let lower = detail.to_lowercase();
+    match stage {
+        CheckStage::Layout => FailureKind::Project,
+        CheckStage::Manifest if lower.contains("capabilit") || lower.contains("asks for") => {
+            FailureKind::Capability
+        }
+        CheckStage::Manifest => FailureKind::Project,
+        CheckStage::Build if build_refused_by_machine(detail) => FailureKind::Environment,
+        CheckStage::Build if lower.starts_with("could not read the built component") => {
+            FailureKind::Environment
+        }
+        CheckStage::Build => FailureKind::Compile,
+        CheckStage::Imports => FailureKind::Imports,
+        _ if lower.starts_with("could not ")
+            && (lower.contains("scratch dir") || lower.contains("could not run the app")) =>
+        {
+            FailureKind::Environment
+        }
+        _ if lower.contains("(exit 4)")
+            || lower.contains("fuel")
+            || lower.contains("timed out")
+            || lower.contains("time limit") =>
+        {
+            FailureKind::Timeout
+        }
+        CheckStage::Run if lower.contains("manifest entry") => FailureKind::Project,
+        CheckStage::Run if lower.contains("(exit 5)") => FailureKind::Capability,
+        _ => FailureKind::Test,
+    }
+}
+
+/// Whether a failed build was refused by the machine rather than the
+/// compiler: a sandbox or permission denial, a read-only or full disk, or
+/// no C compiler for a crate that needs one. Matched on the operating
+/// system's own words and error numbers, never on a folder's name -- the
+/// first cut only knew a denial under a folder called `cache`, so the same
+/// denial anywhere else was still sent to the agent as compiler errors.
+fn build_refused_by_machine(detail: &str) -> bool {
+    const SIGNS: &[&str] = &[
+        "Operation not permitted",
+        "(os error 1)",
+        "Permission denied",
+        "(os error 13)",
+        "Access is denied",
+        "(os error 5)",
+        "Read-only file system",
+        "(os error 30)",
+        "No space left on device",
+        "(os error 28)",
+        "There is not enough space on the disk",
+        "(os error 112)",
+        "Disk quota exceeded",
+    ];
+    // A rustc error code means the compiler ran and judged the code; an
+    // app's own text ("Permission denied" on a label) quoted in that error
+    // must not turn it into the machine's fault.
+    if detail.contains("error[E") {
+        return false;
+    }
+    SIGNS.iter().any(|sign| detail.contains(sign)) || wasi_sdk::explain_c_failure(detail).is_some()
+}
+
+/// The path a refused write named, when the error says which.
+fn refused_path(detail: &str) -> Option<String> {
+    for (open, close) in [("at path \"", '"'), ("directory `", '`'), ("file `", '`')] {
+        if let Some(at) = detail.find(open) {
+            let rest = &detail[at + open.len()..];
+            if let Some(end) = rest.find(close) {
+                return Some(rest[..end].to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Put the `krate` dependency back into a `#![no_std]` app that lost it.
 ///
 /// Returns whether it changed anything. This is a repair, not a check, and it
@@ -20185,21 +23416,14 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
 
     for request in &manifest.capabilities {
         let cap = request.cap.to_string();
-        let (family, scope) = match cap.split_once(':') {
-            Some((f, s)) => (f, Some(s)),
-            None => (cap.as_str(), None),
-        };
+        let family = cap.split_once(':').map_or(cap.as_str(), |(f, _)| f);
 
-        // Rule 1: unscoped fs globs.
-        if family.starts_with("fs.") {
-            let bare = scope
-                .map(|s| s.trim_start_matches("./").trim_start_matches('/'))
-                .unwrap_or("");
-            if bare == "**" || bare == "*" || bare.is_empty() {
-                return Some(format!(
-                    "the manifest asks for {cap}, which reads as everything. The sandbox contains it, but a person cannot tell -- and an app wide open on paper fails the permission wall even when the runtime holds"
-                ));
-            }
+        // Rule 1: unscoped fs globs. The same rule `plan` holds its needs
+        // to, so it never offers a permission this refuses (K-764).
+        if fs_scope_reads_as_everything(&cap) {
+            return Some(format!(
+                "the manifest asks for {cap}, which reads as everything. The sandbox contains it, but a person cannot tell -- and an app wide open on paper fails the permission wall even when the runtime holds"
+            ));
         }
 
         // Rule 2: a family whose interface the component never imports.
@@ -20220,6 +23444,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "photos.add" => Some(":ui/photos"),
             "ui.dialog" => Some(":ui/dialog"),
             "ui.clipboard" => Some(":ui/clipboard"),
+            "process.run" | "process.terminal" => Some(":process/"),
             // System and always-on families carry no signal here.
             _ => None,
         };
@@ -20327,22 +23552,41 @@ fn build_fix(detail: &str) -> String {
     //
     // Named here with the one override that IS honoured. A person hitting
     // this outside an agent gets the same sentence, which is still true.
-    if detail.contains("Operation not permitted")
-        || detail.contains("os error 1)")
-        || (detail.contains("Permission denied") && detail.contains("cache"))
-    {
-        return "The build could not WRITE to its cache -- this is a \
-                permission problem, not a compiler error, and nothing in the \
-                app's code will fix it.\n\
-                It usually means the build is running inside a sandbox that \
-                only allows writes under the project directory, while the \
-                shared dependency cache lives under your home directory.\n\
-                Set CARGO_TARGET_DIR to a path inside the project and build \
-                again, for example:\n\
-                \u{20}\u{20}CARGO_TARGET_DIR=./target krate check-app .\n\
-                KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME are NOT read \
-                by this build; CARGO_TARGET_DIR is the one that works."
-            .to_string();
+    //
+    // Any refusal by the machine, not only one under a folder named
+    // `cache`: "Permission denied (os error 13)" on a target folder
+    // anywhere else still came back as "fix the compiler errors above".
+    if build_refused_by_machine(detail) {
+        let path = refused_path(detail)
+            .map(|path| format!(" ({path})"))
+            .unwrap_or_default();
+        if [
+            "No space left on device",
+            "(os error 28)",
+            "not enough space",
+            "quota",
+        ]
+        .iter()
+        .any(|sign| detail.contains(sign))
+        {
+            return format!(
+                "The disk is full{path} -- this is not a compiler error, and nothing in the \
+                 app's code will fix it. Free some space, then build again."
+            );
+        }
+        return format!(
+            "The build could not WRITE where it needed to{path} -- this is a \
+             permission problem, not a compiler error, and nothing in the \
+             app's code will fix it.\n\
+             It usually means the build is running inside a sandbox that \
+             only allows writes under the project directory, while the \
+             shared dependency cache lives under your home directory.\n\
+             Set CARGO_TARGET_DIR to a path inside the project and build \
+             again, for example:\n\
+             \u{20}\u{20}CARGO_TARGET_DIR=./target krate check-app .\n\
+             KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME are NOT read \
+             by this build; CARGO_TARGET_DIR is the one that works."
+        );
     }
     // The no_std guest with no SDK. rustc reports the missing lang items one at
     // a time, so match any of them rather than one exact string.
@@ -20478,15 +23722,27 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
         None
     };
     let outcome = run_check_app(dir, shoot, no_run);
-    if let Some(secs) = pace_note {
+    if std::env::var_os("KRATE_CHECK_TIMING").is_some() {
+        let times = check_stage_times()
+            .iter()
+            .map(|(stage, ms)| format!("{stage} {ms}ms"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("timing: {times}");
+    }
+    // A reused pass cost well under a second; the pace arithmetic is about
+    // checks that ran the app again.
+    let reused = matches!(&outcome, Ok(summary) if summary.reused_secs.is_some());
+    if let Some(secs) = pace_note.filter(|_| !reused) {
         if !json {
             println!(
-                "  pace: this is your second full check in {secs}s. Iterate with                  `check-app . --no-run` (about 2s) and save the full check for when                  you believe the app is done -- full checks this frequent are the                  single biggest time cost in authoring."
+                "  pace: this is your second full check in {secs}s. Iterate with `check-app . --no-run` (about 2s) and save the full check for when you believe the app is done -- full checks this frequent are the single biggest time cost in authoring."
             );
         }
     }
     match &outcome {
         Ok(summary) => {
+            let link = link_notes(dir);
             if json {
                 println!(
                     "{}",
@@ -20497,13 +23753,20 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "imports": summary.imports,
                         "shoot": summary.shoot.as_ref().map(|p| p.display().to_string()),
                         "usability_notes": summary.usability_notes,
+                        "link_notes": link,
                         "source_changes": summary.source_changes,
+                        "reused_pass_secs": summary.reused_secs,
                     })
                 );
             } else {
                 println!("OK");
                 for stage in &summary.passed {
                     println!("  {stage} passed");
+                }
+                if let Some(age) = summary.reused_secs {
+                    println!(
+                        "  note: these exact bytes passed a full check {age}s ago, so the app was not run again to re-prove run, usability and phone. Any change to the code, manifest, assets or krate-check.toml runs everything again."
+                    );
                 }
                 if let Some(shot) = &summary.shoot {
                     println!("  wrote {}", shot.display());
@@ -20512,6 +23775,9 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                 // is: these are the usability checks that could not be made on
                 // this app, not ones it passed.
                 for note in &summary.usability_notes {
+                    println!("  note: {note}");
+                }
+                for note in &link {
                     println!("  note: {note}");
                 }
             }
@@ -20525,12 +23791,14 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "ok": false,
                         "dir": dir.display().to_string(),
                         "stage": failure.stage.label(),
+                        "kind": failure.kind().label(),
                         "detail": failure.detail,
                         "fix": failure.fix,
                     })
                 );
             } else {
                 eprintln!("FAILED at {}", failure.stage.label());
+                eprintln!("{}", failure.kind().headline());
                 eprintln!();
                 eprintln!("{}", failure.detail.trim_end());
                 if !failure.fix.is_empty() {
@@ -20545,6 +23813,38 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
 }
 
 /// What a passing `check-app` recorded, for the OK summary.
+/// What an app asks for that a browser tab cannot give yet (IC-974), from
+/// the same list the Player's consent card reads
+/// (`Capability::works_in_a_tab`). A note, not a failure: the app still
+/// opens from a link and says plainly when it reaches that part. Said so an
+/// author knows before a person on a phone finds out.
+fn link_notes(dir: &Path) -> Vec<String> {
+    let Ok(manifest) = krate_manifest::Manifest::parse_file(dir.join("manifest.toml")) else {
+        return Vec::new();
+    };
+    let mut missing: Vec<String> = Vec::new();
+    for request in &manifest.capabilities {
+        let Ok(cap) = request.cap.parse::<krate_manifest::Capability>() else {
+            continue;
+        };
+        if cap.is_default_granted() || cap.works_in_a_tab() {
+            continue;
+        }
+        let words = format!("{} ({cap})", cap.plain());
+        if !missing.contains(&words) {
+            missing.push(words);
+        }
+    }
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    vec![format!(
+        "opens from a link, except: {}. Those need Krate on Mac, Windows or Linux; from a link \
+         the app still opens, and says so when it reaches one",
+        missing.join(", ")
+    )]
+}
+
 struct CheckSummary {
     passed: Vec<&'static str>,
     imports: Vec<String>,
@@ -20556,6 +23856,176 @@ struct CheckSummary {
     /// Files the build stage rewrote, said out loud (IC-295): a build must
     /// not change source without the change being shown and recorded.
     source_changes: Vec<String>,
+    /// Seconds since a full check passed for these exact bytes, when that
+    /// pass was reused instead of running the app again.
+    reused_secs: Option<u64>,
+}
+
+/// How long a full check's pass is reused for the same bytes.
+///
+/// Measured on 34 real Studio builds (2026-11-03): in 27 of 29 the engine's
+/// closing check judged bytes the agent's own last full check had passed
+/// moments before, and 30 of the agents' 81 full checks re-ran an app nothing
+/// had changed in. Each re-run costs about 19 seconds, 15 of them the
+/// stay-open watch. Half an hour covers a build and its repair rounds; past
+/// that the machine may have changed under the app, so it is judged again.
+const CHECK_PASS_TTL_SECS: u64 = 30 * 60;
+
+/// The stages a reused pass can name, so a record read back from disk maps
+/// onto the same `&'static str` labels a fresh check pushes.
+const CHECK_STAGE_NAMES: [&str; 8] = [
+    "layout",
+    "manifest",
+    "build",
+    "imports",
+    "run",
+    "usability",
+    "screens",
+    "phone",
+];
+
+/// Everything a full check's verdict depends on, hashed: this krate binary,
+/// the built component, the manifest, the task file, the assets, and the few
+/// environment settings that change how a run looks. Same key, same
+/// judgment -- so a pass for this key can be reused rather than re-proved.
+/// None when any part cannot be read, which means "judge it again".
+fn check_pass_key(dir: &Path, wasm: &[u8], manifest: &Path) -> Option<String> {
+    fn part(hasher: &mut Sha256, bytes: &[u8]) {
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    }
+    fn walk(root: &Path, here: &Path, out: &mut Vec<(String, PathBuf)>) {
+        let Ok(entries) = fs::read_dir(here) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else if let Ok(rel) = path.strip_prefix(root) {
+                out.push((rel.to_string_lossy().replace('\\', "/"), path));
+            }
+        }
+    }
+    let mut hasher = Sha256::new();
+    part(&mut hasher, b"krate-check-pass-v1");
+    let exe = std::env::current_exe().ok()?;
+    let exe = exe.canonicalize().unwrap_or(exe);
+    let meta = fs::metadata(&exe).ok()?;
+    let built = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    part(&mut hasher, exe.to_string_lossy().as_bytes());
+    part(&mut hasher, &meta.len().to_le_bytes());
+    part(&mut hasher, &built.to_le_bytes());
+    part(&mut hasher, wasm);
+    part(&mut hasher, &fs::read(manifest).ok()?);
+    // An empty task file and no task file are judged differently, so they
+    // must not share a key.
+    match fs::read(dir.join("krate-check.toml")) {
+        Ok(task) => part(&mut hasher, &task),
+        Err(_) => part(&mut hasher, b"\0no krate-check.toml"),
+    }
+    let assets = dir.join("assets");
+    let mut files = Vec::new();
+    walk(&assets, &assets, &mut files);
+    files.sort();
+    for (rel, path) in files {
+        part(&mut hasher, rel.as_bytes());
+        part(&mut hasher, &fs::read(path).ok()?);
+    }
+    for name in [
+        "KRATE_PULLEY",
+        "KRATE_SCREEN",
+        "KRATE_APPEARANCE",
+        "KRATE_SHOOT_AFTER_MS",
+    ] {
+        let value = std::env::var_os(name).unwrap_or_default();
+        part(&mut hasher, name.as_bytes());
+        part(&mut hasher, value.to_string_lossy().as_bytes());
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+/// Where a pass is remembered: inside the app's own target/, which is never
+/// packed or shipped.
+fn check_pass_file(dir: &Path) -> PathBuf {
+    dir.join("target").join(".krate-check-pass.json")
+}
+
+/// A pass recorded for exactly this key, younger than the TTL: its stage
+/// list, the usability stage's notes, and its age in seconds.
+fn read_check_pass(dir: &Path, key: &str) -> Option<(Vec<&'static str>, Vec<String>, u64)> {
+    let text = fs::read_to_string(check_pass_file(dir)).ok()?;
+    let record: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if record["key"].as_str()? != key {
+        return None;
+    }
+    let age = unix_now().checked_sub(record["at"].as_u64()?)?;
+    if age > CHECK_PASS_TTL_SECS {
+        return None;
+    }
+    let passed = record["passed"]
+        .as_array()?
+        .iter()
+        .filter_map(|s| {
+            CHECK_STAGE_NAMES
+                .iter()
+                .copied()
+                .find(|n| Some(*n) == s.as_str())
+        })
+        .collect::<Vec<_>>();
+    let notes = record["notes"]
+        .as_array()?
+        .iter()
+        .filter_map(|s| s.as_str().map(str::to_string))
+        .collect();
+    Some((passed, notes, age))
+}
+
+/// Remember a full pass. Best effort: a record that cannot be written only
+/// means the next check runs in full.
+fn write_check_pass(dir: &Path, key: &str, passed: &[&'static str], notes: &[String]) {
+    let file = check_pass_file(dir);
+    let Some(parent) = file.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let record = serde_json::json!({
+        "key": key,
+        "at": unix_now(),
+        "passed": passed,
+        "notes": notes,
+    });
+    let staging = parent.join(format!(".krate-check-pass.{}.tmp", std::process::id()));
+    if fs::write(&staging, record.to_string()).is_ok() && fs::rename(&staging, &file).is_err() {
+        let _ = fs::remove_file(&staging);
+    }
+}
+
+/// How long each stage of the last check-app in this process took, in
+/// milliseconds, in the order they finished. Read by `check_app_verdict`
+/// for the build's trace and printed by `check-app` under
+/// KRATE_CHECK_TIMING=1.
+static CHECK_STAGE_MS: std::sync::Mutex<Vec<(&'static str, u64)>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn stage_took(name: &'static str, since: std::time::Instant) {
+    if let Ok(mut times) = CHECK_STAGE_MS.lock() {
+        times.push((name, since.elapsed().as_millis() as u64));
+    }
+}
+
+fn check_stage_times() -> Vec<(&'static str, u64)> {
+    CHECK_STAGE_MS
+        .lock()
+        .map(|times| times.clone())
+        .unwrap_or_default()
 }
 
 /// The files a build is allowed to rewrite, watched across the build stage
@@ -20605,6 +24075,9 @@ fn run_check_app(
 ) -> std::result::Result<CheckSummary, CheckFailure> {
     let mut passed: Vec<&'static str> = Vec::new();
     let mut usability_notes: Vec<String> = Vec::new();
+    if let Ok(mut times) = CHECK_STAGE_MS.lock() {
+        times.clear();
+    }
 
     // Stage: layout. The three files every Krate app has.
     let manifest_path = dir.join("manifest.toml");
@@ -20676,7 +24149,13 @@ fn run_check_app(
             return Err(CheckFailure {
                 stage: CheckStage::Layout,
                 detail,
-                fix: "Bound the `quick` path, never the interactive one:\n\n                          if quick {\n        // draw one frame, print key:value, exit 0\n                          }\n    // interactive: no round limit at all\n    loop {\n                              match events::wait(None) {\n                                  Some(Event::CloseRequested(_)) => break,\n            _ => {}\n                              }\n    }\n\nA real session ends when the person closes the window,                       and only then."
+                fix: "Bound the `quick` path, never the interactive one:\n\n    \
+                      if quick {\n        // draw one frame, print key:value, exit 0\n    }\n    \
+                      // interactive: no round limit at all\n    loop {\n        \
+                      match events::wait(None) {\n            \
+                      Some(Event::CloseRequested(_)) => break,\n            _ => {}\n        \
+                      }\n    }\n\nA real session ends when the person closes the window, \
+                      and only then."
                     .to_string(),
             });
         }
@@ -20708,11 +24187,13 @@ fn run_check_app(
     // the line back instead of complaining about it.
     let watched = source_snapshot(dir);
     let restored_sdk_dep = restore_krate_dependency(dir);
+    let build_started = std::time::Instant::now();
     let wasm = build_component_captured(dir).map_err(|detail| CheckFailure {
         stage: CheckStage::Build,
         fix: build_fix(&detail),
         detail,
     })?;
+    stage_took("build", build_started);
     let source_changes = source_changes_since(dir, &watched);
     if restored_sdk_dep {
         // Not a failure -- the build passed -- but say it happened, so an author
@@ -20792,7 +24273,31 @@ fn run_check_app(
             shoot: None,
             usability_notes,
             source_changes,
+            reused_secs: None,
         });
+    }
+
+    // A full check already passed for these exact bytes: the same krate,
+    // component, manifest, task file and assets. Its verdict is this one's
+    // verdict, so the stages that run the app -- run, usability, screens,
+    // phone, about 19 seconds -- are not run again to re-prove it. Asked
+    // for a picture, the picture and the screens still run, because the
+    // person or agent wants to look at them.
+    let pass_key = check_pass_key(dir, &wasm_bytes, &manifest_path);
+    let reused = pass_key
+        .as_deref()
+        .and_then(|key| read_check_pass(dir, key));
+    if let Some((reused_passed, reused_notes, age)) = &reused {
+        if shoot.is_none() {
+            return Ok(CheckSummary {
+                passed: reused_passed.clone(),
+                imports,
+                shoot: None,
+                usability_notes: reused_notes.clone(),
+                source_changes,
+                reused_secs: Some(*age),
+            });
+        }
     }
 
     // Stage: run. Run the built component with its manifest, headless, all
@@ -20858,12 +24363,65 @@ fn run_check_app(
     run_args.push("--".into());
     run_args.push(verify_arg);
     let run_arg_refs: Vec<&str> = run_args.iter().map(String::as_str).collect();
-    let exit = run_self(verify_dir.path(), &run_arg_refs).map_err(|error| CheckFailure {
-        stage: CheckStage::Run,
-        detail: format!("could not run the app: {error:#}"),
-        fix: String::new(),
-    })?;
+    let run_started = std::time::Instant::now();
+    let exit = if reused.is_some() {
+        // These bytes ran and exited 0 in the pass being reused.
+        0
+    } else {
+        run_self(verify_dir.path(), &run_arg_refs).map_err(|error| CheckFailure {
+            stage: CheckStage::Run,
+            detail: format!("could not run the app: {error:#}"),
+            fix: String::new(),
+        })?
+    };
+    stage_took("run", run_started);
     if exit != 0 {
+        // Exit 5 is every refusal at the door, and they are not all
+        // capabilities. The seeded starter's manifest names the example's
+        // own `entry` file, so a fresh app is refused with "permission
+        // denied: manifest entry ... does not match" -- and this said "a
+        // capability it needs is not declared", which Studio agents then
+        // chased (K-763). Run it once more to read the refusal's own words:
+        // a refusal is immediate, so this costs well under a second.
+        if exit == 5 {
+            let said = run_self_captured(verify_dir.path(), &run_arg_refs)
+                .map(|(_, _, stderr)| stderr)
+                .unwrap_or_default();
+            let refusal = said
+                .lines()
+                .find(|line| line.contains("permission denied"))
+                .map(str::trim)
+                .unwrap_or("")
+                .to_string();
+            if refusal.contains("manifest entry") {
+                let built = wasm
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "<crate>.wasm".to_string());
+                return Err(CheckFailure {
+                    stage: CheckStage::Run,
+                    detail: format!(
+                        "the app was refused before it started (exit 5) because manifest.toml's \
+                         `entry` names a different file from the one this build makes: {refusal}"
+                    ),
+                    fix: format!(
+                        "In manifest.toml, set `entry = \"target/wasm32-wasip1/release/{built}\"` \
+                         -- the file this crate builds. Nothing else needs to change: this is \
+                         not a missing capability."
+                    ),
+                });
+            }
+            if !refusal.is_empty() {
+                return Err(CheckFailure {
+                    stage: CheckStage::Run,
+                    detail: format!("the app was refused something it needs (exit 5): {refusal}"),
+                    fix: "Declare the capability it names in manifest.toml, scoped as \
+                          narrowly as the app needs (KRATE_AUTHORING.md section 2 lists them), \
+                          or stop using it."
+                        .to_string(),
+                });
+            }
+        }
         let hint = match exit {
             4 => " (exit 4 means it exhausted its fuel budget -- either a runaway loop, or honest work that is too expensive per frame: hoist per-pixel math out of inner loops, and draw fewer `quick` frames)",
             5 => " (exit 5 means a capability it needs is not declared in manifest.toml)",
@@ -20872,17 +24430,25 @@ fn run_check_app(
         return Err(CheckFailure {
             stage: CheckStage::Run,
             detail: format!("the app failed to run headless with all grants (exit {exit}){hint}"),
-            fix: "Run it yourself to see its output: \
-                  `krate run <wasm> --manifest manifest.toml --auto-grant`. Set \
-                  KRATE_VERIFY_LOG=/path/to/log to capture what it printed. If it needs a \
-                  capability, declare it in manifest.toml."
-                .to_string(),
+            // The capability sentence only where a capability is the
+            // question: an app that returned 3 was told to go declare one.
+            fix: format!(
+                "Run it yourself to see its output: \
+                 `krate run <wasm> --manifest manifest.toml --auto-grant`. Set \
+                 KRATE_VERIFY_LOG=/path/to/log to capture what it printed.{}",
+                match exit {
+                    5 => " If it needs a capability, declare it in manifest.toml.",
+                    4 => "",
+                    _ => " A non-zero exit is the app's own answer: find where it returns it.",
+                }
+            ),
         });
     }
     passed.push("run");
 
     // Stage: shoot (optional). Paint the first frame to a PNG so a GUI app's
     // output can be seen.
+    let shoot_started = std::time::Instant::now();
     let shot = if let Some(png) = shoot {
         // Absolute so the PNG lands next to where the user ran check-app, not
         // inside the app dir the child cd's into.
@@ -20916,10 +24482,16 @@ fn run_check_app(
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         ));
-        // SAFETY: single-threaded at this point in check-app.
-        unsafe { std::env::set_var("KRATE_LAYOUT_REPORT", &layout_report) };
         let shoot_refs: Vec<&str> = shoot_args.iter().map(String::as_str).collect();
-        let shoot_exit = run_self(dir, &shoot_refs).map_err(|error| CheckFailure {
+        let shoot_exit = run_self_env(
+            dir,
+            &shoot_refs,
+            &[(
+                "KRATE_LAYOUT_REPORT",
+                Some(layout_report.clone().into_os_string()),
+            )],
+        )
+        .map_err(|error| CheckFailure {
             stage: CheckStage::Shoot,
             detail: format!("could not paint the app's frame: {error:#}"),
             fix: String::new(),
@@ -20933,7 +24505,6 @@ fn run_check_app(
                     .to_string(),
             });
         }
-        unsafe { std::env::remove_var("KRATE_LAYOUT_REPORT") };
 
         // The stage exists to prove the app PAINTED, and it used to prove
         // only that the run exited 0 (IC-743, tests 1504/1505). `krate run
@@ -20995,6 +24566,9 @@ fn run_check_app(
     } else {
         None
     };
+    if shoot.is_some() {
+        stage_took("shoot", shoot_started);
+    }
 
     // Stage: usability. Every stage above asks whether the app is *valid*.
     // This one asks whether it is *usable*: does it stay open, does it follow
@@ -21002,34 +24576,87 @@ fn run_check_app(
     // the properties a person actually experiences, and an app that fails all
     // three passed every other stage green.
     //
-    // Only a GUI app has a window, so a CLI app skips this outright rather than
-    // failing it.
+    // Stage: screens. An app is made once and opened on a phone, a tablet and
+    // a desktop; run it on each and read how the frame lands there (IC-911).
+    //
+    // Stage: phone. On an iPhone every app runs on the interpreter, so a
+    // frame the desktop draws in time can miss a phone's (IC-915).
+    //
+    // Only a GUI app has a window, so a CLI app skips these outright rather
+    // than failing them.
+    //
+    // The usability run is mostly waiting: it watches the app for 15 seconds
+    // to see that it stays open (`usability::STAY_OPEN_WATCH`). Screens and
+    // phone (about 2.5 seconds of runs) used to wait for it to finish; they
+    // now run beside it, each run given its own settings (`run_self_env`).
+    // The verdict is unchanged: every stage still runs and is judged on the
+    // same terms, and failures are told in the same order -- usability
+    // first, so an app that does not stay open or answer a press hears that
+    // before anything about screens. Measured on a Studio-made app: the
+    // phone stage's frame times beside a usability run sat inside the
+    // spread of its times alone (p95 2.3-4.8 ms against 2.1-4.4 ms).
+    let mut fresh_usability_notes: Vec<String> = Vec::new();
     if is_gui {
-        let notes = run_usability_stage(dir, &wasm_str, &manifest_str)?;
+        if let Some((_, reused_notes, _)) = &reused {
+            // Reached only with a picture asked for (see above): the frames
+            // are painted again for whoever looks at them, and the stages
+            // the reused pass already judged on these bytes are not re-run.
+            let started = std::time::Instant::now();
+            run_screens_stage(dir, &wasm_str, &manifest_str, shoot)?;
+            stage_took("screens", started);
+            usability_notes.extend(reused_notes.iter().cloned());
+        } else {
+            let (usability, screens_and_phone) = std::thread::scope(|scope| {
+                let usability = scope.spawn(|| {
+                    let started = std::time::Instant::now();
+                    let verdict = run_usability_stage(dir, &wasm_str, &manifest_str);
+                    stage_took("usability", started);
+                    verdict
+                });
+                let started = std::time::Instant::now();
+                let screens = run_screens_stage(dir, &wasm_str, &manifest_str, shoot);
+                stage_took("screens", started);
+                // Phone after screens, as before: a screens failure is told
+                // first, so the phone run would only be thrown away.
+                let screens_and_phone = screens.and_then(|()| {
+                    let started = std::time::Instant::now();
+                    let phone = run_phone_stage(dir, &wasm_str, &manifest_str);
+                    stage_took("phone", started);
+                    phone
+                });
+                let usability = usability.join().unwrap_or_else(|_| {
+                    Err(CheckFailure {
+                        stage: CheckStage::Usability,
+                        detail: "the usability run stopped unexpectedly".to_string(),
+                        fix: String::new(),
+                    })
+                });
+                (usability, screens_and_phone)
+            });
+            let notes = usability?;
+            // Extend, never assign: the shoot stage above may already have
+            // added layout findings.
+            usability_notes.extend(notes.iter().cloned());
+            fresh_usability_notes = notes;
+            screens_and_phone?;
+        }
         passed.push("usability");
-        // Extend, never assign: the shoot stage above may already have added
-        // layout findings, and this stage runs after it.
-        usability_notes.extend(notes);
-
-        // Stage: screens. An app is made once and opened on a phone, a
-        // tablet and a desktop; run it on each and read how the frame lands
-        // there (IC-911). After usability, so an app that does not stay open
-        // or answer a press is told that first.
-        run_screens_stage(dir, &wasm_str, &manifest_str, shoot)?;
         passed.push("screens");
-
-        // Stage: phone. On an iPhone every app runs on the interpreter, so
-        // a frame the desktop draws in time can miss a phone's (IC-915).
-        run_phone_stage(dir, &wasm_str, &manifest_str)?;
         passed.push("phone");
     }
 
+    if reused.is_none() {
+        if let Some(key) = &pass_key {
+            write_check_pass(dir, key, &passed, &fresh_usability_notes);
+        }
+    }
     Ok(CheckSummary {
         passed,
         imports,
         shoot: shot,
         usability_notes,
         source_changes,
+        reused_secs: reused.map(|(_, _, age)| age),
     })
 }
 
@@ -21072,25 +24699,18 @@ fn run_phone_stage(
         "--auto-grant".into(),
         "--headless".into(),
     ];
-    // SAFETY: single-threaded at this point in check-app.
-    unsafe {
-        std::env::set_var("KRATE_PULLEY", "1");
-        std::env::set_var("KRATE_SCREEN", "390x844");
-        std::env::set_var("KRATE_DRIVE_SCROLL", "40");
-        std::env::set_var("KRATE_COST_REPORT", &report);
-    }
+    // Given to this run alone: the usability stage runs beside it.
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let _ = run_self(dir, &refs);
-    unsafe {
-        for name in [
-            "KRATE_PULLEY",
-            "KRATE_SCREEN",
-            "KRATE_DRIVE_SCROLL",
-            "KRATE_COST_REPORT",
-        ] {
-            std::env::remove_var(name);
-        }
-    }
+    let _ = run_self_env(
+        dir,
+        &refs,
+        &[
+            ("KRATE_PULLEY", Some("1".into())),
+            ("KRATE_SCREEN", Some("390x844".into())),
+            ("KRATE_DRIVE_SCROLL", Some("40".into())),
+            ("KRATE_COST_REPORT", Some(report.clone().into_os_string())),
+        ],
+    );
     // Nothing measured is not a failure: an app that never waits for input
     // has no frames to time.
     let Some(cost) = fs::read_to_string(&report)
@@ -21113,6 +24733,21 @@ fn run_phone_stage(
         ));
     }
     if faults.is_empty() {
+        return Ok(());
+    }
+    // A debug build of krate draws several times slower than the release a
+    // person installs, and the interpreter it times the app on is debug too,
+    // so its numbers are not the phone's. Measured: krate-checklist failed
+    // at 20.2 ms a step under a debug krate and passed twice under release;
+    // agents shaved shadows off apps to pass a debug run. So a debug build
+    // says what it saw and does not judge.
+    if cfg!(debug_assertions) {
+        eprintln!(
+            "note: phone timing not judged -- this krate is a debug build, which runs the app \
+             several times slower than a phone's release Krate would ({}). Build krate with \
+             --release to measure it.",
+            faults.join("; ")
+        );
         return Ok(());
     }
     Err(CheckFailure {
@@ -21177,22 +24812,17 @@ fn run_screens_stage(
                 "--".into(),
                 "quick".into(),
             ];
-            // SAFETY: single-threaded at this point in check-app.
-            unsafe {
-                std::env::set_var("KRATE_SCREEN", format!("{w:.0}x{h:.0}"));
-                std::env::set_var("KRATE_FIT_REPORT", &report);
-                match look {
-                    Some(look) => std::env::set_var("KRATE_APPEARANCE", look),
-                    None => std::env::remove_var("KRATE_APPEARANCE"),
-                }
-            }
+            // Given to this run alone: the usability stage runs beside it.
             let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            let _ = run_self(dir, &refs);
-            unsafe {
-                std::env::remove_var("KRATE_SCREEN");
-                std::env::remove_var("KRATE_FIT_REPORT");
-                std::env::remove_var("KRATE_APPEARANCE");
-            }
+            let _ = run_self_env(
+                dir,
+                &refs,
+                &[
+                    ("KRATE_SCREEN", Some(format!("{w:.0}x{h:.0}").into())),
+                    ("KRATE_FIT_REPORT", Some(report.clone().into_os_string())),
+                    ("KRATE_APPEARANCE", look.map(Into::into)),
+                ],
+            );
             fs::read_to_string(&report)
                 .ok()
                 .and_then(|text| serde_json::from_str(&text).ok())
@@ -21429,9 +25059,14 @@ fn run_usability_stage(
                   expect_text = \"what should then be on screen\")."
                 .to_string(),
         })?;
+        // Absolute: the run below starts inside `dir`, so a relative
+        // `apps/x/krate-check.toml` would be looked for at
+        // apps/x/apps/x/krate-check.toml and the task never ran (K-1126).
+        let task_file = task_file.canonicalize().unwrap_or(task_file.clone());
         args.push("--task".into());
         args.push(task_file.to_string_lossy().into_owned());
     }
+    let has_task = args.iter().any(|arg| arg == "--task");
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let exit = run_self(dir, &arg_refs).map_err(|error| CheckFailure {
         stage: CheckStage::Usability,
@@ -21441,6 +25076,21 @@ fn run_usability_stage(
 
     let report = match krate_runtime::usability::UsabilityReport::read(&report_path) {
         Ok(report) => report,
+        Err(error) if has_task => {
+            // The author wrote the app's task down and it never ran: that is
+            // not a gap to note, it is the one check that proves the app does
+            // its job, and passing without it says the app was proved when it
+            // was not (K-1126).
+            return Err(CheckFailure {
+                stage: CheckStage::Usability,
+                detail: format!(
+                    "the app's task (krate-check.toml) did not run: exit {exit}, no report: {error}"
+                ),
+                fix: "Run `krate run --task krate-check.toml` with the app's wasm and manifest \
+                      from the app's folder to see why the task could not start."
+                    .to_string(),
+            });
+        }
         Err(error) => {
             // No report at all means the driver never got far enough to write
             // one. That is a gap in the measurement, not proof of a defect, so
@@ -23221,6 +26871,17 @@ pub(crate) enum StoragePrincipal {
     /// rather than guessing. It is not a publisher claim -- it says "this
     /// machine made this", never "this person is who they say".
     Development { developer: String, app_id: String },
+    /// An unsigned app a Krate hub handed over, with the hub's tag for the
+    /// account that published it (`x-krate-store`, K-1159): keyed by its id
+    /// AND that account, the tab's own name for it (`<id>~<tag>`, K-1172).
+    ///
+    /// The tag is the hub's word, not the file's: it is taken only from a
+    /// download whose bytes came from a Krate hub. It says who published
+    /// this copy, not who the app is, so it isolates two accounts that both
+    /// publish an unsigned `notes` but is not a publisher claim -- a file
+    /// opened from disk, with no hub in the way, is keyed by its id as it
+    /// always was.
+    HubOwned { tag: String, app_id: String },
 }
 
 impl StoragePrincipal {
@@ -23231,17 +26892,11 @@ impl StoragePrincipal {
     /// publishers shipping the same app id cannot collide with each other.
     fn storage_key(&self) -> String {
         match self {
-            // Short prefix of the publisher key: enough to separate
-            // publishers without an unreadable 64-character filename. A
-            // collision here needs a deliberate 16-hex-character preimage,
-            // and the consequence would be two of ONE publisher's own apps
-            // sharing a store, not a stranger reaching in.
+            // `<id>@<first 16 of the publisher key>`: the rule is shared
+            // with the phones (K-1172), so a computer and a phone name one
+            // signed app's data the same way.
             StoragePrincipal::Verified { publisher, app_id } => {
-                format!(
-                    "{}@{}",
-                    sanitize_storage_name(app_id),
-                    &publisher[..publisher.len().min(16)]
-                )
+                krate_runtime::storage_key::verified_storage_key(app_id, publisher)
             }
             StoragePrincipal::Unverified { app_id } => sanitize_storage_name(app_id),
             // A different separator from the publisher's `@`, so the two can
@@ -23252,6 +26907,12 @@ impl StoragePrincipal {
                 sanitize_storage_name(app_id),
                 &developer[..developer.len().min(16)]
             ),
+            // `<id>~<tag>`, the browser Player's name for it; a tag that is
+            // not a hub tag never reaches here (see `storage_principal`).
+            StoragePrincipal::HubOwned { tag, app_id } => {
+                krate_runtime::storage_key::hub_owner_storage_key(app_id, tag)
+                    .unwrap_or_else(|| sanitize_storage_name(app_id))
+            }
         }
     }
 
@@ -23341,12 +27002,34 @@ pub(crate) fn storage_principal(
     envelope: Option<&krate_bundle::signing::SignatureEnvelope>,
     verdict: Option<&krate_bundle::signing::FullVerdict>,
 ) -> StoragePrincipal {
+    storage_principal_from(manifest, envelope, verdict, None)
+}
+
+/// [`storage_principal`] for an app a Krate hub handed over with its tag for
+/// the publishing account (K-1172): a signed app is still keyed by its
+/// publisher; an unsigned one by its id and that account, never by its id
+/// alone. `hub_tag` is already checked to be a hub's, in a hub tag's shape.
+pub(crate) fn storage_principal_from(
+    manifest: &Manifest,
+    envelope: Option<&krate_bundle::signing::SignatureEnvelope>,
+    verdict: Option<&krate_bundle::signing::FullVerdict>,
+    hub_tag: Option<&str>,
+) -> StoragePrincipal {
     let app_id = manifest.app.id.clone();
+    let unsigned = |app_id: String| match hub_tag
+        .filter(|tag| krate_runtime::storage_key::is_hub_owner_tag(tag))
+    {
+        Some(tag) => StoragePrincipal::HubOwned {
+            tag: tag.to_string(),
+            app_id,
+        },
+        None => unsigned_principal(app_id),
+    };
     let (Some(envelope), Some(full)) = (envelope, verdict) else {
-        return unsigned_principal(app_id);
+        return unsigned(app_id);
     };
     if !full.is_trustworthy() {
-        return unsigned_principal(app_id);
+        return unsigned(app_id);
     }
 
     // The publisher is the ROOT when a release key was delegated. Release
@@ -23384,25 +27067,9 @@ fn percent_encode_text(text: &str) -> String {
     out
 }
 
-/// Reduce a name to something safe to put in a path.
-fn sanitize_storage_name(name: &str) -> String {
-    let safe: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let safe = safe.replace("..", "__");
-    if safe.trim_matches(['.', '_'].as_slice()).is_empty() {
-        "unnamed-app".to_string()
-    } else {
-        safe
-    }
-}
+// Reduce a name to something safe to put in a path: the rule the phones
+// share (K-1172).
+use krate_runtime::storage_key::sanitize_storage_name;
 
 /// This machine's development identity (IC-737).
 ///
@@ -23474,8 +27141,12 @@ fn group_store_path(principal: &StoragePrincipal, group: &str) -> PathBuf {
         }
         // An app with no lineage at all shares only with other apps that
         // also have none, on this machine. That is weaker than the other two
-        // and it is named `shared-` so nobody reads it as a guarantee.
-        StoragePrincipal::Unverified { .. } => "shared".to_string(),
+        // and it is named `shared-` so nobody reads it as a guarantee. A
+        // hub account is no lineage either: no publisher list names its
+        // members, so it joins nothing (`group_access_for`).
+        StoragePrincipal::Unverified { .. } | StoragePrincipal::HubOwned { .. } => {
+            "shared".to_string()
+        }
     };
     krate_home()
         .join("groups")
@@ -23568,9 +27239,9 @@ pub(crate) fn group_access_for(
             group,
             known_group_list(publisher, group).as_ref(),
         ),
-        StoragePrincipal::Unverified { app_id } | StoragePrincipal::Development { app_id, .. } => {
-            access(None, app_id, group, None)
-        }
+        StoragePrincipal::Unverified { app_id }
+        | StoragePrincipal::Development { app_id, .. }
+        | StoragePrincipal::HubOwned { app_id, .. } => access(None, app_id, group, None),
     }
 }
 
@@ -23871,7 +27542,7 @@ fn principal_store_path_in(home: &Path, principal: &StoragePrincipal) -> PathBuf
         // Unchanged from before, byte for byte: an unsigned app must find
         // the data it already has.
         StoragePrincipal::Unverified { app_id } => app_store_path_in(home, app_id),
-        StoragePrincipal::Verified { .. } => home
+        StoragePrincipal::Verified { .. } | StoragePrincipal::HubOwned { .. } => home
             .join("store")
             .join(format!("{}.kv", principal.storage_key())),
         // A development app prefers its own isolated store, but falls back
@@ -23898,6 +27569,226 @@ fn principal_store_path_in(home: &Path, principal: &StoragePrincipal) -> PathBuf
             }
         }
     }
+}
+
+/// What an open did with the data an app's id kept unsigned (IC-983,
+/// K-1172).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IdDataAdopted {
+    /// Not an app whose first open takes anything: unsigned, from a file, or
+    /// signed by a key that is not this computer's maker key.
+    NotTaken,
+    /// The id's data was decided before: nothing moves now, or ever again.
+    Settled,
+    /// First open, and the id kept nothing.
+    Nothing,
+    /// First open of the maker's own signed app: these pieces moved.
+    Moved(Vec<String>),
+    /// First open of a hub-published unsigned app: these pieces copied.
+    Copied(Vec<String>),
+}
+
+/// The pieces of one store, journal before database, so a move cut short
+/// never leaves a database at its new name without its newest writes.
+const ID_DATA_PIECES: [&str; 8] = [
+    "sqlite-wal",
+    "sqlite-shm",
+    "sqlite-journal",
+    "sqlite",
+    "kv.sync",
+    "kv",
+    "secrets",
+    "shared.json",
+];
+
+/// The first open of an app whose data is keyed apart from its bare id
+/// takes what the id kept before, once -- the phones' rule (a613e9fd9) on
+/// a computer:
+///
+/// - **An app signed by this computer's maker key** (IC-983) MOVES it: the
+///   maker built this app here, its unsigned builds wrote that data, and
+///   its first signed build must open with it (K-247). Renamed, never
+///   copied, secrets sealed again under the new name, and the id settled in
+///   `store/<id>.moved` (the publisher, then `done`) so nothing takes it
+///   again and an unsigned file declaring the id opens to a fresh store.
+///   Only the maker's own key: an app signed by anyone else -- a download,
+///   another person's release -- takes nothing, as before.
+/// - **An unsigned app a hub vouched for** (`HubOwned`, K-1172) gets a
+///   COPY, once (`<its store>.from-id`): the tag says who published this
+///   copy of the app, not who wrote the data -- on a computer that is most
+///   often the person's own app of the same id -- so a link takes nothing
+///   from anyone and gets nothing it could not already read.
+///
+/// `Err` is words for the person: the app must not run on a half-moved
+/// store.
+fn adopt_id_keyed_data_here(
+    home: &Path,
+    principal: &StoragePrincipal,
+    maker: Option<&str>,
+    machine_key: &dyn Fn() -> Vec<u8>,
+) -> std::result::Result<IdDataAdopted, String> {
+    let (copy, app_id) = match principal {
+        StoragePrincipal::Verified { publisher, app_id } if Some(publisher.as_str()) == maker => {
+            (false, app_id)
+        }
+        StoragePrincipal::HubOwned { app_id, .. } => (true, app_id),
+        _ => return Ok(IdDataAdopted::NotTaken),
+    };
+    let old = unsigned_principal(app_id.clone());
+    let old_base = principal_store_path_in(home, &old);
+    let new_base = principal_store_path_in(home, principal);
+    if old_base == new_base {
+        return Ok(IdDataAdopted::NotTaken);
+    }
+    let said = |e: std::io::Error| {
+        format!(
+            "{app_id}'s saved data could not be {} to its own place ({e})",
+            if copy { "copied" } else { "moved" }
+        )
+    };
+
+    let record = if copy {
+        let settled = new_base.with_extension("from-id");
+        if settled.exists() {
+            return Ok(IdDataAdopted::Settled);
+        }
+        settled
+    } else {
+        let record = app_store_path_in(home, app_id).with_extension("moved");
+        let publisher = maker.unwrap_or_default();
+        match fs::read_to_string(&record) {
+            Ok(text) => {
+                let mut lines = text.lines();
+                if lines.next() != Some(publisher) || lines.next() == Some("done") {
+                    return Ok(IdDataAdopted::Settled);
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                if let Some(parent) = record.parent() {
+                    fs::create_dir_all(parent).map_err(said)?;
+                }
+                fs::write(&record, format!("{publisher}\n")).map_err(said)?;
+            }
+            Err(e) => return Err(said(e)),
+        }
+        record
+    };
+
+    let mut taken = Vec::new();
+    for piece in ID_DATA_PIECES {
+        let from = old_base.with_extension(piece);
+        let to = new_base.with_extension(piece);
+        let did = if copy {
+            copy_store_piece(&from, &to)
+        } else {
+            move_store_piece(&from, &to)
+        };
+        if did.map_err(said)? {
+            taken.push(piece.to_string());
+        }
+    }
+    if taken.iter().any(|p| p == "secrets") || new_base.with_extension("secrets").exists() {
+        reseal_moved_secrets(
+            &new_base.with_extension("secrets"),
+            &old.storage_key(),
+            &principal.storage_key(),
+            &machine_key(),
+        )?;
+    }
+    if copy {
+        fs::write(&record, b"").map_err(said)?;
+    } else {
+        let publisher = maker.unwrap_or_default();
+        let done = record.with_extension("moved-tmp");
+        fs::write(&done, format!("{publisher}\ndone\n")).map_err(said)?;
+        fs::rename(&done, &record).map_err(said)?;
+    }
+    Ok(match (taken.is_empty(), copy) {
+        (true, _) => IdDataAdopted::Nothing,
+        (false, false) => IdDataAdopted::Moved(taken),
+        (false, true) => IdDataAdopted::Copied(taken),
+    })
+}
+
+/// Rename `from` to `to` when `from` is there and `to` is not: one rename
+/// on one disk, so the piece is in one place or the other, never both.
+fn move_store_piece(from: &Path, to: &Path) -> io::Result<bool> {
+    if fs::symlink_metadata(from).is_err() || fs::symlink_metadata(to).is_ok() {
+        return Ok(false);
+    }
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(from, to)?;
+    Ok(true)
+}
+
+/// Copy `from` (a file, or a folder like `kv.sync`) to `to` when `from` is
+/// there and `to` is not, through a sibling renamed into place.
+fn copy_store_piece(from: &Path, to: &Path) -> io::Result<bool> {
+    fn tree(from: &Path, to: &Path) -> io::Result<()> {
+        if fs::symlink_metadata(from)?.is_dir() {
+            fs::create_dir_all(to)?;
+            for entry in fs::read_dir(from)? {
+                let entry = entry?;
+                tree(&entry.path(), &to.join(entry.file_name()))?;
+            }
+            Ok(())
+        } else {
+            fs::copy(from, to).map(|_| ())
+        }
+    }
+    let Ok(meta) = fs::symlink_metadata(from) else {
+        return Ok(false);
+    };
+    if meta.file_type().is_symlink() || fs::symlink_metadata(to).is_ok() {
+        return Ok(false);
+    }
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut staging = to.as_os_str().to_owned();
+    staging.push(".copying");
+    let staging = PathBuf::from(staging);
+    let _ = fs::remove_dir_all(&staging);
+    let _ = fs::remove_file(&staging);
+    tree(from, &staging)?;
+    fs::rename(&staging, to)?;
+    Ok(true)
+}
+
+/// Secrets that moved were sealed under the old name; open them with it and
+/// seal them again under the new, beside the file and then over it, so they
+/// read under one name or the other at every moment. A file that reads as
+/// empty under both is left exactly as it is.
+fn reseal_moved_secrets(
+    path: &Path,
+    old_label: &str,
+    new_label: &str,
+    machine_key: &[u8],
+) -> std::result::Result<(), String> {
+    use krate_runtime::secret_host::AppSecrets;
+    let read = |label: &str| AppSecrets::open(path.to_path_buf(), label, machine_key, true);
+    if !path.exists() || !read(new_label).names().unwrap_or_default().is_empty() {
+        return Ok(());
+    }
+    let sealed = read(old_label);
+    let names = sealed.names().unwrap_or_default();
+    if names.is_empty() {
+        return Ok(());
+    }
+    let said = |e: String| format!("its saved secrets could not be moved ({e})");
+    let beside = path.with_extension("secrets-reseal");
+    let _ = fs::remove_file(&beside);
+    let mut resealed = AppSecrets::open(beside.clone(), new_label, machine_key, true);
+    for name in names {
+        if let Some(value) = sealed.get(&name).map_err(|e| said(format!("{e:?}")))? {
+            resealed
+                .set(&name, value)
+                .map_err(|e| said(format!("{e:?}")))?;
+        }
+    }
+    fs::rename(&beside, path).map_err(|e| said(e.to_string()))
 }
 
 fn app_store_path(app_id: &str) -> PathBuf {
@@ -23968,9 +27859,142 @@ fn shared_hub_url() -> String {
         .unwrap_or_else(|_| fleet::pinned_hub().unwrap_or(DEFAULT_HUB_URL).to_string())
 }
 
+/// Where this machine keeps its account-sync files: device keys, the key
+/// it holds, the toggle for every app (IC-981).
+pub(crate) fn account_sync_dir() -> PathBuf {
+    krate_home().join("account-sync")
+}
+
+/// What a run needs to keep an app's store.kv and store.sql -- and, for an
+/// installed app, its own files -- on every device of the signed-in person
+/// (IC-981), or `None`: nobody signed in, the app granted none, or
+/// `KRATE_NO_ACCOUNT_SYNC` set. A toggle that is off rides along as
+/// `enabled: false`.
+fn account_sync_context(
+    app_id: &str,
+    principal: &StoragePrincipal,
+    store: &Path,
+    policy: &krate_policy::SessionPolicy,
+    sandbox: &Path,
+) -> Option<krate_runtime::account_sync_host::AccountSyncContext> {
+    if std::env::var_os("KRATE_NO_ACCOUNT_SYNC").is_some() || app_id.is_empty() {
+        return None;
+    }
+    let files = own_files_folder(principal, sandbox);
+    // store.sql syncs by row (S4), beside store.kv and the files.
+    let granted = |action: &str| {
+        krate_manifest::Capability::new("store", action, None)
+            .is_ok_and(|capability| policy.allows(&capability))
+    };
+    if !granted("kv") && !granted("sql") && files.is_none() {
+        return None;
+    }
+    let identity = github_auth::current()?;
+    let device_dir = account_sync_dir();
+    // The publisher every device reads from the bundle: a verified root, or
+    // `unsigned` (this machine's development identity is not something
+    // another device can check).
+    let publisher = match principal {
+        StoragePrincipal::Verified { publisher, .. } => {
+            krate_accountsync::publisher_label(Some(publisher))
+        }
+        _ => krate_accountsync::publisher_label(None),
+    };
+    Some(krate_runtime::account_sync_host::AccountSyncContext {
+        hub: shared_hub_url(),
+        token: identity.token.clone(),
+        enabled: krate_runtime::account_sync_host::sync_wanted(store, &device_dir),
+        device_dir,
+        device_name: this_computers_name(identity.display_name()),
+        machine_key: machine_key(),
+        app_id: app_id.to_string(),
+        publisher,
+        background: true,
+        files,
+    })
+}
+
+/// The app's files sync (S3) only from a folder Krate keeps for that app
+/// alone -- its data folder ([`app_data_dir`]), which every opened or
+/// installed app has on every desktop OS (IC-943, K-1222). A folder named
+/// with `--sandbox-root`, or a developer's current folder, holds other
+/// things too, and is never sent anywhere.
+fn own_files_folder(principal: &StoragePrincipal, sandbox: &Path) -> Option<PathBuf> {
+    let own = app_data_dir(&home_dir()?, principal);
+    let same = match (own.canonicalize(), sandbox.canonicalize()) {
+        (Ok(own), Ok(sandbox)) => own == sandbox,
+        _ => false,
+    };
+    same.then_some(own)
+}
+
+/// What the person's device list calls this computer: its own name where
+/// the system has one ("Yashraj's MacBook Pro"), else who and which system.
+pub(crate) fn this_computers_name(who: &str) -> String {
+    let asked = if cfg!(target_os = "macos") {
+        std::process::Command::new("scutil")
+            .args(["--get", "ComputerName"])
+            .output()
+            .ok()
+    } else {
+        std::process::Command::new("hostname").output().ok()
+    };
+    asked
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("{who}'s {} computer", std::env::consts::OS))
+}
+
 /// The env var a debug build reads to move the clock an app's organisation
 /// data is stamped with, so a test can be a device whose clock is wrong.
 const ORG_CLOCK_SKEW_ENV: &str = "KRATE_TEST_ORG_CLOCK_SKEW_MS";
+
+/// What a manifest declared, for the runtime's "never asked" refusals
+/// (krate:process, IC-977). `None` with no manifest, which names nothing.
+pub(crate) fn declared_set(
+    manifest: Option<&krate_manifest::Manifest>,
+) -> Option<std::collections::BTreeSet<krate_manifest::Capability>> {
+    manifest
+        .and_then(|manifest| manifest.declared_capabilities().ok())
+        .map(|caps| caps.into_iter().collect())
+}
+
+/// The organisation's team data (store.org, IC-951) for a run the
+/// organisation gate let through: only the private app it opened, as that
+/// release, for the person signed in; anything else is not an org app.
+/// Every door that runs an app builds it here, `krate run` and the MCP
+/// tools alike (K-1102).
+pub(crate) fn org_run_access(
+    opened: Option<&access::Opened>,
+    manifest: Option<&krate_manifest::Manifest>,
+) -> Result<krate_runtime::org_store::OrgAccess> {
+    Ok(match (opened, manifest) {
+        (Some(opened), Some(manifest)) => krate_orgaccess::org_access(
+            &access::HERE,
+            opened,
+            &manifest.app.id,
+            org_clock_skew_ms(),
+        )
+        .map_err(|words| anyhow::anyhow!(words))?,
+        _ => krate_runtime::org_store::OrgAccess::NotAnOrgApp,
+    })
+}
+
+/// Company connections (IC-952) for a run: an organisation's private app
+/// granted `net.connection:<name>` gets that connection's credential, from
+/// the hub, into memory only. `digest` is the opened bytes' sha256, worked
+/// out only when the app asks for a connection. One place for every door
+/// (K-1102), and the phones' too (K-1171).
+pub(crate) fn run_connections(
+    manifest: Option<&krate_manifest::Manifest>,
+    policy: &krate_policy::SessionPolicy,
+    bundle: Option<&krate_bundle::OpenBundle>,
+    digest: impl FnOnce() -> Option<String>,
+) -> krate_runtime::connections::Connections {
+    krate_orgaccess::connections::for_run(&access::HERE, manifest, policy, bundle, digest)
+}
 
 /// How far a test moves this device's clock for `store.org`. Zero in a
 /// release build, whatever the environment says.
@@ -24056,6 +28080,185 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod wit_deps_tests {
+    use super::*;
+
+    /// K-1132: an app made before an interface joined the world lists fewer
+    /// deps than the SDK's world imports; the missing ones are added in the
+    /// same shape, and a complete list is left alone.
+    #[test]
+    fn an_older_apps_dependency_list_gains_the_interfaces_it_lacks() {
+        let sdk = tempfile::tempdir().unwrap();
+        let deps = sdk.path().join("wit/krate/phase4/deps");
+        for name in ["gfx", "gpu", "io", "ui"] {
+            fs::create_dir_all(deps.join(name)).unwrap();
+        }
+        let d = deps.to_string_lossy().replace('\\', "/");
+        let old = format!(
+            "[package.metadata.component.target.dependencies]\n\"krate:io\" = {{ path = \"{d}/io\" }}\n\"krate:gfx\" = {{ path = \"{d}/gfx\" }}\n\n[profile.release]\n"
+        );
+        let new = add_missing_wit_deps(&old);
+        assert!(
+            new.contains(&format!("\"krate:gpu\" = {{ path = \"{d}/gpu\" }}")),
+            "{new}"
+        );
+        assert!(
+            new.contains(&format!("\"krate:ui\" = {{ path = \"{d}/ui\" }}")),
+            "{new}"
+        );
+        assert!(
+            new.find("krate:gpu").unwrap() < new.find("[profile.release]").unwrap(),
+            "added inside the dependency table"
+        );
+        assert_eq!(
+            add_missing_wit_deps(&new),
+            new,
+            "a complete list is unchanged"
+        );
+        assert_eq!(
+            add_missing_wit_deps("[package]\nname = \"x\"\n"),
+            "[package]\nname = \"x\"\n"
+        );
+    }
+}
+
+#[cfg(test)]
+mod build_cache_prune_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    /// A finished leaf for `app` (whose directory may or may not exist).
+    fn leaf(shared: &Path, name: &str, app: &Path) -> PathBuf {
+        let leaf = shared.join(name);
+        fs::create_dir_all(leaf.join("wasm32-wasip1/release/.fingerprint")).unwrap();
+        mark_leaf_used(&leaf, app);
+        leaf
+    }
+
+    fn kept(dir: &Path) -> bool {
+        dir.is_dir()
+    }
+
+    /// K-1125: a leaf whose app directory is gone goes after an hour, one
+    /// still in use or still with its app stays, and the leaf being built,
+    /// a locked leaf and the newest finished leaf (the seed) always stay.
+    #[test]
+    fn orphaned_leaves_go_and_live_ones_stay() {
+        let home = tempfile::tempdir().unwrap();
+        let shared = home.path().join("build/0123456789abcdef");
+        let app = home.path().join("live-app");
+        fs::create_dir_all(&app).unwrap();
+        let gone = home.path().join("gone-app");
+        let live = leaf(&shared, "app-live", &app);
+        let orphan = leaf(&shared, "app-orphan", &gone);
+        let locked = leaf(&shared, "app-locked", &gone);
+        let building = leaf(&shared, "app-building", &gone);
+        std::thread::sleep(Duration::from_millis(20));
+        // The newest finished leaf, orphaned too: it stays as the seed.
+        let seed = leaf(&shared, "app-seed", &gone);
+        let hold = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(locked.join(".krate-build.lock"))
+            .unwrap();
+        hold.lock().unwrap();
+
+        let soon = SystemTime::now() + Duration::from_secs(60);
+        assert!(prune_build_cache_at(&shared, &building, soon).is_empty());
+        assert!(kept(&orphan), "an orphan stays for its first hour");
+
+        let later = SystemTime::now() + Duration::from_secs(2 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, later);
+        assert!(!kept(&orphan), "the orphan went");
+        assert_eq!(trash.len(), 1, "{trash:?}");
+        assert!(
+            trash[0].starts_with(home.path().join("build")),
+            "set aside in the root"
+        );
+        for (dir, why) in [
+            (&live, "its app is still there"),
+            (&locked, "a build holds it"),
+            (&building, "it is being built"),
+            (&seed, "it is the seed"),
+        ] {
+            assert!(kept(dir), "kept because {why}");
+        }
+        drop(hold);
+    }
+
+    /// A leaf nobody built for two weeks goes even when its app is still
+    /// there; another SDK version's whole tree goes after three idle days,
+    /// and what an earlier prune set aside is collected again.
+    #[test]
+    fn idle_leaves_and_old_sdk_trees_go() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("build");
+        let shared = root.join("aaaaaaaaaaaaaaaa");
+        let old = root.join("bbbbbbbbbbbbbbbb");
+        let app = home.path().join("app");
+        fs::create_dir_all(&app).unwrap();
+        let idle = leaf(&shared, "app-idle", &app);
+        let building = leaf(&shared, "app-building", &app);
+        std::thread::sleep(Duration::from_millis(20));
+        let seed = leaf(&shared, "app-seed", &app);
+        leaf(&old, "app-old", &app);
+        let left = root.join("trash-1-2-3");
+        fs::create_dir_all(&left).unwrap();
+
+        let in_two_days = SystemTime::now() + Duration::from_secs(2 * 24 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, in_two_days);
+        assert_eq!(trash, vec![left.clone()], "only the earlier leftovers");
+        assert!(kept(&old) && kept(&idle));
+
+        let in_three_weeks = SystemTime::now() + Duration::from_secs(21 * 24 * 3600);
+        let trash = prune_build_cache_at(&shared, &building, in_three_weeks);
+        assert!(!kept(&old), "the old SDK's tree went");
+        assert!(!kept(&idle), "the idle leaf went");
+        assert!(kept(&seed) && kept(&building));
+        assert!(trash.contains(&left));
+        assert_eq!(trash.len(), 3, "{trash:?}");
+    }
+
+    /// The mark names the app by its absolute path, so a relative app
+    /// directory is not read as gone from wherever the next prune runs.
+    #[test]
+    fn a_relative_app_directory_is_marked_absolute() {
+        let home = tempfile::tempdir().unwrap();
+        let leaf = home.path().join("build/aaaaaaaaaaaaaaaa/app-x");
+        mark_leaf_used(&leaf, Path::new("."));
+        let marked = fs::read_to_string(leaf.join(".krate-app-dir")).unwrap();
+        assert!(Path::new(&marked).is_absolute(), "{marked}");
+        assert!(Path::new(&marked).exists());
+    }
+
+    /// A tree another SDK version is building in right now stays.
+    #[test]
+    fn an_old_sdk_tree_in_use_stays() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("build");
+        let shared = root.join("aaaaaaaaaaaaaaaa");
+        let app = home.path().join("app");
+        fs::create_dir_all(&app).unwrap();
+        let building = leaf(&shared, "app-building", &app);
+        let old = leaf(&root.join("bbbbbbbbbbbbbbbb"), "app-old", &app);
+        let hold = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(old.join(".krate-build.lock"))
+            .unwrap();
+        hold.lock().unwrap();
+        let later = SystemTime::now() + Duration::from_secs(30 * 24 * 3600);
+        prune_build_cache_at(&shared, &building, later);
+        assert!(kept(&old));
+        drop(hold);
+    }
 }
 
 #[cfg(test)]
@@ -24813,6 +29016,187 @@ mod refusal_tests {
         assert!(extract_plan_json(planned).is_some());
         assert!(agent_failure_reason_in(asked).is_none());
         assert!(agent_failure_reason_in(planned).is_none());
+    }
+}
+
+#[cfg(test)]
+mod failure_kind_tests {
+    use super::{build_fix, failed_check_message, failure_kind, CheckStage, FailureKind};
+    use std::path::Path;
+
+    /// Each failure is told apart by who can fix it (K-763).
+    #[test]
+    fn a_failure_is_classified_by_who_can_fix_it() {
+        let cases: &[(CheckStage, &str, FailureKind)] = &[
+            (
+                CheckStage::Build,
+                "error[E0425]: cannot find value `x` in this scope",
+                FailureKind::Compile,
+            ),
+            (
+                CheckStage::Build,
+                "error: Operation not permitted (os error 1) at path \"/Users/a/.cache/krate/build/x\"",
+                FailureKind::Environment,
+            ),
+            // Any folder, not only one named `cache`.
+            (
+                CheckStage::Build,
+                "error: Permission denied (os error 13) at path \"/tmp/ro/target/t\"",
+                FailureKind::Environment,
+            ),
+            (
+                CheckStage::Build,
+                "error: couldn't create a temp dir: No space left on device (os error 28)",
+                FailureKind::Environment,
+            ),
+            // The app's own text quoted in a compiler error is still the code.
+            (
+                CheckStage::Build,
+                "error[E0308]: mismatched types\n let x: u32 = \"Permission denied\";",
+                FailureKind::Compile,
+            ),
+            (
+                CheckStage::Imports,
+                "the component imports non-Krate APIs: wasi:filesystem/types@0.2.0",
+                FailureKind::Imports,
+            ),
+            (
+                CheckStage::Run,
+                "the app was refused something it needs (exit 5): permission denied: store.kv",
+                FailureKind::Capability,
+            ),
+            (
+                CheckStage::Run,
+                "the app was refused before it started (exit 5) because manifest.toml's `entry` \
+                 names a different file: permission denied: manifest entry `a` does not match `b`",
+                FailureKind::Project,
+            ),
+            (
+                CheckStage::Run,
+                "the app failed to run headless with all grants (exit 4) (exit 4 means it \
+                 exhausted its fuel budget)",
+                FailureKind::Timeout,
+            ),
+            (
+                CheckStage::Run,
+                "the app failed to run headless with all grants (exit 3)",
+                FailureKind::Test,
+            ),
+            (
+                CheckStage::Manifest,
+                "the manifest asks for fs.read:**, which reads as everything",
+                FailureKind::Capability,
+            ),
+            (CheckStage::Usability, "the window closed by itself", FailureKind::Test),
+        ];
+        for (stage, detail, expected) in cases {
+            assert_eq!(failure_kind(*stage, detail), *expected, "{detail}");
+        }
+    }
+
+    /// A refusal by the machine is never sent as "fix the compiler errors",
+    /// and the agent is not asked to edit anything for it.
+    #[test]
+    fn a_refused_build_is_not_sent_to_the_agent_as_compiler_errors() {
+        let denied = "error: Permission denied (os error 13) at path \"/tmp/ro/target/t\"";
+        let fix = build_fix(denied);
+        assert!(!fix.contains("Fix the compiler errors"), "{fix}");
+        assert!(fix.contains("/tmp/ro/target/t"), "the path is named: {fix}");
+        assert!(FailureKind::Environment.agent_instruction().is_none());
+        for kind in [
+            FailureKind::Imports,
+            FailureKind::Capability,
+            FailureKind::Test,
+            FailureKind::Timeout,
+        ] {
+            let said = kind.agent_instruction().expect("an edit can fix it");
+            assert!(said.contains("compiles"), "{kind:?}: {said}");
+            assert!(!said.contains("does not compile"), "{kind:?}: {said}");
+        }
+        let words = failed_check_message(FailureKind::Environment, denied, Path::new("/t.txt"));
+        assert!(words.starts_with("This computer stopped Krate"), "{words}");
+        assert!(
+            !words.contains("often gets it the rest of the way"),
+            "{words}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod plan_agrees_with_create_tests {
+    use super::{build_verdict, plan_held_to_create, plan_need_is_buildable, request_to_judge};
+    use krate_author::feasibility::Verdict;
+
+    /// Studio's notes are not the request: the agreed plan, an unanswered
+    /// question and the app's name are dropped; the person's answer stays.
+    #[test]
+    fn only_the_persons_words_are_judged() {
+        let studio = "a journal\n\n(When asked \"Where?\" the person answered: \"on my laptop\")\n\n\
+                      (The person was asked \"Sync to the cloud?\" and chose not to answer.)\n\n\
+                      (The agreed plan: nothing is uploaded to the cloud.)\n\n(The app is called \"Diary\".)";
+        let judged = request_to_judge(studio);
+        assert!(
+            judged.contains("a journal") && judged.contains("on my laptop"),
+            "{judged}"
+        );
+        assert!(
+            !judged.contains("cloud") && !judged.contains("Diary"),
+            "{judged}"
+        );
+        assert!(matches!(
+            build_verdict(studio),
+            Verdict::Buildable | Verdict::Caveat(_)
+        ));
+        // The person's own words still decide.
+        assert!(matches!(
+            build_verdict("an app that reads my Gmail inbox\n\n(The agreed plan: a mail viewer.)"),
+            Verdict::Refuse(_)
+        ));
+    }
+
+    #[test]
+    fn a_plan_only_names_permissions_create_accepts() {
+        for good in [
+            "store.kv",
+            "net.connect:api.example.com:443",
+            "fs.write:exports/**",
+        ] {
+            assert!(plan_need_is_buildable(good), "{good}");
+        }
+        for bad in [
+            "ui.window",
+            "ui.window:create",
+            "fs.write:<chosen-folder>/**",
+            "fs.read:**",
+            "a CSV file of your expenses",
+            "camera.photograph",
+        ] {
+            assert!(!plan_need_is_buildable(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn an_ai_refusal_becomes_the_cannot_arm_not_a_plan() {
+        let held = plan_held_to_create(serde_json::json!({
+            "cannot": "a Krate app cannot sign in to your Google account",
+            "instead": "a viewer for mail you export",
+            "agent_session": "claude:abc",
+        }));
+        assert!(held.get("plan").is_none(), "{held}");
+        assert_eq!(
+            held["cannot"],
+            "Krate cannot build that: a Krate app cannot sign in to your Google account. \
+             Try instead: a viewer for mail you export."
+        );
+        assert_eq!(held["agent_session"], "claude:abc");
+
+        let plan = plan_held_to_create(serde_json::json!({
+            "plan": "a tip calculator",
+            "needs": ["store.kv", "ui.window"],
+            "shape": "krate-no-such-example",
+        }));
+        assert_eq!(plan["needs"], serde_json::json!(["store.kv"]));
+        assert!(plan.get("shape").is_none(), "{plan}");
     }
 }
 
@@ -27538,6 +31922,281 @@ mod url_cache_tests {
 mod storage_identity_tests {
     use super::*;
 
+    /// A signed app's store name is pinned, byte for byte (K-1172): the
+    /// rule moved to krate_runtime::storage_key so the phones share it, and
+    /// a person's data on this computer must still be where it was.
+    #[test]
+    fn a_signed_apps_store_name_is_unchanged_by_sharing_the_rule() {
+        let signed = StoragePrincipal::Verified {
+            publisher: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(signed.storage_key(), "dev.krate.notes@0123456789abcdef");
+        let unsigned = StoragePrincipal::Unverified {
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(unsigned.storage_key(), "dev.krate.notes");
+        let home = Path::new("/h");
+        assert_eq!(
+            principal_store_path_in(home, &signed),
+            Path::new("/h/store/dev.krate.notes@0123456789abcdef.kv")
+        );
+        assert_eq!(
+            principal_store_path_in(home, &unsigned),
+            Path::new("/h/store/dev.krate.notes.kv")
+        );
+    }
+
+    const MAKER: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const STRANGER: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+    /// An app's unsigned data, every piece with something in it, sealed as
+    /// the run seals it: under the unsigned principal's own name.
+    fn unsigned_data(home: &Path, app_id: &str, key: &[u8]) -> PathBuf {
+        let old = unsigned_principal(app_id.to_string());
+        let base = principal_store_path_in(home, &old);
+        fs::create_dir_all(base.parent().unwrap()).unwrap();
+        fs::write(base.with_extension("kv"), b"notes").unwrap();
+        fs::write(base.with_extension("sqlite"), b"db").unwrap();
+        fs::write(base.with_extension("sqlite-wal"), b"wal").unwrap();
+        fs::write(base.with_extension("shared.json"), b"{}").unwrap();
+        let mut secrets = krate_runtime::secret_host::AppSecrets::open(
+            base.with_extension("secrets"),
+            &old.storage_key(),
+            key,
+            true,
+        );
+        secrets.set("token", b"s3cret".to_vec()).unwrap();
+        base
+    }
+
+    fn secret_in(base: &Path, label: &str, key: &[u8]) -> Option<Vec<u8>> {
+        krate_runtime::secret_host::AppSecrets::open(
+            base.with_extension("secrets"),
+            label,
+            key,
+            true,
+        )
+        .get("token")
+        .ok()
+        .flatten()
+    }
+
+    /// IC-983, K-247: the first open of an app signed by THIS computer's
+    /// maker key takes what its unsigned builds kept, once -- renamed, its
+    /// secrets sealed again under the signed name -- and a rebuild (the same
+    /// key) finds it there. The id is settled: an unsigned file declaring
+    /// the id later opens to a fresh store, and nothing is taken again.
+    #[test]
+    fn the_makers_first_signed_open_takes_its_unsigned_data_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let signed = StoragePrincipal::Verified {
+            publisher: MAKER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let new = principal_store_path_in(home, &signed);
+
+        let moved = adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine).unwrap();
+        let IdDataAdopted::Moved(pieces) = moved else {
+            panic!("expected a move, got {moved:?}")
+        };
+        for piece in ["sqlite-wal", "sqlite", "kv", "secrets", "shared.json"] {
+            assert!(pieces.iter().any(|p| p == piece), "{piece} in {pieces:?}");
+        }
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+        assert_eq!(fs::read(new.with_extension("sqlite-wal")).unwrap(), b"wal");
+        for piece in ["kv", "sqlite", "sqlite-wal", "secrets", "shared.json"] {
+            assert!(
+                !old.with_extension(piece).exists(),
+                "{piece} left at the id"
+            );
+        }
+        assert_eq!(
+            secret_in(&new, &signed.storage_key(), &key).as_deref(),
+            Some(&b"s3cret"[..]),
+            "its secrets open under the signed name"
+        );
+        let old_label = unsigned_principal("dev.krate.notes".to_string()).storage_key();
+        assert_eq!(secret_in(&new, &old_label, &key), None);
+
+        // A rebuild: same key, nothing to take, the data is where it was.
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine),
+            Ok(IdDataAdopted::Settled)
+        );
+        fs::write(old.with_extension("kv"), b"an unsigned file's").unwrap();
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine),
+            Ok(IdDataAdopted::Settled),
+            "what an unsigned file writes under the id later stays its own"
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+        assert_eq!(
+            fs::read(old.with_extension("kv")).unwrap(),
+            b"an unsigned file's"
+        );
+    }
+
+    /// Only the maker's own key takes anything: an app signed by another
+    /// publisher -- a download, someone else's release -- moves nothing, and
+    /// an unsigned app from a file is where it always was.
+    #[test]
+    fn an_app_signed_by_another_key_takes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let theirs = StoragePrincipal::Verified {
+            publisher: STRANGER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &theirs, Some(MAKER), &machine),
+            Ok(IdDataAdopted::NotTaken)
+        );
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &theirs, None, &machine),
+            Ok(IdDataAdopted::NotTaken),
+            "no maker key on this computer: nothing is anyone's to take"
+        );
+        let unsigned = unsigned_principal("dev.krate.notes".to_string());
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &unsigned, Some(MAKER), &machine),
+            Ok(IdDataAdopted::NotTaken)
+        );
+        assert_eq!(fs::read(old.with_extension("kv")).unwrap(), b"notes");
+        assert!(!principal_store_path_in(home, &theirs).exists());
+    }
+
+    /// A move cut short finishes on the maker's next open, never on another
+    /// publisher's.
+    #[test]
+    fn a_makers_move_cut_short_finishes_on_the_next_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let signed = StoragePrincipal::Verified {
+            publisher: MAKER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let new = principal_store_path_in(home, &signed);
+        // As a crash leaves it: the record names the maker, the database
+        // is across, the rest is not.
+        fs::write(
+            app_store_path_in(home, "dev.krate.notes").with_extension("moved"),
+            format!("{MAKER}\n"),
+        )
+        .unwrap();
+        fs::rename(old.with_extension("sqlite"), new.with_extension("sqlite")).unwrap();
+        let finished = adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine).unwrap();
+        assert!(
+            matches!(&finished, IdDataAdopted::Moved(p) if !p.iter().any(|p| p == "sqlite") && p.iter().any(|p| p == "kv")),
+            "{finished:?}"
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+    }
+
+    const TAG: &str = "k0123456789abcdef";
+
+    /// K-1172 on a computer: an unsigned app a hub handed over is keyed by
+    /// its id and the account that published it -- two accounts, two stores
+    /// -- and a file with no hub tag keeps the id-keyed path it always had.
+    #[test]
+    fn two_unsigned_apps_with_one_id_from_two_hub_accounts_get_different_stores() {
+        let manifest = |id: &str| {
+            Manifest::parse(&format!(
+                "[app]\nid = \"{id}\"\nname = \"N\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ))
+            .unwrap()
+        };
+        let notes = manifest("dev.krate.notes");
+        let alice = storage_principal_from(&notes, None, None, Some(TAG));
+        let mallory = storage_principal_from(&notes, None, None, Some("kfedcba9876543210"));
+        let file = storage_principal_from(&notes, None, None, None);
+        assert_eq!(alice.storage_key(), "dev.krate.notes~k0123456789abcdef");
+        assert_ne!(alice.storage_key(), mallory.storage_key());
+        assert!(alice.is_isolated() && !alice.is_verified());
+        let home = Path::new("/h");
+        assert_eq!(
+            principal_store_path_in(home, &alice),
+            Path::new("/h/store/dev.krate.notes~k0123456789abcdef.kv")
+        );
+        assert_eq!(file, unsigned_principal("dev.krate.notes".to_string()));
+        // A header that is not a hub tag keys nothing apart.
+        assert_eq!(
+            storage_principal_from(&notes, None, None, Some("../../x")),
+            file
+        );
+        // No id spells its way into an account's store: a manifest refuses
+        // the `~`, and the name it would make is sanitized apart anyway.
+        assert!(Manifest::parse(
+            "[app]\nid = \"dev.krate.notes~k0123456789abcdef\"\nname = \"N\"\n\
+             version = \"1.0.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+        )
+        .is_err());
+        let spelled = StoragePrincipal::Unverified {
+            app_id: "dev.krate.notes~k0123456789abcdef".to_string(),
+        };
+        assert_ne!(
+            principal_store_path_in(home, &spelled),
+            principal_store_path_in(home, &alice)
+        );
+    }
+
+    /// The first open of a hub-published unsigned app gets a COPY of its
+    /// id's data, once: nothing is taken from the person's own app of the
+    /// same id, and a second account's app gets its own copy.
+    #[test]
+    fn a_hub_published_app_gets_a_copy_of_its_ids_data_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let key = vec![7u8; 32];
+        let machine = || key.clone();
+        let old = unsigned_data(home, "dev.krate.notes", &key);
+        let alice = StoragePrincipal::HubOwned {
+            tag: TAG.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let new = principal_store_path_in(home, &alice);
+        let copied = adopt_id_keyed_data_here(home, &alice, Some(MAKER), &machine).unwrap();
+        assert!(
+            matches!(&copied, IdDataAdopted::Copied(p) if p.iter().any(|p| p == "kv")),
+            "{copied:?}"
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"notes");
+        assert_eq!(
+            secret_in(&new, &alice.storage_key(), &key).as_deref(),
+            Some(&b"s3cret"[..])
+        );
+        assert_eq!(
+            fs::read(old.with_extension("kv")).unwrap(),
+            b"notes",
+            "nothing taken"
+        );
+        fs::write(new.with_extension("kv"), b"alice's own").unwrap();
+        assert_eq!(
+            adopt_id_keyed_data_here(home, &alice, Some(MAKER), &machine),
+            Ok(IdDataAdopted::Settled)
+        );
+        assert_eq!(fs::read(new.with_extension("kv")).unwrap(), b"alice's own");
+        // The maker's own signed build still finds the id's data to take.
+        let signed = StoragePrincipal::Verified {
+            publisher: MAKER.to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        let moved = adopt_id_keyed_data_here(home, &signed, Some(MAKER), &machine).unwrap();
+        assert!(matches!(moved, IdDataAdopted::Moved(_)), "{moved:?}");
+    }
+
     /// What the app id does and does not decide (IC-736).
     ///
     /// It decides where an app's data lives, which is right: data follows the
@@ -28476,5 +33135,276 @@ mod storage_identity_tests {
                 root.display()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod link_note_tests {
+    use super::*;
+
+    #[test]
+    fn check_app_says_what_a_link_cannot_run_and_nothing_when_all_can() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let manifest = |caps: &[&str]| {
+            let mut text = String::from(
+                "[app]\nid = \"dev.krate.t\"\nname = \"T\"\nversion = \"0.1.0\"\n\
+                 entry = \"x.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n",
+            );
+            for cap in caps {
+                text.push_str(&format!(
+                    "\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"r\"\nrequired = true\n"
+                ));
+            }
+            std::fs::write(dir.path().join("manifest.toml"), text).expect("write");
+        };
+        manifest(&[
+            "ui.window:create",
+            "store.sql",
+            "net.connect:api.example.com:443",
+        ]);
+        assert_eq!(link_notes(dir.path()), Vec::<String>::new());
+        manifest(&["ui.window:create", "photos.add", "store.sql"]);
+        let notes = link_notes(dir.path());
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].contains("add pictures to your photo library (photos.add)"),
+            "{notes:?}"
+        );
+        assert!(!notes[0].contains("store.sql"), "{notes:?}");
+    }
+}
+
+#[cfg(test)]
+mod app_id_tests {
+    use super::*;
+
+    /// A new app's id gains its own part; rewriting it touches only the
+    /// `[app]` id line, never an id-looking line elsewhere (IC-976).
+    #[test]
+    fn a_new_app_id_is_its_own_and_a_rewrite_touches_only_that_line() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let text = "[app]\nid = \"dev.krate.timer\"\nname = \"Timer\"\nversion = \"0.1.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n[[capabilities]]\ncap = \"ui.window:create\"\nrationale = \"id = not this\"\nrequired = true\n";
+        std::fs::write(dir.path().join("manifest.toml"), text).expect("write");
+        assert_eq!(
+            manifest_app_id(dir.path()).as_deref(),
+            Some("dev.krate.timer")
+        );
+        let suffix = app_id_suffix("a countdown timer for tea");
+        assert_eq!(suffix.len(), 6);
+        assert!(suffix
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase()));
+        set_manifest_app_id(dir.path(), &format!("dev.krate.timer.{suffix}")).expect("set");
+        let after = std::fs::read_to_string(dir.path().join("manifest.toml")).expect("read");
+        assert_eq!(
+            after,
+            text.replace("dev.krate.timer", &format!("dev.krate.timer.{suffix}"))
+        );
+        krate_manifest::Manifest::parse(&after).expect("still a valid manifest");
+        assert_eq!(
+            app_id_suffix("a countdown timer for tea"),
+            suffix,
+            "the same request, the same app"
+        );
+        assert_ne!(
+            app_id_suffix("a timer for my workouts"),
+            suffix,
+            "another app with the name, another id"
+        );
+    }
+}
+
+#[cfg(test)]
+mod check_pass_tests {
+    use super::{check_pass_file, check_pass_key, read_check_pass, write_check_pass};
+    use std::fs;
+
+    fn app() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp dir");
+        fs::write(dir.path().join("manifest.toml"), "[app]\nid = \"a\"\n").expect("manifest");
+        fs::create_dir_all(dir.path().join("assets/img")).expect("assets");
+        fs::write(dir.path().join("assets/img/a.png"), b"one").expect("asset");
+        dir
+    }
+
+    fn key(dir: &std::path::Path, wasm: &[u8]) -> String {
+        check_pass_key(dir, wasm, &dir.join("manifest.toml")).expect("a key")
+    }
+
+    #[test]
+    fn the_same_bytes_give_the_same_key() {
+        let dir = app();
+        assert_eq!(key(dir.path(), b"wasm"), key(dir.path(), b"wasm"));
+    }
+
+    #[test]
+    fn every_input_the_verdict_depends_on_changes_the_key() {
+        let dir = app();
+        let first = key(dir.path(), b"wasm");
+        assert_ne!(first, key(dir.path(), b"wasm2"), "the component");
+
+        fs::write(dir.path().join("manifest.toml"), "[app]\nid = \"b\"\n").expect("manifest");
+        let after_manifest = key(dir.path(), b"wasm");
+        assert_ne!(first, after_manifest, "the manifest");
+
+        fs::write(dir.path().join("krate-check.toml"), "").expect("empty task");
+        assert_ne!(
+            after_manifest,
+            key(dir.path(), b"wasm"),
+            "an empty task file is not the same as none"
+        );
+        fs::write(dir.path().join("krate-check.toml"), "name = \"t\"\n").expect("task");
+        let after_task = key(dir.path(), b"wasm");
+        assert_ne!(after_manifest, after_task, "the task file");
+
+        fs::write(dir.path().join("assets/img/a.png"), b"two").expect("asset");
+        let after_asset = key(dir.path(), b"wasm");
+        assert_ne!(after_task, after_asset, "an asset's bytes");
+
+        fs::write(dir.path().join("assets/b.txt"), b"new").expect("asset");
+        assert_ne!(after_asset, key(dir.path(), b"wasm"), "a new asset");
+    }
+
+    #[test]
+    fn a_pass_is_read_back_only_for_its_own_key_and_only_while_fresh() {
+        let dir = app();
+        let k = key(dir.path(), b"wasm");
+        assert!(
+            read_check_pass(dir.path(), &k).is_none(),
+            "nothing recorded yet"
+        );
+
+        write_check_pass(
+            dir.path(),
+            &k,
+            &["layout", "build", "run", "usability"],
+            &["responds to a press: not checked".to_string()],
+        );
+        let (passed, notes, age) = read_check_pass(dir.path(), &k).expect("the pass");
+        assert_eq!(passed, vec!["layout", "build", "run", "usability"]);
+        assert_eq!(notes, vec!["responds to a press: not checked".to_string()]);
+        assert!(age < 5);
+
+        let other = key(dir.path(), b"changed wasm");
+        assert!(
+            read_check_pass(dir.path(), &other).is_none(),
+            "a pass never answers for other bytes"
+        );
+
+        // An hour old: judged again.
+        let file = check_pass_file(dir.path());
+        let mut record: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&file).expect("record")).expect("json");
+        record["at"] = serde_json::json!(super::unix_now() - 3600);
+        fs::write(&file, record.to_string()).expect("age it");
+        assert!(
+            read_check_pass(dir.path(), &k).is_none(),
+            "a stale pass is not reused"
+        );
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+mod publish_staged_tests {
+    use super::publish_staged;
+    use std::fs;
+
+    /// An update replaces the whole app: nothing of the old version is left
+    /// inside it, and nothing is left beside it (IC-278).
+    #[test]
+    fn an_update_replaces_the_app_whole_and_leaves_nothing_beside_it() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("Notes (notes)");
+        let staging = root.path().join(".Notes (notes).installing");
+        let previous = root.path().join(".Notes (notes).replaced");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("app.krate"), "version 1").unwrap();
+        fs::write(target.join("only-in-v1"), "stale").unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("app.krate"), "version 2").unwrap();
+
+        publish_staged(&staging, &target, &previous).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("app.krate")).unwrap(),
+            "version 2"
+        );
+        assert!(
+            !target.join("only-in-v1").exists(),
+            "nothing of v1 is left inside"
+        );
+        assert!(
+            !staging.exists() && !previous.exists(),
+            "nothing is left beside it"
+        );
+    }
+
+    /// An install that cannot finish leaves the installed app exactly as it
+    /// was: the failure is "the update failed", never "the app is gone".
+    #[test]
+    fn an_install_that_cannot_finish_leaves_the_old_app_working() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("Notes (notes)");
+        let previous = root.path().join(".Notes (notes).replaced");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("app.krate"), "version 1").unwrap();
+        // The staged copy never got written: a full disk, a killed terminal.
+        let staging = root.path().join(".Notes (notes).installing");
+        assert!(!staging.exists(), "the hazard: there is nothing to swap in");
+
+        let err = publish_staged(&staging, &target, &previous).unwrap_err();
+
+        assert!(format!("{err:#}").contains("installing"), "{err:#}");
+        assert_eq!(
+            fs::read_to_string(target.join("app.krate")).unwrap(),
+            "version 1"
+        );
+        assert!(!previous.exists());
+    }
+
+    /// A first install has nothing to set aside, and a leftover from an
+    /// earlier interrupted run does not get in the way.
+    #[test]
+    fn a_first_install_ignores_what_an_interrupted_one_left_behind() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("Notes (notes)");
+        let staging = root.path().join(".Notes (notes).installing");
+        let previous = root.path().join(".Notes (notes).replaced");
+        fs::create_dir_all(&previous).unwrap();
+        fs::write(previous.join("junk"), "from a crash").unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("app.krate"), "version 1").unwrap();
+
+        publish_staged(&staging, &target, &previous).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("app.krate")).unwrap(),
+            "version 1"
+        );
+        assert!(!previous.exists());
+    }
+}
+
+/// The bundle an opened app runs in says why for every piece of hardware
+/// (IC-982): without the location sentence macOS drops the prompt and the
+/// app waits for ever; without the Bluetooth one it ends the process.
+#[cfg(all(test, target_os = "macos"))]
+mod launcher_plist_tests {
+    #[test]
+    fn an_opened_app_s_bundle_says_why_for_every_piece_of_hardware() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let engine = dir.path().join("engine");
+        std::fs::write(&engine, b"not a program").expect("engine");
+        super::macos_launcher_bundle(dir.path(), "Heart Rate", &engine).expect("bundle");
+        let plist = std::fs::read_to_string(dir.path().join("Heart Rate.app/Contents/Info.plist"))
+            .expect("Info.plist");
+        for key in super::HARDWARE_USAGE_KEYS {
+            assert!(
+                plist.contains(&format!("<key>{key}</key>")),
+                "missing {key}"
+            );
+        }
+        assert!(plist.contains("Heart Rate asked to reach a Bluetooth device"));
     }
 }

@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           components: rustfmt
       - name: Check formatting
@@ -81,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           components: clippy
       - name: Install Linux audio and window-system development files
@@ -107,6 +107,39 @@ jobs:
             --no-default-features --features phase2-bindings -- -D warnings
           cargo clippy -p krate-cli --all-targets --no-default-features -- -D warnings
 
+  # The phone code is cfg'd to its own targets, so the host lint above never
+  # reads it; until this job, nothing built it but a person (K-1205).
+  phones:
+    name: Lint phones (${{ matrix.phone }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            phone: android
+            targets: wasm32-wasip1, aarch64-linux-android
+          - os: macos-latest
+            phone: ios
+            targets: wasm32-wasip1, aarch64-apple-ios-sim, aarch64-apple-ios
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
+        with:
+          components: clippy
+          targets: ${{ matrix.targets }}
+      - name: Cache cargo registry
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-phones-${{ hashFiles('**/Cargo.lock') }}
+      - name: Lint the phone code on its own targets
+        run: sh scripts/lint-phones.sh ${{ matrix.phone }}
+
   # ──────────────────────────────────────────────
   # 3. Phase 2 binding checkpoint
   # ──────────────────────────────────────────────
@@ -117,7 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Cache cargo registry
@@ -140,7 +173,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2, wasm32-unknown-unknown
       - name: Install Linux audio, window-system and Studio (Tauri) development files
@@ -305,7 +338,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Cache cargo registry
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -360,7 +393,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1
       - name: Install Linux audio and window-system development files
@@ -395,7 +428,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Cache cargo registry
@@ -458,7 +491,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2
       - name: Install Linux audio and window-system development files
@@ -555,9 +588,13 @@ jobs:
     # run 34094426007.
     #
     # Measured on that run: macOS 37 min, ubuntu 46 min. Windows reaches the
-    # Phase 1 step at 33 min. 90 leaves real margin on the slowest lane while
-    # still failing, with a step name attached, well before the ceiling.
-    timeout-minutes: 90
+    # Phase 1 step at 33 min.
+    #
+    # By run 41797544618 (2026-11-04) Windows had grown to 89 minutes of
+    # steps, every one green, and the 90-minute cap fired during the cache
+    # save -- a cancelled lane that held rc9 for a passing build. 110 keeps
+    # ten minutes under the ceiling and twenty over the slowest lane.
+    timeout-minutes: 110
     strategy:
       fail-fast: false
       matrix:
@@ -568,7 +605,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2, wasm32-unknown-unknown
       - name: Cache cargo registry
@@ -1114,6 +1151,7 @@ jobs:
             --strict \
             --output "krate-evidence/adapter-evidence-${{ matrix.os }}.md"
       - name: Upload adapter evidence
+        if: ${{ !cancelled() && hashFiles('krate-evidence/adapter-evidence-*.md') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: adapter-evidence-${{ matrix.os }}
@@ -1147,6 +1185,88 @@ jobs:
   #
   # If this job is red, the sentence "one file, any computer" is not true and
   # nothing else on the board matters.
+  # The organisation starters, each used by two people through its window
+  # (crates/cli/tests/cli.rs, every test ending `_through_its_window`): the
+  # fifteen apps an organisation is offered first, plus cutting and pasting
+  # in one. Their own job, beside the full lanes rather than inside them --
+  # run one at a time on Windows they added twenty minutes to the Phase 1
+  # step and pushed that lane past its limit (run 41675230168). They need no
+  # fixtures: the shipped starters are the bundles under test.
+  starter-apps:
+    name: Organisation starters (${{ matrix.os }})
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: ${{ matrix.os }}
+    # Measured on a Mac: the sixteen take about three and a half minutes in
+    # parallel. Windows runs them one at a time; 60 leaves room for that and
+    # the build while still failing well before GitHub's two-hour ceiling.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-2022]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install Linux audio and window-system development files
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
+      - name: Cache cargo registry
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.os }}-starters-${{ hashFiles('**/Cargo.lock') }}
+      - name: Use every starter through its window
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          # One at a time on Windows, as the Phase 1 step runs there.
+          threads=""
+          if [ "$RUNNER_OS" = "Windows" ]; then threads="--test-threads=1"; fi
+          cargo test -p krate-cli --test cli -- _through_its_window --show-output $threads 2>&1 | tee starters.log
+          status=${PIPESTATUS[0]}
+          # Sixteen ran, not zero: a filter that matched nothing passes.
+          ran=$(sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' starters.log | tail -1)
+          ran=${ran:-0}
+          if grep -q "^skipping starter_" starters.log; then echo "a starter test skipped itself" >&2; exit 1; fi
+          echo "starter tests passed: $ran"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if [ "$ran" -lt 16 ]; then echo "expected 16 starter tests to pass, $ran did" >&2; exit 1; fi
+
+  # The apps the authoring pack tells authors to start from pass the check
+  # those authors are held to: nine of them did not, and every app made from
+  # them copied the fault (K-1216).
+  reference-apps:
+    name: Reference apps pass check-app
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
+        with:
+          targets: wasm32-wasip1, wasm32-wasip2
+      - name: Cache cargo registry
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-reference-apps-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-component (check-app builds each app as a component)
+        run: cargo install cargo-component --locked --version 0.21.1
+      - name: Build krate
+        run: cargo build --release -p krate-cli
+      - name: The checker reads the pack and judges as check-app does
+        run: python3 scripts/check-reference-apps.py --self-test
+      - name: Check every reference app
+        run: python3 scripts/check-reference-apps.py
+
   cross-system-bundles:
     name: Open every bundle on ${{ matrix.os }}
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
@@ -1160,7 +1280,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
@@ -1301,7 +1421,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
@@ -1383,7 +1503,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install cross
         run: cargo install cross --locked
       - name: Build the release binary the way the release does
@@ -1417,7 +1537,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1
       - name: Install Linux audio and window-system development files
@@ -1602,7 +1722,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux language-variant evidence
@@ -1639,7 +1759,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux UCap evidence
@@ -1676,7 +1796,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux adapter evidence
@@ -1713,7 +1833,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Download Linux sample evidence
@@ -1870,6 +1990,16 @@ jobs:
         run: |
           python3 scripts/check-version-pins.py
           python3 scripts/check-version-pins.py --self-test
+      # The organisation starters are copies twice over: twelve apps share
+      # one kit by copying it, and each shipped .krate carries the source it
+      # was built from. A fix that misses a copy, or is never repacked, ships
+      # the old behaviour. Neither check ran anywhere before.
+      - name: The starters agree with each other and with apps/
+        run: |
+          python3 scripts/check-starter-kit.py
+          python3 scripts/check-starter-kit.py --self-test
+          python3 scripts/check-starters-fresh.py
+          python3 scripts/check-starters-fresh.py --self-test
       # The hub worker's tests mirror its logic rather than importing it (it
       # is one file with no module boundary), and a mirrored test that never
       # runs cannot catch the drift it was written for. Three of these
@@ -1882,11 +2012,33 @@ jobs:
       # The publish door makes each release's web pack with the transpiler
       # compiled to wasm, and the hub serves the Player (IC-956); the worker
       # imports both. The transpiler brings its own Rust (its toolchain file).
+      # store.sql in the tab (K-1149) is SQLite, which is C: the Player
+      # build compiles it with wasi-sdk's clang (crates/sql-web). Pinned and
+      # checked by its published digest.
+      - name: Install wasi-sdk
+        run: |
+          curl -sSfL -o /tmp/wasi-sdk.tar.gz \
+            https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz
+          echo "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4  /tmp/wasi-sdk.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/opt" && tar xzf /tmp/wasi-sdk.tar.gz -C "$HOME/opt"
+          ln -sfn "$HOME/opt/wasi-sdk-34.0-x86_64-linux" "$HOME/opt/wasi-sdk"
       - name: Build the hub transpiler and the Player
         run: |
           cargo install wasm-bindgen-cli --locked --version 0.2.120
           rustup toolchain install 1.96.0 --profile minimal --target wasm32-unknown-unknown
           scripts/build-web-player.sh
+      # The browser-tab proofs below open apps in this Player, so they take
+      # this build rather than making a second one.
+      - name: Keep the Player for the browser-tab proofs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: web-player
+          path: |
+            cloud/worker/player-dist/
+            cloud/worker/src/validator.wasm
+            cloud/worker/src/transpiler.wasm
+          if-no-files-found: error
+          retention-days: 3
       # The hub signs people in with SAML through @node-saml/node-saml
       # (IC-955), so the worker has npm dependencies now; exactly the
       # locked ones.
@@ -1955,6 +2107,83 @@ jobs:
         run: node packages/sdk-go/scripts/check-shape.mjs
 
   # ──────────────────────────────────────────────
+  # 13b. The tab Player, opened from a link in real browsers
+  # ──────────────────────────────────────────────
+  #
+  # A Krate app opened from a link runs in the browser's tab (IC-956). Its
+  # proofs -- a database, live connections, picked and saved files, a shared
+  # store and secrets, the device's senses, sound, and a link that follows
+  # an app to its next version -- each run the hub Worker in Node over the
+  # worker tests' stand-ins, publish a committed .krate to it, and open it
+  # in Chromium (computer and phone), WebKit (iPhone) and, for live
+  # connections, Firefox. Until this job they ran only on the founder's Mac.
+  #
+  # Every push, not only the full lanes: the Player is already built by the
+  # docs job on every push and handed over here, the proofs take about five
+  # minutes, and this job ends well before the Ubuntu test job does, so it
+  # adds no time to a run. A tab guard that runs nightly finds the break the
+  # morning after it shipped.
+  #
+  # Runs once the docs job has uploaded the Player even if a later docs
+  # check fails, so an unrelated red line does not hide these verdicts.
+  browser-tab-proofs:
+    name: Browser-tab proofs (Chromium, WebKit, Firefox)
+    needs: docs
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # The hub's tests need node:sqlite (Node 22); pinned so a runner image
+      # change cannot move it.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+      - name: Fetch the Player the docs job built
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: web-player
+          path: cloud/worker
+      - name: Install the hub's dependencies
+        run: cd cloud/worker && npm ci --no-audit --no-fund
+      # Playwright 1.63.0, the version crates/adapter-web/player/package.json
+      # names, from a lock file that holds nothing else.
+      - name: Install Playwright
+        run: cd cloud/worker/browser-test && npm ci --no-audit --no-fund
+      - name: Cache Playwright's browsers
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('cloud/worker/browser-test/package-lock.json') }}
+      # --with-deps installs the system libraries WebKit and Firefox need on
+      # Ubuntu every time (apt, not cached); the browsers come from the cache.
+      - name: Install Chromium, WebKit and Firefox
+        run: cd cloud/worker/browser-test && npx playwright install --with-deps --only-shell chromium webkit firefox
+      # Every proof runs even when one fails, and the step fails naming each
+      # one that did not exit 0. ws-proof exits 2 when an engine on its list
+      # (Firefox among them) did not start: here that is a failure, not a
+      # pass. No screenshot folder is passed: share-proof's pictures inject a
+      # style WebKit's content policy logs, and it reads that log after them.
+      - name: Run the browser-tab proofs
+        env:
+          PLAYWRIGHT_MODULE: ${{ github.workspace }}/cloud/worker/browser-test/node_modules/playwright/index.mjs
+        run: |
+          failed=""
+          for proof in sql ws file share senses audio versions storage signin open-file; do
+            echo "== $proof-proof"
+            start=$SECONDS
+            code=0
+            timeout 600 node --experimental-wasm-modules "crates/adapter-web/player/$proof-proof.mjs" || code=$?
+            echo "== $proof-proof exited $code after $((SECONDS - start))s"
+            if [ "$code" -ne 0 ]; then failed="$failed $proof-proof($code)"; fi
+          done
+          if [ -n "$failed" ]; then
+            echo "failed, or not run in every engine:$failed" >&2
+            exit 1
+          fi
+          echo "every browser-tab proof passed in every engine"
+
+  # ──────────────────────────────────────────────
   # 14. Benchmark smoke + warning-only regression check
   # ──────────────────────────────────────────────
   benchmarks:
@@ -1966,7 +2195,7 @@ jobs:
       - name: Install Linux audio and window-system development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2
       - name: Cache cargo registry
@@ -2044,7 +2273,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked --version 0.19.4
       - name: Run cargo-deny

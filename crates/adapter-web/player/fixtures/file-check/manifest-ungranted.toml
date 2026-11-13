@@ -1,0 +1,13 @@
+# The same app with no file dialog and no drop declared: what a tab must
+# refuse exactly as the desktop does (sabotage-free half of file-proof.mjs).
+[app]
+id = "dev.krate.file-check-ungranted"
+name = "File Check Ungranted"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_file_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true

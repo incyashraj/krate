@@ -4,7 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Open a Krate app</title>
-<meta name="description" content="Someone sent you a .krate file. Install Krate once, double-click the file, decide what it may do." />
+<meta name="description" content="Someone sent you a Krate app? Open it right here in your browser, on a phone or a computer, with nothing to install. Or install Krate once and double-click the file." />
+<meta property="og:title" content="Open a Krate app" />
+<meta property="og:description" content="Someone sent you a Krate app? Open it right here in your browser, on a phone or a computer, with nothing to install. Or install Krate once and double-click the file." />
+<meta property="og:url" content="https://krate.tech/open/" />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="https://krate.tech/og-v5.png" />
+<meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="/krate-favicon.png" />
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
@@ -14,6 +20,14 @@
 <style>
 /* the page's script hides and shows with the hidden attribute; it must beat kit display rules (.btn is inline-flex) */
 .hidden, [hidden] { display: none !important; }
+
+/* a .krate file they already have: open it in the browser, nothing installed */
+.fileopen { display: flex; align-items: center; gap: 18px; margin: 30px auto 0; max-width: 620px; padding: 14px 16px 14px 14px; border-radius: 22px; text-align: left; background: var(--s1); box-shadow: 0 0 0 1px var(--hair), var(--sh-1); }
+.fileopen .fo-doc { flex: none; width: auto; height: 58px; margin-left: 4px; filter: drop-shadow(0 6px 12px rgba(24,24,27,.14)); }
+.fileopen .fo-text { flex: 1; min-width: 0; }
+.fileopen h2 { font-size: 17px; line-height: 1.3; letter-spacing: -.02em; }
+.fileopen p { margin-top: 3px; font-size: 14px; line-height: 1.5; color: var(--mute); }
+.fileopen .btn { flex: none; }
 
 /* the app they were actually sent (?a=<hash>), above everything else */
 .theirapp { display: flex; align-items: center; gap: 22px; margin: 34px auto 0; max-width: 620px; padding: 12px 22px 12px 12px; border-radius: 24px; text-align: left; background: var(--s1); box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 35%, var(--hair)), 0 24px 50px -30px rgba(30,90,50,.3); }
@@ -25,6 +39,10 @@
 .ta-kicker::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
 .theirapp h2 { margin-top: 6px; font-size: 24px; letter-spacing: -.03em; line-height: 1.15; overflow-wrap: anywhere; }
 .ta-sub { margin-top: 4px; font-size: 14px; color: var(--mute); }
+/* An older version than the app's current one (IC-976): one quiet line. */
+.ta-newer { margin-top: 6px; font-size: 13px; color: var(--ink-3); }
+.ta-newer a { color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.ta-newer a:hover { color: var(--ink); text-decoration-color: currentColor; }
 .dlrow { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
 .theirapp .dlrow { margin-top: 14px; }
 /* a private app (?private=1): sign-in choices or a refusal inside the card */
@@ -79,6 +97,10 @@
 @media (max-width: 760px) { .ostep.permstep .body { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 560px) {
   .theirapp { flex-direction: column; align-items: stretch; gap: 14px; padding: 12px 12px 18px; }
+  .fileopen { flex-wrap: wrap; gap: 14px; padding: 16px; }
+  .fileopen .fo-doc { height: 48px; margin-left: 0; }
+  .fileopen .fo-text { flex-basis: calc(100% - 62px); }
+  .fileopen .btn { width: 100%; }
   .theirapp #taShot { width: 100%; }
   .ta-doc { margin: 8px 0 0 6px; height: 60px; align-self: flex-start; }
   .ta-text { padding: 0 6px; }
@@ -105,7 +127,7 @@
     <div class="drawer" id="drawer" role="menu">
       <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
       <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
-      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
       <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a></div>
     </div>
   </nav>
@@ -117,7 +139,7 @@
   </div>
 </header>
 <nav class="mnav" id="mnav" aria-label="Menu">
-  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a>
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
   <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
 </nav>
 
@@ -125,7 +147,19 @@
 <section class="ph wrap n">
   <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Received an app?</span>
   <h1 class="page" id="pageHead">Someone sent you an app.</h1>
-  <p class="lede pagesub">It is one small file, like a photo. To open it you need Krate once, like a player for a movie. After that, every app anyone sends you just opens, and each one tells you what it wants first.</p>
+  <p class="lede pagesub">It is one small file, like a photo. Open it right here in your browser, on a phone or a computer. To keep apps on your computer, get Krate once: after that, every app anyone sends you just opens, and each one tells you what it wants first.</p>
+
+  <!-- A .krate file the person already has: the hub's file page opens it in the browser, and the file is not uploaded.
+       Hidden when the page is about one app (?a=<hash>). -->
+  <div class="fileopen" id="fileOpen">
+    <img class="fo-doc" src="/krate-doc.png" alt="">
+    <div class="fo-text">
+      <h2>Got a .krate file? Open it here</h2>
+      <p>It opens in this browser on any phone or computer. Nothing to install, and the file is not uploaded.</p>
+    </div>
+    <a class="btn dark" id="foOpen" href="https://hub.krate.tech/run/file">Open a file</a>
+  </div>
+  <script>if (/[?&]a=/.test(location.search)) document.getElementById("fileOpen").hidden = true;</script>
 
   <!-- When a link carries ?a=<hash>, this page is about ONE app: the one they were actually sent.
        The script fills taName / taSize / taShot / taGet from GET /meta/<hash> and unhides it. -->
@@ -136,7 +170,8 @@
       <p class="ta-kicker" id="taKick">Waiting for you</p>
       <h2 id="taName">Your app</h2>
       <p class="ta-sub" id="taSize"></p>
-      <p class="dlrow" id="taRow" hidden><a class="btn dark" id="taGet" href="#">Download the app</a><a class="btn ghost" id="taTab" href="#" hidden>Open in this tab</a></p>
+      <p class="ta-newer" id="taNewer" hidden></p>
+      <p class="dlrow" id="taRow" hidden><a class="btn dark" id="taTab" href="#" hidden>Open in this tab</a><a class="btn ghost" id="taGet" href="#">Download the app</a></p>
       <div id="taMore" hidden></div>
     </div>
   </div>
@@ -210,12 +245,12 @@
 
 <footer class="foot">
   <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
-  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
   <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
   <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
   <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
-  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
-  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Open source under MIT or Apache-2.0</span></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
 </footer>
 <script src="/kit/site.js"></script>
 <script src="/kit/org.js"></script>
@@ -236,13 +271,20 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
  * this page's own "about 24 MB" describes.
  */
 (function () {
+  /* A phone or a tablet: an iPad's Safari says "Macintosh", and only a Mac
+   * with a touch screen is one. */
+  function handheld() {
+    return /Android|iPhone|iPad|iPod/.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  }
   var ua = navigator.userAgent;
   var os = /Windows/.test(ua) ? "win"
     : (/Linux|X11/.test(ua) && !/Mac/.test(ua)) ? "linux"
     : /Mac/.test(ua) ? "mac" : "";
   // A phone cannot run a desktop app. Say so rather than handing them a
-  // download that will never open.
-  var mobile = /Android/.test(ua) || /iPhone|iPad|iPod/.test(ua);
+  // download that will never open. An iPad says it is a Mac; its touch
+  // screen tells it apart.
+  var mobile = handheld();
 
   var btn = document.getElementById("dlBtn");
   var btn2 = document.getElementById("dlBtn2");
@@ -266,8 +308,8 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
       btn2.textContent = "Copied";
       setTimeout(function () { btn2.textContent = "Copy the link"; }, 1500);
     });
-    note.textContent = "Krate runs on Mac, Windows and Linux computers, not on phones yet. "
-      + "Open this page on your computer and the file will open there.";
+    note.textContent = "On a phone, a Krate app opens right in the browser, with nothing to install. "
+      + "To keep apps as native apps, open this page on a Mac, Windows or Linux computer.";
     document.getElementById("dlSize").textContent = "Free and open source. "
       + "This is the only setup there is: after it, every app anyone ever sends you just opens.";
     document.getElementById("terminal").hidden = true;
@@ -415,21 +457,40 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
  * person who was sent one specific app landed on "Nothing to open yet?".
  */
 (function () {
+  // The same test as the block above; each block keeps its own scope.
+  function handheld() {
+    return /Android|iPhone|iPad|iPod/.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  }
   var hash;
   try { hash = new URLSearchParams(location.search).get("a"); } catch (e) { return; }
   // The app in this browser tab, nothing installed (IC-956): the Player on
   // the hub, which can send the headers a tab needs to run it. Offered for
-  // a full link only, beside the download; on a phone it is the way in.
-  function inThisTab(primary) {
+  // a full link only, and always first (K-1129): a person who was sent an
+  // app wants to see it now, and the download is the second step for the
+  // native app. On a phone it is the only way in.
+  function inThisTab(phone) {
     if (!/^[0-9a-f]{64}$/.test(hash)) return;
     var tab = document.getElementById("taTab");
-    tab.href = "https://hub.krate.tech/run/" + hash;
+    var get = document.getElementById("taGet");
+    // The post the link came from (?via=reddit) goes on to the open's count.
+    var via = (new URLSearchParams(location.search).get("via") || "").toLowerCase();
+    tab.href = "https://hub.krate.tech/run/" + hash + (/^[a-z0-9][a-z0-9_-]{0,31}$/.test(via) ? "?via=" + via : "");
     tab.hidden = false;
-    if (primary) {
-      tab.className = "btn dark";
-      document.getElementById("taGet").hidden = true;
-    }
+    tab.className = "btn dark";
+    if (phone) get.hidden = true;
+    else get.className = "btn ghost";
     document.getElementById("taRow").hidden = false;
+    // The page now leads with the tab, so its words do too: nothing to
+    // install to use it here. A phone or a tablet has nothing else to do,
+    // so the computer's steps go; a computer keeps them, second.
+    var lede = document.querySelector(".pagesub");
+    if (phone) {
+      if (lede) lede.textContent = "It opens right here in your browser, with nothing to install, and shows you first what it may touch.";
+      document.getElementById("steps").hidden = true;
+    } else if (lede) {
+      lede.textContent = "It opens right here in this tab, with nothing to install. To keep it as an app on this computer, get Krate once: after that, every app anyone sends you opens with a double-click.";
+    }
   }
   if (!hash || !/^[0-9a-f]{8,64}$/.test(hash)) return;
   // An organisation's private release (IC-947, CONTRACT.md Addendum 2):
@@ -454,9 +515,25 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
       } else if (typeof size === "string" && size.trim()) {
         pretty = size.trim();
       }
+      var where = /^[0-9a-f]{64}$/.test(hash)
+        ? (handheld() ? "it opens in this browser" : "it opens in this tab, or in Krate on Mac, Windows and Linux")
+        : "it runs on Mac, Windows and Linux";
       document.getElementById("taSize").textContent = pretty
-        ? pretty + " -- it runs on Mac, Windows and Linux"
-        : "It runs on Mac, Windows and Linux";
+        ? pretty + " -- " + where
+        : where.charAt(0).toUpperCase() + where.slice(1);
+      // A link to one older version of an app that has moved on (IC-976):
+      // say so once, quietly, with the way to the version everyone else
+      // with the app's link now gets. The app's own link opens it.
+      var v = d.version;
+      if (v && v.newer && /^https:\/\/hub\.krate\.tech\/a\/v[0-9a-f]{11}$/.test(String(v.app_url || ""))) {
+        var newer = document.getElementById("taNewer");
+        newer.textContent = "This is v" + v.n + ". There is a newer version, v" + v.current + ". ";
+        var to = document.createElement("a");
+        to.href = v.app_url;
+        to.textContent = "Open v" + v.current;
+        newer.appendChild(to);
+        newer.hidden = false;
+      }
       if (d.shot) {
         var img = document.getElementById("taShot");
         img.src = d.shot;
@@ -469,7 +546,7 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
       // was sent (K-858). `?dl=1` is the hub's "the bytes, please", so this
       // link can never come back to this page. A phone cannot open the
       // file, and the steps above already tell it to use a computer.
-      if (!/Android|iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      if (!handheld()) {
         var get = document.getElementById("taGet");
         get.href = "https://hub.krate.tech/a/" + hash + "?dl=1";
         get.textContent = "Download " + name;
@@ -479,7 +556,7 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
           + "double-click it, the same as a document or a photo. Nothing to unzip, nothing to "
           + "install per app.";
       }
-      inThisTab(/Android|iPhone|iPad|iPod/.test(navigator.userAgent));
+      inThisTab(handheld());
       document.getElementById("theirApp").hidden = false;
       document.getElementById("pageHead").textContent = "Someone sent you " + name + ".";
       // They have a specific app in hand; an invitation to browse the
@@ -499,7 +576,7 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
     var here = "/open/?a=" + hash + "&private=1";
     var card = document.getElementById("theirApp");
     var more = document.getElementById("taMore");
-    var phone = /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+    var phone = handheld();
     document.getElementById("galleryCard").hidden = true;
     card.classList.add("private");
     function state(kick, title, sub, kids, refused) {

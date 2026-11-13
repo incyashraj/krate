@@ -42,6 +42,7 @@ world = "gui"
 "krate:resources" = { path = "../../wit/krate/phase4/deps/resources" }
 "krate:store" = { path = "../../wit/krate/phase4/deps/store" }
 "krate:random" = { path = "../../wit/krate/phase4/deps/random" }
+"krate:process" = { path = "../../wit/krate/phase4/deps/process" }
 "krate:ui" = { path = "../../wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "../../wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "../../wit/krate/phase4/deps/gpu" }

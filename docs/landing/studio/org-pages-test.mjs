@@ -27,11 +27,11 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
 
   // Tabs per role, from the contract's matrix.
   const tabs = (r) => K.tabsFor(r).join(",");
-  check(tabs("owner") === "home,releases,apps,insights,waiting,people,activity,billing,settings", "an owner sees all eight tabs, Apps, Insights and Billing among them");
-  check(tabs("admin") === "home,releases,apps,insights,waiting,people,activity,billing,settings", "an admin sees the apps, the insights, the activity and billing");
-  check(tabs("developer") === "home,releases,insights,waiting,people,settings", "a developer has no Activity tab");
-  check(tabs("reviewer") === "home,releases,apps,insights,waiting,people,settings", "a reviewer sees the apps and has no Activity tab");
-  check(tabs("recipient") === "home,releases,insights,people", "a recipient sees releases, their own insights and their own entry, nothing else");
+  check(tabs("owner") === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,settings", "an owner runs the organisation: Overview, Apps, Approvals, Requests, people, computers, security, connections, numbers, activity, settings -- no billing");
+  check(tabs("admin") === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,settings", "an admin has the same console as an owner");
+  check(tabs("developer") === "home,myapps,build,requests,releases,connections,insights,people,settings", "a developer makes apps: Home, My apps, New app, Requests, company apps, connections, and no Activity");
+  check(tabs("reviewer") === "home,waiting,apps,releases,insights,people,settings", "a reviewer has a home and the queue, sees the apps, and has no Activity");
+  check(tabs("recipient") === "home,requests,help", "a member has their apps, their requests and help, nothing else");
 
   check(K.invitable("owner").join() === "owner,admin,developer,reviewer,recipient", "an owner invites any role");
   check(K.invitable("admin").join() === "developer,reviewer,recipient", "an admin invites developers, reviewers and recipients only");
@@ -58,6 +58,11 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
     // "removed" and "offline" are words already; a code with a dash is not.
     check(w.title && w.body && (!r.includes("-") || !all.includes(r)) && !/[—–`]|--/.test(all), `"${r}" is words: ${w.title}`);
   }
+  // Refusals a person meets on the page name no machinery (seamless bar rule 3).
+  for (const r of ["not-signed-for-this-org", "no-org-key"]) {
+    const w = K.refusal(r, { org: "Acme" });
+    check(!/root key|release key|delegat|krate org|keys init/i.test(w.title + " " + w.body), `"${r}" names no keys or commands: ${w.body}`);
+  }
   const si = K.refusal("not-signed-in", { here: "/org/?o=acme&tab=people" });
   check(si.action && si.action.href === "/login/?next=%2Forg%2F%3Fo%3Dacme%26tab%3Dpeople", "the sign-in refusal comes back to the same page");
 
@@ -65,7 +70,7 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
   const w1 = K.eventWords({ actor: "github:carol", action: "candidate.approve", target: `candidate:${DIGEST}`, result: "denied", reason: "self-approval" }, { [DIGEST]: "Bounce 1.0.0" });
   check(w1 === "@carol tried to approve Bounce 1.0.0: they sent it themselves.", "a refused self-approval reads plainly");
   const w2 = K.eventWords({ actor: "github:alice", action: "invite.create", target: "invite:email:erin@acme.test/recipient", result: "allowed" });
-  check(w2 === "@alice invited erin@acme.test as recipient.", "an email invitation names the inbox");
+  check(w2 === "@alice invited erin@acme.test as member.", "an email invitation names the inbox");
   const w3 = K.eventWords({ actor: "github:alice", action: "member.role", target: "member:github:bob", result: "allowed", reason: "reviewer->developer" });
   check(w3 === "@alice changed @bob from reviewer to developer.", "a role change says from and to");
   check(K.fingerprint(ACME.root_key) === "0d92 19f2 81ef db72", "a key fingerprint is its first 16 hex in fours");
@@ -123,14 +128,15 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
 
 {
   const owner = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "tok-alice", routes: orgRoutes("github:alice") });
-  check(tabNames(owner) === "home,releases,apps,insights,waiting,people,activity,billing,settings", "/org/ shows an owner the Dashboard first, then all eight tabs, Apps (IC-954) beside Releases, then Insights (IC-959)");
+  check(tabNames(owner) === "home,apps,waiting,requests,releases,people,computers,security,connections,insights,activity,settings", "/org/ shows an owner their console, grouped as the sidebar draws it");
+  check(!/Billing/.test(owner.el("tabs").shown) && owner.sent.every((s) => !/\/billing/.test(s.key)), "the sidebar has no Billing, and the console never asks the hub about billing");
   check(/you are an owner/i.test(owner.el("oMeta").textContent), "and says which role they hold");
   check(/Bounce 1\.0\.0/.test(owner.el("pane").shown) && /Sent by @carol · approved by @bob/.test(owner.el("pane").shown), "Releases names who sent and who approved");
   check(button(owner.el("pane"), "Open in Krate") && button(owner.el("pane"), "Copy link"), "each release has Open in Krate and Copy link");
-  check(/Waiting for approval|Waiting/.test(owner.el("tabs").shown) && owner.el("tab-waiting").shown.includes("1"), "the Waiting tab counts what is waiting");
+  check(/Approvals/.test(owner.el("tabs").shown) && owner.el("tab-waiting").shown.includes("1"), "the Approvals tab counts what is waiting");
 
   const dan = await page("https://krate.tech/org/?o=acme&tab=activity", DASH, { token: "tok-dan", routes: orgRoutes("github:dan") });
-  check(tabNames(dan) === "home,releases,insights,people", "a recipient's /org/ has Releases, their own Insights and People only");
+  check(tabNames(dan) === "home,requests,help", "a member's /org/ has their apps, requests and help only");
   check(dan.location.href.endsWith("tab=home"), "and a link to a tab they cannot see lands on the Dashboard instead");
 
   // A reviewer approves somebody else's upload, and the confirmation names the digest it sends.
@@ -149,8 +155,9 @@ import { KIT, ORGS, DASH, JOIN, OPEN, check, page, settle, storage, P, ACME, mem
   check(sentApprove && sentApprove.key === `POST /orgs/acme/candidates/${"a".repeat(64)}/approve` && sentApprove.headers["idempotency-key"], "Approve sends that digest, once, with an Idempotency-Key");
   check(/is released/.test(bob.el("toast").shown), "and says it is released");
 
-  const carol = await page("https://krate.tech/org/?o=acme&tab=waiting", DASH, { token: "tok-carol", routes: orgRoutes("github:carol") });
-  check(!button(carol.el("pane"), "Approve") && /someone else approves/.test(carol.el("pane").shown), "the uploader is told someone else approves it, and has no Approve button");
+  // A developer follows their own versions in My apps, not in the queue.
+  const carol = await page("https://krate.tech/org/?o=acme&tab=myapps", DASH, { token: "tok-carol", routes: orgRoutes("github:carol") });
+  check(!button(carol.el("pane"), "Approve") && /Bounce/.test(carol.el("pane").shown) && /With a reviewer/.test(carol.el("pane").shown), "the sender sees their version is with a reviewer, and has no Approve button");
 
   // A refused approval stays on the sheet, in words.
   const late = await page("https://krate.tech/org/?o=acme&tab=waiting", DASH, {

@@ -1,111 +1,84 @@
-// The desktop never sells anything.
+// Studio never sells anything (F-322, 2026-11-07).
 //
-// A build on somebody's own machine uses their own AI and costs Krate
-// nothing, so the allowance, its wall and every price belong to the WEB
-// alone. That rule has drifted three times: the UI said "three apps a
-// month" while the shipped constant was one (K-216), the free-count chip
-// computed `3 - n` under a constant of 1, and the plan sheet with its
-// "$12/month" button was reachable from two desktop sidebar buttons --
-// harmless only because a CHARGING flag happened to be false, which is
-// protection by accident rather than by decision.
+// Krate has no paid plans. Studio used to carry a whole paid path behind a
+// CHARGING flag that was false: a "$12/month" plan sheet, a limit wall with
+// checkout buttons, a founding-200 offer, a priority-support tag, and two
+// shell commands (billing_info, billing_checkout) that opened Stripe. It
+// was unreachable only because a flag happened to be false -- protection
+// by accident. It is gone now, and this keeps it gone: no price, no
+// checkout and no billing command anywhere in Studio's UI or its web
+// bridge, in code or in the markup a person sees.
 //
-// So this checks the SEAM, not the flag: every money surface must be
-// behind the `tauri` test that distinguishes the desktop from a tab, and
-// must stay behind it on the day CHARGING flips.
+// What stays is the free app on Krate's own AI key in a browser: one app
+// and one change, told plainly on the web only (the desktop builds with the
+// person's own AI and has no allowance at all), with the two free ways on.
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 
-const src = readFileSync("studio/ui/app.js", "utf8");
+const app = readFileSync("studio/ui/app.js", "utf8");
+const bridge = readFileSync("docs/landing/studio/bridge.js", "utf8");
+const html = readFileSync("studio/ui/index.html", "utf8");
+
+/** Source with comments stripped, so a paragraph explaining what was
+ *  removed is not mistaken for code that still does it. */
+const bare = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+/** Markup with its comments and scripts stripped: what a person can read. */
+const visible = (src) => src.replace(/<!--[\s\S]*?-->/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
+
+const MONEY = /\$\d+\s*(?:\/|a |per )\s*(?:month|year|mo\b|yr\b)|\bcheckout\b|stripe|\bbilling_|\/billing\b|founding|upgrade for|per month|\/month|\/year|subscribe|pay by card|CHARGING|priority/i;
+for (const [name, text] of [
+  ["studio/ui/app.js", bare(app)],
+  ["docs/landing/studio/bridge.js", bare(bridge)],
+  ["studio/ui/index.html", visible(html)],
+]) {
+  const hit = MONEY.exec(text);
+  assert.ok(!hit, `${name} sells nothing (found ${hit && JSON.stringify(text.slice(Math.max(0, hit.index - 60), hit.index + 40))})`);
+}
+
+// The fixture really carries the hazard: the pattern catches what used to
+// be there, so a clean pass means the strings are gone, not that the test
+// cannot see them.
+for (const old of [
+  `'<button class="btn btn-primary" id="buyMonthly">Upgrade for $12/month</button>'`,
+  `const url = await invoke("billing_checkout", { plan });`,
+  `const CHARGING = false;`,
+  `<span class="plan-tag sup-priority hidden" id="supPriorityTag">priority</span>`,
+]) {
+  assert.ok(MONEY.test(old), `the check would catch: ${old}`);
+}
 
 /** One function's body, from its opening brace to its matching close. */
 function body(name) {
-  const m = new RegExp(`(?:async )?function ${name}\\s*\\([^)]*\\)\\s*\\{`).exec(src);
+  const m = new RegExp(`(?:async )?function ${name}\\s*\\([^)]*\\)\\s*\\{`).exec(app);
   assert.ok(m, `${name} exists`);
   let depth = 0;
   const from = m.index + m[0].length - 1;
-  for (let i = from; i < src.length; i++) {
-    if (src[i] === "{") depth++;
-    else if (src[i] === "}" && --depth === 0) return src.slice(from, i + 1);
+  for (let i = from; i < app.length; i++) {
+    if (app[i] === "{") depth++;
+    else if (app[i] === "}" && --depth === 0) return bare(app.slice(from, i + 1));
   }
   throw new Error(`${name} has no closing brace`);
 }
 
-/** A function body with its comments stripped, so a long explanation
- *  above a guard cannot look like code that ran before it. Measuring raw
- *  characters made this test fail on a guard that was in the right place
- *  under a comment saying why -- the wrong thing to punish. */
-function code(name) {
-  return body(name)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/\n\s*\n/g, "\n");
-}
-
-// Each money surface, and the guard that must come before it does
-// anything. The guard is checked EARLY -- within the first few statements
-// of real code -- because a check after the sheet is already painted is
-// not a guard.
+// The free-app words are the web's alone: the desktop has no allowance, so
+// each surface that shows it tests `tauri` before it paints anything.
 for (const name of ["maybeWelcome", "renderFreeCount", "openPlanSheet"]) {
-  const text = code(name);
+  const text = body(name);
   const guard = text.search(/\btauri\b/);
+  const paint = text.search(/textContent\s*=|innerHTML\s*=|classList\.remove\(\s*["']hidden/);
   assert.ok(guard > 0, `${name} tests \`tauri\` -- the desktop/web seam`);
-  assert.ok(
-    guard < 300,
-    `${name} tests \`tauri\` early, before it paints anything (found at ${guard} of code)`,
-  );
+  assert.ok(paint === -1 || guard < paint, `${name} decides on the desktop before it paints`);
 }
 
-// The cap in make() is web-only, and says so with !tauri rather than by
-// leaning on CHARGING being false.
-const make = code("make");
-assert.match(
-  make,
-  /let overCap = !tauri/,
-  "the free-app cap in make() is web-only (!tauri)",
-);
+// The free allowance is one app, from the constant the hub enforces.
+assert.match(bare(app), /const FREE_MAKES = 1;/, "the free allowance is one app");
 
-// No price string may sit in a function the desktop can run to completion.
-// openPlanSheet is allowed to exist on the desktop -- the referral block is
-// worth keeping -- but it must return before any pricing is dressed on.
-// Read from the same comment-stripped text the offsets come from: a
-// mention of dressPlanSheet inside the comment that EXPLAINS the guard is
-// not code that runs, and an earlier cut of this test failed on exactly
-// that.
-const plan = code("openPlanSheet");
-const tauriReturn = /if \(tauri\)[\s\S]{0,400}?return;/.exec(plan);
-assert.ok(tauriReturn, "openPlanSheet returns early on the desktop");
-assert.ok(
-  !/dressPlanSheet|\$12|checkout/.test(plan.slice(0, tauriReturn.index + tauriReturn[0].length)),
-  "nothing priced runs before the desktop return",
-);
+// Where the free app runs out, the sheet names the two free ways on.
+const after = /<b>After that<\/b><span>([^<]*)<\/span>/.exec(html);
+assert.ok(after, "the What-is-free sheet has its After-that row");
+assert.match(after[1], /own API key/, "after the free app: your own API key");
+assert.match(after[1], /Studio on your computer is free/, "or Studio on your computer, free with your own AI");
 
-// Nothing may be written onto the free-count chip before the desktop
-// guard decides whether it should exist at all. A character budget alone
-// did not catch a paint inserted just above the guard -- both fitted
-// inside it -- so the order of the two is what is asserted.
-{
-  const text = code("renderFreeCount");
-  const guard = text.search(/\btauri\b/);
-  const paint = text.search(/textContent\s*=|innerHTML\s*=/);
-  assert.ok(
-    paint === -1 || guard < paint,
-    "renderFreeCount decides on the desktop BEFORE it writes to the chip",
-  );
-}
-
-// The free count is computed from the constant, never from a literal. "3"
-// next to FREE_MAKES is how the wording drifted from the decision before.
-const free = code("renderFreeCount");
-assert.ok(
-  !/\b3\s*-\s*n\b/.test(free),
-  "the remaining-free count uses FREE_MAKES, not a hardcoded 3",
-);
-// The constant itself, read from the file with its comments stripped for
-// the same reason: the paragraph above it discusses "3 free apps" as the
-// mistake it was, and a search over raw source would find that.
-const bare = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-assert.match(bare, /const FREE_MAKES = 1;/, "the free allowance is one app");
-
-console.log("ok  every money surface is behind the desktop/web seam");
-console.log("ok  the desktop cannot reach a price, whatever CHARGING says");
-console.log("ok  the free count comes from the constant, not a literal");
+console.log("ok  no price, checkout or billing command anywhere in Studio");
+console.log("ok  the free-app words are web-only, behind the desktop/web seam");
+console.log("ok  after the free app, the two free ways on are named");

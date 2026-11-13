@@ -1,0 +1,11 @@
+# World Clock's job: show the time in each city it keeps. (Not the header's
+# local time: on a machine whose timezone it does not know, that says UTC.)
+name = "read the time in every city"
+[[step]]
+expect_text = "World Clock"
+[[step]]
+expect_text = "San Francisco"
+[[step]]
+expect_text = "London"
+[[step]]
+expect_text = "Tokyo"

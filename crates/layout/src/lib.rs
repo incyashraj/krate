@@ -402,7 +402,13 @@ pub fn hit_test(
     best
 }
 
-fn child_index(tree: &WidgetTree) -> BTreeMap<WidgetId, Vec<WidgetId>> {
+/// Every widget's children, in the tree's order, built in one pass.
+///
+/// `WidgetTree` is flat with parent pointers, so asking one node for its
+/// children walks the whole tree. Anything that asks per node builds this
+/// once instead: asking per node per frame is what made placing a 2,000-row
+/// list cost 14 s before its first frame (K-1135).
+pub fn child_index(tree: &WidgetTree) -> BTreeMap<WidgetId, Vec<WidgetId>> {
     let mut children: BTreeMap<WidgetId, Vec<WidgetId>> = BTreeMap::new();
     for node in tree.nodes().values() {
         if let Some(parent) = node.parent {
@@ -650,13 +656,22 @@ fn parent_hides_this_child(
 /// this gives the drawn painters the same truth. Walks every ancestor, so a
 /// control several containers deep inside a hidden panel is still hidden.
 pub fn is_hidden_by_tabs(tree: &WidgetTree, widget: WidgetId) -> bool {
-    let index = child_index(tree);
+    is_hidden_by_tabs_in(tree, &child_index(tree), widget)
+}
+
+/// [`is_hidden_by_tabs`] with a [`child_index`] the caller built once, for
+/// asking about every widget of a tree (K-1135).
+pub fn is_hidden_by_tabs_in(
+    tree: &WidgetTree,
+    index: &BTreeMap<WidgetId, Vec<WidgetId>>,
+    widget: WidgetId,
+) -> bool {
     let mut cursor = Some(widget);
     while let Some(id) = cursor {
         let Some(node) = tree.node(id) else {
             return false;
         };
-        if parent_hides_this_child(tree, &index, node) {
+        if parent_hides_this_child(tree, index, node) {
             return true;
         }
         cursor = node.parent;

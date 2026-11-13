@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/incyashraj/krate"
-rust-version = "1.95"  # wgpu 29 needs 1.95; the repository pins 1.94.1, so guest builds use 1.95
+rust-version = "1.95"  # wgpu 29 needs 1.95, the same Rust the repository pins
 description = "wgpu's custom backend over krate:gpu: a program or engine written for wgpu draws inside a Krate app unchanged."
 
 # Its own workspace: a guest crate, built for wasm32 inside apps, never by the

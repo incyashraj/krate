@@ -20,10 +20,15 @@ members = [
     "crates/bundle",
     "crates/lease",
     "crates/orgkeys",
+    "crates/orgdata",
+    "crates/orgaccess",
+    "crates/accountsync",
     "crates/http",
     "crates/validator-wasm",
     "crates/manifest",
     "crates/policy",
+    "crates/appsql",
+    "crates/sql-web",
     "crates/runtime",
     "crates/cli",
     "crates/mcp",
@@ -88,7 +93,7 @@ rusqlite = { version = "0.32", features = ["bundled", "hooks"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.18"
-zip = { version = "2.2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # Native file dialogs on all three systems. Default features use the XDG
 # portal on Linux rather than GTK, so no GTK development libraries are
 # needed to build.
@@ -104,7 +109,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 # pulley: the portable interpreter backend, selected at engine init on
 # iOS where executable pages are forbidden. Compiled in everywhere, used
 # only where JIT cannot be.
-wasmtime = { version = "46.0.3", features = ["component-model", "pulley"] }
+wasmtime = { version = "48.0.8", features = ["component-model", "pulley"] }
 wasmparser = "0.244.0"
 wit-parser = "0.244.0"
 
@@ -113,3 +118,19 @@ lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# The hashing and compression a bundle passes through on every pack, sign
+# and open, optimised even in a debug build. Unoptimised, a 70 MB bundle
+# (an app carrying a speech model) took a minute to pack and sign and more
+# than the 90-second verification budget to open, so a debug-built CI lane
+# failed an app the release build opens in seconds (2026-11-07).
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.zlib-rs]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
+[profile.dev.package.adler2]
+opt-level = 3

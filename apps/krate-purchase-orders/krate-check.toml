@@ -1,0 +1,57 @@
+name = "ask to buy chairs, approve and receive them"
+[[step]]
+click = "Try it here"
+[[step]]
+click = "Make the first order"
+# Select and replace (K-1109): a draft, all of it selected and pasted
+# over, then the last word selected with Shift and typed over.
+[[step]]
+type = "a first draft"
+[[step]]
+key = "Primary+a"
+[[step]]
+paste = "Six office desks"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+key = "Shift+ArrowLeft"
+[[step]]
+type = "chairs"
+[[step]]
+expect_text = "Six office chairs"
+[[step]]
+expect_no_text = "a first draft"
+[[step]]
+expect_no_text = "Six office desks"
+[[step]]
+key = "Tab"
+[[step]]
+type = "Ikea"
+[[step]]
+key = "Tab"
+[[step]]
+type = "480"
+[[step]]
+click = "you"
+[[step]]
+click = "Send for approval"
+[[step]]
+expect_text = "Waiting for you"
+[[step]]
+click = "Approve"
+[[step]]
+type = "Fine, within budget"
+[[step]]
+click = "Approve"
+[[step]]
+click = "Mark ordered"
+[[step]]
+click = "Mark received"
+[[step]]
+expect_text = "Received it"

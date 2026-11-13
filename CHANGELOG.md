@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to Krate will be documented in this file.
+All notable changes to Krate are recorded in this file. Downloads and
+checksums for every version are on the
+[releases page](https://github.com/incyashraj/krate/releases).
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Krate uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -13,6 +15,119 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 ### Fixed
 - The CLI doctor integration test now uses an isolated home and PATH, so it does not launch locally installed AI agents or depend on their presence.
+Changes merged since 0.5.5-rc9. Contributors: add a line here with your change.
+
+### Fixed
+- Web Player: in a browser tab, the haptics, motion and unlock interfaces now answer `available() = false` (and the calls answer as a phone without the feature does) instead of showing a "works in Krate on a computer" notice, which a tab cannot promise.
+
+## [0.5.5] pre-releases (rc2 to rc9) - latest rc9 2026-11-04
+
+### Added
+- Open a Krate app from a link in any browser tab, with nothing installed. A `.krate` file you were sent opens at krate.tech/open without being uploaded.
+- Apps opened from a link keep their own database, open and save files, use live connections, and can ask for the camera, microphone, location, notifications and speech.
+- One app, many versions: publishing the same app again updates it, and a link you already sent opens the new version with its data.
+- Apps lay themselves out for the screen they are on, and `check-app` runs every app as a phone, a tablet and a desktop and fails one that does not fit.
+- C and C++ programs run as Krate apps, exceptions included. Doom ships as one 2.8 MB `.krate` that plays at 51 fps.
+- Apps reach the GPU through `krate:gpu`, wgpu and Bevy programs draw in a Krate window, and `krate:process` lets an app run programs on the computer it opens on.
+- Krate for organisations: private team apps with approvals, releases and groups, team data sealed end to end, company connections the hub cannot read, SAML, OIDC and SCIM sign-in, audit export, and a console for each role.
+- A guide to publishing and opening big apps: the size limits, resuming an interrupted upload, and how a big app opens from a link.
+
+### Changed
+- Krate Studio and krate.tech are redesigned. Studio gains an IDE (Beta) to open, edit and build a Krate project with your AI, and a Port door (Beta) to bring an app you already have.
+- A gift `.krate` carries Krate with it: friends on a Mac or Linux need nothing installed first.
+- Apps are compiled once and cached, large bundles unpack once, and `krate publish` handles apps over 5 MiB.
+- Releases carry SBOMs, build provenance and `.pkg`, `.deb` and `.rpm` installers, and Krate follows a company's machine policy and proxy.
+
+### Fixed
+- Security updates to Wasmtime and other dependencies for published advisories, plus clearer errors: a crash says what it was, and an app made with a newer Krate says to update Krate.
+
+## [0.5.0] to [0.5.4] - 2026-09-19 to 2026-09-30
+
+### Added
+- Krate Studio in the browser: make, change, download and publish an app from krate.tech, with Plan mode and your own AI key.
+- GPU-backed 3D with lighting, shadows, fog, transparency, normal mapping and tone mapping: 250,000 triangles at 72 fps on the GPU.
+- Widget placement, backgrounds, borders and rounded corners, plus file drop and a working save-file dialog.
+- Apps can speak aloud, watch a folder for changes, print their window, share a store with the same publisher's other apps, and ask the person for more memory.
+- Every developer gets their own page at `name.krate.tech`.
+
+### Changed
+- New text draws about eight times faster.
+- A refused capability says why, an optional one is asked for when the feature is used, and a grant the app never declared is refused.
+- krate.tech and Studio work on a phone, and Krate apps on a Mac quit with Cmd+Q and close with Cmd+W.
+
+### Fixed
+- Linux Krate starts on Ubuntu 22.04 and Debian 12 again, Linux Studio opens, and arm64 Linux ships `cargo-component`.
+- Claude builds no longer fail with "OAuth session expired", and Studio no longer loses sessions to ordinary input.
+
+## [0.4.0] - 2026-09-14
+
+### Added
+- Signed apps: a publisher signs a bundle, delegates and revokes release keys, and an app changed after signing does not run.
+- A Windows Player installer, so someone who only opens apps has a path that fits.
+- Take an app's saved data out and put it back, and remove an installed app without losing what you wrote in it.
+- New sample apps: Pad, Diff, Bigtable and Slowfetch.
+- `check-app` drives every app with the keyboard too, and proves the app does what its author says it is for.
+
+### Changed
+- An app built against an older interface still opens, and the packer writes the same bytes for the same input on every machine.
+- The hub checks a published app with the same validator the person opening it uses.
+- One SDK for command-line and windowed apps, through a `gui` feature.
+
+### Fixed
+- Security hardening: a Wasmtime security patch, secrets sealed with real AEAD, SQLite deciding what a statement may do, and an updater that installs only what it verified.
+- Windows opens links and `.krate` files without a shell in the way, and `krate pack` no longer overflows the stack there.
+
+## [0.3.0] - 2026-09-02
+
+### Added
+- Make an app in the browser: describe it on the website, watch the build, and get the app. Studio also runs in a browser tab.
+- Author with an Anthropic or OpenAI API key, with no coding CLI to install.
+- After a build, a developer can reach the app's code and the command that made it.
+- The Mac gift is notarized, and the receive page knows which app you were sent and hands you one download.
+
+### Changed
+- Studio has a new logo, sessions in a drawer you can drag, and rebuilt Settings.
+
+### Fixed
+- Studio no longer runs from the filesystem root, so macOS stops asking for Downloads in Krate's name; dictation works; the drawer closes on Windows and Linux.
+
+## [0.2.0] to [0.2.5] - 2026-08-26 to 2026-08-31
+
+### Added
+- `krate card` and Studio's Send sheet: share an app as a card, and a hub link lands the person on a page about their app.
+- `krate wrap`: a double-clickable file for one friend that installs Krate once, then opens the app.
+- Every published app gets a page that shows it, and krate.tech has a privacy page written from the source code.
+
+### Changed
+- Every supported AI gets its own sign-in in Studio, and the AI agent is confined to its workspace.
+- Setup finishes itself without a new terminal, and a new app in the same sitting starts from a warm session.
+- A new design for krate.tech and Studio. Studio and the hub move to the Business Source License 1.1; the player, format, CLI and runtime stay MIT or Apache.
+
+### Fixed
+- The in-app updater verifies what it downloads, animating apps no longer grow memory without limit, and a late frame no longer burns a core.
+
+## [0.1.1] to [0.1.58] - 2026-08-07 to 2026-08-25
+
+### Added
+- Krate Studio: describe an app, watch it get built, change it, and publish it. It ships as a signed, notarized Mac app, then for Windows and Linux.
+- Studio plans with you before it builds, and `krate revise` changes an app you already have instead of remaking it.
+- Modern UI for apps: rounded corners, soft shadows, gradients, styled text, arcs and spring motion.
+- Apps can use the camera, keep live connections, share data between people, and join two-player game rooms on the hub.
+- Krate Cloud in Studio: browse apps, publish your own with a listing, and open an app's page.
+
+### Changed
+- Apps open about ten times faster and fill the window they are given.
+- Windows, macOS and Linux draw through the GPU, and macOS canvases present on Metal with vsync.
+- Double-clicking a `.krate` opens the app under its own name and icon.
+
+### Fixed
+- A fresh Windows machine works, Windows archives unpack correctly everywhere, and the close button always ends an app.
+
+## [0.1.0] - 2026-08-07
+
+The first release where the whole path works: install Krate, describe an app, an AI writes it, and the `.krate` file it hands you opens on macOS, Windows and Linux.
+
+Everything below was built for 0.1.0, from the first commit in April 2026.
 
 ### Added
 - Manifest `net.connect` host-pattern hardening: capability parsing now rejects invalid dot placement, invalid label-edge `-` forms, and malformed numeric IPv4 host forms before runtime policy matching, with manifest tests for accepted wildcard/label forms and malformed host cases.
@@ -26,7 +141,6 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Policy `net.connect` matching parity hardening: session grant matching now normalizes host case and numeric ports before wildcard matching, so grants like `API.example.com:0443` match canonical runtime endpoint checks.
 - Manifest capability resource-shape hardening: filesystem capability resources now use shared logical-path validation rules, and `net.connect` resources must match valid endpoint shapes (`<host>:<port>` with wildcard support) so malformed resources fail at manifest parse time.
 - Docs: added a non technical progress page at `docs/book/src/progress-for-everyone.md` with plain language goals, system flow diagrams, current timeline state, and glossary style explanations.
-- Docs: added `Publishing and opening big apps` at `docs/book/src/publishing-big-apps.md`, linked from mdBook navigation, covering the size tiers (a 2 GiB local open, the 5 MiB publish door, the 1 GiB big-file path in 64 MiB parts), per-part upload progress and the hub's whole-bundle check before a link is shown, resuming an interrupted upload from `~/.krate/uploads/`, how `krate run <link>` saves a big app once and reopens it from the file, and `KRATE_KEEP_DEBUG=1` for `krate pack`; every number is checked against `crates/bundle/src/lib.rs` and `crates/cli/src/main.rs`.
 - CLI and runtime Phase 2 app-argument count guardrail: `krate run` preflight and runtime `io.args.raw` now reject more than 1024 app arguments before guest parsing, with runtime and CLI tests covering this path.
 - Runtime Phase 2 resource-id reuse hardening: local adapter and generated host resource tables now recycle released file/stream resource IDs before allocating new IDs, with runtime tests proving close/drop reuse and free-list-first allocation at ID-counter ceiling edge cases.
 - Generated host Phase 2 resource-table guardrail: the host-side file/input/output resource table now enforces an active-resource cap and fails with a clear host-table limit error when exceeded, with runtime tests covering overflow rejection.
@@ -165,22 +279,20 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Render Mermaid flowcharts as diagrams on the published mdBook site.
 - Reworked the public mdBook docs into clearer human language, added system flow diagrams, and changed the roadmap from fixed fixed-month language to estimates.
 
+### Fixed
+- Windowed-sync tests no longer use a fixed 100 ms sleep before asserting the stand-in hub saw the connection; they poll `served` with a 5 s deadline so the test stays reliable on a busy machine (#72).
+- Krate Studio now creates an ignored placeholder resource for debug and test builds when `studio/bin/` is absent, allowing tests to compile on a fresh checkout while keeping the release engine requirement intact.
+
 ---
 
-<!-- Releases appear here as they are cut. Example format:
-
-## [0.1.0] : 2026-XX-XX
-
-### Added
-- …
-
-### Changed
-- …
-
-### Fixed
-- …
-
+[Unreleased]: https://github.com/incyashraj/krate/compare/v0.5.5-rc9...HEAD
+[0.5.5]: https://github.com/incyashraj/krate/releases/tag/v0.5.5-rc9
+[0.5.4]: https://github.com/incyashraj/krate/releases/tag/v0.5.4
+[0.5.0]: https://github.com/incyashraj/krate/releases/tag/v0.5.0
+[0.4.0]: https://github.com/incyashraj/krate/releases/tag/v0.4.0
+[0.3.0]: https://github.com/incyashraj/krate/releases/tag/v0.3.0
+[0.2.5]: https://github.com/incyashraj/krate/releases/tag/v0.2.5
+[0.2.0]: https://github.com/incyashraj/krate/releases/tag/v0.2.0
+[0.1.58]: https://github.com/incyashraj/krate/releases/tag/v0.1.58
+[0.1.1]: https://github.com/incyashraj/krate/releases/tag/v0.1.1
 [0.1.0]: https://github.com/incyashraj/krate/releases/tag/v0.1.0
--->
-
-[Unreleased]: https://github.com/incyashraj/krate/compare/HEAD...HEAD

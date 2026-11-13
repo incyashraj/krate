@@ -32,7 +32,11 @@ class PublicFactsTests(unittest.TestCase):
         for text in (readme, quickstart):
             self.assertIn(url, text)
             self.assertIn(revision + "/apps/krate-chart", text)
-            self.assertIn("krate run chart.krate --dump-caps", text)
+        # The quickstart downloads the file first; the README runs the pinned
+        # URL directly so its first sample works when pasted as written.
+        self.assertIn("krate run chart.krate --dump-caps", quickstart)
+        self.assertIn("CHART=" + url, readme)
+        self.assertIn('krate run "$CHART" --dump-caps', readme)
         expected = "3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3"
         self.assertIn(expected, quickstart)
         self.assertIn("### Try the Chart sample", quickstart)
@@ -60,8 +64,10 @@ class PublicFactsTests(unittest.TestCase):
     def test_llms_is_generated_and_scoped(self):
         rendered = facts.render_llms()
         self.assertEqual(rendered, (facts.ROOT / "docs/landing/llms.txt").read_text())
-        for phrase in ("recipient installs", "not a measurement of the latest release",
-                       "Studio has separate licensing", "not all distributed", "Source-bearing"):
+        # The founder's call (2026-10-06, P4 2026-11-07): the benchmark keeps
+        # its numbers, its date and its machine line, without disclaimers.
+        for phrase in ("recipient installs", "The recorded 2026-08-25 notes comparison",
+                       "Apple M4", "Studio has separate licensing", "Source-bearing"):
             self.assertIn(phrase, rendered)
         for phrase in ("15-40 KB", "guarantees", "cannot do anything", "80-200 MB"):
             self.assertNotIn(phrase, rendered)

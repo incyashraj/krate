@@ -150,7 +150,7 @@ jobs:
       - name: Verify discovery snapshot accounting
         run: python3 scripts/discovery-report.py --self-test
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
+        uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
       - name: Install Linux audio development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Install mdBook
@@ -253,6 +253,12 @@ jobs:
           # And that a failed build tells the person what happened in
           # words about their app, from the engine's real output (K-892).
           node docs/landing/studio/failure-words-test.mjs
+          # And that the plan step's refusal is said as one, with what Krate
+          # can make instead, and never starts a build (K-1243).
+          node docs/landing/studio/plan-cannot-test.mjs
+          # And that a phone or tablet ports from a .zip, read in the tab into
+          # the same files a chosen folder gives (a phone cannot choose one).
+          node docs/landing/studio/port-zip-test.mjs
           # And that a sign-in link from somebody else cannot sign this
           # browser in (K-909): /login/done keeps a session only when the
           # nonce this browser started with comes back beside it, and /make
@@ -276,7 +282,16 @@ jobs:
           # reason, Make current sends the exact digest, and each role is
           # shown only the controls the matrix gives it (IC-949 R).
           node docs/landing/studio/org-releases-test.mjs
+          # Staged rollout (pilot group, kept groups), Slack and Teams channels,
+          # the SIEM presets of the activity export, and Insights' computer
+          # words (K-1114, K-1115): each asks before it changes anything.
+          node docs/landing/studio/org-rollout-chat-test.mjs
           node docs/landing/studio/org-review-test.mjs
+          # And approving with the code in view (G15, G16, G22): the code
+          # changes and their risk rows on the card, the approval rules'
+          # word on each version, an approval that would not count not
+          # offered, the email's one-version link, and the rules in Settings.
+          node docs/landing/studio/org-approvals-test.mjs
           # Company connections in Settings: only owners and admins manage
           # them, the credential is sent once and never shown again (IC-952).
           node docs/landing/studio/org-connections-test.mjs
@@ -309,6 +324,19 @@ jobs:
           # itself, joining from the email, and the signing ring's places
           # hidden where the hub has not got them.
           node docs/landing/studio/org-setup-test.mjs
+          # Describe it, approve it, ship it in the browser (G5): only owners
+          # and developers are offered Send to <org>, the app goes with its
+          # note and the answer is said in words; a spreadsheet's build
+          # carries its columns and a sample, the whole sheet only as the
+          # app's asset (G6).
+          node docs/landing/studio/org-send-test.mjs
+          # The spreadsheet reader itself: CSV and XLSX, kinds of value, the
+          # 5 MB and 20,000-row caps.
+          node docs/landing/studio/sheet-test.mjs
+          # An API's OpenAPI description made a company connection: the
+          # address, exact path prefixes, the credential kind, the 24 KB
+          # summary Studio's AI reads, and the presets (SMART-FIXES 4).
+          node docs/landing/studio/connect-test.mjs
           # And the IT pack the dashboard makes in the browser is
           # scripts/build-policy-templates.py's, byte for byte.
           node docs/landing/studio/org-policy-test.mjs
@@ -327,6 +355,12 @@ jobs:
           # And that app.js and the bridge, one global scope in a tab, never
           # declare the same top-level name (a clash blanks the whole page).
           node docs/landing/studio/scope-test.mjs
+          # One app, many versions (IC-976): "Publish update (v3)" before an
+          # app already out goes up, the app's own link kept and copied, the
+          # versions in Details with Make current said before it is done,
+          # the tab finding the app by its manifest id, and an older
+          # version's receive page naming the newer one.
+          node docs/landing/studio/versions-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/
@@ -550,7 +584,12 @@ jobs:
             || { echo "::error::_site/.well-known/security.txt is missing"; exit 1; }
           tar --dereference --hard-dereference --directory _site \
             -cvf "$RUNNER_TEMP/artifact.tar" --exclude=.git --exclude=.github .
-          tar -tf "$RUNNER_TEMP/artifact.tar" | grep -qx './.well-known/security.txt' \
+          # The listing goes to a file, then grep reads it. Piped straight into
+          # `grep -q`, grep exits at the first match, tar dies writing the rest
+          # ("stdout: write error"), and pipefail failed an archive that did
+          # carry the file (2026-11-09).
+          tar -tf "$RUNNER_TEMP/artifact.tar" > "$RUNNER_TEMP/artifact.list"
+          grep -qx './.well-known/security.txt' "$RUNNER_TEMP/artifact.list" \
             || { echo "::error::the Pages archive does not carry .well-known/security.txt"; exit 1; }
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -26,6 +26,9 @@ getrandom = { version = "0.2", features = ["custom"] }
 # owner's device (IC-958): the same sealing the CLI does, not a JavaScript
 # copy of it. Without its `agent` feature it has no network code.
 krate-orgkeys = { path = "../orgkeys" }
+# A browser tab's team data (store.org, G1): the device's copy, the merge and
+# the sealing, the same crate krate-runtime's org_store is built on.
+krate-orgdata = { path = "../orgdata" }
 zeroize = "1.8"
 
 # The keyring's HPKE draws its randomness through getrandom 0.3. In the

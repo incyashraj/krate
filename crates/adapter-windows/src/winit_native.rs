@@ -264,6 +264,10 @@ mod real {
             for pending in self.pending_creates.drain(..) {
                 let attributes = WindowAttributes::default()
                     .with_title(pending.title)
+                    // Out of screenshots and screen sharing when the
+                    // organisation says so for this app (G17); Windows
+                    // honours it, X11 cannot.
+                    .with_content_protected(krate_adapter_common::ui::windows_kept_from_capture())
                     // LOGICAL, and this is the load-bearing unit decision.
                     //
                     // The app speaks logical units everywhere: it asks for a
@@ -429,15 +433,16 @@ mod real {
                             }
                         }
                     }
-                    WindowEvent::KeyboardInput { event, .. } => {
+                    WindowEvent::KeyboardInput { event, .. }
                         if event.state == winit::event::ElementState::Pressed
                             && event.logical_key
-                                == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
-                            && tracker.captured
-                        {
-                            tracker.captured = false;
-                            release = true;
-                        }
+                                == winit::keyboard::Key::Named(
+                                    winit::keyboard::NamedKey::Escape,
+                                )
+                            && tracker.captured =>
+                    {
+                        tracker.captured = false;
+                        release = true;
                     }
                     _ => {}
                 }

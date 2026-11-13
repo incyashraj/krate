@@ -1,0 +1,20 @@
+# Help Desk: the team's tickets, who has each one, and what was said (a starter
+# an organisation releases in its first minute on Krate). Its data is the
+# team's, kept with store.org, and it asks for nothing else.
+
+[app]
+id = "dev.krate.help-desk"
+name = "Help Desk"
+version = "1.0.0"
+entry = "target/wasm32-wasip1/release/krate_help_desk.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show your team's tickets"
+required = true
+
+[[capabilities]]
+cap = "store.org"
+rationale = "Keep the tickets with your team, encrypted, so everyone in it sees the same ones"
+required = true

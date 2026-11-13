@@ -768,6 +768,8 @@ impl super::Runtime {
         .with_app_name(config.app_name.clone());
         gui_host.screen.pace_outside.set(true);
         state.phase2.sleep_outside_host = true;
+        // A windowed app's team-data sync never waits on the network.
+        state.phase2.set_windowed();
         state.phase3_gui = Some(gui_host);
 
         let shared = Arc::new(Shared {

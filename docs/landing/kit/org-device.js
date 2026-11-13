@@ -5,6 +5,17 @@
  *       them already, register and do this browser's share.
  *   sign(slug, bytes)   -> Uint8Array: the .krate marked for the
  *       organisation and signed as it, through the validator module.
+ *   publish(slug, bytes, {name, note, role, wait, onStep})
+ *       -> {state, digest, solo, url, approvers, publisher}
+ *       send an app to the organisation for approval from this tab, as
+ *       `krate publish --org` does: signed as the organisation when this
+ *       browser holds its signing key, otherwise with this browser's own
+ *       release key, asked for and approved in the background like a
+ *       developer's computer. state "waiting-for-publisher" while the
+ *       organisation has not approved this browser yet (nothing was sent).
+ *   duties(slug)        -> what this browser did as a holder, or null when
+ *       it is not one of the organisation's devices: pass keys on, approve
+ *       waiting publishers, withdraw the keys of people who left.
  *   Rejections carry .reason: "not-holder" (not an owner or admin, or this
  *   browser does not hold the signing key yet), "unsupported" (no WebCrypto
  *   Ed25519/X25519, WebAssembly or IndexedDB), or the hub's own reason.
@@ -42,9 +53,15 @@
  *                                           and release it when it may
  *   duties({hub, token, slug, device, mod})
  *        -> {keyGrants, ringGrants, approved, withdrawn}
+ *   publish({hub, token, slug, device, mod, store, bytes, name, note,
+ *            holder, wait, onStep})
+ *        -> {state, digest, solo, url, approvers, publisher}
  *   approvePublisher({hub, token, slug, device, mod, key})
  *        -> the publisher record, signed by this tab when it can
  *   restore({hub, token, slug, device, mod, code}) -> {keyring, signing}
+ *   refresh({hub, token, slug, device, mod, held})
+ *        -> {status: "holds"|"waiting"|"no-key", envelope}  a member's
+ *           browser and the key: what a computer does before each sync
  * Every hub refusal is thrown as an Error with .reason and .status and the
  * hub's own sentence as its message.
  */
@@ -131,6 +148,15 @@
       },
       judge: function (bytes) {
         return JSON.parse(dec.decode(raw("krate_judge", bytes)));
+      },
+      /// One team-data call (crates/validator-wasm teamdata.rs): the
+      /// device's copy of an app's data, its merge and its sealing. Answers
+      /// the module's JSON as it is, {ok, ...} or {ok:false, error}: an
+      /// error here is the app's to see. `random` bytes of entropy are added
+      /// for a call that seals.
+      data: function (op, random) {
+        var input = random ? Object.assign({ entropy: b64(root.crypto.getRandomValues(new Uint8Array(random))) }, op) : op;
+        return JSON.parse(dec.decode(raw("krate_org_data", enc.encode(JSON.stringify(input)))));
       },
     };
   }
@@ -322,6 +348,112 @@
     return out;
   }
 
+  // ------------------------------------------ publishing from this tab
+
+  /// This browser's release key for one organisation: an Ed25519 key made
+  /// here the first time it publishes there, kept sealed in the store by a
+  /// key the browser never lets out, as the device key is. The hub only
+  /// ever sees its public half, and the permission slip a holder signs.
+  async function releaseKeyOf(store, slug) {
+    var name = "release:" + slug;
+    var rec = await store.get(name);
+    if (!rec) {
+      var pair = await subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+      var jwk = await subtle.exportKey("jwk", pair.privateKey);
+      var wrap = await subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+      var iv = root.crypto.getRandomValues(new Uint8Array(12));
+      var sealed = await subtle.encrypt({ name: "AES-GCM", iv: iv }, wrap, enc.encode(hex(fromB64url(jwk.d))));
+      rec = { v: 1, public_key: hex(fromB64url(jwk.x)), wrap: wrap, iv: iv, sealed: new Uint8Array(sealed) };
+      jwk = null;
+      await store.put(name, rec);
+    }
+    return {
+      public_key: rec.public_key,
+      seed: async function () {
+        return dec.decode(await subtle.decrypt({ name: "AES-GCM", iv: rec.iv }, rec.wrap, rec.sealed));
+      },
+      forget: function () { return store.del(name); },
+    };
+  }
+
+  var GONE = { revoked: 1, "revoke-due": 1, closed: 1 };
+  function pause(ms) { return new Promise(function (ok) { root.setTimeout(ok, ms); }); }
+
+  /// Send `bytes` to the organisation for approval from this tab, the way
+  /// `krate publish --org` does from a computer:
+  /// - signed as the organisation when `holder` (an owner or admin) and
+  ///   this browser holds its signing key;
+  /// - otherwise signed with this browser's release key: asked for at
+  ///   POST /publishers, approved in the background by any holder device
+  ///   (or by an owner's click when the organisation approves publishers by
+  ///   hand), waited on for `wait` ms (6 s by default). Not approved yet,
+  ///   it answers state "waiting-for-publisher" and sends nothing;
+  /// - marked as the organisation's private app either way
+  ///   (ext/krate/org/private.json, by the validator module), sent with its
+  ///   name and release note (x-krate-name, x-krate-note), and released at
+  ///   once when the hub says its sender may release it alone.
+  async function publish(o) {
+    var say = o.onStep || function () {};
+    var call = client(o.hub, o.token, o.slug);
+    var mod = o.mod;
+    var bytes = o.bytes instanceof Uint8Array ? o.bytes : new Uint8Array(o.bytes);
+    var now = function () { return Math.floor(Date.now() / 1000); };
+    var signed = null;
+    if (o.holder && o.device) {
+      var r = await ringOf(call, mod, o.device);
+      if (r.view.envelope && r.view.ring && r.view.ring.current) {
+        say("Signing " + (o.name || "the app") + "...");
+        var secret = await o.device.secret();
+        signed = mod.sign({ org: o.slug, signed_at: now(), ring: { envelope: r.view.envelope.blob, device_secret: secret } }, bytes);
+        secret = null;
+      }
+    }
+    if (!signed) {
+      var key = await releaseKeyOf(o.store, o.slug);
+      say("Getting you ready to publish...");
+      var p = await call("POST", "/publishers", { public_key: key.public_key, name: (o.device && o.device.name) || browserName() });
+      var until = Date.now() + (o.wait === undefined ? 6000 : o.wait);
+      while (p.state !== "signed" && !GONE[p.state] && Date.now() < until) {
+        await pause(Math.max(50, Math.min(1500, until - Date.now())));
+        p = await call("GET", "/publishers/" + key.public_key);
+      }
+      if (GONE[p.state]) {
+        // This browser's permission was withdrawn: the next send makes a
+        // new key and asks again.
+        await key.forget();
+        var gone = new Error("this browser's earlier permission to publish was withdrawn, so nothing was sent -- send it again to ask afresh");
+        gone.reason = "publisher-withdrawn";
+        throw gone;
+      }
+      if (p.state !== "signed") return { state: "waiting-for-publisher", publisher: p };
+      var slip = p.delegation;
+      if (!slip || !slip.delegation || String(slip.delegation.key).toLowerCase() !== key.public_key) {
+        var odd = new Error("the organisation's approval is for another key -- send it again");
+        odd.reason = "bad-delegation";
+        throw odd;
+      }
+      say("Signing " + (o.name || "the app") + "...");
+      var seed = await key.seed();
+      signed = mod.sign({ org: o.slug, signed_at: now(), seed: seed, public: key.public_key, delegation: slip }, bytes);
+      seed = null;
+    }
+    say("Sending it...");
+    var headers = { "x-krate-encoding": "uri" };
+    if (o.name) headers["x-krate-name"] = encodeURIComponent(o.name);
+    var note = String(o.note || "").trim();
+    if (note) headers["x-krate-note"] = encodeURIComponent(note);
+    var sent = await call("POST", "/candidates", signed.bytes, headers);
+    var out = { state: sent.state, digest: sent.digest || signed.meta.digest, solo: false, url: null, approvers: sent.approvers || [], signer: signed.meta.signer };
+    if (sent.solo_release) {
+      say("Releasing it...");
+      var done = await call("POST", "/candidates/" + out.digest + "/approve", { accept: [] });
+      out.state = "released";
+      out.solo = Boolean(done.release && done.release.solo);
+      out.url = done.release && done.release.url;
+    }
+    return out;
+  }
+
   /// A holder's duties, from this tab: pass the keyring and the signing key
   /// to new devices, approve waiting publishers, withdraw the release keys
   /// of people who left. What a computer running Krate does in the
@@ -345,8 +477,11 @@
       var rot = mod.keys({
         op: "keyring_rotate", org: o.slug, envelope: keys.envelope.blob, device_secret: secret, secret: await x25519Secret(),
         to: keys.seal_to, recovery_public: keys.recovery && keys.recovery.public_key,
+        credentials: keys.credentials || [],
       });
-      await call("POST", "/keys/rotate", { version: rot.version, public_key: rot.public_key, by_device: id, envelopes: rot.envelopes, recovery_blob: rot.recovery_blob });
+      // The company connections' credentials go with it, sealed again to the
+      // new key: the hub refuses a renewal that leaves one on the old key.
+      await call("POST", "/keys/rotate", { version: rot.version, public_key: rot.public_key, by_device: id, envelopes: rot.envelopes, recovery_blob: rot.recovery_blob, credentials: rot.credentials || {} });
     }
     var view = await call("GET", "/signing?device=" + id);
     if (view.envelope && view.ring && view.ring.current) {
@@ -377,6 +512,61 @@
     }
     secret = null;
     return did;
+  }
+
+  /// Where this browser stands with the organisation's key, as a member's
+  /// device -- what a computer's Krate does before every sync
+  /// (krate_orgkeys::agent::Agent::refresh): register this browser if the
+  /// hub does not know it, take the keyring from its envelope (opened here,
+  /// by the module), check that the hub's current public key is the one
+  /// held, and pass the key on to the organisation's waiting devices.
+  /// `held` is the envelope this browser kept from last time. Answers
+  /// {status: "holds", envelope, version}, {status: "waiting"} (another
+  /// member's device has not passed it yet, or a newer version is coming)
+  /// or {status: "no-key"} (the organisation has no key yet). A new key
+  /// after someone leaves is made by a computer or an owner's browser, not
+  /// here.
+  async function refresh(o) {
+    var call = client(o.hub, o.token, o.slug);
+    var mod = o.mod;
+    var id = await deviceIdOf(mod, o.device);
+    var view = await call("GET", "/keys?device=" + id);
+    if (!view.device) {
+      await call("PUT", "/keys/devices/" + id, { public_key: o.device.public_key, name: o.device.name, kind: "browser" });
+      view = await call("GET", "/keys?device=" + id);
+    }
+    if (!view.current) return { status: "no-key" };
+    var secret = await o.device.secret();
+    var held = o.held || null;
+    var blob = view.envelope && view.envelope.blob;
+    if (blob && blob !== held) {
+      // Throws when it does not open: an envelope for another key.
+      mod.keys({ op: "keyring_open", org: o.slug, envelope: blob, device_secret: secret });
+      held = blob;
+    }
+    if (!held) return { status: "waiting" };
+    var opened = mod.keys({ op: "keyring_open", org: o.slug, envelope: held, device_secret: secret });
+    if (opened.version < view.current.version) return { status: "waiting", envelope: held };
+    if (opened.version !== view.current.version || opened.public_key !== view.current.public_key) {
+      var odd = new Error("the organisation key the hub names is not the one this browser holds");
+      odd.reason = "key-mismatch";
+      throw odd;
+    }
+    if (view.current.state !== "stale") {
+      for (var i = 0; i < (view.requests || []).length; i++) {
+        var q = view.requests[i];
+        if (q.device_id === id) continue;
+        if ((await deviceIdOf(mod, { public_key: q.public_key })) !== q.device_id) continue;
+        var g = mod.keys({ op: "keyring_grant", org: o.slug, envelope: held, device_secret: secret, to_public: q.public_key });
+        try {
+          await call("POST", "/keys/grants", { device_id: q.device_id, version: g.version, blob: g.blob, by_device: id });
+        } catch (e) {
+          if (e.reason === "offline") throw e;
+        }
+      }
+    }
+    secret = null;
+    return { status: "holds", envelope: held, version: opened.version };
   }
 
   /// "Approve" on a waiting publisher, when the organisation approves new
@@ -415,7 +605,7 @@
   // ------------------------------------------- the dashboard's facade
 
   var cfg = {};
-  var cached = { mod: null, device: null };
+  var cached = { mod: null, device: null, store: null };
 
   function refuse(reason, message) {
     var e = new Error(message);
@@ -463,7 +653,7 @@
       throw refuse("unsupported", "this browser cannot keep the organisation's keys -- use a current Chrome, Edge, Safari or Firefox, or Krate on a computer");
     }
     if (!cached.mod) cached.mod = await loadModule(hubOf() + "/validator.wasm");
-    if (!cached.device) cached.device = await openDevice({ store: cfg.store, name: name || browserName() });
+    if (!cached.device) cached.device = await openDevice({ store: storeOf(), name: name || browserName() });
     return { hub: hubOf(), token: tokenOf(), mod: cached.mod, device: cached.device };
   }
 
@@ -499,13 +689,52 @@
     return signed.bytes;
   }
 
+  function storeOf() {
+    if (!cached.store) cached.store = cfg.store || indexedStore();
+    return cached.store;
+  }
+
+  /// Send a .krate to the organisation for approval from this tab (see
+  /// KrateSigning.publish). `role` is the person's role there: an owner or
+  /// admin may sign as the organisation when this browser holds its key.
+  async function publishFacade(slug, bytes, opts) {
+    opts = opts || {};
+    if (!(await supported())) {
+      throw refuse("unsupported", "this browser cannot sign apps -- use a current Chrome, Edge, Safari or Firefox, or Krate Studio on a computer");
+    }
+    if (!cached.mod) cached.mod = await loadModule(hubOf() + "/validator.wasm");
+    if (!cached.device) cached.device = await openDevice({ store: storeOf(), name: browserName() });
+    return publish({
+      hub: hubOf(), token: tokenOf(), slug: slug, mod: cached.mod, device: cached.device, store: storeOf(),
+      bytes: bytes, name: opts.name, note: opts.note, wait: opts.wait, onStep: opts.onStep,
+      holder: opts.role === "owner" || opts.role === "admin",
+    });
+  }
+
+  /// A holder's duties from this tab, quietly: only when this browser is
+  /// already one of the organisation's devices (it set the organisation up
+  /// or released from here), and only for an owner or admin. null when it
+  /// is not; nothing is made or registered for a browser that never was.
+  async function quietDuties(slug) {
+    if (!(await supported())) return null;
+    if (!(await storeOf().get("device"))) return null;
+    var p = await parts();
+    var o = Object.assign({ slug: slug }, p);
+    var call = client(o.hub, o.token, slug);
+    var r = await ringOf(call, o.mod, o.device);
+    if (!r.view.may_hold || !r.view.envelope) return null;
+    return duties(o);
+  }
+
   root.KrateOrgDevice = {
     ready: ready,
     sign: sign,
+    publish: publishFacade,
+    duties: quietDuties,
     /// For a page on a development hub, and for tests: {hub, token, store}.
     configure: function (c) {
       cfg = Object.assign({}, c);
-      cached = { mod: null, device: null };
+      cached = { mod: null, device: null, store: null };
     },
   };
 
@@ -517,7 +746,9 @@
     setUp: setUp,
     release: release,
     duties: duties,
+    publish: publish,
     approvePublisher: approvePublisher,
     restore: restore,
+    refresh: refresh,
   };
 })(typeof window !== "undefined" ? window : globalThis);

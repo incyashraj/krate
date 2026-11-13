@@ -2,10 +2,10 @@
 //
 //   curl, hello-gui, bigscroll, convert, checklist   the apps, packed from their
 //                                                   built components (build.sh)
-//   camera       hello-gui declaring camera.capture as required: a capability a
+//   camera       hello-gui declaring photos.add as required: a capability a
 //                tab cannot give
-//   orgprobe     apps/krate-orgstore-probe with store.org made optional: it runs,
-//                and its store.org calls are refused in words
+//   orgprobe     apps/krate-orgstore-probe with store.org made optional, published
+//                as an ordinary app: it runs, and has no team data (not-an-org-app)
 //   tampered     the organisation fixture signed by acme's root, with one custom
 //                section added to its component after signing: still a valid
 //                component, no longer what was signed
@@ -30,9 +30,10 @@ const manifest = (app) => join(repo, 'apps', `krate-${app}`, 'manifest.toml');
 for (const app of ['curl', 'hello-gui', 'bigscroll', 'convert', 'checklist']) {
   pack(manifest(app), component(app), join(out, `${app}.krate`));
 }
-pack(manifest('hello-gui'), component('hello-gui'), join(out, 'camera.krate'), 'camera.capture');
-// orgstore-probe with store.org optional, so it runs in a tab and meets the
-// tab's refusal at the call (the organisation keyring is not in a tab yet).
+pack(manifest('hello-gui'), component('hello-gui'), join(out, 'camera.krate'), 'photos.add');
+// orgstore-probe with store.org optional and no organisation's mark: it runs in
+// a tab and has no team data, as on a computer (team-data-proof.mjs opens it
+// as an organisation's release).
 pack(manifest('orgstore-probe'), component('orgstore-probe'), join(out, 'orgprobe.krate'), 'optional:store.org');
 
 // ---- zip read/write, enough for these fixtures

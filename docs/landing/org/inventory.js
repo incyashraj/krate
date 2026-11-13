@@ -135,19 +135,27 @@
         ]),
       ]);
       // The app's head opens the whole of it on the right.
-      if (D.inspect) head.addEventListener("click", function () { inspectApp(a); });
+      if (D.openApp) head.addEventListener("click", function () { D.openApp(a.app_id); });
+      else if (D.inspect) head.addEventListener("click", function () { inspectApp(a); });
       card.appendChild(head);
       card.appendChild(ownerRow(a, p));
-      var facts = [
-        el("small", { text: (a.built ? "Made with " + a.built_words : "Made by hand") + (a.built && a.built.revisions ? ", changed " + a.built.revisions + (a.built.revisions === 1 ? " time" : " times") + " since" : "") }),
-        el("small", { text: canWords(a) }),
-      ];
-      if (a.connections && a.connections.length) {
-        facts.push(el("small", { text: "Uses the " + a.connections.join(", ") + " connection" + (a.connections.length === 1 ? "" : "s") + ": the app never holds the credential" }));
+      // What it is, one fact a line, each with its mark.
+      var facts = [];
+      function fact(svg, text, cls) {
+        var ic = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        ic.setAttribute("viewBox", "0 0 16 16"); ic.setAttribute("width", "14"); ic.setAttribute("height", "14"); ic.setAttribute("aria-hidden", "true");
+        ic.setAttribute("fill", "none"); ic.setAttribute("stroke", "currentColor"); ic.setAttribute("stroke-width", "1.4"); ic.setAttribute("stroke-linecap", "round"); ic.setAttribute("stroke-linejoin", "round");
+        ic.innerHTML = svg;
+        facts.push(el("div", { class: "af" + (cls ? " " + cls : "") }, [ic, el("span", { text: text })]));
       }
-      facts.push(el("small", { text: "Last sent by " + K.who(a.last_sent_by).label + (a.last_sent_at ? " on " + K.day(a.last_sent_at) : "") }));
-      facts.push(el("small", { class: "ppl", text: peopleWords(a) }));
-      card.appendChild(el("div", { class: "rw flat" }, [el("div", { class: "t" }, facts)]));
+      fact('<path d="M3 13l6.5-6.5M9 3.5l3.5 3.5-2 2L7 5.5z"/>', (a.built ? "Made with " + a.built_words : "Made by hand") + (a.built && a.built.revisions ? ", changed " + a.built.revisions + (a.built.revisions === 1 ? " time" : " times") + " since" : ""));
+      fact('<path d="M8 1.8l5 2v3.6c0 3.2-2.2 5.6-5 6.8-2.8-1.2-5-3.6-5-6.8V3.8z"/>', canWords(a));
+      if (a.connections && a.connections.length) {
+        fact('<path d="M6.5 9.5l3-3"/><path d="M5 7.5L3.6 8.9a2.5 2.5 0 0 0 3.5 3.5L8.5 11M11 8.5l1.4-1.4a2.5 2.5 0 0 0-3.5-3.5L7.5 5"/>', "Uses the " + a.connections.join(", ") + " connection" + (a.connections.length === 1 ? "" : "s") + ": the app never holds the credential");
+      }
+      fact('<path d="M3 8h8M8 4.5L11.5 8 8 11.5"/>', "Last sent by " + K.who(a.last_sent_by).label + (a.last_sent_at ? " on " + K.day(a.last_sent_at) : ""));
+      fact('<circle cx="6" cy="5.5" r="2.3"/><path d="M2 13c.4-2.2 2-3.5 4-3.5s3.6 1.3 4 3.5"/><path d="M10.5 3.4a2.2 2.2 0 0 1 0 4.2M11.6 9.7c1.3.4 2.2 1.6 2.4 3.3"/>', peopleWords(a), "ppl");
+      card.appendChild(el("div", { class: "afacts" }, facts));
       // The exact terms, for whoever wants them, behind Details.
       var details = [el("summary", { text: "Details" }), el("small", { text: "App id: " + a.app_id })];
       if (a.built && a.built.prompt) details.push(el("small", { text: "Asked for: “" + a.built.prompt + "”" }));
@@ -232,6 +240,6 @@
       return row;
     }
 
-    return { pane: pane };
+    return { pane: pane, ownerRow: ownerRow, canWords: canWords, peopleWords: peopleWords, forWords: forWords, STATE: STATE };
   };
 })(typeof window !== "undefined" ? window : globalThis);

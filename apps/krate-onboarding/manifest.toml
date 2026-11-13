@@ -1,0 +1,20 @@
+# Onboarding: a checklist for each new joiner, with owners and due dates (a
+# starter an organisation releases in its first minute on Krate). Its data is
+# the team's, kept with store.org, and it asks for nothing else.
+
+[app]
+id = "dev.krate.onboarding"
+name = "Onboarding"
+version = "1.0.0"
+entry = "target/wasm32-wasip1/release/krate_onboarding.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show your team's new joiners"
+required = true
+
+[[capabilities]]
+cap = "store.org"
+rationale = "Keep the onboarding checklists with your team, encrypted, so everyone in it sees the same ones"
+required = true

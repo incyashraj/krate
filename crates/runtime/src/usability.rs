@@ -156,9 +156,22 @@ pub struct TaskStep {
     /// not act.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shoot: Option<String>,
-    /// Press and release one key, by the runtime's key name ("Enter", "a").
+    /// Press and release one key, by the runtime's key name ("Enter", "a"),
+    /// with `Shift+` and `Primary+` in front for a chord: "Shift+ArrowLeft"
+    /// selects, "Primary+a" is Cmd+A on a Mac and Ctrl+A elsewhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+    /// Paste this text the way a person does: it is put on the run's own
+    /// clipboard and Cmd+V (Ctrl+V elsewhere) is pressed (K-1109).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paste: Option<String>,
+    /// Answer the app's next folder or file picker with this name, as a
+    /// person choosing it would: a folder or file inside a scratch folder
+    /// made for this run, empty until the app writes to it. Never a path
+    /// on the computer -- an app's own task file runs under check-app, so
+    /// it must not be able to hand the app the person's files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pick: Option<String>,
     /// Type this text, one key per character, into whatever has focus.
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_text: Option<String>,
@@ -173,6 +186,23 @@ pub struct TaskStep {
     pub expect_no_text: Option<String>,
 }
 
+/// A `pick` step's name as a path inside the run's scratch folder: plain
+/// names joined by `/`, never absolute, never `..`, at most 200 bytes.
+pub fn pick_name(name: &str) -> Result<std::path::PathBuf, String> {
+    use std::path::Component;
+    let path = std::path::Path::new(name);
+    let plain = !name.trim().is_empty()
+        && name.len() <= 200
+        && !name.contains('\\')
+        && path.components().all(|c| matches!(c, Component::Normal(_)));
+    if !plain {
+        return Err(format!(
+            "pick {name:?} must name a folder or file inside the run's scratch folder, like \"hello\" or \"notes/plan.txt\": no absolute path, no .."
+        ));
+    }
+    Ok(path.to_path_buf())
+}
+
 impl TaskStep {
     /// The one thing this step does, or why it is not one thing.
     pub fn validate(&self) -> Result<(), String> {
@@ -185,6 +215,8 @@ impl TaskStep {
             self.look.is_some(),
             self.shoot.is_some(),
             self.key.is_some(),
+            self.paste.is_some(),
+            self.pick.is_some(),
             self.type_text.is_some(),
             self.wait_ms.is_some(),
             self.expect_text.is_some(),
@@ -213,9 +245,12 @@ impl TaskStep {
                 return Err(format!("shoot {path:?} must name a .png file"));
             }
         }
+        if let Some(name) = &self.pick {
+            pick_name(name)?;
+        }
         match set {
             1 => Ok(()),
-            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, type, wait_ms, shoot, expect_text or expect_no_text".to_string()),
+            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text or expect_no_text".to_string()),
             _ => Err(format!("a step does one thing, this one does {set}: {}", self.describe())),
         }
     }
@@ -245,6 +280,12 @@ impl TaskStep {
         if let Some(k) = &self.key {
             return format!("key {k:?}");
         }
+        if let Some(t) = &self.paste {
+            return format!("paste {t:?}");
+        }
+        if let Some(p) = &self.pick {
+            return format!("pick {p:?}");
+        }
         if let Some(t) = &self.type_text {
             return format!("type {t:?}");
         }
@@ -258,6 +299,25 @@ impl TaskStep {
             return format!("expect {t:?} not on screen");
         }
         "an empty step".to_string()
+    }
+
+    /// A `key` step as (key, shift, primary): "Shift+Primary+a" is
+    /// ("a", true, true).
+    pub fn key_chord(&self) -> Option<(String, bool, bool)> {
+        let mut rest = self.key.as_deref()?;
+        let (mut shift, mut primary) = (false, false);
+        loop {
+            if let Some(after) = rest.strip_prefix("Shift+") {
+                shift = true;
+                rest = after;
+            } else if let Some(after) = rest.strip_prefix("Primary+") {
+                primary = true;
+                rest = after;
+            } else {
+                break;
+            }
+        }
+        Some((rest.to_string(), shift, primary))
     }
 
     /// Where `click_at` presses, as fractions of the window, or why it cannot.
@@ -726,6 +786,32 @@ mod fit_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `pick` names something inside the run's scratch folder and
+    /// nothing else: an app's own task file runs under check-app, so it must
+    /// not be able to hand the app the person's files.
+    #[test]
+    fn a_pick_names_only_something_inside_the_scratch_folder() {
+        for ok in ["hello", "notes/plan.txt", "My project"] {
+            assert!(pick_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "  ",
+            "/Users/me/.ssh",
+            "../secrets",
+            "a/../../b",
+            "C:\\Windows",
+            "~/x/../..",
+        ] {
+            assert!(pick_name(bad).is_err(), "{bad:?} must be refused");
+        }
+        let step = TaskStep {
+            pick: Some("/etc".into()),
+            ..TaskStep::default()
+        };
+        assert!(step.validate().unwrap_err().contains("scratch folder"));
+    }
 
     /// K-096's lock: an app pinned to fixed numbers leaves the new space
     /// empty after a resize, and that is exactly what the check must see.

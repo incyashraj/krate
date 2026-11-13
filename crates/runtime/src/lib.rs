@@ -28,6 +28,11 @@ use wasmtime::{
     Engine, ResourceLimiter, Store, Trap,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod account_sync_files;
+pub mod account_sync_host;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod account_sync_sql;
 pub mod connections;
 pub mod phase3_ui;
 pub mod uapi;
@@ -59,6 +64,12 @@ pub(crate) use krate_lowering::canvas_raster;
 mod core_app;
 #[cfg(target_os = "macos")]
 mod gamepad_macos;
+/// Adding a picture where the photo library is a folder (IC-982).
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+mod pictures;
+/// Sharing where a computer has no share sheet (IC-982).
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+mod share_fallback;
 mod sign_in;
 mod unlock;
 mod video;
@@ -73,7 +84,11 @@ pub mod desktop_host;
 pub mod embed;
 mod fs_watch;
 mod gamepad;
-pub mod org_merge;
+/// The merge rule, from the crate the browser tab shares (`krate-orgdata`).
+pub use krate_orgdata::merge as org_merge;
+/// The team data's live socket: push instead of poll (SMART-FIXES 7).
+#[cfg(not(target_arch = "wasm32"))]
+mod org_live;
 pub mod org_store;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
@@ -88,6 +103,12 @@ pub mod phase3_gui_host;
 pub mod phase4_gui_bindings;
 pub mod phase4_gui_host;
 mod print_host;
+// Programs on the computer (krate:process, IC-977): desktop only.
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod process_host;
 pub mod random_host;
 pub mod scene3d;
 pub mod screen_fit;
@@ -98,6 +119,7 @@ mod speech_apple;
 mod speech_synthesis;
 mod speech_transcription;
 pub mod sql_host;
+pub mod storage_key;
 pub mod store_host;
 pub mod text_overlap;
 pub mod touch_pad;
@@ -194,6 +216,11 @@ pub struct Config {
     /// the app: an app names keys, not locations, so storage cannot widen into
     /// reading the user's files.
     pub app_store_path: Option<PathBuf>,
+    /// When the person is signed in and has not turned it off: keep this
+    /// app's key-value store the same on every device they sign in on
+    /// (IC-981). `None` -- nobody signed in, a test, a picture -- leaves the
+    /// store exactly as it always was.
+    pub account_sync: Option<account_sync_host::AccountSyncContext>,
     /// Where this app's database lives, chosen by the runtime on the same
     /// terms as the key-value store.
     pub app_database_path: Option<PathBuf>,
@@ -240,6 +267,12 @@ pub struct Config {
     /// switch `KRATE_PULLEY=1` makes for measurement, carried as
     /// configuration so a policy does not depend on an environment.
     pub interpreter: bool,
+    /// What the app's manifest declared, so a refusal can say whether the
+    /// app never asked or the person said no. `None` for a run with no
+    /// manifest: then nothing a manifest must name is available --
+    /// `process.run` and `process.terminal` need the manifest to name them
+    /// as well as the person to allow them (IC-977).
+    pub declared_capabilities: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
 }
 
 impl Default for Config {
@@ -258,6 +291,7 @@ impl Default for Config {
             sandbox_root: PathBuf::from("."),
             bundle_assets_root: None,
             app_store_path: None,
+            account_sync: None,
             app_groups: std::collections::BTreeMap::new(),
             connections: connections::Connections::default(),
             app_org: None,
@@ -271,6 +305,7 @@ impl Default for Config {
             screenshot_scale: 2.0,
             usability_plan: None,
             interpreter: false,
+            declared_capabilities: None,
         }
     }
 }
@@ -544,6 +579,14 @@ impl Runtime {
         // with "exceptions proposal not enabled" (IC-908). Control flow
         // inside the module only: it reaches nothing the sandbox did not.
         wt_config.wasm_exceptions(true);
+        // Wasmtime 47 turned the GC and typed function-references proposals
+        // on by default. Krate's guests never had them (46 left them off),
+        // and a security upgrade is not where what a .krate may contain gets
+        // wider: every instruction the engine accepts is engine code a
+        // crafted file can reach, and RUSTSEC-2026-0359 was in exactly that
+        // code. Turning them on is its own decision, made on its own.
+        wt_config.wasm_gc(false);
+        wt_config.wasm_function_references(false);
 
         // iOS forbids executable pages, so the JIT cannot exist there.
         // Pulley is wasmtime's portable interpreter backend: guests are
@@ -567,16 +610,28 @@ impl Runtime {
         // without owning one. Not documented for users; measurement only.
         // An organisation's `[runtime] interpreter = true` takes the same
         // road, from configuration rather than the environment (IC-949).
+        //
+        // A 32-bit phone (armeabi-v7a: many low-cost Android phones run a
+        // 32-bit system, even on a 64-bit chip) has no compiler backend at
+        // all -- Cranelift does not emit 32-bit ARM -- so every app there
+        // runs on the interpreter, the 32-bit one (K-1207).
         #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
-        let interpreted = config.interpreter || std::env::var("KRATE_PULLEY").as_deref() == Ok("1");
+        let interpreted = cfg!(target_pointer_width = "32")
+            || config.interpreter
+            || std::env::var("KRATE_PULLEY").as_deref() == Ok("1");
         #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
         if interpreted {
-            if let Err(err) = wt_config.target("pulley64") {
+            let pulley = if cfg!(target_pointer_width = "32") {
+                "pulley32"
+            } else {
+                "pulley64"
+            };
+            if let Err(err) = wt_config.target(pulley) {
                 return Err(RuntimeError::EngineInit(format!(
                     "pulley backend unavailable: {err}"
                 )));
             }
-            stage_mark("runtime: engine is the interpreter (pulley64)");
+            stage_mark(&format!("runtime: engine is the interpreter ({pulley})"));
         }
 
         if config.fuel.is_some() {
@@ -726,6 +781,26 @@ impl Runtime {
             self.run_bytes_with_output(bytes, config, OutputMode::Capture(buffer.clone()), world)?;
         let captured = buffer.borrow().clone();
         Ok((outcome, captured))
+    }
+
+    /// Run and keep everything the app printed, stdout and stderr in the
+    /// order written: a terminal's view, for a host with no terminal (a
+    /// phone shows it when a command-line app ends).
+    pub fn run_bytes_transcribed_for_world(
+        &self,
+        bytes: &[u8],
+        config: &Config,
+        world: RuntimeWorld,
+    ) -> Result<(RunOutcome, Vec<u8>)> {
+        let buffer = Rc::new(RefCell::new(Vec::new()));
+        let outcome = self.run_bytes_with_output(
+            bytes,
+            config,
+            OutputMode::Transcript(buffer.clone()),
+            world,
+        )?;
+        let transcript = buffer.borrow().clone();
+        Ok((outcome, transcript))
     }
 
     /// Run a component file while capturing its stdout. See [`Self::run_bytes_captured`].
@@ -1227,6 +1302,15 @@ impl Runtime {
                 if krate_adapter_common::ui::app_ending() {
                     return Err(wasmtime::Error::msg(ENDED_BY_KRATE));
                 }
+                // Ctrl-C on an app with no window (K-1181). A windowed app
+                // hears it as a close through its event paths; a
+                // command-line app has none, so its loop is ended here, the
+                // one place a loop that never calls the host still reaches.
+                if ctx.data().phase3_gui.is_none()
+                    && phase3_gui_host::INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    return Err(wasmtime::Error::msg(ENDED_BY_CTRL_C));
+                }
                 EPOCH_PUMPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if let Some(gui) = ctx.data_mut().phase3_gui.as_ref() {
                     gui.pump_native_windows_for_epoch();
@@ -1377,6 +1461,12 @@ impl Runtime {
         .with_chosen_files(store.data().chosen.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
         .with_app_name(config.app_name.clone());
+        // A Phase 3 app cannot ask what screen it is on (krate:ui/screen is
+        // Phase 4), so it never adapts -- and it must say so: the host keeps
+        // the last answer, and one carried over from the permission sheet
+        // (which adapts) held a wide app upright on a phone, shrunk into a
+        // band across the middle (K-1209).
+        gui_host.set_adapts(false);
         store.data_mut().phase3_gui = Some(gui_host);
 
         let linker = self.phase3_gui_linker()?;
@@ -1432,6 +1522,8 @@ impl Runtime {
             .any(|(name, _)| name.starts_with("krate:ui/screen@"));
         gui_host.set_adapts(adapts);
         store.data_mut().phase3_gui = Some(gui_host);
+        // A windowed app's team-data sync never waits on the network.
+        store.data().phase2.set_windowed();
 
         let linker = self.phase4_gui_linker()?;
 
@@ -1596,6 +1688,9 @@ impl Runtime {
         link_phase2!(store::group);
         link_phase2!(store::org);
         link_phase2!(random::bytes);
+        // Programs on the computer (IC-977); a phone or a tab answers every
+        // call with words, so the import always links.
+        link_phase2!(phase2_bindings::krate::process::processes);
 
         // The two that differ.
         link_gui!(ui4::types);
@@ -1750,6 +1845,9 @@ pub(crate) fn end_unanswered_close() -> wasmtime::Error {
 /// What a run ended by Krate's own Close traps with (IC-934).
 pub(crate) const ENDED_BY_KRATE: &str = "ended by Krate: the app did not answer Close";
 
+/// What a command-line run ended by the person's Ctrl-C traps with (K-1181).
+pub const ENDED_BY_CTRL_C: &str = "ended by Ctrl-C";
+
 /// Code memory that is already executable: the host binary's own signed
 /// text. See [`Runtime::new_for_native_image`].
 struct SignedCode;
@@ -1855,6 +1953,7 @@ impl HostState {
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "kv", None).expect("store.kv"),
                 ),
+                config.account_sync.as_ref(),
             )
             .with_database(
                 config.app_database_path.clone(),
@@ -1900,7 +1999,10 @@ impl HostState {
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "org", None).expect("store.org"),
                 ),
-            ),
+            )
+            // What the manifest names, for krate:process (IC-977): a program
+            // runs only when it is named there AND the person allowed it.
+            .with_declared(config.declared_capabilities.clone()),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]
@@ -1934,6 +2036,9 @@ enum OutputMode {
     Sink,
     /// Collect app stdout into a shared buffer for embedding callers.
     Capture(Rc<RefCell<Vec<u8>>>),
+    /// Collect stdout and stderr together, in the order written: what a
+    /// terminal would have shown, for a host that has none (a phone).
+    Transcript(Rc<RefCell<Vec<u8>>>),
 }
 
 impl OutputMode {
@@ -1941,7 +2046,7 @@ impl OutputMode {
         match self {
             Self::Stdout => print_stdout_line_on_host(msg),
             Self::Sink => {}
-            Self::Capture(buffer) => {
+            Self::Capture(buffer) | Self::Transcript(buffer) => {
                 let mut buffer = buffer.borrow_mut();
                 buffer.extend_from_slice(msg.as_bytes());
                 buffer.push(b'\n');
@@ -1949,11 +2054,29 @@ impl OutputMode {
         }
     }
 
+    /// The app wrote to stderr: the host's own, except in a transcript.
+    fn write_err(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Transcript(buffer) => {
+                buffer.borrow_mut().extend_from_slice(bytes);
+                Ok(())
+            }
+            _ => write_stderr_on_host(bytes),
+        }
+    }
+
+    fn flush_err(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Transcript(_) => Ok(()),
+            _ => flush_stderr_on_host(),
+        }
+    }
+
     fn write_bytes(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         match self {
             Self::Stdout => write_stdout_on_host(bytes),
             Self::Sink => Ok(()),
-            Self::Capture(buffer) => {
+            Self::Capture(buffer) | Self::Transcript(buffer) => {
                 buffer.borrow_mut().extend_from_slice(bytes);
                 Ok(())
             }
@@ -1964,7 +2087,7 @@ impl OutputMode {
         match self {
             Self::Stdout => flush_stdout_on_host(),
             Self::Sink => Ok(()),
-            Self::Capture(_) => Ok(()),
+            Self::Capture(_) | Self::Transcript(_) => Ok(()),
         }
     }
 }
@@ -2403,6 +2526,21 @@ fn bounded_write_len(n: usize) -> std::result::Result<u32, AdapterError> {
     u32::try_from(n).map_err(|_| AdapterError::Io("write length overflow".to_string()))
 }
 
+/// Whether an app could read these arguments: the same rule `args_raw` holds
+/// them to (at most 1,024, 64 KB in all, none empty, no newline or NUL). A
+/// launcher that builds arguments from data it does not control -- a phone
+/// handing Krate's wall what a program printed -- checks them here first.
+#[cfg(feature = "phase2-bindings")]
+pub fn app_args_fit(app_args: &[String]) -> std::result::Result<(), String> {
+    encode_args_raw(app_args)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// The most arguments, and the most bytes of them, an app can be given.
+#[cfg(feature = "phase2-bindings")]
+pub const APP_ARGS_LIMITS: (usize, usize) = (MAX_PHASE2_ARG_COUNT, MAX_PHASE2_ARGS_RAW_BYTES);
+
 #[cfg(feature = "phase2-bindings")]
 fn encode_args_raw(app_args: &[String]) -> std::result::Result<String, AdapterError> {
     if app_args.len() > MAX_PHASE2_ARG_COUNT {
@@ -2654,7 +2792,7 @@ impl IoAdapter for LocalPhase2Adapter {
         let mut state = self.state.borrow_mut();
         match state.resources.get_mut(&handle.id) {
             Some(LocalResource::Stdout) => self.output.borrow_mut().write_bytes(bytes),
-            Some(LocalResource::Stderr) => write_stderr_on_host(bytes),
+            Some(LocalResource::Stderr) => self.output.borrow_mut().write_err(bytes),
             Some(_) => Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
                 "stream is not writable",
@@ -2671,7 +2809,7 @@ impl IoAdapter for LocalPhase2Adapter {
         let mut state = self.state.borrow_mut();
         match state.resources.get_mut(&handle.id) {
             Some(LocalResource::Stdout) => self.output.borrow_mut().flush(),
-            Some(LocalResource::Stderr) => flush_stderr_on_host(),
+            Some(LocalResource::Stderr) => self.output.borrow_mut().flush_err(),
             Some(_) => Ok(()),
             None => Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -2821,6 +2959,15 @@ impl FsAdapter for LocalPhase2Adapter {
         stat_path_on_host(path.as_path())
             .map(file_stat_from_metadata)
             .map_err(map_io_error)
+    }
+
+    fn resolve_folder(&self, path: &str) -> std::result::Result<PathBuf, AdapterError> {
+        let folder = self.resolve_fs_path(path, FsOperation::Existing)?;
+        match symlink_metadata_on_host(folder.as_path()) {
+            Ok(meta) if meta.is_dir() => Ok(folder),
+            Ok(_) => Err(AdapterError::InvalidPath),
+            Err(err) => Err(map_io_error(err)),
+        }
     }
 
     fn list(&self, path: &str) -> std::result::Result<Vec<String>, AdapterError> {
@@ -3901,6 +4048,55 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// A transcript keeps what the app wrote to stdout and stderr together,
+    /// in the order written: a phone shows it once a program ends (K-1208).
+    #[test]
+    fn a_transcript_keeps_stdout_and_stderr_in_order() {
+        let buffer = Rc::new(RefCell::new(Vec::new()));
+        let mut mode = OutputMode::Transcript(buffer.clone());
+        mode.write_bytes(b"out 1\n").expect("stdout");
+        mode.write_err(b"err 1\n").expect("stderr");
+        mode.print_line("out 2");
+        mode.flush_err().expect("flush");
+        assert_eq!(buffer.borrow().as_slice(), b"out 1\nerr 1\nout 2\n");
+        // A plain capture keeps stdout only: what the wall reads its
+        // decision from must not take in error lines.
+        let plain = Rc::new(RefCell::new(Vec::new()));
+        let mut mode = OutputMode::Capture(plain.clone());
+        mode.write_bytes(b"wall:open:\n").expect("stdout");
+        let _ = mode.write_err(b"");
+        assert_eq!(plain.borrow().as_slice(), b"wall:open:\n");
+    }
+
+    /// What a guest may contain did not widen with the engine. Wasmtime 47
+    /// turned GC and typed function references on by default; Krate keeps
+    /// them off (K-1127), and keeps exception handling on (IC-908). Each
+    /// module below is valid WebAssembly that needs exactly one of them.
+    #[test]
+    fn the_engine_accepts_the_proposals_krate_chose_and_no_more() {
+        let runtime = super::Runtime::new(&super::Config::default()).expect("runtime");
+        let compiles = |text: &str| {
+            let bytes = wat::parse_str(text).expect("the test's own module must parse");
+            wasmtime::Module::from_binary(&runtime.engine, &bytes).is_ok()
+        };
+        assert!(
+            !compiles("(module (type (struct (field i32))))"),
+            "a GC struct type must be refused"
+        );
+        assert!(
+            !compiles("(module (type $f (func)) (func (param (ref $f))))"),
+            "a typed function reference must be refused"
+        );
+        assert!(
+            compiles("(module (tag $e) (func (throw $e)))"),
+            "exception handling stays on for C++ and setjmp (IC-908)"
+        );
+        assert!(
+            compiles("(module (func (export \"f\") (result i32) i32.const 1))"),
+            "an ordinary module still compiles"
+        );
+    }
+
     /// Every engine is ticked, not only the first (IC-934). A player makes a
     /// new runtime for each app it opens; the ticker was tied to the first
     /// engine, which is dropped when Krate's own library closes, so on the
@@ -5770,6 +5966,179 @@ mod tests {
             .is_err(),
             "a link out of the picked folder must be refused"
         );
+    }
+
+    /// A program runs in a folder the person picked, reached by its token
+    /// alone (krate:process, IC-977): the host resolves `picked/<token>` by
+    /// the file calls' rules, so the app names the folder and never learns
+    /// where it is; `..`, a link out, a forged token and a raw path are
+    /// refused, and a program the manifest does not name never starts.
+    #[cfg(all(feature = "phase2-bindings", unix))]
+    #[test]
+    fn a_program_runs_in_a_picked_folder_by_token_and_nowhere_else() {
+        use phase2_bindings::krate::process::processes::{Host, ProcessError};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let picked_dir = tempfile::tempdir().expect("picked");
+        // A marker only the picked folder has, so the program proves where
+        // it ran without the app being told a path.
+        std::fs::write(picked_dir.path().join("marker.txt"), b"picked").expect("marker");
+        std::fs::create_dir(picked_dir.path().join("src")).expect("src");
+        let outside = tempfile::tempdir().expect("outside");
+        std::os::unix::fs::symlink(outside.path(), picked_dir.path().join("out")).expect("symlink");
+
+        let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        let token = chosen
+            .borrow_mut()
+            .remember_folder(picked_dir.path().to_path_buf())
+            .expect("token");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            sandbox.path().to_path_buf(),
+            chosen,
+        );
+        let caps = |list: &[&str]| -> std::collections::BTreeSet<krate_manifest::Capability> {
+            list.iter().map(|c| c.parse().expect(c)).collect()
+        };
+        let grants: Vec<String> = vec!["process.run:sh".into(), "process.run:cargo".into()];
+        let mut host = phase2_host::Phase2Host::new(
+            UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+            Box::new(adapter),
+        )
+        .with_declared(Some(caps(&["process.run:sh", "process.run:cargo"])));
+
+        // cargo, in the picked folder, finds the project there.
+        std::fs::write(
+            picked_dir.path().join("Cargo.toml"),
+            "[package]\nname = \"picked-probe\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .expect("Cargo.toml");
+        std::fs::write(picked_dir.path().join("src/lib.rs"), "").expect("lib.rs");
+        let h = host
+            .start(
+                "cargo".into(),
+                vec![
+                    "metadata".into(),
+                    "--no-deps".into(),
+                    "--offline".into(),
+                    "--format-version".into(),
+                    "1".into(),
+                ],
+                format!("picked/{token}"),
+                Vec::new(),
+            )
+            .expect("no trap")
+            .expect("cargo starts in the picked folder");
+        let mut metadata = Vec::new();
+        for _ in 0..30_000 {
+            let o = host
+                .read_stdout(h, 1 << 20)
+                .expect("no trap")
+                .expect("read");
+            metadata.extend(o.bytes);
+            if o.ended {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let status = host.wait(h, 60_000).expect("no trap").expect("wait");
+        assert_eq!(status.map(|s| s.code), Some(Some(0)));
+        assert!(
+            String::from_utf8_lossy(&metadata).contains("\"name\":\"picked-probe\""),
+            "cargo ran in the picked folder"
+        );
+        host.release(h).expect("no trap");
+
+        let mut run_in = |cwd: &str| -> std::result::Result<String, ProcessError> {
+            let h = host
+                .start(
+                    "sh".into(),
+                    vec![
+                        "-c".into(),
+                        "cat marker.txt 2>/dev/null || echo none".into(),
+                    ],
+                    cwd.into(),
+                    Vec::new(),
+                )
+                .expect("no trap")?;
+            let mut out = Vec::new();
+            for _ in 0..2000 {
+                let o = host
+                    .read_stdout(h, 1 << 16)
+                    .expect("no trap")
+                    .expect("read");
+                out.extend(o.bytes);
+                if o.ended {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            host.release(h).expect("no trap");
+            Ok(String::from_utf8_lossy(&out).trim().to_string())
+        };
+
+        assert_eq!(
+            run_in(&format!("picked/{token}")).expect("picked"),
+            "picked"
+        );
+        assert_eq!(
+            run_in(&format!("picked/{token}/src")).expect("below"),
+            "none"
+        );
+        assert_eq!(run_in(".").expect("its own folder"), "none");
+        let picked_path = picked_dir.path().to_string_lossy().to_string();
+        for bad in [
+            format!("picked/{token}/.."),
+            format!("picked/{token}/../.."),
+            format!("picked/{token}/out"),
+            "picked/folder-999".to_string(),
+            picked_path.clone(),
+            "../..".to_string(),
+        ] {
+            match run_in(&bad) {
+                // The words repeat what the app said, and never add where
+                // a picked folder really is.
+                Err(ProcessError::BadFolder(words)) => assert!(
+                    bad == picked_path || !words.contains(&picked_path),
+                    "the words never name the real folder: {words}"
+                ),
+                other => panic!("{bad} must be refused as a bad folder, got {other:?}"),
+            }
+        }
+
+        // Granted on the command line but not named by the manifest: no.
+        let mut host = phase2_host::Phase2Host::new(
+            UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+            Box::new(LocalPhase2Adapter::new(
+                Rc::new(RefCell::new(OutputMode::Sink)),
+                None,
+                None,
+                None,
+                None,
+                Vec::new(),
+                1024,
+                sandbox.path().to_path_buf(),
+                Default::default(),
+            )),
+        )
+        .with_declared(Some(caps(&["process.run:cargo"])));
+        assert!(matches!(
+            host.start("sh".into(), Vec::new(), ".".into(), Vec::new())
+                .expect("no trap"),
+            Err(ProcessError::NotDeclared(words)) if words == "the app did not ask to run sh"
+        ));
+        // No manifest at all names nothing.
+        let mut host = host.with_declared(None);
+        assert!(matches!(
+            host.start("cargo".into(), Vec::new(), ".".into(), Vec::new())
+                .expect("no trap"),
+            Err(ProcessError::NotDeclared(_))
+        ));
     }
 
     /// RUSTSEC-2026-0269 is a filesystem sandbox escape through a trailing

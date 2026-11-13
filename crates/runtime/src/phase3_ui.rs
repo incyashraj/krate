@@ -33,6 +33,9 @@ pub enum UiDispatchError {
 pub struct Phase3UiDispatcher<'a> {
     guard: &'a UapiGuard,
     adapter: &'a dyn UiAdapter,
+    /// A run with no window keeps its clipboard here, never the system's
+    /// ([`Phase3UiRuntime`]); `None` reaches the adapter's.
+    run_clipboard: Option<&'a std::sync::Mutex<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -116,16 +119,18 @@ pub struct Phase3UiRuntime {
     guard: UapiGuard,
     adapter: Box<dyn UiAdapter>,
     host_mode: Phase3HostUiMode,
+    /// The clipboard of a run with no window: a check run, `--headless`,
+    /// a machine with no display. Kept here, whatever the adapter does,
+    /// because macOS's headless adapter is the drawn host's and reaches the
+    /// real pasteboard -- a check task's paste and an app's copy wrote the
+    /// person's own clipboard (K-1193).
+    run_clipboard: Option<std::sync::Mutex<String>>,
 }
 
 impl Phase3UiRuntime {
     /// Build a UI runtime with an explicit adapter, mainly for tests.
     pub fn new(guard: UapiGuard, adapter: Box<dyn UiAdapter>) -> Self {
-        Self {
-            guard,
-            adapter,
-            host_mode: Phase3HostUiMode::HeadlessDraft,
-        }
+        Self::with_adapter_mode(guard, adapter, Phase3HostUiMode::HeadlessDraft)
     }
 
     /// Build a UI runtime with an explicit adapter and recorded host mode.
@@ -134,10 +139,15 @@ impl Phase3UiRuntime {
         adapter: Box<dyn UiAdapter>,
         host_mode: Phase3HostUiMode,
     ) -> Self {
+        // No window, no person at this clipboard: judged by the adapter
+        // serving the run, as the GUI host judges `headless`.
+        let windowless = adapter.info().window_backend
+            == krate_adapter_common::ui::WindowBackendKind::HeadlessDraft;
         Self {
             guard,
             adapter,
             host_mode,
+            run_clipboard: windowless.then(|| std::sync::Mutex::new(String::new())),
         }
     }
 
@@ -164,7 +174,10 @@ impl Phase3UiRuntime {
 
     /// Return a dispatcher that checks policy before each adapter call.
     pub fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
-        Phase3UiDispatcher::new(&self.guard, self.adapter.as_ref())
+        Phase3UiDispatcher {
+            run_clipboard: self.run_clipboard.as_ref(),
+            ..Phase3UiDispatcher::new(&self.guard, self.adapter.as_ref())
+        }
     }
 
     /// Return the selected adapter information.
@@ -185,7 +198,32 @@ impl Phase3UiRuntime {
 
 impl<'a> Phase3UiDispatcher<'a> {
     pub fn new(guard: &'a UapiGuard, adapter: &'a dyn UiAdapter) -> Self {
-        Self { guard, adapter }
+        Self {
+            guard,
+            adapter,
+            run_clipboard: None,
+        }
+    }
+
+    /// Text on the clipboard this run uses: its own when it has no window,
+    /// otherwise the adapter's.
+    fn clip_read(&self) -> Result<String, UiAdapterError> {
+        match self.run_clipboard {
+            Some(clip) => Ok(clip.lock().map(|c| c.clone()).unwrap_or_default()),
+            None => self.adapter.read_clipboard_text(),
+        }
+    }
+
+    fn clip_write(&self, text: &str) -> Result<(), UiAdapterError> {
+        match self.run_clipboard {
+            Some(clip) => {
+                if let Ok(mut c) = clip.lock() {
+                    *c = String::from(text);
+                }
+                Ok(())
+            }
+            None => self.adapter.write_clipboard_text(text),
+        }
     }
 
     pub fn adapter_info(&self) -> UiAdapterInfo {
@@ -225,6 +263,15 @@ impl<'a> Phase3UiDispatcher<'a> {
     }
 
     pub fn create_window(&self, options: WindowOptions) -> UiDispatchResult<WindowId> {
+        // Kept out of screenshots, recordings and screen sharing where the
+        // system allows it, when the organisation says so for this app (G17).
+        krate_adapter_common::ui::keep_windows_from_capture(
+            self.organisation_blocks_call(krate_policy::SCREEN_CAPTURE_CALL),
+        );
+        krate_adapter_common::ui::keep_clipboard(
+            self.organisation_blocks_cap("ui.clipboard:read"),
+            self.organisation_blocks_cap("ui.clipboard:write"),
+        );
         self.check_window_access()?;
         let id = self.adapter.create_window(options)?;
         // A created window is a window somebody can see. Every adapter kept
@@ -322,12 +369,91 @@ impl<'a> Phase3UiDispatcher<'a> {
 
     pub fn read_clipboard_text(&self) -> UiDispatchResult<String> {
         self.check(&UapiCall::Ui(UiCall::ClipboardRead))?;
-        self.adapter.read_clipboard_text().map_err(Into::into)
+        self.clip_read().map_err(Into::into)
+    }
+
+    /// Whether the machine policy's ceiling stops this host call for this
+    /// app ([`krate_policy::PRINT_CALL`], [`krate_policy::SCREEN_CAPTURE_CALL`],
+    /// G17).
+    pub fn organisation_blocks_call(&self, call: &str) -> bool {
+        self.guard.policy().organisation_blocks_call(call)
+    }
+
+    /// Whether the machine policy blocks this capability for this app.
+    fn organisation_blocks_cap(&self, cap: &str) -> bool {
+        cap.parse::<krate_manifest::Capability>()
+            .is_ok_and(|cap| self.guard.policy().organisation_blocks(&cap).is_some())
+    }
+
+    /// What the person pasted with their own keystroke (Cmd+V on a Mac,
+    /// Ctrl+V elsewhere) into the app's window, as text input (K-1109).
+    ///
+    /// The keystroke is the person's, as a paste into a system text field
+    /// is, so it needs no `ui.clipboard:read`: the app is handed exactly
+    /// what was pasted, when it was pasted, and cannot read the clipboard
+    /// at any other time. An app that holds `ui.clipboard:read` reads the
+    /// clipboard itself on that keystroke, so it gets nothing here and a
+    /// paste is never typed twice. The organisation's ceiling still
+    /// applies: where the machine policy blocks clipboard reads for this
+    /// app, nothing is pasted.
+    pub fn person_paste_text(&self) -> Option<String> {
+        let read = krate_manifest::Capability::new("ui", "clipboard", Some("read")).ok()?;
+        let policy = self.guard.policy();
+        if policy.organisation_blocks(&read).is_some() || policy.allows(&read) {
+            return None;
+        }
+        self.clip_read().ok().filter(|text| !text.is_empty())
+    }
+
+    /// A key the person pressed: when it is their paste keystroke, queue
+    /// what they pasted as text input for the focused field. True when
+    /// something was pasted.
+    pub fn paste_for_person(
+        &self,
+        window: WindowId,
+        widget: Option<WidgetId>,
+        key: &str,
+        modifiers: Modifiers,
+    ) -> bool {
+        if !is_paste_chord(key, modifiers) {
+            return false;
+        }
+        let Some(text) = self.person_paste_text() else {
+            return false;
+        };
+        let mut pasted = false;
+        for piece in paste_pieces(&text) {
+            if let Ok(event) = TextInputEvent::new(window, widget, piece) {
+                pasted |= self.queue_text_input(event).is_ok();
+            }
+        }
+        pasted
+    }
+
+    /// Put text on the run's clipboard for a check task's `paste` step. A
+    /// check run is headless, so this is Krate's in-process clipboard.
+    /// Never the system clipboard: a run with native windows puts nothing.
+    pub(crate) fn put_on_run_clipboard(&self, text: &str) {
+        if self.run_clipboard.is_some() || !self.adapter.info().native_windows {
+            let _ = self.clip_write(text);
+        }
     }
 
     pub fn write_clipboard_text(&self, text: &str) -> UiDispatchResult<()> {
         self.check(&UapiCall::Ui(UiCall::ClipboardWrite))?;
-        self.adapter.write_clipboard_text(text).map_err(Into::into)
+        self.clip_write(text).map_err(Into::into)
+    }
+
+    /// Write what the person copied or cut with their own keystroke (Cmd+C
+    /// or Cmd+X on a Mac, Ctrl elsewhere) from a field the app draws, with no
+    /// `ui.clipboard:write` grant (K-1190). The caller holds the keystroke:
+    /// this is only reached just after one, once. It is a write, so the app
+    /// learns nothing; the organisation's ceiling still applies.
+    pub fn write_clipboard_for_person(&self, text: &str) -> UiDispatchResult<()> {
+        if self.organisation_blocks_cap("ui.clipboard:write") {
+            return Err(UiDispatchError::PermissionDenied);
+        }
+        self.clip_write(text).map_err(Into::into)
     }
 
     pub fn window(&self, id: WindowId) -> UiDispatchResult<Option<WindowRecord>> {
@@ -576,6 +702,11 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.set_adapts(adapts)
     }
 
+    /// Whether a finger on a canvas presses it rather than scrolling it.
+    pub fn set_canvas_presses(&self, window: WindowId, widget: WidgetId, presses: bool) {
+        self.adapter.set_canvas_presses(window, widget, presses)
+    }
+
     /// The platform's own file or folder picker (phones); None when cancelled.
     pub fn choose_path(
         &self,
@@ -584,6 +715,12 @@ impl<'a> Phase3UiDispatcher<'a> {
         filter: &str,
     ) -> Option<std::path::PathBuf> {
         self.adapter.choose_path(id, folder, filter)
+    }
+
+    /// The platform's own message or yes-or-no dialog (phones); None where
+    /// the host has none.
+    pub fn ask(&self, id: WindowId, title: &str, body: &str, question: bool) -> Option<bool> {
+        self.adapter.ask(id, title, body, question)
     }
 
     /// Whether the device can tap back (IC-917).
@@ -745,6 +882,49 @@ impl<'a> Phase3UiDispatcher<'a> {
     fn check(&self, call: &UapiCall) -> UiDispatchResult<()> {
         self.guard.check(call).map(|_| ()).map_err(map_ui_policy)
     }
+}
+
+/// The keystrokes a person copies or cuts with: Cmd+C or Cmd+X on a Mac,
+/// Ctrl elsewhere, with no other modifier but Shift.
+pub(crate) fn is_copy_chord(key: &str, m: Modifiers) -> bool {
+    let primary = if cfg!(target_os = "macos") {
+        m.meta && !m.control
+    } else {
+        m.control && !m.meta
+    };
+    primary && !m.alt && (key.eq_ignore_ascii_case("c") || key.eq_ignore_ascii_case("x"))
+}
+
+/// The keystroke a person pastes with: Cmd+V on a Mac, Ctrl+V elsewhere,
+/// with no other modifier but Shift.
+pub(crate) fn is_paste_chord(key: &str, m: Modifiers) -> bool {
+    let primary = if cfg!(target_os = "macos") {
+        m.meta && !m.control
+    } else {
+        m.control && !m.meta
+    };
+    primary && !m.alt && key.eq_ignore_ascii_case("v")
+}
+
+/// A paste as text-input events: each at most as long as one may be, cut
+/// on character boundaries.
+pub(crate) fn paste_pieces(text: &str) -> Vec<&str> {
+    const MOST: usize = 4_096;
+    let mut pieces = Vec::new();
+    let mut start = 0;
+    let mut count = 0;
+    for (at, _) in text.char_indices() {
+        if count == MOST {
+            pieces.push(&text[start..at]);
+            start = at;
+            count = 0;
+        }
+        count += 1;
+    }
+    if start < text.len() {
+        pieces.push(&text[start..]);
+    }
+    pieces
 }
 
 fn discover_host_ui_adapter() -> Box<dyn UiAdapter> {
@@ -1820,6 +2000,164 @@ mod tests {
             .expect_err("clipboard should need explicit grant");
 
         assert!(matches!(err, UiDispatchError::PermissionDenied));
+    }
+
+    /// K-1109: the person's own Cmd/Ctrl+V reaches a field the app draws
+    /// itself as typed text, with no clipboard grant; an app that holds the
+    /// grant reads it itself and gets nothing twice; the organisation's
+    /// ceiling blocks it; any other key pastes nothing.
+    #[test]
+    fn the_persons_paste_arrives_as_text_input_without_the_clipboard_grant() {
+        let primary = if cfg!(target_os = "macos") {
+            Modifiers {
+                meta: true,
+                ..Default::default()
+            }
+        } else {
+            Modifiers {
+                control: true,
+                ..Default::default()
+            }
+        };
+        let paste_with = |policy: SessionPolicy, key: &str, m: Modifiers| {
+            let guard = UapiGuard::new(policy);
+            let adapter = DraftUiAdapter::default();
+            adapter
+                .write_clipboard_text("Twelve chairs\nstackable")
+                .expect("clipboard");
+            let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+            let window = dispatcher
+                .create_window(
+                    WindowOptions::new("Notes", WindowSize::new(400, 300).expect("size"))
+                        .expect("options"),
+                )
+                .expect("window");
+            let pasted = dispatcher.paste_for_person(window, None, key, m);
+            let typed: Vec<String> = dispatcher
+                .drain_events()
+                .expect("events")
+                .into_iter()
+                .filter_map(|e| match e {
+                    UiEvent::TextInput(t) => Some(t.text),
+                    _ => None,
+                })
+                .collect();
+            (pasted, typed)
+        };
+        let window_only =
+            SessionPolicy::from_cli_grants(&["ui.window:create".to_string()]).expect("policy");
+        assert_eq!(
+            paste_with(window_only.clone(), "v", primary),
+            (true, vec!["Twelve chairs\nstackable".to_string()])
+        );
+        assert_eq!(
+            paste_with(window_only.clone(), "x", primary),
+            (false, vec![])
+        );
+        assert_eq!(
+            paste_with(window_only.clone(), "v", Modifiers::default()),
+            (false, vec![])
+        );
+        let reads_itself = SessionPolicy::from_cli_grants(&[
+            "ui.window:create".to_string(),
+            "ui.clipboard:read".to_string(),
+        ])
+        .expect("policy");
+        assert_eq!(paste_with(reads_itself, "v", primary), (false, vec![]));
+        let blocked = window_only.with_organisation(krate_policy::OrgCeiling {
+            deny: vec![krate_policy::DenyRule::parse("ui.clipboard").expect("rule")],
+            network: None,
+            calls: Vec::new(),
+        });
+        assert_eq!(paste_with(blocked, "v", primary), (false, vec![]));
+        // A long paste is cut into pieces a text-input event may carry.
+        let long = "é".repeat(4_097);
+        let pieces = paste_pieces(&long);
+        assert_eq!(pieces.len(), 2);
+        assert_eq!(pieces.concat(), long);
+    }
+
+    /// K-1190: the person's own copy reaches the clipboard with no grant,
+    /// the organisation's ceiling still stops it, and only Cmd/Ctrl+C or X
+    /// count as that keystroke.
+    #[test]
+    fn the_persons_copy_reaches_the_clipboard_without_the_grant() {
+        let primary = if cfg!(target_os = "macos") {
+            Modifiers {
+                meta: true,
+                ..Default::default()
+            }
+        } else {
+            Modifiers {
+                control: true,
+                ..Default::default()
+            }
+        };
+        let copy_with = |policy: SessionPolicy| {
+            let guard = UapiGuard::new(policy);
+            let adapter = DraftUiAdapter::default();
+            let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+            let refused = dispatcher.write_clipboard_text("Room 4").is_err();
+            let written = dispatcher.write_clipboard_for_person("Room 4").is_ok();
+            (
+                refused,
+                written,
+                adapter.read_clipboard_text().unwrap_or_default(),
+            )
+        };
+        let window_only =
+            SessionPolicy::from_cli_grants(&["ui.window:create".to_string()]).expect("policy");
+        assert_eq!(
+            copy_with(window_only.clone()),
+            (true, true, "Room 4".to_string())
+        );
+        let blocked = window_only.with_organisation(krate_policy::OrgCeiling {
+            deny: vec![krate_policy::DenyRule::parse("ui.clipboard").expect("rule")],
+            network: None,
+            calls: Vec::new(),
+        });
+        assert_eq!(copy_with(blocked), (true, false, String::new()));
+        assert!(is_copy_chord("c", primary) && is_copy_chord("X", primary));
+        assert!(!is_copy_chord("c", Modifiers::default()));
+        assert!(!is_copy_chord("v", primary));
+        let alt = Modifiers {
+            alt: true,
+            ..primary
+        };
+        assert!(!is_copy_chord("c", alt));
+    }
+
+    /// K-1193: a run with no window keeps its clipboard in the runtime --
+    /// across dispatchers, for the app, a check task's paste and the
+    /// person's own paste -- and never writes the adapter's, which on a Mac
+    /// is the person's pasteboard.
+    #[test]
+    fn a_windowless_run_never_touches_the_adapters_clipboard() {
+        let policy = SessionPolicy::from_cli_grants(&[
+            "ui.window:create".to_string(),
+            "ui.clipboard:write".to_string(),
+        ])
+        .expect("policy");
+        let runtime =
+            Phase3UiRuntime::new(UapiGuard::new(policy), Box::new(DraftUiAdapter::default()));
+        runtime
+            .dispatcher()
+            .write_clipboard_text("from the app")
+            .expect("write");
+        assert_eq!(
+            runtime.dispatcher().person_paste_text().as_deref(),
+            Some("from the app")
+        );
+        runtime.dispatcher().put_on_run_clipboard("from the task");
+        assert_eq!(
+            runtime.dispatcher().person_paste_text().as_deref(),
+            Some("from the task")
+        );
+        assert_eq!(
+            runtime.adapter.read_clipboard_text().expect("adapter"),
+            "",
+            "the adapter's clipboard is never written"
+        );
     }
 
     #[test]

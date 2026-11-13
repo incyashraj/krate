@@ -93,7 +93,20 @@
     return lines.join("\n");
   }
 
-  function buildToml(keys, org) {
+  /// The [apps] section, commented out (G17): app_rules_toml() in the
+  /// generator, line for line.
+  function appRulesToml(table) {
+    var out = [wrap("Device-side data rules for your organisation's own apps: [apps.\"*\"] for every one of them, or [apps.\"<app id>\"] for one app. Each only narrows; a key left out keeps Krate's default. Uncomment to use."),
+      '# [apps."*"]'];
+    table.app_rules.forEach(function (r) {
+      out.push(wrap(r.help));
+      out.push("# " + r.key + " = " + tomlValue(r.narrows));
+    });
+    out.push('# [apps."' + table.app_rules_example_id + '"]', "# clipboard_write = false", "");
+    return out;
+  }
+
+  function buildToml(keys, org, table) {
     var out = [
       org ? "# Krate organisation policy, version 1, for " + clean(org) + "." : "# Krate organisation policy, version 1. A sample with every key.",
       "#",
@@ -129,6 +142,7 @@
       }
       out.push("");
     });
+    if (!org && table && table.app_rules) out = out.concat(appRulesToml(table));
     return out.join("\n").replace(/\s+$/, "") + "\n";
   }
 
@@ -236,7 +250,7 @@
     return "hex(7):" + out.join(",");
   }
 
-  function buildReg(policyKeys, org) {
+  function buildReg(policyKeys, org, table) {
     var keys = {}, order = [];
     var at = function (key) { if (!keys[key]) { keys[key] = []; order.push(key); } return keys[key]; };
     policyKeys.forEach(function (k) {
@@ -268,6 +282,14 @@
       keys[key].forEach(function (l) { out.push(l); });
       out.push("");
     });
+    if (!org && table && table.app_rules) {
+      out.push("; Device-side data rules for every organisation app (remove the ; to use):");
+      out.push(";[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Krate\\apps\\*]");
+      table.app_rules.forEach(function (r) {
+        out.push(';"' + r.key + '"=dword:' + (r.narrows ? "00000001" : "00000000"));
+      });
+      out.push("");
+    }
     return out.join("\r\n");
   }
 
@@ -306,10 +328,10 @@
     var enc = new TextEncoder();
     return buildMobileconfig(table.keys, null, null, subtle).then(function (profile) {
       return {
-        "policy.toml": enc.encode(buildToml(table.keys, null)),
+        "policy.toml": enc.encode(buildToml(table.keys, null, table)),
         "tech.krate.policy.plist": enc.encode(plist(sampleDict(table.keys))),
         "krate-policy.mobileconfig": enc.encode(profile),
-        "windows/krate-policy-example.reg": utf16le(buildReg(table.keys, null)),
+        "windows/krate-policy-example.reg": utf16le(buildReg(table.keys, null, table)),
       };
     });
   }

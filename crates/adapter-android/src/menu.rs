@@ -82,6 +82,17 @@ mod real {
         }) == Some(1)
     }
 
+    /// Whether a link or file was tapped since last asked while Krate's own
+    /// screen (its home, the permission sheet) shows: that screen closes so
+    /// the player can open what was tapped.
+    pub fn take_opened_meanwhile() -> bool {
+        with_activity("reading what was opened", |env, activity| {
+            env.call_method(activity, "krateOpenedMeanwhile", "()Z", &[])?
+                .z()
+        })
+        .unwrap_or(false)
+    }
+
     /// Whether the menu asked for the app to open again once it has closed.
     pub fn restart_asked() -> bool {
         with_activity("reading Krate's menu", |env, activity| {

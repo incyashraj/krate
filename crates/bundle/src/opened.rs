@@ -59,6 +59,10 @@ const LEGACY_LOCK: &str = ".krate-opened.lock";
 const STAGING_PREFIX: &str = ".opening-";
 /// Where the cheap check keeps what it last saw of each bundle file.
 const SOURCES: &str = ".sources";
+/// How recently a bundle may have been written and still not be trusted by
+/// its size and time alone: well past any file system's clock tick (FAT
+/// keeps two seconds).
+const RACY_NANOS: u64 = 3_000_000_000;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Marker {
@@ -438,22 +442,35 @@ fn remember_seen(
     let Ok(path) = fs::canonicalize(bundle_path) else {
         return;
     };
+    let dir = root.join(SOURCES);
+    let record = dir.join(format!("{key}.json"));
+    // A file written in the last moments may be written again within the
+    // same tick of the clock, and then its size and time say nothing: two
+    // packs of the same size a few milliseconds apart carried one modified
+    // time on Windows, and the second opened as the first (git calls these
+    // racy entries). Such a file is hashed again next time instead, and any
+    // older record for the path is dropped.
+    let now = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    if now.saturating_sub(modified) < RACY_NANOS {
+        let _ = fs::remove_file(&record);
+        return;
+    }
     let seen = Seen {
         path: path.to_string_lossy().into_owned(),
         size,
         modified,
         digest: digest.to_string(),
     };
-    let dir = root.join(SOURCES);
     if fs::create_dir_all(&dir).is_err() {
         return;
     }
     if let Ok(json) = serde_json::to_vec(&seen) {
         // Written beside and renamed, so a reader never sees half of it.
         let tmp = dir.join(format!("{key}.{}.tmp", std::process::id()));
-        if fs::write(&tmp, json).is_ok()
-            && fs::rename(&tmp, dir.join(format!("{key}.json"))).is_err()
-        {
+        if fs::write(&tmp, json).is_ok() && fs::rename(&tmp, &record).is_err() {
             let _ = fs::remove_file(&tmp);
         }
     }

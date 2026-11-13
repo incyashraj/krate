@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Opening an app - Krate</title>
 <meta name="description" content="A Krate app, open in this tab. Nothing to install.">
 <meta name="robots" content="noindex">
@@ -14,18 +17,40 @@
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="https://krate.tech/" rel="noopener"><img src="/player/krate-mark-3d-96.png" alt="" width="24" height="24">Krate</a>
+  <a class="brand" href="https://krate.tech/" rel="noopener"><img src="/player/krate-mark-3d-96.png" alt="" width="24" height="24"><span>Krate</span></a>
   <div class="who" id="who" hidden><span class="dot" aria-hidden="true"></span><span id="whoName"></span><span class="sig" id="whoSig"></span></div>
+  <button class="sync" id="sync" type="button" hidden aria-expanded="false" aria-controls="syncInfo"><span class="sdot" aria-hidden="true"></span><span id="syncWords">Syncing</span></button>
   <div class="acts">
     <a class="btn ghost small" id="inKrate" href="https://krate.tech/open/" rel="noopener">Open in Krate</a>
     <button class="btn ghost small" id="closeApp" type="button" hidden>Close</button>
   </div>
 </header>
 
+<div class="syncinfo" id="syncInfo" hidden role="status">
+  <p id="syncSay"></p>
+  <p class="safari" id="syncSafari" hidden>Safari deletes what a website keeps when you go 7 days of browsing without opening it. Open this app online at least once a week so no change waits here that long.</p>
+</div>
+
 <main id="stage" aria-live="polite">
   <section class="card state" id="loading">
     <div class="spin" aria-hidden="true"></div>
     <p class="say" id="loadingWords">Opening the app...</p>
+  </section>
+
+  <!-- /run/file: a .krate the person has, opened here and sent nowhere. -->
+  <section class="card state" id="file" hidden aria-labelledby="fileTitle">
+    <h1 id="fileTitle">Open a .krate file</h1>
+    <p class="say" id="fileWords">It opens in this tab, on this device. The file is not uploaded anywhere.</p>
+    <div class="drop" id="fileDrop">
+      <div class="doc" aria-hidden="true">
+        <svg viewBox="0 0 44 54"><path class="pg" d="M9 2.5h18.5L41.5 16.5V48a3.5 3.5 0 0 1-3.5 3.5H9A3.5 3.5 0 0 1 5.5 48V6A3.5 3.5 0 0 1 9 2.5z"/><path class="fold" d="M27.5 2.5v10.5a3.5 3.5 0 0 0 3.5 3.5h10.5"/></svg>
+        <img src="/player/krate-mark-3d-96.png" alt="">
+      </div>
+      <p class="dropsay" id="fileDropSay">Drop it here, or</p>
+      <button class="btn dark" id="filePick" type="button">Choose a file</button>
+    </div>
+    <p class="fine" id="fileFine" hidden><span id="fileTip"></span> <button class="link" id="fileInstall" type="button" hidden>Install</button></p>
+    <input type="file" id="fileInput" class="pick" tabindex="-1" aria-hidden="true">
   </section>
 
   <section class="card state" id="consent" hidden aria-labelledby="consentTitle">
@@ -38,16 +63,22 @@
         <button class="btn dark" id="consentAllow" type="button">Allow and open</button>
       </div>
     </div>
-    <p class="fine" id="consentFine">It gets nothing else. It runs in this tab, on your computer, and stops when you close it.</p>
+    <p class="fine" id="consentFine">It gets nothing else. It runs in this tab and stops when you close it.</p>
   </section>
 
   <section class="card state" id="signin" hidden aria-labelledby="signinTitle">
     <h1 id="signinTitle">Sign in to open this app</h1>
     <p class="say" id="signinWords">It was shared with your team. Sign in with the account your team invited.</p>
     <div class="stack">
+      <a class="btn dark" id="signinCompany" href="#" hidden>Continue with your company</a>
       <a class="btn dark" id="signinGithub" href="#">Continue with GitHub</a>
       <a class="btn ghost" id="signinGoogle" href="#">Continue with Google</a>
     </div>
+    <form class="mail" id="signinMail" novalidate>
+      <input type="email" id="signinEmail" placeholder="Or your email" autocomplete="email" inputmode="email" aria-label="Your email">
+      <button class="btn ghost" type="submit" id="signinSend">Email me a link</button>
+    </form>
+    <p class="fine" id="signinSaid" role="status" hidden></p>
   </section>
 
   <section class="card state" id="refused" hidden aria-labelledby="refusedTitle">
@@ -64,6 +95,7 @@
     </div>
     <pre class="term" id="term" hidden tabindex="0" aria-label="What the app printed"></pre>
     <p class="ended" id="ended" hidden></p>
+    <a class="btn ghost small" id="another" href="/run/file" hidden>Open another file</a>
   </section>
 
   <div class="notice" id="notice" hidden role="status">
@@ -72,6 +104,52 @@
     <button class="x" id="noticeClose" type="button" aria-label="Hide this">&times;</button>
   </div>
 </main>
+
+<div class="keep" id="keep" hidden role="status" aria-labelledby="keepTitle">
+  <img class="kicon" id="keepIcon" alt="" width="40" height="40">
+  <div class="kwords">
+    <b id="keepTitle">Keep this app</b>
+    <span id="keepHow"></span>
+  </div>
+  <button class="btn dark small" id="keepAdd" type="button" hidden>Add</button>
+  <button class="x" id="keepClose" type="button" aria-label="Not now">&times;</button>
+</div>
+
+<footer class="made" id="made" hidden>
+  <a class="mk" id="makeOwn" href="https://krate.tech/app/" target="_blank" rel="noopener"><img src="/player/krate-mark-3d-96.png" alt="" width="16" height="16"><span class="by">Made with Krate</span><span class="own">Make your own</span></a>
+  <button class="rep" id="reportOpen" type="button" aria-haspopup="dialog">Report</button>
+</footer>
+
+<div class="sheet" id="reportSheet" hidden>
+  <form class="perm" id="reportForm" role="dialog" aria-modal="true" aria-labelledby="reportTitle" novalidate>
+    <h1 id="reportTitle">Report this app</h1>
+    <p class="lede" id="reportLede">Tell Krate what is wrong with it. No account needed.</p>
+    <fieldset class="why" id="reportWhy">
+      <legend>What is wrong</legend>
+      <label><input type="radio" name="why" value="scam"><span>It is a scam, or asks for passwords or money</span></label>
+      <label><input type="radio" name="why" value="harmful"><span>It is harmful, hateful or sexual</span></label>
+      <label><input type="radio" name="why" value="copyright"><span>It copies someone else's work</span></label>
+      <label><input type="radio" name="why" value="other"><span>Something else</span></label>
+    </fieldset>
+    <textarea id="reportNote" maxlength="500" rows="3" placeholder="Anything that helps (optional)"></textarea>
+    <p class="note" id="reportSay" role="status"></p>
+    <div class="row-acts">
+      <button class="btn ghost" id="reportCancel" type="button">Cancel</button>
+      <button class="btn dark" id="reportSend" type="submit">Send report</button>
+    </div>
+  </form>
+</div>
+<!-- The app's own dialogs: a message, a yes/no, "choose a file", "save it". -->
+<div class="sheet" id="askSheet" hidden>
+  <div class="perm" role="dialog" aria-modal="true" aria-labelledby="askTitle" aria-describedby="askBody">
+    <h1 id="askTitle"></h1>
+    <p class="lede ask" id="askBody"></p>
+    <div class="row-acts">
+      <button class="btn ghost" id="askNo" type="button">No</button>
+      <button class="btn dark" id="askYes" type="button">OK</button>
+    </div>
+  </div>
+</div>
 <script type="module" src="/player/player.js"></script>
 </body>
 </html>

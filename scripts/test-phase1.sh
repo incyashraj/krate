@@ -139,13 +139,19 @@ export KRATE_PROBE_TIMEOUT_SECS="${KRATE_PROBE_TIMEOUT_SECS:-3}"
 # where PIPESTATUS does not exist, so cargo's exit code is carried out of the
 # pipeline by hand: the subshell writes it to a file that is read back after.
 # Checked against dash and zsh, not just bash.
+#
+# The organisation starters' click-through tests (`*_through_its_window`)
+# run in their own job, "Organisation starters" in ci.yml: each drives a
+# real app through several windowed runs, and on Windows, where this step
+# runs one test at a time, the sixteen of them added twenty minutes and
+# pushed the lane past its 90-minute limit (full run 41675230168).
 code_file="${log}.code"
 if [ "${RUNNER_OS:-}" = "Windows" ]; then
   { KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- \
-      --nocapture --test-threads=1 2>&1 || echo "$?" >"$code_file"; } | tee "$log"
+      --nocapture --test-threads=1 --skip _through_its_window 2>&1 || echo "$?" >"$code_file"; } | tee "$log"
 else
   { KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- \
-      --nocapture 2>&1 || echo "$?" >"$code_file"; } | tee "$log"
+      --nocapture --skip _through_its_window 2>&1 || echo "$?" >"$code_file"; } | tee "$log"
 fi
 if [ -f "$code_file" ]; then
   status="$(cat "$code_file")"

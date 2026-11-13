@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time},
+    phase2_bindings::krate::{fs, io, locale, net, process, random, resources, store, time},
     phase2_bridge as bridge,
     uapi::UapiGuard,
     uapi_dispatch::{FileHandle, HostAdapter, UapiDispatcher},
@@ -31,7 +31,19 @@ pub struct Phase2Host<'a> {
     /// The app's own key-value store. `None` until a run supplies a location,
     /// in which case every store call refuses -- an app cannot conjure storage
     /// the runtime did not give it.
-    store: Option<crate::store_host::AppStore>,
+    store: Option<crate::account_sync_host::KvStore>,
+    /// The app's own files kept the same on the person's devices (IC-981
+    /// S3): a thread of its own, closed with the run.
+    #[cfg(not(target_arch = "wasm32"))]
+    files_sync: Option<crate::account_sync_files::SyncedFiles>,
+    /// The app's database kept the same on the person's devices, by row
+    /// (IC-981 S4): a thread of its own, closed with the run.
+    #[cfg(not(target_arch = "wasm32"))]
+    sql_sync: Option<crate::account_sync_sql::SyncedSql>,
+    /// The store and the sync context `with_store` was given, for
+    /// `with_database` to sync the database beside them.
+    #[cfg(not(target_arch = "wasm32"))]
+    sync_beside: Option<(PathBuf, crate::account_sync_host::AccountSyncContext)>,
     /// The app's own database, on the same terms as the store above.
     database: Option<crate::sql_host::AppDatabase>,
     /// The app's own secrets, encrypted at rest.
@@ -58,6 +70,14 @@ pub struct Phase2Host<'a> {
     random_granted: bool,
     /// Folders this run is watching (`krate:fs/watch`).
     watches: crate::fs_watch::Watches,
+    /// What the manifest declared (IC-977): a program runs only when the
+    /// manifest names it AND the person allowed it. `None` (no manifest)
+    /// names nothing.
+    declared: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
+    /// Programs and terminals this run started (`krate:process`). Dropped
+    /// with the run, which kills every one of them.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    processes: crate::process_host::Processes,
     /// Requests started with `http-client.begin` and not yet answered.
     ///
     /// Lives here so it dies with the run: a handle cannot outlive the app
@@ -90,6 +110,12 @@ impl<'a> Phase2Host<'a> {
             resources: Phase2ResourceTable::default(),
             asset_root: None,
             store: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            files_sync: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            sql_sync: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            sync_beside: None,
             database: None,
             secrets: None,
             shared: None,
@@ -98,6 +124,9 @@ impl<'a> Phase2Host<'a> {
             chosen_files: Default::default(),
             random_granted: false,
             watches: Default::default(),
+            declared: None,
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            processes: crate::process_host::Processes::new(),
             async_fetches: crate::async_fetch::AsyncFetches::new(),
             async_ws: crate::async_ws::AsyncWs::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -152,17 +181,63 @@ impl<'a> Phase2Host<'a> {
     /// app, so an app that was refused `store.kv` gets a store that answers
     /// `Denied` to everything instead of no store at all -- the refusal is
     /// explicit rather than looking like a missing feature.
-    pub fn with_store(mut self, path: Option<PathBuf>, granted: bool) -> Self {
-        self.store = path.map(|path| crate::store_host::AppStore::open(path, granted));
+    ///
+    /// `sync` keeps it the same on every device the person signs in on
+    /// (IC-981, account_sync_host): the same file, the same answers, with
+    /// the exchange on a thread of its own.
+    pub fn with_store(
+        mut self,
+        path: Option<PathBuf>,
+        granted: bool,
+        sync: Option<&crate::account_sync_host::AccountSyncContext>,
+    ) -> Self {
+        // The app's own folder, when the player names one for it alone:
+        // its files follow the person by the same rule (S3). Whatever the
+        // store.kv grant, an app's files are its files.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(store), Some(context)) = (path.as_ref(), sync.filter(|c| c.enabled)) {
+            self.sync_beside = Some((store.clone(), context.clone()));
+            if let Some(folder) = context.files.clone() {
+                self.files_sync = Some(crate::account_sync_files::SyncedFiles::open(
+                    folder,
+                    store.clone(),
+                    context.clone(),
+                ));
+            }
+        }
+        self.store = path.map(|path| crate::account_sync_host::KvStore::open(path, granted, sync));
         self
     }
 
     /// Give this run its database, on the same terms as the key-value store:
     /// the grant is resolved once from the session policy, and the file is not
     /// opened until the app actually runs a statement.
+    ///
+    /// For a synced run (`with_store` was given a context), the database is
+    /// kept the same on the person's devices by row (IC-981 S4), beside
+    /// the store's own sync.
     pub fn with_database(mut self, path: Option<PathBuf>, granted: bool) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(database), true, Some((store, context))) =
+            (path.as_ref(), granted, self.sync_beside.as_ref())
+        {
+            self.sql_sync = Some(crate::account_sync_sql::SyncedSql::open(
+                database.clone(),
+                store.clone(),
+                context.clone(),
+            ));
+        }
         self.database = path.map(|path| crate::sql_host::AppDatabase::new(path, granted));
         self
+    }
+
+    /// The app wrote to its database: tell its sync (the first write of a
+    /// run wakes it, so a fresh device fills as soon as the tables exist).
+    fn database_written(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(sync) = self.sql_sync.as_ref() {
+            sync.app_wrote();
+        }
     }
 
     /// Give this run its secret store. The machine key never reaches the app;
@@ -211,6 +286,18 @@ impl<'a> Phase2Host<'a> {
         self
     }
 
+    /// This run draws a window: the app's code runs where the window is
+    /// drawn, so neither `store.org` sync (K-1107) nor `store.shared` sync
+    /// (K-1121) may wait on the network.
+    pub fn set_windowed(&self) {
+        if let Some(org) = self.org.as_ref() {
+            org.set_windowed();
+        }
+        if let Some(shared) = self.shared.as_ref() {
+            shared.set_windowed();
+        }
+    }
+
     fn org(&self) -> Result<&crate::org_store::AppOrg, store::org::OrgError> {
         self.org.as_ref().ok_or(store::org::OrgError::Denied)
     }
@@ -233,6 +320,69 @@ impl<'a> Phase2Host<'a> {
                 Ok(crate::store_host::AppStore::open(path.clone(), true))
             }
         }
+    }
+
+    /// What the app's manifest declared (IC-977), as the caller read it.
+    pub fn with_declared(
+        mut self,
+        declared: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
+    ) -> Self {
+        self.declared = declared;
+        self
+    }
+
+    /// May this run start `cap` (`process.run:<program>` or
+    /// `process.terminal`)? Only when the manifest names it and the person
+    /// allowed it; `what` says it in words ("run cargo").
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_process(
+        &self,
+        cap: &krate_manifest::Capability,
+        what: &str,
+    ) -> Result<(), process::processes::ProcessError> {
+        use krate_policy::{Decision, Refusal};
+        use process::processes::ProcessError;
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(ProcessError::NotDeclared(format!(
+                "the app did not ask to {what}"
+            )));
+        };
+        match self.guard.policy().decide(cap, Some(declared)) {
+            Decision::Granted { .. } => Ok(()),
+            Decision::Refused {
+                reason: Refusal::Undeclared,
+            } => Err(ProcessError::NotDeclared(format!(
+                "the app did not ask to {what}"
+            ))),
+            Decision::Refused {
+                reason: Refusal::Organisation,
+            } => Err(ProcessError::Platform(format!(
+                "the organisation that manages this computer does not allow apps to {what}"
+            ))),
+            Decision::Refused { .. } => Err(ProcessError::RefusedByPerson(format!(
+                "you did not allow this app to {what}"
+            ))),
+        }
+    }
+
+    /// The real folder for a program to run in: the app's own folder or one
+    /// the person picked, by the file calls' own rules.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    fn process_folder(&self, cwd: &str) -> Result<PathBuf, process::processes::ProcessError> {
+        use crate::uapi_dispatch::AdapterError;
+        let cwd = if cwd.trim().is_empty() { "." } else { cwd };
+        self.adapter.fs().resolve_folder(cwd).map_err(|err| {
+            process::processes::ProcessError::BadFolder(match err {
+                AdapterError::NotFound => format!("there is no folder `{cwd}`"),
+                _ => format!(
+                    "`{cwd}` is not a folder of this app's own or one you picked: a program \
+                     runs in one of those, named as files are"
+                ),
+            })
+        })
     }
 
     fn dispatcher(&self) -> UapiDispatcher<'_> {
@@ -351,6 +501,276 @@ impl store::kv::Host for Phase2Host<'_> {
     }
 }
 
+/// Programs and a terminal on the computer (`krate:process`, IC-977).
+///
+/// Every start is admitted here -- the manifest names the program and the
+/// person allowed it -- and its folder resolved by the file calls' rules;
+/// `process_host` does the rest. A phone or a browser tab answers every call
+/// with the words those places use for an ability of Krate on a computer.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+impl process::processes::Host for Phase2Host<'_> {
+    fn start(
+        &mut self,
+        program: String,
+        args: Vec<String>,
+        cwd: String,
+        env: Vec<(String, String)>,
+    ) -> wasmtime::Result<Result<u64, process::processes::ProcessError>> {
+        use process::processes::ProcessError;
+        // A name that is not bare cannot be in any manifest.
+        let cap = match krate_manifest::validate_program_name(&program)
+            .ok()
+            .and_then(|()| krate_manifest::Capability::new("process", "run", Some(&program)).ok())
+        {
+            Some(cap) => cap,
+            None => {
+                return Ok(Err(ProcessError::NotDeclared(format!(
+                    "the app did not ask to run `{}`: a program is named by its bare name, \
+                     like `cargo`",
+                    program.escape_default()
+                ))))
+            }
+        };
+        if let Err(err) = self.admit_process(&cap, &format!("run {program}")) {
+            return Ok(Err(err));
+        }
+        let folder = match self.process_folder(&cwd) {
+            Ok(folder) => folder,
+            Err(err) => return Ok(Err(err)),
+        };
+        Ok(self
+            .processes
+            .start(&program, &args, &folder, &env)
+            .map_err(process_error_to_wit))
+    }
+
+    fn open_terminal(
+        &mut self,
+        cwd: String,
+        cols: u16,
+        rows: u16,
+    ) -> wasmtime::Result<Result<u64, process::processes::ProcessError>> {
+        let cap = krate_manifest::Capability::new("process", "terminal", None)
+            .expect("process.terminal is a capability");
+        if let Err(err) = self.admit_process(&cap, "open a terminal") {
+            return Ok(Err(err));
+        }
+        let folder = match self.process_folder(&cwd) {
+            Ok(folder) => folder,
+            Err(err) => return Ok(Err(err)),
+        };
+        Ok(self
+            .processes
+            .open_terminal(&folder, cols, rows)
+            .map_err(process_error_to_wit))
+    }
+
+    fn write_stdin(
+        &mut self,
+        handle: u64,
+        bytes: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(self
+            .processes
+            .write_stdin(handle, bytes)
+            .map_err(process_error_to_wit))
+    }
+
+    fn close_stdin(
+        &mut self,
+        handle: u64,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(self
+            .processes
+            .close_stdin(handle)
+            .map_err(process_error_to_wit))
+    }
+
+    fn read_stdout(
+        &mut self,
+        handle: u64,
+        max: u32,
+    ) -> wasmtime::Result<Result<process::processes::Output, process::processes::ProcessError>>
+    {
+        Ok(self
+            .processes
+            .read(handle, crate::process_host::Stream::Stdout, max)
+            .map(output_to_wit)
+            .map_err(process_error_to_wit))
+    }
+
+    fn read_stderr(
+        &mut self,
+        handle: u64,
+        max: u32,
+    ) -> wasmtime::Result<Result<process::processes::Output, process::processes::ProcessError>>
+    {
+        Ok(self
+            .processes
+            .read(handle, crate::process_host::Stream::Stderr, max)
+            .map(output_to_wit)
+            .map_err(process_error_to_wit))
+    }
+
+    fn wait(
+        &mut self,
+        handle: u64,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<
+        Result<Option<process::processes::ExitStatus>, process::processes::ProcessError>,
+    > {
+        Ok(self
+            .processes
+            .wait(handle, timeout_ms)
+            .map(|exit| {
+                exit.map(|exit| process::processes::ExitStatus {
+                    code: exit.code,
+                    signal: exit.signal,
+                })
+            })
+            .map_err(process_error_to_wit))
+    }
+
+    fn kill(
+        &mut self,
+        handle: u64,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(self.processes.kill(handle).map_err(process_error_to_wit))
+    }
+
+    fn resize(
+        &mut self,
+        handle: u64,
+        cols: u16,
+        rows: u16,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(self
+            .processes
+            .resize(handle, cols, rows)
+            .map_err(process_error_to_wit))
+    }
+
+    fn release(&mut self, handle: u64) -> wasmtime::Result<()> {
+        self.processes.release(handle);
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn process_error_to_wit(err: crate::process_host::OsError) -> process::processes::ProcessError {
+    use crate::process_host::OsError;
+    use process::processes::ProcessError;
+    match err {
+        OsError::NotFound(words) => ProcessError::NotFound(words),
+        OsError::TooMany(words) => ProcessError::TooMany(words),
+        OsError::UnknownHandle => ProcessError::UnknownHandle,
+        OsError::Platform(words) => ProcessError::Platform(words),
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn output_to_wit(out: crate::process_host::Output) -> process::processes::Output {
+    process::processes::Output {
+        bytes: out.bytes,
+        ended: out.ended,
+    }
+}
+
+/// What a phone or a browser tab says to every `krate:process` call.
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const PROCESS_ON_A_COMPUTER: &str =
+    "Running programs works in Krate on a computer (macOS, Windows, Linux), not here.";
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+impl process::processes::Host for Phase2Host<'_> {
+    fn start(
+        &mut self,
+        _program: String,
+        _args: Vec<String>,
+        _cwd: String,
+        _env: Vec<(String, String)>,
+    ) -> wasmtime::Result<Result<u64, process::processes::ProcessError>> {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn open_terminal(
+        &mut self,
+        _cwd: String,
+        _cols: u16,
+        _rows: u16,
+    ) -> wasmtime::Result<Result<u64, process::processes::ProcessError>> {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn write_stdin(
+        &mut self,
+        _handle: u64,
+        _bytes: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn close_stdin(
+        &mut self,
+        _handle: u64,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn read_stdout(
+        &mut self,
+        _handle: u64,
+        _max: u32,
+    ) -> wasmtime::Result<Result<process::processes::Output, process::processes::ProcessError>>
+    {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn read_stderr(
+        &mut self,
+        _handle: u64,
+        _max: u32,
+    ) -> wasmtime::Result<Result<process::processes::Output, process::processes::ProcessError>>
+    {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn wait(
+        &mut self,
+        _handle: u64,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<
+        Result<Option<process::processes::ExitStatus>, process::processes::ProcessError>,
+    > {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn kill(
+        &mut self,
+        _handle: u64,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn resize(
+        &mut self,
+        _handle: u64,
+        _cols: u16,
+        _rows: u16,
+    ) -> wasmtime::Result<Result<(), process::processes::ProcessError>> {
+        Ok(Err(not_on_this_device()))
+    }
+
+    fn release(&mut self, _handle: u64) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn not_on_this_device() -> process::processes::ProcessError {
+    process::processes::ProcessError::Platform(PROCESS_ON_A_COMPUTER.to_string())
+}
+
 impl random::bytes::Host for Phase2Host<'_> {
     fn get(&mut self, count: u32) -> wasmtime::Result<Result<Vec<u8>, random::bytes::RandomError>> {
         if !self.random_granted {
@@ -424,7 +844,11 @@ impl store::sql::Host for Phase2Host<'_> {
             return Ok(Err(store::sql::SqlError::Denied));
         };
         let params: Vec<_> = params.into_iter().map(value_from_wit).collect();
-        Ok(db.execute(&statement, &params).map_err(sql_error_to_wit))
+        let done = db.execute(&statement, &params).map_err(sql_error_to_wit);
+        if done.is_ok() {
+            self.database_written();
+        }
+        Ok(done)
     }
 
     fn transaction(
@@ -434,7 +858,11 @@ impl store::sql::Host for Phase2Host<'_> {
         let Some(db) = self.database.as_mut() else {
             return Ok(Err(store::sql::SqlError::Denied));
         };
-        Ok(db.transaction(&statements).map_err(sql_error_to_wit))
+        let done = db.transaction(&statements).map_err(sql_error_to_wit);
+        if done.is_ok() {
+            self.database_written();
+        }
+        Ok(done)
     }
 }
 
@@ -731,6 +1159,44 @@ impl store::org::Host for Phase2Host<'_> {
                         role: m.role,
                         org: m.org,
                     })
+                })
+                .map_err(org_error_to_wit)
+        }))
+    }
+
+    fn members(
+        &mut self,
+    ) -> wasmtime::Result<Result<Vec<store::org::Member>, store::org::OrgError>> {
+        Ok(self.org().and_then(|org| {
+            org.members()
+                .map(|people| {
+                    people
+                        .into_iter()
+                        .map(|m| store::org::Member {
+                            name: m.name,
+                            role: m.role,
+                            org: m.org,
+                        })
+                        .collect()
+                })
+                .map_err(org_error_to_wit)
+        }))
+    }
+
+    fn status(&mut self) -> wasmtime::Result<Result<store::org::Standing, store::org::OrgError>> {
+        use crate::org_store::Link;
+        Ok(self.org().and_then(|org| {
+            org.status()
+                .map(|status| store::org::Standing {
+                    link: match status.link {
+                        Link::Synced => store::org::Link::Synced,
+                        Link::Syncing => store::org::Link::Syncing,
+                        Link::Offline => store::org::Link::Offline,
+                        Link::WaitingForKey => store::org::Link::WaitingForKey,
+                    },
+                    pending: status.pending,
+                    reached_at: status.reached_at,
+                    org: status.org,
                 })
                 .map_err(org_error_to_wit)
         }))

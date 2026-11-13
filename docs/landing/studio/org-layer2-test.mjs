@@ -1,8 +1,9 @@
 // The organisation pages' second layer (IC-947, IC-948; CONTRACT.md
 // Addenda 3 and 4), run from the shipped scripts against a stand-in hub in
 // the contract's shapes: invitation mail, replacing the root key, closing
-// and its window, export, the suspended and recovery banners, billing,
-// company sign-in, offline access, and the /login?org= door.
+// and its window, export, the recovery banner, no billing anywhere
+// (organisations are not billed), company sign-in, offline access, and the
+// /login?org= door.
 //
 //   node docs/landing/studio/org-layer2-test.mjs
 import { readFileSync } from "node:fs";
@@ -14,7 +15,7 @@ const ALICE = "github:alice";
 const KEY2 = "ab".repeat(32);
 const t = (s) => String(s || "").replace(/\s+/g, " ");
 const withOrg = (me, org, members) => ({
-  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, suspended: false, billing_state: "pilot", recovery: null, ...org }, me: member(me, (members || []).find((m) => m.principal === me)?.role || "owner"), members: members || [member(ALICE, "owner")] }],
+  "GET /orgs/acme": () => [200, { org: { ...ACME, offline_default: "days-7", state: "active", close: null, recovery: null, ...org }, me: member(me, (members || []).find((m) => m.principal === me)?.role || "owner"), members: members || [member(ALICE, "owner")] }],
 });
 const two = [member(ALICE, "owner"), member("github:olga", "owner"), member("github:bob", "reviewer")];
 
@@ -138,10 +139,12 @@ const two = [member(ALICE, "owner"), member("github:olga", "owner"), member("git
   check(ex.sent.some((s) => s.key === "POST /orgs/acme/export" && s.headers["idempotency-key"]) && /Building/.test(ex.el("pane").shown), "Build an export asks the hub, and the list shows it building");
 }
 
-/* ---- D. suspended and recovery banners --------------------------------- */
+/* ---- D. no billing banner, and the recovery banner ---------------------- */
 {
+  // Even an older hub's answer that still says "suspended" draws nothing
+  // about billing: organisations are not billed.
   const susp = await page("https://krate.tech/org/?o=acme", DASH, { token: "t", routes: { ...orgRoutes(ALICE), ...withOrg(ALICE, { suspended: true, billing_state: "suspended" }) } });
-  check(/paused for billing/.test(susp.el("banner").shown) && /already released still open/.test(susp.el("banner").shown), "a suspended organisation says its released apps still open");
+  check(!/billing|paused|settle|pay/i.test(t(susp.el("banner").shown)) && !button(susp.el("banner"), "Open Billing"), "no paused-for-billing banner, ever");
   const rec = { id: "r1", for: "github:carol", by: "github:krate-admin", reason: "the only owner lost access to their account", requested_at: 1760000000, effective_at: 1760259200, state: "waiting", not_mailed: ["github:olga"] };
   const ownerView = await page("https://krate.tech/org/?o=acme", DASH, {
     token: "t", routes: { ...orgRoutes(ALICE), ...withOrg(ALICE, { recovery: rec }), "POST /orgs/acme/recover/r1/object": () => [200, { recovery: { ...rec, state: "cancelled" } }] },
@@ -156,25 +159,18 @@ const two = [member(ALICE, "owner"), member("github:olga", "owner"), member("git
   check(!/restoring ownership/.test(dev.el("banner").shown), "a developer is not shown the recovery");
 }
 
-/* ---- E. billing ---------------------------------------------------------- */
+/* ---- E. no billing ------------------------------------------------------ */
 {
-  const bill = (body, me = ALICE, role = "owner") => page("https://krate.tech/org/?o=acme&tab=billing", DASH, {
-    token: "t", routes: { ...orgRoutes(me), ...withOrg(me, {}, [member(me, role)]), "GET /orgs/acme/billing": () => [200, body], "POST /orgs/acme/billing/checkout": () => [200, { url: "https://checkout.stripe.com/c/pay/cs_test_1" }] },
-  });
-  const closedB = await bill({ plan: "pilot", state: "pilot", seats_used: 4, seats_paid: null, period_end: null, checkout_open: false, manual: null, invoices: [] });
-  check(/Krate invoices pilot organisations directly: write to yashraj@krate\.tech/.test(t(closedB.el("pane").shown)) && !button(closedB.el("pane"), "Pay by card for 4 seats"), "billing not open: the invoicing line, no checkout");
-  check(!/[$€£]|USD|EUR/.test(closedB.el("pane").shown), "no price appears that the hub did not send");
-  const open = await bill({ plan: "pilot", state: "pilot", seats_used: 4, seats_paid: null, checkout_open: true, manual: null, invoices: [{ id: "i1", at: 1760000000, status: "paid", number: "ACME-0001" }] });
-  const pay = button(open.el("pane"), "Pay by card for 4 seats");
-  check(!!pay && /ACME-0001/.test(open.el("pane").shown) && !/[$€£]/.test(open.el("pane").shown), "billing open: checkout for the seats in use, and an invoice with no amount shows none");
-  pay.click();
-  await settle();
-  check(open.sent.some((s) => s.key === "POST /orgs/acme/billing/checkout" && s.headers["idempotency-key"]) && open.location.href === "https://checkout.stripe.com/c/pay/cs_test_1", "Pay opens Stripe's checkout, with an Idempotency-Key");
-  const admin = await bill({ plan: "invoiced", state: "invoiced", seats_used: 4, seats_paid: 10, period_end: 1767225600, checkout_open: true, manual: { reference: "INV-0042", paid_until: 1767225600 }, invoices: [{ id: "i2", at: 1760000000, status: "paid", amount: 12000, currency: "usd" }] }, "github:ada", "admin");
-  check(!button(admin.el("pane"), "Pay by card for 4 seats") && /INV-0042/.test(admin.el("pane").shown) && /4 used · 10 paid/.test(admin.el("pane").shown), "an admin reads billing but is not offered checkout");
-  check(/\$120\.00/.test(admin.el("pane").shown), "an amount Stripe sent is shown in its currency");
-  const dev = await page("https://krate.tech/org/?o=acme&tab=billing", DASH, { token: "t", routes: { ...orgRoutes("github:carol"), ...withOrg("github:carol", {}, [member("github:carol", "developer")]) } });
-  check(!tabNames(dev).includes("billing"), "developers have no Billing tab");
+  // An old ?tab=billing link: an owner lands on the console, with no Billing
+  // tab, no pane, no pay button, and nothing asks the hub about billing.
+  for (const [me, role] of [[ALICE, "owner"], ["github:ada", "admin"], ["github:carol", "developer"]]) {
+    const p = await page("https://krate.tech/org/?o=acme&tab=billing", DASH, { token: "t", routes: { ...orgRoutes(me), ...withOrg(me, {}, [member(me, role)]), "GET /orgs/acme/sso": () => [200, null], "GET /orgs/acme/exports": () => [200, []] } });
+    await settle();
+    const all = t(p.el("tabs").shown) + " " + t(p.el("pane").shown) + " " + t(p.el("banner").shown);
+    check(!tabNames(p).includes("billing") && !/tab=billing/.test(p.location.href), `${role}: no Billing tab, and an old billing link opens the console instead`);
+    check(!/Pay by card|checkout|invoice|paused for billing|Billing/i.test(all) && !/[$€£]/.test(all), `${role}: no price, pay button, invoice list or billing pane`);
+    check(p.sent.every((x) => !/\/billing/.test(x.key)), `${role}: nothing asks the hub about billing`);
+  }
 }
 
 /* ---- F. company sign-in -------------------------------------------------- */
@@ -265,7 +261,7 @@ const two = [member(ALICE, "owner"), member("github:olga", "owner"), member("git
   sel.dispatch("change");
   await settle();
   check(own.sent.some((s) => s.key === "PUT /orgs/acme/apps/Bounce/offline" && s.body.class === "online"), "and the choice is sent for that app's name");
-  const rec = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: routes("github:dan", "recipient") });
+  const rec = await page("https://krate.tech/org/?o=acme&tab=releases", DASH, { token: "t", routes: routes("github:bob", "reviewer") });
   check(!rec.el("pane").querySelector("select") && /30 days offline/.test(rec.el("pane").shown), "everyone else reads the class in words");
   const set = await page("https://krate.tech/org/?o=acme&tab=settings", DASH, { token: "t", routes: routes(ALICE, "owner") });
   const def = set.el("pane").all((n) => n.tagName === "SELECT" && /new apps/i.test(n.attrs["aria-label"] || ""))[0];

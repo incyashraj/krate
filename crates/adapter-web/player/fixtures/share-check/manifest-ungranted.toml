@@ -1,0 +1,13 @@
+# The same app with neither store.shared nor store.secret declared: what a
+# tab must refuse exactly as the desktop does (share-proof.mjs).
+[app]
+id = "dev.krate.share-check-ungranted"
+name = "Share Check Ungranted"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_share_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true

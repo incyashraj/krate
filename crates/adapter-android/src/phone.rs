@@ -71,6 +71,43 @@ mod real {
         .unwrap_or((0.0, 0.0, 0.0, 0.0))
     }
 
+    /// The phone's name as its owner sees it, for Krate's profile screen.
+    pub fn device_name() -> String {
+        with_activity("reading the phone's name", |env, activity| {
+            let name = env
+                .call_method(activity, "krateDeviceName", "()Ljava/lang/String;", &[])?
+                .l()?;
+            string(env, name)
+        })
+        .flatten()
+        .unwrap_or_else(|| "This phone".to_string())
+    }
+
+    /// Ask for dark bar icons over a light top or bottom, light over dark.
+    pub fn light_bars(top: bool, bottom: bool) {
+        let _ = with_activity("colouring the system bars", |env, activity| {
+            env.call_method(
+                activity,
+                "krateLightBars",
+                "(ZZ)V",
+                &[
+                    jni::objects::JValue::Bool(top.into()),
+                    jni::objects::JValue::Bool(bottom.into()),
+                ],
+            )?
+            .v()
+        });
+    }
+
+    /// Whether a screen reader that explores by touch (TalkBack) is on.
+    pub fn screen_reader_on() -> bool {
+        with_activity("asking about the screen reader", |env, activity| {
+            env.call_method(activity, "krateScreenReaderOn", "()Z", &[])?
+                .z()
+        })
+        .unwrap_or(false)
+    }
+
     pub fn read_clipboard() -> Result<String, String> {
         with_activity("reading the clipboard", |env, activity| {
             let text = env
@@ -214,6 +251,19 @@ mod stub {
     /// No phone, nothing covering the edges.
     pub fn covered_edges() -> (f32, f32, f32, f32) {
         (0.0, 0.0, 0.0, 0.0)
+    }
+
+    /// No bars off a phone.
+    pub fn light_bars(_top: bool, _bottom: bool) {}
+
+    /// No phone, no name.
+    pub fn device_name() -> String {
+        "This phone".to_string()
+    }
+
+    /// No screen reader off a phone.
+    pub fn screen_reader_on() -> bool {
+        false
     }
 
     pub fn read_clipboard() -> Result<String, String> {

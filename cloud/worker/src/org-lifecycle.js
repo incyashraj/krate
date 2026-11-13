@@ -120,7 +120,6 @@ export const EXCLUSIONS = [
   { class: "secrets", why: "no secret held for the organisation (sign-in client secrets included) is exported" },
   { class: "invitation codes", why: "an open invitation's code is a credential; who was invited is in the audit" },
   { class: "idempotency records", why: "request bookkeeping, not organisation data" },
-  { class: "billing identifiers", why: "Stripe customer and subscription ids stay with Krate; invoices come from Stripe" },
 ];
 
 async function buildExport(h) {
@@ -355,6 +354,9 @@ export async function sweepOrgs(env, orgAsk) {
         await env.BUNDLES.delete(digest);
         deleted.push(digest);
       }
+      // Its code comparison (org-approvals.js) holds source: it goes too.
+      const changes = await env.BUNDLES.head(`changes:${digest}`);
+      if (changes && changes.customMetadata && changes.customMetadata.org === slug) await env.BUNDLES.delete(`changes:${digest}`);
       const blob = await env.APPS.get(`bigkey:${digest}`).catch(() => null);
       if (blob) {
         const bigHead = await env.BUNDLES.head(blob);

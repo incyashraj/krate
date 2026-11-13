@@ -151,6 +151,16 @@ impl Ui {
         self.inner.wheel(id(window), x, y, dx, dy, mods);
     }
 
+    /// A finger on a touch screen: start, move, end or cancel.
+    pub fn touch(&mut self, window: &str, phase: &str, finger: u32, x: f32, y: f32) {
+        self.inner.touch(id(window), phase, u64::from(finger), x, y);
+    }
+
+    /// The text fields' rectangles on screen, four numbers each.
+    pub fn text_rects(&self, window: &str) -> Vec<f32> {
+        self.inner.text_rects(id(window))
+    }
+
     pub fn key(&mut self, window: &str, key: &str, pressed: bool, mods: u8, text: Option<String>) {
         self.inner
             .key(id(window), key, pressed, mods, text.as_deref());
@@ -217,6 +227,14 @@ impl Ui {
         self.inner.frame(id(window)).map(|f| f.len()).unwrap_or(0)
     }
 
+    /// `[top, bottom)`: the rows of the frame the last `render` changed.
+    pub fn frame_rows(&self, window: &str) -> Vec<u32> {
+        match self.inner.painted_rows(id(window)) {
+            Some((top, bottom)) => vec![top, bottom],
+            None => Vec::new(),
+        }
+    }
+
     /// `[physical width, physical height, logical width, logical height]`.
     pub fn frame_size(&self, window: &str) -> Vec<u32> {
         let w = id(window);
@@ -269,6 +287,14 @@ impl Grants {
 
     pub fn allows(&self, cap: &str) -> bool {
         self.inner.allows(cap)
+    }
+
+    /// Whether a file named `name` dropped on the app may reach it: the
+    /// desktop's `ui.dropzone:<mime>` check, the media type taken from the
+    /// name by the desktop's own table. An empty name asks what a hover
+    /// asks: whether the app takes anything at all.
+    pub fn allows_drop(&self, name: &str) -> bool {
+        self.inner.allows_drop(name)
     }
 
     /// `headers` is a JSON list of `{name, value}`. Answers

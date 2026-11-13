@@ -12,6 +12,14 @@
  * (F-316, orgseal.js) and only the sealed blob is sent, so Krate's hub
  * cannot read it; the hub answers only who set it and when.
  *
+ * The new-connection form starts from a preset for the systems buyers name
+ * first, or from the API's own OpenAPI description (its address, a pasted
+ * copy, or a dropped file), read here by /kit/connect.js: the address,
+ * what is allowed and the kind of credential are filled in for the admin to
+ * review, and a short summary of the API is kept with the connection so
+ * Studio's AI writes apps against the real API. Nothing is saved until
+ * they press Add connection.
+ *
  * dashboard.js owns the page and hands this part what it needs (D). Like the
  * rest of the page it hides only what the role matrix says a role can never
  * use, and says refusals in words.
@@ -54,6 +62,9 @@
     }
     var name = String(typed.header || "").trim();
     if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/.test(name)) return { problem: ["The header name is one word", "Such as Authorization or X-Api-Key."] };
+    if (name.toLowerCase() === "krate-identity") {
+      return { problem: ["That header cannot carry a credential", "Krate-Identity is the one Krate uses to tell the API who is calling. Use the header your API names, like Authorization."] };
+    }
     if (TRANSPORT.indexOf(name.toLowerCase()) >= 0 || name.toLowerCase().indexOf("proxy-") === 0) {
       return { problem: ["That header cannot carry a credential", name + " is one the connection itself sets. Use the header your API names, like Authorization."] };
     }
@@ -178,6 +189,11 @@
         el("b", {}, [c.name, " ", el("span", { class: "tag blue", text: allowWords(c) })]),
         el("small", { class: "dg", text: c.base }),
         el("small", { text: scopeWords(c) }),
+        el("small", { text: c.identity === false ? "Does not tell the API who is calling" : "Tells the API who is calling: each request carries a signed Krate-Identity header naming the person" }),
+        c.api ? el("small", { class: "connapi" }, [
+          "API: " + c.api.title + (c.api.version ? " " + c.api.version : "") + (c.api.operations ? ", " + c.api.operations + " operation" + (c.api.operations === 1 ? "" : "s") : "") + ", which Studio's AI reads when an app uses it. ",
+          el("button", { class: "btn link", type: "button", text: "Save for Studio", onclick: function () { saveForStudio(c, note); } }),
+        ]) : null,
         el("small", { text: "Credential: the " + (cred.kind === "basic" ? "user and password" : cred.header + " header") + ", set by " + K.who(cred.set_by).label + " on " + K.day(cred.set_at) +
           " · used " + (uses.today || 0) + (uses.today === 1 ? " time" : " times") + " today, " + (uses.last_30_days || 0) + " in 30 days" }),
         again ? K.refusalBlock({
@@ -217,42 +233,85 @@
       return r;
     }
 
+    /// The connection as Studio's AI reads it, as a file: Studio in a tab
+    /// adds it to a build by itself; on a computer, attach this file to
+    /// the request.
+    function saveForStudio(c, note) {
+      K.api("GET", path("/" + encodeURIComponent(c.name) + "/api")).then(function (res) {
+        note.hidden = false;
+        if (!res.ok) { note.textContent = D.words(res, { what: "read this connection's API", whoCan: "owners, admins, developers and reviewers" }).body; return; }
+        var text = root.KrateConnect.contextText(res.body, nameOf());
+        var blob = new root.Blob([text], { type: "text/markdown" });
+        var href = root.URL.createObjectURL(blob);
+        var a = root.document.createElement("a");
+        a.href = href;
+        a.setAttribute("download", "connection-" + c.name + ".md");
+        if (a.click) a.click();
+        note.textContent = "Saved connection-" + c.name + ".md. Attach it in Studio when you ask for an app that uses " + c.name + ". Studio in the browser adds it by itself.";
+      });
+    }
+
     // ------------------------------------------------------------- parts
 
     function fld(label, input, hint) {
       return el("label", { class: "fld" }, [el("span", { text: label }), input, hint ? el("small", { text: hint }) : null]);
     }
 
-    /// The credential: one header, or a user and password.
+    /// The credential: one header, or a user and password. `set(auth)`
+    /// shapes it for what a preset or a description asks for: the kind,
+    /// the header's name, a prefix the value is sent with (Bearer), and
+    /// the words for what to paste.
     function credentialPart() {
       var kind = "header";
+      var prefix = "";
       var seg = el("div", { class: "seg", role: "group", "aria-label": "Kind of credential" });
       var headerName = el("input", { class: "inp", name: "headerName", value: "Authorization", autocomplete: "off", spellcheck: "false", autocapitalize: "none" });
       var value = el("input", { class: "inp", name: "credValue", type: "password", autocomplete: "new-password", placeholder: "Bearer ...", spellcheck: "false" });
       var user = el("input", { class: "inp", name: "credUser", autocomplete: "off", spellcheck: "false", autocapitalize: "none" });
       var password = el("input", { class: "inp", name: "credPassword", type: "password", autocomplete: "new-password" });
+      var SEALED = "Encrypted on this computer before it is sent: Krate cannot read it. It is never shown again, here or to an app. A server that echoes request headers back would show it to the app.";
+      var valueFld = fld("Value", value, SEALED);
+      var userFld = fld("User", user);
+      var passwordFld = fld("Password", password, "Encrypted on this computer before it is sent: Krate cannot read it. It is never shown again.");
       var asHeader = el("div", { class: "form" }, [
         fld("Header", headerName, "Usually Authorization, or the one your API names, like X-Api-Key."),
-        fld("Value", value, "Encrypted on this computer before it is sent: Krate cannot read it. It is never shown again, here or to an app. A server that echoes request headers back would show it to the app."),
+        valueFld,
       ]);
-      var asBasic = el("div", { class: "form", hidden: true }, [fld("User", user), fld("Password", password, "Encrypted on this computer before it is sent: Krate cannot read it. It is never shown again.")]);
+      var asBasic = el("div", { class: "form", hidden: true }, [userFld, passwordFld]);
+      var pick = function (k) {
+        kind = k;
+        [].forEach.call(seg.children, function (x) { x.setAttribute("aria-pressed", x.dataset.kind === kind ? "true" : "false"); });
+        asHeader.hidden = kind !== "header";
+        asBasic.hidden = kind !== "basic";
+      };
+      var label = function (f, text) { f.children[0].textContent = text; };
+      var small = function (f, text) { f.children[2].textContent = text; };
       [["header", "A header"], ["basic", "User and password"]].forEach(function (p) {
         var b = el("button", { type: "button", "aria-pressed": p[0] === kind ? "true" : "false", text: p[1] });
         b.dataset.kind = p[0];
-        b.addEventListener("click", function () {
-          kind = p[0];
-          [].forEach.call(seg.children, function (x) { x.setAttribute("aria-pressed", x.dataset.kind === kind ? "true" : "false"); });
-          asHeader.hidden = kind !== "header";
-          asBasic.hidden = kind !== "basic";
-        });
+        b.addEventListener("click", function () { prefix = ""; pick(p[0]); });
         seg.appendChild(b);
       });
       return {
         node: el("div", { class: "fld" }, [el("span", { text: "Credential" }), seg, asHeader, asBasic]),
+        set: function (auth) {
+          auth = auth || { kind: "header", header: "Authorization" };
+          pick(auth.kind === "basic" ? "basic" : "header");
+          prefix = auth.prefix || "";
+          if (auth.kind !== "basic") headerName.value = auth.header || "Authorization";
+          label(valueFld, auth.secret ? "Value: " + auth.secret : "Value");
+          value.setAttribute("placeholder", prefix ? "Paste the token" : headerName.value === "Authorization" ? "Bearer ..." : "Paste the value");
+          small(valueFld, (prefix ? "Paste it alone: Krate sends it after " + prefix.trim() + " and a space. " : "") + SEALED);
+          label(userFld, auth.user || "User");
+          label(passwordFld, auth.kind === "basic" && auth.secret ? auth.secret : "Password");
+        },
         /// What was typed, for sealForHub alone: never a request body.
         typed: function () {
           if (kind === "basic") return user.value.trim() ? { kind: "basic", user: user.value.trim(), password: password.value } : null;
-          return value.value.trim() ? { kind: "header", header: headerName.value.trim(), value: value.value } : null;
+          var v = value.value.trim();
+          if (!v) return null;
+          if (prefix && v.toLowerCase().indexOf(prefix.toLowerCase()) !== 0) v = prefix + v;
+          return { kind: "header", header: headerName.value.trim(), value: v };
         },
         clear: function () { value.value = ""; password.value = ""; },
       };
@@ -268,11 +327,26 @@
       });
       var paths = el("input", { class: "inp", name: "paths", autocomplete: "off", spellcheck: "false", autocapitalize: "none",
         value: (cur.paths || []).filter(function (p) { return p !== "/"; }).join(", "), placeholder: "Everything under the address" });
+      var methodsHint = el("small", { text: "GET reads. Tick more only if the apps must change things." });
+      var changed = null;
+      boxes.forEach(function (b) { b.querySelector("input").addEventListener("change", function () { if (changed) changed(); }); });
+      var shown = function (list) { return (list || []).filter(function (p) { return p !== "/"; }).join(", "); };
       return {
         node: el("div", { class: "form" }, [
-          el("div", { class: "fld" }, [el("span", { text: "Apps may" }), el("div", { class: "mchecks" }, boxes), el("small", { text: "GET reads. Tick more only if the apps must change things." })]),
+          el("div", { class: "fld" }, [el("span", { text: "Apps may" }), el("div", { class: "mchecks" }, boxes), methodsHint]),
           fld("Paths", paths, "Under the address, comma-separated, like /invoices, /rates. Empty is all of it."),
         ]),
+        /// Fill it: the methods ticked and the paths, and what the API has.
+        set: function (methods, list) {
+          boxes.forEach(function (b) { var i = b.querySelector("input"); i.checked = methods.indexOf(i.value) >= 0; });
+          paths.value = shown(list);
+        },
+        ticked: function () {
+          return boxes.map(function (b) { return b.querySelector("input"); }).filter(function (i) { return i.checked; }).map(function (i) { return i.value; });
+        },
+        /// The paths field, when nobody has typed in it since `list`.
+        untouched: function (list) { return paths.value === shown(list); },
+        onChange: function (f) { changed = f; },
         body: function () {
           var m = boxes.map(function (b) { return b.querySelector("input"); }).filter(function (i) { return i.checked; }).map(function (i) { return i.value; });
           var p = paths.value.split(/[,\s]+/).map(function (x) { return x.trim(); }).filter(Boolean);
@@ -330,6 +404,22 @@
       };
     }
 
+    /// "Tell the API who is calling": on unless turned off. When on, each
+    /// request also carries a short-lived Krate-Identity token, signed by
+    /// Krate, naming the person, the app and the release, so the API can
+    /// log who did what. The credential still decides access.
+    function identityPart(cur) {
+      var box = el("input", { type: "checkbox", name: "identity" });
+      box.checked = cur !== false;
+      return {
+        node: el("div", { class: "fld" }, [
+          el("label", { class: "chk" }, [box, el("span", { text: "Tell the API who is calling" })]),
+          el("small", { text: "Each request also carries a Krate-Identity header, signed by Krate, naming the person, the app and its version. Your API can log it and check it; it needs no sign-in work. Docs: krate.tech/docs/organisations.html#telling-the-api-who-is-calling" }),
+        ]),
+        value: function () { return box.checked; },
+      };
+    }
+
     function outBox() { return el("div", { class: "connout" }); }
     function hint(out, t, b) { out.textContent = ""; out.appendChild(K.refusalBlock({ title: t, body: b, action: null }, "warn")); }
 
@@ -342,19 +432,174 @@
 
     // ------------------------------------------------------------- forms
 
+    /// "Start from": one chip per preset. Choosing one fills the form; the
+    /// admin can still change everything.
+    function presetPart(onPick) {
+      var C = root.KrateConnect;
+      var row = el("div", { class: "connpresets", role: "group", "aria-label": "Start from" });
+      (C ? C.PRESETS : []).forEach(function (p) {
+        var b = el("button", { class: "chip", type: "button", "aria-pressed": "false", text: p.label });
+        b.dataset.preset = p.id;
+        if (p.what) b.setAttribute("title", p.label + ": " + p.what);
+        b.addEventListener("click", function () {
+          [].forEach.call(row.children, function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+          onPick(p);
+        });
+        row.appendChild(b);
+      });
+      return el("div", { class: "fld" }, [el("span", { text: "Start from" }), row]);
+    }
+
+    /// The API's own description: its address, or the text pasted or a
+    /// file dropped. Read here; `onRead(result)` fills the form.
+    function importPart(onRead) {
+      var C = root.KrateConnect;
+      var url = el("input", { class: "inp", name: "specUrl", type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false", autocapitalize: "none", placeholder: "https://api.acme.com/openapi.json" });
+      var paste = el("textarea", { class: "inp", name: "specText", rows: "4", spellcheck: "false", autocapitalize: "none", placeholder: "Or paste the description here, or drop its file (.json or .yaml)" });
+      var file = el("input", { type: "file", accept: ".json,.yaml,.yml,application/json,application/yaml,text/yaml", hidden: true });
+      var out = outBox();
+      var readBtn = el("button", { class: "btn ghost sm", type: "button", text: "Read it" });
+      var useBtn = el("button", { class: "btn ghost sm", type: "button", text: "Use what I pasted" });
+      var fileBtn = el("button", { class: "btn quiet sm", type: "button", text: "Choose a file", onclick: function () { file.click(); } });
+      var said = function (title, body, extra) {
+        out.textContent = "";
+        var block = K.refusalBlock({ title: title, body: body, action: null }, "warn");
+        if (extra) block.children[0].appendChild(el("div", { class: "row2" }, extra));
+        out.appendChild(block);
+      };
+      var read = function (text, from) {
+        var r = C.parse(text);
+        if (r.problem) return said(r.problem[0], r.problem[1]);
+        var made = C.fromSpec(r.spec, { url: from });
+        if (made.problem) return said(made.problem[0], made.problem[1]);
+        out.textContent = "";
+        onRead(made);
+      };
+      var fromText = function (text, from) {
+        if (!text) return said("Nothing to read", "Paste the description, or drop its file here.");
+        read(text, from || null);
+      };
+      readBtn.addEventListener("click", function () {
+        var u = url.value.trim();
+        if (!/^https:\/\/[^\s<>]+$/.test(u)) return said("The address starts with https://", "Where the API publishes its description, often ending in openapi.json or swagger.json.");
+        var done = saving(readBtn, "Reading");
+        var cors = function () {
+          done();
+          said("That site does not let this page read it", "Many API sites only let their own pages read their description. Open it, copy all of it, and paste it below.", [
+            el("a", { class: "btn ghost sm", href: u, target: "_blank", rel: "noopener noreferrer", text: "Open it in a new tab" }),
+            el("button", { class: "btn quiet sm", type: "button", text: "Paste it instead", onclick: function () { paste.focus(); } }),
+          ]);
+        };
+        root.fetch(u, { credentials: "omit", redirect: "follow" }).then(function (res) {
+          if (!res.ok) {
+            done();
+            return said("That address answered " + res.status, "Check it opens the description itself in a new tab, or paste the description below.");
+          }
+          var size = Number((res.headers && res.headers.get && res.headers.get("content-length")) || 0);
+          if (size > 16 * 1024 * 1024) { done(); return said("That description is too big", "Krate reads descriptions up to 16 MB."); }
+          return res.text().then(function (text) { done(); read(text, u); });
+        }, cors);
+      });
+      useBtn.addEventListener("click", function () { fromText(paste.value.trim(), null); });
+      var readFile = function (f) {
+        if (!f) return;
+        if (f.size > 16 * 1024 * 1024) return said("That file is too big", "Krate reads descriptions up to 16 MB.");
+        f.text().then(function (text) { paste.value = ""; fromText(text, null); }, function () { said("That file could not be read", "Try again, or paste its contents instead."); });
+      };
+      file.addEventListener("change", function () { readFile(file.files && file.files[0]); file.value = ""; });
+      paste.addEventListener("dragover", function (e) { e.preventDefault(); });
+      paste.addEventListener("drop", function (e) {
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!f) return;
+        e.preventDefault();
+        readFile(f);
+      });
+      return el("details", { class: "connimport" }, [
+        el("summary", { text: "Import its OpenAPI description" }),
+        el("div", { class: "form" }, [
+          el("small", { class: "sub", text: "OpenAPI 3 or Swagger 2, JSON or YAML. Krate fills in the address, what apps may do and the kind of credential, for you to check before you add it." }),
+          el("div", { class: "fld" }, [el("span", { text: "Its address" }), el("div", { class: "connfetch" }, [url, readBtn])]),
+          paste,
+          el("div", { class: "row2" }, [useBtn, fileBtn]),
+          file, out,
+        ]),
+      ]);
+    }
+
+    function slugOf(title) {
+      var s = String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 39).replace(/-+$/, "");
+      return /^[a-z][a-z0-9-]{1,38}$/.test(s) ? s : "";
+    }
+
     function createForm(card, box) {
+      var C = root.KrateConnect;
       var name = el("input", { class: "inp", name: "connName", autocomplete: "off", spellcheck: "false", autocapitalize: "none", placeholder: "finance-api" });
       var base = el("input", { class: "inp", name: "connBase", type: "url", autocomplete: "off", spellcheck: "false", autocapitalize: "none", placeholder: "https://api.acme.com/finance" });
       var cred = credentialPart();
       var allow = allowPart();
       var scope = scopePart();
+      var who = identityPart(true);
       var out = outBox();
+      // What the form was filled from: the preset, and the description's
+      // operations and summary.
+      var from = { preset: null, ops: null, paths: null, api: null, made: null };
+      var guide = el("div", { class: "connguide", hidden: true });
+      var review = el("div", { class: "connreview", hidden: true });
+      var suggested = "";
+      var suggest = function (n) {
+        if (!n) return;
+        if (!name.value.trim() || name.value.trim() === suggested) { name.value = n; suggested = n; }
+      };
+      var showGuide = function (p) {
+        guide.textContent = "";
+        guide.hidden = !(p.note || p.docs);
+        if (p.note) guide.appendChild(el("p", { text: p.note }));
+        if (p.docs) guide.appendChild(el("a", { class: "btn ghost sm", href: p.docs, target: "_blank", rel: "noopener noreferrer", text: "How to make the credential in " + p.label }));
+      };
+      var presetApi = function (p) {
+        return p && p.ai ? { title: (p.label + " " + (p.what || "")).trim(), version: "", source: "preset:" + p.id, notes: p.ai, operations: [], more: 0 } : null;
+      };
+      var presets = presetPart(function (p) {
+        from = { preset: p, ops: null, paths: null, api: presetApi(p), made: null };
+        review.hidden = true;
+        suggest(p.name);
+        base.value = p.base;
+        base.setAttribute("placeholder", p.basePlaceholder || "https://api.acme.com/finance");
+        cred.set(p.auth);
+        allow.set(p.methods, p.paths);
+        showGuide(p);
+      });
+      var imported = importPart(function (r) {
+        var keepNotes = from.preset && from.preset.ai;
+        from = { preset: from.preset, ops: r.ops, paths: r.paths, api: keepNotes ? Object.assign({}, r.api, { notes: from.preset.ai }) : r.api, made: r };
+        if (r.base) base.value = r.base;
+        suggest(slugOf(r.title));
+        if (r.auth) cred.set(r.auth);
+        allow.set(r.ticked, r.paths);
+        review.textContent = "";
+        review.hidden = false;
+        var a = r.api;
+        review.appendChild(el("b", { text: "Read " + a.title + (a.version ? " " + a.version : "") + ": " + r.ops.length + " operation" + (r.ops.length === 1 ? "" : "s") }));
+        review.appendChild(el("p", { text: "Check the address, what apps may do and the credential below, then add it. Nothing is saved until you do." }));
+        r.notes.forEach(function (n) { review.appendChild(el("small", { text: n })); });
+        if (a.more) review.appendChild(el("small", { text: "Studio's AI reads the first " + a.operations.length + " operations; the other " + a.more + " did not fit." }));
+      });
+      // Ticking a method allows the paths of that method's operations,
+      // while nobody has typed their own.
+      allow.onChange(function () {
+        if (!from.ops || !allow.untouched(from.paths)) return;
+        var p = C.pathsFor(from.ops, allow.ticked());
+        from.paths = p.paths.length ? p.paths : ["/"];
+        allow.set(allow.ticked(), from.paths);
+      });
       var save = el("button", { class: "btn dark", type: "button", text: "Add connection" });
       var cancel = el("button", { class: "btn ghost", type: "button", text: "Cancel", onclick: function () { box.hidden = true; } });
       save.addEventListener("click", function () {
         var n = name.value.trim().toLowerCase();
         var b = base.value.trim();
         if (!/^[a-z][a-z0-9-]{1,38}$/.test(n)) return hint(out, "The name is short and plain", "2 to 39 lower-case letters, digits and dashes, like finance-api. Apps ask for it by this name.");
+        var hole = /<([^>]+)>/.exec(b);
+        if (hole) return hint(out, "Put your own " + hole[1] + " in the address", "Replace <" + hole[1] + "> with yours, as it appears in the address you sign in to.");
         var local = /^(127\.0\.0\.1|localhost)$/.test(location.hostname) && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(b + "/");
         if (!/^https:\/\/[^\s<>]+$/.test(b) && !local) return hint(out, "The address starts with https://", "A host and a path, like https://api.acme.com/finance. Requests under it get the credential.");
         var c = cred.typed();
@@ -369,7 +614,10 @@
         var done = saving(save, "Encrypting and adding");
         sealForHub(c, where).then(function (sealed) {
           if (sealed.problem || sealed.refused) return sealed;
-          var body = { name: n, base: where.base, allow: a, audience: s.audience, apps: s.apps, credential: sealed.credential };
+          var body = { name: n, base: where.base, allow: a, audience: s.audience, apps: s.apps, identity: who.value(), credential: sealed.credential };
+          // Summarised again for what it now allows: those operations first.
+          if (from.made) from.api = C.summary(from.made.spec, from.made.ops, from.made.url, a, from.api.notes);
+          if (from.api) body.api = from.api;
           return K.api("POST", path(), body, { key: K.key() });
         }).then(function (res) {
           done();
@@ -383,8 +631,9 @@
       });
       return el("div", { class: "connbox" }, [
         el("b", { text: "New connection" }),
+        presets, guide, imported, review,
         el("div", { class: "form" }, [fld("Name", name, "Apps ask for it as net.connection:<name>."), fld("Address", base, "Requests under this address get the credential. Anything else never does.")]),
-        cred.node, allow.node, scope.node, out,
+        cred.node, allow.node, scope.node, who.node, out,
         el("div", { class: "row2" }, [save, cancel]),
       ]);
     }
@@ -420,9 +669,30 @@
     }
 
     function changeForm(card, c, box) {
+      var C = root.KrateConnect;
       var allow = allowPart(c.allow);
       var scope = scopePart(c);
+      var who = identityPart(c.identity);
       var out = outBox();
+      var from = { ops: null, paths: null, api: undefined };
+      var review = el("div", { class: "connreview", hidden: true });
+      var drop = c.api ? el("input", { type: "checkbox", name: "dropApi" }) : null;
+      var imported = importPart(function (r) {
+        from = { ops: r.ops, paths: r.paths, api: r.api, made: r };
+        allow.set(r.ticked, r.paths);
+        review.textContent = "";
+        review.hidden = false;
+        review.appendChild(el("b", { text: "Read " + r.api.title + (r.api.version ? " " + r.api.version : "") + ": " + r.ops.length + " operation" + (r.ops.length === 1 ? "" : "s") }));
+        review.appendChild(el("p", { text: "What apps may do is filled in from it. Check it, then save. Nothing changes until you do." }));
+        if (r.base && normalBase(r.base) !== c.base) review.appendChild(el("small", { text: "Its address is " + r.base + ". This connection's stays " + c.base + "." }));
+        r.notes.filter(function (n) { return !/address/.test(n); }).forEach(function (n) { review.appendChild(el("small", { text: n })); });
+      });
+      allow.onChange(function () {
+        if (!from.ops || !allow.untouched(from.paths)) return;
+        var p = C.pathsFor(from.ops, allow.ticked());
+        from.paths = p.paths.length ? p.paths : ["/"];
+        allow.set(allow.ticked(), from.paths);
+      });
       var save = el("button", { class: "btn dark", type: "button", text: "Save changes" });
       var cancel = el("button", { class: "btn ghost", type: "button", text: "Cancel", onclick: function () { box.hidden = true; } });
       save.addEventListener("click", function () {
@@ -432,7 +702,11 @@
         if (s.pickedNone) return hint(out, "Pick at least one group", "Or choose Everyone.");
         out.textContent = "";
         var done = saving(save, "Saving");
-        K.api("PUT", path("/" + encodeURIComponent(c.name)), { allow: a, audience: s.audience, apps: s.apps }, { key: K.key() }).then(function (res) {
+        var body = { allow: a, audience: s.audience, apps: s.apps, identity: who.value() };
+        if (from.made) from.api = C.summary(from.made.spec, from.made.ops, from.made.url, a);
+        if (from.api) body.api = from.api;
+        else if (drop && drop.checked) body.api = null;
+        K.api("PUT", path("/" + encodeURIComponent(c.name)), body, { key: K.key() }).then(function (res) {
           done();
           if (!res.ok) { out.appendChild(K.refusalBlock(D.words(res, ctx), "bad")); return; }
           D.toast(c.name + " is changed. Apps follow it the next time they open.");
@@ -442,7 +716,9 @@
       return el("div", { class: "connbox" }, [
         el("b", { text: "Change " + c.name }),
         el("p", { class: "sub", text: "Its address stays " + c.base + ". To send the credential somewhere else, remove this connection and add it again with the new address." }),
-        allow.node, scope.node, out, el("div", { class: "row2" }, [save, cancel]),
+        imported, review,
+        drop ? el("label", { class: "chk" }, [drop, el("span", { text: "Remove its API description" })]) : null,
+        allow.node, scope.node, who.node, out, el("div", { class: "row2" }, [save, cancel]),
       ]);
     }
 

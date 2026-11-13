@@ -1,0 +1,84 @@
+# A stranger's first ten minutes with Krate Code, on a real project: make one in a
+# folder, run it, break it, see the error listed, fix it, build clean, run the
+# tests, and type a command in its terminal. Needs cargo.
+#
+#   krate run "Krate Code.krate" --auto-grant --headless --task apps/krate-code/walk-a-real-project.toml
+#
+# `pick` answers the folder picker with a scratch folder made for the run.
+name = "make a project, run it, break it, build, see the error"
+[[step]]
+pick = "hello"
+[[step]]
+click = "New Rust project"
+[[step]]
+click = "Make project"
+[[step]]
+wait_ms = 6000
+[[step]]
+expect_text = "fn main()"
+[[step]]
+type = ":run"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 20000
+[[step]]
+expect_text = "Hello, world!"
+[[step]]
+type = "ggOfn broken() -> i32 { \"seven\" }"
+[[step]]
+key = "Escape"
+[[step]]
+type = ":w"
+[[step]]
+key = "Enter"
+[[step]]
+type = ":build"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 15000
+[[step]]
+expect_text = "mismatched types"
+[[step]]
+type = ":2"
+[[step]]
+key = "Enter"
+[[step]]
+type = "ddO7"
+[[step]]
+key = "Escape"
+[[step]]
+type = ":w"
+[[step]]
+key = "Enter"
+[[step]]
+type = ":build"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 15000
+[[step]]
+expect_no_text = "mismatched types"
+[[step]]
+type = ":test"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 15000
+[[step]]
+expect_text = "test result: ok"
+[[step]]
+type = ":term"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 2000
+[[step]]
+type = "echo krate-terminal-$((40+2))"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 2000
+[[step]]
+expect_text = "krate-terminal-42"

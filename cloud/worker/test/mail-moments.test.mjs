@@ -1,0 +1,187 @@
+/* The mail a person gets about their own things (cloud/worker/src/mail.js):
+ * their app is live, someone opened it for the first time, the app they
+ * asked for is made. Each moment mails once, and none of them can fail
+ * what it is about. Resend is a stub: nothing here sends real mail.
+ *
+ *   node --experimental-wasm-modules --test cloud/worker/test/mail-moments.test.mjs
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { orgEnv, call, tokenFor, worker } from "./org-tools.mjs";
+import { sha256Hex } from "./r2-mock.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const ported = (name) => new Uint8Array(readFileSync(join(here, "..", "..", "..", "evidence", "ported", name)));
+
+/* Resend, standing in: every mail it is handed, and an optional refusal. */
+function stubResend() {
+  const sent = [];
+  const real = globalThis.fetch;
+  const stub = { sent, refuse: false };
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input.url || input) === "https://api.resend.com/emails") {
+      if (stub.refuse) return new Response("refused", { status: 422 });
+      sent.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ id: "sent" }), { headers: { "content-type": "application/json" } });
+    }
+    return real(input, init);
+  };
+  stub.restore = () => {
+    globalThis.fetch = real;
+  };
+  return stub;
+}
+
+const hubEnv = () => {
+  const env = orgEnv({ RESEND_API_KEY: "re_test", VISITOR_SALT: "salt", PUBLIC_BASE: "https://hub.example", KEY_WRAP_SECRET: "wrap-secret" });
+  env.USAGE = { writeDataPoint() {} };
+  return env;
+};
+
+test("a publish mails its publisher once, with the link; a quiet publish or the same bytes again mails nobody", async () => {
+  const mail = stubResend();
+  try {
+    const env = hubEnv();
+    const up = await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("bounce.krate"), headers: { "x-krate-name": "Bounce" } });
+    assert.equal(up.status, 200, JSON.stringify(up.body));
+    assert.equal(mail.sent.length, 1);
+    const [m] = mail.sent;
+    assert.deepEqual(m.to, ["ada@example.com"]);
+    assert.equal(m.from, "Krate <hello@krate.tech>");
+    assert.equal(m.reply_to, "incyashraj@gmail.com");
+    assert.equal(m.subject, "Bounce is live on Krate");
+    assert.ok(m.text.includes(up.body.url), m.text);
+    assert.ok(m.text.includes("opens in any browser, on a phone or a computer"), m.text);
+    // The same bytes again: the hub already holds them, so nothing new is live.
+    await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("bounce.krate"), headers: { "x-krate-name": "Bounce" } });
+    assert.equal(mail.sent.length, 1, "the same app is not announced twice");
+    // Studio's Open it here publishes quietly: no mail for opening a tab.
+    const quiet = await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("chart.krate"), headers: { "x-krate-unlisted": "1", "x-krate-quiet": "1" } });
+    assert.equal(quiet.status, 200, JSON.stringify(quiet.body));
+    assert.equal(mail.sent.length, 1, "a quiet publish mails nobody");
+    // The same, said on the URL the way Studio in a tab says it.
+    const viaQuery = await call(env, "cy@example.com", "POST", "/publish?quiet=1", { bytes: ported("cubes.krate"), headers: { "x-krate-unlisted": "1" } });
+    assert.ok(viaQuery.status === 200, JSON.stringify(viaQuery.body));
+    assert.equal(mail.sent.length, 1, "?quiet=1 mails nobody either");
+    // Resend refusing is not a failed publish.
+    mail.refuse = true;
+    const refused = await call(env, "bob@example.com", "POST", "/publish", { bytes: ported("chart.krate"), headers: { "x-krate-name": "Chart" } });
+    assert.ok(refused.status === 200 || refused.status === 409, `a refused mail never fails the publish: ${refused.status}`);
+  } finally {
+    mail.restore();
+  }
+});
+
+test("the first time someone else opens an app in a tab, its publisher hears once; the maker's own opens never mail", async () => {
+  const mail = stubResend();
+  try {
+    const env = hubEnv();
+    const up = await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("bounce.krate"), headers: { "x-krate-name": "Bounce" } });
+    assert.equal(up.status, 200, JSON.stringify(up.body));
+    const hash = await sha256Hex(ported("bounce.krate"));
+    mail.sent.length = 0;
+    const open = (who, extra = {}) =>
+      worker.fetch(
+        new Request("https://hub.example/tab", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+            ...(who ? { authorization: `Bearer ${tokenFor(env, who)}` } : {}),
+          },
+          body: JSON.stringify({ event: "open", app: hash, ...extra }),
+        }),
+        env,
+      );
+    await open("ada@example.com");
+    assert.equal(mail.sent.length, 0, "the maker opening their own app is not news");
+    await open(null, { probe: true });
+    assert.equal(mail.sent.length, 0, "a proof run (?probe=1) is not a person");
+    await open(null);
+    assert.equal(mail.sent.length, 1);
+    assert.equal(mail.sent[0].subject, "Someone just opened Bounce");
+    assert.deepEqual(mail.sent[0].to, ["ada@example.com"]);
+    assert.ok(mail.sent[0].text.includes(`https://hub.example/a/${hash}`), mail.sent[0].text);
+    await open(null);
+    await open("bob@example.com");
+    assert.equal(mail.sent.length, 1, "only the first open by someone else");
+  } finally {
+    mail.restore();
+  }
+});
+
+test("the first file a build makes is mailed to the person who asked for it, once", async () => {
+  const mail = stubResend();
+  try {
+    const env = hubEnv();
+    const device = "d".repeat(64);
+    const post = (path, payload) =>
+      worker.fetch(
+        new Request(`https://hub.example${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${tokenFor(env, "ada@example.com")}` },
+          body: JSON.stringify(payload),
+        }),
+        env,
+      );
+    const opened = await (await post("/case/open", { device, request: "a habit tracker with streaks" })).json();
+    assert.ok(opened.id, JSON.stringify(opened));
+    await post("/case/attempt", { device, id: opened.id, outcome: "failed" });
+    assert.equal(mail.sent.length, 0, "a failed try is not mailed");
+    await post("/case/attempt", { device, id: opened.id, outcome: "made" });
+    assert.equal(mail.sent.length, 1);
+    assert.equal(mail.sent[0].subject, "Your app is ready");
+    assert.deepEqual(mail.sent[0].to, ["ada@example.com"]);
+    assert.ok(mail.sent[0].text.includes("a habit tracker with streaks"), mail.sent[0].text);
+    assert.ok(mail.sent[0].text.includes("https://krate.tech/app/"), mail.sent[0].text);
+    await post("/case/attempt", { device, id: opened.id, outcome: "made" });
+    assert.equal(mail.sent.length, 1, "a change to the same app is not a new app");
+  } finally {
+    mail.restore();
+  }
+});
+
+test("moment mails stop at a daily ceiling per inbox and per hub, so they cannot spend the sign-in mail's allowance", async () => {
+  const mail = stubResend();
+  try {
+    const env = hubEnv();
+    const apps = ["bounce", "chart", "cubes", "ddh", "envelope", "eo2", "grex", "hexyl", "mdview"];
+    // One account publishing nine new apps in a day: five mails, not nine.
+    for (const name of apps) {
+      const up = await call(env, "spender@example.com", "POST", "/publish", { bytes: ported(`${name}.krate`), headers: { "x-krate-name": name } });
+      assert.equal(up.status, 200, `${name}: ${JSON.stringify(up.body)}`);
+    }
+    assert.equal(mail.sent.length, 5, "one inbox hears at most five moments a day");
+    assert.ok(mail.sent.every((m) => m.to[0] === "spender@example.com"));
+    // The hub's own ceiling, made small here: past it nobody is mailed.
+    const env2 = hubEnv();
+    env2.MAIL_MOMENTS_PER_DAY = "3";
+    mail.sent.length = 0;
+    for (const [i, name] of apps.slice(0, 5).entries()) {
+      await call(env2, `p${i}@example.com`, "POST", "/publish", { bytes: ported(`${name}.krate`), headers: { "x-krate-name": name } });
+    }
+    assert.equal(mail.sent.length, 3, "the hub sends at most its daily ceiling of moments");
+  } finally {
+    mail.restore();
+  }
+});
+
+test("someone opening a newer version of an app already opened is not news again", async () => {
+  const mail = stubResend();
+  try {
+    const env = hubEnv();
+    const { tellFirstOpen } = await import("../src/mail.js");
+    await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("bounce.krate"), headers: { "x-krate-name": "Bounce" } });
+    mail.sent.length = 0;
+    const record = { owner: "account:x", name: "Bounce", line: "v0123456789a" };
+    env.APPS.put("user:x", JSON.stringify({ email: "ada@example.com" }));
+    assert.equal(await tellFirstOpen(env, "a".repeat(64), record, "https://hub.example"), null);
+    assert.equal(await tellFirstOpen(env, "b".repeat(64), record, "https://hub.example"), "already told");
+    assert.equal(mail.sent.length, 1, "v2 of the same app does not mail a second first-open");
+  } finally {
+    mail.restore();
+  }
+});

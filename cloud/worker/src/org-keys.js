@@ -411,9 +411,10 @@ export async function orgKeysRoute(h) {
   if (rest.length === 2 && rest[1] === "recovery" && method === "GET") return orgAnswer(await askRaw("keys-recovery"));
   if (rest.length === 3 && rest[1] === "devices" && method === "PUT") {
     const id = String(rest[2]).toLowerCase();
-    return orgAnswer(
-      await mutateRaw("keys-device-add", (b) => ({ device_id: id, public_key: String(b.public_key || "").toLowerCase(), name: b.name, kind: b.kind })),
-    );
+    const answer = await mutateRaw("keys-device-add", (b) => ({ device_id: id, public_key: String(b.public_key || "").toLowerCase(), name: b.name, kind: b.kind }));
+    // A computer added is a security item the channels hear (org-chat.js).
+    if (answer.status === 200 && !answer.replayed && h.notify) await h.notify({ event: "security" });
+    return orgAnswer(answer);
   }
   if (rest.length === 2 && rest[1] === "init" && method === "POST") return orgAnswer(await mutateRaw("keys-init", (b) => b));
   if (rest.length === 2 && rest[1] === "grants" && method === "POST") return orgAnswer(await mutateRaw("keys-grant", (b) => b));

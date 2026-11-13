@@ -531,6 +531,78 @@ function pickLocalFolder() {
   });
 }
 
+/* Phones and tablets cannot choose a folder: iOS and Android browsers
+ * ignore webkitdirectory, so the picker either offers single files or
+ * nothing at all -- and Choose a folder did nothing (Studio audit, 2026-11-07). They
+ * can choose a .zip (GitHub's Code, then Download ZIP, or Files' Compress),
+ * so that is what a port asks for there. iPadOS calls itself a Mac. */
+function cannotPickFolders() {
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod/.test(ua)) return true;
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+  try { return matchMedia("(hover: none) and (pointer: coarse)").matches; } catch (e) { return false; }
+}
+
+function pickLocalZip() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip,application/zip,application/x-zip-compressed";
+    input.style.display = "none";
+    document.body.appendChild(input);
+    let settled = false;
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      try { input.remove(); } catch (e) {}
+      resolve(value);
+    };
+    window.addEventListener("focus", () => { setTimeout(() => done(null), 600); }, { once: true });
+    input.addEventListener("change", () => done((input.files && input.files[0]) || null));
+    input.click();
+  });
+}
+
+function bytesBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+const PROJECT_ZIP_MAX = 100 * 1024 * 1024;
+
+/* A zipped project, as the same {name, files} a chosen folder gives: the
+ * zip is read in the tab (zipEntries/zipRead below), the same files are
+ * skipped, and the build service receives exactly what it gets from a
+ * folder. A zip of a folder holds it under one top folder -- GitHub's
+ * "repo-main/" -- and the project is what is inside it. */
+async function projectFromZip(file) {
+  if (file.size > PROJECT_ZIP_MAX) throw refusal(`${file.name} is over 100 MB. Zip the project without its build folders (node_modules, target, dist) and try again.`);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const entries = zipEntries(bytes).filter((e) => !e.name.endsWith("/") && !/^__MACOSX\//.test(e.name));
+  if (!entries.length) throw refusal(`${file.name} is not a zip Krate can open. Zip the project's folder and choose that.`);
+  const tops = new Set(entries.map((e) => e.name.split("/")[0]));
+  // Not when that one folder is itself one a port skips (a zip of only
+  // node_modules is not a project inside node_modules).
+  const only = [...tops][0];
+  const under = tops.size === 1 && entries.every((e) => e.name.includes("/")) && !PROJECT_SKIP.test(`/${only}/`) ? `${only}/` : "";
+  const name = ((under ? under.slice(0, -1) : file.name.replace(/\.zip$/i, "")).replace(/-(main|master)$/i, "")) || "project";
+  const kept = [];
+  let total = 0;
+  for (const entry of entries) {
+    const rel = entry.name.slice(under.length);
+    if (!rel || PROJECT_SKIP.test("/" + rel)) continue;
+    if (entry.size > PROJECT_FILE_MAX) continue;
+    if (kept.length >= PROJECT_FILES_MAX || total + entry.size > PROJECT_BYTES_MAX) break;
+    const data = await zipRead(bytes, entry).catch(() => null);
+    if (!data) continue;
+    total += data.length;
+    kept.push({ path: rel, bytes: bytesBase64(data) });
+  }
+  if (!kept.length) throw refusal(`${name} has no files a port can read (source files, under 2 MB each).`);
+  return { name, files: kept };
+}
+
 function pickLocalFiles({ accept, multiple }) {
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
@@ -804,14 +876,19 @@ function askFirstRun(app) {
     downloadApp(app.url, app.name).catch(() => {});
     return;
   }
-  const system = thisSystem();
-  const sub = document.getElementById("frNeedSub");
+  // A phone opens the app here and nowhere else: the native player is for
+  // Mac, Windows and Linux, so the other two answers would only send it
+  // round in a circle.
+  const phone = thisSystem() === "phone";
+  for (const id of ["frHaveBtn", "frNeedBtn"]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.hidden = phone;
+  }
+  const sub = document.getElementById("frSub");
   if (sub) {
-    sub.textContent = system === "phone"
-      ? "Krate runs on computers, not phones. Open this page on your Mac, "
-        + "Windows or Linux and your app will open there."
-      : "Get it once, the way you got a video player. After that every "
-        + "Krate app just opens.";
+    sub.textContent = phone
+      ? "Open it right here, on this phone."
+      : "Open it right here, or run it natively on your computer.";
   }
   const note = document.getElementById("frNote");
   if (note) note.textContent = "";
@@ -865,8 +942,9 @@ function currentWebApp(path, version) {
  * of file paths, which the hub read as a bundle and refused. The bytes are
  * fetched from the build service with the sign-in, then posted. A picture
  * of the app (the build's own shot, a data URL) goes up beside it the way
- * the CLI's --shot does. Resolves with the app's public URL. */
-async function publishWebApp({ path, name, description, shot, unlisted } = {}, token) {
+ * the CLI's --shot does. Resolves with the hub's whole answer: `url` is
+ * the app's own link (IC-976), `full_url` this build's 64-hex address. */
+async function publishWebApp({ path, name, description, shot, unlisted, quiet } = {}, token) {
   const app = currentWebApp(path);
   if (!app) throw new Error("This app is not on the build service; publish it from Studio on your computer.");
   const headers = {};
@@ -884,7 +962,9 @@ async function publishWebApp({ path, name, description, shot, unlisted } = {}, t
     publishHeaders["x-krate-description"] = encodeURIComponent(Array.from(String(description)).slice(0, 500).join(""));
   }
   if (unlisted) publishHeaders["x-krate-unlisted"] = "1";
-  const res = await fetch(`${HUB}/publish`, { method: "POST", headers: publishHeaders, body: bytes });
+  // Quiet: a publish that only opens the app in a tab, so nobody is mailed
+  // that it is live. A query, not a header, so no preflight is needed.
+  const res = await fetch(`${HUB}/publish${quiet ? "?quiet=1" : ""}`, { method: "POST", headers: publishHeaders, body: bytes });
   if (!res.ok) throw new Error((await res.text().catch(() => "")) || res.statusText);
   const out = await res.json();
   // The picture is a courtesy: a listing without one is still published.
@@ -894,7 +974,58 @@ async function publishWebApp({ path, name, description, shot, unlisted } = {}, t
       await fetch(`${HUB}/shot/${out.id}`, { method: "POST", headers: { ...headers, "content-type": "image/png" }, body: png });
     } catch (e) {}
   }
-  return out.full_url || out.url;
+  return out;
+}
+
+/* ---- an app's versions (IC-976) ---------------------------------------
+ *
+ * Publishing the same app again is its next version, behind one link. To
+ * say "Publish update (v3)" before anything goes up, Studio asks the hub
+ * for this person's app with the same manifest id, and which of its
+ * versions this very file is. The id is the [app] table's own `id` line;
+ * the file's sha256 is the number the hub files a version under. */
+function manifestAppId(text) {
+  let inApp = false;
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const t = raw.trim();
+    if (t.startsWith("[")) { inApp = t === "[app]"; continue; }
+    if (!inApp) continue;
+    const m = t.match(/^id\s*=\s*"([^"]+)"/);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+/* What the hub said about the app, with which version this file is
+ * (`this_version`, null when it is not published yet) and the number a
+ * publish would make it (`next`). The same shape the desktop answers. */
+function withThisVersion(view, hash) {
+  const history = Array.isArray(view && view.history) ? view.history : [];
+  const mine = history.find((v) => v && v.hash === hash);
+  const last = history.reduce((m, v) => Math.max(m, Number(v && v.n) || 0), 0);
+  return { ...view, this_version: mine ? mine.n : null, next: last + 1 };
+}
+
+async function webAppVersions(path) {
+  if (!bridge.token) return null;
+  const app = currentWebApp(path);
+  if (!app) return null;
+  const got = await fetch(app.url, { headers: { authorization: `Bearer ${bridge.token}` } });
+  if (!got.ok) return null;
+  const bytes = new Uint8Array(await got.arrayBuffer());
+  const entry = zipEntries(bytes).find((e) => e.name === "manifest.toml");
+  const body = entry ? await zipRead(bytes, entry) : null;
+  const id = body ? manifestAppId(new TextDecoder().decode(body)) : null;
+  if (!id) return null;
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const hash = [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    return withThisVersion(await hub(`/lines?app=${encodeURIComponent(id)}`), hash);
+  } catch (err) {
+    // Not published yet, or a sign-in the hub no longer knows: no update.
+    if (err && (err.status === 404 || err.status === 401)) return null;
+    throw err;
+  }
 }
 
 /* ---- the source, handed over ------------------------------------------
@@ -1333,6 +1464,222 @@ function watchJob(jobId, request, sessionId) {
   });
 }
 
+
+/* ---- an organisation's apps, made here (G5 and G6) -----------------------
+ *
+ * /app/?org=<slug> is the console's New app page opening Studio for one
+ * organisation. The slug is kept for this tab (it survives the sign-in
+ * round trip) and only ever ORDERS things: the Send menu offers that
+ * organisation first, and a spreadsheet start keeps its records as that
+ * organisation's team data. It never sends, builds or signs anything by
+ * itself -- nothing a link says starts work (K-885). /app/?start=sheet
+ * opens "Start from a spreadsheet" once, with nothing chosen yet.
+ */
+const ORG_PICK_KEY = "krate_org_pick";
+const SHEET_START_KEY = "krate_start_sheet";
+/// Who may send an app to an organisation: the hub's role matrix,
+/// `candidate.publish` (cloud/worker/src/org.js, docs/landing/kit/org.js).
+const ORG_SENDERS = ["owner", "developer"];
+try {
+  const asked = new URLSearchParams(location.search);
+  const pick = String(asked.get("org") || "").trim().toLowerCase();
+  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(pick)) sessionStorage.setItem(ORG_PICK_KEY, pick);
+  if (asked.get("start") === "sheet") sessionStorage.setItem(SHEET_START_KEY, "1");
+} catch (e) {}
+window.krOrgPick = () => {
+  try { return sessionStorage.getItem(ORG_PICK_KEY) || null; } catch (e) { return null; }
+};
+window.krStartSheet = () => {
+  try {
+    const due = sessionStorage.getItem(SHEET_START_KEY) === "1";
+    if (due) sessionStorage.removeItem(SHEET_START_KEY);
+    return due;
+  } catch (e) { return false; }
+};
+
+/// One of the site's own scripts (/kit/...), loaded the first time a
+/// command needs it: the organisation's signing in this tab, and the
+/// spreadsheet reader. Same origin, nothing from anywhere else.
+const siteKits = {};
+function loadSiteKit(file, global) {
+  if (window[global]) return Promise.resolve(window[global]);
+  if (!siteKits[file]) {
+    siteKits[file] = new Promise((resolve, reject) => {
+      const tag = document.createElement("script");
+      tag.src = `/kit/${file}`;
+      tag.async = true;
+      tag.onload = () => (window[global] ? resolve(window[global]) : reject(refusal("This part of Studio did not load. Reload the page and try again.")));
+      tag.onerror = () => {
+        delete siteKits[file];
+        reject(refusal("This part of Studio did not load. Check the connection and try again."));
+      };
+      document.head.appendChild(tag);
+    });
+  }
+  return siteKits[file];
+}
+
+/// "Alice", "Alice or Bob", "Alice and 2 others".
+function orgNames(list) {
+  const names = (list || []).map(String).filter(Boolean);
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} or ${names[1]}`;
+  return `${names[0]} and ${names.length - 1} others`;
+}
+function sentence(text) {
+  const t = String(text || "").trim().replace(/[.\s]+$/, "");
+  return t ? t[0].toUpperCase() + t.slice(1) + "." : "";
+}
+
+/// What Studio shows for an answer from KrateOrgDevice.publish, in the
+/// shape the desktop's send_to_org gives: {org, state, words, digest, url,
+/// waiting_url}. A developer's console has My apps, an owner's Approvals.
+function orgSendAnswer(out, slug, orgName, role) {
+  const consoleAt = (tab) => `https://krate.tech/org/?o=${encodeURIComponent(slug)}&tab=${tab}`;
+  if (out.state === "waiting-for-publisher") {
+    const p = out.publisher || {};
+    const can = orgNames(p.can_sign);
+    // Whole sentences: Studio says them alone, then adds its own.
+    const words = p.by_hand && p.state === "waiting"
+      ? `${orgName} approves new publishers by hand: an owner or admin says yes once, in People.`
+      : can
+        ? `Waiting for ${can} to approve you as a publisher. It happens by itself when one of them opens Krate or the ${orgName} console.`
+        : `Waiting for an owner of ${orgName} to open Krate or the ${orgName} console, which approves you as a publisher by itself.`;
+    return { org: slug, state: "waiting-for-publisher", words, waiting_url: consoleAt("home") };
+  }
+  if (out.state === "released") {
+    return { org: slug, state: "released", words: `Released. Everyone in ${orgName} can use it now`, digest: out.digest, url: out.url || null, waiting_url: consoleAt(role === "developer" ? "myapps" : "releases") };
+  }
+  return { org: slug, state: "waiting-for-approval", words: "It waits for a second person to approve it", digest: out.digest, waiting_url: consoleAt(role === "developer" ? "myapps" : "waiting") };
+}
+
+/// A refusal on the way to the organisation, in words that say what to do.
+function orgSendWords(err, orgName, appName) {
+  const reason = err && err.reason;
+  if (reason === "offline") return "Could not reach Krate, so nothing was sent. Check the connection and send it again.";
+  if (reason === "role-cannot") return `You cannot send apps to ${orgName}. An owner of ${orgName} can make you a developer in People.`;
+  if (reason === "removed" || reason === "not-a-member") return `You are not in ${orgName} any more, so nothing was sent.`;
+  if (err && (err.status === 401 || reason === "not-signed-in")) return "Your sign-in ran out, so nothing was sent. Sign in again and send it.";
+  if (err && err.status === 413) return `${appName || "This app"} is larger than ${orgName} takes from a browser. Send it from Krate Studio on your computer.`;
+  return sentence(err && err.message) || `${orgName} did not take it. Try again in a minute.`;
+}
+
+/* The spreadsheet chosen in this tab: its sheets, which one is in use, and
+ * the whole table, kept here. Studio gets the columns and the first rows;
+ * the full sheet only ever leaves as the app's asset (an attachment). */
+const sheetChosen = { file: "", sheets: [], index: 0, table: null };
+const SHEET_SAMPLE = 5;
+
+/// One file from the browser's picker, or null when it was cancelled.
+function pickOneFile(accept) {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.style.display = "none";
+    document.body.appendChild(input);
+    let settled = false;
+    const done = (file) => {
+      if (settled) return;
+      settled = true;
+      try { input.remove(); } catch (e) {}
+      resolve(file);
+    };
+    window.addEventListener("focus", () => { setTimeout(() => done(null), 400); }, { once: true });
+    input.addEventListener("change", () => done((input.files && input.files[0]) || null));
+    input.click();
+  });
+}
+
+/// What Studio draws for the sheet in use: its columns with their kinds,
+/// the first rows, how many there are, and the refusal when it is not one
+/// Krate starts from.
+function sheetSummary(K) {
+  const sheet = sheetChosen.sheets[sheetChosen.index] || { name: "", rows: [] };
+  const t = K.table(sheet.rows);
+  sheetChosen.table = t;
+  const problem = K.check(t, sheetChosen.sheets.length > 1 ? `The sheet "${sheet.name}"` : sheetChosen.file);
+  const stem = sheetChosen.file.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+  return {
+    file: sheetChosen.file,
+    sheets: sheetChosen.sheets.map((s) => s.name),
+    sheet: sheetChosen.index,
+    rows: t.rows.length,
+    columns: t.columns,
+    sample: t.rows.slice(0, SHEET_SAMPLE),
+    problem: problem ? problem.message : null,
+    name: stem ? stem[0].toUpperCase() + stem.slice(1) : "",
+  };
+}
+
+function utf8Base64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+/* The company connections a request names (SMART-FIXES 4). A developer
+ * who asks for "an app that lists our open jira tickets" in an
+ * organisation with a `jira` connection gets that connection handed to the
+ * build as a file: how to declare it, its address, what it allows, and the
+ * operations its API's description lists, so the AI writes calls against
+ * the real API instead of guessing. Read from the hub by whoever may see
+ * connections (the role matrix's connection.view); a request naming none,
+ * or someone in no organisation, sends nothing extra. The list is kept
+ * five minutes; each connection's API is read fresh for the build. */
+const CONNECTION_VIEWERS = ["owner", "admin", "developer", "reviewer"];
+const CONNECTION_FILES = 3;
+/// The build service takes at most this many attachments (cloud/builder).
+const BUILD_ATTACHMENTS = 6;
+const knownConnections = { at: 0, list: null };
+async function connectionsNamed(text) {
+  if (!bridge.token || !text) return [];
+  if (!knownConnections.list || Date.now() - knownConnections.at > 5 * 60 * 1000) {
+    let orgs = [];
+    try {
+      const l = await hub("/orgs");
+      orgs = (Array.isArray(l) ? l : (l && Array.isArray(l.orgs) ? l.orgs : []))
+        .filter((o) => o && o.slug && CONNECTION_VIEWERS.includes(o.role));
+    } catch (e) {
+      return [];
+    }
+    const found = [];
+    for (const o of orgs.slice(0, 10)) {
+      try {
+        const r = await hub(`/orgs/${encodeURIComponent(o.slug)}/connections`);
+        for (const c of (r && r.connections) || []) found.push({ slug: String(o.slug), org: String(o.name || o.slug), name: String(c.name) });
+      } catch (e) {}
+    }
+    knownConnections.list = found;
+    knownConnections.at = Date.now();
+  }
+  const words = String(text).toLowerCase();
+  return knownConnections.list
+    .filter((c) => /^[a-z][a-z0-9-]{1,38}$/.test(c.name) && new RegExp(`(^|[^a-z0-9-])${c.name}([^a-z0-9-]|$)`).test(words))
+    .slice(0, CONNECTION_FILES);
+}
+/// The attachments a build sends, with a file for each connection named.
+async function withConnections(text, names) {
+  const out = (names || []).slice();
+  let named = [];
+  try { named = await connectionsNamed(text); } catch (e) { return out; }
+  if (!named.length) return out;
+  let C;
+  try { C = await loadSiteKit("connect.js", "KrateConnect"); } catch (e) { return out; }
+  for (const c of named) {
+    if (out.length >= BUILD_ATTACHMENTS) break;
+    try {
+      const full = await hub(`/orgs/${encodeURIComponent(c.slug)}/connections/${encodeURIComponent(c.name)}/api`);
+      const file = `connection-${c.name}.md`;
+      attached.set(file, { name: file, type: "text/markdown", bytes: utf8Base64(C.contextText(full, c.org)) });
+      if (!out.includes(file)) out.push(file);
+    } catch (e) {}
+  }
+  return out;
+}
+
 const COMMANDS = {
   /* ---- who they are ---------------------------------------------------- */
 
@@ -1481,7 +1828,7 @@ const COMMANDS = {
     return Promise.resolve();
   },
 
-  /* ---- the plan and the money ------------------------------------------ */
+  /* ---- the free app ----------------------------------------------------- */
 
   async plan_makes() {
     try {
@@ -1508,21 +1855,6 @@ const COMMANDS = {
     // counts its own makes is a page anyone can edit. This only reads back
     // what the server already recorded.
     return COMMANDS.plan_makes();
-  },
-
-  async billing_info() {
-    if (!bridge.me) await COMMANDS.account_status();
-    const plan = (bridge.me && bridge.me.plan) || {};
-    return { plan: plan.plan || "free", active: Boolean(plan.active), until: plan.until || 0, portal: Boolean(plan.portal) };
-  },
-
-  async billing_checkout({ plan } = {}) {
-    const out = await hub("/billing/checkout", {
-      method: "POST",
-      body: JSON.stringify({ plan, return_url: location.href }),
-    });
-    if (out.url) location.href = out.url;
-    return out;
   },
 
   /* ---- making ----------------------------------------------------------
@@ -1587,6 +1919,8 @@ const COMMANDS = {
     }
 
     bridge.stopAsked = false;
+    // A company connection the request names goes with what they attached.
+    attachments = await withConnections(request, attachments);
     let started;
     try {
       started = await builder("/build", {
@@ -1602,7 +1936,7 @@ const COMMANDS = {
       });
     } catch (err) {
       // The one-app wall. The builder answers with `download: true` when the
-      // right next step is the desktop rather than a payment, and Studio's UI
+      // right next step is the desktop (there is nothing to pay for), and Studio's UI
       // reads `err.download` to offer that instead of a plain failure card.
       const text = String((err && err.message) || err || "");
       let parsed = null;
@@ -1641,6 +1975,7 @@ const COMMANDS = {
     if (overChange) return overChange;
     const id = jobIdOf(path);
     if (!id) return refuse("This app was not made here, so it cannot be changed here. Open it in Studio on your computer.");
+    attachments = await withConnections(change, attachments);
     let started;
     try {
       started = await builder(`/build/${id}/revise`, {
@@ -1829,7 +2164,33 @@ const COMMANDS = {
     // Studio hands over the picture it chose as a path; on the web that
     // path is the build's own shot (a data URL) or nothing.
     const shot = args.shot || (bridge.jobResult && bridge.jobResult.shot) || "";
-    return publishWebApp({ ...args, shot }, bridge.token);
+    const out = await publishWebApp({ ...args, shot }, bridge.token);
+    // The desktop's shape (IC-976): the app's link to share, which version
+    // this publish became, and whether it replaced an earlier one.
+    return {
+      url: out.url || out.full_url,
+      version: Number.isFinite(out.version) ? out.version : null,
+      updated: out.updated === true,
+      version_url: out.version_url || null,
+    };
+  },
+
+  /* An app's published versions, when this person has published it. */
+  async app_versions({ path } = {}) {
+    return webAppVersions(path);
+  },
+
+  /* Make one of an app's versions the one its link opens. */
+  async app_make_current({ line, version } = {}) {
+    if (!bridge.token) return refuse("Sign in first.");
+    if (!/^v[0-9a-f]{11}$/.test(String(line || ""))) return refuse("That is not one of your apps.");
+    try {
+      return await hub(`/lines/${line}/current`, { method: "POST", body: JSON.stringify({ version: Number(version) }) });
+    } catch (err) {
+      let words = String((err && err.message) || err || "");
+      try { words = JSON.parse(words).error || words; } catch (e) {}
+      return refuse(words || "That did not work just now. Try again in a moment.");
+    }
   },
 
   async open_external({ url } = {}) {
@@ -1893,18 +2254,16 @@ const COMMANDS = {
     }
     return { v: 1, signed_in: true, policy_org: null, offline: false, orgs: out };
   },
-  /* Open one in a tab: the browser cannot run it, so the release that opens
-   * now is downloaded (with every check a download makes) and the person
-   * double-clicks it, as open_app does for their own apps. */
+  /* Open one in a new tab: the app's own address on the hub, which runs it
+   * there (IC-956) and opens the version the team has on now, so an update
+   * or a rollback reaches it with nothing to download (K-1166). The tab asks
+   * its own sign-in, with the company's own door first (K-1165). */
   async org_app_open({ slug, appId } = {}) {
     if (!bridge.token) return refuse("Sign in first: company apps are only for the people they were made for.");
-    const link = `${HUB}/orgs/${encodeURIComponent(slug || "")}/apps/${encodeURIComponent(appId || "")}/current`;
-    if (!hasKrateAlready()) {
-      askFirstRun({ url: link, name: `${appId}.krate` });
-      return "asking";
+    if (!/^[a-z][a-z0-9-]{1,38}$/.test(slug || "") || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(appId || "")) {
+      return refuse("That app's address is not one Krate opens.");
     }
-    await downloadApp(link, `${appId}.krate`);
-    return refuse("Downloaded. Double-click the file on your Mac, Windows or Linux. That is where the app really runs.");
+    window.open(`${HUB}/run/org/${slug}/${appId}`, "_blank", "noopener");
   },
   /* The desktop's test hook (KRATE_STUDIO_AUTORUN): Studio types whatever
    * this returns into the box and starts a build. A tab has no such hook,
@@ -1938,6 +2297,12 @@ const COMMANDS = {
    * build, dotfiles, and files past 2 MB -- none of which a port reads. */
   async pick_source_folder() {
     if (!bridge.token) return goSignIn("");
+    if (cannotPickFolders()) {
+      const zip = await pickLocalZip();
+      if (!zip) return null;
+      bridge.project = await projectFromZip(zip);
+      return bridge.project.name;
+    }
     const files = await pickLocalFolder();
     if (!files.length) return null;
     const name = (files[0].webkitRelativePath || "").split("/")[0] || "project";
@@ -2361,6 +2726,111 @@ const COMMANDS = {
       method: "POST",
       body: JSON.stringify({ id, key: key || "", text: message || "" }),
     });
+  },
+
+  /* The organisations this person may send an app to for approval (G5),
+   * the shape the desktop's `krate org list --json` gives: an owner or a
+   * developer, by the hub's role matrix. Signed out, none. */
+  async org_targets() {
+    if (!bridge.token) return [];
+    let list;
+    try {
+      list = await hub("/orgs");
+    } catch (e) {
+      return [];
+    }
+    const orgs = (Array.isArray(list) ? list : (list && Array.isArray(list.orgs) ? list.orgs : []))
+      .filter((o) => o && o.slug && ORG_SENDERS.includes(o.role))
+      .map((o) => ({ slug: String(o.slug), name: String(o.name || o.slug), role: o.role }));
+    bridge.orgTargets = orgs;
+    return orgs;
+  },
+
+  /* "Send to <org> for approval" (G5): what `krate publish --org` does on
+   * a computer, done in this tab. The app's bytes come from the build
+   * service; KrateOrgDevice (/kit/org-device.js) marks them as the
+   * organisation's private app and signs them -- as the organisation when
+   * this browser holds its signing key, otherwise with this browser's own
+   * release key, which the organisation approves in the background -- and
+   * sends them with the release note. Answers the desktop's shape. */
+  async send_to_org({ path, slug, name, note } = {}) {
+    if (!bridge.token) return goSignIn();
+    const targets = bridge.orgTargets || await COMMANDS.org_targets();
+    const org = targets.find((o) => o.slug === slug);
+    if (!org) return refuse(`You cannot send apps to ${slug || "that organisation"}. An owner there can make you a developer in People.`);
+    if (String(note || "").trim().length > 1000) return refuse("A release note is up to 1,000 characters. Say what changed in a line or two.");
+    const app = currentWebApp(path);
+    if (!app) return refuse("This app is not on the build service. Send it from Krate Studio on your computer.");
+    const got = await fetch(app.url, { headers: { authorization: `Bearer ${bridge.token}` } });
+    if (!got.ok) throw await fileFetchError(got);
+    const bytes = new Uint8Array(await got.arrayBuffer());
+    const device = await loadSiteKit("org-device.js", "KrateOrgDevice");
+    if (!bridge.orgDeviceReady) {
+      device.configure({ hub: HUB, token: () => bridge.token });
+      bridge.orgDeviceReady = true;
+    }
+    const appName = String(name || app.name || "").replace(/\.krate$/i, "").replace(/ v\d+$/, "").trim();
+    let out;
+    try {
+      out = await device.publish(slug, bytes, { name: appName, note: String(note || "").trim(), role: org.role });
+    } catch (err) {
+      throw refusal(orgSendWords(err, org.name, appName));
+    }
+    return orgSendAnswer(out, slug, org.name, org.role);
+  },
+
+  /* "Start from a spreadsheet" (G6): one .csv or .xlsx from the browser's
+   * picker, read here. Over 5 MB it is refused before a byte is read; over
+   * 20,000 rows, or with nothing under its header, the summary carries the
+   * refusal so the person can pick another sheet or file. */
+  async sheet_pick() {
+    const K = await loadSiteKit("sheet.js", "KrateSheet");
+    const file = await pickOneFile(".csv,.tsv,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!file) return null;
+    const early = K.fileProblem(file.name, file.size);
+    if (early) throw refusal(early.message);
+    let read;
+    try {
+      read = await K.read(file.name, new Uint8Array(await file.arrayBuffer()));
+    } catch (err) {
+      throw refusal(err.message || `${file.name} could not be read.`);
+    }
+    sheetChosen.file = file.name;
+    sheetChosen.sheets = read.sheets;
+    // The first sheet with something in it.
+    const first = read.sheets.findIndex((s) => K.table(s.rows).rows.length > 0);
+    sheetChosen.index = first >= 0 ? first : 0;
+    return sheetSummary(K);
+  },
+  async sheet_use({ sheet } = {}) {
+    const K = await loadSiteKit("sheet.js", "KrateSheet");
+    if (!sheetChosen.sheets.length) return refuse("Choose a spreadsheet first.");
+    const i = Number(sheet);
+    if (!(i >= 0 && i < sheetChosen.sheets.length)) return refuse("That sheet is not in this file.");
+    sheetChosen.index = i;
+    return sheetSummary(K);
+  },
+  /* The request a build starts from, and the whole sheet as the app's
+   * asset: the asset waits here as an attachment, the way a picked file
+   * does, and is sent with the build; the request carries the columns and
+   * a sample of rows only. `org` is a slug this person may send to. */
+  async sheet_request({ name, purpose, org } = {}) {
+    const K = await loadSiteKit("sheet.js", "KrateSheet");
+    const t = sheetChosen.table;
+    if (!t) return refuse("Choose a spreadsheet first.");
+    const problem = K.check(t, sheetChosen.file);
+    if (problem) return refuse(problem.message);
+    if (!String(name || "").trim()) return refuse("Give the app a name.");
+    let forOrg = null;
+    if (org) {
+      const targets = bridge.orgTargets || await COMMANDS.org_targets();
+      const found = targets.find((o) => o.slug === org);
+      if (!found) return refuse(`You cannot make apps for ${org}. An owner there can make you a developer in People.`);
+      forOrg = { slug: found.slug, name: found.name };
+    }
+    const out = K.request({ app: name, purpose, org: forOrg, table: t, file: sheetChosen.file });
+    attached.set(out.asset.name, { name: out.asset.name, type: "text/csv", bytes: utf8Base64(out.asset.text) });
+    return { request: out.request, attachment: out.asset.name, rows: t.rows.length };
   },
 };
 
@@ -2812,6 +3282,24 @@ function speakWebWording() {
   return hits.length;
 }
 
+/* Port, where no folder can be chosen: the same door, asking for what
+ * works there (see cannotPickFolders). */
+function speakWebPort() {
+  if (!cannotPickFolders()) return;
+  const title = document.querySelector("#homePortDrop .kr-ta2 b");
+  const sub = document.querySelector("#homePortDrop .kr-ta2 small");
+  if (title) title.textContent = "Choose a .zip of an app you already have";
+  if (sub) sub.textContent = "Electron, Tauri or a web app, zipped. On GitHub: Code, then Download ZIP. Krate shows the plan first.";
+  const link = document.getElementById("homePort");
+  if (link) link.textContent = "Have an app already? Choose its .zip and I'll port it.";
+  const go1 = document.querySelector("#homePortDrop .kr-portgo");
+  if (go1) go1.textContent = "Choose a .zip";
+  const choose = document.getElementById("homePortChoose");
+  if (choose && choose.lastChild && choose.lastChild.nodeType === 3) choose.lastChild.nodeValue = "Choose a .zip";
+  const go = document.getElementById("homePortGo");
+  if (go) go.title = "Choose a .zip";
+}
+
 function speakWeb() {
   // Nothing to swap in onboarding: a tab never shows it (see the
   // krate-onboarded flag at the top). The desktop's wording is its own.
@@ -2839,6 +3327,7 @@ function speakWeb() {
   trimDesktopOnly();
   speakWebWording();
   speakTouchWording();
+  speakWebPort();
   // Studio rewrites the composer's hint itself when a build finishes, so
   // a one-shot pass at boot would be undone a minute later. Watching the
   // one element is cheaper and more honest than re-scanning on a timer.
@@ -3069,6 +3558,33 @@ console.info("krate: studio bridge ready (hub + builder)");
   const app = () => ({
     url: sheet.dataset.appUrl || "",
     name: sheet.dataset.appName || "app.krate",
+  });
+
+  // Open it here: the app goes up unlisted -- the same bytes always get
+  // the same id, and an app already in the gallery keeps its listing --
+  // and the tab Player runs it. The new tab is opened inside the press,
+  // before anything is awaited, or a browser treats it as a pop-up.
+  document.getElementById("frHereBtn")?.addEventListener("click", async () => {
+    const { url, name } = app();
+    const tab = window.open("about:blank", "_blank");
+    if (note) note.textContent = "Getting it ready…";
+    try {
+      const out = await publishWebApp({ path: url, name: name.replace(/\.krate$/, ""), unlisted: true, quiet: true }, bridge.token);
+      const hash = String((out && (out.full_url || out.url)) || "").split("/").pop().split("?")[0];
+      if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error("The app could not be put online to open here.");
+      const run = `${HUB}/run/${hash}?via=studio`;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = run;
+      } else {
+        location.assign(run);
+      }
+      if (note) note.textContent = "";
+      sheet.classList.add("hidden");
+    } catch (err) {
+      if (tab) tab.close();
+      if (note) note.textContent = String((err && err.message) || err);
+    }
   });
 
   document.getElementById("frHaveBtn")?.addEventListener("click", async () => {

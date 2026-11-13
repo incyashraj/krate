@@ -1,0 +1,21 @@
+# Contacts: the companies the team works with, the people there, and the next
+# step with each (a starter an organisation releases in its first minute on
+# Krate). Its data is the team's, kept with store.org, and it asks for nothing
+# else.
+
+[app]
+id = "dev.krate.team-contacts"
+name = "Contacts"
+version = "1.0.0"
+entry = "target/wasm32-wasip1/release/krate_team_contacts.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show your team's contacts"
+required = true
+
+[[capabilities]]
+cap = "store.org"
+rationale = "Keep the contacts with your team, encrypted, so everyone in it sees the same ones"
+required = true

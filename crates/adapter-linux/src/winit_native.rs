@@ -370,15 +370,16 @@ mod real {
                             }
                         }
                     }
-                    WindowEvent::KeyboardInput { event, .. } => {
+                    WindowEvent::KeyboardInput { event, .. }
                         if event.state == winit::event::ElementState::Pressed
                             && event.logical_key
-                                == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
-                            && tracker.captured
-                        {
-                            tracker.captured = false;
-                            release = true;
-                        }
+                                == winit::keyboard::Key::Named(
+                                    winit::keyboard::NamedKey::Escape,
+                                )
+                            && tracker.captured =>
+                    {
+                        tracker.captured = false;
+                        release = true;
                     }
                     _ => {}
                 }
@@ -951,9 +952,23 @@ mod real {
     /// Wayland sessions never load it, so the check is skipped there rather
     /// than refusing a machine that would have worked.
     fn missing_x11_keyboard_library() -> Option<String> {
+        missing_x11_keyboard_library_for(
+            std::env::var_os("DISPLAY").as_deref(),
+            std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+        )
+    }
+
+    /// [`missing_x11_keyboard_library`] for the session these two variables
+    /// describe. Taking them as arguments lets a test ask about a Wayland
+    /// session without changing the process's environment, which every
+    /// other test running beside it reads.
+    fn missing_x11_keyboard_library_for(
+        display: Option<&std::ffi::OsStr>,
+        wayland: Option<&std::ffi::OsStr>,
+    ) -> Option<String> {
         // Wayland-only session: winit takes the Wayland path and this
         // library is never opened.
-        if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        if display.is_none() && wayland.is_some() {
             return None;
         }
         for soname in XKB_X11_SONAMES {
@@ -1304,7 +1319,9 @@ mod real {
     #[cfg(test)]
     mod tests {
         use super::key_name;
-        use super::{missing_x11_keyboard_library, XKB_X11_SONAMES};
+        use super::{
+            missing_x11_keyboard_library, missing_x11_keyboard_library_for, XKB_X11_SONAMES,
+        };
         use winit::keyboard::{Key, NamedKey, SmolStr};
 
         #[test]
@@ -1346,23 +1363,11 @@ mod real {
         fn a_wayland_only_session_is_not_asked_about_x11() {
             // Wayland never loads the X11 bridge, so refusing a Wayland
             // machine for a library it does not need would be a new bug.
-            let display = std::env::var_os("DISPLAY");
-            let wayland = std::env::var_os("WAYLAND_DISPLAY");
-            // SAFETY: single-threaded test, restored before returning.
-            unsafe {
-                std::env::remove_var("DISPLAY");
-                std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
-            }
-            let verdict = missing_x11_keyboard_library();
-            unsafe {
-                std::env::remove_var("WAYLAND_DISPLAY");
-                if let Some(value) = display {
-                    std::env::set_var("DISPLAY", value);
-                }
-                if let Some(value) = wayland {
-                    std::env::set_var("WAYLAND_DISPLAY", value);
-                }
-            }
+            // Asked of the variables, not by changing them: this test once
+            // removed DISPLAY for a moment, and a test on another thread
+            // that read the environment then saw no display at all (K-1184).
+            let verdict =
+                missing_x11_keyboard_library_for(None, Some(std::ffi::OsStr::new("wayland-0")));
             assert!(
                 verdict.is_none(),
                 "a Wayland session must not be refused over an X11 library"

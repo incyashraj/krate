@@ -165,36 +165,27 @@
     }
   }
 
-  /* ---- Home: the placeholder types out ideas until someone types -------- */
-  (function typingPlaceholder() {
+  /* ---- Home: one example in the box, written there and still ---------- */
+  // It used to type ideas out and erase them, which the founder called a
+  // distraction (2026-11-04): the box holds one plain example now. The
+  // wrapper stays because the Port and IDE doors hide the box through it.
+  (function examplePlaceholder() {
     const ta = $("homePrompt");
-    if (!ta || reduce) return;
+    if (!ta) return;
     const wrap = document.createElement("div");
     wrap.className = "kr-ta";
     ta.parentNode.insertBefore(wrap, ta);
     wrap.appendChild(ta);
-    const ph = document.createElement("div");
-    ph.className = "kr-ph"; ph.setAttribute("aria-hidden", "true");
-    wrap.appendChild(ph);
-    wrap.classList.add("typing");
-    const IDEAS = ["a habit tracker with streaks and a weekly chart", "split a dinner bill four ways, tip included",
-      "a focus timer that lives in the corner", "flashcards for twenty Spanish words a day"];
-    const lead = "Describe an app, like ";
-    const sync = () => wrap.classList.toggle("has", ta.value.length > 0);
-    ta.addEventListener("input", sync); sync();
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const paint = (s) => { ph.innerHTML = esc(s) + '<span class="kr-car"></span>'; };
-    (async () => {
-      for (let k = 0; ; k++) {
-        const s = lead + IDEAS[k % IDEAS.length];
-        for (let i = 0; i <= s.length; i++) {
-          while (document.hidden) await wait(500);
-          paint(s.slice(0, i)); await wait(i < lead.length ? 12 : 30);
-        }
-        await wait(2400);
-        for (let i = s.length; i >= lead.length; i--) { paint(s.slice(0, i)); await wait(10); }
-      }
-    })();
+    // The box shows two lines; at 320 wide the full example needs three
+    // (measured), so the narrowest phones get a shorter one that fits.
+    const narrow = window.matchMedia("(max-width: 360px)");
+    const set = () => {
+      ta.placeholder = narrow.matches
+        ? "Describe an app, like a bill split four ways"
+        : "Describe an app, like split a dinner bill four ways, tip included";
+    };
+    set();
+    narrow.addEventListener("change", set);
   })();
 
   /* ---- Home: Create / Port --------------------------------------------- */
@@ -222,6 +213,10 @@
     const idePane = $("homeIdePane"), ideUnder = $("homeIdeUnder");
     if (idePane) idePane.hidden = mode !== "ide";
     if (ideUnder) ideUnder.hidden = mode !== "ide";
+    // Start from a spreadsheet is a way to Create; under Port or the IDE it
+    // read as part of that door. app.js owns its `hidden`, so a class.
+    const sheetLine = $("homeSheetLine");
+    if (sheetLine) sheetLine.classList.toggle("kr-offmode", mode !== "create");
     const kb = $("homeKb");
     if (kb) {
       kb.hidden = mode === "port";
@@ -247,7 +242,7 @@
     if (sub && changed) {
       sub.textContent = mode === "port" ? "Krate reads it first and tells you what the port would take."
         : mode === "ide" ? "Edit a Krate project yourself, with your AI one keystroke away."
-        : "Describe it. Krate turns it into one small file that opens on every desktop.";
+        : "Describe it. Send the link, and it opens on any phone or computer.";
       sub.classList.remove("kr-swap"); void sub.offsetWidth; sub.classList.add("kr-swap");
     }
     document.dispatchEvent(new CustomEvent("kr-home-mode", { detail: mode }));
@@ -763,9 +758,10 @@
       ver.className = "kr-ver"; ver.hidden = true;
       title.insertAdjacentElement("afterend", ver);
       // The newest version, or "draft" before anything is built -- also for
-      // a reopened session, whose transcript has no build rows.
+      // a reopened session, whose transcript has no build rows. Only a build
+      // that made something counts: a first build that failed made no v1.
       const paint = () => {
-        const chips = qa("#thread .vchip b");
+        const chips = qa("#thread .msg.vok .vchip b");
         const last = chips[chips.length - 1];
         const st = app(), sess = st && st.session;
         const word = last ? last.textContent : sess && sess.result ? `v${sess.builds || 1}` : sess ? "draft" : "";
@@ -798,7 +794,8 @@
       (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(place);
     }
     const share = $("barShare");
-    // Run it is relabelled by app.js (textContent), so its icon is drawn in CSS.
+    // Hidden for good (the card under the preview has Run and Share); its
+    // icon is kept so an old door that unhides it still draws it right.
     if (share && !q("svg", share)) share.insertAdjacentHTML("afterbegin", ico("share"));
   })();
 
@@ -1214,7 +1211,7 @@
     const name = appName(), size = res.size || "";
     const words = r.revise
       ? "Done. The change is in, and I opened it again to check it still works."
-      : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Try it with Run it, or send it to someone.`;
+      : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Press Run to try it, or Share to send it to someone.`;
     const el = document.createElement("div"); el.className = "msg krate kr-close";
     el.innerHTML = '<span class="body"></span>'; q(".body", el).textContent = words;
     const tools = q(":scope > .kr-tools", msg);
@@ -1401,6 +1398,9 @@
   // where it is seen. Only when a NEW link appeared, so closing the sheet
   // any other way says nothing.
   let linking = false; // Share's Make a link publishes too, and says so itself
+  // The last publish was an update (IC-976): say so, with its number.
+  const lastPublish = () => { try { return (typeof state !== "undefined" && state.lastPublish) || null; } catch (e) { return null; } };
+  const updatedWords = () => { const o = lastPublish(); return o && o.updated && o.version ? `Updated to v${o.version}. Everyone with the link gets it` : ""; };
   (function published() {
     const sheet = $("publishSheet");
     if (!sheet) return;
@@ -1409,7 +1409,7 @@
     watch(sheet, { attributes: true, attributeFilter: ["class"] }, () => {
       if (!sheet.classList.contains("hidden")) { before = link(); return; }
       const now = link();
-      if (now && now !== before && !linking) toast("Published. The link is copied", true);
+      if (now && now !== before && !linking) toast(updatedWords() || "Published. The link is copied", true);
       before = now;
     });
   })();
@@ -1418,7 +1418,7 @@
   function thenPress(id, ms = 6000) {
     const t0 = Date.now();
     const tick = () => {
-      const b = $(id);
+      const b = /^[.#\[]/.test(id) ? q(id) : $(id);
       if (b && !b.classList.contains("hidden") && b.offsetParent) { press(b); return; }
       if (Date.now() - t0 < ms) setTimeout(tick, 100);
     };
@@ -1436,7 +1436,15 @@
       h.className = "kr-hov";
       h.innerHTML = `<span class="kr-hb dark" role="button" tabindex="0" data-a="run">${ico("play")}Run</span>` +
         `<span class="kr-hb" role="button" tabindex="0" data-a="share">${ico("share")}Share</span>`;
-      const go = (b) => { card.click(); thenPress(b.dataset.a === "run" ? "barRun" : "barShare"); };
+      // The app card's own Run and Share, under the preview: the one place
+      // the session has them.
+      // On a phone the session opens on its conversation, so the app side
+      // is shown first or the card's button is never on screen to press.
+      const go = (b) => {
+        card.click();
+        setTimeout(() => { const m = q('.mob-switch [data-mob="app"]'); if (m && m.offsetParent) m.click(); }, 120);
+        thenPress(`.kr-fdone [data-fa="${b.dataset.a === "run" ? "run" : "share"}"]`);
+      };
       h.addEventListener("click", (e) => {
         const b = e.target.closest("[data-a]"); if (!b) return;
         e.stopPropagation(); e.preventDefault();
@@ -1640,7 +1648,14 @@
       e.stopImmediatePropagation(); sheet();
       setTimeout(() => { const t = q('#aiNav [data-ai="keys"]'); if (t) press(t); }, 0);
     }, true);
-    if (!desktopApp()) { const kp = $("setKeyPanel"); if (kp) kp.hidden = true; }
+    // In a tab the key row stays, in the web's own words. It was hidden
+    // here, which left Settings with no way to add a key while the plan
+    // sheet and the free-app wall both say "your own API key keeps you
+    // making here" -- the only door was the wall itself, after the fact.
+    if (!desktopApp()) {
+      const hint = q("#setKeyPanel .hint");
+      if (hint) hint.textContent = "Your own Anthropic or OpenAI key keeps you making here after the free app. It is kept in your account";
+    }
     // Reduce motion: this computer only, on top of the system's own setting.
     const calm = $("setCalm");
     let on = false; try { on = localStorage.getItem("krate-calm") === "1"; } catch (e) {}
@@ -1684,21 +1699,29 @@
   const shareWrap = document.createElement("div");
   shareWrap.className = "sheet-wrap hidden kr-share-wrap"; shareWrap.id = "krShare";
   shareWrap.innerHTML = `<div class="sheet kr-share" role="dialog" aria-modal="true" aria-labelledby="krShareH">
-    <div class="kr-sh-h"><div><h2 id="krShareH">Share <span data-n></span></h2><p class="sheet-sub">One file. Whoever gets it double-clicks, and it opens.</p></div>
+    <div class="kr-sh-h"><div><h2 id="krShareH">Share <span data-n></span></h2><p class="sheet-sub">A link opens in any browser, on a phone too. The file opens with Krate on a computer.</p></div>
       <button type="button" class="kr-x" data-close title="Close" aria-label="Close">${ico("x")}</button></div>
     <div class="kr-shfile"><span class="kr-shic"><img src="krate-logo.png" alt=""></span><span class="kr-sht"><b data-f></b><small data-s></small></span><em data-v hidden></em></div>
     <div class="kr-ways" role="tablist">
-      <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Anyone with it can open the app</small></button>
+      <button type="button" class="kr-way" data-w="link" role="tab" style="--c:#3d6df0"><i>${ico("link")}</i><b>Share a link</b><small>Opens in any browser, phone or computer</small></button>
       <button type="button" class="kr-way" data-w="file" role="tab" style="--c:#7c5ce8"><i>${ico("file")}</i><b>Send the file</b><small>Email, a chat, a USB stick</small></button>
       <button type="button" class="kr-way" data-w="pub" role="tab" style="--c:#22a35a"><i>${ico("globe")}</i><b>Publish</b><small>List it in the public gallery</small></button>
+      <button type="button" class="kr-way" data-w="org" role="tab" style="--c:#d97706" hidden><i>${ico("shield")}</i><b>Send for approval</b><small data-orgsub>To your organisation</small></button>
     </div>
     <div class="kr-wp" data-w="link"></div>
     <div class="kr-wp" data-w="file"></div>
     <div class="kr-wp" data-w="pub"></div>
-    <p class="kr-shnote">${ico("info")}<span>New to Krate? They install it once, like a video player.</span></p>
+    <div class="kr-wp" data-w="org"></div>
+    <p class="kr-shnote">${ico("info")}<span>New to Krate? Send the link: it opens in their browser, with nothing to install.</span></p>
   </div>`;
   document.body.appendChild(shareWrap);
   let shareApp = null, shareVer = null;
+  // What publishing this build would do (IC-976, app.js publishPlan): a
+  // first publish, the next version behind the same link, or nothing new.
+  let sharePlan = null;
+  const planOf = () => (sharePlan && isCurrent() ? sharePlan : null);
+  const makeLabel = () => { const p = planOf(); return p && p.update ? p.label : "Make a link"; };
+  const pubLabel = () => { const p = planOf(); return p && p.update ? p.label : "Publish"; };
   const linkOf = () => { const s = app(); const r = s && s.session && s.session.result; return r && r.share_url ? r.share_url : null; };
   const isCurrent = () => { try { const c = currentApp(); return !!(c && shareApp && c.path === shareApp.path); } catch (e) { return false; } };
   function closeShare() { shareWrap.classList.add("hidden"); }
@@ -1732,7 +1755,24 @@
       pane.innerHTML = `<p class="kr-shp">A link is made for the newest version. Open it and share from there.</p>`;
       return;
     }
-    pane.innerHTML = `<button type="button" class="btn kr-dark kr-make"><span class="kr-pg"></span><span class="kr-lb">Make a link</span></button><p class="kr-sherr" hidden></p>`;
+    const plan = planOf();
+    // Published before: the link they already sent is here to copy, and
+    // the button puts this build behind it as the next version.
+    pane.innerHTML = (plan && plan.update
+      ? `<div class="kr-linkf"><span class="kr-u"></span><button type="button" class="btn kr-ghost" data-copy>${ico("copy")}<span>Copy</span></button></div>` +
+        `<p class="kr-shp kr-upd">This link opens v${esc(String(plan.current || plan.n - 1))}. Your changes are not at it yet.</p>`
+      : "") +
+      `<button type="button" class="btn kr-dark kr-make"><span class="kr-pg"></span><span class="kr-lb">${esc(makeLabel())}</span></button>` +
+      (plan && plan.update ? `<p class="kr-shst">${esc(plan.sub)}</p>` : "") +
+      `<p class="kr-sherr" hidden></p>`;
+    if (plan && plan.update) {
+      q(".kr-u", pane).textContent = plan.url.replace(/^https?:\/\//, "");
+      q("[data-copy]", pane).addEventListener("click", (e) => {
+        const c = e.currentTarget;
+        const done = () => { c.classList.add("ok"); q("span", c).textContent = "Copied"; setTimeout(() => { c.classList.remove("ok"); q("span", c).textContent = "Copy"; }, 1400); };
+        (navigator.clipboard ? navigator.clipboard.writeText(plan.url) : Promise.reject()).then(done, done);
+      });
+    }
     const b = q(".kr-make", pane);
     b.addEventListener("click", async () => {
       if (b.dataset.busy) return;
@@ -1742,7 +1782,7 @@
       linking = true;
       // Signed out: the popup asks, and when it lands this button makes the
       // link again, right here (as Publish does).
-      window.__krPubAgain = () => { delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link"; b.click(); };
+      window.__krPubAgain = () => { delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = makeLabel(); b.click(); };
       try {
         openPublishSheet();
         if (sheet) sheet.classList.add("hidden");
@@ -1751,16 +1791,16 @@
       } catch (e) { /* app.js says why in the publish sheet's note */ }
       linking = false;
       const url = linkOf();
-      if (url) { window.__krPubAgain = null; paintLink(url, true); toast("Link made and copied", true); return; }
+      if (url) { window.__krPubAgain = null; settled(); paintLink(url, true); toast(updatedWords() || "Link made and copied", true); return; }
       // Waiting on the sign-in popup, already open over this pane; the old
       // publish sheet stays shut (it was left behind on its sign-in step).
       if ($("pubSignin") && !$("pubSignin").classList.contains("hidden")) {
         if (sheet) sheet.classList.add("hidden");
-        delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link";
+        delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = makeLabel();
         return;
       }
       window.__krPubAgain = null;
-      delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = "Make a link";
+      delete b.dataset.busy; b.classList.remove("busy"); q(".kr-lb", b).textContent = makeLabel();
       const why = (($("pubNote") || {}).textContent || "").trim();
       const err = q(".kr-sherr", pane); err.textContent = why || "The link could not be made just now. Try again in a moment."; err.hidden = false;
     });
@@ -1774,7 +1814,7 @@
         <div class="kr-shacts"><button type="button" class="btn kr-dark" data-dl>${ico("down")}Download the file</button></div>
         <div class="kr-new" data-gift hidden><b>For someone new to Krate</b><small>One file with Krate inside: it installs once, then opens the app.</small>
         <div class="kr-os"><button type="button" class="btn kr-ghost" data-os="mac">Mac</button><button type="button" class="btn kr-ghost" data-os="linux">Linux</button></div>
-        <p class="kr-shst" data-wst>Windows: send the link. They get Krate once, then it opens.</p></div>`;
+        <p class="kr-shst" data-wst>Windows: send the link. It opens in their browser.</p></div>`;
       q("[data-dl]", pane).addEventListener("click", () => press($("filesSave")));
       const giftBox = q("[data-gift]", pane), wst = q("[data-wst]", pane);
       qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
@@ -1795,6 +1835,48 @@
     qa("[data-os]", pane).forEach((b) => b.addEventListener("click", () => { try { makeWrap(shareApp, b.dataset.os, wst); } catch (e) {} }));
   }
   const invokeReveal = () => press($("filesSave"));
+  // Send for approval: the fourth way, there when this person may send apps
+  // to an organisation (an owner or a developer). app.js's sendToOrg does
+  // the work, on a computer through the engine and in a tab through the
+  // bridge (G5); the one Studio was opened for (/app/?org=<slug>) is first.
+  // In a tab the version can carry a release note.
+  function orgList() { try { return (orgTargets && orgTargets.list) || []; } catch (e) { return []; } }
+  function paintOrg() {
+    const way = q('.kr-way[data-w="org"]', shareWrap), pane = q('.kr-wp[data-w="org"]', shareWrap);
+    const orgs = orgList();
+    way.hidden = !orgs.length;
+    q(".kr-ways", shareWrap).classList.toggle("four", orgs.length > 0);
+    if (!orgs.length) { pane.innerHTML = ""; return; }
+    const pick = typeof window.krOrgPick === "function" ? window.krOrgPick() : null;
+    const list = orgs.slice().sort((a, b) => Number(b.slug === pick) - Number(a.slug === pick));
+    const nm = (o) => o.name || o.slug;
+    q("[data-orgsub]", way).textContent = list.length === 1 ? `To ${nm(list[0])}: a second person approves it` : "To one of your organisations";
+    pane.innerHTML = `<div class="kr-frm">
+        ${list.length > 1 ? '<label>Send to<select class="kr-field" data-o></select></label>' : ""}
+        ${desktopApp() ? "" : '<label>What changed<input class="kr-field" data-note maxlength="1000" placeholder="Optional: a line for whoever approves it"></label>'}
+        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-send><span class="kr-lb"></span><span class="pop-val" hidden></span></button></div>
+        <p class="kr-shst" data-st>It goes up signed by the organisation, and nobody can open it until someone else approves it.</p></div>`;
+    const sel = q("[data-o]", pane), note = q("[data-note]", pane), go = q("[data-send]", pane), st = q("[data-st]", pane);
+    const chosen = () => list.find((o) => o.slug === (sel ? sel.value : list[0].slug)) || list[0];
+    const ready = () => { delete go.dataset.waiting; q(".kr-lb", go).textContent = `Send to ${nm(chosen())} for approval`; };
+    if (sel) {
+      list.forEach((o) => { const opt = document.createElement("option"); opt.value = o.slug; opt.textContent = nm(o); sel.appendChild(opt); });
+      sel.addEventListener("change", () => { ready(); st.textContent = ""; });
+    }
+    ready();
+    go.addEventListener("click", async () => {
+      if (go.dataset.busy || !shareApp) return;
+      const org = chosen();
+      const opening = Boolean(go.dataset.waiting);
+      go.dataset.busy = "1"; go.classList.add("busy");
+      try { await sendToOrg(shareApp, org, go, st, note ? note.value.trim() : ""); } catch (e) {}
+      delete go.dataset.busy; go.classList.remove("busy");
+      if (!opening && go.dataset.waiting) {
+        q(".kr-lb", go).textContent = /^Released/.test(st.textContent) ? "Open it" : `Open the ${nm(org)} console`;
+        if (note) note.disabled = true;
+      }
+    });
+  }
   // Publish, in the sheet: the name, one line, and whether it is listed.
   // The fields are app.js's own publish sheet's (it prefills them, and it
   // does the publishing and any sign-in); this only shows them here.
@@ -1809,7 +1891,8 @@
         <label>Name<input class="kr-field" data-n maxlength="60"></label>
         <label>One line about it<input class="kr-field" data-d maxlength="140" placeholder="What it does, in a sentence"></label>
         <div class="kr-tog"><span>List it in the gallery<small>Off: only people with the link can find it.</small></span><button type="button" class="sw on" role="switch" aria-checked="true" aria-label="List it in the gallery" data-l></button></div>
-        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}<span>Publish</span></button><button type="button" class="btn kr-ghost" data-more>Add a picture or a logo</button></div>
+        <div class="kr-shacts"><button type="button" class="btn kr-dark" data-pub>${ico("globe")}<span>${esc(pubLabel())}</span></button><button type="button" class="btn kr-ghost" data-more>Add a picture or a logo</button></div>
+        <p class="kr-shst" data-plan${planOf() && planOf().update ? "" : " hidden"}>${esc((planOf() && planOf().update && planOf().sub) || "")}</p>
         <p class="kr-sherr" hidden></p></div>`;
     const n = q("[data-n]", pane), d = q("[data-d]", pane), l = q("[data-l]", pane), go = q("[data-pub]", pane), err = q(".kr-sherr", pane);
     n.value = nameV; d.value = descV;
@@ -1843,25 +1926,25 @@
       // Signed out: the popup asks, and when it lands this same button
       // publishes again here, ring and stamp and all (it finished behind the
       // old sheet with only a toast).
-      window.__krPubAgain = () => { delete go.dataset.busy; q("span", go).textContent = "Publish"; go.click(); };
+      window.__krPubAgain = () => { delete go.dataset.busy; q("span", go).textContent = pubLabel(); go.click(); };
       try { await publishFromSheet(); } catch (e) {}
       linking = false;
       cancelAnimationFrame(raf); clearTimeout(upT);
       if (linkOf() && !($("pubSignin") && !$("pubSignin").classList.contains("hidden"))) {
         bar.style.transition = "transform .4s var(--ease)"; bar.style.transform = "scaleX(1)";
         await new Promise((r) => setTimeout(r, reduce ? 0 : 420));
-        ring.dataset.ph = "done"; window.krSwap(q(".kr-swp", ring), listed ? "In the gallery" : "Your link is ready");
+        ring.dataset.ph = "done"; window.krSwap(q(".kr-swp", ring), updatedWords() ? `Updated to v${lastPublish().version}` : listed ? "In the gallery" : "Your link is ready");
         await new Promise((r) => setTimeout(r, reduce ? 0 : 1500));
       }
       ring.remove(); frm.hidden = false;
       if (sheet) sheet.classList.add("hidden");
       const url = linkOf();
       const signIn = $("pubSignin") && !$("pubSignin").classList.contains("hidden");
-      if (url && !signIn) { window.__krPubAgain = null; return published(pane, n.value.trim(), url, listed); }
+      if (url && !signIn) { window.__krPubAgain = null; settled(); return published(pane, n.value.trim(), url, listed); }
       // Waiting on the sign-in popup, which is already open over this pane.
-      if (signIn) { if (sheet) sheet.classList.add("hidden"); delete go.dataset.busy; q("span", go).textContent = "Publish"; return; }
+      if (signIn) { if (sheet) sheet.classList.add("hidden"); delete go.dataset.busy; q("span", go).textContent = pubLabel(); return; }
       window.__krPubAgain = null;
-      delete go.dataset.busy; q("span", go).textContent = "Publish";
+      delete go.dataset.busy; q("span", go).textContent = pubLabel();
       err.textContent = (($("pubNote") || {}).textContent || "").trim() || "It did not publish just now. Try again in a moment."; err.hidden = false;
     });
   }
@@ -1882,6 +1965,12 @@
       <div class="kr-linkf"><span class="kr-u"></span><button type="button" class="btn kr-dark" data-copy>${ico("copy")}<span>Copy</span></button></div>
       ${listed ? `<div class="kr-shacts kr-center"><button type="button" class="btn kr-ghost" data-gal>See it in the gallery</button></div>` : ""}`;
     q(".kr-pubdone b", pane).textContent = listed ? `${name} is in the gallery` : `${name} has a link`;
+    // An update says what changed for the people who already have the link.
+    const upd = lastPublish();
+    if (upd && upd.updated && upd.version) {
+      q(".kr-pubdone b", pane).textContent = `${name} is updated to v${upd.version}`;
+      q(".kr-pubdone p", pane).textContent = `Everyone with the link now gets v${upd.version}.` + (listed ? " The gallery shows it too." : "");
+    }
     // The link types itself in, as a freshly made link does.
     const shownUrl = url.replace(/^https?:\/\//, ""), uEl = q(".kr-u", pane);
     if (reduce) uEl.textContent = shownUrl;
@@ -1893,6 +1982,30 @@
     const g = q("[data-gal]", pane);
     if (g) g.addEventListener("click", () => { closeShare(); const r = q('#side .side-row[data-side="discover"]'); if (r) r.click(); });
     paintLink(url, false);
+  }
+  // Published just now: this build is the version it became, at the link.
+  function settled() {
+    const o = lastPublish();
+    sharePlan = o && o.version ? { update: false, same: true, n: o.version, url: linkOf(), label: "Publish", sub: "" } : null;
+    paintWays();
+  }
+  // Each tile says where the app really is. A link made with Share a link
+  // is "Shared by link", on that tile; only a publish with the gallery
+  // switched on makes it "In the gallery". The Publish tile used to say
+  // "v1 is at your link" after a link was made, which under the word
+  // Publish read as if the app were already listed.
+  function paintWays() {
+    const w = q('.kr-way[data-w="pub"]', shareWrap), lw = q('.kr-way[data-w="link"]', shareWrap);
+    if (!w || !lw) return;
+    const p = planOf();
+    const res = (() => { const s = app(); return s && s.session && s.session.result; })();
+    const here = isCurrent() && (Boolean(linkOf()) || Boolean(p && p.same));
+    const n = (p && p.same && p.n) || (res && res.published_version) || (lastPublish() && lastPublish().version) || null;
+    const vn = n ? ` · v${n}` : "";
+    const listed = isCurrent() && Boolean(res && res.listed);
+    q("b", w).textContent = p && p.update ? "Publish update" : "Publish";
+    q("small", w).textContent = p && p.update ? `v${p.n}, behind the same link` : listed && here ? `In the gallery${vn}` : "List it in the public gallery";
+    q("small", lw).textContent = p && p.update ? `Your link opens v${p.current || p.n - 1}` : here ? `Shared by link${vn}` : "Opens in any browser, phone or computer";
   }
   function openShare(which, version) {
     let cur = null; try { cur = currentApp(); } catch (e) {}
@@ -1907,10 +2020,33 @@
     const builds = s && s.session && s.session.builds;
     const v = q("[data-v]", shareWrap);
     if (version && builds && version < builds) { v.hidden = false; v.textContent = `v${version} · newest is v${builds}`; } else v.hidden = true;
+    sharePlan = null;
+    paintWays();
     const url = isCurrent() ? linkOf() : null;
     if (url) paintLink(url, false); else paintMakeLink();
-    paintFile(); paintPub();
-    pickWay("link");
+    paintFile(); paintPub(); paintOrg();
+    // Published before (IC-976)? Then the link and Publish say "update",
+    // with the version it becomes; this exact build is already at its link.
+    const asked = shareApp;
+    if (isCurrent() && typeof versionsOf === "function") versionsOf(asked).then((line) => {
+      if (shareApp !== asked || shareWrap.classList.contains("hidden") || !line) return;
+      sharePlan = publishPlan(line);
+      paintWays();
+      const mk = q('.kr-wp[data-w="link"] .kr-make', shareWrap);
+      if (!linkOf() && !(mk && mk.dataset.busy)) {
+        if (sharePlan.same) paintLink(sharePlan.url, false); else paintMakeLink();
+      }
+      const pub = q('.kr-wp[data-w="pub"] [data-pub]', shareWrap);
+      if (pub && !pub.dataset.busy) {
+        q("span", pub).textContent = pubLabel();
+        const note = q('.kr-wp[data-w="pub"] [data-plan]', shareWrap);
+        if (note) { note.textContent = sharePlan.update ? sharePlan.sub : ""; note.hidden = !sharePlan.update; }
+      }
+    }).catch(() => {});
+    try { if (!orgTargets.list) refreshOrgTargets().then(() => { if (!shareWrap.classList.contains("hidden")) paintOrg(); }); } catch (e) {}
+    // Opened for an organisation, Share starts on sending it there.
+    const forOrg = typeof window.krOrgPick === "function" && window.krOrgPick() && orgList().some((o) => o.slug === window.krOrgPick());
+    pickWay(forOrg ? "org" : "link");
     shareWrap.classList.remove("hidden");
     setTimeout(() => { const b = q(".kr-way.on", shareWrap); if (b) b.focus(); }, 60);
   }
@@ -1940,7 +2076,7 @@
         <div class="kr-pv-a"><p class="kr-pv-q">What are we <em>building</em>?</p><div class="kr-pv-cmp"><span class="kr-pv-tx"></span><span class="kr-pv-car"></span><span class="kr-pv-go">${ico("up")}</span></div></div>
         <div class="kr-pv-b"><div class="kr-pv-card"><div class="kr-pv-th"><svg viewBox="14 30 132 126">${[1, 2, 3].map((n) => { const y = [0, 104, 84, 64][n]; return `<g class="kr-sl kr-s${n}"><path class="l" d="M28 ${y} L80 ${y + 26} L80 ${y + 41} L28 ${y + 15}Z"/><path class="r" d="M80 ${y + 26} L132 ${y} L132 ${y + 15} L80 ${y + 41}Z"/><path class="t" d="M28 ${y} L80 ${y - 26} L132 ${y} L80 ${y + 26}Z"/></g>`; }).join("")}</svg></div>
           <div class="kr-pv-nm"><b>Weather</b><small>Writing the app</small></div></div></div>
-        <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens on every desktop</small></div></div>
+        <div class="kr-pv-c"><div class="kr-pv-app"><img src="cards/card3.jpg" alt=""></div><div class="kr-pv-file"><img src="krate-doc.png" alt=""><b>weather.krate</b><small>opens from a link</small></div></div>
       </div></div></div>
     <div class="kr-ob-f"><button type="button" class="kr-plain kr-ob-skip">Skip</button><span class="kr-dots"><i class="on"></i><i></i><i></i></span><button type="button" class="kr-dark kr-ob-go">Take the tour</button></div>
   </div>`;
@@ -2214,7 +2350,7 @@
       } });
       let label = ""; try { label = agentLabel(); } catch (err) {}
       items.push({ mark: logo(st && st.agent), label: "Change the AI", em: label, run: () => agentPicker(t) });
-      if (a) items.push({ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download", run: () => press($("filesSave")) });
+      if (a) items.push({ icon: desktopApp() ? "folder" : "down", label: desktopApp() ? "Show in folder" : "Download the file", run: () => press($("filesSave")) });
       items.push("sep", { icon: "trash", label: "Remove this app", danger: true, keep: true, run: (row) => {
         if (!row.dataset.armed) { row.dataset.armed = "1"; q(".kr-pt", row).firstChild.textContent = "Click again to remove it"; return true; }
         try { removeCurrentSession(); } catch (err) {}
@@ -2398,7 +2534,7 @@
         `<div class="kr-fx kr-fnote"><div><p class="kr-fstill">${ast}Still going. Bigger apps take a minute.</p></div></div>` +
       `</div>` +
       `<div class="kr-ffail"><h5><i>!</i><span></span></h5><p></p><div class="kr-facts2"></div></div>` +
-      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Show details</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>`;
+      `<div class="kr-facts"><button type="button" class="btn kr-plain" data-fa="log">${ico("term", "kr-ico")}<span>Details</span></button><button type="button" class="btn kr-plain" data-fa="stop">${ico("stop", "kr-ico")}Stop</button></div>`;
     stage.insertBefore(f, stage.firstChild);
     stage.classList.add("kr-forged");
     const fst = q(".kr-fst", f), fel = q(".kr-fel", f), img = q(".kr-flive img", f);
@@ -2546,9 +2682,11 @@
       q(".kr-ffail p", f).textContent = why;
       q(".kr-ffail p", f).hidden = !why;
       const acts = q(".kr-facts2", f);
-      // Report an issue rides along: it lived only on the old failure pane,
-      // which this card hides, so a failed build could not be reported.
-      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["makeitBtn", "kr-plain", "Send this to Krate"], ["reportBtn", "kr-plain", "Report an issue"]]
+      // One way to tell us: Report an issue, which sends the evidence and
+      // the request with it. "Send this to Krate" sat beside it and did
+      // nearly the same (the request, no evidence), and a person could not
+      // tell which to press; it stays in the page, out of sight.
+      const want = [["retryBtn", "kr-dark"], ["switchAiBtn", "kr-ghost"], ["reportBtn", "kr-plain", "Report an issue"]]
         .filter(([id]) => { const b = $(id); return b && !b.classList.contains("hidden") && !b.hidden; });
       const key = want.map(([id]) => id + ":" + ($(id).textContent || "")).join("|") + "|" + stopped;
       if (acts.dataset.k !== key) {
@@ -2562,13 +2700,16 @@
         });
         if (($("buildLog") || {}).textContent) {
           const l = document.createElement("button"); l.type = "button"; l.className = "btn kr-plain"; l.dataset.fa = "log";
-          l.innerHTML = `${ico("term", "kr-ico")}<span>Show details</span>`; acts.appendChild(l);
+          l.innerHTML = `${ico("term", "kr-ico")}<span>Details</span>`; acts.appendChild(l);
         }
       }
       return stopped;
     }
     function paintLogBtn() {
-      qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logOn ? "Hide details" : "Show details"; });
+      qa('[data-fa="log"] span', f).forEach((s) => { s.textContent = logOn ? "Hide details" : "Details"; });
+      // "Details", the word every failure sentence uses ("Press Details for the
+      // compiler output"): the button said "Show details", so the sentence
+      // named a button that was not on the card.
       if (f.classList.contains("kr-logon") !== logOn) { f.classList.toggle("kr-logon", logOn); if (logOn) { lgKey = ""; paintLog(); } }
     }
 
@@ -2717,7 +2858,7 @@
     if (galRoot || !galView) return galRoot;
     const main = q("main.cloud", galView);
     galRoot = document.createElement("div"); galRoot.className = "kr-gal";
-    galRoot.innerHTML = `<div class="kr-galh"><div><h1>Gallery</h1><p>Apps people made with Krate and shared. Each one is a single file that opens on every desktop.</p></div>
+    galRoot.innerHTML = `<div class="kr-galh"><div><h1>Gallery</h1><p>Apps people made with Krate and shared. Each one opens from a link, in a browser or on a computer.</p></div>
         <label class="kr-find kr-galq">${ico("search")}<input type="search" placeholder="Search apps" aria-label="Search the gallery" autocomplete="off" spellcheck="false"></label></div>
       <div class="kr-galbar"><div class="kr-cats" role="tablist"></div><div class="kr-sorts" role="tablist"><button type="button" data-s="pop" class="on">Popular</button><button type="button" data-s="new">New</button><button type="button" data-s="small">Smallest</button></div></div>
       <div class="kr-galbody"></div>`;
@@ -2867,7 +3008,7 @@
           <div class="kd-by">${m.author ? `<span class="kr-av sm">${esc(m.author.charAt(0).toUpperCase())}</span>` : ""}${[m.author ? "@" + esc(m.author) : "", m.category ? esc(catName(m.category)) : "", a.opens > 0 ? `${a.opens} open${a.opens === 1 ? "" : "s"} this month` : ""].filter(Boolean).join(" · ")}</div>
           ${m.description ? `<div class="kd-said"><small>In one sentence</small><p>${esc(m.description)}</p></div>` : ""}
           <div class="kd-file"><img src="krate-doc.png" alt=""><div><b>${esc(fileOf(a))}</b><small>${[kb(a), when ? "published " + when : "", "macOS, Windows and Linux"].filter(Boolean).join(" · ")}</small></div></div>
-          <div class="kd-act">${getBtn(a, true)}<button type="button" class="kr-ghost2" data-kd="run">${ico("play")}Run it</button><button type="button" class="kr-ghost2" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button><button type="button" class="kr-ib" data-kd="link" title="Copy the link" aria-label="Copy the link">${ico("link")}</button></div>
+          <div class="kd-act">${getBtn(a, true)}<button type="button" class="kr-ghost2" data-kd="run">${ico("play")}Run</button><button type="button" class="kr-ghost2" data-remix="${esc(keyOf(a))}">${ico("spark")}Remix</button><button type="button" class="kr-ib" data-kd="link" title="Copy the link" aria-label="Copy the link">${ico("link")}</button></div>
           <div class="kd-note"></div>
           <div class="kd-sec"><h6>What it asks for</h6><div class="kd-asks"><span class="kd-dim">Reading the file…</span></div><p class="kd-wall">${ico("shield")}Krate enforces this list. The app cannot do anything that is not on it, whatever its code says.</p></div>
         </div></div>${more(a)}`;
@@ -3364,7 +3505,11 @@
     wasOpen = open;
     const nowBuilding = shown("stateBuilding") || shown("statePlanning");
     sw.classList.toggle("live", nowBuilding);
-    if (building && !nowBuilding && shown("stateDone") && open) set("app");
+    // Finished, or failed for a reason the card can act on: the app side
+    // has Run and Share, or Try again, so it is shown. A build the person
+    // stopped stays where they pressed Stop.
+    const failed = shown("stateFailed") && !/stop/i.test((document.getElementById("failTitle") || {}).textContent || "");
+    if (building && !nowBuilding && (shown("stateDone") || failed) && open) set("app");
     else if (!building && nowBuilding && view.dataset.mob === "chat") sw.classList.add("news");
     building = nowBuilding;
   };

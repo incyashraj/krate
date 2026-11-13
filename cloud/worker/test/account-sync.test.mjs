@@ -1,0 +1,447 @@
+/* A person's own app data on every device (IC-981, account-sync.js).
+ *
+ * The REAL worker over a counting KV and the REAL SyncAccount object over
+ * SQLite (sync-account-tools.mjs), signed in as GitHub users through the
+ * stub (gho_<login>). What it proves: only a signed-in account reaches its
+ * keys and buckets, and never another's; a device gets the data key only
+ * when a device that holds it (or the recovery code) passes it on; the hub
+ * keeps every version no other replaces and drops only what a newer one
+ * replaced; account sync writes nothing to KV; and a sync is one
+ * transaction in the account's object when it changed something, and
+ * writes no row when it did not.
+ *
+ *   node --experimental-wasm-modules cloud/worker/test/account-sync.test.mjs
+ */
+import assert from "node:assert/strict";
+import test from "node:test";
+import "./github-stub.mjs";
+import worker from "../src/index.js";
+import { covers, keepVersion, SEALED_MAX, ROW_MAX, ROW_ROOM, VV_MAX } from "../src/account-sync.js";
+import { r2Mock, sha256Hex } from "./r2-mock.mjs";
+import { syncNamespace } from "./sync-account-tools.mjs";
+
+const KV = new Map();
+const writes = [];
+const R2 = r2Mock();
+const env = {
+  PUBLIC_BASE: "https://hub.test",
+  BUNDLES: R2,
+  APPS: {
+    __standIn: true,
+    get: async (k) => KV.get(k) ?? null,
+    put: async (k, v) => {
+      writes.push(k);
+      KV.set(k, v);
+    },
+    delete: async (k) => {
+      KV.delete(k);
+    },
+    list: async ({ prefix = "" } = {}) => ({ keys: [...KV.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })), list_complete: true }),
+  },
+};
+const SYNC = syncNamespace(env);
+env.SYNC_ACCOUNTS = SYNC;
+// The account's object, by GitHub login (the stub's user ids are the login's).
+const objectOf = async (login) => {
+  const view = await call(login, "GET", "/account/sync/keys");
+  return SYNC.dump()[`acct:${view.body.account}`];
+};
+
+async function call(who, method, path, payload) {
+  const headers = {};
+  if (who) headers.authorization = `Bearer gho_${who}`;
+  let body;
+  if (payload instanceof Uint8Array) {
+    headers["content-type"] = "application/octet-stream";
+    body = payload;
+  } else if (payload !== undefined) {
+    headers["content-type"] = "application/json";
+    body = JSON.stringify(payload);
+  }
+  const res = await worker.fetch(new Request(`https://hub.test${path}`, { method, headers, body }), env, { waitUntil() {} });
+  if ((res.headers.get("content-type") || "").startsWith("application/octet-stream")) {
+    return { status: res.status, body: new Uint8Array(await res.arrayBuffer()) };
+  }
+  const text = await res.text();
+  let parsed = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = text;
+  }
+  return { status: res.status, body: parsed };
+}
+
+async function deviceIdOf(hex) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(hex));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+
+async function device(seed) {
+  const public_key = seed.repeat(64).slice(0, 64);
+  return { public_key, id: await deviceIdOf(public_key) };
+}
+
+const blob = (s) => Buffer.from(s).toString("base64");
+const params = { alg: "argon2id", salt: "00".repeat(16), m_kib: 19 * 1024, t: 2, p: 1 };
+const BUCKET = "ab".repeat(32);
+const NAME = "cd".repeat(32);
+
+test("nothing without a sign-in", async () => {
+  assert.equal((await call(null, "GET", "/account/sync/keys")).status, 401);
+  assert.equal((await call(null, "GET", `/account/sync/buckets/${BUCKET}`)).status, 401);
+  assert.equal((await call("nobody-at-all-x", "GET", "/account/sync/keys", undefined)).status, 200, "any GitHub user is an account");
+});
+
+test("the first device makes the key; a second waits until a device that holds it says yes", async () => {
+  const mac = await device("1a");
+  const phone = await device("2b");
+  let r = await call("ada", "PUT", `/account/sync/devices/${mac.id}`, { public_key: mac.public_key, name: "Mac" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  // A device id that is not its key's is refused.
+  r = await call("ada", "PUT", `/account/sync/devices/${phone.id}`, { public_key: mac.public_key, name: "x" });
+  assert.equal(r.status, 400);
+  r = await call("ada", "GET", `/account/sync/keys?device=${mac.id}`);
+  assert.equal(r.body.key, null);
+  assert.ok(r.body.account, "the view names the account");
+  assert.equal(r.body.device.device_id, mac.id);
+
+  r = await call("ada", "POST", "/account/sync/init", {
+    device_id: mac.id, version: 1, public_key: "ee".repeat(32), envelope: blob("sealed to the mac"),
+    recovery: { public_key: "ff".repeat(32), params, blob: blob("sealed to the code") },
+  });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  r = await call("ada", "POST", "/account/sync/init", {
+    device_id: mac.id, version: 1, public_key: "ee".repeat(32), envelope: blob("again"),
+    recovery: { public_key: "ff".repeat(32), params, blob: blob("again") },
+  });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, "key-exists", "one key per account");
+
+  assert.equal((await call("ada", "PUT", `/account/sync/devices/${phone.id}`, { public_key: phone.public_key, name: "Galaxy S22 Ultra" })).status, 200);
+  r = await call("ada", "GET", `/account/sync/keys?device=${phone.id}`);
+  assert.equal(r.body.envelope, null, "the phone holds nothing yet");
+  assert.equal(r.body.recovery.public_key, "ff".repeat(32));
+  assert.equal(r.body.recovery.blob, undefined, "the view carries no envelope but the device's own");
+  const listed = r.body.devices.find((d) => d.device_id === phone.id);
+  assert.equal(listed.holds, null);
+  assert.equal(listed.name, "Galaxy S22 Ultra");
+  assert.equal(r.body.devices.find((d) => d.device_id === mac.id).holds, 1);
+
+  // Only a device that holds the key can pass it on.
+  r = await call("ada", "POST", "/account/sync/grants", { device_id: phone.id, version: 1, blob: blob("x"), by_device: phone.id });
+  assert.equal(r.status, 403);
+  r = await call("ada", "POST", "/account/sync/grants", { device_id: phone.id, version: 1, blob: blob("sealed to the phone"), by_device: mac.id });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await call("ada", "GET", `/account/sync/keys?device=${phone.id}`);
+  assert.equal(r.body.envelope.blob, blob("sealed to the phone"));
+  assert.equal(r.body.envelope.granted_device, mac.id);
+
+  // The recovery envelope, for a device with no other at hand.
+  r = await call("ada", "GET", "/account/sync/recovery");
+  assert.equal(r.body.blob, blob("sealed to the code"));
+  assert.deepEqual(r.body.params, params);
+  const tablet = await device("3c");
+  await call("ada", "PUT", `/account/sync/devices/${tablet.id}`, { public_key: tablet.public_key, name: "iPad" });
+  r = await call("ada", "POST", "/account/sync/grants", { device_id: tablet.id, version: 1, blob: blob("from the code"), by_device: "recovery" });
+  assert.equal(r.status, 200);
+
+  // Forgetting a device takes its envelope.
+  assert.equal((await call("ada", "DELETE", `/account/sync/devices/${tablet.id}`)).status, 200);
+  r = await call("ada", "GET", `/account/sync/keys?device=${tablet.id}`);
+  assert.equal(r.body.device, null);
+  assert.equal(r.body.envelope, null);
+  assert.ok(!r.body.devices.some((d) => d.device_id === tablet.id));
+});
+
+test("another account sees none of it", async () => {
+  const mac = await device("1a");
+  let r = await call("bob", "GET", `/account/sync/keys?device=${mac.id}`);
+  assert.equal(r.body.key, null);
+  assert.equal(r.body.device, null, "ada's device is not bob's");
+  assert.deepEqual(r.body.devices, []);
+  r = await call("bob", "POST", "/account/sync/grants", { device_id: mac.id, version: 1, blob: blob("x"), by_device: mac.id });
+  assert.notEqual(r.status, 200);
+});
+
+const A = "aaaaaaaaaaaaaaaa";
+const B = "bbbbbbbbbbbbbbbb";
+const w = (vv, c, by = Object.keys(vv)[0], kind = "v") => ({ name: NAME, vv, by, kind, k: 1, c: blob(c) });
+
+test("a bucket keeps every version no other replaces, in one transaction per sync", async () => {
+  writes.length = 0;
+  let commits = SYNC.commits;
+  let r = await call("ada", "GET", `/account/sync/buckets/${BUCKET}`);
+  assert.deepEqual(r.body, { rev: 0, entries: {} });
+  assert.equal(SYNC.commits, commits, "a read writes nothing");
+
+  r = await call("ada", "PUT", `/account/sync/buckets/${BUCKET}`, { writes: [w({ [A]: 1 }, "mac 1"), { ...w({ [A]: 1 }, "other"), name: "ef".repeat(32) }] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.rev, 1);
+  assert.equal(SYNC.commits, commits + 1, "two entries, one transaction");
+  assert.deepEqual(writes, [], "and no KV write");
+
+  // Made knowing it: replaces it.
+  r = await call("ada", "PUT", `/account/sync/buckets/${BUCKET}`, { writes: [w({ [A]: 1, [B]: 1 }, "phone on top")] });
+  assert.deepEqual(r.body.entries[NAME].map((v) => v.c), [blob("phone on top")]);
+  // Made apart: both kept.
+  r = await call("ada", "PUT", `/account/sync/buckets/${BUCKET}`, { writes: [w({ [A]: 2 }, "mac apart")] });
+  assert.deepEqual(r.body.entries[NAME].map((v) => v.c).sort(), [blob("mac apart"), blob("phone on top")].sort());
+  // An older one, or one already held, changes nothing and writes nothing.
+  const rows = SYNC.rows;
+  r = await call("ada", "PUT", `/account/sync/buckets/${BUCKET}?since=${r.body.rev}`, { writes: [w({ [A]: 1 }, "stale"), w({ [A]: 2 }, "mac apart")] });
+  assert.equal(SYNC.rows, rows, "nothing changed, no row written");
+  assert.equal(r.body.unchanged, true);
+  // Settled: a version that has seen both replaces both.
+  r = await call("ada", "PUT", `/account/sync/buckets/${BUCKET}`, { writes: [w({ [A]: 3, [B]: 1 }, "settled")] });
+  assert.deepEqual(r.body.entries[NAME].map((v) => v.c), [blob("settled")]);
+  const rev = r.body.rev;
+  // Nothing new since: no bytes.
+  r = await call("ada", "GET", `/account/sync/buckets/${BUCKET}?since=${rev}`);
+  assert.deepEqual(r.body, { rev, unchanged: true });
+  r = await call("ada", "GET", `/account/sync/buckets/${BUCKET}?since=${rev - 1}`);
+  assert.ok(r.body.entries[NAME]);
+
+  // Another account naming the same bucket reaches its own, empty one.
+  r = await call("bob", "GET", `/account/sync/buckets/${BUCKET}`);
+  assert.deepEqual(r.body, { rev: 0, entries: {} });
+  assert.equal((await objectOf("ada")).buckets.filter((b) => b.bucket === BUCKET).length, 1, "ada's bucket exists");
+  assert.deepEqual((await objectOf("bob")).buckets, [], "bob's object holds no bucket");
+  assert.ok(![...KV.keys()].some((k) => k.includes(BUCKET)), "and KV holds none");
+});
+
+test("what is not a sealed entry is refused", async () => {
+  for (const bad of [
+    { ...w({ [A]: 1 }, "x"), name: "not-hex" },
+    { ...w({ [A]: 1 }, "x"), vv: {} },
+    { ...w({ [A]: 1 }, "x"), vv: { [A]: 0 } },
+    { ...w({ [A]: 1 }, "x"), vv: { nothex: 1 } },
+    { ...w({ [A]: 1 }, "x"), kind: "z" },
+    { ...w({ [A]: 1 }, "x"), c: "not base64!" },
+    { ...w({ [A]: 1 }, "x"), by: "me" },
+  ]) {
+    const r = await call("ada", "PUT", `/account/sync/buckets/${BUCKET}`, { writes: [bad] });
+    assert.equal(r.status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await call("ada", "GET", "/account/sync/buckets/not-a-bucket")).status, 404);
+  assert.equal((await call("ada", "PUT", `/account/sync/buckets/${BUCKET}`, { nope: 1 })).status, 400);
+});
+
+test("the version rule", () => {
+  assert.ok(covers({ [A]: 2 }, { [A]: 1 }));
+  assert.ok(!covers({ [A]: 1 }, { [B]: 1 }));
+  const versions = [{ vv: { [A]: 1 } }];
+  assert.equal(keepVersion(versions, { vv: { [B]: 1 } }), true);
+  assert.equal(versions.length, 2);
+  assert.equal(keepVersion(versions, { vv: { [A]: 1 } }), false, "already held");
+  assert.equal(keepVersion(versions, { vv: { [A]: 1, [B]: 1 } }), true);
+  assert.deepEqual(versions, [{ vv: { [A]: 1, [B]: 1 } }], "it replaced both");
+});
+
+test("a file's body waits in R2 under its own digest, and goes when no version names it", async () => {
+  const FILES = "fb".repeat(32);
+  const body1 = new Uint8Array([9, 8, 7, 6, 5, 4, 3, 2, 1]);
+  const id1 = await sha256Hex(body1);
+  const fw = (vv, c, b) => ({ ...w(vv, c), blob: b });
+
+  // A version naming a body the hub does not have is refused, and names it.
+  let r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 1 }, "photo 1", id1)] });
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.error, "blob-missing");
+  assert.deepEqual(r.body.missing, [id1]);
+
+  // A body goes by the SHA-256 of its bytes, and is kept once.
+  assert.equal((await call("ada", "PUT", `/account/sync/blobs/${FILES}/${"00".repeat(32)}`, body1)).status, 400);
+  writes.length = 0;
+  r = await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id1}`, body1);
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  r = await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id1}`, body1);
+  assert.equal(r.body.stored, false, "already there: not written again");
+  assert.equal(writes.length, 0, "a body is no KV write");
+
+  const commits = SYNC.commits;
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 1 }, "photo 1", id1)] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.entries[NAME][0].blob, id1);
+  assert.equal(r.body.entries[NAME][0].bn, body1.length, "the size the hub measured");
+  assert.equal(SYNC.commits, commits + 1, "one transaction for the sync");
+  assert.equal(writes.length, 0, "and no KV write");
+  r = await call("ada", "GET", `/account/sync/blobs/${FILES}/${id1}`);
+  assert.deepEqual([...r.body], [...body1]);
+
+  // Another account reaches none of it.
+  assert.equal((await call("bob", "GET", `/account/sync/blobs/${FILES}/${id1}`)).status, 404);
+
+  // A deletion names no body; a version made knowing the first replaces
+  // it, and the body nothing names any more is gone.
+  assert.equal((await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [{ ...w({ [A]: 2 }, "gone", A, "t"), blob: id1 }] })).status, 400);
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [w({ [A]: 2 }, "deleted", A, "t")] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id1}`)).status, 404);
+  assert.ok(![...R2._blobs.keys()].some((k) => k.endsWith(id1)), "R2 holds it no more");
+
+  // Two made apart each keep their body.
+  const body2 = new TextEncoder().encode("mac copy");
+  const body3 = new TextEncoder().encode("phone copy");
+  const [id2, id3] = [await sha256Hex(body2), await sha256Hex(body3)];
+  await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id2}`, body2);
+  await call("ada", "PUT", `/account/sync/blobs/${FILES}/${id3}`, body3);
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 3 }, "mac", id2), fw({ [A]: 2, [B]: 1 }, "phone", id3)] });
+  assert.equal(r.body.entries[NAME].length, 2);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id2}`)).status, 200);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id3}`)).status, 200);
+  // Settled on the Mac's: the phone's body goes, the Mac's stays named.
+  r = await call("ada", "PUT", `/account/sync/buckets/${FILES}`, { writes: [fw({ [A]: 4, [B]: 1 }, "settled", id2)] });
+  assert.equal(r.body.entries[NAME].length, 1);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id2}`)).status, 200);
+  assert.equal((await call("ada", "GET", `/account/sync/blobs/${FILES}/${id3}`)).status, 404);
+
+  // A body over the bound is refused before it is read whole.
+  const big = new Uint8Array(16 * 1024 * 1024 + 65);
+  r = await call("ada", "PUT", `/account/sync/blobs/${FILES}/${await sha256Hex(big)}`, big);
+  assert.equal(r.status, 413);
+  assert.equal(r.body.error, "file-too-large");
+});
+
+test("a whole sync round writes nothing to KV, and a sync with nothing new writes no row", async () => {
+  // The account itself is made on its first sign-in (ensureUser); what
+  // sync does after that is measured.
+  await call("cy", "GET", "/account/sync/keys");
+  writes.length = 0;
+  const mac = await device("4d");
+  const phone = await device("5e");
+  const rows0 = SYNC.rows;
+  await call("cy", "PUT", `/account/sync/devices/${mac.id}`, { public_key: mac.public_key, name: "Mac" });
+  await call("cy", "PUT", `/account/sync/devices/${phone.id}`, { public_key: phone.public_key, name: "Phone" });
+  await call("cy", "POST", "/account/sync/init", {
+    device_id: mac.id, version: 1, public_key: "ee".repeat(32), envelope: blob("to the mac"),
+    recovery: { public_key: "ff".repeat(32), params, blob: blob("to the code") },
+  });
+  await call("cy", "POST", "/account/sync/grants", { device_id: phone.id, version: 1, blob: blob("to the phone"), by_device: mac.id });
+  const keyRows = SYNC.rows - rows0;
+
+  const DATA = "da".repeat(32);
+  const FILES = "f1".repeat(32);
+  const M = mac.id;
+  const P = phone.id;
+  const kv = (vv, c, name = NAME) => ({ name, vv, by: Object.keys(vv)[0], kind: "v", k: 1, c: blob(c) });
+  // The Mac's first sync: two values and a file.
+  const picture = new TextEncoder().encode("sealed picture bytes");
+  const pid = await sha256Hex(picture);
+  assert.equal((await call("cy", "PUT", `/account/sync/blobs/${FILES}/${pid}`, picture)).status, 201);
+  let rows = SYNC.rows;
+  let r = await call("cy", "PUT", `/account/sync/buckets/${DATA}`, { writes: [kv({ [M]: 1 }, "milk"), kv({ [M]: 1 }, "eggs", "e1".repeat(32))] });
+  assert.equal(r.status, 200);
+  const firstSync = SYNC.rows - rows;
+  rows = SYNC.rows;
+  r = await call("cy", "PUT", `/account/sync/buckets/${FILES}`, { writes: [{ ...kv({ [M]: 1 }, "photo"), blob: pid }] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const fileSync = SYNC.rows - rows;
+  // The phone reads both, then edits one value knowing the Mac's.
+  const dataRev = (await call("cy", "GET", `/account/sync/buckets/${DATA}`)).body.rev;
+  assert.ok((await call("cy", "GET", `/account/sync/buckets/${FILES}`)).body.entries[NAME]);
+  rows = SYNC.rows;
+  r = await call("cy", "PUT", `/account/sync/buckets/${DATA}?since=${dataRev}`, { writes: [kv({ [M]: 1, [P]: 1 }, "oat milk")] });
+  assert.equal(r.body.rev, dataRev + 1);
+  const editSync = SYNC.rows - rows;
+  // A second file with the same sealed body: the body is held once,
+  // counted once, and named twice.
+  r = await call("cy", "PUT", `/account/sync/buckets/${FILES}`, { writes: [{ ...kv({ [P]: 1 }, "copy", "c0".repeat(32)), blob: pid }] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const filesNow = r.body.rev;
+
+  // Nothing new, every way a device asks: no row written.
+  rows = SYNC.rows;
+  const commits = SYNC.commits;
+  for (let i = 0; i < 3; i++) {
+    r = await call("cy", "GET", `/account/sync/buckets/${DATA}?since=${dataRev + 1}`);
+    assert.deepEqual(r.body, { rev: dataRev + 1, unchanged: true });
+    r = await call("cy", "PUT", `/account/sync/buckets/${DATA}?since=${dataRev + 1}`, { writes: [kv({ [M]: 1, [P]: 1 }, "oat milk")] });
+    assert.equal(r.body.unchanged, true);
+    r = await call("cy", "PUT", `/account/sync/buckets/${FILES}?since=${filesNow}`, { writes: [{ ...kv({ [M]: 1 }, "photo"), blob: pid }] });
+    assert.equal(r.body.unchanged, true);
+    await call("cy", "GET", `/account/sync/keys?device=${P}`);
+    // A device registering again, unchanged, is no write either.
+    await call("cy", "PUT", `/account/sync/devices/${P}`, { public_key: phone.public_key, name: "Phone" });
+  }
+  assert.equal(SYNC.rows, rows, "a sync with nothing new writes no row");
+  assert.equal(SYNC.commits, commits);
+
+  assert.deepEqual(writes, [], "account sync made no KV write in the whole round");
+  console.log(
+    `MEASURE rows written: devices+key+grant ${keyRows}, first sync of two values ${firstSync}, ` +
+      `first sync of one file ${fileSync}, an edit ${editSync}, nothing new 0; KV writes 0`,
+  );
+});
+
+test("the object's running totals match its rows", async () => {
+  for (const [name, o] of Object.entries(SYNC.dump())) {
+    for (const b of o.buckets) {
+      const versions = o.versions.filter((v) => v.bucket === b.bucket);
+      const bytes = versions.reduce((n, row) => {
+        const v = { vv: JSON.parse(row.vv), by: row.by_device, kind: row.kind, k: row.k, c: row.c };
+        if (row.blob) Object.assign(v, { blob: row.blob, bn: row.bn });
+        return n + JSON.stringify(v).length + row.name.length + 6;
+      }, 0);
+      assert.equal(b.bytes, bytes, `${name} ${b.bucket}: bytes`);
+      const bodies = o.bodies.filter((x) => x.bucket === b.bucket);
+      assert.equal(b.files, bodies.reduce((n, x) => n + x.size, 0), `${name} ${b.bucket}: files`);
+      for (const x of bodies) assert.equal(x.refs, versions.filter((v) => v.blob === x.id).length, `${name} ${x.id}: refs`);
+      assert.ok(!versions.some((v) => v.blob && !bodies.some((x) => x.id === v.blob)), "every body named is counted");
+    }
+  }
+});
+
+test("two devices syncing at the same moment both land", async () => {
+  const BOTH = "b0".repeat(32);
+  const [r1, r2] = await Promise.all([
+    call("ada", "PUT", `/account/sync/buckets/${BOTH}`, { writes: [w({ [A]: 1 }, "from the mac")] }),
+    call("ada", "PUT", `/account/sync/buckets/${BOTH}`, { writes: [w({ [B]: 1 }, "from the phone")] }),
+  ]);
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 200);
+  const r = await call("ada", "GET", `/account/sync/buckets/${BOTH}`);
+  assert.equal(r.body.rev, 2, "two transactions, one after the other");
+  assert.deepEqual(r.body.entries[NAME].map((v) => v.c).sort(), [blob("from the mac"), blob("from the phone")].sort(), "neither lost");
+});
+
+test("the ceilings hold, and a refusal writes nothing", async () => {
+  // One version at its largest, with the most devices a vector names, is
+  // one row SQLite keeps (2,000,000 bytes at most).
+  assert.ok(SEALED_MAX + ROW_ROOM <= ROW_MAX, "a sealed version leaves room in its row");
+  const BIG = "b1".repeat(32);
+  const vv = {};
+  for (let i = 0; i < VV_MAX; i++) vv[i.toString(16).padStart(16, "a")] = Number.MAX_SAFE_INTEGER;
+  const largest = "A".repeat(SEALED_MAX - (SEALED_MAX % 4));
+  let r = await call("ada", "PUT", `/account/sync/buckets/${BIG}`, { writes: [{ name: NAME, vv, by: A, kind: "v", k: 1, c: largest }] });
+  assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 200));
+  const row = (await objectOf("ada")).versions.find((v) => v.bucket === BIG);
+  const rowBytes = Object.values(row).reduce((n, x) => n + String(x ?? "").length, 0);
+  assert.ok(rowBytes < ROW_MAX, `the row is ${rowBytes} bytes`);
+
+  // An app's data past what one answer carries.
+  const rows = SYNC.rows;
+  const many = [];
+  for (let i = 0; i < 13; i++) many.push({ name: i.toString(16).padStart(64, "0"), vv: { [A]: 1 }, by: A, kind: "v", k: 1, c: largest });
+  r = await call("ada", "PUT", `/account/sync/buckets/${"b2".repeat(32)}`, { writes: many });
+  assert.equal(r.status, 413);
+  assert.equal(r.body.error, "bucket-too-large");
+  // One entry holding more versions than anyone decided between.
+  const apart = [];
+  for (let i = 0; i < 17; i++) apart.push(w({ [i.toString(16).padStart(16, "c")]: 1 }, `apart ${i}`));
+  r = await call("ada", "PUT", `/account/sync/buckets/${"b3".repeat(32)}`, { writes: apart });
+  assert.equal(r.status, 413);
+  assert.equal(r.body.error, "too-many-versions");
+  assert.equal(SYNC.rows, rows, "neither refusal wrote a row");
+});
+
+test("a hub without the account object says so", async () => {
+  const off = { ...env, SYNC_ACCOUNTS: undefined };
+  const res = await worker.fetch(
+    new Request("https://hub.test/account/sync/keys", { headers: { authorization: "Bearer gho_ada" } }),
+    off,
+    { waitUntil() {} },
+  );
+  assert.equal(res.status, 503);
+  assert.equal((await res.json()).error, "sync-off");
+});

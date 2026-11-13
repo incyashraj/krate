@@ -182,13 +182,13 @@ const ops = {
     }
     const outside = this.audienceRefusal(ctx, me, c, action, target);
     if (outside) return { refusal: outside };
-    return { me, app: appOf(c) };
+    return { me, app: appOf(c), release: c };
   },
 
   /// POST /orgs/<slug>/data/<digest>/sync: push this device's sealed
   /// writes, pull what changed since its cursor. One transaction.
   op_data_sync(ctx) {
-    const { me, app, refusal } = this.dataStanding(ctx, "data.sync");
+    const { me, app, release, refusal } = this.dataStanding(ctx, "data.sync");
     if (refusal) return refusal;
     const device = String(ctx.args.device || "");
     if (!/^[0-9a-f]{16}$/.test(device)) return bad("device is 16 lower-case hex digits");
@@ -324,6 +324,9 @@ const ops = {
       purgedSeq = Math.max(purgedSeq, expired.top);
     }
     this.sql.exec("UPDATE org_data_apps SET seq = ?, used = ?, purged_seq = ? WHERE app_id = ?", seq, Math.max(0, used), purgedSeq, app);
+    // Something new for this app: the live sockets hear the cursor, after
+    // the commit (org-data-live.js). Never what changed.
+    if (seq > state.seq) this.dataChanged = { app, cursor: seq, device };
 
     // Counts for the day's audit line: writes, and who synced.
     const day = this.orgDay(ctx.now);
@@ -371,7 +374,13 @@ const ops = {
       full,
       me: { name: displayOf(me.principal), role: me.role },
       org: { slug: this.org().slug, name: this.org().name },
+      // Who this release reaches, for the app to offer as people to
+      // choose (IC-979): names and roles, never groups or devices.
+      people: this.audiencePeople(release),
       quota: { used: Math.max(0, used), limit: quota },
+      // A one-use ticket for this app's live socket, when the device asks
+      // (org-data-live.js): the same checks as this sync just passed.
+      ...(ctx.args.live === true && typeof this.liveTicket === "function" ? { live: this.liveTicket(me, app, device, ctx) } : {}),
     });
   },
 
@@ -495,7 +504,7 @@ export async function orgDataRoute(h) {
     }
     if (!body || typeof body !== "object") return json({ error: "bad-request", message: "the body is a JSON object" }, 400);
     return orgAnswer(
-      await askRaw("data-sync", { digest, device: body.device, now: body.now, since: body.since, writes: body.writes }),
+      await askRaw("data-sync", { digest, device: body.device, now: body.now, since: body.since, writes: body.writes, live: body.live === true }),
     );
   }
   return null;

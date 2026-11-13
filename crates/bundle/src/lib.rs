@@ -357,7 +357,7 @@ fn put_krate_extension_bytes(
     let mut declared: Option<ExtensionsRecord> = None;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         let mut body = Vec::new();
         entry
             .read_to_end(&mut body)
@@ -488,7 +488,7 @@ pub fn sign_bytes(
         let mut writer = DeterministicZip::new(Vec::new());
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if name == SIGNATURE_ENTRY {
                 continue;
             }
@@ -634,7 +634,7 @@ fn records_of<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<Rec
     let mut records = Vec::with_capacity(archive.len());
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name.ends_with('/') {
             continue;
         }
@@ -2765,7 +2765,7 @@ pub fn sign_bundle(
         let mut writer = DeterministicZip::new(io::BufWriter::new(file));
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if name == SIGNATURE_ENTRY {
                 continue; // replaced below
             }
@@ -2867,7 +2867,7 @@ fn replace_entry(bundle_path: &Path, entry_name: &str, bytes: &[u8]) -> Result<(
         let mut writer = DeterministicZip::new(io::BufWriter::new(file));
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
-            let name = entry.name().to_string();
+            let name = entry.name()?.to_string();
             if name == entry_name {
                 continue;
             }
@@ -3404,7 +3404,7 @@ fn judge_all(
         .map(|index| {
             archive
                 .by_index(index)
-                .map(|entry| entry.name().to_string())
+                .and_then(|entry| Ok(entry.name()?.to_string()))
         })
         .collect::<std::result::Result<_, _>>()?;
     for name in names {
@@ -3784,7 +3784,7 @@ fn unpack_into<R: Read + io::Seek>(mut archive: ZipArchive<R>, dir: TempDir) -> 
     let source_names: Vec<String> = {
         let mut names = Vec::new();
         for index in 0..archive.len() {
-            let name = archive.by_index(index)?.name().to_string();
+            let name = archive.by_index(index)?.name()?.to_string();
             if name.starts_with(SOURCE_PREFIX) && !name.ends_with('/') {
                 names.push(name);
             }
@@ -3823,7 +3823,7 @@ fn unpack_into<R: Read + io::Seek>(mut archive: ZipArchive<R>, dir: TempDir) -> 
     let sdk_names: Vec<String> = {
         let mut names = Vec::new();
         for index in 0..archive.len() {
-            let name = archive.by_index(index)?.name().to_string();
+            let name = archive.by_index(index)?.name()?.to_string();
             if name.starts_with(SDK_PREFIX) && !name.ends_with('/') {
                 names.push(name);
             }
@@ -3944,7 +3944,7 @@ fn unpack_into<R: Read + io::Seek>(mut archive: ZipArchive<R>, dir: TempDir) -> 
         let asset_names: Vec<String> = {
             let mut names = Vec::new();
             for index in 0..archive.len() {
-                let name = archive.by_index(index)?.name().to_string();
+                let name = archive.by_index(index)?.name()?.to_string();
                 if name.starts_with(ASSETS_PREFIX) && !name.ends_with('/') {
                     names.push(name);
                 }
@@ -4181,6 +4181,11 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 | "desktop.ini"
                 // The verification frame the pack tells agents to shoot.
                 | "frame.png"
+                // check-app's note that these bytes passed a full check: a
+                // cache on the machine that ran it, not the app. Packed, it
+                // put a different file list into every starter repacked
+                // after a check-app run.
+                | ".last-full-check"
             )
     })
 }
@@ -4584,7 +4589,7 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
 
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name.ends_with('/') {
             continue; // a directory record carries no content
         }
@@ -4776,7 +4781,7 @@ fn asset_entry_names<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
     let mut names = BTreeSet::new();
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if !name.starts_with(ASSETS_PREFIX) || name.ends_with('/') {
             continue;
         }
@@ -4809,7 +4814,7 @@ fn extract_asset_entry<R: Read + io::Seek>(
     }
     let mut out = File::create(destination).map_err(|err| io_err(destination, err))?;
     let mut limited = entry.by_ref().take(lim().asset_bytes + 1);
-    let written = io::copy(&mut limited, &mut out).map_err(|err| io_err(destination, err))?;
+    let written = copy_out(&mut limited, &mut out, destination)?;
     if written > lim().asset_bytes {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
@@ -4817,6 +4822,31 @@ fn extract_asset_entry<R: Read + io::Seek>(
         });
     }
     Ok(written)
+}
+
+/// Copy one entry out of the archive, keeping the two ways it can fail apart.
+///
+/// A READ that fails is the archive: an entry whose bytes do not match its
+/// own checksum, or that holds more than its header declares (the zip crate
+/// refuses that itself since 9.0). That is a damaged or forged file, and a
+/// person is told so. A WRITE that fails is this machine -- a full disk, a
+/// folder that cannot be written -- and names the place it was writing.
+/// Before, both read "could not open <a temp path>", which pointed at the
+/// disk for a file that was simply damaged.
+fn copy_out(reader: &mut impl Read, out: &mut File, destination: &Path) -> Result<u64> {
+    let mut buffer = [0u8; 64 * 1024];
+    let mut written = 0_u64;
+    loop {
+        let read = match reader.read(&mut buffer) {
+            Ok(0) => return Ok(written),
+            Ok(read) => read,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(BundleError::Archive(zip::result::ZipError::Io(err))),
+        };
+        out.write_all(&buffer[..read])
+            .map_err(|err| io_err(destination, err))?;
+        written += read as u64;
+    }
 }
 
 fn extract_entry<R: Read + io::Seek>(
@@ -4843,7 +4873,7 @@ fn extract_entry<R: Read + io::Seek>(
     // Copy through a limited reader as well as checking the declared size: a
     // zip header can lie about how large an entry is.
     let mut limited = entry.by_ref().take(lim().entry_bytes + 1);
-    let written = io::copy(&mut limited, &mut out).map_err(|err| io_err(destination, err))?;
+    let written = copy_out(&mut limited, &mut out, destination)?;
     if written > lim().entry_bytes {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
@@ -4946,6 +4976,11 @@ pub struct Fetched {
     /// The plain sha256 of the bytes that arrived: what an organisation's
     /// lease and the hub's check-in name them by (IC-948 G).
     pub sha256: String,
+    /// What the server said in `x-krate-store`: a Krate hub's tag for the
+    /// account that published the app (K-1159, K-1172). Any server can
+    /// send the header, so the caller takes it only from a Krate hub, and
+    /// only in the hub tag's shape.
+    pub store_tag: Option<String>,
 }
 
 /// The bytes served at a content address must BE that content (IC-389,
@@ -5122,6 +5157,8 @@ pub enum FetchedForRun {
         path: PathBuf,
         url: String,
         address: Option<String>,
+        /// As [`Fetched::store_tag`].
+        store_tag: Option<String>,
     },
 }
 
@@ -5174,6 +5211,7 @@ fn fetch_big(
 ) -> Result<FetchedForRun> {
     use sha2::{Digest, Sha256};
     let final_url = response.get_url().to_string();
+    let store_tag = response.header("x-krate-store").map(str::to_string);
     let total: Option<u64> = response
         .header("content-length")
         .and_then(|n| n.parse().ok());
@@ -5198,6 +5236,7 @@ fn fetch_big(
                 path: saved,
                 url: final_url.clone(),
                 address: Some(segment.to_string()),
+                store_tag,
             });
         }
     }
@@ -5262,6 +5301,7 @@ fn fetch_big(
         path: saved,
         url: final_url,
         address,
+        store_tag,
     })
 }
 
@@ -5271,6 +5311,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
     // fixed address it currently points at, and that is the address the
     // bytes are held to.
     let final_url = response.get_url().to_string();
+    let store_tag = response.header("x-krate-store").map(str::to_string);
     let mut bytes = Vec::new();
     response
         .into_reader()
@@ -5314,6 +5355,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
         url: final_url,
         address,
         sha256,
+        store_tag,
     })
 }
 
@@ -5347,7 +5389,14 @@ mod tests {
             let file = File::open(&bundle).expect("open zip");
             let mut archive = ZipArchive::new(file).expect("zip");
             (0..archive.len())
-                .map(|i| archive.by_index(i).expect("entry").name().to_string())
+                .map(|i| {
+                    archive
+                        .by_index(i)
+                        .expect("entry")
+                        .name()
+                        .expect("entry name")
+                        .to_string()
+                })
                 .collect()
         };
         assert!(
@@ -5650,7 +5699,7 @@ required = true
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for index in 0..archive.len() {
             let mut existing = archive.by_index(index).expect("entry");
-            let name = existing.name().to_string();
+            let name = existing.name().expect("entry name").to_string();
             let mut existing_bytes = Vec::new();
             existing.read_to_end(&mut existing_bytes).expect("read");
             writer.start_file(name.clone(), options).expect("start");
@@ -5822,7 +5871,7 @@ required = true
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             for index in 0..archive.len() {
                 let mut entry = archive.by_index(index).expect("entry");
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 let mut bytes = Vec::new();
                 entry.read_to_end(&mut bytes).expect("read entry");
                 writer.start_file(name, options).expect("start");
@@ -5868,7 +5917,7 @@ required = true
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             for index in 0..archive.len() {
                 let mut entry = archive.by_index(index).expect("entry");
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 let mut bytes = Vec::new();
                 entry.read_to_end(&mut bytes).expect("read entry");
                 writer.start_file(name, options).expect("start");
@@ -5990,7 +6039,10 @@ required = true
         let bytes = fs::read(&bundle).expect("read");
         let mut archive = ZipArchive::new(io::Cursor::new(&bytes)).expect("open");
         assert_eq!(
-            archive.name_for_index(0),
+            archive
+                .name_for_index(0)
+                .map(|name| name.expect("entry name").into_owned())
+                .as_deref(),
             Some(PROFILE_ENTRY),
             "the profile must be the FIRST entry, so a reader meets it before \
              it parses anything under this version's rules",
@@ -6077,7 +6129,7 @@ required = true
                 SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             for index in 0..archive.len() {
                 let mut entry = archive.by_index(index).expect("entry");
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 if name == PROFILE_ENTRY {
                     continue;
                 }
@@ -6885,7 +6937,7 @@ required = true
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for index in 0..archive.len() {
             let mut existing = archive.by_index(index).expect("entry");
-            let name = existing.name().to_string();
+            let name = existing.name().expect("entry name").to_string();
             let mut bytes = Vec::new();
             existing.read_to_end(&mut bytes).expect("read");
             if let Some(payload) = edit(&name, &bytes) {
@@ -7795,7 +7847,7 @@ required = true
             let local = &bytes[at..at + 30];
             parts.push(format!(
                 "{}[method={:?} flags={:02x}{:02x} time={:02x}{:02x} date={:02x}{:02x} crc={:08x} csize={} size={} extra={} mode={:o} content={}]",
-                entry.name(),
+                entry.name().expect("entry name"),
                 entry.compression(),
                 local[7],
                 local[6],
@@ -7963,7 +8015,11 @@ required = true
         assert_eq!(archive.len(), entries.len());
         for (index, (name, bytes)) in entries.iter().enumerate() {
             let mut entry = archive.by_index(index).unwrap();
-            assert_eq!(entry.name(), *name, "entries keep their order");
+            assert_eq!(
+                entry.name().expect("entry name"),
+                *name,
+                "entries keep their order"
+            );
             let mut body = Vec::new();
             entry.read_to_end(&mut body).unwrap();
             assert_eq!(&body, bytes, "{name}: content round-trips");
@@ -8474,8 +8530,9 @@ required = true
         EXTRACT_ROOT.with(|r| *r.borrow_mut() = None);
 
         assert!(
-            matches!(opened, Err(BundleError::SourceTooLarge { .. })),
-            "the fixture must be refused during extraction"
+            refused_for_forged_size(&opened),
+            "the fixture must be refused during extraction: {:?}",
+            opened.as_ref().err()
         );
 
         let left: Vec<PathBuf> = fs::read_dir(&root)
@@ -8965,15 +9022,41 @@ required = true
         assert_ne!(forged, buf, "the fixture must really declare forged sizes");
         let bundle = dir.path().join("forged.krate");
         fs::write(&bundle, &forged).expect("write");
+        // Refused either way: by Krate counting the bytes it actually wrote,
+        // or -- since zip 9.0 -- by the zip reader itself, which stops an
+        // entry that holds more than its header declares. Krate's count stays
+        // for any reader that does not; the refusal must say "damaged", not
+        // name a temporary folder as if the disk had failed.
+        let opened = open(&bundle);
         assert!(
-            matches!(open(&bundle), Err(BundleError::SourceTooLarge { .. })),
-            "a FORGED size must not get past the source limit"
+            refused_for_forged_size(&opened),
+            "a FORGED size must not get past the source limit: {:?}",
+            opened.as_ref().err()
         );
+        if let Err(err @ BundleError::Archive(_)) = &opened {
+            let words = err.user_message().expect("words for a person");
+            assert!(
+                words.contains("damaged"),
+                "a forged file reads as damaged, not as a disk problem: {words}"
+            );
+        }
     }
 
     /// Rewrite the uncompressed-size field of every `source/` record to 1,
     /// in both the central directory and the local headers, leaving the
     /// compressed bytes alone. No writer produces this; an attacker does.
+    /// A forged-size archive is refused by Krate's own byte count, or by the
+    /// zip reader noticing an entry holds more than it declares.
+    fn refused_for_forged_size(opened: &Result<OpenBundle>) -> bool {
+        match opened {
+            Err(BundleError::SourceTooLarge { .. }) => true,
+            Err(BundleError::Archive(zip::result::ZipError::Io(err))) => {
+                err.kind() == io::ErrorKind::InvalidData
+            }
+            _ => false,
+        }
+    }
+
     fn forge_source_sizes_to_one_byte(input: &[u8]) -> Vec<u8> {
         let mut data = input.to_vec();
         let one = 1u32.to_le_bytes();
@@ -9148,8 +9231,9 @@ required = true
         );
 
         // A file that really is not an archive keeps the old, correct words.
-        let invalid =
-            BundleError::Archive(zip::result::ZipError::InvalidArchive("Invalid zip header"));
+        let invalid = BundleError::Archive(zip::result::ZipError::InvalidArchive(
+            "Invalid zip header".into(),
+        ));
         let message = invalid.user_message().expect("words for a person");
         assert!(
             message.contains("not a Krate app"),
@@ -9825,6 +9909,37 @@ required = true
         assert!(!held.exists(), "let go, the old entry is swept");
     }
 
+    /// Two packs of the same size written within one tick of the clock
+    /// carry one modified time (Windows keeps time in ticks of about 15 ms),
+    /// so size and time cannot tell them apart: the second must still open
+    /// as itself, not as the first. Made here by giving the second the
+    /// first's exact time, which is what a coarse clock does.
+    #[test]
+    fn a_same_size_pack_written_in_the_same_tick_opens_as_itself() {
+        let dir = TempDir::new().expect("tempdir");
+        let root = dir.path().join("opened");
+        let bundle = cached_fixture(dir.path(), b"first");
+        let tick = modified_of(&bundle);
+        let size = fs::metadata(&bundle).expect("meta").len();
+        let first = open_cached(&bundle, &root).expect("first");
+        drop(first);
+
+        let bundle = cached_fixture(dir.path(), b"other");
+        File::options()
+            .write(true)
+            .open(&bundle)
+            .expect("open")
+            .set_modified(tick)
+            .expect("same tick");
+        // The hazard is really there: same path, same size, same time.
+        assert_eq!(modified_of(&bundle), tick);
+        assert_eq!(size, fs::metadata(&bundle).expect("meta").len());
+
+        let opened = open_cached(&bundle, &root).expect("second");
+        let read = fs::read(opened.assets_path().expect("assets").join("level.bin")).expect("r");
+        assert_eq!(read, b"other", "the second pack, not the first");
+    }
+
     /// A half-written entry (no marker) and one whose files changed after
     /// it was made are never used: the bundle is unpacked again.
     #[test]
@@ -9981,7 +10096,13 @@ required = true
         // so the skip cannot be "every dotfile".
         fs::create_dir_all(dir.path().join(".cargo")).expect(".cargo");
         fs::write(dir.path().join(".cargo/config.toml"), b"[build]\n").expect("config");
-        for junk in [".DS_Store", "src/.DS_Store", "Thumbs.db", "src/desktop.ini"] {
+        for junk in [
+            ".DS_Store",
+            "src/.DS_Store",
+            "Thumbs.db",
+            "src/desktop.ini",
+            ".last-full-check",
+        ] {
             fs::write(dir.path().join(junk), b"os state").expect(junk);
         }
 
@@ -9993,10 +10114,16 @@ required = true
             let file = File::open(&bundle).expect("open");
             let mut zip = ZipArchive::new(file).expect("zip");
             (0..zip.len())
-                .map(|i| zip.by_index(i).expect("entry").name().to_string())
+                .map(|i| {
+                    zip.by_index(i)
+                        .expect("entry")
+                        .name()
+                        .expect("entry name")
+                        .to_string()
+                })
                 .collect()
         };
-        for junk in ["DS_Store", "Thumbs.db", "desktop.ini"] {
+        for junk in ["DS_Store", "Thumbs.db", "desktop.ini", "last-full-check"] {
             assert!(
                 !names.iter().any(|n| n.contains(junk)),
                 "{junk} was packed as source; the bundle now depends on which \
@@ -11212,7 +11339,7 @@ required = true
                 DeterministicZip::new(io::BufWriter::new(File::create(&forged).unwrap()));
             for i in 0..archive.len() {
                 let mut entry = archive.by_index(i).unwrap();
-                let name = entry.name().to_string();
+                let name = entry.name().expect("entry name").to_string();
                 let mut body = Vec::new();
                 entry.read_to_end(&mut body).unwrap();
                 if name == PROVENANCE_ENTRY {

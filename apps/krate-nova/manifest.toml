@@ -1,7 +1,7 @@
 [app]
 id = "dev.krate.nova"
 name = "Krate Nova"
-version = "0.1.0-dev"
+version = "0.2.1"
 entry = "target/wasm32-wasip1/release/krate_nova.wasm"
 world = "krate:app/gui@0.2.0"
 
@@ -19,3 +19,8 @@ required = true
 cap = "io.args"
 rationale = "Read the quick-run flag"
 required = true
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Remember your best score, on every device you sign in on"
+required = false

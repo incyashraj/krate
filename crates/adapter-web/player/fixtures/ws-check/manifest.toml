@@ -1,0 +1,16 @@
+[app]
+id = "dev.krate.ws-check"
+name = "Live Check"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_ws_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true
+
+[[capabilities]]
+cap = "net.connect:127.0.0.1:8935"
+rationale = "Talk to the echo server over a live connection"
+required = true

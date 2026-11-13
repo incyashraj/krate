@@ -284,7 +284,7 @@
           <img class="fan-card" src="cards/card5.jpg" alt="" />
         </div>
         <h1 class="ob-h">Built with Krate</h1>
-        <p class="ob-p">Apps made by describing them. Each one is a single small file that opens on every desktop.</p>
+        <p class="ob-p">Apps made by describing them. Each one is a small file you send as a link.</p>
         <button class="ob-cta" data-go="2">Start<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </section>
 
@@ -321,7 +321,6 @@
       </button>
       <div class="spacer"></div>
       <button class="link-btn update-chip hidden" id="updateChip" title="A newer Krate is ready">Update ready</button>
-      <button class="plan-chip" id="freeCount" title="Your plan"></button>
       <button class="icon-btn" id="themeBtn" title="Switch to light"></button>
       <button class="icon-btn hidden" id="cloudBtn" title="Shared"></button>
       <button class="agent-chip hidden" id="agentChip"><span class="dot" id="agentDot"></span><span id="agentName">checking…</span></button>
@@ -343,7 +342,7 @@
         <h1 class="display home-title reveal" id="homeTitle">
           What are we <span class="rw" id="homeRw"><span class="w on">building</span><span class="w">shipping</span></span>?
         </h1>
-        <p class="home-sub reveal" id="homeSub">Describe it. Krate turns it into one small file that opens on every desktop.</p>
+        <p class="home-sub reveal" id="homeSub">Describe it. Send the link, and it opens on any phone or computer.</p>
         <div class="composer-shell reveal">
           <div class="bigbar">
             <div class="home-tabs" id="homeTabs" role="tablist">
@@ -357,7 +356,8 @@
             <div class="home-portpane home-idepane" id="homePortPane" hidden>
               <button type="button" class="kr-drop2 kr-portdrop" id="homePortDrop">
                 <span class="dz-i" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M2.2 4.6a1.4 1.4 0 011.4-1.4h2.8l1.4 1.6h4.6a1.4 1.4 0 011.4 1.4v5.6a1.4 1.4 0 01-1.4 1.4H3.6a1.4 1.4 0 01-1.4-1.4V4.6z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg></span>
-                <span class="kr-ta2"><b>Choose the folder of an app you already have<em class="kr-beta">Beta</em></b><small>Electron, Tauri or a web app. Krate reads it first and says what the port would take; nothing changes until you say so.</small></span>
+                <span class="kr-ta2"><b>Choose the folder of an app you already have</b><small>Electron, Tauri or a web app. Krate shows the plan first, and your folder is never touched.</small></span>
+                <span class="kr-portgo" aria-hidden="true">Choose a folder</span>
               </button>
               <div class="kr-cmprow">
                 <button type="button" class="kr-chipb" id="homePortChoose"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.2 4.6a1.4 1.4 0 011.4-1.4h2.8l1.4 1.6h4.6a1.4 1.4 0 011.4 1.4v5.6a1.4 1.4 0 01-1.4 1.4H3.6a1.4 1.4 0 01-1.4-1.4V4.6z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>Choose a folder</button>
@@ -405,6 +405,10 @@
           <!-- Where dictation says what it is doing. Empty by default so
                the screen stays quiet until something needs saying. -->
           <p class="composer-hint home-hint" id="homeHint"></p>
+          <!-- Start from a spreadsheet (G6): in a browser tab, where the
+               sheet is read in the page. app.js shows it when the bridge
+               is there. -->
+          <p class="home-sheet" id="homeSheetLine" hidden><a href="#" id="homeSheet">Start from a spreadsheet</a><span> · a .csv or .xlsx becomes an app around its rows</span></p>
           <div class="kr-under" id="homeIdeUnder" hidden>
             <p class="kr-lab">Recent projects</p>
             <div class="kr-starts" id="homeIdeRows"></div>
@@ -524,7 +528,7 @@
             </button>
           </div>
           <div class="spacer"></div>
-          <button class="btn btn-sm hidden" id="barRun" title="Open the app">Run it</button>
+          <button class="btn btn-sm hidden" id="barRun" title="Run the app">Run</button>
           <button class="btn btn-sm btn-primary hidden" id="barShare" title="Send it, or get a link">Share</button>
         </header>
 
@@ -641,7 +645,7 @@
               <p class="done-verdict hidden" id="doneVerdict"></p>
               <ul class="asks" id="asks"></ul>
               <div class="done-actions">
-                <button class="btn btn-primary" id="openBtn">Run it</button>
+                <button class="btn btn-primary" id="openBtn">Run</button>
                 <button class="btn" id="sourceBtn" title="Open the Cargo project this was built from">Source</button>
                 <button class="btn btn-ghost" id="infoBtn">Details</button>
               </div>
@@ -690,7 +694,7 @@
           <p class="pane-title">Files</p>
           <span class="grow"></span>
           <button class="btn btn-sm" id="filesAttach" title="Give the AI a picture or file with your next message">Add a file</button>
-          <button class="btn btn-sm hidden" id="filesSave">Download the app</button>
+          <button class="btn btn-sm hidden" id="filesSave">Download the file</button>
         </div>
         <div class="pane-scroll" id="filesList"></div>
       </section>
@@ -1127,9 +1131,9 @@
 
   <div class="sheet-wrap hidden" id="reportSheet">
     <div class="sheet sheet-report">
-      <h2>Send this to Krate support?</h2>
-      <p class="pub-sub">Something went wrong and we want the real evidence,
-      not a screenshot. Here is exactly what would leave this computer:</p>
+      <h2>Report an issue</h2>
+      <p class="pub-sub">The real evidence tells us more than a screenshot.
+      This is exactly what is sent:</p>
       <ul class="rep-list" id="repList"></ul>
       <p class="rep-note" id="repSize"></p>
       <label class="pub-label">Anything you want to add
@@ -1140,7 +1144,7 @@
       else on this computer is read: no other projects, no files you did not
       attach, no keys. You can open the file yourself first.</p>
       <div class="detail-actions">
-        <button class="btn btn-primary" id="repSend">Send to support</button>
+        <button class="btn btn-primary" id="repSend">Send report</button>
         <button class="btn" id="repReveal">Show me the file</button>
         <button class="btn btn-ghost sheet-close" data-close="reportSheet">Cancel</button>
       </div>
@@ -1167,6 +1171,41 @@
         <button class="btn btn-ghost sheet-close" data-close="makeitSheet">Close</button>
       </div>
       <p class="detail-note" id="makeitNote"></p>
+    </div>
+  </div>
+
+  <!-- Start from a spreadsheet (G6): the file is read here, its columns
+       and first rows shown, then a normal build starts from Home. -->
+  <div class="sheet-wrap hidden" id="sheetSheet">
+    <div class="sheet sheet-start" role="dialog" aria-modal="true" aria-labelledby="sheetH">
+      <button class="sheet-x" data-close="sheetSheet" aria-label="Close"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      <h2 id="sheetH">Start from a spreadsheet</h2>
+      <p class="sheet-sub">A .csv or .xlsx up to 5 MB and 20,000 rows. It is read here, in this tab; every row goes into the app, and only the first few go to the AI.</p>
+      <div class="sheet-pick">
+        <button class="btn" id="sheetChoose" type="button">Choose a file</button>
+        <span class="sheet-file" id="sheetFile" role="status"></span>
+      </div>
+      <label class="pub-label hidden" id="sheetTabRow">Sheet
+        <select id="sheetTab"></select>
+      </label>
+      <p class="sheet-problem hidden" id="sheetProblem" role="alert"></p>
+      <div class="sheet-cols hidden" id="sheetCols"></div>
+      <div class="hidden" id="sheetForm">
+        <label class="pub-label">Name of the app
+          <input id="sheetName" type="text" maxlength="60" autocomplete="off" />
+        </label>
+        <label class="pub-label">What it is for, in one sentence
+          <input id="sheetPurpose" type="text" maxlength="300" autocomplete="off" placeholder="Track what the warehouse holds and reorder in time" />
+        </label>
+        <label class="pub-label hidden" id="sheetForRow">Who keeps the records
+          <select id="sheetFor"></select>
+        </label>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="sheetMake" type="button" disabled>Make the app</button>
+        <button class="btn btn-ghost sheet-close" data-close="sheetSheet" type="button">Cancel</button>
+      </div>
+      <p class="detail-note" id="sheetNote" role="status"></p>
     </div>
   </div>
 
@@ -1227,24 +1266,9 @@
     </div>
   </div>
 
-  <div class="sheet-wrap hidden" id="limitSheet">
-    <div class="sheet">
-      <h2 id="limitTitle">Making is paused</h2>
-      <p class="sheet-sub" id="limitSub">Making apps in the browser is
-      switched off right now. This is on our side, not your account: your
-      one free app and one free change to it are untouched. Krate Studio on
-      your own machine is free and unlimited with your own AI.</p>
-      <p class="sheet-sub hidden" id="limitSub2" style="margin-top:8px"></p>
-      <div class="detail-actions" id="limitActions">
-        <button class="btn btn-primary" id="limitGo">Try again</button>
-      </div>
-      <p class="detail-note" id="limitNote"></p>
-    </div>
-  </div>
-
   <div class="sheet-wrap hidden" id="supportSheet">
     <div class="sheet sheet-send">
-      <h2>Support <span class="plan-tag sup-priority hidden" id="supPriorityTag">priority</span></h2>
+      <h2>Support</h2>
       <p class="sheet-sub" id="supIntro">A real person answers, in this same thread. Replies
       show up right here.</p>
       <div id="supTickets"></div>
@@ -1269,15 +1293,20 @@
   <div class="sheet-wrap hidden" id="firstRunSheet">
     <div class="sheet sheet-send">
       <h2>Your app is ready to run</h2>
-      <p class="sheet-sub">It runs on your computer, not in this tab. Which
-      is true for you?</p>
+      <p class="sheet-sub" id="frSub">Open it right here, or run it natively on
+      your computer.</p>
       <div class="send-opts">
+        <button class="send-opt" id="frHereBtn" type="button">
+          <b>Open it here</b>
+          <span>It runs in a new tab, on a phone too, with nothing to install,
+          and shows you first what it may touch.</span>
+        </button>
         <button class="send-opt" id="frHaveBtn" type="button">
           <b>I already have Krate</b>
-          <span>Download the app and it opens when you double-click it.</span>
+          <span>Download the app and it opens natively when you double-click it.</span>
         </button>
         <button class="send-opt" id="frNeedBtn" type="button">
-          <b>I do not have Krate yet</b>
+          <b>Run it natively: get Krate</b>
           <span id="frNeedSub">Get it once, the way you got a video player.
           After that every Krate app just opens.</span>
         </button>
@@ -1333,7 +1362,7 @@
       </div>
       <div id="pubForm">
       <p class="pub-sub">Anyone with the link can open it. Publishing again
-      later replaces it.</p>
+      later updates it.</p>
       <label class="pub-list-row"><input type="checkbox" id="pubListed" />
         <span>Also list it in the public gallery<small>Off, and the app is
         only reachable by its link.</small></span></label>

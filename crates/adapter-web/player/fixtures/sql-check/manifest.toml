@@ -1,0 +1,21 @@
+[app]
+id = "dev.krate.sql-check"
+name = "Records Check"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_sql_check.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true
+
+[[capabilities]]
+cap = "store.sql"
+rationale = "Count how many times it was opened"
+required = true
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Clear its settings, to show the database stays"
+required = true

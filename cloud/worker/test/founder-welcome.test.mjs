@@ -1,7 +1,7 @@
-/* A new person gets the founder's plain welcome, once, ten minutes on.
+/* A new person gets the founder's plain welcome, once, 21 minutes on.
  *
  * Signing up marks the account welcome-due; the ten-minute run sends the
- * note to accounts at least ten minutes old -- from the founder's krate.tech
+ * note to accounts at least 21 minutes old -- from the founder's krate.tech
  * address, replies to his Gmail, plain text, the first name filled in --
  * and records that it went, so a second run sends nothing. An account only
  * minutes old waits. An account that existed before (no due mark) is never
@@ -24,6 +24,8 @@ const env = {
   KRATE_ADMINS: "boss",
   GITHUB_CLIENT_SECRET: "gh-secret",
   RESEND_API_KEY: "resend-key",
+  // What makes each welcome's unsubscribe link (the hub has it as a secret).
+  KEY_WRAP_SECRET: "wrap-secret",
   APPS: {
     get: async (k) => KV.get(k) ?? null,
     put: async (k, v) => { KV.set(k, v); },
@@ -68,7 +70,7 @@ const tick = (now) => {
   });
 };
 
-test("a new account is welcomed once, ten minutes on, in the founder's words", async () => {
+test("a new account is welcomed once, 21 minutes on, in the founder's words", async () => {
   await signUpWithGithub();
   const due = [...KV.keys()].filter((k) => k.startsWith("welcome-due:"));
   assert.equal(due.length, 1, "signing up marks the account welcome-due");
@@ -76,9 +78,11 @@ test("a new account is welcomed once, ten minutes on, in the founder's words", a
 
   await tick(created + 3 * 60 * 1000);
   assert.equal(mailed.length, 0, "three minutes in, nothing is sent");
+  await tick(created + 20 * 60 * 1000);
+  assert.equal(mailed.length, 0, "twenty minutes in, still nothing");
 
-  await tick(created + 11 * 60 * 1000);
-  assert.equal(mailed.length, 1, "eleven minutes in, the note goes");
+  await tick(created + 22 * 60 * 1000);
+  assert.equal(mailed.length, 1, "twenty-two minutes in, the note goes");
   const mail = mailed[0];
   assert.equal(mail.from, "Yashraj Pardeshi <yashraj@krate.tech>");
   assert.equal(mail.reply_to, "incyashraj@gmail.com");
@@ -100,7 +104,7 @@ test("a nameless sign-up is greeted as 'there', and an old account is never mail
   await signUpWithGithub();
   // An account from before the welcome existed: a user with no due mark.
   KV.set("user:old-person", JSON.stringify({ id: "old-person", created: 1, email: "old@example.com" }));
-  await tick(Date.now() + 11 * 60 * 1000);
+  await tick(Date.now() + 22 * 60 * 1000);
   const latest = mailed[mailed.length - 1];
   assert.deepEqual(latest.to, ["x@example.com"]);
   assert.ok(latest.text.startsWith("Hi there,\n"), latest.text.slice(0, 30));
@@ -160,7 +164,7 @@ test("with the founder's app password, the welcome goes through Gmail itself, cc
   await worker.fetch(new Request(`https://hub.test/login/callback?state=${state}&code=abc`), gmailEnv, ctx);
   const before = mailed.length;
   const real = Date.now;
-  const later = Date.now() + 11 * 60 * 1000;
+  const later = Date.now() + 22 * 60 * 1000;
   Date.now = () => later;
   await worker.scheduled({ cron: "*/10 * * * *" }, gmailEnv).finally(() => {
     Date.now = real;

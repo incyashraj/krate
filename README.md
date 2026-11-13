@@ -5,13 +5,14 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Ship a desktop app as one file that opens natively on macOS, Windows and Linux.</strong>
+  <strong>Make and send apps like pictures.</strong>
 </p>
 
 <p align="center">
-  Write the app in Rust, build it into a WebAssembly component, and send one <code>.krate</code>.<br>
-  The runtime is open source, runs on Wasmtime, and is installed once per machine.<br>
-  The same bytes open on all three systems, and an app can reach only what its manifest declares.
+  Describe an app and Krate makes it, or write it yourself in Rust. It is one <code>.krate</code> file.<br>
+  Send it as a link and it opens in any browser, phones included, with nothing to install.<br>
+  On macOS, Windows and Linux the same file runs natively. Every app is sandboxed: it reaches only<br>
+  what it asks for and the person allows. Open source, built on Wasmtime.
 </p>
 
 <p align="center">
@@ -74,6 +75,19 @@ ship for macOS (Apple silicon, Intel), Windows (x64, ARM64) and Linux
 
 ## Start here
 
+**Send an app as a link.** Publish any `.krate` and send the link:
+
+```sh
+krate publish my-app.krate
+```
+
+Whoever taps it sees the app open in their browser, on a phone, a tablet
+or a computer, with nothing to install. Publishing it again is the app's
+next version: the same link opens the update. A few abilities (working in a
+folder on the computer, Bluetooth) need Krate on a computer, and the app
+says so in words when it asks for one. Or make one in [Krate Studio](https://krate.tech/studio/)
+and press Share.
+
 **Build your own app.** Press **Use this template** on
 [krate-app-template](https://github.com/incyashraj/krate-app-template).
 It is a small working app (a counter that keeps its value) whose CI builds
@@ -91,7 +105,8 @@ runs it once, and tells you which stage failed and how to fix it. In CI,
 [setup-krate](https://github.com/incyashraj/setup-krate) installs Krate on
 any GitHub runner.
 
-**Open an app someone sent you.** Install Krate once:
+**Open an app someone sent you.** A link opens in your browser. To run
+`.krate` files natively on a computer, install Krate once:
 
 ```sh
 curl -fsSL https://krate.tech/install.sh | sh
@@ -107,8 +122,9 @@ a small rainfall chart ([source](https://github.com/incyashraj/krate/tree/c46d29
 [checksum](https://krate.tech/docs/quickstart.html#try-the-chart-sample)):
 
 ```sh
-krate run chart.krate --dump-caps
-krate run chart.krate --prompt
+CHART=https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate
+krate run "$CHART" --dump-caps
+krate run "$CHART" --prompt
 ```
 
 `--dump-caps` lists what the app asks for without running it. Chart asks
@@ -157,7 +173,7 @@ the desktop ready to edit.
 ## Why a file
 
 <p align="center">
-  <img src="docs/landing/og-v4.png" width="760" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+  <img src="docs/landing/og-v5.png" width="760" alt="Krate: make and send apps like pictures. Opens from a link in any browser, phones included, and natively on Mac, Windows and Linux">
 </p>
 
 Cross-platform frameworks can share source while still producing separate
@@ -216,6 +232,23 @@ lookalikes:
 
 Sessions live on your account, so an app you start in the browser opens on
 the desktop with its conversation intact and editable.
+
+## For a team
+
+[krate.tech/orgs](https://krate.tech/orgs/) gives a company its own place
+on Krate. Name the organisation, release its first app (Team Notes,
+Expenses, Stock List, or a `.krate` you made) and invite your team by
+email, all from one page. A developer sends an app, a reviewer approves its
+exact bytes, and only your people can open it: a copied link alone opens
+nothing. The apps' team data and the credentials for your company's APIs
+are encrypted on members' computers, so Krate's hub stores them without
+being able to read them.
+
+For IT: company sign-in with OpenID Connect or SAML 2.0, people and groups
+kept in step by SCIM, a policy that says which apps may open on company
+computers, and an audit of every approval. Read
+[Organisations](https://krate.tech/docs/organisations.html) and
+[Running Krate in an organisation](https://krate.tech/docs/running-in-an-organisation.html).
 
 ## What it costs
 
@@ -296,7 +329,7 @@ never work.
 ## `krate check-app`: the oracle behind AI authoring
 
 An AI writing code needs a truthful, fast answer to "is this actually
-correct?" `check-app` runs six stages and prints one verdict; because the
+correct?" `check-app` runs nine stages and prints one verdict; because the
 failure text names the fix, an agent can loop on it without a human in the
 middle.
 
@@ -308,6 +341,9 @@ middle.
 | imports | 13 | It imports only `krate:*`, no `wasi:*` leak |
 | run | 14 | It actually runs, headless |
 | shoot | 15 | A GUI app paints a real frame |
+| usability | 16 | Driven the way a person would: it stays open, follows a resize, answers a press |
+| screens | 17 | It fits a phone, a tablet and a desktop window (from 0.5.5) |
+| phone | 18 | It runs the way a phone runs it, on the interpreter iOS requires, and its first frame and scrolling are timed (from 0.5.5) |
 
 `--json` gives the same verdict as a machine-readable object; `--shoot
 frame.png` writes the app's first frame to a PNG so output can be looked at
@@ -344,7 +380,7 @@ cd krate
 cargo build --workspace && cargo test --workspace
 ```
 
-The workspace has over 1,600 Rust tests. You need the Rust toolchain named in
+The workspace has over 2,300 Rust tests. You need the Rust toolchain named in
 `rust-toolchain.toml` and `cargo-component`; check your machine with
 `krate doctor`. Platform packages, the two Windows traps, and the
 one-package Linux receiver note live in [docs/build.md](docs/build.md).
@@ -353,9 +389,12 @@ one-package Linux receiver note live in [docs/build.md](docs/build.md).
 
 ```text
 apps/       Sample apps and apps used to test Krate
-crates/     Runtime, CLI, policy, adapters, MCP server, authoring, and SDK
+cloud/      The hub (hub.krate.tech) and the build service behind Studio in a browser
+crates/     Runtime, CLI, policy, desktop/browser/phone adapters, MCP server, authoring, SDK
 docs/       Website, book, design records, and technical documentation
+evidence/   Measurements, claim records and release evidence behind the numbers above
 scripts/    Build, install, test, evidence, and release tools
+studio/     Krate Studio, the desktop app
 test/       Integration fixtures and cross-language tests
 wit/        Krate interface definitions
 ```
@@ -368,6 +407,8 @@ wit/        Krate interface definitions
 | The paste-in prompt for any AI chat | [Krate Mode](https://krate.tech/docs/pages/krate-mode.html) |
 | Plain guide for making an app | [Make an app with AI](https://krate.tech/docs/pages/make-an-app-with-ai.html) |
 | Developer quickstart | [Quickstart](https://krate.tech/docs/quickstart.html) |
+| Private apps for a company | [Organisations](https://krate.tech/docs/organisations.html) |
+| Bring an app you already have | [Porting guide](https://krate.tech/docs/porting.html) |
 | Build from source | [docs/build.md](docs/build.md) |
 | Exact current evidence | [Status](STATUS.md) |
 
@@ -384,7 +425,8 @@ Everyone is held to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 A random id made on your machine, the Krate version, the OS name, one of
 `install` / `make` / `open` / `publish`, whether an AI wrote the app, and
-whether it worked. Never: app names, prompts, paths, or anything about you.
+whether it worked; when an app does not open, one word for why from a fixed
+list (`refused`, `not-found`, `bad-bundle` and so on). Never: app names, prompts, paths, or anything about you.
 `krate telemetry off` turns it off (`DO_NOT_TRACK=1` is honoured too), and
 it says so on first run rather than hiding here.
 
@@ -394,7 +436,7 @@ it says so on first run rather than hiding here.
 - Current release: [the latest on the releases page](https://github.com/incyashraj/krate/releases/latest)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
-- License: MIT OR Apache-2.0
+- License: MIT OR Apache-2.0 for the player, format and CLI; BSL 1.1 for Studio and the hub ([details](#license))
 
 
 ## License

@@ -3,7 +3,7 @@
  * hub (GET /orgs/<slug>/insights):
  *
  *  - owners and admins: is the organisation getting value, and is it safe
- *    (adoption, people, security, releases, cost);
+ *    (adoption, people, security, releases);
  *  - whoever sends apps: how each of their apps is doing;
  *  - whoever approves: what needs them;
  *  - everyone: their own computers and the apps they used.
@@ -161,7 +161,8 @@
       var top = exact.length ? Math.max.apply(null, exact) : 0;
       var last = items.length ? items[items.length - 1] : null;
       var said = o.what + ", " + o.span + ": most on one " + o.unit + " " + numSaid(top) + "; " + (o.lastWord || "the last") + " " + (last ? numSaid(last.value) : "0") + ".";
-      var bars = el("div", { class: "bars", role: "img", "aria-label": said });
+      var empty = !top && !few;
+      var bars = el("div", { class: "bars" + (empty ? " zero" : ""), role: "img", "aria-label": said, "data-empty": "Nobody yet in this time." });
       bars.appendChild(el("span", { class: "top", "aria-hidden": "true", text: String(max === 1 && !top ? 1 : max) }));
       items.forEach(function (x) {
         var v = x.value === FEWER ? 2 : Number(x.value) || 0;
@@ -298,8 +299,12 @@
       ]));
       sec.push(sub("Computers with access", s.devices.length
         ? [capped(s.devices.slice().sort(function (x, y) { return Number(y.silent) - Number(x.silent) || Number(x.holds_current) - Number(y.holds_current); }), 8, function (d) {
-            var seen = d.last_seen ? "last seen " + when(d.last_seen, now) : "not seen since it was added on " + K.day(d.added_at);
-            return row([d.name || "A computer", d.silent ? el("span", { class: "tag warn", text: "Silent 60+ days" }) : null], K.who(d.principal).label + " · " + seen + (d.holds_current ? "" : " · waiting for another computer to share access"),
+            // K-1115: an older Krate does not say which computer it is when
+            // it checks in; that computer is "not identified", never silent.
+            var unknown = d.identified === false;
+            var fresh = now - (Number(d.added_at) || 0) < 86400;
+            var seen = d.last_seen ? "last seen " + when(d.last_seen, now) : unknown && !fresh ? "added " + K.day(d.added_at) + "; its Krate is older and does not say when it checks in, so update Krate there to see it here" : unknown ? "added " + K.day(d.added_at) + "; it has not checked in yet" : "not seen since it was added on " + K.day(d.added_at);
+            return row([d.name || "A computer", d.silent ? el("span", { class: "tag warn", text: "Silent 60+ days" }) : unknown ? el("span", { class: "tag", text: "Not identified" }) : null], K.who(d.principal).label + " · " + seen + (d.holds_current ? "" : " · waiting for another computer to share access"),
               d.silent ? [go("people", "Open People", "Open People to decide about " + K.who(d.principal).label)] : null);
           }, "computers"),
           el("details", { class: "nums" }, [el("summary", { text: "Details" }), el("small", { text: s.key ? "These computers hold version " + s.key.version + " of " + name + "'s organisation key" + (s.key.state === "stale" ? "; someone was removed since, so the next member computer online replaces it" : "") + "." : name + " has no organisation key yet." })])]
@@ -337,25 +342,6 @@
         tile({ label: "Taken back, last 30 days", value: String(r.withdrawn_month), of: "withdrawn", means: r.rollbacks_month ? "and " + plural(r.rollbacks_month, "rollback", "rollbacks") + " to an older version" : "and no rollbacks to an older version", act: go("releases", "See the versions") }),
       ])]));
 
-      // Cost.
-      var c = o.cost;
-      var perHead = tile({ label: "Cost per active person", value: "Working it out", means: "the last invoice, over the " + plural(c.active_month, "person", "people") + " who opened an app in 30 days", act: go("billing", "See invoices") });
-      out.push(card("ins-cost", "Cost", "What does " + name + " pay for what it uses?", [tiles([
-        tile({ label: "Seats in use", value: String(c.seats_used), of: c.seats_paid ? "of " + c.seats_paid + " paid" : "", means: "owners, admins, developers and reviewers; people who only use apps are free" + (c.seats_paid ? "" : " · " + c.free_seats + " seats are free"), act: go("billing", "Open billing") }),
-        perHead,
-      ])]));
-      // The amount is Billing's: the hub's Stripe invoices, read once.
-      K.api("GET", path("/billing")).then(function (res) {
-        var inv = res.ok && res.body && Array.isArray(res.body.invoices) ? res.body.invoices.filter(function (i) { return typeof i.amount === "number" && i.currency; })[0] : null;
-        var val = perHead.children[1], means = perHead.children[2];
-        if (inv && c.active_month) {
-          val.textContent = K.money(Math.round(inv.amount / c.active_month), inv.currency);
-          means.textContent = "the invoice of " + K.day(inv.at) + ", " + K.money(inv.amount, inv.currency) + ", over the " + plural(c.active_month, "person", "people") + " who opened an app in 30 days";
-        } else {
-          val.textContent = "Not yet";
-          means.textContent = inv ? "nobody opened an app in the last 30 days" : "shown once " + name + " has a paid invoice; " + plural(c.active_month, "person", "people") + " opened an app in 30 days";
-        }
-      });
       return out;
     }
 
@@ -406,7 +392,9 @@
       return dv.apps.map(function (a, i) {
         var kids = [];
         var refused = a.refusals.reduce(function (t, r) { return t + r.n; }, 0);
-        var link = K.hub() + "/orgs/" + slug + "/apps/" + encodeURIComponent(a.app_id) + "/current";
+        // The app's own address: a browser opens it (the /current door is
+        // for Krate and answers a browser "sign in" in JSON).
+        var link = K.appLink(slug, a.app_id) || K.hub() + "/orgs/" + slug + "/apps/" + encodeURIComponent(a.app_id) + "/current";
         var copyBtn = el("button", { class: "act", type: "button", text: "Copy its link", onclick: function () { K.copy(link, copyBtn); } });
         kids.push(tiles([
           tile({ label: "People in the last 7 days", value: numSaid(a.people_week), means: a.released ? "who opened it, of everyone it is for" : "it has no approved version yet", act: a.released ? copyBtn : go("waiting", "See what is waiting") }),
@@ -471,7 +459,7 @@
       var kids = [];
       kids.push(sub("Your computers", y.devices.length
         ? [rows(y.devices.map(function (d) {
-            return row([d.name || "A computer"], "Added " + K.day(d.added_at) + " · " + (d.last_seen ? "last seen " + when(d.last_seen, now) : "not seen since") + (d.holds_current ? "" : " · waiting for another computer to share access"));
+            return row([d.name || "A computer"], "Added " + K.day(d.added_at) + " · " + (d.last_seen ? "last seen " + when(d.last_seen, now) : d.identified === false ? (now - (Number(d.added_at) || 0) < 86400 ? "not checked in yet" : "computer not identified: its Krate is older, so update it to see when it checks in") : "not seen since") + (d.holds_current ? "" : " · waiting for another computer to share access"));
           }))]
         : [none("Your computers show here once Krate runs on them signed in to " + nameOf() + ".")]));
       kids.push(sub("Apps you opened, last 30 days", y.apps.length

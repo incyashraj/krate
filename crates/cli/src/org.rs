@@ -682,6 +682,9 @@ pub fn words(refusal: &HubRefusal, org: &str, me: &str, action: Action) -> Strin
         "self-approval" => {
             format!("you can't approve your own upload: ask a reviewer in {org}")
         }
+        "approval-policy" | "already-approved" => {
+            format!("nothing was approved: {}", refusal.message)
+        }
         "new-capabilities" => format!(
             "nothing was approved: {}. `krate org candidates {org}` lists what is new; approve \
              with --accept and each one's name",
@@ -921,14 +924,7 @@ fn spoken_target(target: &str) -> String {
 /// `github:<login>`. Both lower-case. An explicit `github:` or `email:`
 /// prefix is kept.
 pub fn principal_of(name: &str) -> String {
-    let name = name.trim().to_ascii_lowercase();
-    if name.starts_with("github:") || name.starts_with("email:") {
-        name
-    } else if name.contains('@') {
-        format!("email:{name}")
-    } else {
-        format!("github:{name}")
-    }
+    krate_orgaccess::principal_of(name)
 }
 
 /// A principal as a person reads it: `alice (GitHub)`, `bob@corp.com
@@ -961,13 +957,43 @@ pub fn spoken_principal(value: &serde_json::Value) -> String {
     }
 }
 
-/// The join page for an invitation, as the hub's answer gives it or as
-/// the addendum spells it.
-fn join_url(answer: &serde_json::Value, slug: &str, code: &str) -> String {
+/// Is this origin this machine (`http://127.0.0.1:8787`, a `wrangler dev`
+/// hub or a copy of the site served here)?
+fn loopback(url: &str) -> bool {
+    origin(url).is_some_and(|o| {
+        let host = o.split_once("://").map_or("", |(_, h)| h);
+        let bare = host.rsplit_once(':').map_or(host, |(h, _)| h);
+        matches!(bare, "127.0.0.1" | "localhost" | "[::1]")
+    })
+}
+
+/// Is this Krate's own hub, whose site is krate.tech?
+fn krates_hub(hub: &str) -> bool {
+    matches!(
+        origin(hub).as_deref(),
+        Some("https://hub.krate.tech") | Some("https://krate.tech")
+    )
+}
+
+/// The join page for an invitation on `hub`, as the hub's answer gives it
+/// or as the addendum spells it. A link must go to a site that talks to
+/// that hub: krate.tech's join page talks to Krate's hub only, so a local
+/// or company hub that names no site of its own gets no link -- its
+/// invitation is taken with `krate org join` (K-1105). A hub on this
+/// machine may name a site on this machine (`SITE_BASE`), over http.
+fn join_url(answer: &serde_json::Value, slug: &str, code: &str, hub: &str) -> Option<String> {
     for key in ["join_url", "url"] {
-        if let Some(url) = answer[key].as_str().filter(|u| u.starts_with("https://")) {
-            return url.to_string();
+        let Some(url) = answer[key].as_str() else {
+            continue;
+        };
+        let reachable = url.starts_with("https://") || (loopback(hub) && loopback(url));
+        let krate_site = origin(url).as_deref() == Some("https://krate.tech");
+        if reachable && (krates_hub(hub) || !krate_site) {
+            return Some(url.to_string());
         }
+    }
+    if !krates_hub(hub) {
+        return None;
     }
     let q = |text: &str| {
         text.bytes()
@@ -980,7 +1006,34 @@ fn join_url(answer: &serde_json::Value, slug: &str, code: &str) -> String {
             })
             .collect::<String>()
     };
-    format!("https://krate.tech/join/?o={}&c={}", q(slug), q(code))
+    Some(format!(
+        "https://krate.tech/join/?o={}&c={}",
+        q(slug),
+        q(code)
+    ))
+}
+
+/// What to say for an approval the hub recorded without releasing (its
+/// approval rules need more), or None when the answer is a release.
+fn partial_approval(answer: &serde_json::Value, digest: &str) -> Option<String> {
+    if !answer["release"].is_null() || text(answer, "state") != "waiting-for-approval" {
+        return None;
+    }
+    let still = text(&answer["approval"], "words");
+    let still = if still.is_empty() {
+        "it needs more approvals".to_string()
+    } else {
+        let mut chars = still.chars();
+        match chars.next() {
+            Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
+            None => String::new(),
+        }
+    };
+    Some(format!(
+        "approved. {} is not released yet: {still}. It is released once the \
+         organisation's approval rules are met.",
+        short(digest)
+    ))
 }
 
 /// The first twelve characters of a digest, which is how one is spoken.
@@ -1000,32 +1053,7 @@ fn worded<T>(result: Result<T>, org: &str, me: &str, action: Action) -> Result<T
 /// A time the hub gave: an RFC 3339 string is shown as it is; unix seconds
 /// (or milliseconds) become a UTC date.
 pub(crate) fn when(value: &serde_json::Value) -> String {
-    if let Some(text) = value.as_str() {
-        return text.to_string();
-    }
-    let Some(mut secs) = value.as_u64() else {
-        return String::new();
-    };
-    if secs > 100_000_000_000 {
-        secs /= 1000;
-    }
-    let days = (secs / 86_400) as i64;
-    let rest = secs % 86_400;
-    // Howard Hinnant's civil-from-days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02} {:02}:{:02} UTC",
-        rest / 3600,
-        (rest % 3600) / 60
-    )
+    krate_orgaccess::when(value)
 }
 
 fn text<'a>(value: &'a serde_json::Value, key: &str) -> &'a str {
@@ -1268,7 +1296,9 @@ fn run_command(client: &Client, command: OrgCommand) -> Result<u8> {
                 println!("Send them this. It works once, only for {who}, until {expires}:");
             }
             println!("  krate org join {slug} {code}");
-            println!("  or open {}", join_url(&answer, &slug, code));
+            if let Some(link) = join_url(&answer, &slug, code, &client.hub) {
+                println!("  or open {link}");
+            }
             Ok(0)
         }
         OrgCommand::CancelInvite { slug, code } => {
@@ -1491,6 +1521,13 @@ fn run_command(client: &Client, command: OrgCommand) -> Result<u8> {
                 &me,
                 Action::Approve(&digest),
             )?;
+            // Under the organisation's approval rules this approval may be
+            // one of several: the version keeps waiting, and the hub says
+            // what is still needed.
+            if let Some(line) = partial_approval(&answer, &digest) {
+                println!("{line}");
+                return Ok(0);
+            }
             let release = &answer["release"];
             let released = Some(text(release, "digest"))
                 .filter(|d| !d.is_empty())
@@ -2085,17 +2122,7 @@ pub fn link_authorization(url: &str) -> Option<String> {
 }
 
 pub(crate) fn origin(url: &str) -> Option<String> {
-    let (scheme, rest) = url.split_once("://")?;
-    let host = rest.split(['/', '?', '#']).next()?;
-    // userinfo@host is not a hub; refuse rather than guess which part counts.
-    if host.contains('@') || host.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "{}://{}",
-        scheme.to_ascii_lowercase(),
-        host.to_ascii_lowercase()
-    ))
+    krate_orgaccess::origin(url)
 }
 
 pub(crate) fn is_hub_link(url: &str) -> bool {
@@ -2110,6 +2137,16 @@ pub(crate) fn is_hub_link(url: &str) -> bool {
     configured.as_deref() == Some(link.as_str())
         || link == "https://hub.krate.tech"
         || link == "https://krate.tech"
+}
+
+/// The address that hands over an app's bytes, for a link someone copied
+/// from a browser (K-1166). The hub's tab Player lives at `/run/...` and
+/// answers with a web page; the same app's bytes are at `/a/<hash>`,
+/// `/a/v<line>` (an app's current version) and, for an organisation's app,
+/// `/orgs/<slug>/apps/<app-id>/current`. Only on a Krate hub, and only for
+/// those exact shapes; anything else is returned as it was given.
+pub fn bundle_address(url: &str) -> std::borrow::Cow<'_, str> {
+    krate_orgaccess::bundle_address(&crate::access::HERE, url)
 }
 
 /// The words for a refused download of a private release.
@@ -2386,7 +2423,7 @@ fn keys_command(client: &Client, command: KeysCommand) -> Result<u8> {
             match status {
                 Status::NoKey => println!("{slug} has no key yet: an owner runs `krate org keys init {slug}`"),
                 Status::Waiting => println!(
-                    "this computer is waiting for {slug}'s key: the next time another member's                      computer is online with one of {slug}'s apps open, it passes the key on"
+                    "this computer is waiting for {slug}'s key: the next time another member's computer is online with one of {slug}'s apps open, it passes the key on"
                 ),
                 Status::Holds(held) => {
                     println!("this computer holds {slug}'s key, version {}", held.keyring.current().0)
@@ -2600,6 +2637,63 @@ fn write_private_key(path: &Path, bytes: &[u8]) -> Result<()> {
 mod tests {
 
     #[test]
+    fn a_player_address_from_a_browser_names_the_same_app_s_bytes() {
+        let hash = "ab".repeat(32);
+        for (given, want) in [
+            (
+                format!("https://hub.krate.tech/run/{hash}"),
+                format!("https://hub.krate.tech/a/{hash}"),
+            ),
+            (
+                format!("https://hub.krate.tech/run/{hash}/?via=link#x"),
+                format!("https://hub.krate.tech/a/{hash}"),
+            ),
+            (
+                "https://hub.krate.tech/run/v0123456789a".to_string(),
+                "https://hub.krate.tech/a/v0123456789a".to_string(),
+            ),
+            (
+                "https://hub.krate.tech/run/org/acme/com.acme.expenses".to_string(),
+                "https://hub.krate.tech/orgs/acme/apps/com.acme.expenses/current".to_string(),
+            ),
+        ] {
+            assert_eq!(bundle_address(&given), want, "{given}");
+        }
+        // Everything else is left as it was given: other hubs, other paths,
+        // the manifest beside a Player page, malformed shapes.
+        for same in [
+            format!("https://evil.example/run/{hash}"),
+            format!("https://hub.krate.tech/a/{hash}"),
+            format!("https://hub.krate.tech/run/{hash}/app.webmanifest"),
+            "https://hub.krate.tech/run/org/Acme/x".to_string(),
+            "https://hub.krate.tech/run/org/acme/../../x".to_string(),
+            "https://hub.krate.tech/run/v0123".to_string(),
+            "https://hub.krate.tech/run/".to_string(),
+        ] {
+            assert_eq!(bundle_address(&same), same.as_str(), "{same}");
+        }
+    }
+
+    #[test]
+    fn an_approval_the_rules_need_more_of_is_not_called_a_release() {
+        let digest = "ab".repeat(32);
+        let waiting = serde_json::json!({
+            "digest": digest,
+            "state": "waiting-for-approval",
+            "approval": { "words": "Needs one more approval from security" },
+        });
+        assert_eq!(
+            super::partial_approval(&waiting, &digest).as_deref(),
+            Some(
+                "approved. abababababab is not released yet: needs one more approval from \
+                 security. It is released once the organisation's approval rules are met."
+            )
+        );
+        let released = serde_json::json!({ "release": { "digest": digest, "url": "u" } });
+        assert_eq!(super::partial_approval(&released, &digest), None);
+    }
+
+    #[test]
     fn new_capabilities_are_the_asked_additions_against_a_release() {
         let update = serde_json::json!({
             "changes": {
@@ -2725,9 +2819,36 @@ mod tests {
             seg(&principal_of("bob@corp.com")).unwrap(),
             "email%3Abob%40corp.com"
         );
+        let live = "https://hub.krate.tech";
         assert_eq!(
-            join_url(&serde_json::json!({}), "acme", "abc+/="),
-            "https://krate.tech/join/?o=acme&c=abc%2B%2F%3D"
+            join_url(&serde_json::json!({}), "acme", "abc+/=", live).as_deref(),
+            Some("https://krate.tech/join/?o=acme&c=abc%2B%2F%3D")
+        );
+    }
+
+    /// K-1105: an invitation on a hub on this machine links to the site on
+    /// this machine the hub names, never to krate.tech, whose join page
+    /// talks to another hub; a hub that names no site gets no link.
+    #[test]
+    fn a_local_invitation_never_links_to_krate_tech() {
+        let local = "http://127.0.0.1:8787";
+        let named = serde_json::json!({ "join_url": "http://127.0.0.1:8000/join/?o=acme&c=x" });
+        assert_eq!(
+            join_url(&named, "acme", "x", local).as_deref(),
+            Some("http://127.0.0.1:8000/join/?o=acme&c=x")
+        );
+        let unset = serde_json::json!({ "join_url": "https://krate.tech/join/?o=acme&c=x" });
+        assert_eq!(join_url(&unset, "acme", "x", local), None);
+        assert_eq!(join_url(&serde_json::json!({}), "acme", "x", local), None);
+        // A company's own hub with a site of its own keeps its link; plain
+        // http off this machine is never offered.
+        let own = serde_json::json!({ "join_url": "https://krate.acme.com/join/?o=acme&c=x" });
+        assert!(join_url(&own, "acme", "x", "https://hub.acme.com").is_some());
+        let plain = serde_json::json!({ "join_url": "http://krate.acme.com/join/?o=acme&c=x" });
+        assert_eq!(join_url(&plain, "acme", "x", "https://hub.acme.com"), None);
+        assert_eq!(
+            join_url(&unset, "acme", "x", "https://hub.krate.tech").as_deref(),
+            Some("https://krate.tech/join/?o=acme&c=x")
         );
     }
 

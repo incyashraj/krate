@@ -58,6 +58,9 @@ export function transpileComponent(component) {
 }
 
 const packKey = (hash) => `web/${WEB_PACK_TAG}/${hash}`;
+/// Where the tab Player's pack for `hash` is kept in R2, for removing it
+/// with its app (account-delete.js).
+export const webPackKey = packKey;
 
 /// Make the web pack for `hash` if it does not exist yet. `judgedComponent`
 /// is the validator's: the component exactly as judged, or the refusal.
@@ -101,7 +104,9 @@ export const ISOLATED = {
   "cross-origin-resource-policy": "same-origin",
   "content-security-policy":
     "default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; worker-src 'self' blob:; " +
-    "connect-src *; img-src 'self' data: blob:; style-src 'self'; font-src 'self'; " +
+    // ws: and wss: named: a bare * has not always covered them, and the
+    // team data's live socket (org-data-live.js) is one.
+    "connect-src * ws: wss:; img-src 'self' data: blob:; style-src 'self'; font-src 'self'; " +
     "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
@@ -115,6 +120,7 @@ const TYPES = {
   woff2: "font/woff2",
   png: "image/png",
   json: "application/json",
+  svg: "image/svg+xml",
 };
 
 /// The files the Player page is made of, by name. Anything else under
@@ -127,12 +133,40 @@ const PLAYER_FILES = new Set([
   "hosts.js",
   "bridge.js",
   "ring.js",
+  // Sound (K-1134): the page's and worker's half, and the audio thread.
+  "audio.js",
+  "audio-worklet.js",
+  "org-data.js",
+  "org-device.js",
+  // An app's database (K-1149): the loader, and SQLite with the desktop's
+  // rules, fetched only by an app that imports store.sql.
+  "sqldb.js",
+  "sql.wasm",
+  // An app's shared store and its secrets (IC-974): the page keeps both.
+  "shared-store.js",
+  "secret-store.js",
+  // The device's senses (IC-974): the page's half, and the service worker
+  // a notification is shown through (its scope, /player/notify/, holds no
+  // page, and it has no fetch handler).
+  "senses.js",
+  "notify-sw.js",
+  // A .krate file opened in the tab (/run/file): the transpiler the hub
+  // makes each release's web pack with, run in the page instead, so the file
+  // never leaves the browser; and the service worker that takes a file
+  // shared to the installed Player (Android's share sheet) before it can
+  // reach the network.
+  "transpiler.wasm",
+  "file-sw.js",
   "krate_web.js",
   "krate_web_bg.wasm",
   "validator.wasm",
   "geist-var-latin.woff2",
   "krate-mark-3d-96.png",
   "krate-favicon.png",
+  "krate-app-icon.png",
+  // The link card a chat shows for an app with no picture of its own, and
+  // for a team's private app (receive.js).
+  "krate-card.png",
 ]);
 
 async function asset(env, url, name) {
@@ -146,15 +180,144 @@ async function asset(env, url, name) {
       "content-type": TYPES[ext] || "application/octet-stream",
       "cache-control": name === "run.html" ? "no-cache" : "public, max-age=300",
       ...ISOLATED,
+      // The link card is fetched by chat apps from anywhere, not by this page.
+      ...(name === "krate-card.png" ? { "cross-origin-resource-policy": "cross-origin" } : {}),
+      // The file page's service worker answers for /run/file and nothing else.
+      ...(name === "file-sw.js" ? { "service-worker-allowed": FILE_PAGE } : {}),
     },
   });
 }
 
-/// GET /run/<hash>: the Player page for one app. The page itself decides
-/// nothing about the app until it has fetched and judged it.
+/// The Player's addresses: one release (`/run/<hash>`), or an
+/// organisation's app as it is now (`/run/org/<slug>/<app-id>`, which the
+/// page resolves to the current release with the person's session -- the
+/// address a phone keeps on its home screen, so an update never breaks it),
+/// or a public app as it is now (`/run/v<line>`, the app's own link,
+/// IC-976: what a home screen keeps for it, so an update reaches it too),
+/// each with its web app manifest and icon; or `/run/file`, a .krate file the
+/// person has, opened in the page without being sent anywhere. Neither the
+/// line nor `file` is a group of its own, so the groups others read keep
+/// their numbers.
+export const RUN_PATH = /^\/run\/(?:([0-9a-f]{64})|org\/([a-z][a-z0-9-]{1,38})\/([a-z0-9][a-z0-9._-]{0,127})|v[0-9a-f]{11}|file)(?:\/(app\.webmanifest|icon\.svg))?\/?$/;
+
+/// The Player's page for a .krate file the person has.
+export const FILE_PAGE = "/run/file";
+
+/// What a home screen calls an app: the name the page judged, trimmed, with
+/// nothing that is not printable.
+function appName(raw) {
+  const name = String(raw || "").replace(/[\u0000-\u001f\u007f-\u009f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 45);
+  return name || "Krate app";
+}
+
+/// The icon's colour: one of the site's own, chosen by the address, so each
+/// app keeps its colour and two apps rarely share one.
+const ICON_COLOURS = ["#3d6df0", "#22a35a", "#b7791f", "#7c4dff", "#e5484d", "#0f9d9a", "#d6409f", "#52525b"];
+function colourOf(text) {
+  let h = 5381;
+  for (const c of text) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return ICON_COLOURS[h % ICON_COLOURS.length];
+}
+
+/// The letter on the icon: the name's first letter or digit.
+function initialOf(name) {
+  const m = /[\p{L}\p{N}]/u.exec(name);
+  return m ? m[0].toLocaleUpperCase() : "K";
+}
+
+const escapeXml = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
+
+/// GET /run/<...>/app.webmanifest?name=<name>: what lets a phone (or a
+/// computer's browser) add the app to its home screen as itself -- its name,
+/// its icon, opening on its own without the browser's bar.
+function manifestFor(base, name) {
+  const body = {
+    id: base,
+    name,
+    short_name: name.length > 12 ? name.split(" ")[0].slice(0, 12) : name,
+    description: `${name}, a Krate app`,
+    start_url: base,
+    // The whole Player, so the address a release opens from is inside it too.
+    scope: "/run/",
+    display: "standalone",
+    background_color: "#fbfbfd",
+    theme_color: "#fbfbfd",
+    icons: [
+      { src: `${base}/icon.svg?name=${encodeURIComponent(name)}`, sizes: "any", type: "image/svg+xml", purpose: "any" },
+      { src: "/player/krate-app-icon.png", sizes: "1024x1024", type: "image/png", purpose: "any" },
+    ],
+  };
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/manifest+json; charset=utf-8", "cache-control": "public, max-age=300", ...ISOLATED },
+  });
+}
+
+/// GET /run/file/app.webmanifest: the Player as an app that opens .krate
+/// files. Installed (Chromium on a computer), the computer opens a .krate
+/// with it (file_handlers, read by the page's launchQueue); on Android, a
+/// .krate shared from any app comes to it (share_target, which the page's
+/// service worker, file-sw.js, takes before it can reach the network).
+/// Browsers without either ignore them, and the page's own picker is the
+/// way in.
+function fileManifest() {
+  const body = {
+    id: FILE_PAGE,
+    name: "Krate",
+    short_name: "Krate",
+    description: "Open .krate apps in this browser. The file is not uploaded.",
+    start_url: FILE_PAGE,
+    scope: FILE_PAGE,
+    display: "standalone",
+    background_color: "#fbfbfd",
+    theme_color: "#fbfbfd",
+    icons: [{ src: "/player/krate-app-icon.png", sizes: "1024x1024", type: "image/png", purpose: "any" }],
+    file_handlers: [{ action: FILE_PAGE, accept: { "application/x-krate": [".krate"] } }],
+    // Each file in its own window, so an app already open keeps running.
+    launch_handler: { client_mode: "navigate-new" },
+    share_target: {
+      action: FILE_PAGE,
+      method: "POST",
+      enctype: "multipart/form-data",
+      // A chat app hands a .krate over as whatever type it guessed.
+      params: { files: [{ name: "file", accept: [".krate", "application/x-krate", "application/octet-stream", "application/zip"] }] },
+    },
+  };
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/manifest+json; charset=utf-8", "cache-control": "public, max-age=300", ...ISOLATED },
+  });
+}
+
+/// POST /run/file: a share that reached the hub instead of the page's
+/// service worker (one not installed yet, or cleared). The file is not read,
+/// kept or answered with: the body is dropped unread and the person is sent
+/// to the page, which asks them to choose the file there.
+export async function fileShareFallback(request) {
+  try { if (request.body && request.body.cancel) await request.body.cancel(); } catch (_) {}
+  return new Response(null, { status: 303, headers: { location: `${FILE_PAGE}?share=lost`, "cache-control": "no-store" } });
+}
+
+/// GET /run/<...>/icon.svg?name=<name>: the app's initial on its colour.
+function iconFor(base, name) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="${colourOf(base)}"/>` +
+    `<text x="256" y="256" dy=".35em" text-anchor="middle" font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="280" font-weight="600" fill="#fff">${escapeXml(initialOf(name))}</text></svg>`;
+  return new Response(svg, {
+    headers: { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "public, max-age=86400", ...ISOLATED },
+  });
+}
+
+/// GET /run/<hash> or /run/org/<slug>/<app-id>: the Player page for one
+/// app. The page itself decides nothing about the app until it has fetched
+/// and judged it.
 export async function playerPage(request, url, env) {
-  const m = /^\/run\/([0-9a-f]{64})\/?$/.exec(url.pathname);
+  const m = RUN_PATH.exec(url.pathname);
   if (!m) return null;
+  if (!m[1] && !m[2] && url.pathname.startsWith(FILE_PAGE)) {
+    if (m[4] === "app.webmanifest") return fileManifest();
+    if (m[4] === "icon.svg") return iconFor(FILE_PAGE, "Krate");
+  }
+  const base = m[1] ? `/run/${m[1]}` : m[2] ? `/run/org/${m[2]}/${m[3]}` : url.pathname.slice(0, "/run/v".length + 11);
+  if (m[4] === "app.webmanifest") return manifestFor(base, appName(url.searchParams.get("name")));
+  if (m[4] === "icon.svg") return iconFor(base, appName(url.searchParams.get("name")));
   const page = await asset(env, url, "run.html");
   if (page) return page;
   return new Response("The Player is not installed on this hub yet: run scripts/build-web-player.sh before deploying.", {
@@ -191,7 +354,7 @@ export async function validatorFile(request, url, env) {
 
 /// GET /a/<hash>/web. `access(object)` applies /a/<hash>'s own checks and
 /// answers null (go ahead) or the refusal Response.
-export async function webPackRoute(env, hash, { lookup, access, judgedComponent }) {
+export async function webPackRoute(env, hash, { lookup, access, judgedComponent, storeTag }) {
   const found = await lookup(hash);
   if (found.response) return found.response;
   const { object, privateOrg } = found;
@@ -203,7 +366,7 @@ export async function webPackRoute(env, hash, { lookup, access, judgedComponent 
   const cache = privateOrg ? noStore : { "cache-control": "public, max-age=300" };
   if (object.size > MAX_PACK_SOURCE_BYTES) {
     try { if (object.body && object.body.cancel) await object.body.cancel(); } catch (_) {}
-    return webJson({ error: "no-tab", message: "This app is too big to open in a tab. Open it in Krate on your computer." }, 422, cache);
+    return webJson({ error: "no-tab", message: "This app is too big to open in a tab. It opens in Krate on a computer." }, 422, cache);
   }
   const bundle = new Uint8Array(await object.arrayBuffer());
   const pack = await ensureWebPack(env, hash, bundle, judgedComponent);
@@ -214,12 +377,17 @@ export async function webPackRoute(env, hash, { lookup, access, judgedComponent 
   new DataView(body.buffer).setUint32(0, bundle.length, true);
   body.set(bundle, 4);
   body.set(pack.bytes, 4 + bundle.length);
+  // Whose app this is, as the hub knows it from the publisher's sign-in: the
+  // Player keys the app's storage by it, so another publisher declaring the
+  // same app id never reaches this one's data (security review, 2026-11-03).
+  const tag = storeTag ? await storeTag().catch(() => null) : null;
   return new Response(body, {
     headers: {
       "content-type": "application/octet-stream",
       "content-length": String(body.length),
       "cross-origin-resource-policy": "same-origin",
       "x-krate-web-pack": WEB_PACK_TAG,
+      ...(tag ? { "x-krate-store": tag } : {}),
       ...cache,
     },
   });
