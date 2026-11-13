@@ -13,6 +13,8 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 ## [Unreleased]
 
+### Fixed
+- The CLI doctor integration test now uses an isolated home and PATH, so it does not launch locally installed AI agents or depend on their presence.
 Changes merged since 0.5.5-rc9. Contributors: add a line here with your change.
 
 ### Fixed
