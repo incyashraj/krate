@@ -151,7 +151,7 @@ fn open_connection(image: &[u8], dirty: Arc<AtomicBool>) -> Result<Connection, S
     // one (no leading "/", which would make it shared): only then does
     // sqlite3_serialize copy the bytes directly, rather than through a
     // PRAGMA the authorizer below refuses.
-    let connection = Connection::open_with_flags(
+    let mut connection = Connection::open_with_flags(
         "file:app.db?vfs=memdb",
         OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
@@ -187,12 +187,15 @@ fn open_connection(image: &[u8], dirty: Arc<AtomicBool>) -> Result<Connection, S
             .query_row("SELECT count(*) FROM sqlite_schema", [], |_| Ok(()))
             .map_err(|e| format!("the saved database could not be read ({e})"))?;
     }
-    krate_appsql::prepare_connection(&connection, "").map_err(|e| format!("{e:?}"))?;
+    krate_appsql::prepare_connection(&mut connection, "").map_err(|e| format!("{e:?}"))?;
     // Every committed write, DDL included, marks the database for saving.
-    connection.commit_hook(Some(move || {
-        dirty.store(true, Ordering::Relaxed);
-        false
-    }));
+    // Without the hook nothing would ever be saved, so a failure is an error.
+    connection
+        .commit_hook(Some(move || {
+            dirty.store(true, Ordering::Relaxed);
+            false
+        }))
+        .map_err(|e| format!("the database cannot record its writes ({e})"))?;
     Ok(connection)
 }
 

@@ -123,9 +123,9 @@ fn database(dir: &Path) -> PathBuf {
 /// The app's own connection, as sql_host opens it, with its tables made
 /// the way the app makes them at start.
 fn app(dir: &Path) -> Connection {
-    let connection = Connection::open(database(dir)).unwrap();
+    let mut connection = Connection::open(database(dir)).unwrap();
     krate_appsql::prepare_connection(
-        &connection,
+        &mut connection,
         "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;",
     )
     .unwrap();
