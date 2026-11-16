@@ -762,8 +762,8 @@ impl krate_orgaccess::Device for Phone {
     fn home(&self) -> PathBuf {
         self.private.clone()
     }
-    fn machine_key(&self) -> Vec<u8> {
-        self.machine_key.clone()
+    fn machine_key(&self) -> Result<Vec<u8>, String> {
+        Ok(self.machine_key.clone())
     }
     fn signed_in(&self) -> Option<krate_orgaccess::SignedIn> {
         self.signed_in.clone()

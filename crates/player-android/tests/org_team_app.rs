@@ -101,8 +101,8 @@ impl krate_orgaccess::Device for Desk {
     fn home(&self) -> PathBuf {
         self.home.clone()
     }
-    fn machine_key(&self) -> Vec<u8> {
-        b"alice's computer".repeat(2)
+    fn machine_key(&self) -> Result<Vec<u8>, String> {
+        Ok(b"alice's computer".repeat(2))
     }
     fn signed_in(&self) -> Option<krate_orgaccess::SignedIn> {
         Some(krate_orgaccess::SignedIn {

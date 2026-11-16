@@ -246,11 +246,13 @@ impl<'a> Phase2Host<'a> {
         mut self,
         path: Option<PathBuf>,
         app_id: &str,
-        machine_key: &[u8],
+        machine_key: Result<&[u8], &str>,
         granted: bool,
     ) -> Self {
-        self.secrets = path
-            .map(|path| crate::secret_host::AppSecrets::open(path, app_id, machine_key, granted));
+        self.secrets = path.map(|path| match machine_key {
+            Ok(key) => crate::secret_host::AppSecrets::open(path, app_id, key, granted),
+            Err(why) => crate::secret_host::AppSecrets::locked(path, why, granted),
+        });
         self
     }
 

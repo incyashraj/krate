@@ -225,8 +225,10 @@ pub struct Config {
     /// terms as the key-value store.
     pub app_database_path: Option<PathBuf>,
     /// Where this app's secrets live, and the machine key they are encrypted
-    /// with. The key is the runtime's, never the app's.
-    pub app_secrets: Option<(PathBuf, String, Vec<u8>)>,
+    /// with. The key is the runtime's, never the app's. `Err` is why the key
+    /// could not be had (a locked keychain): every secret call then answers
+    /// with those words and nothing is written (IC-038).
+    pub app_secrets: Option<(PathBuf, String, std::result::Result<Vec<u8>, String>)>,
     /// Where this app's shared-store mirror lives, and the hub it syncs
     /// against, on the same terms as the key-value store.
     pub app_shared: Option<(PathBuf, String)>,
@@ -1984,8 +1986,8 @@ impl HostState {
                 config
                     .app_secrets
                     .as_ref()
-                    .map(|(_, _, key)| key.as_slice())
-                    .unwrap_or_default(),
+                    .map(|(_, _, key)| key.as_deref().map_err(String::as_str))
+                    .unwrap_or(Ok(&[])),
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "secret", None)
                         .expect("store.secret"),

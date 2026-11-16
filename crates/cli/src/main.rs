@@ -25,8 +25,10 @@ mod audit;
 mod authoring_context;
 mod fleet;
 mod github_auth;
+mod keychain;
 mod krate_mode;
 mod lineedit;
+mod machine_key;
 mod maker_key;
 mod mcp;
 mod org;
@@ -6086,7 +6088,7 @@ fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
     let account = Account::load(
         &device_dir,
         &id,
-        &machine_key(),
+        &machine_key().map_err(anyhow::Error::msg)?,
         &this_computers_name(identity.display_name()),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -6230,7 +6232,7 @@ fn sync_conflicts_command(
     use krate_runtime::account_sync_sql::{resolve_row_at, row_conflicts_at, sql_waits_at};
 
     let name = this_computers_name(identity.display_name());
-    let machine = machine_key();
+    let machine = machine_key().map_err(anyhow::Error::msg)?;
     let hub = shared_hub_url();
     let me = Me {
         device_dir,
@@ -7373,6 +7375,25 @@ fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u
         _ => {
             println!("Your publisher key: not made yet. It is made the first time you make");
             println!("or share an app, and every app you make is signed with it.");
+        }
+    }
+
+    // The key the passwords and tokens apps keep are sealed with (IC-038).
+    println!();
+    match machine_key::kept() {
+        Some(kept) => {
+            println!("Your secrets key: kept {}.", kept.describe());
+            println!("  The passwords and tokens apps keep here are sealed with it.");
+            if kept == machine_key::Kept::File {
+                println!("  An app's files copied alone cannot be read elsewhere; a copy of");
+                println!("  your whole home folder carries the key with it.");
+            } else {
+                println!("  A copied disk, backup or home folder does not carry it.");
+            }
+        }
+        None => {
+            println!("Your secrets key: not made yet. It is made the first time an app");
+            println!("keeps a password or token here.");
         }
     }
     Ok(0)
@@ -28111,7 +28132,7 @@ fn adopt_id_keyed_data_here(
     home: &Path,
     principal: &StoragePrincipal,
     maker: Option<&str>,
-    machine_key: &dyn Fn() -> Vec<u8>,
+    machine_key: &dyn Fn() -> std::result::Result<Vec<u8>, String>,
 ) -> std::result::Result<IdDataAdopted, String> {
     let (copy, app_id) = match principal {
         StoragePrincipal::Verified { publisher, app_id } if Some(publisher.as_str()) == maker => {
@@ -28178,7 +28199,7 @@ fn adopt_id_keyed_data_here(
             &new_base.with_extension("secrets"),
             &old.storage_key(),
             &principal.storage_key(),
-            &machine_key(),
+            &machine_key()?,
         )?;
     }
     if copy {
@@ -28386,13 +28407,22 @@ fn account_sync_context(
         }
         _ => krate_accountsync::publisher_label(None),
     };
+    // Without this computer's key the device's account key cannot be
+    // opened; the app runs, and only this run does not sync (IC-038).
+    let machine = match machine_key() {
+        Ok(key) => key,
+        Err(why) => {
+            eprintln!("krate: this run does not sync: {why}");
+            return None;
+        }
+    };
     Some(krate_runtime::account_sync_host::AccountSyncContext {
         hub: shared_hub_url(),
         token: identity.token.clone(),
         enabled: krate_runtime::account_sync_host::sync_wanted(store, &device_dir),
         device_dir,
         device_name: this_computers_name(identity.display_name()),
-        machine_key: machine_key(),
+        machine_key: machine,
         app_id: app_id.to_string(),
         publisher,
         background: true,
@@ -28494,59 +28524,19 @@ fn org_clock_skew_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// This computer's key, generated once and kept private to the user.
+/// This computer's key, made once and kept by the system's own keeper where
+/// there is one (`machine_key.rs`, IC-038).
 ///
 /// Secrets are encrypted with a key derived from this, so copying an app's
 /// secret file to another machine does not carry usable secrets with it. It
 /// never reaches an app: the runtime uses it to derive a per-app key and the
-/// app only ever sees plaintext it already stored.
+/// app only ever sees plaintext it already stored. It also protects this
+/// computer's organisation device key at rest (F-316).
 ///
-/// The key is 32 bytes from the operating system's own secure generator
-/// (getrandom: the kernel on Linux and macOS, BCryptGenRandom on Windows).
-/// It also protects this computer's organisation device key at rest (F-316),
-/// so it must never be guessable. Windows used to have no source here and
-/// fell back to a hash of the home path, the time and the process id.
-///
-/// Only a system whose generator fails outright falls back to that derived
-/// value, and it says so on stderr: an app keeps working, and the person is
-/// told the protection is weaker on this computer.
-pub(crate) fn machine_key() -> Vec<u8> {
-    let path = krate_home().join("machine.key");
-    if let Ok(existing) = fs::read(&path) {
-        if existing.len() >= 32 {
-            return existing;
-        }
-    }
-    let mut key = vec![0u8; 32];
-    let sourced = getrandom::fill(&mut key).is_ok();
-    if !sourced {
-        eprintln!(
-            "warning: this computer's random number generator did not answer, so Krate's \
-             machine key is derived from this install instead; secrets kept by apps are \
-             less protected here"
-        );
-        let mut hasher = Sha256::new();
-        hasher.update(krate_home().to_string_lossy().as_bytes());
-        hasher.update(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos().to_le_bytes())
-                .unwrap_or([0; 16]),
-        );
-        hasher.update(std::process::id().to_le_bytes());
-        key.copy_from_slice(&hasher.finalize());
-    }
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if fs::write(&path, &key).is_ok() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-        }
-    }
-    key
+/// `Err` is words for the person (a locked keychain): never a second key,
+/// which would make everything sealed with the first unreadable.
+pub(crate) fn machine_key() -> std::result::Result<Vec<u8>, String> {
+    machine_key::get()
 }
 
 /// The person's home directory, on every system Krate runs on.
@@ -32479,7 +32469,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let signed = StoragePrincipal::Verified {
             publisher: MAKER.to_string(),
@@ -32536,7 +32526,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let theirs = StoragePrincipal::Verified {
             publisher: STRANGER.to_string(),
@@ -32567,7 +32557,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let signed = StoragePrincipal::Verified {
             publisher: MAKER.to_string(),
@@ -32646,7 +32636,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let alice = StoragePrincipal::HubOwned {
             tag: TAG.to_string(),

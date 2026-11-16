@@ -60,8 +60,10 @@ pub trait Device {
     /// private storage, which no other app reads, on a phone.
     fn home(&self) -> PathBuf;
     /// This device's machine key: it seals the organisation key at rest, so
-    /// a copied file does not carry it to another device.
-    fn machine_key(&self) -> Vec<u8>;
+    /// a copied file does not carry it to another device. `Err` is words for
+    /// the person when the key cannot be had (a locked keychain): never a
+    /// stand-in key, which would seal a second organisation key.
+    fn machine_key(&self) -> Result<Vec<u8>, String>;
     /// Who is signed in here, if anyone.
     fn signed_in(&self) -> Option<SignedIn>;
     /// The hub this device uses when neither a link nor an earlier open
@@ -825,7 +827,7 @@ pub fn org_device_key<D: Device + ?Sized>(device: &D) -> Result<krate_orgkeys::K
     const CONTEXT: &str = "krate org device key v1";
     let kind = device.kind();
     let path = org_device_key_path(device);
-    let machine = device.machine_key();
+    let machine = device.machine_key()?;
     if let Ok(text) = std::fs::read_to_string(&path) {
         let stored: Value = serde_json::from_str(&text).unwrap_or_default();
         if let Some(sealed) = stored["sealed"].as_str() {
@@ -1293,8 +1295,8 @@ mod tests {
         fn home(&self) -> PathBuf {
             std::env::temp_dir()
         }
-        fn machine_key(&self) -> Vec<u8> {
-            Vec::new()
+        fn machine_key(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
         }
         fn signed_in(&self) -> Option<SignedIn> {
             None

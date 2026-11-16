@@ -43,7 +43,7 @@ impl krate_orgaccess::Device for Computer {
     fn home(&self) -> PathBuf {
         crate::krate_home()
     }
-    fn machine_key(&self) -> Vec<u8> {
+    fn machine_key(&self) -> Result<Vec<u8>, String> {
         crate::machine_key()
     }
     fn signed_in(&self) -> Option<krate_orgaccess::SignedIn> {

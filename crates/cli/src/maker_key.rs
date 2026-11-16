@@ -33,7 +33,6 @@ use anyhow::{bail, Context, Result};
 use crate::krate_home;
 
 /// The keychain service the key is kept under on a Mac.
-#[cfg(target_os = "macos")]
 const KEYCHAIN_SERVICE: &str = "tech.krate.maker-key";
 
 /// Where the private half of the key is kept.
@@ -119,22 +118,7 @@ fn is_public_hex(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-// Read back only from the keychain, which only a Mac has.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn unhex(text: &str) -> Option<Vec<u8>> {
-    let text = text.trim();
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
-        .collect()
-}
+use crate::keychain::hex;
 
 fn from_pkcs8(document: &[u8]) -> Result<(krate_bundle::signing::SigningKey, String)> {
     let key = krate_bundle::signing::SigningKey::from_pkcs8(document)
@@ -291,136 +275,26 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
 
 /* ---- the keychain ------------------------------------------------------- */
 
-/// The keychain is used when this is a Mac and Krate's home is the
-/// account's own: the keychain belongs to the account, so a Krate home
-/// anywhere else (a test, a moved `HOME`) keeps its key in its own folder
-/// and never writes into the person's keychain.
+const KEYCHAIN_ITEM: crate::keychain::Item = crate::keychain::Item {
+    service: KEYCHAIN_SERVICE,
+    label: "Krate maker key",
+    comment: "Signs the apps you make with Krate. Removing it means Krate cannot sign \
+              updates to them.",
+    said: "your maker key",
+};
+
 fn keychain_usable() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        let Some(account_home) = account_home() else {
-            return false;
-        };
-        let Some(home) = crate::home_dir() else {
-            return false;
-        };
-        let same = match (account_home.canonicalize(), home.canonicalize()) {
-            (Ok(a), Ok(b)) => a == b,
-            _ => false,
-        };
-        same && Path::new("/usr/bin/security").exists()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        false
-    }
+    crate::keychain::usable()
 }
 
-/// The account's home as the system knows it, not as `HOME` says.
-#[cfg(target_os = "macos")]
-fn account_home() -> Option<PathBuf> {
-    use std::ffi::CStr;
-    // SAFETY: getpwuid_r writes into the buffers we own and hands back a
-    // pointer into them; we read pw_dir before they go out of scope.
-    unsafe {
-        let mut pwd: libc::passwd = std::mem::zeroed();
-        let mut buf = vec![0 as libc::c_char; 4096];
-        let mut result: *mut libc::passwd = std::ptr::null_mut();
-        let rc = libc::getpwuid_r(
-            libc::getuid(),
-            &mut pwd,
-            buf.as_mut_ptr(),
-            buf.len(),
-            &mut result,
-        );
-        if rc != 0 || result.is_null() || pwd.pw_dir.is_null() {
-            return None;
-        }
-        let dir = CStr::from_ptr(pwd.pw_dir).to_string_lossy().into_owned();
-        Some(PathBuf::from(dir))
-    }
-}
-
-/// The key's PKCS#8 document from the keychain: `Ok(None)` when there is no
-/// such item, an error when the keychain could not be asked (locked, or the
-/// person said no) -- the two must never be confused, or a locked keychain
-/// would make a second key.
+/// The key's PKCS#8 document from the keychain (see `keychain::read`).
 fn keychain_read() -> Result<Option<Vec<u8>>> {
-    #[cfg(target_os = "macos")]
-    {
-        if !keychain_usable() {
-            return Ok(None);
-        }
-        let out = std::process::Command::new("/usr/bin/security")
-            .args([
-                "find-generic-password",
-                "-s",
-                KEYCHAIN_SERVICE,
-                "-a",
-                "krate",
-                "-w",
-            ])
-            .output()
-            .context("could not ask the keychain for your maker key")?;
-        if out.status.success() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            return unhex(&text)
-                .map(Some)
-                .context("the maker key in your keychain is damaged");
-        }
-        // 44: errSecItemNotFound. Anything else is the keychain refusing.
-        if out.status.code() == Some(44) {
-            return Ok(None);
-        }
-        bail!(
-            "your keychain did not hand over your maker key ({}). Unlock it -- open \
-             Keychain Access, or run `security unlock-keychain` -- and try again.",
-            String::from_utf8_lossy(&out.stderr).trim()
-        )
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Ok(None)
-    }
+    crate::keychain::read(&KEYCHAIN_ITEM)
 }
 
-/// Put the key in the keychain. The secret goes in on `security -i`'s
-/// standard input, never on a command line another process could read.
-/// Never `-U`: an item already there is somebody's key, not ours to
-/// overwrite.
+/// Put the key in the keychain, never over an item already there.
 fn keychain_write(document: &[u8]) -> Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        use std::io::Write;
-        let mut child = std::process::Command::new("/usr/bin/security")
-            .arg("-i")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .context("could not reach the keychain")?;
-        let line = format!(
-            "add-generic-password -s {KEYCHAIN_SERVICE} -a krate -l \"Krate maker key\" \
-             -j \"Signs the apps you make with Krate. Removing it means Krate cannot \
-             sign updates to them.\" -w {}\n",
-            hex(document)
-        );
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(line.as_bytes())?;
-        }
-        let out = child.wait_with_output()?;
-        let said = String::from_utf8_lossy(&out.stderr);
-        if out.status.success() && !said.contains("rror") {
-            Ok(())
-        } else {
-            bail!("the keychain did not take the key: {}", said.trim())
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = document;
-        bail!("no keychain here")
-    }
+    crate::keychain::add(&KEYCHAIN_ITEM, document)
 }
 
 /* ---- signing ------------------------------------------------------------ */
@@ -586,10 +460,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hex_round_trips_and_refuses_what_is_not_hex() {
-        assert_eq!(unhex(&hex(&[0, 1, 254, 255])), Some(vec![0, 1, 254, 255]));
-        assert_eq!(unhex("abc"), None);
-        assert_eq!(unhex("zz"), None);
+    fn a_public_key_is_lower_case_hex_of_its_length() {
+        assert_eq!(
+            crate::keychain::unhex(&hex(&[0, 1, 254, 255])),
+            Some(vec![0, 1, 254, 255])
+        );
         assert!(is_public_hex(&"a".repeat(64)));
         assert!(!is_public_hex(&"A".repeat(64)));
         assert!(!is_public_hex("abcd"));
