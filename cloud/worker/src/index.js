@@ -41,7 +41,7 @@ import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
 import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
-import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements } from "./mail-announce.js";
+import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements, renderAnnouncement } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
@@ -630,10 +630,13 @@ export default {
         return cors(await githubMirror(pathname, request));
       }
       if (request.method === "GET" && pathname === "/stats") {
-        return cors(await stats(env));
+        // Public, so kept five minutes: each answer lists KV twice (listBudget).
+        return cors(await cachedPublic(env, "/stats", 300, () => stats(env)));
       }
       if (request.method === "GET" && pathname === "/apps") {
-        return cors(await list(env, url));
+        // The gallery lists KV twice per answer and every visit asks, so the
+        // answer is kept two minutes per query (listBudget).
+        return cors(await cachedPublic(env, `/apps${url.search}`, 120, () => list(env, url)));
       }
       if (request.method === "GET" && pathname.startsWith("/meta/")) {
         // One app's public face, by hash or short alias -- name, size,
@@ -3169,6 +3172,8 @@ async function ensureUser(env, provider, stableId, profile) {
       await env.APPS.put(`welcome-due:${userId}`, String(record.created), {
         expirationTtl: 7 * 24 * 3600,
       });
+      // Tells the ten-minute run there is something to list (listBudget).
+      await env.APPS.put(WELCOME_WAITING, waitingStamp());
     }
   } else {
     record = JSON.parse((await env.APPS.get(`user:${userId}`)) || "{}");
@@ -3219,7 +3224,7 @@ const WELCOME_CRON = "*/10 * * * *";
 const WELCOME_AFTER_MS = 21 * 60 * 1000;
 const WELCOME_FROM = "Yashraj Pardeshi <yashraj@krate.tech>";
 const WELCOME_REPLY_TO = "incyashraj@gmail.com";
-const WELCOME_SUBJECT = "You\u2019re in. One question from me";
+const WELCOME_SUBJECT = "Thanks for joining Krate";
 
 /// The note, in the founder's words. `name` is the first word of the name
 /// the provider gave; none (an email sign-in knows no name) is "there".
@@ -3249,6 +3254,40 @@ krate.tech
 
 P.S. If you get stuck, here\u2019s a 3-minute demo of making an app from scratch: https://youtu.be/No0Cu8dAewg
 `;
+}
+
+/// The welcome's words for the designed mail: the note above without its own
+/// sign-off, which the shared template adds (the logo, "best, Yashraj", the
+/// unsubscribe line). The founder chose that look on 2026-11-16 over the
+/// bare plain-text note: "it has proper logo".
+// Written to one person, by name: the founder asked for it to feel like a
+// real note that wants an answer (2026-11-16), so it asks about them and
+// says what happens to what they write.
+const WELCOME_BODY = `Hi {first_name},
+
+I’m Yashraj. I build Krate, and I wanted to say thank you for joining. It really means a lot.
+
+Krate started from one simple wish: making an app and sharing it should feel as easy as sending a photo. You’re one of the early people trying it, so how it feels to you matters to me a great deal.
+
+What are you hoping to make? Just reply with a sentence, even a rough idea. I’ll read it and write back, and if I can help you build it, I will.
+
+And if something felt confusing or broke along the way, I’d really like to hear that too. You’re early, so what you tell me shapes Krate more than you’d think.
+
+If talking is easier, pick any time that suits you: https://calendly.com/incyashraj/30min
+
+There’s also a Discord where people share what they make and help each other: https://discord.gg/XaEegAxDCb
+
+If it helps, here’s a 3-minute video of an app made from scratch: https://youtu.be/No0Cu8dAewg
+
+Really glad you’re here.`;
+
+/// The welcome as sent: subject, text and HTML, in the same design as the
+/// founder's announcements, with this person's own unsubscribe link.
+function welcomeMail(user, link) {
+  return renderAnnouncement(
+    { subject: WELCOME_SUBJECT, body: WELCOME_BODY },
+    { firstName: (user.name || "").trim().split(/\s+/)[0] || "", link },
+  );
 }
 
 /// Gmail's compose window, from the founder's own account, with the
@@ -3333,7 +3372,7 @@ async function notifyFounderOfSignup(env, user) {
 async function sendWelcome(env, user) {
   const news = await newsMail(env, user.id, user, "the welcome");
   if (news.skip) return news.skip;
-  const text = welcomeText(user.name) + news.footer + "\n";
+  const { text, html } = welcomeMail(user, news.link);
   if (env.GMAIL_APP_PASSWORD) {
     const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
     return smtpSend(connect, {
@@ -3344,6 +3383,7 @@ async function sendWelcome(env, user) {
       cc: WELCOME_CC,
       subject: WELCOME_SUBJECT,
       text,
+      html,
       headers: news.headers,
     });
   }
@@ -3359,6 +3399,7 @@ async function sendWelcome(env, user) {
       reply_to: WELCOME_REPLY_TO,
       subject: WELCOME_SUBJECT,
       text,
+      html,
       headers: news.headers,
     }),
   });
@@ -3414,7 +3455,26 @@ async function smtpSend(connect, msg) {
     await step("DATA", 354, "data");
     // Base64 body lines of 76: the note has curly quotes, and 8-bit text
     // over SMTP is not something to count on.
-    const body = b64(msg.text).replace(/.{1,76}/g, (m) => `${m}\r\n`);
+    const lines76 = (t) => b64(t).replace(/.{1,76}/g, (m) => `${m}\r\n`);
+    // With HTML: both parts, multipart/alternative, plain text first so a
+    // client that cannot draw the design shows the words.
+    const boundary = `krate-${crypto.randomUUID()}`;
+    const body = msg.html
+      ? [
+          `--${boundary}`,
+          "Content-Type: text/plain; charset=UTF-8",
+          "Content-Transfer-Encoding: base64",
+          "",
+          lines76(msg.text),
+          `--${boundary}`,
+          "Content-Type: text/html; charset=UTF-8",
+          "Content-Transfer-Encoding: base64",
+          "",
+          lines76(msg.html),
+          `--${boundary}--`,
+          "",
+        ].join("\r\n")
+      : lines76(msg.text);
     const date = new Date().toUTCString().replace("GMT", "+0000");
     const id = `<${crypto.randomUUID()}@hub.krate.tech>`;
     const headers = [
@@ -3425,8 +3485,9 @@ async function smtpSend(connect, msg) {
       `Date: ${date}`,
       `Message-ID: ${id}`,
       "MIME-Version: 1.0",
-      "Content-Type: text/plain; charset=UTF-8",
-      "Content-Transfer-Encoding: base64",
+      ...(msg.html
+        ? [`Content-Type: multipart/alternative; boundary="${boundary}"`]
+        : ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64"]),
       // The one-click unsubscribe pair on a non-essential mail (RFC 8058).
       ...Object.entries(msg.headers || {}).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, "")}`),
     ].filter(Boolean);
@@ -3449,16 +3510,90 @@ async function smtpSend(connect, msg) {
 // For scripts/send-welcome-test.mjs: the exact note, sent by hand.
 export { welcomeText, sendWelcome };
 
+// ------------------------------------------------------ the KV list budget
+//
+// The free plan allows about 1,000 KV list operations a day for the whole
+// account. On 2026-11-16 the hub had spent them by late morning: every list
+// after that failed, so welcomes stopped going out and the admin desk's lists
+// went blank until midnight UTC. Two ten-minute jobs alone listed 288 times a
+// day, almost always finding nothing.
+//
+// So a job lists only when something may be waiting: whatever queues work
+// writes a fresh "waiting" stamp, a run that leaves nothing behind records
+// the stamp it cleared as "swept", and a run lists only while the two differ.
+// A job that has never swept lists, which is how work queued before these
+// stamps existed still gets done.
+const WELCOME_WAITING = "list-waiting:welcome";
+const WELCOME_SWEPT = "list-swept:welcome";
+const BIG_WAITING = "list-waiting:bigup";
+const BIG_SWEPT = "list-swept:bigup";
+// KV list is eventually consistent (a key can take ~30 s to appear in a
+// listing), so a stamp younger than this is never recorded as swept: the
+// queue it marks may not have shown up yet, and the next run lists again.
+const LIST_LAG_MS = 120_000;
+
+/// A new waiting stamp: when, and a nonce so two stamps never match.
+function waitingStamp() {
+  return `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+/// The waiting stamp a run sweeps against, or null when nothing is waiting.
+async function listWorthIt(env, waitingKey, sweptKey) {
+  const waiting = (await env.APPS.get(waitingKey)) || "-";
+  return (await env.APPS.get(sweptKey)) === waiting ? null : waiting;
+}
+
+async function markSwept(env, sweptKey, stamp, startedMs) {
+  const at = Number(stamp.split("-")[0]) || 0;
+  if (at > startedMs - LIST_LAG_MS) return;
+  await env.APPS.put(sweptKey, stamp);
+}
+
+/// A public answer kept for a few minutes in this data centre's cache, so a
+/// page anyone (or any crawler) can load costs one KV listing per data centre
+/// per few minutes rather than one per visit (listBudget above). No cache
+/// (tests, workers.dev): it is simply made each time.
+async function cachedPublic(env, key, seconds, make) {
+  const cache = typeof caches !== "undefined" && caches.default ? caches.default : null;
+  if (!cache) return make();
+  const base = (env.PUBLIC_BASE || "https://hub.krate.tech").replace(/\/$/, "");
+  const cacheKey = new Request(`${base}/__kept${key}`);
+  const hit = await cache.match(cacheKey).catch(() => null);
+  // A copy, because the caller adds headers (cors) and a cached response's
+  // headers cannot be changed.
+  if (hit) return new Response(hit.body, hit);
+  const res = await make();
+  if (res.status === 200 || res.status === 404) {
+    const kept = new Response(res.clone().body, res);
+    kept.headers.set("cache-control", `public, max-age=${seconds}`);
+    await cache.put(cacheKey, kept).catch(() => {});
+  }
+  return res;
+}
+
 /// Send the welcomes that are due: each at most once (the account records
 /// that it was welcomed before the due mark is dropped), twenty a run.
 async function sendDueWelcomes(env, now = Date.now()) {
   if (!env.RESEND_API_KEY && !env.GMAIL_APP_PASSWORD) return { sent: 0 };
+  // A list only when a sign-up may have queued something since the last run
+  // that left nothing behind: listing every ten minutes regardless spent 144
+  // of the free plan's ~1,000 daily KV lists on an empty prefix (listBudget).
+  const stamp = await listWorthIt(env, WELCOME_WAITING, WELCOME_SWEPT);
+  if (stamp === null) return { sent: 0 };
+  const started = Date.now();
   const listed = await env.APPS.list({ prefix: "welcome-due:" });
   let sent = 0;
+  let left = 0;
   for (const { name: key } of listed.keys || []) {
-    if (sent >= 20) break;
+    if (sent >= 20) {
+      left++;
+      continue;
+    }
     const created = Number((await env.APPS.get(key)) || "0");
-    if (!created || now - created < WELCOME_AFTER_MS) continue;
+    if (!created || now - created < WELCOME_AFTER_MS) {
+      left++;
+      continue;
+    }
     const userId = key.slice("welcome-due:".length);
     const user = JSON.parse((await env.APPS.get(`user:${userId}`)) || "null");
     if (!user || user.welcomed || !user.email) {
@@ -3476,6 +3611,7 @@ async function sendDueWelcomes(env, now = Date.now()) {
     if (failed) {
       // Left due: the next run tries again, until the mark expires in a week.
       console.error(`the welcome to a new account did not go: ${failed}`);
+      left++;
       continue;
     }
     user.welcomed = now;
@@ -3483,6 +3619,7 @@ async function sendDueWelcomes(env, now = Date.now()) {
     await env.APPS.delete(key);
     sent++;
   }
+  if (!left && listed.list_complete !== false) await markSwept(env, WELCOME_SWEPT, stamp, started);
   return { sent };
 }
 
@@ -4597,6 +4734,8 @@ async function bigFinish(request, env, id) {
   record.status = "judging";
   record.finished = Math.floor(Date.now() / 1000);
   await writeBigRecord(env, record);
+  // Tells the ten-minute run there is a judging to follow up (listBudget).
+  await env.APPS.put(BIG_WAITING, waitingStamp());
   await askBuilderToJudge(env, record);
   return json(bigStatus(record, env), 202);
 }
@@ -4891,6 +5030,10 @@ async function fetchAttachment(hash, kind, env) {
 /// minutes, and give up on anything judging for a day.
 async function retryBigJudging(env) {
   if (!bigOn(env)) return;
+  // Only while a judging may be outstanding (listBudget).
+  const stamp = await listWorthIt(env, BIG_WAITING, BIG_SWEPT);
+  if (stamp === null) return;
+  const started = Date.now();
   let listing;
   try {
     listing = await env.APPS.list({ prefix: "bigup:" });
@@ -4898,6 +5041,7 @@ async function retryBigJudging(env) {
     return;
   }
   const now = Math.floor(Date.now() / 1000);
+  let stillJudging = 0;
   for (const key of listing.keys || []) {
     const record = await readBigRecord(env, key.name.slice("bigup:".length));
     if (!record || record.status !== "judging") continue;
@@ -4909,10 +5053,12 @@ async function retryBigJudging(env) {
       record.status = "refused";
       record.problem = "the build service did not judge it within a day -- publish it again";
       await writeBigRecord(env, record);
-    } else if (waited > 10 * 60) {
-      await askBuilderToJudge(env, record);
+      continue;
     }
+    stillJudging++;
+    if (waited > 10 * 60) await askBuilderToJudge(env, record);
   }
+  if (!stillJudging && listing.list_complete !== false) await markSwept(env, BIG_SWEPT, stamp, started);
 }
 
 // ------------------------------------------------------------------- helpers
@@ -5227,7 +5373,12 @@ async function developerRoute(request, url, login, env) {
   const wantsPage = classifyClient(request) !== "tool";
 
   if (parts.length === 0) {
-    const apps = await developerApps(env, login);
+    // Any name reaches here (the wildcard record) and each lists KV twice,
+    // so what a name has published is kept five minutes, made-up names
+    // included (listBudget).
+    const apps = await (
+      await cachedPublic(env, `/developer/${login}`, 300, async () => json(await developerApps(env, login)))
+    ).json();
     // A name nobody has published under is not a developer (K-856).
     //
     // The wildcard record means EVERY name reaches this worker, and this

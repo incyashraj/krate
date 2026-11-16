@@ -66,13 +66,13 @@ impl AppDatabase {
             if let Some(parent) = self.path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| SqlError::Io(e.to_string()))?;
             }
-            let connection =
+            let mut connection =
                 Connection::open(&self.path).map_err(|e| SqlError::Io(e.to_string()))?;
             // Sync (IC-981 S4) reads and writes the same file through a
             // connection of its own: the app's waits its turn for a moment
             // rather than failing with "database is locked".
             krate_appsql::prepare_connection(
-                &connection,
+                &mut connection,
                 "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;",
             )?;
             self.connection = Some(connection);

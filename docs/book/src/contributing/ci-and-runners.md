@@ -51,10 +51,11 @@ compatibility with older local runner installs.
 They still opt JavaScript actions into Node 24, so a local runner must be new
 enough to support that runtime. For the newer cache and artifact action
 families, use runner `2.327.1` or newer.
-The scheduled `Self-hosted Fuzz Nightly` workflow now keeps older queued runs
-when the runner is offline. Automatic schedule runs do not cancel each other
-anymore, while manual dispatch still cancels in-progress runs for the same
-branch.
+The scheduled `Fuzz Nightly` workflow runs on a GitHub-hosted Linux runner
+(it used a laptop runner until November 2026, which slept mid-fuzz). The
+corpus carries from night to night through the Actions cache. Automatic
+schedule runs do not cancel each other, while manual dispatch still cancels
+in-progress runs for the same branch.
 That local gate now also runs a short Phase 2 fuzz smoke over the first fuzz
 targets.
 The benchmark regression step is warning-only by default in this manual
