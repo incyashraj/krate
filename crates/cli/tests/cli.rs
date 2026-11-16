@@ -9587,6 +9587,111 @@ fn an_update_across_a_release_key_rotation_replaces_the_installed_app() {
     );
 }
 
+/// On Windows an installed app is in the Start menu as itself (IC-278,
+/// per-artifact identity): its own entry, carrying an AppUserModelID of its
+/// own lineage, that opens its own installed copy. Two apps with one name
+/// are two entries with two ids; a reinstall replaces its entry; uninstall
+/// removes the entry with the app and leaves the other alone.
+#[test]
+#[cfg(windows)]
+fn a_windows_install_is_in_the_start_menu_as_itself() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let pack = |id: &str| {
+        let manifest = dir.path().join(format!("{id}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{id}\"\nname = \"Notes\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{id}.krate"));
+        let out = krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        bundle
+    };
+    let run = |args: &[&std::ffi::OsStr]| {
+        let out = krate()
+            .args(args)
+            .arg("--prefix")
+            .arg(prefix.path())
+            .output()
+            .expect("krate");
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let menu = prefix.path().join("Start Menu/Programs/Krate Apps");
+    let entries = || -> Vec<(std::path::PathBuf, String, String)> {
+        let mut found: Vec<_> = std::fs::read_dir(&menu)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "lnk"))
+            .map(|p| {
+                let (id, args) = krate_adapter_windows::shortcut::read(&p).expect("read entry");
+                (p, id, args)
+            })
+            .collect();
+        found.sort();
+        found
+    };
+
+    let (a, b) = (pack("dev.krate.notes-a"), pack("dev.krate.notes-b"));
+    run(&["install".as_ref(), a.as_os_str()]);
+    run(&["install".as_ref(), b.as_os_str()]);
+    let two = entries();
+    assert_eq!(two.len(), 2, "two Notes, two entries: {two:?}");
+    assert_ne!(two[0].1, two[1].1, "and two ids");
+    for (entry, id, args) in &two {
+        assert!(id.starts_with("Krate.App."), "{entry:?}: {id}");
+        let payload = args
+            .split('"')
+            .find(|part| part.ends_with("app.krate"))
+            .unwrap_or_else(|| panic!("{entry:?} opens no installed app: {args}"));
+        assert!(
+            std::path::Path::new(payload).starts_with(prefix.path().join("Krate").join("apps")),
+            "{entry:?} opens the installed copy: {payload}"
+        );
+        assert!(std::path::Path::new(payload).is_file(), "{payload}");
+    }
+
+    run(&["install".as_ref(), a.as_os_str()]);
+    assert_eq!(entries(), two, "a reinstall replaces its own entry");
+
+    run(&["uninstall".as_ref(), "dev.krate.notes-a".as_ref()]);
+    let left = entries();
+    assert_eq!(left.len(), 1, "uninstall took its entry: {left:?}");
+    let apps = std::fs::read_dir(prefix.path().join("Krate").join("apps"))
+        .expect("apps")
+        .flatten()
+        .count();
+    assert_eq!(apps, 1, "and its folder, and nothing else");
+}
+
 #[test]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {

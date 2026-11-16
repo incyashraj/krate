@@ -62,8 +62,19 @@ tests() {
 
 fuzz_fresh() {
   since=$(python3 -c 'import datetime as d; print((d.datetime.now(d.timezone.utc)-d.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"))')
-  last=$(gh api "repos/incyashraj/krate/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success&created=%3E%3D${since}&per_page=100" \
-    --jq '[.workflow_runs[].created_at] | max // empty') || { echo "could not reach GitHub"; return 1; }
+  # The newest run whose "Fuzz nightly" JOB succeeded: a run that only
+  # seeded the corpus skips that job and still ends green (2026-11-16).
+  runs=$(gh api "repos/incyashraj/krate/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success&created=%3E%3D${since}&per_page=100" \
+    --jq '.workflow_runs | sort_by(.created_at) | reverse | .[] | "\(.id) \(.created_at)"') || { echo "could not reach GitHub"; return 1; }
+  last=""
+  while read -r id created; do
+    [ -n "$id" ] || continue
+    fuzzed=$(gh api "repos/incyashraj/krate/actions/runs/${id}/jobs" \
+      --jq '[.jobs[] | select(.name == "Fuzz nightly" and .conclusion == "success")] | length') || { echo "could not reach GitHub"; return 1; }
+    if [ "$fuzzed" -gt 0 ]; then last=$created; break; fi
+  done <<RUNS
+$runs
+RUNS
   [ -n "$last" ] || { echo "no successful fuzz nightly since $since"; return 1; }
   echo "last successful fuzz nightly: $last"
 }

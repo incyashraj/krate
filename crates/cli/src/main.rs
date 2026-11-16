@@ -19741,11 +19741,17 @@ fn engine_fingerprint() -> String {
 }
 
 /// Where installed apps live by default on this machine.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
     if let Some(prefix) = prefix {
         return Ok(prefix.to_path_buf());
     }
+    // Per user, beside every other program installed for one person, so
+    // no administrator is asked.
+    #[cfg(windows)]
+    return std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .context("no LOCALAPPDATA folder");
     // One expression, not two cfg blocks: written as two, the first
     // compiles as a statement that falls through and the function returns
     // (). Caught by compiling the Linux path on macOS before it reached CI.
@@ -19753,6 +19759,7 @@ fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
     let relative = "Applications";
     #[cfg(target_os = "linux")]
     let relative = ".local/share";
+    #[cfg(not(windows))]
     home_dir()
         .map(|home| home.join(relative))
         .context("no home directory")
@@ -19765,7 +19772,7 @@ fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
 /// beside them: a separate index is a second source of truth that goes
 /// stale the moment somebody moves a folder in Finder, and the payload is
 /// already there and already authoritative.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
     let mut found = Vec::new();
     // On Linux the installer writes only under krate/apps, so only that is
@@ -19773,6 +19780,8 @@ fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
     // app.krate is not Krate's to list, or to remove (IC-278).
     #[cfg(target_os = "linux")]
     let root = &root.join("krate/apps");
+    #[cfg(windows)]
+    let root = &root.join("Krate").join("apps");
     let Ok(entries) = fs::read_dir(root) else {
         return found;
     };
@@ -19781,7 +19790,7 @@ fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
         // The payload each platform's installer writes.
         #[cfg(target_os = "macos")]
         let payload = path.join("Contents/Resources/app.krate");
-        #[cfg(target_os = "linux")]
+        #[cfg(not(target_os = "macos"))]
         let payload = path.join("app.krate");
         if !payload.is_file() {
             continue;
@@ -19801,14 +19810,14 @@ fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
 
 /// `krate installed`: what is on this machine.
 fn list_installed(prefix: Option<&Path>) -> Result<u8> {
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
         let _ = prefix;
         println!("Installing apps is not supported on this system yet.");
         println!("Open a .krate directly instead -- that is the ordinary way to run one.");
         Ok(0)
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     {
         let root = install_root(prefix)?;
         let apps = installed_apps(&root);
@@ -19835,12 +19844,12 @@ fn uninstall_app(
     export_to: Option<&Path>,
     dry_run: bool,
 ) -> Result<u8> {
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
         let _ = (app_id, prefix, delete_data, export_to, dry_run);
         bail!("installing apps is not supported on this system, so there is nothing to uninstall")
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     {
         let root = install_root(prefix)?;
         let matches: Vec<_> = installed_apps(&root)
@@ -19925,6 +19934,14 @@ fn uninstall_app(
             if let Some(entry) = owned_desktop_entry(&root, path) {
                 let _ = fs::remove_file(entry);
             }
+            // The Start menu entry is named after the app's folder, in the
+            // folder only Krate writes to.
+            #[cfg(windows)]
+            if let Some(folder) = path.file_name() {
+                let mut entry = start_menu_dir(prefix)?.join(folder);
+                entry.as_mut_os_string().push(".lnk");
+                let _ = fs::remove_file(entry);
+            }
             fs::remove_dir_all(path).with_context(|| format!("removing {}", path.display()))?;
             println!("Removed {name} ({id}).");
         }
@@ -19982,13 +19999,13 @@ fn owned_desktop_entry(root: &Path, app: &Path) -> Option<PathBuf> {
 }
 
 /// The bundle an installed app runs, inside its installed object.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn installed_payload_path(installed: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
     {
         installed.join("Contents/Resources/app.krate")
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     {
         installed.join("app.krate")
     }
@@ -20066,7 +20083,7 @@ fn resolve_app_storage(app: &str, prefix: Option<&Path>) -> Result<(Manifest, St
     let bundle_path = if path.is_file() {
         path.to_path_buf()
     } else {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
         {
             let root = install_root(prefix)?;
             let found = installed_apps(&root)
@@ -20082,7 +20099,7 @@ fn resolve_app_storage(app: &str, prefix: Option<&Path>) -> Result<(Manifest, St
                 ),
             }
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         {
             let _ = prefix;
             bail!("{app} is not a .krate file, and installed apps are not supported on this system")
@@ -20466,7 +20483,7 @@ fn import_data(
 /// real installer keyed on lineage and the preview kept printing the
 /// display name alone, so the command that exists to say where a file
 /// will go said the wrong place. One function, both callers.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn install_directory_name(opened: &krate_bundle::OpenBundle) -> String {
     let manifest = opened.manifest();
     let principal = storage_principal(
@@ -20487,7 +20504,7 @@ fn install_directory_name(opened: &krate_bundle::OpenBundle) -> String {
     )
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 /// A short, stable tag for the app's lineage: its id, and its publisher
 /// when one is verified (IC-278).
 ///
@@ -20514,7 +20531,7 @@ fn install_lineage_tag(manifest: &Manifest, principal: Option<&StoragePrincipal>
     digest.iter().take(4).map(|b| format!("{b:02x}")).collect()
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 /// What a display name may contribute to a path: no separators, no dots
 /// that could make a hidden file or a traversal, nothing that needs
 /// quoting. The lineage tag carries the uniqueness, so this only has to
@@ -20565,7 +20582,7 @@ fn launcher_file_name(name: &str) -> String {
 /// new one is in place. One function for the Mac wrapper and the Linux
 /// payload, so the two cannot drift: Linux used to copy straight over the
 /// installed app, and an interrupted update left it half-written.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn publish_staged(staging: &Path, target: &Path, previous: &Path) -> Result<()> {
     // An install cut short between the two renames below -- power lost, the
     // terminal killed -- left the app only under the set-aside name, and
@@ -20883,6 +20900,120 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 
     println!("Installed {name}: it is in your app menu with its own name and icon.");
     Ok(0)
+}
+
+/// Where installed apps' Start menu entries go: a "Krate Apps" folder that
+/// only Krate writes to, so uninstall never touches an entry it did not make.
+/// Under the prefix when one is given, so a test never edits a real menu.
+#[cfg(windows)]
+fn start_menu_dir(prefix: Option<&Path>) -> Result<PathBuf> {
+    let programs = match prefix {
+        Some(prefix) => prefix.join("Start Menu").join("Programs"),
+        None => std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .context("no APPDATA folder")?
+            .join("Microsoft\\Windows\\Start Menu\\Programs"),
+    };
+    Ok(programs.join("Krate Apps"))
+}
+
+/// Windows install (IC-278, per-artifact identity): the app's own copy
+/// under %LOCALAPPDATA%\Krate\apps, and a Start menu entry carrying the
+/// app's AppUserModelID -- the id its window takes when it runs -- so the
+/// entry, the window and its notifications are one app to Windows, under
+/// the app's name and icon rather than Krate's.
+#[cfg(windows)]
+fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Result<u8> {
+    let opened = krate_bundle::open(bundle_path)
+        .with_context(|| format!("reading {}", bundle_path.display()))?;
+    let manifest = opened.manifest();
+    let name = manifest.app.name.trim().to_string();
+    if name.is_empty() {
+        bail!("this app has no name in its manifest, so it cannot be installed");
+    }
+    // Lineage, as on the other systems (K-292): two publishers' "Notes"
+    // are two folders and two entries.
+    let folder = install_directory_name(&opened);
+    let apps = install_root(prefix)?.join("Krate").join("apps");
+    let app_dir = apps.join(&folder);
+    let menu = start_menu_dir(prefix)?;
+    let shortcut = menu.join(format!("{folder}.lnk"));
+    if dry_run {
+        println!("{}", shortcut.display());
+        return Ok(0);
+    }
+    fs::create_dir_all(&apps).with_context(|| format!("creating {}", apps.display()))?;
+    // Built beside and swapped in, as on the other systems: the installed
+    // app is never half-written.
+    let staging = apps.join(format!(".{folder}.installing"));
+    let _ = fs::remove_dir_all(&staging);
+    let _cleanup = RemoveOnDrop(staging.clone());
+    fs::create_dir_all(&staging)?;
+    fs::copy(bundle_path, staging.join("app.krate"))
+        .with_context(|| format!("copying the app into {}", staging.display()))?;
+    let have_icon = opened
+        .assets_path()
+        .map(|assets| assets.join("icon.png"))
+        .and_then(|icon| fs::read(icon).ok())
+        .and_then(|png| ico_from_png(&png))
+        .is_some_and(|ico| fs::write(staging.join("app.ico"), ico).is_ok());
+    publish_staged(
+        &staging,
+        &app_dir,
+        &apps.join(format!(".{folder}.replaced")),
+    )?;
+
+    // The opener, not krate.exe: it is built for the windows subsystem, so
+    // no console opens beside the app, and it says in a dialog when the
+    // app cannot open. krate.exe when the opener is not beside it.
+    let engine = current_engine_path()?;
+    let opener = engine.with_file_name("krate-open.exe");
+    let payload = format!("\"{}\"", app_dir.join("app.krate").display());
+    let (target, arguments) = if opener.is_file() {
+        (opener, payload)
+    } else {
+        (engine, format!("launch {payload}"))
+    };
+    fs::create_dir_all(&menu).with_context(|| format!("creating {}", menu.display()))?;
+    let icon = app_dir.join("app.ico");
+    let app_id =
+        krate_adapter_windows::toast::app_user_model_id(&principal_of(&opened).storage_key());
+    krate_adapter_windows::shortcut::write(&krate_adapter_windows::shortcut::Shortcut {
+        path: &shortcut,
+        target: &target,
+        arguments: &arguments,
+        description: "Made with Krate",
+        icon: have_icon.then_some(icon.as_path()),
+        app_id: &app_id,
+    })
+    .map_err(anyhow::Error::msg)?;
+    println!("Installed {name}: it is in your Start menu with its own name and icon.");
+    Ok(0)
+}
+
+/// A one-image `.ico` holding the PNG as it is, the form Windows has read
+/// since Vista. `None` for bytes that are not a PNG.
+#[cfg(any(windows, test))]
+fn ico_from_png(png: &[u8]) -> Option<Vec<u8>> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if png.len() < 24 || !png.starts_with(SIGNATURE) || &png[12..16] != b"IHDR" {
+        return None;
+    }
+    let side = |at: usize| {
+        let pixels = u32::from_be_bytes(png[at..at + 4].try_into().expect("4 bytes"));
+        // 0 means 256 or more: the entry's byte cannot say more.
+        u8::try_from(pixels).unwrap_or(0)
+    };
+    let size = u32::try_from(png.len()).ok()?;
+    let mut ico = Vec::with_capacity(png.len() + 22);
+    ico.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
+    ico.extend_from_slice(&[side(16), side(20), 0, 0]);
+    ico.extend_from_slice(&1u16.to_le_bytes());
+    ico.extend_from_slice(&32u16.to_le_bytes());
+    ico.extend_from_slice(&size.to_le_bytes());
+    ico.extend_from_slice(&22u32.to_le_bytes());
+    ico.extend_from_slice(png);
+    Some(ico)
 }
 
 /// The script a Linux menu entry runs: the engine `krate install` recorded,
@@ -21237,7 +21368,7 @@ fn krate_icon_png_source() -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn install_app(_bundle_path: &Path, _prefix: Option<&Path>, _dry_run: bool) -> Result<u8> {
     bail!("on Windows the installer sets up file associations; run the .krate directly")
 }
@@ -33352,7 +33483,7 @@ mod storage_identity_tests {
     /// installed object that collided, which is the shape that loses
     /// somebody an app they installed.
     #[test]
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     fn two_apps_with_one_name_do_not_share_an_installed_path() {
         let manifest = |id: &str, name: &str| {
             krate_manifest::Manifest::parse(&format!(
@@ -33625,7 +33756,39 @@ mod check_pass_tests {
     }
 }
 
-#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+#[cfg(test)]
+mod ico_tests {
+    /// The Start menu icon is the app's own PNG inside a one-entry .ico
+    /// that points at it; anything that is not a PNG makes no icon.
+    #[test]
+    fn a_png_becomes_a_one_image_ico_and_nothing_else_does() {
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 48, 300);
+            encoder.set_color(png::ColorType::Rgba);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&vec![0u8; 48 * 300 * 4]).unwrap();
+        }
+        let ico = super::ico_from_png(&png).expect("an icon");
+        assert_eq!(
+            &ico[..6],
+            &[0, 0, 1, 0, 1, 0],
+            "an icon file with one image"
+        );
+        assert_eq!(ico[6], 48, "its width");
+        assert_eq!(ico[7], 0, "a side of 256 or more reads 0");
+        assert_eq!(
+            u32::from_le_bytes(ico[14..18].try_into().unwrap()) as usize,
+            png.len()
+        );
+        assert_eq!(u32::from_le_bytes(ico[18..22].try_into().unwrap()), 22);
+        assert_eq!(&ico[22..], &png[..], "the PNG as it was");
+        assert!(super::ico_from_png(b"GIF89a not a png at all").is_none());
+        assert!(super::ico_from_png(&png[..20]).is_none(), "a cut-short PNG");
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux", windows)))]
 mod publish_staged_tests {
     use super::publish_staged;
     use std::fs;
