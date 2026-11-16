@@ -3266,9 +3266,9 @@ I’m Yashraj. I build Krate, and I wanted to say thank you for joining. It real
 
 Krate started from one simple wish: making an app and sharing it should feel as easy as sending a photo. You’re one of the early people trying it, so how it feels to you matters to me a great deal.
 
-I’d love to know what you’re hoping to make. A game, a tool for your work, something for your family, anything at all. Write me a line about it and I’ll help you get there.
+What are you hoping to make? Just reply with a sentence, even a rough idea. I’ll read it and write back, and if I can help you build it, I will.
 
-And if anything confuses you or doesn’t work, please tell me. I read every message myself, and what people tell me usually becomes the next thing I fix.
+And if something felt confusing or broke along the way, I’d really like to hear that too. You’re early, so what you tell me shapes Krate more than you’d think.
 
 If talking is easier, pick any time that suits you: https://calendly.com/incyashraj/30min
 
