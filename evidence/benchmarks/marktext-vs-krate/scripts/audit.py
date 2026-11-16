@@ -157,6 +157,23 @@ def main() -> int:
     if rejected_rosetta:
         errors.append("resource run detected Rosetta translation")
 
+    # Correctness before performance (IC-822, tests 1744-1746): from the run
+    # the content leg arrived in, every app and workload must show the
+    # document's own lines on screen, and a scroll counts only when it moved
+    # the document (measure-scroll-leg.sh rejects one that did not).
+    content = read_tsv(raw / "content.tsv")
+    if not (raw / "content.tsv").exists():
+        if run_dir.resolve().name >= "20261116T":
+            errors.append("missing raw/content.tsv: nothing shows the document was on screen (1745)")
+        else:
+            warnings.append("run predates the content leg: nothing shows the document was on screen")
+    else:
+        for workload in ("5000", "50000"):
+            for app in ("krate", "marktext"):
+                if not any(r.get("app") == app and r.get("workload_content_lines") == workload
+                           and r.get("status") == "accepted" and r.get("content_on_screen") == "yes" for r in content):
+                    errors.append(f"{app}/{workload}: the document was not read off the screen, so its numbers cannot be used (1745)")
+
     scroll = read_tsv(raw / "scroll.tsv")
     for workload in ("5000", "50000"):
         for app in ("krate", "marktext"):
@@ -165,7 +182,7 @@ def main() -> int:
                 errors.append(f"no accepted controlled-scroll sample for {app}/{workload}")
 
     fixture_hashes: dict[str, set[str]] = {"5000": set(), "50000": set()}
-    for filename in ("startup.tsv", "resources.tsv", "scroll.tsv"):
+    for filename in ("content.tsv", "startup.tsv", "resources.tsv", "scroll.tsv"):
         for row in read_tsv(raw / filename):
             workload = row.get("workload_content_lines")
             digest = row.get("fixture_sha256")

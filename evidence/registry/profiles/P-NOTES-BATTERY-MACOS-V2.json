@@ -1,0 +1,109 @@
+{
+ "id": "P-NOTES-BATTERY-MACOS-V2",
+ "title": "The notes-app battery on macOS, version 2: the same measurements, gated on the document being on screen and the scroll moving it",
+ "claims": [
+  "C-NOTES-PERFORMANCE",
+  "C-NOTES-ENERGY"
+ ],
+ "frozen_at": "2026-11-16T15:45:08Z",
+ "supersedes": "P-NOTES-BATTERY-MACOS",
+ "note": [
+  "Frozen before any run against it, unlike version 1, which was written down after the 2026-08-16 run.",
+  "Adds the two correctness cells the comparison corpus requires (IC-822, tests 1744-1746, K-322):",
+  "content-readiness and input-integrity. The kit measures them with scripts/content_probe.swift, which",
+  "reads the document's own lines off each app's window with the system's text recognition. A pair that",
+  "fails either contributes no performance value: analyze.py leaves it out and audit.py fails the run."
+ ],
+ "cells": [
+  {
+   "name": "content-readiness",
+   "status": "required",
+   "claims": [
+    "C-NOTES-PERFORMANCE",
+    "C-NOTES-ENERGY"
+   ],
+   "unit": "yes or no, per app and workload",
+   "definition": "the benchmark document's own lines are read off the app's window after it opens, not only a window shown",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "input-integrity",
+   "status": "required",
+   "claims": [
+    "C-NOTES-PERFORMANCE",
+    "C-NOTES-ENERGY"
+   ],
+   "unit": "yes or no, per app and workload",
+   "definition": "the controlled scroll moved the document: the last line read on screen is further down after the scroll than before",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "app-file-size",
+   "status": "required",
+   "claims": [
+    "C-NOTES-PERFORMANCE"
+   ],
+   "unit": "bytes",
+   "definition": "the app file itself, not its installed footprint",
+   "fixture": "notes-replica",
+   "arch": "arm64"
+  },
+  {
+   "name": "memory-50k",
+   "status": "required",
+   "claims": [
+    "C-NOTES-PERFORMANCE"
+   ],
+   "unit": "bytes",
+   "definition": "resident memory with a 50,000-line document open, summed across processes",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "warm-start-50k",
+   "status": "required",
+   "claims": [
+    "C-NOTES-PERFORMANCE"
+   ],
+   "unit": "seconds",
+   "definition": "time from launch to a visible window, second and later launches, 50,000 lines",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "idle-cpu-50k",
+   "status": "required",
+   "claims": [
+    "C-NOTES-PERFORMANCE"
+   ],
+   "unit": "percent of a core",
+   "definition": "CPU with the document open and nothing happening, 50,000 lines",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "scroll-pacing",
+   "status": "required",
+   "claims": [
+    "C-NOTES-PERFORMANCE"
+   ],
+   "unit": "milliseconds per frame",
+   "definition": "p50 and p99 frame interval while scrolling; Krate only, no comparison instrument exists on macOS",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "energy-scroll-leg",
+   "status": "required",
+   "claims": [
+    "C-NOTES-ENERGY"
+   ],
+   "unit": "joules",
+   "definition": "energy drawn over the scroll leg, from the platform power meter",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  }
+ ]
+}

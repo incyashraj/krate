@@ -19,7 +19,8 @@
     "released_at": "2022-03-07T18:12:02Z",
     "support_status": "repository not archived; last push observed 2026-09-13",
     "verified_at": "2026-09-13",
-    "verified_from": "api.github.com/repos/marktext/marktext and /releases/tags/v0.17.1"
+    "verified_from": "api.github.com/repos/marktext/marktext and /releases/tags/v0.17.1",
+    "framework": "Electron"
    },
    "common_required_features": [
     {
@@ -88,13 +89,15 @@
     "memory footprint of the whole process tree",
     "controlled scrolling"
    ],
-   "profile": "P-NOTES-BATTERY-MACOS",
+   "profile": "P-NOTES-BATTERY-MACOS-V2",
    "required_correctness_cells": [
     "content-readiness",
     "input-integrity"
    ],
-   "permitted_wording": "workload-matched"
+   "permitted_wording": "workload-matched",
+   "historical_profile": "P-NOTES-BATTERY-MACOS",
+   "historical_note": "The published notes figures come from the 2026-08-16 run against version 1, which carried no correctness cells; they stay labelled historical until a run against version 2 passes its audit."
   }
  ],
- "seal": "f829680494a0578a66ced2d7a6a63d176e50e075bf7de5f2c70bf099fd78275c"
+ "seal": "58b8f9134c15b6db5c3e9689d5ac92275f55ca0f5bc23895f8e925258a4c71c2"
 }

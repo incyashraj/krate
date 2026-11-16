@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 load_config
 
-[[ -x "$ROOT/build/window-probe" && -x "$ROOT/build/scroll-driver" ]] || \
+[[ -x "$ROOT/build/window-probe" && -x "$ROOT/build/scroll-driver" && -x "$ROOT/build/content-probe" ]] || \
   die "run ./scripts/prepare.sh first"
 "$ROOT/scripts/verify-inputs.sh"
 
@@ -39,6 +39,8 @@ done
 
 for workload in 5000 50000; do
   for app in krate marktext; do
+    printf 'content workload=%s app=%s\n' "$workload" "$app"
+    "$ROOT/scripts/measure-content-leg.sh" "$run_dir" "$app" "$workload" || true
     printf 'resources workload=%s app=%s\n' "$workload" "$app"
     "$ROOT/scripts/measure-resources-leg.sh" "$run_dir" "$app" "$workload"
     printf 'scroll workload=%s app=%s\n' "$workload" "$app"

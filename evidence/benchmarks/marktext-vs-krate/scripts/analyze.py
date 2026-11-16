@@ -31,6 +31,21 @@ def fmt_number(value: float, suffix: str = "") -> str:
     return f"{value:,.2f}{suffix}"
 
 
+def shown(raw: Path):
+    """The (app, workload) pairs whose document was read off the screen, or
+    None for a run from before the content leg existed (IC-822, 1744-1745).
+    Correctness is decided before any performance value is used: a pair not
+    in this set contributes no number to the analysis."""
+    content = raw / "content.tsv"
+    if not content.exists():
+        return None
+    return {
+        (r["app"], r["workload_content_lines"])
+        for r in rows(content)
+        if r.get("status") == "accepted" and r.get("content_on_screen") == "yes"
+    }
+
+
 def render(run_dir: Path) -> str:
     """The analysis as text, from the raw files alone. Kept as a function
     so audit.py can regenerate it and compare (test 1810): an analysis.md
@@ -70,7 +85,21 @@ def render(run_dir: Path) -> str:
         out.append("Size measurements are incomplete.")
     out.append("")
 
-    startup_rows = [r for r in rows(raw / "startup.tsv") if r["status"] == "accepted" and r["window_ms"]]
+    on_screen = shown(raw)
+    counted = lambda r: on_screen is None or (r["app"], r["workload_content_lines"]) in on_screen  # noqa: E731
+    if on_screen is not None:
+        out.extend(["## Document on screen", "", "Read off each app's window before any timing is used (tests 1744-1746).", "",
+                    "| Workload | App | On screen | Lines read |", "|---:|---|---|---:|"])
+        for r in sorted(rows(raw / "content.tsv"), key=lambda r: (int(r["workload_content_lines"]), r["app"])):
+            out.append(f"| {int(r['workload_content_lines']):,} | {r['app']} | {r['content_on_screen']} | {r['lines_read']} |")
+        out.append("")
+        left_out = sorted({(r["app"], r["workload_content_lines"]) for r in rows(raw / "content.tsv")} - on_screen)
+        for app, workload in left_out:
+            out.append(f"- {app} / {int(workload):,} lines: the document was not on screen, so its numbers are left out.")
+        if left_out:
+            out.append("")
+
+    startup_rows = [r for r in rows(raw / "startup.tsv") if r["status"] == "accepted" and r["window_ms"] and counted(r)]
     groups: dict[tuple[str, str, str], list[float]] = defaultdict(list)
     for row in startup_rows:
         groups[(row["workload_content_lines"], row["mode"], row["app"])].append(float(row["window_ms"]))
@@ -92,7 +121,7 @@ def render(run_dir: Path) -> str:
             out.append(f"- {int(workload):,} lines, {mode}: median visible-window time is **{ratio:.2f}x lower** for Krate.")
     out.append("")
 
-    resource_rows = [r for r in rows(raw / "resources.tsv") if r["status"] == "accepted"]
+    resource_rows = [r for r in rows(raw / "resources.tsv") if r["status"] == "accepted" and counted(r)]
     out.extend(["## Settled resources", "", "| Workload | App | Processes | Footprint | Average CPU |", "|---:|---|---:|---:|---:|"])
     for row in sorted(resource_rows, key=lambda r: (int(r["workload_content_lines"]), r["app"])):
         mib = float(row["footprint_bytes"]) / 1024 / 1024
@@ -102,7 +131,7 @@ def render(run_dir: Path) -> str:
         )
     out.append("")
 
-    scroll_rows = [r for r in rows(raw / "scroll.tsv") if r["status"] == "accepted"]
+    scroll_rows = [r for r in rows(raw / "scroll.tsv") if r["status"] == "accepted" and counted(r)]
     out.extend(["## Controlled scrolling", ""])
     if scroll_rows:
         out.extend(["| Workload | App | Event rate | Average whole-tree CPU |", "|---:|---|---:|---:|"])
@@ -119,7 +148,7 @@ def render(run_dir: Path) -> str:
     else:
         out.append("Not measured. Do not make a power or battery-life claim from this run.")
 
-    rejected = [r for name in ("startup.tsv", "resources.tsv", "scroll.tsv") for r in rows(raw / name) if r.get("status") == "rejected"]
+    rejected = [r for name in ("content.tsv", "startup.tsv", "resources.tsv", "scroll.tsv") for r in rows(raw / name) if r.get("status") == "rejected"]
     out.extend(["", "## Rejected samples", ""])
     if rejected:
         for row in rejected:
@@ -166,6 +195,21 @@ def self_test() -> int:
         (run / "raw" / "startup.tsv").write_text("app\tworkload_content_lines\tmode\tstatus\twindow_ms\nkrate\t5000\twarm\taccepted\t200\n")
         if check(run) is None:
             failures.append("a raw file that changed after the analysis was written must fail the check")
+        # Correctness before performance (1744-1746): a pair whose document
+        # was never on screen contributes no timing, however fast it was.
+        (run / "raw" / "content.tsv").write_text(
+            "app\tworkload_content_lines\tcontent_on_screen\tlines_read\tstatus\treason\n"
+            "krate\t5000\tno\t0\trejected\tdocument_not_on_screen\n"
+        )
+        gated = render(run)
+        if "| 5,000 | warm | krate |" in gated or "left out" not in gated:
+            failures.append("a fast start whose document was not on screen must not enter the analysis")
+        (run / "raw" / "content.tsv").write_text(
+            "app\tworkload_content_lines\tcontent_on_screen\tlines_read\tstatus\treason\n"
+            "krate\t5000\tyes\t9\taccepted\t-\n"
+        )
+        if "| 5,000 | warm | krate |" not in render(run):
+            failures.append("a start whose document was on screen is analysed")
     if failures:
         print("analyze self-test FAILED:")
         for f in failures:

@@ -37,6 +37,12 @@ size of the shared Krate Studio/runtime installation.
 - A release Krate CLI/runtime.
 - Xcode Command Line Tools (`swiftc`) and Python 3.
 - Accessibility permission for Terminal only for the automated scroll test.
+- Screen Recording permission for Terminal, for the content check: before any
+  timing is used, `scripts/content_probe.swift` reads the document's own lines
+  off each app's window with the system's text recognition, and again before
+  and after the scroll. A pair whose document is not on screen, or whose
+  scroll did not move it, contributes no number (profile
+  `P-NOTES-BATTERY-MACOS-V2`, IC-822 tests 1744-1746).
 - `sudo` only for the optional energy run (`powermetrics`).
 
 Copy `config.example.env` to `config.env` and set the three local paths. Do not
