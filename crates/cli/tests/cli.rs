@@ -9545,12 +9545,52 @@ fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
                 app.display()
             );
             shown.push(read("CFBundleName"));
+            // Handler coexistence (IC-396): an installed app opens itself
+            // and claims no file type, so `.krate` files keep opening in the
+            // Krate Player however many apps are installed.
+            let plist_text = std::fs::read_to_string(&plist).expect("Info.plist");
+            for key in [
+                "CFBundleDocumentTypes",
+                "UTExportedTypeDeclarations",
+                "CFBundleURLTypes",
+            ] {
+                assert!(
+                    !plist_text.contains(key),
+                    "{} declares {key}",
+                    app.display()
+                );
+            }
         }
         for name in names {
             assert!(
                 shown.iter().any(|s| s == name.trim()),
                 "{name:?} must read back as itself: {shown:?}"
             );
+        }
+    }
+
+    // On Linux each menu entry launches its own app and claims no file
+    // type, so the Player stays the handler for `.krate` (IC-396).
+    #[cfg(target_os = "linux")]
+    {
+        let entries: Vec<_> = std::fs::read_dir(prefix.path().join("applications"))
+            .expect("applications")
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        assert_eq!(
+            entries.len(),
+            names.len(),
+            "one menu entry each: {entries:?}"
+        );
+        for entry in &entries {
+            let text = std::fs::read_to_string(entry).expect("entry");
+            assert!(
+                !text.contains("MimeType="),
+                "{} claims a file type",
+                entry.display()
+            );
+            assert_eq!(text.matches("\nExec=").count(), 1, "one Exec line: {text}");
         }
     }
 

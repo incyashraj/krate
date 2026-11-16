@@ -20874,7 +20874,9 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     Ok(0)
 }
 
-#[cfg(target_os = "linux")]
+// Linux writes these; tests on every host check them, so a change made on
+// a Mac is proved on that Mac rather than first on CI's Ubuntu.
+#[cfg(any(target_os = "linux", test))]
 /// One value in a desktop entry, escaped as the Desktop Entry
 /// Specification requires (IC-278).
 ///
@@ -20898,7 +20900,7 @@ fn desktop_value(value: &str) -> String {
     out
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 /// An `Exec=` value: each argument quoted, as the specification's own
 /// rules require, so a path with a space or a quote in it stays one
 /// argument instead of becoming several.
@@ -20920,9 +20922,88 @@ fn desktop_exec(args: &[String]) -> String {
         .join(" ")
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod desktop_entry_tests {
     use super::{desktop_exec, desktop_value};
+
+    /// What a menu runs for an `Exec=` value, read by the Desktop Entry
+    /// Specification's own rules, written apart from the writer above so
+    /// the two cannot share a mistake: the string-value escapes first, then
+    /// the argument quoting, then field codes (only `%%` is literal; any
+    /// other `%` code here would be expanded by the menu, so it is an error).
+    fn menu_reads(exec: &str) -> Result<Vec<String>, String> {
+        let mut value = String::new();
+        let mut chars = exec.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('s') => value.push(' '),
+                    Some('n') => value.push('\n'),
+                    Some('t') => value.push('\t'),
+                    Some('r') => value.push('\r'),
+                    Some('\\') => value.push('\\'),
+                    other => return Err(format!("bad string escape \\{other:?}")),
+                }
+            } else {
+                value.push(c);
+            }
+        }
+        let mut args = Vec::new();
+        let mut chars = value.chars().peekable();
+        loop {
+            while chars.peek() == Some(&' ') {
+                chars.next();
+            }
+            let Some(first) = chars.next() else { break };
+            let mut arg = String::new();
+            if first == '"' {
+                loop {
+                    match chars.next() {
+                        None => return Err("an unclosed quote".into()),
+                        Some('"') => break,
+                        Some('\\') => match chars.next() {
+                            Some(e @ ('"' | '`' | '$' | '\\')) => arg.push(e),
+                            other => return Err(format!("bad quoted escape {other:?}")),
+                        },
+                        Some('%') => match chars.next() {
+                            Some('%') => arg.push('%'),
+                            other => return Err(format!("field code %{other:?} inside a quote")),
+                        },
+                        Some(c) => arg.push(c),
+                    }
+                }
+            } else {
+                return Err(format!("an unquoted argument starting {first:?}"));
+            }
+            args.push(arg);
+        }
+        Ok(args)
+    }
+
+    /// Every argument the installer writes reads back as exactly itself
+    /// (IC-278, IC-396 "desktop parser"; portable test 205): spaces,
+    /// quotes, backslashes, `$`, backtick, percent field-code text,
+    /// newlines, tabs and Unicode, in the engine path and the payload path.
+    #[test]
+    fn every_exec_argument_reads_back_as_itself() {
+        let hostile = [
+            "/home/a person/bin/krate",
+            "launch",
+            "/home/x/.local/share/krate/apps/50% off %f %U (1a2b)/app.krate",
+            r#"/tmp/quote " and back\slash and \\ two"#,
+            "/tmp/$HOME and `id` and $(id)",
+            "/tmp/new\nline\tand tab",
+            "/tmp/Café ☕ 日本 / Ünïcode",
+            "",
+        ]
+        .map(String::from);
+        let exec = desktop_exec(&hostile);
+        assert!(
+            !exec.contains('\n') && !exec.contains('\t'),
+            "one line: {exec:?}"
+        );
+        assert_eq!(menu_reads(&exec).as_deref(), Ok(&hostile[..]), "{exec}");
+    }
 
     /// A value cannot write a key of its own (IC-278).
     ///
