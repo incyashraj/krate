@@ -428,6 +428,16 @@ $('signinMail').onsubmit = async (e) => {
 const hex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 const sha256 = async (bytes) => hex(await crypto.subtle.digest('SHA-256', bytes));
 
+/// Who signed an app, in words, from its signature's namespace (IC-983):
+/// `krate.tech/<account>/<id>` was made on krate.tech (the account's login
+/// follows, from the hub); `<org>/<id>` is an organisation's; a bare app id
+/// is the key on the computer it was made on.
+function signedLine(namespace) {
+  if (/^krate\.tech\//.test(namespace)) return 'Made on krate.tech';
+  if (namespace.includes('/')) return `Signed by ${namespace.split('/')[0]}`;
+  return 'Signed by its maker';
+}
+
 /// [u32 bundle length][bundle][u32 header length][header JSON][files...]
 function unpack(buf) {
   const dv = new DataView(buf);
@@ -905,7 +915,15 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
   document.title = `${name} - Krate`;
   $('whoName').textContent = name;
   const release = sig === 'valid' && j.release;
-  $('whoSig').textContent = (release ? `Signed by ${release.namespace.split('/')[0]}` : 'Not signed') + (FILE ? ', from a file' : '');
+  const from = FILE ? ', from a file' : '';
+  $('whoSig').textContent = (release ? signedLine(release.namespace) : 'Not signed') + from;
+  // A krate.tech build names its account by id; the hub knows its login.
+  const account = release && /^krate\.tech\/([0-9a-f-]{36})\//.exec(release.namespace);
+  if (account) {
+    fetch(`/made-for/${account[1]}`).then((r) => (r.ok ? r.json() : null)).then((who) => {
+      if (who && who.login) $('whoSig').textContent = `Made on krate.tech for ${who.login}${from}`;
+    }).catch(() => {});
+  }
   $('who').hidden = false;
   report.app = { id: app.id, name, world: app.world, signature: sig };
   madeWith(report.private || Boolean(sig === 'valid' && j.org_mark));
