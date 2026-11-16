@@ -1,14 +1,17 @@
-name: Self-hosted Fuzz Nightly
+name: Fuzz Nightly
 
+# Runs on GitHub's own Linux machines since 2026-11-15 (K-1269). The file
+# keeps its old name because ci.yml's freshness check and
+# scripts/release-decision.py read this workflow's history by file name.
+#
+# It used to run on the founder's laptop (the krate-local runner), and the
+# laptop was the failure every time: asleep on battery mid-fuzz in July,
+# its registration deleted by GitHub after days offline in June and again
+# in November, and a closed lid on 2026-11-15 at 10:12 IST -- caffeinate -i
+# stops idle sleep, not clamshell sleep -- so GitHub dropped the job ten
+# minutes later. No nightly passed from 2026-11-08 on. A public repository
+# runs on hosted machines at no cost, and a hosted machine does not sleep.
 on:
-  # Schedule restored 2026-07-02: the krate-local runner is re-registered and
-  # now runs as a LaunchAgent service, so it survives reboots.
-  # (It had been offline since 2026-06-24 because it only ran in a foreground
-  # terminal; GitHub then deleted the stale registration.)
-  # Moved 2026-07-20 from 02:00Z: the runner is a laptop, and 02:00Z is
-  # mid-morning Singapore where it was repeatedly asleep on battery, which
-  # cancelled runs mid-fuzz. 13:00Z = 21:00 SGT, when the machine is
-  # reliably awake; the fuzz step also holds it awake via caffeinate.
   schedule:
     - cron: "0 13 * * *"
   workflow_dispatch:
@@ -18,6 +21,11 @@ on:
         required: false
         type: string
         default: "2400"
+      seed_corpus:
+        description: Once only -- copy the corpus the laptop runner kept into the cache, and fuzz nothing
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: self-hosted-fuzz-nightly-${{ github.ref }}
@@ -29,17 +37,38 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # The campaign so far (730 MB, 187k inputs) lives in ~/krate-fuzz-corpus
+  # on the laptop. Run once, from main, while the laptop is awake: it puts
+  # that corpus in the cache the nightly restores from, so the move to a
+  # hosted machine continues the campaign instead of starting it again.
+  seed-corpus:
+    name: Seed the corpus from the laptop
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_corpus }}
+    runs-on: [self-hosted, krate-local]
+    timeout-minutes: 60
+    steps:
+      - name: Copy the kept corpus into place
+        shell: bash
+        run: |
+          mkdir -p fuzz/corpus
+          cp -R "$HOME/krate-fuzz-corpus/." fuzz/corpus/
+          for d in fuzz/corpus/*/; do
+            echo "seeding $(ls "$d" | wc -l | tr -d ' ') inputs from $d"
+          done
+      - name: Save it to the cache
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+
   fuzz-nightly:
     name: Fuzz nightly
-    runs-on: [self-hosted, krate-local]
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.seed_corpus) }}
+    runs-on: ubuntu-latest
     timeout-minutes: 360
-    # Four targets at 2400 s is 2 h 40 m of fuzzing, done by about 00:00
-    # SGT. At 4800 s it was 5 h 20 m plus an hour saving the corpus: past
-    # the 360-minute ceiling even on a night the laptop stayed awake, and
-    # it rarely did -- the 2026-09-26 run crawled from 03:00 SGT (one
-    # target took 5637 s for 4800, the next ran at 716 exec/s) and was
-    # cancelled, so no nightly had passed for eight days. The corpus
-    # carries over, so a shorter night still continues the campaign.
+    # Four targets at 2400 s is 2 h 40 m of fuzzing, well inside the
+    # 360-minute ceiling. The corpus carries over, so each night continues
+    # the campaign rather than repeating it.
     env:
       KRATE_FUZZ_MAX_TOTAL_TIME: ${{ github.event_name == 'workflow_dispatch' && inputs.fuzz_max_total_time || '2400' }}
     steps:
@@ -53,34 +82,29 @@ jobs:
       - name: Install fuzz tools
         shell: bash
         run: |
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          if ! command -v cargo-fuzz >/dev/null 2>&1; then
-            cargo install cargo-fuzz --locked
-          fi
-          if ! rustup toolchain list | grep -q "^nightly"; then
-            rustup toolchain install nightly --profile minimal
-          fi
+          rustup toolchain install nightly --profile minimal
+          cargo install cargo-fuzz --locked
 
-      # The corpus lives OUTSIDE the workspace. actions/checkout defaults to
-      # clean=true (git clean -ffdx), which deleted the untracked fuzz/corpus
-      # directory on every nightly checkout -- so ten weeks of "nightly
-      # fuzzing" explored from scratch every night (K-244). A campaign is the
-      # corpus; without it this was a smoke test wearing a campaign's name.
+      # A campaign is the corpus (K-244): without it every night explores
+      # from scratch. The newest saved corpus is restored by prefix, and
+      # tonight's is saved under its own key at the end, so a night that
+      # dies halfway still leaves yesterday's corpus to start from.
       - name: Restore the corpus
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+
+      - name: Count the corpus
         shell: bash
         run: |
-          mkdir -p "$HOME/krate-fuzz-corpus"
           mkdir -p fuzz/corpus
-          cp -R "$HOME/krate-fuzz-corpus/." fuzz/corpus/ 2>/dev/null || true
           for d in fuzz/corpus/*/; do
             [ -d "$d" ] && echo "restored $(ls "$d" | wc -l | tr -d ' ') inputs into $d"
           done || true
 
-      # The network is only needed here. Five straight nightlies died on
-      # "transfer too slow" from this machine to crates.io before a single
-      # input ran (K-244) -- so the fetch retries hard, and the fuzz itself
-      # then runs offline, where a flaky network cannot reach it.
+      # The network is only needed here; the fuzz itself then runs offline.
       - name: Fetch dependencies (with retries), then go offline
         env:
           RUSTUP_TOOLCHAIN: nightly
@@ -102,18 +126,15 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: nightly
           CARGO_NET_OFFLINE: "true"
-        # caffeinate -i keeps this macOS laptop from idle-sleeping mid-fuzz
-        # (the exact failure mode of the 2026-07-19/20 cancelled runs).
-        run: caffeinate -i scripts/run-phase2-fuzz-smoke.sh
+        run: scripts/run-phase2-fuzz-smoke.sh
 
-      # What tonight's run learned goes back outside the workspace, so
-      # tomorrow starts where tonight stopped.
+      # What tonight's run learned, so tomorrow starts where tonight stopped.
       - name: Save the corpus
         if: always()
-        shell: bash
-        run: |
-          mkdir -p "$HOME/krate-fuzz-corpus"
-          [ -d fuzz/corpus ] && cp -R fuzz/corpus/. "$HOME/krate-fuzz-corpus/" || true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
 
       # The campaign's evidence: per-target logs and the corpus counts, kept
       # with the run rather than lost with the terminal (IC-163).

@@ -144,7 +144,7 @@ mod engine {
     /// `pragmas` are the host's own (the desktop asks for WAL on its file);
     /// they run first, because once the authorizer is installed no pragma
     /// runs at all.
-    pub fn prepare_connection(connection: &Connection, pragmas: &str) -> Result<(), SqlError> {
+    pub fn prepare_connection(connection: &mut Connection, pragmas: &str) -> Result<(), SqlError> {
         // Close SQLite's own routes out of the sandbox before the app can
         // run anything. `ATTACH` is rejected per statement as well; these
         // stop a pragma from loading an extension or reaching a file.
@@ -153,8 +153,9 @@ mod engine {
                 "PRAGMA trusted_schema = OFF; PRAGMA foreign_keys = ON; {pragmas}"
             ))
             .map_err(|e| SqlError::Io(e.to_string()))?;
-        install_authorizer(connection);
-        Ok(())
+        // A connection whose authorizer did not go in is not handed out:
+        // without it nothing stops an ATTACH of any file on disk.
+        install_authorizer(connection).map_err(|e| SqlError::Io(e.to_string()))
     }
 
     /// Run a statement that returns rows.
@@ -242,7 +243,7 @@ mod engine {
     /// The authorizer runs during prepare, before any row is touched, and sees
     /// typed actions rather than text. Whitespace, comments and casing are gone
     /// by then -- an `Attach` is an `Attach` however it was written.
-    fn install_authorizer(connection: &Connection) {
+    fn install_authorizer(connection: &mut Connection) -> rusqlite::Result<()> {
         use rusqlite::hooks::{AuthAction, Authorization};
         connection.authorizer(Some(|context: rusqlite::hooks::AuthContext<'_>| {
             match context.action {
@@ -258,7 +259,7 @@ mod engine {
                 // database, which is exactly what store.sql is for.
                 _ => Authorization::Allow,
             }
-        }));
+        }))
     }
 
     fn to_rusqlite_params(params: &[SqlValue]) -> Vec<rusqlite::types::Value> {
@@ -312,8 +313,8 @@ mod tests {
     #[cfg(feature = "engine")]
     #[test]
     fn an_in_memory_database_keeps_the_same_rules() {
-        let connection = rusqlite::Connection::open_in_memory().expect("memory");
-        prepare_connection(&connection, "").expect("prepare");
+        let mut connection = rusqlite::Connection::open_in_memory().expect("memory");
+        prepare_connection(&mut connection, "").expect("prepare");
         execute(&connection, "CREATE TABLE t (a INTEGER)", &[]).expect("create");
         execute(
             &connection,

@@ -1539,8 +1539,8 @@ mod tests {
 
     fn db(dir: &Path) -> (PathBuf, Connection) {
         let path = dir.join("app.sqlite");
-        let app = Connection::open(&path).unwrap();
-        krate_appsql::prepare_connection(&app, "PRAGMA journal_mode = WAL;").unwrap();
+        let mut app = Connection::open(&path).unwrap();
+        krate_appsql::prepare_connection(&mut app, "PRAGMA journal_mode = WAL;").unwrap();
         (path, app)
     }
 
