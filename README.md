@@ -25,6 +25,9 @@
   <a href="LICENSE-MIT">
     <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-2563eb" alt="MIT or Apache 2.0 license">
   </a>
+  <a href="https://discord.gg/XaEegAxDCb">
+    <img src="https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join the Krate Discord">
+  </a>
 </p>
 
 <p align="center">
@@ -420,6 +423,9 @@ testing. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then
 and [Discussions](https://github.com/incyashraj/krate/discussions). For a
 larger change, open an issue before writing the full implementation.
 Everyone is held to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Questions, ideas, or something you made? Come say hi on the
+[Krate Discord](https://discord.gg/XaEegAxDCb), where people share what they make and help each other.
 
 ## What Krate counts
 
