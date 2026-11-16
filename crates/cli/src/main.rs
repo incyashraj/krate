@@ -19220,6 +19220,23 @@ fn validate_app_args(app_args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Which installed app, if any, open-app should hand a document to (K-1277).
+///
+/// `running_as` is the payload of the installed app this process already
+/// is, when it is one. An installed app starts with no arguments and runs
+/// open-app on its own payload; once the lookup learned to find
+/// lineage-named installs (K-1266) it found ITSELF, opened itself with
+/// `open -n`, and every copy did the same -- a new app in the Dock every
+/// instant until the person killed them. Already the installed copy: run
+/// here, hand nothing off.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn hand_off_to(running_as: Option<&Path>, found: Option<PathBuf>) -> Option<PathBuf> {
+    if running_as.is_some() {
+        return None;
+    }
+    found
+}
+
 /// The installed `<App>.app` for this bundle, if `krate install` made one.
 ///
 /// Matched on the app's declared id rather than its name, so an unrelated app
@@ -20966,9 +20983,9 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     // The opener, not krate.exe: it is built for the windows subsystem, so
     // no console opens beside the app, and it says in a dialog when the
     // app cannot open. krate.exe when the opener is not beside it.
-    let engine = current_engine_path()?;
+    let engine = shell_path(&current_engine_path()?);
     let opener = engine.with_file_name("krate-open.exe");
-    let payload = format!("\"{}\"", app_dir.join("app.krate").display());
+    let payload = format!("\"{}\"", shell_path(&app_dir.join("app.krate")).display());
     let (target, arguments) = if opener.is_file() {
         (opener, payload)
     } else {
@@ -20989,6 +21006,21 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     .map_err(anyhow::Error::msg)?;
     println!("Installed {name}: it is in your Start menu with its own name and icon.");
     Ok(0)
+}
+
+/// A path the Windows shell accepts in a shortcut: without the `\\?\`
+/// prefix `fs::canonicalize` adds. The shell refused a target written that
+/// way with "The parameter is incorrect" (CI, windows-2022, 2026-11-16).
+#[cfg(any(windows, test))]
+fn shell_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
 }
 
 /// A one-image `.ico` holding the PNG as it is, the form Windows has read
@@ -21693,7 +21725,10 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
     // Launchpad does. Not installed: run it here, under the Krate name, which
     // is still better than not opening at all.
     #[cfg(target_os = "macos")]
-    if let Some(app) = installed_app_for(target) {
+    if let Some(app) = hand_off_to(
+        installed_app_payload().as_deref(),
+        installed_app_for(target),
+    ) {
         let handed_off = ProcessCommand::new("/usr/bin/open")
             .arg("-n")
             .arg(&app)
@@ -33752,6 +33787,54 @@ mod check_pass_tests {
         assert!(
             read_check_pass(dir.path(), &k).is_none(),
             "a stale pass is not reused"
+        );
+    }
+}
+
+#[cfg(test)]
+mod hand_off_tests {
+    use std::path::{Path, PathBuf};
+
+    /// An installed app never hands its own launch to an installed app --
+    /// itself -- which opened a new copy every instant (K-1277). A
+    /// document opened through the Player still goes to the installed copy.
+    #[test]
+    fn an_installed_app_runs_itself_instead_of_opening_itself_again() {
+        let installed = PathBuf::from("/Users/a/Applications/Notes (1a2b3c4d).app");
+        let payload = installed.join("Contents/Resources/app.krate");
+        assert_eq!(
+            super::hand_off_to(Some(&payload), Some(installed.clone())),
+            None,
+            "already the installed copy: run here"
+        );
+        assert_eq!(
+            super::hand_off_to(None, Some(installed.clone())),
+            Some(installed),
+            "from the Player: open the installed copy"
+        );
+        assert_eq!(super::hand_off_to(None::<&Path>, None), None);
+    }
+}
+
+#[cfg(test)]
+mod shell_path_tests {
+    /// A shortcut's target loses the verbatim prefix and nothing else.
+    #[test]
+    fn the_verbatim_prefix_is_dropped_for_the_shell() {
+        let plain = |p: &str| {
+            super::shell_path(std::path::Path::new(p))
+                .display()
+                .to_string()
+        };
+        assert_eq!(plain(r"\\?\C:\Users\a\krate.exe"), r"C:\Users\a\krate.exe");
+        assert_eq!(
+            plain(r"\\?\UNC\server\share\krate.exe"),
+            r"\\server\share\krate.exe"
+        );
+        assert_eq!(plain(r"C:\Users\a\krate.exe"), r"C:\Users\a\krate.exe");
+        assert_eq!(
+            plain(r"\\?\Volume{x}\krate.exe"),
+            r"\\?\Volume{x}\krate.exe"
         );
     }
 }
