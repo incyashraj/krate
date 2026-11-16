@@ -203,11 +203,13 @@ expect_text = \"milk\"   # a label containing this must now be on screen\n\
 ```\n\
 \n\
 Steps: `click`, `type`, `key`, `paste`, `pick`, `wait_ms`, `expect_text`,\n\
-`expect_no_text`, `expect_stored`, `expect_notified`, one per step;\n\
-`expect_stored = \"milk\"` is checked against the app's own store on disk\n\
-(its key-value store and database), and `expect_notified = \"Lunch\"`\n\
-against the notifications the app handed Krate -- not against anything\n\
-the app says on screen, so an app that saves or reminds proves it did.\n\
+`expect_no_text`, `expect_stored`, `expect_notified`, `expect_requested`,\n\
+one per step; `expect_stored = \"milk\"` is checked against the app's own\n\
+store on disk (its key-value store and database), `expect_notified =\n\
+\"Lunch\"` against the notifications the app handed Krate, and\n\
+`expect_requested = \"api.example.com\"` against the requests Krate sent\n\
+for it -- not against anything the app says on screen, so an app that\n\
+saves, reminds or fetches proves it did.\n\
 `key = \"Shift+ArrowLeft\"` or\n\
 `\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord,\n\
 `paste = \"text\"` pastes it as a person would, and `pick = \"notes.txt\"`\n\

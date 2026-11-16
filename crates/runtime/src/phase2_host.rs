@@ -62,6 +62,11 @@ pub struct Phase2Host<'a> {
     /// puts a path in, and `open_chosen` takes it out. Empty for a CLI app,
     /// which has no window to show a dialog from.
     chosen_files: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
+    /// Every request the host sent out for the app this run, as "METHOD
+    /// url" (a socket as "WS url"): what the host did, never what the app
+    /// says it did. Shared with the GUI host, whose task step
+    /// `expect_requested` reads it (IC-743, test 1504).
+    net_log: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     /// Whether this run may draw random bytes.
     ///
     /// A plain flag rather than an `Option` holding state: entropy comes from
@@ -122,6 +127,7 @@ impl<'a> Phase2Host<'a> {
             groups: std::collections::BTreeMap::new(),
             org: None,
             chosen_files: Default::default(),
+            net_log: Default::default(),
             random_granted: false,
             watches: Default::default(),
             declared: None,
@@ -158,6 +164,34 @@ impl<'a> Phase2Host<'a> {
     ) -> Self {
         self.chosen_files = chosen;
         self
+    }
+
+    /// Share the run's record of requests sent (see the field).
+    pub fn with_net_log(mut self, log: std::rc::Rc<std::cell::RefCell<Vec<String>>>) -> Self {
+        self.net_log = log;
+        self
+    }
+
+    /// Note a request the host sent: a refusal at the wall never left, so
+    /// it is not one; a failure on the way (offline, a timeout) did.
+    fn note_sent<T>(
+        &self,
+        what: String,
+        result: &Result<T, crate::uapi_dispatch::NetDispatchError>,
+    ) {
+        use crate::uapi_dispatch::{AdapterError, NetDispatchError};
+        let never_left = matches!(
+            result,
+            Err(NetDispatchError::InvalidUrl
+                | NetDispatchError::PermissionDenied
+                | NetDispatchError::Policy(_)
+                | NetDispatchError::Adapter(
+                    AdapterError::PermissionDenied | AdapterError::Unsupported
+                ))
+        );
+        if !never_left {
+            self.net_log.borrow_mut().push(what);
+        }
     }
 
     pub fn with_asset_root(mut self, asset_root: Option<PathBuf>) -> Self {
@@ -1708,8 +1742,23 @@ impl io::log::Host for Phase2Host<'_> {
     }
 }
 
+/// "Get https://x" as "GET https://x": the method as HTTP spells it.
+trait UppercaseMethod {
+    fn to_uppercase_method(self) -> String;
+}
+
+impl UppercaseMethod for String {
+    fn to_uppercase_method(self) -> String {
+        match self.split_once(' ') {
+            Some((method, url)) => format!("{} {url}", method.to_uppercase()),
+            None => self,
+        }
+    }
+}
+
 impl net::http_client::Host for Phase2Host<'_> {
     fn get(&mut self, url: String) -> wasmtime::Result<Result<Vec<u8>, net::types::NetError>> {
+        let what = format!("GET {url}");
         let req = crate::uapi_dispatch::HttpRequest {
             method: crate::uapi_dispatch::HttpMethod::Get,
             url,
@@ -1717,10 +1766,9 @@ impl net::http_client::Host for Phase2Host<'_> {
             body: Vec::new(),
             timeout_millis: self.default_http_timeout_millis,
         };
-
-        Ok(self
-            .dispatcher()
-            .net_fetch(req)
+        let result = self.dispatcher().net_fetch(req);
+        self.note_sent(what, &result);
+        Ok(result
             .map(|response| response.body)
             .map_err(bridge::net_error_to_wit))
     }
@@ -1729,9 +1777,11 @@ impl net::http_client::Host for Phase2Host<'_> {
         &mut self,
         req: net::types::Request,
     ) -> wasmtime::Result<Result<net::types::Response, net::types::NetError>> {
-        Ok(self
-            .dispatcher()
-            .net_fetch(bridge::request_from_wit(req))
+        let req = bridge::request_from_wit(req);
+        let what = format!("{:?} {}", req.method, req.url).to_uppercase_method();
+        let result = self.dispatcher().net_fetch(req);
+        self.note_sent(what, &result);
+        Ok(result
             .map(bridge::response_to_wit)
             .map_err(bridge::net_error_to_wit))
     }
@@ -1742,11 +1792,13 @@ impl net::http_client::Host for Phase2Host<'_> {
     ) -> wasmtime::Result<Result<u64, net::types::NetError>> {
         // The grant is checked here, before any worker exists, so a handle is
         // only ever issued for a host the person allowed.
-        let job = match self
-            .dispatcher()
-            .net_fetch_job(bridge::request_from_wit(req))
-        {
-            Ok(Some(job)) => job,
+        let req = bridge::request_from_wit(req);
+        let what = format!("{:?} {}", req.method, req.url).to_uppercase_method();
+        let job = match self.dispatcher().net_fetch_job(req) {
+            Ok(Some(job)) => {
+                self.net_log.borrow_mut().push(what);
+                job
+            }
             // The grant passed but this adapter has no off-thread path. Say so
             // rather than falling back to a blocking fetch, which would freeze
             // the app -- the exact thing this call exists to avoid.
@@ -1794,6 +1846,7 @@ impl net::ws::Host for Phase2Host<'_> {
         if let Err(err) = self.dispatcher().check_ws_url(&url) {
             return Ok(Err(bridge::net_error_to_wit(err)));
         }
+        self.net_log.borrow_mut().push(format!("WS {url}"));
         Ok(self.async_ws.open(url).map_err(net::types::NetError::Other))
     }
 
@@ -2458,6 +2511,35 @@ mod tests {
         ) -> Result<String, AdapterError> {
             Ok(format!("{value}:{style:?}:{}", loc.bcp47))
         }
+    }
+
+    /// The host's record of what it sent (IC-743, test 1504): a request
+    /// the wall let out is there, one the wall refused is not, whatever the
+    /// app said about either.
+    #[test]
+    fn the_host_records_the_requests_it_sent_and_not_the_ones_it_refused() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::from_grants(["net.connect:example.com:80"
+            .parse()
+            .unwrap()]));
+        let log: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+        let mut host = Phase2Host::new_with_http_timeout(guard, Box::new(adapter.clone()), None)
+            .with_net_log(log.clone());
+        net::http_client::Host::get(&mut host, "http://example.com/rates".to_string())
+            .unwrap()
+            .unwrap();
+        let refused =
+            net::http_client::Host::get(&mut host, "http://elsewhere.test/x".to_string()).unwrap();
+        assert!(refused.is_err(), "no grant for elsewhere.test");
+        assert_eq!(
+            log.borrow().clone(),
+            vec!["GET http://example.com/rates".to_string()]
+        );
+        assert_eq!(
+            adapter.calls.borrow().net_fetch,
+            1,
+            "and only that one reached the adapter"
+        );
     }
 
     #[test]

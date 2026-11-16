@@ -200,6 +200,11 @@ pub struct TaskStep {
     /// the host keeps what it was asked to show.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_notified: Option<String>,
+    /// The host must have sent a request whose method and address contain
+    /// this ("api.example.com", "POST https://x/orders") -- read from the
+    /// host's own record of what it let out, not from the app (test 1504).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_requested: Option<String>,
 }
 
 /// A `pick` step's name as a path inside the run's scratch folder: plain
@@ -239,6 +244,7 @@ impl TaskStep {
             self.expect_no_text.is_some(),
             self.expect_stored.is_some(),
             self.expect_notified.is_some(),
+            self.expect_requested.is_some(),
         ]
         .iter()
         .filter(|s| **s)
@@ -268,7 +274,7 @@ impl TaskStep {
         }
         match set {
             1 => Ok(()),
-            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text, expect_no_text, expect_stored or expect_notified".to_string()),
+            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text, expect_no_text, expect_stored, expect_notified or expect_requested".to_string()),
             _ => Err(format!("a step does one thing, this one does {set}: {}", self.describe())),
         }
     }
@@ -321,6 +327,9 @@ impl TaskStep {
         }
         if let Some(t) = &self.expect_notified {
             return format!("expect a notification saying {t:?}");
+        }
+        if let Some(t) = &self.expect_requested {
+            return format!("expect a request to {t:?}");
         }
         "an empty step".to_string()
     }
@@ -455,6 +464,7 @@ impl TaskStep {
             && self.expect_no_text.is_none()
             && self.expect_stored.is_none()
             && self.expect_notified.is_none()
+            && self.expect_requested.is_none()
             && self.shoot.is_none()
     }
 }

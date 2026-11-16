@@ -99,6 +99,9 @@ pub struct Phase3GuiHost {
     /// one grant share a store that lives and dies with the run. An app cannot
     /// carry a token across runs because this is gone when the run ends.
     chosen_files: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
+    /// The requests the Phase 2 host sent for the app this run, shared:
+    /// what an `expect_requested` step reads (IC-743, test 1504).
+    net_log: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     /// Host-side vertical scroll offsets per (window, Scroll widget).
     /// Scrolling never involves the guest: wheel input adjusts these and
     /// re-lowers placements, matching native platform feel.
@@ -626,6 +629,7 @@ impl Phase3GuiHost {
         Ok(Self {
             runtime,
             chosen_files: Default::default(),
+            net_log: Default::default(),
             windows: Vec::new(),
             scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -817,6 +821,12 @@ impl Phase3GuiHost {
         chosen: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
     ) -> Self {
         self.chosen_files = chosen;
+        self
+    }
+
+    /// Share the run's record of requests the Phase 2 host sent.
+    pub fn with_net_log(mut self, log: std::rc::Rc<std::cell::RefCell<Vec<String>>>) -> Self {
+        self.net_log = log;
         self
     }
 
@@ -2836,6 +2846,24 @@ impl Phase3GuiHost {
                     format!("{text:?} is not in the app's store on disk")
                 };
                 broke(self, why);
+            }
+            return;
+        }
+        if let Some(text) = &step.expect_requested {
+            let sent = self.net_log.borrow().clone();
+            if sent.iter().any(|line| line.contains(text.trim())) {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.task_index += 1;
+                    driver.report.task_steps_done = number;
+                }
+            } else {
+                broke(
+                    self,
+                    format!(
+                        "the host sent no request to {text:?}; it sent [{}]",
+                        sent.join(", ")
+                    ),
+                );
             }
             return;
         }
@@ -9178,6 +9206,7 @@ mod tests {
             "expect_no_text" => s.expect_no_text = Some(value.to_string()),
             "expect_stored" => s.expect_stored = Some(value.to_string()),
             "expect_notified" => s.expect_notified = Some(value.to_string()),
+            "expect_requested" => s.expect_requested = Some(value.to_string()),
             _ => s.wait_ms = value.parse().ok(),
         }
         s
@@ -9266,6 +9295,26 @@ mod tests {
             }
             drive_until_task_reports(&mut host).task
         };
+        let requested = |sent: &[&str], label: &str| {
+            let plan = task_plan(crate::usability::Task {
+                name: "fetch rates".to_string(),
+                steps: vec![step("expect_requested", "api.rates.test")],
+            });
+            let mut host = host_with_labelled_button(label, plan);
+            for line in sent {
+                host.net_log.borrow_mut().push(line.to_string());
+            }
+            drive_until_task_reports(&mut host).task
+        };
+        assert!(matches!(
+            requested(&[], "Fetched from api.rates.test"),
+            Some(crate::usability::Observation::Broke { .. })
+        ));
+        assert_eq!(
+            requested(&["GET https://api.rates.test/latest"], "anything"),
+            Some(crate::usability::Observation::Held)
+        );
+
         assert!(matches!(
             notified(&[], "Notified: lunch"),
             Some(crate::usability::Observation::Broke { .. })

@@ -1484,6 +1484,7 @@ impl Runtime {
         .with_usability(config.usability_plan_with_stores())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
+        .with_net_log(store.data().net_log.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
         .with_app_name(config.app_name.clone())
         .with_app_identity(config.app_identity.clone());
@@ -1537,6 +1538,7 @@ impl Runtime {
         .with_usability(config.usability_plan_with_stores())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
+        .with_net_log(store.data().net_log.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
         .with_app_name(config.app_name.clone())
         .with_app_identity(config.app_identity.clone());
@@ -1913,6 +1915,10 @@ struct HostState {
     /// into one and fs resolved against the other, so every token failed.
     #[cfg(feature = "phase2-bindings")]
     chosen: Rc<RefCell<chosen_files::ChosenFiles>>,
+    /// The requests the Phase 2 host sent this run, shared into the GUI
+    /// host for a task's `expect_requested` (IC-743, test 1504).
+    #[cfg(feature = "phase2-bindings")]
+    net_log: Rc<RefCell<Vec<String>>>,
     /// The stepped monotonic clock, when this run is a screenshot run. Held
     /// here because both hosts need the same one: the Phase 2 adapter answers
     /// the app's clock reads from it, and the GUI host ends a frame on it at
@@ -1941,6 +1947,8 @@ impl HostState {
         create_dir_all_on_host(&config.sandbox_root)?;
         #[cfg(feature = "phase2-bindings")]
         let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        #[cfg(feature = "phase2-bindings")]
+        let net_log: Rc<RefCell<Vec<String>>> = Default::default();
         #[cfg(feature = "phase2-bindings")]
         let stepped_clock = config
             .frame_step_millis
@@ -1974,6 +1982,7 @@ impl HostState {
             )
             .with_asset_root(config.bundle_assets_root.clone())
             .with_chosen_files(chosen.clone())
+            .with_net_log(net_log.clone())
             .with_store(
                 config.app_store_path.clone(),
                 // The grant is resolved from the session policy here, once, so
@@ -2036,6 +2045,8 @@ impl HostState {
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]
             chosen,
+            #[cfg(feature = "phase2-bindings")]
+            net_log,
             #[cfg(feature = "phase2-bindings")]
             stepped_clock,
         })
