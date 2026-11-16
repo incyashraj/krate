@@ -22887,6 +22887,13 @@ fn a_company_connection_reaches_the_api_and_the_app_never_holds_the_credential()
     let rotated = "Bearer sk-live-acme-rotated-11223344556677889900aabb";
     let secret_file = world.dir.path().join("secret.txt");
     std::fs::write(&secret_file, format!("{secret}\n")).expect("secret");
+    // Dan keeps a copy of his key after he is removed (below), so his
+    // computer's machine key must be one this test can read: a key that is
+    // already a file stays a file (machine_key.rs, IC-984). A fresh home on
+    // Windows would otherwise seal it with DPAPI, where only Krate reads it.
+    let dans_krate = world.homes["dan"].path().join(".krate");
+    std::fs::create_dir_all(&dans_krate).expect("Dan's krate home");
+    std::fs::write(dans_krate.join("machine.key"), [0x5au8; 32]).expect("Dan's machine key file");
 
     let root = world.acme();
     world.says(
