@@ -23,6 +23,7 @@ mod api_author;
 mod api_key;
 mod audit;
 mod authoring_context;
+mod engine_sweep;
 mod fleet;
 mod github_auth;
 mod keychain;
@@ -183,6 +184,16 @@ enum Command {
     /// CLI itself; never meant to be typed by a person.
     #[command(hide = true)]
     UsageFlush,
+
+    /// Bring every app Krate made on this computer up to the newest engine
+    /// here, then move the secrets key out of its file when nothing older
+    /// is left to follow it (IC-984). Spawned detached by the CLI itself.
+    #[command(hide = true)]
+    EngineSweep,
+
+    /// Print this engine's build fingerprint, for a newer engine asking.
+    #[command(hide = true)]
+    EngineBuild,
 
     /// Run a WebAssembly component through the Krate runtime.
     Run {
@@ -2027,6 +2038,15 @@ fn run() -> Result<u8> {
     }
     let cli = Cli::parse_from(args);
 
+    // Once per engine build: bring older installed apps along (IC-984).
+    // Not for the two commands that ARE the sweep.
+    if !matches!(
+        cli.command,
+        Some(Command::EngineSweep | Command::EngineBuild | Command::UsageFlush)
+    ) {
+        engine_sweep::notice();
+    }
+
     let Some(command) = cli.command else {
         return tui::run();
     };
@@ -2294,6 +2314,8 @@ fn run() -> Result<u8> {
             usage::flush_spool_now();
             Ok(0)
         }
+        Command::EngineSweep => engine_sweep::sweep_now(),
+        Command::EngineBuild => Ok(engine_sweep::print_build()),
         Command::Telemetry { state } => usage::telemetry_command(&state),
         Command::Policy { json, action } => match action {
             None => fleet::show(json),
@@ -7387,6 +7409,19 @@ fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u
             if kept == machine_key::Kept::File {
                 println!("  An app's files copied alone cannot be read elsewhere; a copy of");
                 println!("  your whole home folder carries the key with it.");
+                if machine_key::stronger_keeper_here() {
+                    let keeper = if cfg!(windows) {
+                        "Windows"
+                    } else {
+                        "your keychain"
+                    };
+                    println!(
+                        "  It moves to {keeper} once every Krate on this computer can follow it."
+                    );
+                    if let Some(held) = engine_sweep::key_held_by() {
+                        println!("  Waiting on: {held}.");
+                    }
+                }
             } else {
                 println!("  A copied disk, backup or home folder does not carry it.");
             }
@@ -19754,28 +19789,9 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 
 #[cfg(target_os = "macos")]
 /// This engine build's identity, for deciding whether a wrapper's embedded
-/// engine copy is current. Version and git sha alone miss dirty rebuilds of
-/// the same commit, so the binary's length and mtime join them -- cheap to
-/// read, and any rebuild changes at least one of the four.
+/// engine copy is current (engine_sweep.rs says what it carries, IC-984).
 fn engine_fingerprint() -> String {
-    let (len, mtime) = std::env::current_exe()
-        .and_then(fs::metadata)
-        .map(|m| {
-            (
-                m.len(),
-                m.modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0),
-            )
-        })
-        .unwrap_or((0, 0));
-    format!(
-        "{}-{}-{len}-{mtime}",
-        env!("CARGO_PKG_VERSION"),
-        env!("KRATE_GIT_SHA"),
-    )
+    engine_sweep::fingerprint()
 }
 
 /// Where installed apps live by default on this machine.

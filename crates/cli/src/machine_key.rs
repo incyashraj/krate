@@ -138,6 +138,43 @@ fn kept_in(here: &Here) -> Option<Kept> {
     }
 }
 
+/// Whether this computer has a keeper stronger than the file.
+pub(crate) fn stronger_keeper_here() -> bool {
+    cfg!(windows) || crate::keychain::usable()
+}
+
+/// Move a key kept as a file to the keychain or Windows, read back equal
+/// before the file goes. Only the engine sweep calls this, and only once
+/// every engine on the computer knows the record (IC-984): an older one
+/// would make a new key.
+pub(crate) fn move_to_keeper() -> Result<Kept, String> {
+    move_in(&Here::now())
+}
+
+fn move_in(here: &Here) -> Result<Kept, String> {
+    if let Some(kept) = kept_in(here).filter(|k| *k != Kept::File) {
+        return Ok(kept);
+    }
+    let key = match fs::read(here.plain_file()) {
+        Ok(key) if key.len() >= 32 => key,
+        _ => return Err("there is no secrets key file to move".to_string()),
+    };
+    let kept = keep_stronger(here, &key);
+    let Some(word) = kept.record_word() else {
+        return Err("neither the keychain nor Windows would keep it".to_string());
+    };
+    write_private(&here.record_file(), word.as_bytes())
+        .map_err(|err| format!("could not record where the key is: {err}"))?;
+    if load_or_create(here).as_deref() != Ok(key.as_slice()) {
+        // Back to the file, which still holds it: never a key in two minds.
+        let _ = fs::remove_file(here.record_file());
+        return Err("the keeper did not give the same key back".to_string());
+    }
+    fs::remove_file(here.plain_file())
+        .map_err(|err| format!("moved, but the file could not be removed: {err}"))?;
+    Ok(kept)
+}
+
 /// This computer's machine key, made the first time it is needed.
 ///
 /// Asked once per Krate home per process: a run reads it for its secrets,
@@ -491,6 +528,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_file_key_moves_whole_or_not_at_all() {
+        let (_dir, here) = here();
+        let older = vec![4u8; 32];
+        write_private(&here.plain_file(), &older).unwrap();
+        let moved = move_in(&here);
+        if cfg!(windows) {
+            assert_eq!(moved, Ok(Kept::Windows));
+            assert!(
+                !here.plain_file().exists(),
+                "the file goes once the keeper has it"
+            );
+            assert_eq!(
+                load_or_create(&here).unwrap(),
+                older,
+                "the same key, from Windows"
+            );
+        } else {
+            // No keychain for a test home: nothing moves, nothing is lost.
+            assert!(moved.is_err());
+            assert_eq!(fs::read(here.plain_file()).unwrap(), older);
+            assert!(!here.record_file().exists());
+            assert_eq!(load_or_create(&here).unwrap(), older);
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_key_windows_holds_without_a_record_is_taken_not_replaced() {
@@ -526,6 +589,14 @@ mod tests {
             home: dir.path().join(".krate"),
             keychain: Some(&ITEM),
         };
+        // An existing file key moves, read back equal, file removed.
+        let older = vec![6u8; 32];
+        write_private(&here.plain_file(), &older).unwrap();
+        assert_eq!(move_in(&here), Ok(Kept::Keychain));
+        assert!(!here.plain_file().exists());
+        assert_eq!(load_or_create(&here).unwrap(), older);
+        forget();
+        let _ = fs::remove_file(here.record_file());
         let made = load_or_create(&here).unwrap();
         assert_eq!(made.len(), 32);
         assert_eq!(kept_in(&here), Some(Kept::Keychain));

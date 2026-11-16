@@ -28018,3 +28018,153 @@ fn a_fresh_homes_first_create_is_signed_with_its_own_key() {
         "kept on this computer"
     );
 }
+
+/// An installed app made by an older engine is brought up to the newest
+/// one here, in place, with its payload and folder name kept; one made by a
+/// newer engine is left alone; a development build touches nothing unless
+/// a test says so (IC-984, K-1278).
+#[test]
+#[cfg(target_os = "macos")]
+fn the_newest_engine_brings_older_installed_apps_along() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let apps = home.path().join("Applications");
+    std::fs::create_dir_all(&apps).expect("apps");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("wasm");
+    let manifest = dir.path().join("krate.toml");
+    std::fs::write(&manifest, BUNDLE_MANIFEST).expect("manifest");
+    let bundle = dir.path().join("app.krate");
+    let out = krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .output()
+        .expect("pack");
+    assert!(
+        out.status.success(),
+        "pack: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = krate()
+        .arg("install")
+        .arg(&bundle)
+        .arg("--prefix")
+        .arg(&apps)
+        .env("HOME", home.path())
+        .output()
+        .expect("install");
+    assert!(
+        out.status.success(),
+        "install: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let app = std::fs::read_dir(&apps)
+        .expect("apps")
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "app"))
+        .expect("an installed .app");
+    let folder = app.file_name().unwrap().to_owned();
+    let resources = app.join("Contents/Resources");
+    let payload_before = std::fs::read(resources.join("app.krate")).expect("payload");
+    let engine = std::fs::read_dir(app.join("Contents/MacOS"))
+        .expect("MacOS")
+        .flatten()
+        .map(|e| e.path())
+        .next()
+        .expect("the engine copy");
+
+    // Make it what an older Krate left: its engine and its fingerprint.
+    let old_fingerprint = "0.1.28-a2c95fbf5be1-56262736-1787629953";
+    std::fs::write(resources.join("engine.fingerprint"), old_fingerprint).expect("old");
+    std::fs::write(&engine, b"an older engine").expect("old engine");
+    let sweep = |test_env: bool| {
+        let mut command = krate();
+        command.arg("engine-sweep").env("HOME", home.path());
+        if test_env {
+            command.env("KRATE_TEST_ENGINE_SWEEP", "1");
+        }
+        let out = command.output().expect("sweep");
+        assert!(
+            out.status.success(),
+            "sweep: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    // A development build leaves it, and says why.
+    let said = sweep(false);
+    assert!(said.contains("development build"), "{said}");
+    assert_eq!(std::fs::read(&engine).unwrap(), b"an older engine");
+
+    // The newest engine brings it along, under the same folder name.
+    let said = sweep(true);
+    assert!(said.contains("Brought up to date"), "{said}");
+    assert!(
+        apps.join(&folder).is_dir(),
+        "the same folder the Dock holds"
+    );
+    let fingerprint = std::fs::read_to_string(resources.join("engine.fingerprint")).unwrap();
+    assert!(
+        fingerprint.contains("-t"),
+        "a fingerprint that orders: {fingerprint}"
+    );
+    assert_ne!(
+        std::fs::read(&engine).unwrap(),
+        b"an older engine",
+        "a real engine again"
+    );
+    let size = std::fs::metadata(&engine).unwrap().len();
+    assert!(size > 1_000_000, "the engine itself, {size} bytes");
+    assert_eq!(
+        std::fs::read(resources.join("app.krate")).unwrap(),
+        payload_before
+    );
+    let leftovers: Vec<_> = std::fs::read_dir(&apps)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with('.'))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "no staging left behind: {leftovers:?}"
+    );
+    // It still opens as the app it was.
+    let run = krate()
+        .arg("run")
+        .arg("--headless")
+        .arg(resources.join("app.krate"))
+        .env("HOME", home.path())
+        .output()
+        .expect("run");
+    assert!(
+        run.status.success(),
+        "run: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    // One made by a newer engine is never rewritten by this one.
+    let future = "9.0.0-abcdefabcdef-1-1-t99999999999";
+    std::fs::write(resources.join("engine.fingerprint"), future).unwrap();
+    std::fs::write(&engine, b"a newer engine").unwrap();
+    let said = sweep(true);
+    assert!(!said.contains("Brought up to date"), "{said}");
+    assert_eq!(std::fs::read(&engine).unwrap(), b"a newer engine");
+    assert_eq!(
+        std::fs::read_to_string(resources.join("engine.fingerprint")).unwrap(),
+        future
+    );
+    // The sweep is recorded, so the next command does not run it again.
+    let record = std::fs::read_to_string(home.path().join(".krate/engine-sweep.json")).unwrap();
+    assert!(record.contains("\"fingerprint\""), "{record}");
+}
