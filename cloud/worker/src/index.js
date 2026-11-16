@@ -3257,25 +3257,24 @@ P.S. If you get stuck, here\u2019s a 3-minute demo of making an app from scratch
 /// sign-off, which the shared template adds (the logo, "best, Yashraj", the
 /// unsubscribe line). The founder chose that look on 2026-11-16 over the
 /// bare plain-text note: "it has proper logo".
+// Written to one person, by name: the founder asked for it to feel like a
+// real note that wants an answer (2026-11-16), so it asks about them and
+// says what happens to what they write.
 const WELCOME_BODY = `Hi {first_name},
 
-I’m Yashraj, the person who builds Krate. Thanks for signing up.
+I’m Yashraj. I build Krate, and I wanted to say thank you for joining. It really means a lot.
 
-I’ll keep this short. Krate exists for one reason: making an app and sharing it should be as easy as sending a picture. If it doesn’t feel that way to you yet, I want to know.
+Krate started from one simple wish: making an app and sharing it should feel as easy as sending a photo. You’re one of the early people trying it, so how it feels to you matters to me a great deal.
 
-So I have one question:
+I’d love to know what you’re hoping to make. A game, a tool for your work, something for your family, anything at all. Write me a line about it and I’ll help you get there.
 
-What’s the first thing you want to make with Krate?
+And if anything confuses you or doesn’t work, please tell me. I read every message myself, and what people tell me usually becomes the next thing I fix.
 
-Just hit reply. It comes straight to me, not a support queue, and I read every reply myself.
+If talking is easier, pick any time that suits you: https://calendly.com/incyashraj/30min
 
-If something breaks, confuses you, or feels slower than it should, tell me that too. Even the small stuff. Krate is still early, and what you tell me now decides what I build next. Real changes have already come from people like you.
+New to Krate? This 3-minute demo makes an app from scratch: https://youtu.be/No0Cu8dAewg
 
-If you’d rather show me than write it, I’m happy to jump on a quick call: https://calendly.com/incyashraj/30min
-
-Stuck? Here’s a 3-minute demo of making an app from scratch: https://youtu.be/No0Cu8dAewg
-
-Thanks for trying something new with me.`;
+Really glad you’re here.`;
 
 /// The welcome as sent: subject, text and HTML, in the same design as the
 /// founder's announcements, with this person's own unsubscribe link.

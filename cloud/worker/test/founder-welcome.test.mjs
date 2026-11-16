@@ -96,8 +96,9 @@ test("a new account is welcomed once, 21 minutes on, in the founder's words", as
   assert.match(mail.html, /href="https:\/\/hub\.test\/mail\/unsubscribe\?u=[^"&]+&amp;t=[0-9a-f]{32}"/, "this person's own unsubscribe link");
   assert.ok(mail.text.includes("\n--\nbest,\nYashraj\nkrate.tech\n"), "the same signature in the text");
   assert.ok(mail.text.startsWith("Hi Ada,\n"), mail.text.slice(0, 40));
-  assert.ok(mail.text.includes("What’s the first thing you want to make with Krate?"));
+  assert.ok(mail.text.includes("I’d love to know what you’re hoping to make."));
   assert.ok(mail.text.includes("https://calendly.com/incyashraj/30min\n"));
+  assert.ok(mail.html.includes("margin:0;padding:0;text-align:left;"), "written down the left, like a typed mail");
   assert.ok(!mail.text.includes("{"), "no template field left unfilled");
 
   await tick(created + 25 * 60 * 1000);
