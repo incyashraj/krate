@@ -87,7 +87,7 @@ test("a new account is welcomed once, 21 minutes on, in the founder's words", as
   assert.equal(mail.from, "Yashraj Pardeshi <yashraj@krate.tech>");
   assert.equal(mail.reply_to, "incyashraj@gmail.com");
   assert.deepEqual(mail.to, ["ada@example.com"]);
-  assert.equal(mail.subject, "You’re in. One question from me");
+  assert.equal(mail.subject, "Thanks for joining Krate");
   // The founder's chosen design (2026-11-16): the announcement template,
   // logo and signature, beside a plain-text copy.
   assert.ok(mail.html.includes('src="https://krate.tech/krate-logo.png"'), "the Krate logo");
@@ -98,7 +98,10 @@ test("a new account is welcomed once, 21 minutes on, in the founder's words", as
   assert.ok(mail.text.startsWith("Hi Ada,\n"), mail.text.slice(0, 40));
   assert.ok(mail.text.includes("I’d love to know what you’re hoping to make."));
   assert.ok(mail.text.includes("https://calendly.com/incyashraj/30min\n"));
-  assert.ok(mail.html.includes("margin:0;padding:0;text-align:left;"), "written down the left, like a typed mail");
+  assert.ok(mail.html.includes('<div style="margin:0;padding:0;text-align:left;">'), "the mail's own default font, full width, from the left, like a typed mail");
+  assert.ok(!/max-width|font-family|font-size:15px/.test(mail.html.split("<p style=\"margin:28px")[0]), "no fixed column or set font on the words");
+  assert.ok(mail.text.includes("https://discord.gg/XaEegAxDCb"), "the community, to join if they want");
+  assert.ok(!mail.text.includes("New to Krate"), "everyone getting this is new");
   assert.ok(!mail.text.includes("{"), "no template field left unfilled");
 
   await tick(created + 25 * 60 * 1000);
@@ -190,7 +193,7 @@ test("with the founder's app password, the welcome goes through Gmail itself, cc
   assert.ok(seen.data.includes("Cc: <yashraj@krate.tech>\r\n"));
   assert.match(seen.data, /Content-Type: multipart\/alternative; boundary="krate-[^"]+"\r\n/, "text and HTML together");
   const subject = seen.data.match(/Subject: =\?UTF-8\?B\?([^?]+)\?=/)[1];
-  assert.equal(Buffer.from(subject, "base64").toString(), "You’re in. One question from me");
+  assert.equal(Buffer.from(subject, "base64").toString(), "Thanks for joining Krate");
   const part = (type) => {
     const m = seen.data.match(new RegExp(`Content-Type: text/${type}; charset=UTF-8\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n([A-Za-z0-9+/=\\r\\n]+?)\\r\\n--`));
     assert.ok(m, `a text/${type} part`);
@@ -230,7 +233,7 @@ test("a sign-up tells the founder at once, with the welcome ready in Gmail; noth
   assert.equal(compose.searchParams.get("to"), "kj@example.com");
   assert.equal(compose.searchParams.get("cc"), "yashraj@krate.tech");
   assert.equal(compose.searchParams.get("authuser"), "incyashraj@gmail.com");
-  assert.equal(compose.searchParams.get("su"), "You\u2019re in. One question from me");
+  assert.equal(compose.searchParams.get("su"), "Thanks for joining Krate");
   assert.ok(compose.searchParams.get("body").startsWith("Hi Katherine,\n"));
   // Nothing marked due, and the ten-minute run sends nothing.
   const id = [...KV.entries()].find(([k, v]) => k.startsWith("user:") && v.includes("kj@example.com"))[0].slice(5);

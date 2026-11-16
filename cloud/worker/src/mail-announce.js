@@ -80,7 +80,7 @@ ${unsub}
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"></head>
 <body style="margin:0;padding:0;">
-<div style="max-width:600px;margin:0;padding:0;text-align:left;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;">
+<div style="margin:0;padding:0;text-align:left;">
 ${paragraphs.map((p) => `<p ${P}>${linked(p).replace(/\n/g, "<br>")}</p>`).join("\n")}
 <p style="margin:24px 0 0 0;">--<br>best,<br>Yashraj<br><a href="https://krate.tech" style="color:#3d6df0;">krate.tech</a></p>
 <p style="margin:10px 0 0 0;"><img src="${LOGO}" width="40" height="40" alt="Krate" style="display:block;width:40px;height:40px;border:0;outline:none;text-decoration:none;"></p>

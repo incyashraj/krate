@@ -3221,7 +3221,7 @@ const WELCOME_CRON = "*/10 * * * *";
 const WELCOME_AFTER_MS = 21 * 60 * 1000;
 const WELCOME_FROM = "Yashraj Pardeshi <yashraj@krate.tech>";
 const WELCOME_REPLY_TO = "incyashraj@gmail.com";
-const WELCOME_SUBJECT = "You\u2019re in. One question from me";
+const WELCOME_SUBJECT = "Thanks for joining Krate";
 
 /// The note, in the founder's words. `name` is the first word of the name
 /// the provider gave; none (an email sign-in knows no name) is "there".
@@ -3272,7 +3272,9 @@ And if anything confuses you or doesn’t work, please tell me. I read every mes
 
 If talking is easier, pick any time that suits you: https://calendly.com/incyashraj/30min
 
-New to Krate? This 3-minute demo makes an app from scratch: https://youtu.be/No0Cu8dAewg
+There’s also a Discord where people share what they make and help each other: https://discord.gg/XaEegAxDCb
+
+If it helps, here’s a 3-minute video of an app made from scratch: https://youtu.be/No0Cu8dAewg
 
 Really glad you’re here.`;
 
