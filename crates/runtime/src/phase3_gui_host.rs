@@ -147,6 +147,10 @@ pub struct Phase3GuiHost {
     /// What a headless run's `notifications.post` would show, by id: the
     /// stand-in check-app and tests read, since nothing is on screen.
     pub(crate) notices: std::cell::RefCell<std::collections::BTreeMap<String, (String, String)>>,
+    /// Every notification a headless run was asked to show, in order: kept
+    /// instead of shown, so a check run never puts one on the person's
+    /// screen, and what an `expect_notified` step reads (IC-743, 1504).
+    pub(crate) notified: std::cell::RefCell<Vec<(String, String)>>,
     /// How many times the person has asked to close the window.
     ///
     /// The first request goes to the guest untouched. A second means the guest
@@ -644,6 +648,7 @@ impl Phase3GuiHost {
             app_name: None,
             app_identity: None,
             notices: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            notified: std::cell::RefCell::new(Vec::new()),
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
             peeked_event: std::cell::RefCell::new(None),
@@ -1030,6 +1035,9 @@ impl Phase3GuiHost {
             self.notices
                 .borrow_mut()
                 .insert(id.to_string(), (title.to_string(), body.to_string()));
+            self.notified
+                .borrow_mut()
+                .push((title.to_string(), body.to_string()));
             return Ok(());
         }
         crate::desktop_host::notify_as(
@@ -2804,6 +2812,53 @@ impl Phase3GuiHost {
             } else if let Some(driver) = self.usability.as_mut() {
                 driver.task_index += 1;
                 driver.report.task_steps_done = number;
+            }
+            return;
+        }
+        // Host-observed (IC-743, test 1504): the app's store on disk and the
+        // notifications handed to the host -- never the app's own words for
+        // them, which a label on screen is.
+        if let Some(text) = &step.expect_stored {
+            let stores = self
+                .usability
+                .as_ref()
+                .map(|d| d.plan.stores.clone())
+                .unwrap_or_default();
+            if stores_contain(&stores, text) {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.task_index += 1;
+                    driver.report.task_steps_done = number;
+                }
+            } else {
+                let why = if stores.is_empty() {
+                    format!("{text:?} cannot be looked for: this run gives the app no store")
+                } else {
+                    format!("{text:?} is not in the app's store on disk")
+                };
+                broke(self, why);
+            }
+            return;
+        }
+        if let Some(text) = &step.expect_notified {
+            let wanted = text.trim().to_lowercase();
+            let shown = self.notified.borrow().clone();
+            if shown.iter().any(|(t, b)| {
+                t.to_lowercase().contains(&wanted) || b.to_lowercase().contains(&wanted)
+            }) {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.task_index += 1;
+                    driver.report.task_steps_done = number;
+                }
+            } else {
+                let seen: Vec<String> =
+                    shown.iter().map(|(t, b)| format!("{t:?}: {b:?}")).collect();
+                broke(
+                    self,
+                    format!(
+                        "no notification saying {text:?} was handed to the host; it was asked to show [{}]",
+                        seen.join(", ")
+                    ),
+                );
             }
             return;
         }
@@ -6195,6 +6250,46 @@ impl ui::launcher::Host for Phase3GuiHost {
     }
 }
 
+/// Whether the app's own store files hold `text`: a key or a value of its
+/// key-value store (decoded from the file), or bytes of its database and its
+/// write-ahead log. Read from disk, so a write the app only claimed is not
+/// found (IC-743, test 1504).
+pub(crate) fn stores_contain(stores: &[std::path::PathBuf], text: &str) -> bool {
+    let wanted = text.trim();
+    if wanted.is_empty() {
+        return false;
+    }
+    let needle = wanted.as_bytes();
+    let holds = |bytes: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    stores.iter().any(|path| {
+        if let Ok(Some(entries)) = crate::store_host::load_entries(path) {
+            if entries
+                .iter()
+                .any(|(key, value)| key.contains(wanted) || holds(value))
+            {
+                return true;
+            }
+        }
+        let wal = path.with_extension(
+            path.extension()
+                .map(|e| format!("{}-wal", e.to_string_lossy()))
+                .unwrap_or_else(|| "wal".to_string()),
+        );
+        [path.clone(), wal]
+            .iter()
+            .filter_map(|p| std::fs::read(p).ok())
+            .any(|bytes| is_database(&bytes) && holds(&bytes))
+    })
+}
+
+/// SQLite's own header, or a write-ahead log's: the raw search is only for
+/// a database, so a key-value file is read only through its decoder.
+fn is_database(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"SQLite format 3\0")
+        || bytes.starts_with(&[0x37, 0x7f, 0x06, 0x82])
+        || bytes.starts_with(&[0x37, 0x7f, 0x06, 0x83])
+}
+
 impl ui::notify::Host for Phase3GuiHost {
     fn show(
         &mut self,
@@ -6210,6 +6305,26 @@ impl ui::notify::Host for Phase3GuiHost {
         // per-call title (IC-271, see `attribution`).
         let sender = self.attribution();
         let identity = self.os_identity();
+        // A headless run -- check-app, a test, a picture -- keeps what it was
+        // asked to show and shows nothing: a check of someone's app must
+        // never put a notification on their screen (K-1279).
+        if self.headless && granted {
+            return Ok(crate::desktop_host::check_notification(&title, &body)
+                .map(|()| {
+                    self.notified
+                        .borrow_mut()
+                        .push((title.clone(), body.clone()))
+                })
+                .map_err(|err| match err {
+                    crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
+                    crate::desktop_host::NotifyError::InvalidContent(m) => {
+                        ui::notify::NotifyError::InvalidContent(m)
+                    }
+                    crate::desktop_host::NotifyError::Unavailable(m) => {
+                        ui::notify::NotifyError::Unavailable(m)
+                    }
+                }));
+        }
         Ok(
             crate::desktop_host::notify(&title, &body, &sender, &identity, granted).map_err(
                 |err| match err {
@@ -9042,6 +9157,7 @@ mod tests {
             check_keyboard: false,
             check_stay_open: false,
             task: Some(task),
+            stores: Vec::new(),
         }
     }
 
@@ -9060,6 +9176,8 @@ mod tests {
             "type" => s.type_text = Some(value.to_string()),
             "expect_text" => s.expect_text = Some(value.to_string()),
             "expect_no_text" => s.expect_no_text = Some(value.to_string()),
+            "expect_stored" => s.expect_stored = Some(value.to_string()),
+            "expect_notified" => s.expect_notified = Some(value.to_string()),
             _ => s.wait_ms = value.parse().ok(),
         }
         s
@@ -9091,6 +9209,71 @@ mod tests {
             .expect("set_root call")
             .expect("root");
         host
+    }
+
+    /// Host-observed oracles (IC-743, test 1504): an app's own words on
+    /// screen cannot stand in for what the host saw. "Saved" on a button
+    /// does not satisfy `expect_stored`; the store file on disk does. A
+    /// "Notified" label does not satisfy `expect_notified`; a notification
+    /// handed to the host does.
+    #[test]
+    fn an_apps_own_success_words_cannot_satisfy_a_host_observed_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let kv = dir.path().join("app.kv");
+        let stored = |plan_stores: Vec<std::path::PathBuf>, label: &str, wanted: &str| {
+            let mut plan = task_plan(crate::usability::Task {
+                name: "save".to_string(),
+                steps: vec![step("expect_stored", wanted)],
+            });
+            plan.stores = plan_stores;
+            let mut host = host_with_labelled_button(label, plan);
+            drive_until_task_reports(&mut host).task
+        };
+        // The app says "Saved: milk" and wrote nothing.
+        let said = stored(vec![kv.clone()], "Saved: milk", "milk");
+        assert!(
+            matches!(said, Some(crate::usability::Observation::Broke { ref detail }) if detail.contains("not in the app's store")),
+            "{said:?}"
+        );
+        // It wrote it: the host finds it in the file.
+        let mut store = crate::store_host::AppStore::open(kv.clone(), true);
+        store.set("item-1", b"buy milk".to_vec()).unwrap();
+        assert_eq!(
+            stored(vec![kv.clone()], "anything", "milk"),
+            Some(crate::usability::Observation::Held)
+        );
+        assert_eq!(
+            stored(vec![kv.clone()], "anything", "item-1"),
+            Some(crate::usability::Observation::Held)
+        );
+        // A run that gives the app no store says so rather than passing.
+        let none = stored(Vec::new(), "Saved: milk", "milk");
+        assert!(
+            matches!(none, Some(crate::usability::Observation::Broke { ref detail }) if detail.contains("no store")),
+            "{none:?}"
+        );
+
+        let notified = |shown: &[(&str, &str)], label: &str| {
+            let plan = task_plan(crate::usability::Task {
+                name: "remind".to_string(),
+                steps: vec![step("expect_notified", "lunch")],
+            });
+            let mut host = host_with_labelled_button(label, plan);
+            for (t, b) in shown {
+                host.notified
+                    .borrow_mut()
+                    .push((t.to_string(), b.to_string()));
+            }
+            drive_until_task_reports(&mut host).task
+        };
+        assert!(matches!(
+            notified(&[], "Notified: lunch"),
+            Some(crate::usability::Observation::Broke { .. })
+        ));
+        assert_eq!(
+            notified(&[("Reminder", "Lunch at one")], "anything"),
+            Some(crate::usability::Observation::Held)
+        );
     }
 
     /// The task oracle (IC-743, test 1506): a task whose expectation is on
@@ -10552,7 +10735,13 @@ mod notification_attribution_tests {
         let show_at = source
             .find("impl ui::notify::Host for Phase3GuiHost")
             .expect("notify impl");
-        let show = &source[show_at..show_at + 1500];
+        // To the end of the impl, not a fixed slice: a fixed window stops
+        // covering the call the moment the method above it grows.
+        let show_end = source[show_at..]
+            .find("\n}\n")
+            .map(|end| show_at + end)
+            .expect("the impl ends");
+        let show = &source[show_at..show_end];
         assert!(
             show.contains("desktop_host::notify(&title, &body, &sender, &identity, granted)"),
             "show must pass the attribution as the sender"
@@ -10592,6 +10781,35 @@ mod notice_tests {
         host.notice_withdraw("never-posted");
         let shown = host.notices.borrow().clone();
         assert_eq!(shown.keys().collect::<Vec<_>>(), ["chat"]);
+    }
+
+    /// A headless run keeps what it was asked to show and shows nothing:
+    /// a check of someone's app must never put a notification on their
+    /// screen (K-1279). Denied stays denied; bad text stays refused.
+    #[test]
+    fn a_headless_run_keeps_notifications_instead_of_showing_them() {
+        let mut host = host(&["ui.notify"]);
+        let answer = ui::notify::Host::show(&mut host, "Saved".into(), "3 photos".into()).unwrap();
+        assert!(answer.is_ok(), "{answer:?}");
+        host.notice_post("upload", "Uploading", "1 of 3").unwrap();
+        assert_eq!(
+            host.notified.borrow().clone(),
+            vec![
+                ("Saved".to_string(), "3 photos".to_string()),
+                ("Uploading".to_string(), "1 of 3".to_string())
+            ]
+        );
+        let mut denied = self::host(&[]);
+        assert!(matches!(
+            ui::notify::Host::show(&mut denied, "x".into(), "".into()).unwrap(),
+            Err(ui::notify::NotifyError::Denied)
+        ));
+        assert!(matches!(
+            ui::notify::Host::show(&mut host, "".into(), "".into()).unwrap(),
+            Err(ui::notify::NotifyError::InvalidContent(_))
+        ));
+        assert!(denied.notified.borrow().is_empty());
+        assert_eq!(host.notified.borrow().len(), 2, "a refused one is not kept");
     }
 
     /// Without `ui.notify` nothing is posted and nothing is taken back; an

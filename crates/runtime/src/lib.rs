@@ -282,6 +282,23 @@ pub struct Config {
     pub declared_capabilities: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
 }
 
+impl Config {
+    /// The usability plan with the app's own store files filled in, for an
+    /// `expect_stored` step to read (IC-743, test 1504). Only the run's own
+    /// paths: an app's task file can never point the check at another file.
+    pub fn usability_plan_with_stores(&self) -> Option<usability::UsabilityPlan> {
+        self.usability_plan.clone().map(|mut plan| {
+            plan.stores = self
+                .app_store_path
+                .iter()
+                .chain(self.app_database_path.iter())
+                .cloned()
+                .collect();
+            plan
+        })
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -1464,7 +1481,7 @@ impl Runtime {
                 .clone()
                 .map(|path| (path, config.screenshot_scale)),
         )
-        .with_usability(config.usability_plan.clone())
+        .with_usability(config.usability_plan_with_stores())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
@@ -1517,7 +1534,7 @@ impl Runtime {
                 .clone()
                 .map(|path| (path, config.screenshot_scale)),
         )
-        .with_usability(config.usability_plan.clone())
+        .with_usability(config.usability_plan_with_stores())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())

@@ -18996,6 +18996,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 check_keyboard: true,
                 check_stay_open: true,
                 task: task.map(load_task).transpose()?,
+                stores: Vec::new(),
             }),
             // `--task` on its own: the steps and nothing else, so a scripted
             // use of the app (two people taking turns in a team app) is not
@@ -19007,6 +19008,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 check_keyboard: false,
                 check_stay_open: false,
                 task: Some(load_task(task)?),
+                stores: Vec::new(),
             }),
             (None, None) => None,
         },
