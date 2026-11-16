@@ -9430,6 +9430,163 @@ fn reinstalling_an_app_leaves_no_moment_with_neither_copy() {
 /// Contents/MacOS, so "AC/DC" asked for a folder that did not exist and
 /// ".." named the folder above: both failed to install, and each left a
 /// hidden half-built wrapper behind in the person's Applications folder.
+/// An update signed by a NEW release key of the same publisher replaces the
+/// installed app in place, and a file claiming the app's id without that
+/// publisher's signature never lands on top of it (IC-278, key rotation).
+///
+/// Release keys rotate; the publisher's root does not. The installed path
+/// is keyed on the root, so a person who installed 1.0 gets 2.0 where 1.0
+/// was -- not a second copy beside it -- and an unsigned or foreign file
+/// with the same id gets a place of its own.
+#[test]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn an_update_across_a_release_key_rotation_replaces_the_installed_app() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let home = tempfile::tempdir().expect("home");
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).expect("write");
+        path
+    };
+    let key = |name: &str| {
+        write(
+            name,
+            &krate_bundle::signing::SigningKey::generate_pkcs8().expect("key"),
+        )
+    };
+    let (root, other_root) = (key("root.pkcs8"), key("other-root.pkcs8"));
+    let wasm = write(
+        "code.wasm",
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    );
+    let ok = |output: std::process::Output, what: &str| {
+        assert!(
+            output.status.success(),
+            "{what} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    // One release of com.example.bundle, signed by `release` under `root`,
+    // or left unsigned when `root` is None.
+    let release = |label: &str, version: &str, root: Option<&std::path::Path>| {
+        let manifest = write(
+            &format!("{label}.toml"),
+            BUNDLE_MANIFEST
+                .replace("version = \"0.1.0\"", &format!("version = \"{version}\""))
+                .as_bytes(),
+        );
+        let bundle = dir.path().join(format!("{label}.krate"));
+        ok(
+            krate()
+                .arg("pack")
+                .arg(&wasm)
+                .arg("--manifest")
+                .arg(&manifest)
+                .arg("-o")
+                .arg(&bundle)
+                .output()
+                .expect("pack"),
+            "pack",
+        );
+        if let Some(root) = root {
+            let release_key = key(&format!("{label}-release.pkcs8"));
+            let delegation = dir.path().join(format!("{label}-delegation.json"));
+            ok(
+                krate()
+                    .args(["delegate", "--namespace", "acme/*", "--days", "30"])
+                    .arg("--root")
+                    .arg(root)
+                    .arg("--key")
+                    .arg(&release_key)
+                    .arg("-o")
+                    .arg(&delegation)
+                    .output()
+                    .expect("delegate"),
+                "delegate",
+            );
+            ok(
+                krate()
+                    .arg("sign")
+                    .arg(&bundle)
+                    .arg("--key")
+                    .arg(&release_key)
+                    .args(["--namespace", "acme/demo"])
+                    .arg("--delegation")
+                    .arg(&delegation)
+                    .output()
+                    .expect("sign"),
+                "sign",
+            );
+        }
+        bundle
+    };
+    let install = |bundle: &std::path::Path| {
+        ok(
+            krate()
+                .arg("install")
+                .arg(bundle)
+                .arg("--prefix")
+                .arg(prefix.path())
+                .env("HOME", home.path())
+                .output()
+                .expect("install"),
+            "install",
+        );
+    };
+    // The installed payloads, by the folder they sit in.
+    let installed = || -> Vec<(String, Vec<u8>)> {
+        let mut found = Vec::new();
+        for root in [
+            prefix.path().to_path_buf(),
+            prefix.path().join("krate/apps"),
+        ] {
+            for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                for payload in [
+                    entry.path().join("Contents/Resources/app.krate"),
+                    entry.path().join("app.krate"),
+                ] {
+                    if let Ok(bytes) = std::fs::read(&payload) {
+                        found.push((name.clone(), bytes));
+                    }
+                }
+            }
+        }
+        found.sort();
+        found
+    };
+
+    let first = release("v1", "1.0.0", Some(&root));
+    install(&first);
+    let before = installed();
+    assert_eq!(before.len(), 1, "one app installed: {before:?}");
+
+    // 2.0, signed by a different release key the same root authorised.
+    let second = release("v2", "2.0.0", Some(&root));
+    install(&second);
+    let after = installed();
+    assert_eq!(after.len(), 1, "the update replaced it, no second copy");
+    assert_eq!(after[0].0, before[0].0, "in the same place");
+    assert_eq!(
+        after[0].1,
+        std::fs::read(&second).unwrap(),
+        "and it is 2.0 that is installed now"
+    );
+
+    // The same id unsigned, and signed by another publisher: each its own.
+    install(&release("plain", "9.0.0", None));
+    install(&release("foreign", "9.0.0", Some(&other_root)));
+    let all = installed();
+    assert_eq!(all.len(), 3, "three lineages, three places: {all:?}");
+    assert!(
+        all.iter().any(
+            |(place, bytes)| place == &before[0].0 && bytes == &std::fs::read(&second).unwrap()
+        ),
+        "the publisher's 2.0 is untouched by either: {all:?}"
+    );
+}
+
 #[test]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {

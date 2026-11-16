@@ -20563,6 +20563,14 @@ fn launcher_file_name(name: &str) -> String {
 /// installed app, and an interrupted update left it half-written.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn publish_staged(staging: &Path, target: &Path, previous: &Path) -> Result<()> {
+    // An install cut short between the two renames below -- power lost, the
+    // terminal killed -- left the app only under the set-aside name, and
+    // the next install deleted it as leftovers. That set-aside copy is the
+    // last good install, so it goes back first (IC-278, rollback): if this
+    // install fails too, the person still has the app they had.
+    if !target.exists() && previous.exists() {
+        let _ = fs::rename(previous, target);
+    }
     let _ = fs::remove_dir_all(previous);
     let had_previous = target.exists();
     if had_previous {
@@ -20850,11 +20858,10 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
         format!(
             "[Desktop Entry]\nType=Application\nName={name}\nComment=Made with Krate\nExec={exec}\nTerminal=false\nCategories=Utility;\n{icon}",
             name = desktop_value(&name),
-            exec = desktop_exec(&[
-                engine.display().to_string(),
-                "launch".to_string(),
-                payload.display().to_string(),
-            ]),
+            exec = desktop_exec(&menu_launch_args(
+                &engine.display().to_string(),
+                &payload.display().to_string(),
+            )),
             icon = if have_icon {
                 format!("Icon={}\n", desktop_value(&icon_path.display().to_string()))
             } else {
@@ -20872,6 +20879,42 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 
     println!("Installed {name}: it is in your app menu with its own name and icon.");
     Ok(0)
+}
+
+/// The script a Linux menu entry runs: the engine `krate install` recorded,
+/// or, when Krate has since moved, the one this person has now (IC-278,
+/// moved engine).
+///
+/// The entry used to name the engine's absolute path and nothing else, so
+/// reinstalling Krate somewhere else (`/usr/local/bin` one day,
+/// `~/.local/bin` the next) left every installed app in the menu doing
+/// nothing when clicked. The Mac wrapper carries its own engine; this finds
+/// one at click time instead, so an engine upgrade is picked up too.
+///
+/// Every path reaches the script as an argument, never as script text, so
+/// nothing an app or a folder name holds is read by the shell.
+#[cfg(any(target_os = "linux", test))]
+const MENU_LAUNCH_SCRIPT: &str = "for e in \"$1\" \"$(command -v krate)\" \
+     \"$HOME/.local/bin/krate\" /usr/local/bin/krate; do \
+     [ -x \"$e\" ] && shift && exec \"$e\" \"$@\"; done; \
+     echo 'Krate is not installed, so this app cannot open. Get it at https://krate.tech' >&2; \
+     exit 127";
+
+/// The argument list of an installed app's menu entry: the launch script,
+/// then the recorded engine and what it is asked to do.
+#[cfg(any(target_os = "linux", test))]
+fn menu_launch_args(engine: &str, payload: &str) -> Vec<String> {
+    [
+        "/bin/sh",
+        "-c",
+        MENU_LAUNCH_SCRIPT,
+        "krate",
+        engine,
+        "launch",
+        payload,
+    ]
+    .map(String::from)
+    .to_vec()
 }
 
 // Linux writes these; tests on every host check them, so a change made on
@@ -21090,6 +21133,91 @@ mod desktop_entry_tests {
         assert_eq!(
             desktop_exec(&["/home/50%off/%f.krate".to_string()]),
             "\"/home/50%%off/%%f.krate\""
+        );
+    }
+
+    /// An installed app's menu entry still opens it after Krate moves
+    /// (IC-278, moved engine), and hands the app's path over untouched.
+    ///
+    /// Run for real: the `Exec=` value the installer writes is read back by
+    /// the specification's rules and those arguments are executed, with a
+    /// stand-in engine that records what it was given. Four cases: the
+    /// recorded engine is there; it moved and `krate` is on PATH; it moved
+    /// to ~/.local/bin, which a desktop session's PATH often lacks; Krate is
+    /// gone, which says so and exits 127 instead of doing nothing.
+    #[cfg(unix)]
+    #[test]
+    fn a_menu_entry_finds_krate_after_it_moves() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log = dir.path().join("ran.txt");
+        let stand_in = |path: &std::path::Path| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                path,
+                format!(
+                    "#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > '{}'\n",
+                    log.display()
+                ),
+            )
+            .unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let payload = "/x/50% off %f $HOME `id` \"q\" back\\slash/app.krate";
+        let recorded = dir.path().join("old place/krate");
+        let on_path = dir.path().join("path bin/krate");
+        let home = dir.path().join("home");
+        let local = home.join(".local/bin/krate");
+        let run = |path_dir: &std::path::Path| {
+            let _ = std::fs::remove_file(&log);
+            let args = menu_reads(&desktop_exec(&super::menu_launch_args(
+                &recorded.display().to_string(),
+                payload,
+            )))
+            .expect("the entry reads back");
+            let out = std::process::Command::new(&args[0])
+                .args(&args[1..])
+                .env("PATH", format!("{}:/usr/bin:/bin", path_dir.display()))
+                .env("HOME", &home)
+                .output()
+                .expect("run the entry");
+            let ran = std::fs::read_to_string(&log).unwrap_or_default();
+            (out, ran)
+        };
+        let expect = |ran: &str, engine: &std::path::Path, case: &str| {
+            assert_eq!(
+                ran,
+                format!("{}\nlaunch\n{payload}\n", engine.display()),
+                "{case}: the engine runs `launch` with the app's path untouched"
+            );
+        };
+        let empty = dir.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+
+        stand_in(&recorded);
+        stand_in(&on_path);
+        let (_, ran) = run(on_path.parent().unwrap());
+        expect(&ran, &recorded, "the recorded engine is preferred");
+
+        std::fs::remove_file(&recorded).unwrap();
+        let (_, ran) = run(on_path.parent().unwrap());
+        expect(&ran, &on_path, "moved, found on PATH");
+
+        stand_in(&local);
+        let (_, ran) = run(&empty);
+        expect(&ran, &local, "moved to ~/.local/bin, not on PATH");
+
+        std::fs::remove_file(&local).unwrap();
+        let (out, ran) = run(&empty);
+        if std::path::Path::new("/usr/local/bin/krate").exists() {
+            return; // this machine has Krate there; the last case cannot be staged
+        }
+        assert_eq!(out.status.code(), Some(127), "Krate gone: exit 127");
+        assert!(ran.is_empty(), "nothing ran");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("Krate is not installed"),
+            "it says why: {}",
+            String::from_utf8_lossy(&out.stderr)
         );
     }
 }
@@ -33571,6 +33699,36 @@ mod publish_staged_tests {
             "version 1"
         );
         assert!(!previous.exists());
+    }
+
+    fn app(dir: &std::path::Path, text: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("app.krate"), text).unwrap();
+    }
+    fn read(dir: &std::path::Path) -> String {
+        fs::read_to_string(dir.join("app.krate")).unwrap_or_default()
+    }
+
+    /// An install cut short between its two renames left the app only
+    /// under the set-aside name; the next install restores it before
+    /// anything else, so a second failure still leaves the person with it.
+    #[test]
+    fn an_install_cut_short_mid_swap_is_rolled_back_by_the_next() {
+        let root = tempfile::tempdir().unwrap();
+        let (staging, target, previous) = (
+            root.path().join(".a.installing"),
+            root.path().join("a"),
+            root.path().join(".a.replaced"),
+        );
+        app(&previous, "v1");
+        assert!(publish_staged(&staging, &target, &previous).is_err());
+        assert_eq!(read(&target), "v1", "the last good install is back");
+
+        // And a successful one then replaces it and leaves nothing behind.
+        app(&staging, "v2");
+        publish_staged(&staging, &target, &previous).unwrap();
+        assert_eq!(read(&target), "v2");
+        assert!(!previous.exists() && !staging.exists());
     }
 }
 
