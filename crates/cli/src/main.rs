@@ -21028,7 +21028,7 @@ fn ico_from_png(png: &[u8]) -> Option<Vec<u8>> {
 ///
 /// Every path reaches the script as an argument, never as script text, so
 /// nothing an app or a folder name holds is read by the shell.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 const MENU_LAUNCH_SCRIPT: &str = "for e in \"$1\" \"$(command -v krate)\" \
      \"$HOME/.local/bin/krate\" /usr/local/bin/krate; do \
      [ -x \"$e\" ] && shift && exec \"$e\" \"$@\"; done; \
@@ -21037,7 +21037,7 @@ const MENU_LAUNCH_SCRIPT: &str = "for e in \"$1\" \"$(command -v krate)\" \
 
 /// The argument list of an installed app's menu entry: the launch script,
 /// then the recorded engine and what it is asked to do.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn menu_launch_args(engine: &str, payload: &str) -> Vec<String> {
     [
         "/bin/sh",

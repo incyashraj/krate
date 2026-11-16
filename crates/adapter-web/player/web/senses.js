@@ -109,7 +109,11 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
         resolve('denied');
       }));
   });
-  const notifyShow = async ({ title, body }) => {
+  // Notifications posted under an app's id (IC-271), by browser tag: the
+  // browser replaces one with the same tag, and these close it again.
+  const shownByTag = new Map();
+  const noticeTag = (id) => `krate-notice-${id}`;
+  const notifyShow = async ({ title, body, id }) => {
     if (typeof Notification === 'undefined') return no('unavailable', phone ? NO_NOTIFY_PHONE : NO_NOTIFY);
     let answer = Notification.permission;
     if (answer === 'default' && !declined) answer = await askNotify();
@@ -117,15 +121,32 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
     // The app is the sender, from what the person agreed to, never from
     // the app's own text: its title is the first line under the name.
     const opts = { body: body ? `${title}\n${body}` : title, data: { page: location.href } };
+    if (id) opts.tag = noticeTag(id);
     try {
       const reg = await worker();
       if (reg) await reg.showNotification(name, opts);
-      else new Notification(name, opts); // eslint-disable-line no-new
+      else {
+        const shown = new Notification(name, opts);
+        if (id) shownByTag.set(opts.tag, shown);
+      }
       state.notified.push({ title: name, body: opts.body, how: reg ? 'worker' : 'page' });
       return ok();
     } catch (e) {
       return no('unavailable', `the browser did not show it (${(e && e.message) || e})`);
     }
+  };
+
+  // Take back the app's notification under `id`; quiet when there is none.
+  const notifyWithdraw = async ({ id }) => {
+    const tag = noticeTag(id);
+    try {
+      const reg = await worker();
+      if (reg) (await reg.getNotifications({ tag })).forEach((n) => n.close());
+    } catch { /* nothing to take back */ }
+    const shown = shownByTag.get(tag);
+    if (shown) { shown.close(); shownByTag.delete(tag); }
+    state.withdrawn = (state.withdrawn || []).concat(id);
+    return ok();
   };
 
   // ------------------------------------------------------------ location
@@ -471,6 +492,7 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
     facts: { geolocation: Boolean(navigator.geolocation) },
     handlers: {
       'notify.show': notifyShow,
+      'notify.withdraw': notifyWithdraw,
       'location.current': locationNow,
       share: shareNow,
       'speech.voices': voices,

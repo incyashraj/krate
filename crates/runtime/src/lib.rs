@@ -1731,6 +1731,8 @@ impl Runtime {
         link_gui!(ui4::photos);
         // Phase 4 only: reminders delivered with the app closed (IC-921).
         link_gui!(ui4::reminders);
+        // Phase 4 only: notifications replaced and taken back by id (IC-271).
+        link_gui!(ui4::notifications);
         // Phase 4 only: signing in through the system sheet (IC-923).
         link_gui!(ui4::sign_in);
         // Phase 4 only: Face ID, Touch ID or the passcode (IC-924).

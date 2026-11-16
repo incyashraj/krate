@@ -205,7 +205,7 @@ pub(crate) fn schedule(
 /// can only say it came from Script Editor. And macOS answers whether this
 /// app's notifications are on, so one the person switched off is reported as
 /// not shown instead of as success.
-pub fn notify_now(title: &str, body: &str) -> Option<Result<(), String>> {
+pub fn notify_now(title: &str, body: &str, notice: Option<&str>) -> Option<Result<(), String>> {
     installed_app().ok()?;
     let (Some(center), Some(content_class), Some(request_class)) = (
         center(),
@@ -215,14 +215,19 @@ pub fn notify_now(title: &str, body: &str) -> Option<Result<(), String>> {
         return Some(Err("this Mac has no notification service".to_string()));
     };
     let (title, body) = (title.to_string(), body.to_string());
-    // One identifier per notification, so two in a row are both shown.
-    let id = format!(
-        "{PREFIX}now.{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
-    );
+    // One identifier per notification, so two in a row are both shown;
+    // the app's own id when it gave one, so the next under it replaces
+    // this one (IC-271).
+    let id = match notice {
+        Some(notice) => notice_identifier(notice),
+        None => format!(
+            "{PREFIX}now.{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        ),
+    };
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
     // SAFETY: authorization, then a content and a request with no trigger
     // (deliver now) added to the bundle's center; the completions answer on
@@ -266,6 +271,29 @@ pub fn notify_now(title: &str, body: &str) -> Option<Result<(), String>> {
         let _: () = msg_send![&*center, requestAuthorizationWithOptions: 7usize, completionHandler: &*asked];
     }
     Some(wait(&rx, Duration::from_secs(120)).unwrap_or(Err("macOS did not answer".to_string())))
+}
+
+/// The system identifier of the app's notification under `notice`. Apart
+/// from reminders' (`krate.<id>`), so neither can take back the other.
+fn notice_identifier(notice: &str) -> String {
+    format!("{PREFIX}notice.{notice}")
+}
+
+/// Take back the app's notification under `notice` from Notification
+/// Centre (IC-271). Quiet when there is none, or for `krate run`, which
+/// has no notification centre of its own.
+pub fn withdraw_notice(notice: &str) {
+    if installed_app().is_err() {
+        return;
+    }
+    let Some(center) = center() else {
+        return;
+    };
+    // SAFETY: remove one delivered notification by its identifier.
+    unsafe {
+        let ids = NSArray::from_retained_slice(&[NSString::from_str(&notice_identifier(notice))]);
+        let _: () = msg_send![&*center, removeDeliveredNotificationsWithIdentifiers: &*ids];
+    }
 }
 
 /// Take back one of the app's reminders.

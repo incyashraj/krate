@@ -290,7 +290,24 @@ pub fn notify(
     identity: &str,
     granted: bool,
 ) -> Result<(), NotifyError> {
-    let _ = identity;
+    notify_as(title, body, app_name, identity, None, granted)
+}
+
+/// [`notify`] under an id the app chose (IC-271, `krate:ui/notifications`):
+/// a later one under the same id replaces it where the system can, and
+/// [`withdraw`] takes it back. `None` is a one-off, as `notify` shows.
+///
+/// The id is checked by the caller (letters, digits, `-`, `_`). The app is
+/// never told whether anything was seen (F-323).
+pub fn notify_as(
+    title: &str,
+    body: &str,
+    app_name: &str,
+    identity: &str,
+    id: Option<&str>,
+    granted: bool,
+) -> Result<(), NotifyError> {
+    let _ = (identity, id);
     if !granted {
         return Err(NotifyError::Denied);
     }
@@ -318,7 +335,7 @@ pub fn notify(
     // dependency-free one, and WinRT answers in milliseconds.
     #[cfg(target_os = "windows")]
     {
-        return krate_adapter_windows::toast::show(identity, app_name, title, body)
+        return krate_adapter_windows::toast::show(identity, app_name, title, body, id)
             .map_err(NotifyError::Unavailable);
     }
 
@@ -327,7 +344,7 @@ pub fn notify(
     // person has switched it off (IC-271). `krate run` has no bundle of its
     // own and falls through to osascript.
     #[cfg(target_os = "macos")]
-    if let Some(answer) = krate_adapter_macos::notify_now(title, body) {
+    if let Some(answer) = krate_adapter_macos::notify_now(title, body, id) {
         return answer.map_err(NotifyError::Unavailable);
     }
 
@@ -342,16 +359,153 @@ pub fn notify(
         // post as somebody else.
         let script = macos_script(title, body, app_name);
         Command::new("osascript").args(["-e", &script]).status()
+    } else if let Some(id) = id {
+        return linux_notify_as(app_name, identity, id, title, body);
     } else {
         Command::new("notify-send")
-            .arg("--app-name")
-            .arg(app_name)
-            .arg(title)
-            .arg(body)
+            .args(linux_notify_args(app_name, title, body, None))
             .status()
     };
 
     helper_outcome(status)
+}
+
+/// Take back the app's notification under `id` if it still shows (IC-271).
+/// Quiet when there is none, or the system cannot take one back.
+pub fn withdraw(identity: &str, id: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        krate_adapter_windows::toast::withdraw(identity, id);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = identity;
+        krate_adapter_macos::withdraw_notice(id);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let held = linux_notices()
+            .lock()
+            .ok()
+            .and_then(|mut held| held.remove(&linux_notice_key(identity, id)));
+        if let Some(number) = held {
+            let _ = Command::new("gdbus")
+                .args([
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.freedesktop.Notifications",
+                    "--object-path",
+                    "/org/freedesktop/Notifications",
+                    "--method",
+                    "org.freedesktop.Notifications.CloseNotification",
+                    &number.to_string(),
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (identity, id);
+    }
+}
+
+/// notify-send's arguments for one notification, replacing the server's
+/// notification `replace` when given.
+///
+/// `--` before the text: a title starting with `-` was read as an option,
+/// so "--icon=..." set the icon and a title "-u" was refused as a bad
+/// urgency, not shown.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_notify_args(app_name: &str, title: &str, body: &str, replace: Option<u32>) -> Vec<String> {
+    let mut args = vec!["--app-name".to_string(), app_name.to_string()];
+    if let Some(number) = replace {
+        args.push("--print-id".to_string());
+        args.push("--replace-id".to_string());
+        args.push(number.to_string());
+    }
+    args.push("--".to_string());
+    args.push(title.to_string());
+    args.push(body.to_string());
+    args
+}
+
+/// The number notify-send prints with `--print-id`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_notice_number(stdout: &[u8]) -> Option<u32> {
+    std::str::from_utf8(stdout).ok()?.trim().parse().ok()
+}
+
+#[cfg(target_os = "linux")]
+fn linux_notice_key(identity: &str, id: &str) -> String {
+    format!("{identity}\u{0}{id}")
+}
+
+/// The server's number for each notification this process showed under an
+/// id, so the next one replaces it and a withdraw closes it. In memory: the
+/// server's numbers do not outlive its session, and an app's notifications
+/// are its run's.
+#[cfg(target_os = "linux")]
+fn linux_notices() -> &'static std::sync::Mutex<std::collections::HashMap<String, u32>> {
+    static HELD: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, u32>>> =
+        std::sync::OnceLock::new();
+    HELD.get_or_init(Default::default)
+}
+
+/// Linux, under an id: `--print-id` for the number to replace next time.
+/// A notify-send too old to print one (before 0.7.10) shows it plainly.
+#[cfg(target_os = "linux")]
+fn linux_notify_as(
+    app_name: &str,
+    identity: &str,
+    id: &str,
+    title: &str,
+    body: &str,
+) -> Result<(), NotifyError> {
+    let key = linux_notice_key(identity, id);
+    let held = linux_notices()
+        .lock()
+        .ok()
+        .and_then(|h| h.get(&key).copied());
+    // 0 asks for a new one and still prints its number.
+    let out = Command::new("notify-send")
+        .args(linux_notify_args(
+            app_name,
+            title,
+            body,
+            Some(held.unwrap_or(0)),
+        ))
+        .output();
+    match out {
+        Ok(out) if out.status.success() => {
+            if let (Some(number), Ok(mut held)) =
+                (linux_notice_number(&out.stdout), linux_notices().lock())
+            {
+                held.insert(key, number);
+            }
+            Ok(())
+        }
+        Ok(_) => helper_outcome(
+            Command::new("notify-send")
+                .args(linux_notify_args(app_name, title, body, None))
+                .status(),
+        ),
+        Err(err) => helper_outcome(Err(err)),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+#[allow(dead_code)]
+fn linux_notify_as(
+    _app_name: &str,
+    _identity: &str,
+    _id: &str,
+    _title: &str,
+    _body: &str,
+) -> Result<(), NotifyError> {
+    Err(NotifyError::Unavailable("not on this system".to_string()))
 }
 
 /// Reject notification text that is empty or unbounded.
@@ -395,6 +549,44 @@ fn macos_script(title: &str, body: &str, app_name: &str) -> String {
 /// Escape text for embedding in an AppleScript string literal.
 fn escape_applescript(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(test)]
+mod notice_arg_tests {
+    use super::{linux_notice_number, linux_notify_args};
+
+    /// The text goes after `--`, so a title that looks like an option is
+    /// shown as text; the replace number rides with `--print-id`.
+    #[test]
+    fn notify_send_reads_the_text_as_text_and_replaces_by_number() {
+        let plain = linux_notify_args("Notes", "--icon=/etc/passwd", "-u critical", None);
+        assert_eq!(
+            plain,
+            [
+                "--app-name",
+                "Notes",
+                "--",
+                "--icon=/etc/passwd",
+                "-u critical"
+            ]
+        );
+        let replacing = linux_notify_args("Notes", "Uploading", "7 of 10", Some(42));
+        assert_eq!(
+            replacing,
+            [
+                "--app-name",
+                "Notes",
+                "--print-id",
+                "--replace-id",
+                "42",
+                "--",
+                "Uploading",
+                "7 of 10"
+            ]
+        );
+        assert_eq!(linux_notice_number(b"17\n"), Some(17));
+        assert_eq!(linux_notice_number(b"Unknown option --print-id"), None);
+    }
 }
 
 #[cfg(test)]

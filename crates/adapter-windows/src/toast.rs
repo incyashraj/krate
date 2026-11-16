@@ -77,14 +77,21 @@ fn escape_xml(text: &str) -> String {
 }
 
 /// Show one toast attributed to `app_name`, under the app known by
-/// `identity`.
+/// `identity`. With `tag`, it replaces the app's toast under that tag and
+/// [`withdraw`] takes it back (IC-271).
 ///
 /// Ok means Windows accepted it with this app's notifications switched on.
 /// The person may still have Focus Assist on; Windows then files the toast in
 /// the notification centre instead of showing a banner, which is the
 /// platform's own promise and not one Krate can make stronger.
 #[cfg(windows)]
-pub fn show(identity: &str, app_name: &str, title: &str, body: &str) -> Result<(), String> {
+pub fn show(
+    identity: &str,
+    app_name: &str,
+    title: &str,
+    body: &str,
+    tag: Option<&str>,
+) -> Result<(), String> {
     use windows::core::HSTRING;
     use windows::Data::Xml::Dom::XmlDocument;
     use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
@@ -111,7 +118,33 @@ pub fn show(identity: &str, app_name: &str, title: &str, body: &str) -> Result<(
     doc.LoadXml(&HSTRING::from(toast_xml(title, body)))
         .map_err(failed("content"))?;
     let toast = ToastNotification::CreateToastNotification(&doc).map_err(failed("toast"))?;
+    if let Some(tag) = tag {
+        // Windows replaces a toast that has the same tag and group.
+        toast.SetTag(&HSTRING::from(tag)).map_err(failed("id"))?;
+        toast
+            .SetGroup(&HSTRING::from(NOTICE_GROUP))
+            .map_err(failed("group"))?;
+    }
     notifier.Show(&toast).map_err(failed("show"))
+}
+
+/// The group an app's replaceable toasts are filed under, beside their tag.
+#[cfg(windows)]
+const NOTICE_GROUP: &str = "krate-notices";
+
+/// Take back the toast `show` posted under `tag`, from the screen and the
+/// notification centre. Quiet when there is none.
+#[cfg(windows)]
+pub fn withdraw(identity: &str, tag: &str) {
+    use windows::core::HSTRING;
+    use windows::UI::Notifications::ToastNotificationManager;
+    if let Ok(history) = ToastNotificationManager::History() {
+        let _ = history.RemoveGroupedTagWithId(
+            &HSTRING::from(tag),
+            &HSTRING::from(NOTICE_GROUP),
+            &HSTRING::from(app_user_model_id(identity)),
+        );
+    }
 }
 
 /// Days a daily reminder is set ahead on Windows, which has no repeating
@@ -385,6 +418,7 @@ mod tests {
             app,
             "Build finished",
             "3 tests passed & 0 failed <ok>",
+            None,
         ) {
             Ok(()) => {}
             Err(why) => assert!(

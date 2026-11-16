@@ -1397,6 +1397,27 @@ interface notify {
   show: func(title: string, body: string) -> result<_, notify-error>;
 }
 
+/// Notifications the app can replace and take back while they show: a
+/// download's progress, a timer that is now done, a message count
+/// (IC-271).
+///
+/// Behind `ui.notify` and attributed like `notify.show`, with the same
+/// promise: the app learns nothing about whether one was seen, clicked or
+/// dismissed (F-323). Each app reaches only its own.
+interface notifications {
+  use notify.{notify-error};
+
+  /// Show a notification under `id` (letters, digits, `-` and `_`, up to
+  /// 64), replacing the one this app last showed under the same id. Where
+  /// the system cannot replace one, the new one shows and the old one
+  /// stays until the person clears it.
+  post: func(id: string, title: string, body: string) -> result<_, notify-error>;
+
+  /// Take back this app's notification under `id` if it still shows.
+  /// Unknown ids are ignored.
+  withdraw: func(id: string);
+}
+
 /// Reminders that arrive when the app is closed: a timer that rings, a
 /// habit nudged each evening, a meeting about to start (IC-921).
 ///

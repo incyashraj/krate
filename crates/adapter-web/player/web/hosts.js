@@ -908,6 +908,24 @@ function senses({ allows, bridge, present, facts }) {
     },
   };
 
+  // As Phase3GuiHost::notice_post: the grant, the id, then as notify.
+  const NOTICE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+  const notifications = {
+    post(id, title, body) {
+      if (!allows('ui.notify')) throw fail({ tag: 'denied' });
+      if (!NOTICE_ID.test(String(id))) throw fail({ tag: 'invalid-content', val: 'a notification id is letters, digits, - and _, up to 64' });
+      if (!String(title).trim()) throw fail({ tag: 'invalid-content', val: 'a notification needs a title' });
+      if (utf8(title) > MAX_TITLE_BYTES || utf8(body) > MAX_BODY_BYTES) throw fail({ tag: 'invalid-content', val: 'the notification text was too long' });
+      if (CONTROL.test(title) || CONTROL.test(body)) throw fail({ tag: 'invalid-content', val: 'the notification text contained control characters' });
+      present();
+      ask('notify.show', { title, body, id });
+    },
+    withdraw(id) {
+      if (!allows('ui.notify') || !NOTICE_ID.test(String(id))) return;
+      ask('notify.withdraw', { id });
+    },
+  };
+
   // ------------------------------------------------------------ location
   // As Phase3GuiHost::location: without location.read the answer is
   // not-allowed and the browser is never asked. The first ask starts the
@@ -1125,6 +1143,7 @@ function senses({ allows, bridge, present, facts }) {
 
   return {
     'krate:ui/notify': notify,
+    'krate:ui/notifications': notifications,
     'krate:ui/location': location,
     'krate:ui/share': share,
     'krate:speech/synthesis': synthesis,

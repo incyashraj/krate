@@ -42,6 +42,7 @@ world gui {
   import krate:ui/menu@0.1.0;
   import krate:ui/launcher@0.1.0;
   import krate:ui/notify@0.1.0;
+  import krate:ui/notifications@0.1.0;
   import krate:ui/haptics@0.1.0;
   import krate:ui/motion@0.1.0;
   import krate:ui/location@0.1.0;

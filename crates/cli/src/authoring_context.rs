@@ -1213,9 +1213,14 @@ and never make a step depend on hearing them.\n\n\
 attributes it to the app. Use it when the thing the app waits for finishes \
 -- a timer, a long job -- because the person has usually switched windows. \
 No reply channel exists; do not build flows that depend on the person \
-clicking it. **Not available on Windows yet**: `show` returns an error \
-there, so treat it as a courtesy -- show the same state in the window too, \
-and never make a step depend on the notification having appeared.\n\n\
+clicking it. One that changes (a download's progress, a count, a timer \
+that is now done): `ui::notifications::post(\"upload\", \"Uploading\", \
+\"3 of 10 photos\")` -- the same id replaces it, and \
+`ui::notifications::withdraw(\"upload\")` takes it back once it no longer \
+holds; ids are letters, digits, `-` and `_`. Works on a Mac, Windows, \
+Linux and in the browser. Treat any notification as a courtesy -- show \
+the same state in the window too, and never make a step depend on it \
+having appeared.\n\n\
 **Open in the browser** (`ui.open-url`, an explicit ask): \
 `ui::launch::open_url(\"https://...\")` hands a link to the person's \
 browser. Pairs with 2c: a \"get your API token\" button that opens the \

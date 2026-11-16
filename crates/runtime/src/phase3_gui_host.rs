@@ -144,6 +144,9 @@ pub struct Phase3GuiHost {
     app_name: Option<String>,
     /// See [`Config::app_identity`](crate::Config::app_identity).
     app_identity: Option<String>,
+    /// What a headless run's `notifications.post` would show, by id: the
+    /// stand-in check-app and tests read, since nothing is on screen.
+    pub(crate) notices: std::cell::RefCell<std::collections::BTreeMap<String, (String, String)>>,
     /// How many times the person has asked to close the window.
     ///
     /// The first request goes to the guest untouched. A second means the guest
@@ -640,6 +643,7 @@ impl Phase3GuiHost {
             interrupts: std::cell::Cell::new(0),
             app_name: None,
             app_identity: None,
+            notices: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
             peeked_event: std::cell::RefCell::new(None),
@@ -994,6 +998,66 @@ impl Phase3GuiHost {
         if crate::phase3_ui::is_copy_chord(key, modifiers) {
             self.copy_keystroke.set(Some(std::time::Instant::now()));
         }
+    }
+
+    /// Show a notification under the app's own id (IC-271), behind
+    /// `ui.notify`: replaced by the next under that id where the system
+    /// can, attributed like `notify.show`, and never answered with whether
+    /// anyone saw it (F-323). The id is checked: it becomes part of the
+    /// system's identifier.
+    pub(crate) fn notice_post(
+        &self,
+        id: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<(), crate::desktop_host::NotifyError> {
+        use crate::desktop_host::NotifyError;
+        let granted = self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Notify))
+            .is_ok();
+        if !granted {
+            return Err(NotifyError::Denied);
+        }
+        if !valid_reminder_id(id) {
+            return Err(NotifyError::InvalidContent(
+                "a notification id is letters, digits, - and _, up to 64".to_string(),
+            ));
+        }
+        crate::desktop_host::check_notification(title, body)?;
+        if self.headless {
+            self.notices
+                .borrow_mut()
+                .insert(id.to_string(), (title.to_string(), body.to_string()));
+            return Ok(());
+        }
+        crate::desktop_host::notify_as(
+            title,
+            body,
+            &self.attribution(),
+            &self.os_identity(),
+            Some(id),
+            true,
+        )
+    }
+
+    /// Take back the app's notification under `id` (IC-271). Unknown ids,
+    /// bad ids and an app without `ui.notify` are all quietly nothing.
+    pub(crate) fn notice_withdraw(&self, id: &str) {
+        let granted = self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Notify))
+            .is_ok();
+        if !granted || !valid_reminder_id(id) {
+            return;
+        }
+        if self.headless {
+            self.notices.borrow_mut().remove(id);
+            return;
+        }
+        crate::desktop_host::withdraw(&self.os_identity(), id);
     }
 
     /// Schedule a reminder (IC-921), behind `ui.notify`: the id checked
@@ -10497,5 +10561,79 @@ mod notification_attribution_tests {
             !show.contains("notify(&title, &body, &title,"),
             "the guest's title must never be the sender line"
         );
+    }
+}
+
+#[cfg(test)]
+mod notice_tests {
+    use super::*;
+    use crate::desktop_host::NotifyError;
+
+    fn host(grants: &[&str]) -> Phase3GuiHost {
+        let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+        let policy = krate_policy::SessionPolicy::from_cli_grants(&grants).expect("policy");
+        Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host")
+    }
+
+    /// Posting again under an id replaces it, withdrawing takes it back,
+    /// and each id is its own (IC-271). Headless, the stand-in holds what a
+    /// screen would show.
+    #[test]
+    fn an_id_is_replaced_by_the_next_and_taken_back_by_withdraw() {
+        let host = host(&["ui.notify"]);
+        host.notice_post("upload", "Uploading", "3 of 10").unwrap();
+        host.notice_post("chat", "2 new messages", "").unwrap();
+        host.notice_post("upload", "Uploading", "7 of 10").unwrap();
+        let shown = host.notices.borrow().clone();
+        assert_eq!(shown.len(), 2, "one per id: {shown:?}");
+        assert_eq!(shown["upload"].1, "7 of 10", "the later one replaced it");
+        host.notice_withdraw("upload");
+        host.notice_withdraw("never-posted");
+        let shown = host.notices.borrow().clone();
+        assert_eq!(shown.keys().collect::<Vec<_>>(), ["chat"]);
+    }
+
+    /// Without `ui.notify` nothing is posted and nothing is taken back; an
+    /// id that could reach outside the app's own identifiers is refused;
+    /// the text is held to notify's rules.
+    #[test]
+    fn the_grant_the_id_and_the_text_are_checked() {
+        let denied = host(&[]);
+        assert!(matches!(
+            denied.notice_post("upload", "Uploading", ""),
+            Err(NotifyError::Denied)
+        ));
+        assert!(denied.notices.borrow().is_empty());
+
+        let host = host(&["ui.notify"]);
+        for id in ["", "a.b", "../x", "a b", "naïve", &"x".repeat(65)] {
+            assert!(
+                matches!(
+                    host.notice_post(id, "Title", "Body"),
+                    Err(NotifyError::InvalidContent(_))
+                ),
+                "id {id:?} must be refused"
+            );
+        }
+        assert!(matches!(
+            host.notice_post("ok", "", "Body"),
+            Err(NotifyError::InvalidContent(_))
+        ));
+        assert!(matches!(
+            host.notice_post("ok", "Title\nInjected", "Body"),
+            Err(NotifyError::InvalidContent(_))
+        ));
+        assert!(
+            host.notices.borrow().is_empty(),
+            "nothing refused was shown"
+        );
+
+        // A withdraw from an app without the grant does not reach another
+        // run's stand-in either.
+        host.notice_post("keep", "Kept", "").unwrap();
+        let other = super::notice_tests::host(&[]);
+        other.notice_withdraw("keep");
+        assert_eq!(host.notices.borrow().len(), 1);
     }
 }
