@@ -231,12 +231,13 @@ async function publishBig(e, bytes, name = "Big") {
   assert.strictEqual(got.headers.get("content-length"), String(bytes.byteLength));
   assert.strictEqual(await sha256Hex(new Uint8Array(await got.arrayBuffer())), hash);
 
-  // Start 3 (the record, two day counters), finish 1, verdict 8 (owner,
-  // address, listing, alias, channel, versions, the app's line (IC-976),
-  // record): 12, against the free tier's 1,000 a day and the tier's 10 big
-  // publishes a day.
+  // Start 3 (the record, two day counters), finish 2 (the record, and the
+  // waiting stamp that spares the ten-minute run 144 lists a day), verdict 8
+  // (owner, address, listing, alias, channel, versions, the app's line
+  // (IC-976), record): 13, against the free tier's 1,000 a day and the tier's
+  // 10 big publishes a day.
   const writes = e._ops.put - before.put;
-  assert.ok(writes <= 12, `a big publish costs at most 12 KV writes, not ${writes}`);
+  assert.ok(writes <= 13, `a big publish costs at most 13 KV writes, not ${writes}`);
 
   // The status says where it went, to the token's holder.
   const status = await worker.fetch(
