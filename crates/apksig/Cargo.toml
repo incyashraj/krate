@@ -1,0 +1,25 @@
+[package]
+name = "krate-apksig"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Android APK signature verification and the signing-key challenge, for krate port and the hub's door (IC-800)"
+
+[features]
+# A small APK v2/v3 signer, for tests here and in the CLI: never shipped.
+test-signer = []
+
+[dependencies]
+# The same audited crypto the bundle signs with; it already builds for the
+# hub's wasm validator.
+ring = "0.17"
+# Inflate for AndroidManifest.xml, the decompressor the bundle already uses.
+miniz_oxide = "0.8"
+crc32fast = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]

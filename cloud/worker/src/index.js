@@ -46,6 +46,8 @@ import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
 import { leaseRoute, leaseKeyRoute } from "./org-lease.js";
+// Proof of an Android app's signing key for krate port (IC-800).
+import { issueKeyChallenge, answerKeyChallenge } from "./key-challenge.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
@@ -744,6 +746,17 @@ export default {
       if (request.method === "POST" && pathname === "/sign/web-build") {
         // NOT cors(), as /keys/use: the build service's door only.
         return signWebBuild(request, env);
+      }
+      // Proof that the person importing an Android app holds its signing
+      // key (IC-800): issue a challenge, take the signed answer.
+      if (request.method === "POST" && (pathname === "/port/key-challenge" || pathname === "/port/key-challenge/answer")) {
+        const user = await authedUser(request, env);
+        if (!user) return cors(text("Sign in first: krate login", 401));
+        return cors(
+          pathname === "/port/key-challenge"
+            ? await issueKeyChallenge(request, env, user)
+            : await answerKeyChallenge(request, env, user, callValidator),
+        );
       }
       if (request.method === "GET" && /^\/made-for\/[0-9a-f-]{36}$/.test(pathname)) {
         return cors(await madeFor(pathname.slice("/made-for/".length), env));

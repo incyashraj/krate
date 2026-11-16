@@ -21,6 +21,7 @@ mod access;
 mod agent_provider;
 mod api_author;
 mod api_key;
+mod apk_proof;
 mod audit;
 mod authoring_context;
 mod engine_sweep;
@@ -178,6 +179,27 @@ enum GroupCommand {
 // and the other variants costs nothing; boxing `Run`'s fields to satisfy the
 // lint would only make every use of them noisier.
 #[allow(clippy::large_enum_variant)]
+/// `krate apk`.
+#[derive(Debug, Subcommand)]
+enum ApkAction {
+    /// Check an APK's signature and say which certificate signed it. Local:
+    /// nothing is sent anywhere.
+    Check {
+        apk: PathBuf,
+        /// Answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Prove you hold the key an APK is signed with: Krate writes a small
+    /// file for you to sign with that key, then checks your signed copy.
+    Prove {
+        apk: PathBuf,
+        /// The challenge file, signed with the app's key.
+        #[arg(long, value_name = "SIGNED_FILE")]
+        answer: Option<PathBuf>,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Send any spooled usage events, then exit. Spawned detached by the
@@ -194,6 +216,13 @@ enum Command {
     /// Print this engine's build fingerprint, for a newer engine asking.
     #[command(hide = true)]
     EngineBuild,
+
+    /// An Android app: whether its signature holds and who signed it, and
+    /// proof that you hold its signing key (IC-800).
+    Apk {
+        #[command(subcommand)]
+        action: ApkAction,
+    },
 
     /// Run a WebAssembly component through the Krate runtime.
     Run {
@@ -2316,6 +2345,10 @@ fn run() -> Result<u8> {
         }
         Command::EngineSweep => engine_sweep::sweep_now(),
         Command::EngineBuild => Ok(engine_sweep::print_build()),
+        Command::Apk { action } => match action {
+            ApkAction::Check { apk, json } => apk_proof::check_command(&apk, json),
+            ApkAction::Prove { apk, answer } => apk_proof::prove_command(&apk, answer.as_deref()),
+        },
         Command::Telemetry { state } => usage::telemetry_command(&state),
         Command::Policy { json, action } => match action {
             None => fleet::show(json),

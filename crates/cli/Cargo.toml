@@ -57,6 +57,10 @@ krate-policy = { path = "../policy" }
 krate-bundle = { path = "../bundle" }
 # Offline access to an organisation's private app: the lease and its check (IC-948 G).
 krate-lease = { path = "../lease" }
+# Android APK signatures and the signing-key challenge (IC-800).
+krate-apksig = { path = "../apksig" }
+# Checking the hub's signed record of key control (Ed25519).
+ring = "0.17"
 # Opening an organisation's private app: the check-in, the lease, this
 # device's organisation key, its team data and connections, shared with the
 # phone Players (K-1171).
