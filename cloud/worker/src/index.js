@@ -31,7 +31,7 @@ const MAX_REPORT_BYTES = 12 * 1024 * 1024;
 // Either way it is instantiated once, lazily, and the instance's memory
 // is re-read on every call because it can grow.
 import * as validatorImport from "./validator.wasm";
-import { Org, SLUG, EMAIL, chainOk, messageFor } from "./org.js";
+import { Org, SLUG, EMAIL, chainOk, messageFor, canonicalJson } from "./org.js";
 // Organisation lifecycle, mail and the refused-attempt limit
 // (IC-948), each in its own module; importing the store's half registers
 // its commands with the Org class.
@@ -45,7 +45,7 @@ import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedA
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
-import { leaseRoute, leaseKeyRoute } from "./org-lease.js";
+import { leaseRoute, leaseKeyRoute, leaseKey } from "./org-lease.js";
 // Proof of an Android app's signing key for krate port (IC-800).
 import { issueKeyChallenge, answerKeyChallenge } from "./key-challenge.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
@@ -1935,6 +1935,10 @@ async function takedownPut(request, hash, env) {
 
 /// Every open takedown, for clients to hold and honour offline (IC-669,
 /// test 1311). Closed ones are not here: a restored app is not blocked.
+/// What a blocklist signature begins with: never a lease's or a key-control
+/// record's, so no signature over one can pass as another.
+const BLOCKLIST_DOMAIN = "krate-blocklist-v1\n";
+
 async function takedownList(env) {
   const keys = await listAllKeys(env.APPS, "takedown:");
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
@@ -1957,8 +1961,23 @@ async function takedownList(env) {
     }
   }
   blocked.sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0));
+  const list = { schema: "krate.hub-blocklist.v1", hub: base, issued_at: Math.floor(Date.now() / 1000), blocked };
+  // Signed with the hub's key (the one /lease-key publishes and Krate pins)
+  // under its own domain, so a mirror or a network in between can neither
+  // empty the list nor block an app with a forged one (IC-669, 1311).
+  const signer = await leaseKey(env);
+  const signed = signer
+    ? {
+        signature: [...new Uint8Array(await crypto.subtle.sign(
+          { name: "Ed25519" },
+          signer.privateKey,
+          new TextEncoder().encode(BLOCKLIST_DOMAIN + canonicalJson(list)),
+        ))].map((b) => b.toString(16).padStart(2, "0")).join(""),
+        key_id: signer.keyId,
+      }
+    : {};
   return new Response(
-    JSON.stringify({ schema: "krate.hub-blocklist.v1", hub: base, issued_at: Math.floor(Date.now() / 1000), fetched_at: 0, blocked }),
+    JSON.stringify({ ...list, fetched_at: 0, ...signed }),
     { headers: { "content-type": "application/json", "cache-control": "public, max-age=300" } },
   );
 }

@@ -7189,6 +7189,62 @@ fn blocked_entry(target: &str) -> Option<Blocked> {
     list.blocked.into_iter().find(|b| b.hash == hash)
 }
 
+/// What a blocklist signature begins with (cloud/worker/src/index.js).
+const BLOCKLIST_DOMAIN: &str = "krate-blocklist-v1\n";
+
+/// The hub's list, only when its signature holds under the pinned hub key
+/// and it is no older than the list already held: a mirror or a network in
+/// between can neither empty it, nor block an app with a forged one, nor
+/// hand back an older list that no longer names a removed app (IC-669,
+/// test 1311).
+fn read_signed_blocklist(
+    value: &serde_json::Value,
+    key: Option<[u8; 32]>,
+    held_issued_at: Option<u64>,
+) -> std::result::Result<Blocklist, String> {
+    let key = key.ok_or("this Krate has no hub key to check the blocklist with")?;
+    if value["schema"] != BLOCKLIST_SCHEMA {
+        return Err(format!(
+            "the hub answered with a {} list, which this Krate does not read",
+            value["schema"]
+        ));
+    }
+    let signature = value["signature"]
+        .as_str()
+        .and_then(|hex| {
+            (hex.len() == 128)
+                .then(|| {
+                    (0..64)
+                        .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok())
+                        .collect::<Option<Vec<u8>>>()
+                })
+                .flatten()
+        })
+        .ok_or("the hub's blocklist is not signed")?;
+    let body = serde_json::json!({
+        "schema": value["schema"],
+        "hub": value["hub"],
+        "issued_at": value["issued_at"],
+        "blocked": value["blocked"],
+    });
+    let signed = format!("{BLOCKLIST_DOMAIN}{}", krate_lease::canonical_json(&body));
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, key)
+        .verify(signed.as_bytes(), &signature)
+        .map_err(|_| "the blocklist's signature is not the hub's".to_string())?;
+    let list: Blocklist = serde_json::from_value(serde_json::json!({
+        "schema": value["schema"],
+        "hub": value["hub"],
+        "issued_at": value["issued_at"],
+        "fetched_at": 0,
+        "blocked": value["blocked"],
+    }))
+    .map_err(|err| format!("the blocklist did not read: {err}"))?;
+    if held_issued_at.is_some_and(|held| list.issued_at < held) {
+        return Err("the hub answered with a list older than the one held".to_string());
+    }
+    Ok(list)
+}
+
 fn blocklist_command(update: bool) -> Result<u8> {
     if update {
         let hub = org::hub_url(None)?;
@@ -7202,14 +7258,11 @@ fn blocklist_command(update: bool) -> Result<u8> {
         let body = response
             .into_string()
             .with_context(|| format!("{endpoint} did not answer"))?;
-        let mut list: Blocklist = serde_json::from_str(&body)
+        let value: serde_json::Value = serde_json::from_str(&body)
             .with_context(|| format!("{endpoint} did not answer with a blocklist"))?;
-        if list.schema != BLOCKLIST_SCHEMA {
-            anyhow::bail!(
-                "{endpoint} answered with a {} list, which this Krate does not read",
-                list.schema
-            );
-        }
+        let held = stored_blocklist().map(|l| l.issued_at);
+        let mut list = read_signed_blocklist(&value, krate_lease::lease_key(), held)
+            .map_err(|why| anyhow::anyhow!("{why}; the list you had is kept"))?;
         list.hub = hub.clone();
         list.fetched_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -28607,6 +28660,79 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod blocklist_signature_tests {
+    use super::*;
+    use ring::signature::KeyPair;
+
+    fn signed(seed: u8, body: serde_json::Value, domain: &str) -> (serde_json::Value, [u8; 32]) {
+        let pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&[seed; 32]).unwrap();
+        let bytes = format!("{domain}{}", krate_lease::canonical_json(&body));
+        let hex: String = pair
+            .sign(bytes.as_bytes())
+            .as_ref()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let mut value = body.clone();
+        value["signature"] = serde_json::Value::String(hex);
+        value["fetched_at"] = 0.into();
+        (value, pair.public_key().as_ref().try_into().unwrap())
+    }
+
+    fn list(issued_at: u64, hashes: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "schema": BLOCKLIST_SCHEMA,
+            "hub": "https://hub.example",
+            "issued_at": issued_at,
+            "blocked": hashes.iter().map(|h| serde_json::json!({"hash": h, "reason": "malware"})).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Only the hub's signed list is taken (IC-669, 1311): not an unsigned
+    /// one, not one signed by another key or as a lease, not one emptied
+    /// after signing, and not an older one than the list held.
+    #[test]
+    fn only_the_hubs_signed_current_blocklist_is_taken() {
+        let (good, key) = signed(9, list(200, &["aa"]), BLOCKLIST_DOMAIN);
+        let taken = read_signed_blocklist(&good, Some(key), Some(100)).expect("the hub's list");
+        assert_eq!(taken.blocked.len(), 1);
+
+        let mut unsigned = good.clone();
+        unsigned.as_object_mut().unwrap().remove("signature");
+        assert!(read_signed_blocklist(&unsigned, Some(key), None)
+            .unwrap_err()
+            .contains("not signed"));
+
+        let (other, _) = signed(10, list(200, &["aa"]), BLOCKLIST_DOMAIN);
+        assert!(
+            read_signed_blocklist(&other, Some(key), None).is_err(),
+            "another key"
+        );
+
+        let (as_lease, _) = signed(9, list(200, &["aa"]), "krate-lease-v1\n");
+        assert!(
+            read_signed_blocklist(&as_lease, Some(key), None).is_err(),
+            "a lease signature"
+        );
+
+        let mut emptied = good.clone();
+        emptied["blocked"] = serde_json::json!([]);
+        assert!(
+            read_signed_blocklist(&emptied, Some(key), None).is_err(),
+            "emptied after signing"
+        );
+
+        assert!(read_signed_blocklist(&good, Some(key), Some(300))
+            .unwrap_err()
+            .contains("older"));
+        assert!(
+            read_signed_blocklist(&good, None, None).is_err(),
+            "no key, no list"
+        );
+    }
 }
 
 #[cfg(test)]
