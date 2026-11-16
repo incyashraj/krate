@@ -41,7 +41,7 @@ import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
 import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
-import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements } from "./mail-announce.js";
+import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements, renderAnnouncement } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
@@ -3253,6 +3253,39 @@ P.S. If you get stuck, here\u2019s a 3-minute demo of making an app from scratch
 `;
 }
 
+/// The welcome's words for the designed mail: the note above without its own
+/// sign-off, which the shared template adds (the logo, "best, Yashraj", the
+/// unsubscribe line). The founder chose that look on 2026-11-16 over the
+/// bare plain-text note: "it has proper logo".
+const WELCOME_BODY = `Hi {first_name},
+
+I’m Yashraj, the person who builds Krate. Thanks for signing up.
+
+I’ll keep this short. Krate exists for one reason: making an app and sharing it should be as easy as sending a picture. If it doesn’t feel that way to you yet, I want to know.
+
+So I have one question:
+
+What’s the first thing you want to make with Krate?
+
+Just hit reply. It comes straight to me, not a support queue, and I read every reply myself.
+
+If something breaks, confuses you, or feels slower than it should, tell me that too. Even the small stuff. Krate is still early, and what you tell me now decides what I build next. Real changes have already come from people like you.
+
+If you’d rather show me than write it, I’m happy to jump on a quick call: https://calendly.com/incyashraj/30min
+
+Stuck? Here’s a 3-minute demo of making an app from scratch: https://youtu.be/No0Cu8dAewg
+
+Thanks for trying something new with me.`;
+
+/// The welcome as sent: subject, text and HTML, in the same design as the
+/// founder's announcements, with this person's own unsubscribe link.
+function welcomeMail(user, link) {
+  return renderAnnouncement(
+    { subject: WELCOME_SUBJECT, body: WELCOME_BODY },
+    { firstName: (user.name || "").trim().split(/\s+/)[0] || "", link },
+  );
+}
+
 /// Gmail's compose window, from the founder's own account, with the
 /// welcome to `user` written and the krate.tech copy in Cc: one click, read,
 /// change anything, Send.
@@ -3335,7 +3368,7 @@ async function notifyFounderOfSignup(env, user) {
 async function sendWelcome(env, user) {
   const news = await newsMail(env, user.id, user, "the welcome");
   if (news.skip) return news.skip;
-  const text = welcomeText(user.name) + news.footer + "\n";
+  const { text, html } = welcomeMail(user, news.link);
   if (env.GMAIL_APP_PASSWORD) {
     const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
     return smtpSend(connect, {
@@ -3346,6 +3379,7 @@ async function sendWelcome(env, user) {
       cc: WELCOME_CC,
       subject: WELCOME_SUBJECT,
       text,
+      html,
       headers: news.headers,
     });
   }
@@ -3361,6 +3395,7 @@ async function sendWelcome(env, user) {
       reply_to: WELCOME_REPLY_TO,
       subject: WELCOME_SUBJECT,
       text,
+      html,
       headers: news.headers,
     }),
   });
@@ -3416,7 +3451,26 @@ async function smtpSend(connect, msg) {
     await step("DATA", 354, "data");
     // Base64 body lines of 76: the note has curly quotes, and 8-bit text
     // over SMTP is not something to count on.
-    const body = b64(msg.text).replace(/.{1,76}/g, (m) => `${m}\r\n`);
+    const lines76 = (t) => b64(t).replace(/.{1,76}/g, (m) => `${m}\r\n`);
+    // With HTML: both parts, multipart/alternative, plain text first so a
+    // client that cannot draw the design shows the words.
+    const boundary = `krate-${crypto.randomUUID()}`;
+    const body = msg.html
+      ? [
+          `--${boundary}`,
+          "Content-Type: text/plain; charset=UTF-8",
+          "Content-Transfer-Encoding: base64",
+          "",
+          lines76(msg.text),
+          `--${boundary}`,
+          "Content-Type: text/html; charset=UTF-8",
+          "Content-Transfer-Encoding: base64",
+          "",
+          lines76(msg.html),
+          `--${boundary}--`,
+          "",
+        ].join("\r\n")
+      : lines76(msg.text);
     const date = new Date().toUTCString().replace("GMT", "+0000");
     const id = `<${crypto.randomUUID()}@hub.krate.tech>`;
     const headers = [
@@ -3427,8 +3481,9 @@ async function smtpSend(connect, msg) {
       `Date: ${date}`,
       `Message-ID: ${id}`,
       "MIME-Version: 1.0",
-      "Content-Type: text/plain; charset=UTF-8",
-      "Content-Transfer-Encoding: base64",
+      ...(msg.html
+        ? [`Content-Type: multipart/alternative; boundary="${boundary}"`]
+        : ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64"]),
       // The one-click unsubscribe pair on a non-essential mail (RFC 8058).
       ...Object.entries(msg.headers || {}).map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]/g, "")}`),
     ].filter(Boolean);

@@ -88,7 +88,13 @@ test("a new account is welcomed once, 21 minutes on, in the founder's words", as
   assert.equal(mail.reply_to, "incyashraj@gmail.com");
   assert.deepEqual(mail.to, ["ada@example.com"]);
   assert.equal(mail.subject, "You’re in. One question from me");
-  assert.equal(mail.html, undefined, "plain text only");
+  // The founder's chosen design (2026-11-16): the announcement template,
+  // logo and signature, beside a plain-text copy.
+  assert.ok(mail.html.includes('src="https://krate.tech/krate-logo.png"'), "the Krate logo");
+  assert.ok(mail.html.includes("best,<br>Yashraj"), "the signature");
+  assert.ok(mail.html.includes("Hi Ada,"), "the name in the designed copy too");
+  assert.match(mail.html, /href="https:\/\/hub\.test\/mail\/unsubscribe\?u=[^"&]+&amp;t=[0-9a-f]{32}"/, "this person's own unsubscribe link");
+  assert.ok(mail.text.includes("\n--\nbest,\nYashraj\nkrate.tech\n"), "the same signature in the text");
   assert.ok(mail.text.startsWith("Hi Ada,\n"), mail.text.slice(0, 40));
   assert.ok(mail.text.includes("What’s the first thing you want to make with Krate?"));
   assert.ok(mail.text.includes("https://calendly.com/incyashraj/30min\n"));
@@ -181,11 +187,17 @@ test("with the founder's app password, the welcome goes through Gmail itself, cc
   assert.ok(seen.commands.includes("RCPT TO:<yashraj@krate.tech>"), "the krate.tech copy");
   assert.ok(seen.data.includes("From: Yashraj Pardeshi <incyashraj@gmail.com>\r\n"));
   assert.ok(seen.data.includes("Cc: <yashraj@krate.tech>\r\n"));
-  assert.ok(seen.data.includes("Content-Type: text/plain; charset=UTF-8"));
+  assert.match(seen.data, /Content-Type: multipart\/alternative; boundary="krate-[^"]+"\r\n/, "text and HTML together");
   const subject = seen.data.match(/Subject: =\?UTF-8\?B\?([^?]+)\?=/)[1];
   assert.equal(Buffer.from(subject, "base64").toString(), "You’re in. One question from me");
-  const body = seen.data.split("\r\n\r\n")[1].replace(/\r\n\.?$/, "").replace(/\r\n/g, "");
-  assert.ok(Buffer.from(body, "base64").toString().startsWith("Hi Grace,\n"));
+  const part = (type) => {
+    const m = seen.data.match(new RegExp(`Content-Type: text/${type}; charset=UTF-8\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n([A-Za-z0-9+/=\\r\\n]+?)\\r\\n--`));
+    assert.ok(m, `a text/${type} part`);
+    return Buffer.from(m[1].replace(/\r\n/g, ""), "base64").toString();
+  };
+  assert.ok(part("plain").startsWith("Hi Grace,\n"), "the words first, for any client");
+  const html = part("html");
+  assert.ok(html.includes("Hi Grace,") && html.includes('src="https://krate.tech/krate-logo.png"'), "the designed copy");
 });
 
 test("a wrong app password leaves the welcome due, to try again", async () => {
