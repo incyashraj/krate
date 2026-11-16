@@ -18825,6 +18825,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         session_policy: policy,
         // The sender line on a notification, fixed at consent (IC-271).
         app_name: manifest.map(|m| m.app.name.clone()),
+        // Who the app is to the OS where it keeps things per app -- its
+        // own taskbar group and notification sender on Windows -- by
+        // lineage, the key its data is stored under (IC-278).
+        app_identity: storage.as_ref().map(StoragePrincipal::storage_key),
         test_time_millis: request.test_time_millis,
         frame_step_millis: request.frame_step_millis,
         test_locale: request.test_locale,

@@ -765,7 +765,8 @@ impl super::Runtime {
         .with_layout_check(config.check_layout)
         .with_chosen_files(state.chosen.clone())
         .with_stepped_clock(state.stepped_clock.clone())
-        .with_app_name(config.app_name.clone());
+        .with_app_name(config.app_name.clone())
+        .with_app_identity(config.app_identity.clone());
         gui_host.screen.pace_outside.set(true);
         state.phase2.sleep_outside_host = true;
         // A windowed app's team-data sync never waits on the network.

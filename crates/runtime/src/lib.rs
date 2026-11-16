@@ -247,6 +247,11 @@ pub struct Config {
     /// runtime is also driven by tests and tools with no manifest; absent,
     /// the host attributes to "a Krate app" and never to guest-chosen text.
     pub app_name: Option<String>,
+    /// The app's lineage -- the key its data is stored under -- for anything
+    /// the OS keeps per app: its taskbar group and notification sender on
+    /// Windows (IC-278). Never the display name, which two apps can share.
+    /// Absent, the host falls back to the name.
+    pub app_identity: Option<String>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
     /// When set, a headless GUI run paints the window to this PNG once the app
@@ -299,6 +304,7 @@ impl Default for Config {
             app_secrets: None,
             app_shared: None,
             app_name: None,
+            app_identity: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
             check_layout: false,
             screenshot_path: None,
@@ -1460,7 +1466,8 @@ impl Runtime {
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
-        .with_app_name(config.app_name.clone());
+        .with_app_name(config.app_name.clone())
+        .with_app_identity(config.app_identity.clone());
         // A Phase 3 app cannot ask what screen it is on (krate:ui/screen is
         // Phase 4), so it never adapts -- and it must say so: the host keeps
         // the last answer, and one carried over from the permission sheet
@@ -1512,7 +1519,8 @@ impl Runtime {
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
-        .with_app_name(config.app_name.clone());
+        .with_app_name(config.app_name.clone())
+        .with_app_identity(config.app_identity.clone());
         // An app that asks what screen it is on lays itself out for any
         // screen: a phone follows the way it is held for it (IC-912).
         let adapts = component

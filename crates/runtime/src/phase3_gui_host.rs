@@ -142,6 +142,8 @@ pub struct Phase3GuiHost {
     interrupts: std::cell::Cell<u32>,
     /// See [`Config::app_name`](crate::Config::app_name).
     app_name: Option<String>,
+    /// See [`Config::app_identity`](crate::Config::app_identity).
+    app_identity: Option<String>,
     /// How many times the person has asked to close the window.
     ///
     /// The first request goes to the guest untouched. A second means the guest
@@ -637,6 +639,7 @@ impl Phase3GuiHost {
             last_pump: std::cell::Cell::new(None),
             interrupts: std::cell::Cell::new(0),
             app_name: None,
+            app_identity: None,
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
             peeked_event: std::cell::RefCell::new(None),
@@ -749,6 +752,30 @@ impl Phase3GuiHost {
     pub fn with_app_name(mut self, name: Option<String>) -> Self {
         self.app_name = name;
         self
+    }
+
+    /// The app's lineage, for what the OS keeps per app (IC-278). Set after
+    /// the name: on Windows a windowed run takes it as the process's own
+    /// AppUserModelID here, before any window exists, so the taskbar shows
+    /// the app under its own name instead of every app under Krate's.
+    pub fn with_app_identity(mut self, identity: Option<String>) -> Self {
+        #[cfg(target_os = "windows")]
+        if !self.headless {
+            if let Some(identity) = identity.as_deref() {
+                let _ = krate_adapter_windows::identity::adopt(identity, &self.attribution());
+            }
+        }
+        self.app_identity = identity;
+        self
+    }
+
+    /// Who the app is to the OS: its lineage, or its name when the runtime
+    /// was given none (tests and tools with no manifest).
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn os_identity(&self) -> String {
+        self.app_identity
+            .clone()
+            .unwrap_or_else(|| self.attribution())
     }
 
     /// What the OS shows as the sender of a notification.
@@ -1011,6 +1038,7 @@ impl Phase3GuiHost {
         #[cfg(target_os = "windows")]
         {
             return krate_adapter_windows::toast::schedule(
+                &self.os_identity(),
                 &sender,
                 id,
                 title,
@@ -1036,7 +1064,7 @@ impl Phase3GuiHost {
         if granted && valid_reminder_id(id) && !self.headless {
             #[cfg(target_os = "windows")]
             {
-                krate_adapter_windows::toast::cancel(&self.attribution(), id);
+                krate_adapter_windows::toast::cancel(&self.os_identity(), id);
                 return;
             }
             #[allow(unreachable_code)]
@@ -1055,7 +1083,7 @@ impl Phase3GuiHost {
         }
         #[cfg(target_os = "windows")]
         {
-            return krate_adapter_windows::toast::pending(&self.attribution());
+            return krate_adapter_windows::toast::pending(&self.os_identity());
         }
         #[allow(unreachable_code)]
         self.dispatcher().reminders().reminder_pending()
@@ -6117,16 +6145,19 @@ impl ui::notify::Host for Phase3GuiHost {
         // Attribution is the APP's name, fixed at consent, never the guest's
         // per-call title (IC-271, see `attribution`).
         let sender = self.attribution();
+        let identity = self.os_identity();
         Ok(
-            crate::desktop_host::notify(&title, &body, &sender, granted).map_err(|err| match err {
-                crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
-                crate::desktop_host::NotifyError::InvalidContent(m) => {
-                    ui::notify::NotifyError::InvalidContent(m)
-                }
-                crate::desktop_host::NotifyError::Unavailable(m) => {
-                    ui::notify::NotifyError::Unavailable(m)
-                }
-            }),
+            crate::desktop_host::notify(&title, &body, &sender, &identity, granted).map_err(
+                |err| match err {
+                    crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
+                    crate::desktop_host::NotifyError::InvalidContent(m) => {
+                        ui::notify::NotifyError::InvalidContent(m)
+                    }
+                    crate::desktop_host::NotifyError::Unavailable(m) => {
+                        ui::notify::NotifyError::Unavailable(m)
+                    }
+                },
+            ),
         )
     }
 }
@@ -10459,7 +10490,7 @@ mod notification_attribution_tests {
             .expect("notify impl");
         let show = &source[show_at..show_at + 1500];
         assert!(
-            show.contains("desktop_host::notify(&title, &body, &sender, granted)"),
+            show.contains("desktop_host::notify(&title, &body, &sender, &identity, granted)"),
             "show must pass the attribution as the sender"
         );
         assert!(

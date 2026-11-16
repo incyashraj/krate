@@ -281,8 +281,16 @@ fn helper_outcome(status: std::io::Result<std::process::ExitStatus>) -> Result<(
 ///
 /// `app_name` is the sender the OS displays. It must come from the host's
 /// knowledge of the app, never from the guest's arguments: see
-/// [`attribution_for`].
-pub fn notify(title: &str, body: &str, app_name: &str, granted: bool) -> Result<(), NotifyError> {
+/// [`attribution_for`]. `identity` is the app's lineage, which the OS keys
+/// the sender on where it keeps one per app (Windows).
+pub fn notify(
+    title: &str,
+    body: &str,
+    app_name: &str,
+    identity: &str,
+    granted: bool,
+) -> Result<(), NotifyError> {
+    let _ = identity;
     if !granted {
         return Err(NotifyError::Denied);
     }
@@ -310,7 +318,7 @@ pub fn notify(title: &str, body: &str, app_name: &str, granted: bool) -> Result<
     // dependency-free one, and WinRT answers in milliseconds.
     #[cfg(target_os = "windows")]
     {
-        return krate_adapter_windows::toast::show(app_name, title, body)
+        return krate_adapter_windows::toast::show(identity, app_name, title, body)
             .map_err(NotifyError::Unavailable);
     }
 
@@ -400,7 +408,7 @@ mod tests {
             Err(LaunchError::Denied)
         );
         assert_eq!(
-            notify("Title", "Body", "App", false),
+            notify("Title", "Body", "App", "dev.app", false),
             Err(NotifyError::Denied)
         );
     }

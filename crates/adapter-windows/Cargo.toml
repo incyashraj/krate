@@ -50,7 +50,9 @@ windows = { version = "0.62", features = [
     "Win32_Security",
     "Win32_System_Registry",
     "Win32_System_WinRT",
+    "Win32_System_Com",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-future = "0.3"
