@@ -71,6 +71,34 @@ test("publishing the same app again is its next version, behind one link", async
   assert.equal(again.body.version, 2);
 });
 
+test("the app's own link is never cached as one build; a version's own link is (IC-389)", async () => {
+  const env = hubEnv();
+  const v1 = await publish(env, "alice", "0.1.0");
+  const line = v1.body.url.split("/a/")[1];
+  const first = await call(env, null, "GET", `/a/${line}?dl=1`);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("x-krate-sha256"), v1.body.id, "the exact file served is named");
+  assert.equal(first.headers.get("etag"), `"${v1.body.id}"`);
+  const cc = first.headers.get("cache-control");
+  assert.ok(!/immutable|max-age=[1-9]/.test(cc), `a moving link must be asked again, got: ${cc}`);
+
+  // Nothing moved: the browser's copy is still right.
+  const same = await call(env, null, "GET", `/a/${line}?dl=1`, { headers: { "if-none-match": `"${v1.body.id}"` } });
+  assert.equal(same.status, 304);
+
+  // An update: the copy the browser holds is v1, and the link now gives v2.
+  const v2 = await publish(env, "alice", "0.2.0");
+  const after = await call(env, null, "GET", `/a/${line}?dl=1`, { headers: { "if-none-match": `"${v1.body.id}"` } });
+  assert.equal(after.status, 200, "an old copy is replaced, not confirmed");
+  assert.equal(after.headers.get("x-krate-sha256"), v2.body.id);
+
+  // A version's own address never changes, so it may be cached forever.
+  const fixed = await call(env, null, "GET", `/a/${v1.body.id}?dl=1`);
+  assert.equal(fixed.status, 200);
+  assert.match(fixed.headers.get("cache-control"), /immutable/);
+  assert.equal(fixed.headers.get("x-krate-sha256"), v1.body.id);
+});
+
 test("only the owner sees every version and chooses which is current; unpublishing steps back", async () => {
   const env = hubEnv();
   const v1 = await publish(env, "alice", "0.1.0");

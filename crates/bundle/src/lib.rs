@@ -5009,21 +5009,44 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 #[cfg(feature = "fetch")]
-fn check_address(final_url: &str, bytes: &[u8]) -> Result<Option<String>> {
-    check_address_digest(final_url, &sha256_hex(bytes))
+fn check_address(final_url: &str, bytes: &[u8], named: Option<&str>) -> Result<Option<String>> {
+    check_address_digest(final_url, &sha256_hex(bytes), named)
 }
 
 /// [`check_address`] against a digest already taken -- a big download is
 /// hashed as it streams to disk and never held whole (IC-945).
+///
+/// `named` is the hub's `x-krate-sha256`: the exact file it says it sent.
+/// An app's own link (`/a/v...`) moves with each publish, so its path names
+/// no file; the bytes are held to the header instead (IC-389).
 #[cfg(feature = "fetch")]
-fn check_address_digest(final_url: &str, actual: &str) -> Result<Option<String>> {
+fn check_address_digest(
+    final_url: &str,
+    actual: &str,
+    named: Option<&str>,
+) -> Result<Option<String>> {
     let path = final_url.split(['?', '#']).next().unwrap_or(final_url);
     let segment = path.rsplit('/').next().unwrap_or("");
-    let is_address = (8..=64).contains(&segment.len())
-        && segment
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    let is_hex = |s: &str| {
+        s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    let is_address = (8..=64).contains(&segment.len()) && is_hex(segment);
     if !is_address {
+        if let Some(named) = named.filter(|n| n.len() == 64 && is_hex(n)) {
+            if named != actual {
+                return Err(BundleError::Fetch {
+                    url: final_url.to_string(),
+                    message: format!(
+                        "the bytes served at this link are not the file the hub says it sent: \
+                         it says {}..., the file is {}...; nothing ran. Something between you \
+                         and the publisher changed the file, or the download was mixed up",
+                        &named[..12],
+                        &actual[..12]
+                    ),
+                });
+            }
+        }
         return Ok(None);
     }
     if !actual.starts_with(segment) {
@@ -5212,6 +5235,7 @@ fn fetch_big(
     use sha2::{Digest, Sha256};
     let final_url = response.get_url().to_string();
     let store_tag = response.header("x-krate-store").map(str::to_string);
+    let named = response.header("x-krate-sha256").map(str::to_string);
     let total: Option<u64> = response
         .header("content-length")
         .and_then(|n| n.parse().ok());
@@ -5288,7 +5312,7 @@ fn fetch_big(
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let address = match check_address_digest(&final_url, &actual) {
+    let address = match check_address_digest(&final_url, &actual, named.as_deref()) {
         Ok(address) => address,
         Err(err) => {
             let _ = fs::remove_file(&partial);
@@ -5312,6 +5336,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
     // bytes are held to.
     let final_url = response.get_url().to_string();
     let store_tag = response.header("x-krate-store").map(str::to_string);
+    let named = response.header("x-krate-sha256").map(str::to_string);
     let mut bytes = Vec::new();
     response
         .into_reader()
@@ -5321,7 +5346,7 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
             url: url.to_string(),
             message: err.to_string(),
         })?;
-    let address = check_address(&final_url, &bytes)?;
+    let address = check_address(&final_url, &bytes, named.as_deref())?;
     let sha256 = sha256_hex(&bytes);
 
     // A download that did not finish is not a damaged app (K-274).
@@ -6862,7 +6887,7 @@ required = true
         let port = listener.local_addr().expect("addr").port();
         let served = bundle.clone();
         let server = std::thread::spawn(move || {
-            for _ in 0..8 {
+            for _ in 0..10 {
                 let Ok((mut stream, _)) = listener.accept() else {
                     return;
                 };
@@ -6878,8 +6903,14 @@ required = true
                     )
                     .into_bytes()
                 } else {
+                    // An app's own link names the file it sent in a header.
+                    let named = target
+                        .split("named=")
+                        .nth(1)
+                        .map(|n| format!("x-krate-sha256: {n}\r\n"))
+                        .unwrap_or_default();
                     let mut r = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        "HTTP/1.1 200 OK\r\n{named}Content-Length: {}\r\nConnection: close\r\n\r\n",
                         served.len()
                     )
                     .into_bytes();
@@ -6919,6 +6950,20 @@ required = true
         );
         let plain = at("/app.krate".to_string()).expect("a plain file link names no address");
         assert_eq!(plain.address, None);
+        // An app's own link moves, so its path names nothing; the hub's
+        // header names the file, and the bytes are held to it (IC-389).
+        let line = at(format!("/a/v0123456789a?dl=1&named={address}"))
+            .expect("an app link whose header names its bytes opens");
+        assert_eq!(line.address, None);
+        let swapped = at(format!("/a/v0123456789a?dl=1&named={wrong}"))
+            .err()
+            .expect("an app link whose bytes are not the file named must refuse");
+        assert!(
+            swapped
+                .to_string()
+                .contains("not the file the hub says it sent"),
+            "{swapped}"
+        );
         let _ = server.join();
     }
 

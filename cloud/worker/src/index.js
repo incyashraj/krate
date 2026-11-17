@@ -2150,8 +2150,11 @@ async function fetchBundle(request, url, hash, env) {
   // A short link is the hash's own prefix; resolve it to the full content
   // address first. The strict hex checks stay -- they are the guard that
   // closes off every path-traversal shape at once.
-  // The app's own link: whichever version is current now (IC-976).
-  if (LINE_ID.test(hash)) {
+  // The app's own link: whichever version is current now (IC-976). It
+  // moves when the owner publishes, so its bytes are never cached as the
+  // address's forever (IC-389).
+  const moving = LINE_ID.test(hash);
+  if (moving) {
     const now = await currentHash(env, hash);
     if (!now) return text("not found", 404);
     hash = now;
@@ -2303,10 +2306,18 @@ async function fetchBundle(request, url, hash, env) {
 
   const headers = {
     "content-type": "application/octet-stream",
-    // Content-addressed, so a bundle at a given URL can never change and
-    // may be cached forever. Vary, because the same URL serves a phone a
+    // A content address can never change, so its bytes may be cached
+    // forever. The app's own link moves with each publish: it was sent the
+    // same year-long immutable header and a browser or proxy that fetched
+    // it kept the old build after an update (IC-389). It is asked again on
+    // every use, and the ETag (the exact file's SHA-256) makes that ask a
+    // 304 when nothing moved. Vary, because the same URL serves a phone a
     // landing page instead.
-    "cache-control": "public, max-age=31536000, immutable",
+    "cache-control": moving ? "no-cache" : "public, max-age=31536000, immutable",
+    etag: `"${hash}"`,
+    // The exact file served, so a client that fetched a moving link can
+    // check the bytes against the address they are really at.
+    "x-krate-sha256": hash,
     vary: "accept, user-agent",
     "content-disposition": `attachment; filename="${filename}"`,
     // The size up front, so a download can show its progress; and the
@@ -2315,6 +2326,12 @@ async function fetchBundle(request, url, hash, env) {
     ...(big ? { "x-krate-tier": "big" } : {}),
     ...(storeTag ? { "x-krate-store": storeTag } : {}),
   };
+  const asked = request.headers.get("if-none-match") || "";
+  if (asked.split(",").some((tag) => tag.trim().replace(/^W\//, "") === `"${hash}"`)) {
+    await dropBody(object);
+    const { "content-length": _, ...same } = headers;
+    return new Response(null, { status: 304, headers: same });
+  }
   if (request.method === "HEAD") {
     // The size is the one thing a HEAD is usually asked for, and the
     // object knows it without the body being read.
