@@ -17,7 +17,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 - 79 boundaries reviewed, 70 of them WIT interfaces (70 declared under wit/krate).
 - 37 compulsory, each with a justification or a recorded gap; 42 optional.
-- 6 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
+- 5 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
 
@@ -110,6 +110,5 @@ Where a developer's choice is narrower than the principle says it should be. Eac
 - `krate:gfx@0.1.0/canvas2d`: a developer's own GPU renderer goes through krate:gpu, which presents by copying each frame into the canvas through the CPU until the presenter shares its device (K-407); scene3d is software
 - `krate:net@0.1.0/sockets`: listening for incoming connections is not offered yet, so an app cannot host a server (IC-935)
 - `krate:speech@0.1.0/transcription`: the recogniser reads one model family; another engine means the app ships its own
-- `krate:ui@0.1.0/clipboard`: wired on Linux only today; other hosts answer unsupported
 - `krate:ui@0.1.0/menu`: set-items answers unsupported on every host (IC-745)
 - `the WebAssembly component contract`: the SDK and Studio build with cargo-component only; a developer's own build tool is accepted by the validator but not by the make flow (IC-175: custom build tool)
