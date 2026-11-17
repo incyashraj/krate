@@ -51,7 +51,18 @@ import { issueKeyChallenge, answerKeyChallenge } from "./key-challenge.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
-import { LINE_ID, advanceLine, currentHash, dropVersion, linesRoute, settleRows, storeTagOf, versionOf } from "./lines.js";
+import {
+  LINE_ID,
+  advanceLine,
+  currentHash,
+  dropVersion,
+  lineFor,
+  linesRoute,
+  publisherRefusal,
+  settleRows,
+  storeTagOf,
+  versionOf,
+} from "./lines.js";
 // Staged rollout: a pilot group first, pinned groups (G10).
 import { orgRolloutRoute } from "./org-rollout.js";
 // What an approver sees and must confirm (IC-950); after release control.
@@ -1234,6 +1245,22 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     });
   }
 
+  // An update keeps the app's publisher (K-1286): the data people hold is
+  // under the current version's signing key. Asked before anything is
+  // written, so a refused update leaves nothing behind.
+  const signedBy = (judgement.release && judgement.release.authority) || null;
+  const appIdForLine = judgement.manifest && judgement.manifest.app && judgement.manifest.app.id;
+  if (!fields.quiet && appIdForLine) {
+    let refusal = null;
+    try {
+      const { line: existing } = await lineFor(env, owner, appIdForLine);
+      refusal = await publisherRefusal(env, existing, signedBy);
+    } catch (_) {
+      refusal = null; // a quota day: the line is skipped below as well
+    }
+    if (refusal) return text(refusal, 409);
+  }
+
   // Who published it, written BEFORE the bytes become public (IC-833,
   // test 1838). The bundle is served at /a/<hash> the moment the store
   // holds it, and the listing written after it was the only other record
@@ -1338,6 +1365,7 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
         hash,
         version: manifestApp.version,
         size,
+        authority: signedBy,
       });
     } catch (_) {
       line = null;

@@ -106,7 +106,7 @@ export async function versionOf(env, hash) {
 
 /// Record a publish on its line: the next version, or nothing new when these
 /// bytes are already a version of it. Returns { id, n, line, added }.
-export async function advanceLine(env, { owner, appId, name, hash, version, size }) {
+export async function advanceLine(env, { owner, appId, name, hash, version, size, authority = null }) {
   const found = await lineFor(env, owner, appId);
   const id = found.id;
   const now = Math.floor(Date.now() / 1000);
@@ -117,13 +117,61 @@ export async function advanceLine(env, { owner, appId, name, hash, version, size
   if (known) return { id, n: known.n, line, added: false };
   const n = (line.versions.length ? line.versions[line.versions.length - 1].n : 0) + 1;
   const previous = line.current;
-  line.versions.push({ n, hash, version: String(version || ""), at: now, size: Number(size) || 0 });
+  line.versions.push({
+    n,
+    hash,
+    version: String(version || ""),
+    at: now,
+    size: Number(size) || 0,
+    ...(authority ? { authority } : {}),
+  });
   if (line.versions.length > MAX_VERSIONS) line.versions = line.versions.slice(-MAX_VERSIONS);
   line.current = n;
   line.name = name || line.name;
   line.updated = now;
   await env.APPS.put(`line:${id}`, JSON.stringify(line));
   return { id, n, line, added: true, previous };
+}
+
+/// The publisher of the version a line opens now: the signed release's
+/// authority (the root key, the same across a rotation), or null when that
+/// version is unsigned. Read from the line, or from the version's listing
+/// for versions recorded before the line kept it.
+async function currentAuthority(env, line) {
+  const v = line.versions.find((x) => x.n === line.current);
+  if (!v) return null;
+  if ("authority" in v) return v.authority || null;
+  try {
+    const row = JSON.parse((await env.APPS.get(`app:${v.hash}`)) || "null");
+    return (row && row.release && row.release.authority) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Why an update may not join this line, or null (K-1286, IC-389). A signed
+/// app's data lives under its publisher's key, so a version signed by
+/// another key -- or not signed at all -- would open with nothing for
+/// everyone who updated. An unsigned app may become signed: that is how an
+/// app gets its first publisher.
+export async function publisherRefusal(env, line, authority) {
+  if (!line || !line.versions || !line.versions.length) return null;
+  const now = await currentAuthority(env, line);
+  if (!now || now === authority) return null;
+  const short = (k) => `${String(k).slice(0, 16)}...`;
+  if (!authority) {
+    return (
+      `the version people have now is signed (publisher ${short(now)}), and this update is not. ` +
+      "Apps keep their data under their publisher's key, so everyone who updated would lose it. " +
+      "Sign it with the same key -- `krate identity` shows yours -- or publish it under a new app id as a new app."
+    );
+  }
+  return (
+    `this update is signed by a different publisher (${short(authority)}) than the version people have now ` +
+    `(${short(now)}). Apps keep their data under their publisher's key, so everyone who updated would lose it. ` +
+    "Sign it with the key that signed the app -- a rotated key of the same publisher is fine -- or publish it " +
+    "under a new app id as a new app."
+  );
 }
 
 /// Mark which of a line's builds is the gallery's row: the current one

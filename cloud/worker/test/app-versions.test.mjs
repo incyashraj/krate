@@ -10,6 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { orgEnv, call } from "./org-tools.mjs";
@@ -97,6 +98,50 @@ test("the app's own link is never cached as one build; a version's own link is (
   assert.equal(fixed.status, 200);
   assert.match(fixed.headers.get("cache-control"), /immutable/);
   assert.equal(fixed.headers.get("x-krate-sha256"), v1.body.id);
+});
+
+// Notes 0.1.0 and 0.2.0 signed by publisher A, 0.2.0 by publisher B, and
+// 0.3.0 by a release key A delegated to (a rotation: still A's root), all
+// with `krate sign --namespace notes`.
+const signed = (name) => new Uint8Array(readFileSync(join(here, "fixtures", `${name}.krate`)));
+const publishBytes = (env, who, bytes) =>
+  call(env, who, "POST", "/publish", { bytes, headers: { "x-krate-name": "Notes" } });
+const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+test("an update keeps the app's publisher: another key, or none, is refused before anything is stored (K-1286)", async () => {
+  const env = hubEnv();
+  const v1 = await publishBytes(env, "alice", signed("notes-0.1.0-signed-a"));
+  assert.equal(v1.status, 200, JSON.stringify(v1.body));
+
+  const other = signed("notes-0.2.0-signed-b");
+  const refused = await publishBytes(env, "alice", other);
+  assert.equal(refused.status, 409, "another publisher's key is not this app's update");
+  assert.match(String(refused.body), /different publisher/);
+  assert.equal(env._kv.get(`owner:${sha(other)}`), undefined, "nothing written for a refused update");
+  assert.equal(env._kv.get(`app:${sha(other)}`), undefined);
+
+  const unsignedNext = await publish(env, "alice", "0.2.0");
+  assert.equal(unsignedNext.status, 409, "an unsigned update of a signed app is refused too");
+  assert.match(String(unsignedNext.body), /is not/);
+
+  const same = await publishBytes(env, "alice", signed("notes-0.2.0-signed-a"));
+  assert.equal(same.status, 200, JSON.stringify(same.body));
+  assert.deepEqual([same.body.url, same.body.version], [v1.body.url, 2], "the same key is the next version");
+
+  const rotated = await publishBytes(env, "alice", signed("notes-0.3.0-signed-a-rotated"));
+  assert.equal(rotated.status, 200, "a key the publisher's root delegated to is the same publisher");
+  assert.equal(rotated.body.version, 3);
+});
+
+test("an unsigned app may take its first publisher", async () => {
+  const env = hubEnv();
+  const v1 = await publish(env, "alice", "0.1.0");
+  const v2 = await publishBytes(env, "alice", signed("notes-0.2.0-signed-a"));
+  assert.equal(v2.status, 200, JSON.stringify(v2.body));
+  assert.deepEqual([v2.body.url, v2.body.version], [v1.body.url, 2]);
+  // From then on, the line holds that publisher.
+  const b = await publishBytes(env, "alice", signed("notes-0.2.0-signed-b"));
+  assert.equal(b.status, 409);
 });
 
 test("only the owner sees every version and chooses which is current; unpublishing steps back", async () => {
