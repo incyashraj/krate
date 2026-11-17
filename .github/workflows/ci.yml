@@ -608,8 +608,18 @@ jobs:
         uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           targets: wasm32-wasip1, wasm32-wasip2, wasm32-unknown-unknown
-      - name: Cache cargo registry
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      # Restored here and saved by the last step, not by actions/cache's post
+      # step: on Windows the target/ tree is 6.5 GB and its save took 14
+      # minutes after every test had passed, so a cold cache pushed the lane
+      # past timeout-minutes and the run read "cancelled" (K-1282, run
+      # 44019251332). The save below runs only when it fits and cannot fail
+      # the lane.
+      - name: Note when the job started
+        shell: bash
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Restore cargo cache
+        id: cargo-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             ~/.cargo/registry
@@ -1169,6 +1179,34 @@ jobs:
           name: sample-evidence-${{ matrix.os }}
           path: krate-evidence/sample-evidence-${{ matrix.os }}.md
           if-no-files-found: error
+      # Only when every step passed and the key missed, as the post step did,
+      # and only when the save fits: 85 minutes of steps plus a 15-minute
+      # save stays under timeout-minutes: 110. A cold Windows lane (96
+      # minutes on run 44019251332) skips it -- the next run is cold again,
+      # as it already was when the save was cancelled -- but the lane keeps
+      # its verdict.
+      - name: Decide whether the cache save fits
+        id: cache-fits
+        if: ${{ success() && steps.cargo-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          elapsed=$(( ($(date +%s) - JOB_STARTED_AT) / 60 ))
+          if [ "$elapsed" -le 85 ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipping the cache save: $elapsed minutes in, it would not fit before the lane's limit"
+          fi
+      - name: Save cargo cache
+        if: ${{ success() && steps.cache-fits.outputs.save == 'true' }}
+        timeout-minutes: 15
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
 
   # ──────────────────────────────────────────────
   # 9. Compare language-variant evidence across hosts
