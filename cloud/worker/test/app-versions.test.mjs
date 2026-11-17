@@ -133,6 +133,26 @@ test("an update keeps the app's publisher: another key, or none, is refused befo
   assert.equal(rotated.body.version, 3);
 });
 
+// The same two builds with their zip entries written in reverse order:
+// other bytes, the same release (K-1285).
+test("another file of a release the app already has is that version, not the next (K-1285)", async () => {
+  for (const [first, repack, label] of [
+    [signed("notes-0.2.0-signed-a"), signed("notes-0.2.0-signed-a-repacked"), "signed: the same release id"],
+    [build("0.2.0"), signed("notes-0.2.0-repacked"), "unsigned: the same execution and project"],
+  ]) {
+    const env = hubEnv();
+    assert.notEqual(sha(first), sha(repack), "the fixtures must differ in bytes or this proves nothing");
+    const v1 = await publishBytes(env, "alice", first);
+    const again = await publishBytes(env, "alice", repack);
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    assert.equal(again.body.version, 1, `${label}: no new version`);
+    assert.equal(again.body.updated, false);
+    assert.equal(await opens(env, v1.body.url.split("/a/")[1]), sha(first), `${label}: the app's link still opens the original`);
+    assert.equal(row(env, sha(repack)).superseded, true, `${label}: one gallery row`);
+    assert.equal(await opens(env, sha(repack)), sha(repack), "the repack opens at its own address");
+  }
+});
+
 test("an unsigned app may take its first publisher", async () => {
   const env = hubEnv();
   const v1 = await publish(env, "alice", "0.1.0");

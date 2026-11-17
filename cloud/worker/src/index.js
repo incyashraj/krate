@@ -1366,6 +1366,9 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
         version: manifestApp.version,
         size,
         authority: signedBy,
+        content: judgement.release
+          ? `release:${judgement.release.id}`
+          : `content:${judgement.execution}:${judgement.project || ""}`,
       });
     } catch (_) {
       line = null;
@@ -1373,6 +1376,9 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     if (line) {
       meta.line = line.id;
       meta.version_n = line.n;
+      // Another file of a version the app already has (K-1285): it opens at
+      // its own address, and the app's row and link stay the original's.
+      if (!line.added && line.hash && line.hash !== hash) meta.superseded = true;
       // An update of an app in the gallery stays in the gallery, however it
       // was published: Studio's Link pane publishes unlisted, and sharing v3
       // by link must not take a public app off the shelf (IC-976).

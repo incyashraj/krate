@@ -106,15 +106,19 @@ export async function versionOf(env, hash) {
 
 /// Record a publish on its line: the next version, or nothing new when these
 /// bytes are already a version of it. Returns { id, n, line, added }.
-export async function advanceLine(env, { owner, appId, name, hash, version, size, authority = null }) {
+export async function advanceLine(env, { owner, appId, name, hash, version, size, authority = null, content = null }) {
   const found = await lineFor(env, owner, appId);
   const id = found.id;
   const now = Math.floor(Date.now() / 1000);
   const line = found.line || { id, owner, app_id: appId, name, current: 0, versions: [], created: now };
   // Never another owner's line, whatever the id says.
   if (line.owner !== owner) return null;
-  const known = line.versions.find((v) => v.hash === hash);
-  if (known) return { id, n: known.n, line, added: false };
+  // The same release in other bytes -- repacked by another tool, entries
+  // in another order -- is the version it already is, not the next one
+  // (K-1285, IC-389). `content` is the signed release id, or for an
+  // unsigned app its execution and project identities.
+  const known = line.versions.find((v) => v.hash === hash || (content && v.content === content));
+  if (known) return { id, n: known.n, line, added: false, hash: known.hash };
   const n = (line.versions.length ? line.versions[line.versions.length - 1].n : 0) + 1;
   const previous = line.current;
   line.versions.push({
@@ -124,6 +128,7 @@ export async function advanceLine(env, { owner, appId, name, hash, version, size
     at: now,
     size: Number(size) || 0,
     ...(authority ? { authority } : {}),
+    ...(content ? { content } : {}),
   });
   if (line.versions.length > MAX_VERSIONS) line.versions = line.versions.slice(-MAX_VERSIONS);
   line.current = n;

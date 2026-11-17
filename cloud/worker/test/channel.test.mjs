@@ -2,8 +2,8 @@
  * publisher, through an audited update (IC-389, tests 470, 471, 476;
  * K-308).
  *
- * Driven against the real handler with two real committed bundles that
- * carry the same app under different bytes.
+ * Driven against the real handler with two real committed builds of the
+ * same app.
  *
  *   node cloud/worker/test/channel.test.mjs
  */
@@ -16,8 +16,11 @@ import { r2Mock } from "./r2-mock.mjs";
 import "./github-stub.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const V1 = new Uint8Array(readFileSync(join(here, "..", "..", "..", "evidence", "ported", "bounce.krate")));
-const V2 = new Uint8Array(readFileSync(join(here, "fixtures", "bounce-stored.krate")));
+// Two builds of one app (Records Check as 0.1.0 and 0.2.0). Not two packings
+// of one build: since K-1285 a repack is the version it already is, and
+// moves nothing.
+const V1 = new Uint8Array(readFileSync(join(here, "fixtures", "notes-0.1.0.krate")));
+const V2 = new Uint8Array(readFileSync(join(here, "fixtures", "notes-0.2.0.krate")));
 
 function env() {
   const kv = new Map([
