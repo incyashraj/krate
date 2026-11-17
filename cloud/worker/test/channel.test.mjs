@@ -54,8 +54,11 @@ const channel = async (e, path) => {
 /* ---- a publish names its channel, and the channel resolves ------------ */
 const e = env();
 const first = await publish(e, "alice", V1, "My Notes");
-assert.strictEqual(first.channel, "https://hub.example/c/alice/my-notes", "the publish response names the channel");
+// One moving link per app (K-1287): an app with its own link (`url`) is
+// offered no second one, but its name still resolves, through that link.
+assert.strictEqual(first.channel, undefined, "an app with its own link is offered no second moving link");
 let c = await channel(e, "/c/alice/my-notes");
+assert.strictEqual(c.body.app_url, first.url, "the name stands for the app's own link");
 assert.strictEqual(c.status, 200);
 assert.strictEqual(c.body.current, first.id, "the channel names the release just published");
 assert.strictEqual(c.body.url, `https://hub.example/a/${first.id}`);
@@ -85,7 +88,7 @@ assert.strictEqual(dl.headers.get("cache-control"), "no-store", "a channel resol
   const e2 = env();
   const a = await publish(e2, "alice", V1, "My Notes");
   const bobs = await publish(e2, "bob", V2, "My Notes");
-  assert.strictEqual(bobs.channel, "https://hub.example/c/bob/my-notes", "bob's same-named app is bob's channel");
+  assert.strictEqual((await channel(e2, "/c/bob/my-notes")).body.current, bobs.id, "bob's same-named app is bob's channel");
   assert.strictEqual((await channel(e2, "/c/alice/my-notes")).body.current, a.id, "bob publishing the same name did not touch alice's channel");
   // Bob re-POSTing alice's exact bytes: the listing stays alice's (IC-387),
   // and so does her channel.
@@ -145,6 +148,26 @@ const purge = await worker.fetch(req(`/blob/${first.id}`, { method: "DELETE", he
 assert.strictEqual(purge.status, 200, await purge.text());
 assert.strictEqual((await channel(e, "/c/alice/my-notes")).status, 404, "with the bytes purged the name resolves to nothing, never to gone bytes");
 assert.strictEqual((await worker.fetch(req("/c/alice/my-notes?dl=1"), e)).status, 404, "and a download is not redirected to an address that is gone");
+
+/* ---- the name follows the app: a rename and the owner's rollback (K-1287) */
+{
+  const e2 = env();
+  const a1 = await publish(e2, "alice", V1, "My Notes");
+  const renamed = await publish(e2, "alice", V2, "Notes Pro");
+  assert.strictEqual(renamed.url, a1.url, "a rename is still the same app");
+  const old = await channel(e2, "/c/alice/my-notes");
+  assert.strictEqual(old.body.current, renamed.id, "the old name opens what the app opens now, not the build before the rename");
+  assert.strictEqual((await channel(e2, "/c/alice/notes-pro")).body.current, renamed.id, "and so does the new one");
+  const line = a1.url.split("/a/")[1];
+  const back = await worker.fetch(
+    req(`/lines/${line}/current`, { method: "POST", headers: { authorization: "Bearer gho_alice", "content-type": "application/json" }, body: JSON.stringify({ version: 1 }) }),
+    e2,
+  );
+  assert.strictEqual(back.status, 200, await back.clone().text());
+  assert.strictEqual((await channel(e2, "/c/alice/notes-pro")).body.current, a1.id, "the owner's rollback moves the name too");
+  const dl2 = await worker.fetch(req("/c/alice/my-notes?dl=1"), e2);
+  assert.strictEqual(dl2.headers.get("location"), `https://hub.example/a/${a1.id}?dl=1`, "and a download is sent to that build's fixed address");
+}
 
 /* ---- shapes that are not channels -------------------------------------- */
 for (const path of ["/c/alice", "/c/alice/my-notes/extra", "/c/../x", "/c/alice/My_Notes"]) {

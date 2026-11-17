@@ -1486,9 +1486,21 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
   // because the key is their login and the login came from their session.
   // A moving name lives under a developer namespace, which only a
   // GitHub-vouched owner has (K-1085): `/c/bob/notes` is github:bob's.
+  //
+  // One moving link per app (K-1287): an app with a line already has its
+  // own link (`url`), so the name only records which line it stands for
+  // and resolves through it -- a rename, a rollback and an unpublish all
+  // follow the line -- and is not offered as a second link.
   if (listed && !meta.unlisted && vouched) {
-    const channel = await moveChannel(env, identity.login, meta.name, hash, meta.release ? meta.release.id : null);
-    if (channel) {
+    const channel = await moveChannel(
+      env,
+      identity.login,
+      meta.name,
+      hash,
+      meta.release ? meta.release.id : null,
+      line ? line.id : null,
+    );
+    if (channel && !line) {
       result.channel = `${base}/c/${channel.login}/${channel.slug}`;
     }
   }
@@ -1759,7 +1771,7 @@ async function readChannel(env, login, slug) {
 }
 
 /// Point `login`'s channel for `name` at `hash`, recording the move.
-async function moveChannel(env, login, name, hash, releaseId = null) {
+async function moveChannel(env, login, name, hash, releaseId = null, lineId = null) {
   const slug = slugOf(name);
   if (!slug || !login) return null;
   const now = Math.floor(Date.now() / 1000);
@@ -1771,7 +1783,7 @@ async function moveChannel(env, login, name, hash, releaseId = null) {
     moved_at: null,
     history: [],
   };
-  if (existing.current === hash) {
+  if (existing.current === hash && (existing.line || null) === lineId) {
     return existing; // republishing the same bytes moves nothing
   }
   const move = { hash, at: now, previous: existing.current, release: releaseId };
@@ -1782,6 +1794,8 @@ async function moveChannel(env, login, name, hash, releaseId = null) {
     current: hash,
     moved_at: now,
     history: [...existing.history, move].slice(-CHANNEL_HISTORY),
+    // The app this name stands for (K-1287): resolved through its line.
+    ...(lineId ? { line: lineId } : existing.line ? { line: existing.line } : {}),
   };
   try {
     await env.APPS.put(channelKey(login, slug), JSON.stringify(channel));
@@ -1854,6 +1868,24 @@ async function resolveChannel(request, url, rest, env) {
     return text("not found", 404);
   }
   const stored = await readChannel(env, login, slug);
+  // A name that stands for an app opens what the app's line opens now
+  // (K-1287); one recorded before names knew their line finds it from the
+  // row of the build it points at.
+  if (stored && stored.current) {
+    let lineId = stored.line || null;
+    if (!lineId) {
+      try {
+        lineId = (JSON.parse((await env.APPS.get(`app:${stored.current}`)) || "null") || {}).line || null;
+      } catch (_) {
+        lineId = null;
+      }
+    }
+    const now = lineId ? await currentHash(env, lineId) : null;
+    if (now && (await namable(env, stored.login, now))) {
+      stored.current = now;
+      stored.line = lineId;
+    }
+  }
   const channel = stored && stored.current ? await settleChannel(env, stored, "gone") : null;
   if (!channel) return text("not found", 404);
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
@@ -1873,6 +1905,8 @@ async function resolveChannel(request, url, rest, env) {
     slug: channel.slug,
     current: channel.current,
     url: `${base}/a/${channel.current}`,
+    // The app's own link, when the name stands for an app (K-1287).
+    ...(channel.line ? { app_url: `${base}/a/${channel.line}` } : {}),
     moved_at: channel.moved_at,
     blocked: Boolean(takedown),
     history: channel.history,

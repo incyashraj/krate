@@ -75,7 +75,8 @@ test("a look-alike email account cannot re-list, retire, or move bob's moving na
   const mine = await publish(e, BOB, V1);
   assert.strictEqual(mine.status, 200);
   assert.strictEqual(listing(e, mine.body.id).owner, "github:bob");
-  assert.strictEqual(mine.body.channel, "https://hub.example/c/bob/notes");
+  // Bob's name is recorded, though not offered beside the app's own link (K-1287).
+  assert.strictEqual(channel(e, "bob/notes").current, mine.body.id);
 
   // Re-list: the same bytes, sent again by the look-alike.
   const copy = await publish(e, LOOKALIKE, V1);
