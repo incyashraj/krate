@@ -63,10 +63,35 @@ else
   flyctl volumes create "$VOLUME" --app "$APP" --region "$REGION" --size 20 --yes
 fi
 
+echo "==> the Krate engine"
+# The newest PUBLISHED release whose Linux tarball is there, unless
+# KRATE_VERSION names one. The Dockerfile's own default follows the version
+# bump, which can name a release that has not been cut yet: a deploy that
+# took it failed at the image build with a 404 (K-1280).
+if [ -z "${KRATE_VERSION:-}" ]; then
+  KRATE_VERSION="$(curl -fsS --max-time 30 "https://api.github.com/repos/incyashraj/krate/releases?per_page=20" |
+    python3 -c '
+import json, sys
+for release in json.load(sys.stdin):
+    if release.get("draft"):
+        continue
+    version = release["tag_name"].lstrip("v")
+    names = {a["name"] for a in release.get("assets", [])}
+    if f"krate-{version}-x86_64-unknown-linux-gnu.tar.gz" in names and "SHA256SUMS" in names:
+        print(version)
+        break
+')"
+fi
+if [ -z "${KRATE_VERSION:-}" ]; then
+  echo "error: no published Krate release with a Linux build was found; set KRATE_VERSION" >&2
+  exit 1
+fi
+echo "    Krate ${KRATE_VERSION}"
+
 echo "==> deploying"
 # Remote build: the image needs a ~2 GB Rust toolchain and this laptop does
 # not need to be the machine that assembles it, or to have Docker running.
-flyctl deploy --app "$APP" --remote-only
+flyctl deploy --app "$APP" --remote-only --build-arg "KRATE_VERSION=${KRATE_VERSION}"
 
 echo "==> checking it answers"
 # Fly's own hostname first. The custom domain is a separate step below and
