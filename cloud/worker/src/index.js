@@ -1303,7 +1303,12 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     // channel can show it (IC-389 tests 468 and 476): the identities, the
     // signature's state and key, the signed release when there is one,
     // the fork record, and which validator said so.
+    // Two numbers over the same bytes, each under its own name (K-1284):
+    // sha256 is the plain hash the store and every URL key on; archive is
+    // the schema-tagged identity `krate run --json`, `krate inspect` and a
+    // fork's derived-from record carry.
     identity: {
+      sha256: judgement.sha256,
       archive: judgement.archive,
       execution: judgement.execution,
       project: judgement.project,
@@ -1443,6 +1448,9 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     ...(line ? { line: line.id, version: line.n, updated: line.n > 1 } : {}),
     // The receipt: what the store holds, read back, not what was sent.
     stored: { size: stored.size, sha256: stored.sha256 },
+    // The archive identity the validator took from the bytes it judged,
+    // echoed so `krate publish` can match it to the file it sent (IC-212).
+    archive: judgement.archive,
   };
   // The moving name: this author's latest listed publish under this name
   // (IC-389, test 470). Only a listed publish moves it -- an unlisted one

@@ -3155,7 +3155,12 @@ pub struct Judgement {
     pub validator: u32,
     pub wit: String,
     pub manifest: Manifest,
-    /// Plain SHA-256 of the bytes: the hub's store key.
+    /// Plain SHA-256 of the bytes: the hub's store key and every URL's.
+    pub sha256: String,
+    /// The archive identity ([`provenance::digest_archive_bytes`]): the
+    /// same number `krate run --json`, `krate inspect` and a fork's
+    /// derived-from record call `archive`. It held the plain SHA-256 under
+    /// this name until K-1284, so one name meant two numbers.
     pub archive: String,
     /// The execution identity (what runs).
     pub execution: String,
@@ -3681,7 +3686,8 @@ fn judge_all(
         validator: imports::VALIDATOR_VERSION,
         wit: imports::WIT_DIGEST.to_string(),
         manifest,
-        archive: archive_sha256,
+        sha256: archive_sha256,
+        archive: provenance::digest_archive_bytes(bytes).digest,
         execution: execution.digest,
         project: (project.entries.len() > execution.entries.len()).then_some(project.digest),
         signature,
