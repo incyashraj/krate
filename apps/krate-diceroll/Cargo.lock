@@ -44,6 +44,7 @@ dependencies = [
  "dlmalloc",
  "getrandom",
  "libm",
+ "unicode-segmentation",
  "wit-bindgen-rt",
 ]
 
@@ -91,6 +92,12 @@ checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
 dependencies = [
  "getrandom",
 ]
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
 
 [[package]]
 name = "wasip2"
