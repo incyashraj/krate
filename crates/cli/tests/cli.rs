@@ -9666,8 +9666,28 @@ fn a_windows_install_is_in_the_start_menu_as_itself() {
     let two = entries();
     assert_eq!(two.len(), 2, "two Notes, two entries: {two:?}");
     assert_ne!(two[0].1, two[1].1, "and two ids");
+    // Console-free start (IC-396): the entry hands the app to krate-open,
+    // whose arguments are the payload alone (krate.exe would be asked to
+    // `launch`), and krate-open.exe is a GUI-subsystem program, so no
+    // console window opens beside the app.
+    let opener = std::fs::read(env!("CARGO_BIN_EXE_krate-open")).expect("krate-open.exe");
+    let pe = u32::from_le_bytes(opener[0x3c..0x40].try_into().unwrap()) as usize;
+    assert_eq!(
+        &opener[pe..pe + 4],
+        b"PE\0\0",
+        "krate-open.exe is a PE image"
+    );
+    let subsystem = u16::from_le_bytes(opener[pe + 24 + 68..pe + 24 + 70].try_into().unwrap());
+    assert_eq!(
+        subsystem, 2,
+        "krate-open.exe must be IMAGE_SUBSYSTEM_WINDOWS_GUI"
+    );
     for (entry, id, args) in &two {
         assert!(id.starts_with("Krate.App."), "{entry:?}: {id}");
+        assert!(
+            !args.trim_start().starts_with("launch"),
+            "{entry:?} opens through krate.exe, which brings a console: {args}"
+        );
         let payload = args
             .split('"')
             .find(|part| part.ends_with("app.krate"))
