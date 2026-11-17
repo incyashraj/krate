@@ -46,6 +46,11 @@ wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 # them (thirteen apps did; two proof checkpoints lost time to it). Pure Rust,
 # no imports of any kind, and already in the workspace's lockfile.
 libm = "0.2.16"
+# Grapheme clusters for a text field (K-1281): a caret, Backspace and Delete
+# move over what a person sees as one character -- an emoji family, a flag,
+# an accented letter typed as two code points -- not over code points.
+# `#![no_std]`, no imports, and already in the workspace's lockfile.
+unicode-segmentation = "1.13"
 # Only pulled in when an app opts into the getrandom backend. `custom` is the
 # feature that lets a downstream register its own source; the `--cfg
 # getrandom_backend="custom"` flag (set by the app's build) is what activates it.
