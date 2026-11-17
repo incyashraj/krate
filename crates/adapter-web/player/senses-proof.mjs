@@ -288,6 +288,11 @@ for (const [engine, label, viewport, ua] of RUNS) {
     // when it is handed no frame while the camera works in its own page at
     // that moment, which the probe run there says.
     const framed = cam['camera: '] === 'frame 320x240 fits=true opaque=true lit=true' && cam['camera-info: '] === '320x240';
+    // How long each camera request took to its first picture, and how many
+    // were asked for again (K-1262): printed on every run, pass or fail,
+    // so the runner's numbers are measured, not guessed.
+    const starts = await page.evaluate(() => window.__krate.senses.cameraStarts).catch(() => null);
+    console.log(`note [${tag}] camera first pictures: ${JSON.stringify(starts)}`);
     const none = cam['camera: '] === 'no frame in 15 s' && cam['camera-info: '].startsWith('(none)');
     if (framed || !none) {
       check(framed, `${tag} ${FRAME}`, cam);

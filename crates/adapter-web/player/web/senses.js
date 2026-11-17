@@ -69,7 +69,7 @@ export function primeSpeech() {
 /// ctx: { name, report, probe, phone, sheet(title, body, yes, no) -> Promise<bool>,
 ///        withTap(go(how), ask()) }
 export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
-  const state = (report.senses = { asked: [], notified: [], shares: [], said: [], spoken: [], speechErrors: [], speechEvents: [], cameras: 0, microphones: 0 });
+  const state = (report.senses = { asked: [], notified: [], shares: [], said: [], spoken: [], speechErrors: [], speechEvents: [], cameras: 0, cameraStarts: [], microphones: 0 });
 
   // ------------------------------------------------------- notifications
   // Through a service worker everywhere: the only way a phone's browser
@@ -272,6 +272,10 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
   // prompt the first time) and its light comes on; stop puts it off.
   const cams = new Map();
   let nextCam = 1;
+  // A stuck first stream is asked for again after this long, this many
+  // times in all (K-1262).
+  const CAMERA_PATIENCE_MS = 4000;
+  const CAMERA_ASKS = 4;
   let camRefused = false;
   const camFail = (e) => {
     const kind = e && e.name;
@@ -315,7 +319,31 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
       } else {
         s.seq = -1;
       }
-      state.cameras += 1;
+      if (!s.asked) state.cameras += 1;
+      s.asked = true;
+      // How long the first picture took, kept so a slow or stuck camera
+      // shows up as a number rather than a guess (K-1262).
+      const begun = performance.now();
+      const record = { asks: s.asks, firstFrameMs: null };
+      state.cameraStarts.push(record);
+      v.addEventListener('loadeddata', () => { if (record.firstFrameMs === null) record.firstFrameMs = Math.round(performance.now() - begun); }, { once: true });
+      // A live stream whose video holds no picture after a few seconds is
+      // asked for again. WebKit has left a first stream at readyState 0
+      // with its track live for the whole run while a fresh request in the
+      // same page got pictures at once (K-1262); a working camera's first
+      // picture comes in well under a second, so this costs it nothing.
+      setTimeout(() => {
+        if (!s.started || s.run !== run || s.video !== v || v.readyState >= 2) return;
+        if (s.asks >= CAMERA_ASKS) return;
+        s.asks += 1;
+        stopTracks(stream);
+        v.srcObject = null;
+        v.remove();
+        s.video = null;
+        s.stream = null;
+        s.track = null;
+        camBegin(s);
+      }, CAMERA_PATIENCE_MS);
     }).catch((e) => { if (s.run === run) s.error = camFail(e); });
   };
   const camHandlers = {
@@ -334,7 +362,7 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
       if (!list.length) return no('device-unavailable');
       if (device && list.some((d) => d.deviceId) && !list.some((d) => d.deviceId === device)) return no('device-unavailable');
       const id = nextCam++;
-      cams.set(String(id), { device, width, height, fps, started: false, run: 0, seq: 0, read: 0, stream: null, track: null, video: null, error: null, t0: null, canvas: null });
+      cams.set(String(id), { device, width, height, fps, started: false, run: 0, seq: 0, read: 0, stream: null, track: null, video: null, error: null, t0: null, canvas: null, asks: 1, asked: false });
       return ok(id);
     },
     'camera.info': ({ id }) => {
@@ -355,6 +383,8 @@ export function pageSenses({ name, report, probe, phone, sheet, withTap }) {
       if (s.started) return ok();
       s.started = true;
       s.error = null;
+      s.asks = 1;
+      s.asked = false;
       if (s.t0 === null) s.t0 = performance.now();
       camBegin(s);
       return ok();
