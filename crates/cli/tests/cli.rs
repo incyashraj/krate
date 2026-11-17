@@ -9679,6 +9679,23 @@ fn a_windows_install_is_in_the_start_menu_as_itself() {
         assert!(std::path::Path::new(payload).is_file(), "{payload}");
     }
 
+    // The Start menu shows an entry's file name: the first Notes is
+    // "Notes", and only the clash makes the second one carry its tag.
+    let shown = |found: &[(std::path::PathBuf, String, String)]| -> Vec<String> {
+        found
+            .iter()
+            .map(|(p, _, _)| p.file_stem().unwrap().to_string_lossy().into_owned())
+            .collect()
+    };
+    let names = shown(&two);
+    assert!(names.iter().any(|n| n == "Notes"), "{names:?}");
+    assert!(
+        names
+            .iter()
+            .any(|n| n.starts_with("Notes (") && n.ends_with(')')),
+        "{names:?}"
+    );
+
     run(&["install".as_ref(), a.as_os_str()]);
     assert_eq!(entries(), two, "a reinstall replaces its own entry");
 
@@ -9690,6 +9707,13 @@ fn a_windows_install_is_in_the_start_menu_as_itself() {
         .flatten()
         .count();
     assert_eq!(apps, 1, "and its folder, and nothing else");
+
+    // The clash is gone: reinstalled, the other Notes takes the plain name
+    // and its tagged entry goes, so it is in the menu once.
+    run(&["install".as_ref(), b.as_os_str()]);
+    let after = entries();
+    assert_eq!(shown(&after), ["Notes"], "{after:?}");
+    assert_eq!(after[0].1, left[0].1, "the same app, by its id");
 }
 
 #[test]
@@ -9789,6 +9813,7 @@ fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
             .collect();
         assert_eq!(apps.len(), names.len(), "one wrapper each: {apps:?}");
         let mut shown = Vec::new();
+        let mut displayed = Vec::new();
         for app in &apps {
             let plist = app.join("Contents/Info.plist");
             let read = |key: &str| {
@@ -9807,6 +9832,27 @@ fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
                 app.display()
             );
             shown.push(read("CFBundleName"));
+            // What Finder, Spotlight and Launchpad show is the name, not
+            // the lineage-tagged folder: macOS's own display-name lookup.
+            let seen = std::process::Command::new("osascript")
+                .args([
+                    "-l",
+                    "JavaScript",
+                    "-e",
+                    "ObjC.import('Foundation'); $.NSFileManager.defaultManager\
+                     .displayNameAtPath($.NSProcessInfo.processInfo.environment\
+                     .objectForKey('KRATE_SHOWN')).js",
+                ])
+                .env("KRATE_SHOWN", app)
+                .output()
+                .expect("osascript");
+            let seen = String::from_utf8_lossy(&seen.stdout).trim_end().to_string();
+            assert!(
+                !seen.ends_with(".app"),
+                "{} shows as {seen:?}",
+                app.display()
+            );
+            displayed.push(seen);
             // Handler coexistence (IC-396): an installed app opens itself
             // and claims no file type, so `.krate` files keep opening in the
             // Krate Player however many apps are installed.
@@ -9828,6 +9874,14 @@ fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
                 shown.iter().any(|s| s == name.trim()),
                 "{name:?} must read back as itself: {shown:?}"
             );
+            // macOS shows a localized ".." as "...app.app", so a name of
+            // dots alone keeps its folder name, as before.
+            if !name.chars().all(|c| c == '.') {
+                assert!(
+                    displayed.iter().any(|s| s == name.trim()),
+                    "{name:?} must be shown as itself: {displayed:?}"
+                );
+            }
         }
     }
 

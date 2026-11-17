@@ -20076,12 +20076,10 @@ fn uninstall_app(
             if let Some(entry) = owned_desktop_entry(&root, path) {
                 let _ = fs::remove_file(entry);
             }
-            // The Start menu entry is named after the app's folder, in the
-            // folder only Krate writes to.
+            // The Start menu entries that open this app's own copy, in
+            // the folder only Krate writes to.
             #[cfg(windows)]
-            if let Some(folder) = path.file_name() {
-                let mut entry = start_menu_dir(prefix)?.join(folder);
-                entry.as_mut_os_string().push(".lnk");
+            for entry in owned_start_menu_entries(&start_menu_dir(prefix)?, path) {
                 let _ = fs::remove_file(entry);
             }
             fs::remove_dir_all(path).with_context(|| format!("removing {}", path.display()))?;
@@ -20699,6 +20697,24 @@ fn install_name_part(name: &str) -> String {
     }
 }
 
+/// Text inside a double-quoted `.strings` value: backslash, quote and the
+/// line breaks escaped, everything else as it is (the file is UTF-8).
+#[cfg(any(target_os = "macos", test))]
+fn strings_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// The wrapper's executable file name (IC-278): the app's own name, which
 /// is what the dock shows, wherever that is one safe file name.
 ///
@@ -20844,6 +20860,39 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     // Identifier derived from the app's own id, so two different apps are two
     // different apps to Launch Services rather than one overwriting the other.
     let ident = format!("dev.krate.app.{}", manifest.app.id.replace('/', "."));
+    // The folder carries the lineage tag ("Notes (3f9a1c2e).app") so two
+    // publishers' Notes never collide, and Finder, Spotlight and Launchpad
+    // showed exactly that. The name a person sees comes from a localized
+    // display name instead: macOS shows it only while the folder name still
+    // equals the plist's CFBundleDisplayName, so the plist names the folder
+    // and InfoPlist.strings the app. A person who renames the folder sees
+    // their own name, as with any Mac app.
+    //
+    // Not for a name of dots alone: macOS shows ".." as "...app.app", so
+    // that app keeps showing its folder name.
+    let localized = !name.chars().all(|c| c == '.');
+    let folder_name = install_directory_name(&opened);
+    let shown_name = if localized {
+        folder_name.as_str()
+    } else {
+        name
+    };
+    if localized {
+        let english = resources.join("en.lproj");
+        fs::create_dir_all(&english)?;
+        fs::write(
+            english.join("InfoPlist.strings"),
+            format!(
+                "CFBundleDisplayName = \"{shown}\";\nCFBundleName = \"{shown}\";\n",
+                shown = strings_escape(name)
+            ),
+        )?;
+    }
+    let localized_key = if localized {
+        "    <key>LSHasLocalizedDisplayName</key>\n    <true/>\n"
+    } else {
+        ""
+    };
     fs::write(
         staging.join("Contents/Info.plist"),
         format!(
@@ -20854,7 +20903,9 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <key>CFBundleName</key>
     <string>{name}</string>
     <key>CFBundleDisplayName</key>
-    <string>{name}</string>
+    <string>{shown_name}</string>
+{localized_key}    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
     <key>CFBundleExecutable</key>
     <string>{executable}</string>
     <key>CFBundleIdentifier</key>
@@ -20885,6 +20936,7 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
 </plist>
 "#,
             name = xml_escape(name),
+            shown_name = xml_escape(shown_name),
             executable = xml_escape(&executable),
             ident = xml_escape(&ident),
             version = xml_escape(&manifest.app.version),
@@ -21079,7 +21131,9 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     let apps = install_root(prefix)?.join("Krate").join("apps");
     let app_dir = apps.join(&folder);
     let menu = start_menu_dir(prefix)?;
-    let shortcut = menu.join(format!("{folder}.lnk"));
+    let app_id =
+        krate_adapter_windows::toast::app_user_model_id(&principal_of(&opened).storage_key());
+    let shortcut = start_menu_entry_path(&menu, &name, &folder, &app_id);
     if dry_run {
         println!("{}", shortcut.display());
         return Ok(0);
@@ -21118,8 +21172,14 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     };
     fs::create_dir_all(&menu).with_context(|| format!("creating {}", menu.display()))?;
     let icon = app_dir.join("app.ico");
-    let app_id =
-        krate_adapter_windows::toast::app_user_model_id(&principal_of(&opened).storage_key());
+    // An entry this app had under another name (the tagged one an older
+    // Krate wrote, or the tagged one a name clash made and the clash is
+    // gone) goes, so the app is in the menu once.
+    for older in owned_start_menu_entries(&menu, &app_dir) {
+        if older != shortcut {
+            let _ = fs::remove_file(older);
+        }
+    }
     krate_adapter_windows::shortcut::write(&krate_adapter_windows::shortcut::Shortcut {
         path: &shortcut,
         target: &target,
@@ -21131,6 +21191,49 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     .map_err(anyhow::Error::msg)?;
     println!("Installed {name}: it is in your Start menu with its own name and icon.");
     Ok(0)
+}
+
+/// Where an app's Start menu entry goes (IC-278): the Start menu shows an
+/// entry's file name, so it is the app's own name -- "Notes", not the
+/// lineage-tagged folder "Notes (3f9a1c2e)" it used to read as. Only when
+/// another app's entry already holds that name does this one take the
+/// tagged name, so two publishers' Notes are still two entries.
+#[cfg(windows)]
+fn start_menu_entry_path(menu: &Path, name: &str, folder: &str, app_id: &str) -> PathBuf {
+    let plain = menu.join(format!("{}.lnk", install_name_part(name)));
+    match krate_adapter_windows::shortcut::read(&plain) {
+        Ok((holder, _)) if holder != app_id => menu.join(format!("{folder}.lnk")),
+        _ => plain,
+    }
+}
+
+/// The Start menu entries that open this installed app: those whose
+/// arguments name its own copy. Read from the entry, never guessed from a
+/// file name, so uninstall takes what install made and nothing else.
+#[cfg(windows)]
+fn owned_start_menu_entries(menu: &Path, app_dir: &Path) -> Vec<PathBuf> {
+    let payload = shell_path(&app_dir.join("app.krate"))
+        .to_string_lossy()
+        .to_lowercase();
+    let Ok(entries) = fs::read_dir(menu) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("lnk"))
+        })
+        .filter(|path| {
+            krate_adapter_windows::shortcut::read(path).is_ok_and(|(_, arguments)| {
+                arguments
+                    .to_lowercase()
+                    .split('"')
+                    .any(|part| part == payload)
+            })
+        })
+        .collect()
 }
 
 /// A path the Windows shell accepts in a shortcut: without the `\\?\`
@@ -33684,6 +33787,16 @@ mod storage_identity_tests {
     /// keyed on lineage, so their DATA stayed apart -- it was only the
     /// installed object that collided, which is the shape that loses
     /// somebody an app they installed.
+    #[test]
+    fn a_strings_value_holds_any_name_as_text() {
+        assert_eq!(super::strings_escape("Notes"), "Notes");
+        assert_eq!(
+            super::strings_escape("Quote \"x\" \\ y\nz"),
+            "Quote \\\"x\\\" \\\\ y\\nz"
+        );
+        assert_eq!(super::strings_escape("Café ☕"), "Café ☕");
+    }
+
     #[test]
     #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     fn two_apps_with_one_name_do_not_share_an_installed_path() {
