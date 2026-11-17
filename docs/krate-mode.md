@@ -768,6 +768,8 @@ takes this path, so any of them is a model for the wiring.
 - `unlock::available: func() -> bool`
 - `unlock::check: func(reason: string) -> unlock-answer`
 - `notify::show: func(title: string, body: string) -> result<_, notify-error>`
+- `notifications::post: func(id: string, title: string, body: string) -> result<_, notify-error>`
+- `notifications::withdraw: func(id: string)`
 - `reminders::schedule: func(id: string, title: string, body: string, after-seconds: u64, daily: bool) -> result<_, notify-error>`
 - `reminders::cancel: func(id: string)`
 - `reminders::pending: func() -> list<string>`

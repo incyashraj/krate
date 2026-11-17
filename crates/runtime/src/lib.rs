@@ -225,8 +225,10 @@ pub struct Config {
     /// terms as the key-value store.
     pub app_database_path: Option<PathBuf>,
     /// Where this app's secrets live, and the machine key they are encrypted
-    /// with. The key is the runtime's, never the app's.
-    pub app_secrets: Option<(PathBuf, String, Vec<u8>)>,
+    /// with. The key is the runtime's, never the app's. `Err` is why the key
+    /// could not be had (a locked keychain): every secret call then answers
+    /// with those words and nothing is written (IC-038).
+    pub app_secrets: Option<(PathBuf, String, std::result::Result<Vec<u8>, String>)>,
     /// Where this app's shared-store mirror lives, and the hub it syncs
     /// against, on the same terms as the key-value store.
     pub app_shared: Option<(PathBuf, String)>,
@@ -247,6 +249,11 @@ pub struct Config {
     /// runtime is also driven by tests and tools with no manifest; absent,
     /// the host attributes to "a Krate app" and never to guest-chosen text.
     pub app_name: Option<String>,
+    /// The app's lineage -- the key its data is stored under -- for anything
+    /// the OS keeps per app: its taskbar group and notification sender on
+    /// Windows (IC-278). Never the display name, which two apps can share.
+    /// Absent, the host falls back to the name.
+    pub app_identity: Option<String>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
     /// When set, a headless GUI run paints the window to this PNG once the app
@@ -275,6 +282,23 @@ pub struct Config {
     pub declared_capabilities: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
 }
 
+impl Config {
+    /// The usability plan with the app's own store files filled in, for an
+    /// `expect_stored` step to read (IC-743, test 1504). Only the run's own
+    /// paths: an app's task file can never point the check at another file.
+    pub fn usability_plan_with_stores(&self) -> Option<usability::UsabilityPlan> {
+        self.usability_plan.clone().map(|mut plan| {
+            plan.stores = self
+                .app_store_path
+                .iter()
+                .chain(self.app_database_path.iter())
+                .cloned()
+                .collect();
+            plan
+        })
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -299,6 +323,7 @@ impl Default for Config {
             app_secrets: None,
             app_shared: None,
             app_name: None,
+            app_identity: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
             check_layout: false,
             screenshot_path: None,
@@ -1456,11 +1481,13 @@ impl Runtime {
                 .clone()
                 .map(|path| (path, config.screenshot_scale)),
         )
-        .with_usability(config.usability_plan.clone())
+        .with_usability(config.usability_plan_with_stores())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
+        .with_net_log(store.data().net_log.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
-        .with_app_name(config.app_name.clone());
+        .with_app_name(config.app_name.clone())
+        .with_app_identity(config.app_identity.clone());
         // A Phase 3 app cannot ask what screen it is on (krate:ui/screen is
         // Phase 4), so it never adapts -- and it must say so: the host keeps
         // the last answer, and one carried over from the permission sheet
@@ -1508,11 +1535,13 @@ impl Runtime {
                 .clone()
                 .map(|path| (path, config.screenshot_scale)),
         )
-        .with_usability(config.usability_plan.clone())
+        .with_usability(config.usability_plan_with_stores())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
+        .with_net_log(store.data().net_log.clone())
         .with_stepped_clock(store.data().stepped_clock.clone())
-        .with_app_name(config.app_name.clone());
+        .with_app_name(config.app_name.clone())
+        .with_app_identity(config.app_identity.clone());
         // An app that asks what screen it is on lays itself out for any
         // screen: a phone follows the way it is held for it (IC-912).
         let adapts = component
@@ -1723,6 +1752,8 @@ impl Runtime {
         link_gui!(ui4::photos);
         // Phase 4 only: reminders delivered with the app closed (IC-921).
         link_gui!(ui4::reminders);
+        // Phase 4 only: notifications replaced and taken back by id (IC-271).
+        link_gui!(ui4::notifications);
         // Phase 4 only: signing in through the system sheet (IC-923).
         link_gui!(ui4::sign_in);
         // Phase 4 only: Face ID, Touch ID or the passcode (IC-924).
@@ -1884,6 +1915,10 @@ struct HostState {
     /// into one and fs resolved against the other, so every token failed.
     #[cfg(feature = "phase2-bindings")]
     chosen: Rc<RefCell<chosen_files::ChosenFiles>>,
+    /// The requests the Phase 2 host sent this run, shared into the GUI
+    /// host for a task's `expect_requested` (IC-743, test 1504).
+    #[cfg(feature = "phase2-bindings")]
+    net_log: Rc<RefCell<Vec<String>>>,
     /// The stepped monotonic clock, when this run is a screenshot run. Held
     /// here because both hosts need the same one: the Phase 2 adapter answers
     /// the app's clock reads from it, and the GUI host ends a frame on it at
@@ -1912,6 +1947,8 @@ impl HostState {
         create_dir_all_on_host(&config.sandbox_root)?;
         #[cfg(feature = "phase2-bindings")]
         let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        #[cfg(feature = "phase2-bindings")]
+        let net_log: Rc<RefCell<Vec<String>>> = Default::default();
         #[cfg(feature = "phase2-bindings")]
         let stepped_clock = config
             .frame_step_millis
@@ -1945,6 +1982,7 @@ impl HostState {
             )
             .with_asset_root(config.bundle_assets_root.clone())
             .with_chosen_files(chosen.clone())
+            .with_net_log(net_log.clone())
             .with_store(
                 config.app_store_path.clone(),
                 // The grant is resolved from the session policy here, once, so
@@ -1974,8 +2012,8 @@ impl HostState {
                 config
                     .app_secrets
                     .as_ref()
-                    .map(|(_, _, key)| key.as_slice())
-                    .unwrap_or_default(),
+                    .map(|(_, _, key)| key.as_deref().map_err(String::as_str))
+                    .unwrap_or(Ok(&[])),
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "secret", None)
                         .expect("store.secret"),
@@ -2007,6 +2045,8 @@ impl HostState {
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]
             chosen,
+            #[cfg(feature = "phase2-bindings")]
+            net_log,
             #[cfg(feature = "phase2-bindings")]
             stepped_clock,
         })

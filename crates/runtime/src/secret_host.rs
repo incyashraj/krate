@@ -20,7 +20,11 @@
 //!
 //! Secrets are encrypted at rest with a key derived from the machine, so a
 //! backup, a synced folder, or a copied file does not carry usable secrets to
-//! another computer.
+//! another computer. The machine key itself is the caller's to keep: the
+//! desktop keeps a new one in the Mac login keychain or sealed by Windows
+//! for the user, and in a file only the person reads on Linux (IC-038). A
+//! key that cannot be had opens a store with `AppSecrets::locked`, which
+//! answers every call with why and never writes.
 //!
 //! It does **not** protect against code already running as the same user on the
 //! same machine -- that is what an OS keychain's prompts buy, and this does not
@@ -105,6 +109,23 @@ impl AppSecrets {
             key_v1,
             granted,
             unreadable,
+        }
+    }
+
+    /// A store whose machine key could not be had (a locked keychain, a
+    /// Windows profile from another account): every call answers `why` and
+    /// nothing is ever written, so the secrets sealed with the real key are
+    /// still there when it can be had again (IC-038).
+    pub fn locked(path: PathBuf, why: &str, granted: bool) -> Self {
+        Self {
+            path,
+            entries: BTreeMap::new(),
+            changed: Default::default(),
+            deleted: Default::default(),
+            key: [0; 32],
+            key_v1: [0; 32],
+            granted,
+            unreadable: Some(why.to_string()),
         }
     }
 
@@ -532,6 +553,35 @@ mod tests {
             AppSecrets::open(path, "dev.krate.test", MACHINE, granted),
             dir,
         )
+    }
+
+    #[test]
+    fn a_locked_key_refuses_every_call_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("app.secrets");
+        let mut store = AppSecrets::open(path.clone(), "dev.krate.locked", MACHINE, true);
+        store.set("token", b"kept".to_vec()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let mut locked = AppSecrets::locked(path.clone(), "your keychain is locked", true);
+        for answer in [
+            locked.get("token").map(|_| ()),
+            locked.names().map(|_| ()),
+            locked.set("token", b"new".to_vec()),
+            locked.delete("token"),
+        ] {
+            match answer {
+                Err(SecretError::Io(words)) => {
+                    assert!(words.contains("keychain is locked"), "{words}")
+                }
+                other => panic!("a locked store answered {other:?}"),
+            }
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), before, "nothing was written");
+        let reopened = AppSecrets::open(path, "dev.krate.locked", MACHINE, true);
+        assert_eq!(
+            reopened.get("token").unwrap().as_deref(),
+            Some(&b"kept"[..])
+        );
     }
 
     #[test]

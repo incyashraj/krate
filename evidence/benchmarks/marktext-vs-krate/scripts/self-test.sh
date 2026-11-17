@@ -21,6 +21,8 @@ fifty_hash=$(sha256_file "$tmp/notes-50000.md")
 
 swift_build "$ROOT/scripts/window_probe.swift" "$tmp/window-probe"
 swift_build "$ROOT/scripts/scroll_driver.swift" "$tmp/scroll-driver"
+swift_build "$ROOT/scripts/content_probe.swift" "$tmp/content-probe"
+"$tmp/content-probe" --self-test >/dev/null || die "content probe did not read the document's lines"
 "$tmp/window-probe" --timeout 2 --terminate -- /usr/bin/true >"$tmp/probe.json" 2>/dev/null && \
   die "window probe should reject a command that exits without a window"
 python3 - "$tmp/probe.json" <<'PY'

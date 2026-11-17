@@ -11,6 +11,12 @@ fn main() {
 
     println!("cargo:rustc-env=KRATE_RUSTC_VERSION={rustc}");
     println!("cargo:rustc-env=KRATE_GIT_SHA={git_sha}");
+    // The commit's time, so any two engines order (IC-984): every 0.5.5
+    // release candidate reports one version. 0 when git cannot say.
+    let commit_time = command_output("git", &["log", "-1", "--format=%ct", "HEAD"])
+        .and_then(|t| t.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    println!("cargo:rustc-env=KRATE_COMMIT_TIME={commit_time}");
     // The exact query that decided `-dirty`, tab-joined, so the test that
     // checks the stamp against the tree asks git the same question.
     println!(

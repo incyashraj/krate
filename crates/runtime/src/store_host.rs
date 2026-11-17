@@ -341,6 +341,12 @@ fn encode(entries: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
     out.into_bytes()
 }
 
+/// The store's entries as they are on disk, for the host's own check of
+/// what an app wrote (IC-743, test 1504).
+pub(crate) fn load_entries(path: &Path) -> std::io::Result<Option<BTreeMap<String, Vec<u8>>>> {
+    load(path)
+}
+
 /// Read the store from disk.
 ///
 /// `Ok(None)` means there is no store yet -- a new app, which is ordinary.

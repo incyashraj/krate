@@ -35,6 +35,10 @@ pub mod winit_native;
 
 mod clipboard;
 
+/// Who a running app is to Windows: its own taskbar group (IC-278).
+pub mod identity;
+/// Start menu entries for installed apps, carrying their identity (IC-278).
+pub mod shortcut;
 /// Toasts attributed to the app (IC-271).
 pub mod toast;
 

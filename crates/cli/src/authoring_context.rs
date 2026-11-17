@@ -203,7 +203,14 @@ expect_text = \"milk\"   # a label containing this must now be on screen\n\
 ```\n\
 \n\
 Steps: `click`, `type`, `key`, `paste`, `pick`, `wait_ms`, `expect_text`,\n\
-`expect_no_text`, one per step; `key = \"Shift+ArrowLeft\"` or\n\
+`expect_no_text`, `expect_stored`, `expect_notified`, `expect_requested`,\n\
+one per step; `expect_stored = \"milk\"` is checked against the app's own\n\
+store on disk (its key-value store and database), `expect_notified =\n\
+\"Lunch\"` against the notifications the app handed Krate, and\n\
+`expect_requested = \"api.example.com\"` against the requests Krate sent\n\
+for it -- not against anything the app says on screen, so an app that\n\
+saves, reminds or fetches proves it did.\n\
+`key = \"Shift+ArrowLeft\"` or\n\
 `\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord,\n\
 `paste = \"text\"` pastes it as a person would, and `pick = \"notes.txt\"`\n\
 (before the click that opens a picker) answers the app's next file or\n\
@@ -1213,9 +1220,14 @@ and never make a step depend on hearing them.\n\n\
 attributes it to the app. Use it when the thing the app waits for finishes \
 -- a timer, a long job -- because the person has usually switched windows. \
 No reply channel exists; do not build flows that depend on the person \
-clicking it. **Not available on Windows yet**: `show` returns an error \
-there, so treat it as a courtesy -- show the same state in the window too, \
-and never make a step depend on the notification having appeared.\n\n\
+clicking it. One that changes (a download's progress, a count, a timer \
+that is now done): `ui::notifications::post(\"upload\", \"Uploading\", \
+\"3 of 10 photos\")` -- the same id replaces it, and \
+`ui::notifications::withdraw(\"upload\")` takes it back once it no longer \
+holds; ids are letters, digits, `-` and `_`. Works on a Mac, Windows, \
+Linux and in the browser. Treat any notification as a courtesy -- show \
+the same state in the window too, and never make a step depend on it \
+having appeared.\n\n\
 **Open in the browser** (`ui.open-url`, an explicit ask): \
 `ui::launch::open_url(\"https://...\")` hands a link to the person's \
 browser. Pairs with 2c: a \"get your API token\" button that opens the \

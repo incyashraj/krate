@@ -30,6 +30,8 @@ krate-orgkeys = { path = "../orgkeys" }
 # the sealing, the same crate krate-runtime's org_store is built on.
 krate-orgdata = { path = "../orgdata" }
 zeroize = "1.8"
+# The Android signing-key challenge (IC-800): the verifier krate port runs.
+krate-apksig = { path = "../apksig" }
 
 # The keyring's HPKE draws its randomness through getrandom 0.3. In the
 # module that comes from the page that calls it (crypto.getRandomValues),

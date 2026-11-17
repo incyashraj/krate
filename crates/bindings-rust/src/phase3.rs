@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, motion, notify, photos, pointer, print, reminders, screen, share, sign_in, text_entry, touch, tree, unlock, web_page, window.
+/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, text_entry, touch, tree, unlock, web_page, window.
 pub mod ui {
     /// `krate:ui/accessibility`.
     pub mod accessibility {
@@ -358,6 +358,24 @@ pub mod ui {
         /// sensors, and for the first moment after the first ask.
         pub fn read() -> Option<Reading> {
             crate::bindings::krate::ui::motion::read()
+        }
+    }
+    /// `krate:ui/notifications`.
+    pub mod notifications {
+        pub use crate::bindings::krate::ui::notifications::NotifyError;
+
+        /// Show a notification under `id` (letters, digits, `-` and `_`, up to
+        /// 64), replacing the one this app last showed under the same id. Where
+        /// the system cannot replace one, the new one shows and the old one
+        /// stays until the person clears it.
+        pub fn post(id: &str, title: &str, body: &str) -> Result<(), NotifyError> {
+            crate::bindings::krate::ui::notifications::post(id, title, body)
+        }
+
+        /// Take back this app's notification under `id` if it still shows.
+        /// Unknown ids are ignored.
+        pub fn withdraw(id: &str) {
+            crate::bindings::krate::ui::notifications::withdraw(id)
         }
     }
     /// `krate:ui/notify`.

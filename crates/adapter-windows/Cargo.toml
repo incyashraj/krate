@@ -48,12 +48,21 @@ windows = { version = "0.62", features = [
     "UI_Notifications",
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_System_Com_StructuredStorage",
     "Win32_System_Registry",
+    "Win32_System_Variant",
     "Win32_System_WinRT",
+    "Win32_System_Com",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-future = "0.3"
+
+[dev-dependencies]
+tempfile = "3.27.0"
 
 [features]
 # Compile the real winit+GPU path on any OS, for local dev proof.

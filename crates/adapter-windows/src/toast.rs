@@ -13,16 +13,21 @@
 //! off is reported as not shown instead of as success -- the acknowledgement
 //! macOS cannot give.
 
-/// The AppUserModelID an app's toasts are posted under.
+/// The AppUserModelID an app is known to Windows by: its taskbar button,
+/// its toasts and its reminders (IC-278, IC-271).
 ///
-/// Stable for a name, so the person's per-app setting in Windows (on, off,
-/// banners or not) survives across runs. A hash rather than the name itself:
-/// an id may not hold spaces, and any name is a valid app name.
-pub fn app_user_model_id(app_name: &str) -> String {
+/// `identity` is the app's lineage -- the key its data is stored under, its
+/// publisher and id when signed -- never its display name. Keyed on the
+/// name, two apps called "Notes" from two publishers shared one sender, one
+/// notification setting and one taskbar group, and either could take back
+/// the other's reminders. Stable for a lineage, so the person's per-app
+/// setting in Windows survives across runs and renames. A hash rather than
+/// the key itself: an id may not hold spaces and is at most 128 characters.
+pub fn app_user_model_id(identity: &str) -> String {
     // FNV-1a, 64-bit: no dependency, and the id only has to be stable, not
     // secret.
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in app_name.as_bytes() {
+    for byte in identity.as_bytes() {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -71,19 +76,27 @@ fn escape_xml(text: &str) -> String {
     out
 }
 
-/// Show one toast attributed to `app_name`.
+/// Show one toast attributed to `app_name`, under the app known by
+/// `identity`. With `tag`, it replaces the app's toast under that tag and
+/// [`withdraw`] takes it back (IC-271).
 ///
 /// Ok means Windows accepted it with this app's notifications switched on.
 /// The person may still have Focus Assist on; Windows then files the toast in
 /// the notification centre instead of showing a banner, which is the
 /// platform's own promise and not one Krate can make stronger.
 #[cfg(windows)]
-pub fn show(app_name: &str, title: &str, body: &str) -> Result<(), String> {
+pub fn show(
+    identity: &str,
+    app_name: &str,
+    title: &str,
+    body: &str,
+    tag: Option<&str>,
+) -> Result<(), String> {
     use windows::core::HSTRING;
     use windows::Data::Xml::Dom::XmlDocument;
     use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
 
-    let id = app_user_model_id(app_name);
+    let id = app_user_model_id(identity);
     register_sender(&id, app_name)?;
 
     fn failed(step: &'static str) -> impl Fn(windows::core::Error) -> String {
@@ -105,7 +118,33 @@ pub fn show(app_name: &str, title: &str, body: &str) -> Result<(), String> {
     doc.LoadXml(&HSTRING::from(toast_xml(title, body)))
         .map_err(failed("content"))?;
     let toast = ToastNotification::CreateToastNotification(&doc).map_err(failed("toast"))?;
+    if let Some(tag) = tag {
+        // Windows replaces a toast that has the same tag and group.
+        toast.SetTag(&HSTRING::from(tag)).map_err(failed("id"))?;
+        toast
+            .SetGroup(&HSTRING::from(NOTICE_GROUP))
+            .map_err(failed("group"))?;
+    }
     notifier.Show(&toast).map_err(failed("show"))
+}
+
+/// The group an app's replaceable toasts are filed under, beside their tag.
+#[cfg(windows)]
+const NOTICE_GROUP: &str = "krate-notices";
+
+/// Take back the toast `show` posted under `tag`, from the screen and the
+/// notification centre. Quiet when there is none.
+#[cfg(windows)]
+pub fn withdraw(identity: &str, tag: &str) {
+    use windows::core::HSTRING;
+    use windows::UI::Notifications::ToastNotificationManager;
+    if let Ok(history) = ToastNotificationManager::History() {
+        let _ = history.RemoveGroupedTagWithId(
+            &HSTRING::from(tag),
+            &HSTRING::from(NOTICE_GROUP),
+            &HSTRING::from(app_user_model_id(identity)),
+        );
+    }
 }
 
 /// Days a daily reminder is set ahead on Windows, which has no repeating
@@ -147,6 +186,7 @@ const REMINDER_GROUP: &str = "krate-reminders";
 /// replacing any it had under that id.
 #[cfg(windows)]
 pub fn schedule(
+    identity: &str,
     app_name: &str,
     id: &str,
     title: &str,
@@ -159,7 +199,7 @@ pub fn schedule(
     use windows::Foundation::DateTime;
     use windows::UI::Notifications::{ScheduledToastNotification, ToastNotificationManager};
 
-    let aumid = app_user_model_id(app_name);
+    let aumid = app_user_model_id(identity);
     register_sender(&aumid, app_name)?;
     fn failed(step: &'static str) -> impl Fn(windows::core::Error) -> String {
         move |err| format!("Windows could not set the reminder ({step}: {err})")
@@ -171,7 +211,7 @@ pub fn schedule(
             return Err(why.to_string());
         }
     }
-    cancel(app_name, id);
+    cancel(identity, id);
     let now = now_unix_ms();
     for after in deliveries(after_seconds, daily) {
         let doc = XmlDocument::new().map_err(failed("document"))?;
@@ -193,10 +233,11 @@ pub fn schedule(
     Ok(())
 }
 
-/// Every scheduled toast of `app_name`'s reminders, with its tag.
+/// Every scheduled toast of the reminders of the app known by `identity`,
+/// with its tag.
 #[cfg(windows)]
 fn scheduled(
-    app_name: &str,
+    identity: &str,
 ) -> Vec<(
     windows::UI::Notifications::ToastNotifier,
     windows::UI::Notifications::ScheduledToastNotification,
@@ -205,7 +246,7 @@ fn scheduled(
     use windows::core::HSTRING;
     use windows::UI::Notifications::ToastNotificationManager;
     let Ok(notifier) = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
-        app_user_model_id(app_name),
+        app_user_model_id(identity),
     )) else {
         return Vec::new();
     };
@@ -229,18 +270,19 @@ fn scheduled(
 
 /// Take back every toast still to come of reminder `id`.
 #[cfg(windows)]
-pub fn cancel(app_name: &str, id: &str) {
-    for (notifier, toast, tag) in scheduled(app_name) {
+pub fn cancel(identity: &str, id: &str) {
+    for (notifier, toast, tag) in scheduled(identity) {
         if tag == id {
             let _ = notifier.RemoveFromSchedule(&toast);
         }
     }
 }
 
-/// The ids of `app_name`'s reminders still to come, each once.
+/// The ids of the reminders still to come of the app known by `identity`,
+/// each once.
 #[cfg(windows)]
-pub fn pending(app_name: &str) -> Vec<String> {
-    let mut ids: Vec<String> = scheduled(app_name)
+pub fn pending(identity: &str) -> Vec<String> {
+    let mut ids: Vec<String> = scheduled(identity)
         .into_iter()
         .map(|(_, _, tag)| tag)
         .collect();
@@ -254,7 +296,7 @@ pub fn pending(app_name: &str) -> Vec<String> {
 /// Per user, so no administrator is needed, and rewritten on every toast so
 /// an app that is renamed is shown under its new name.
 #[cfg(windows)]
-fn register_sender(id: &str, app_name: &str) -> Result<(), String> {
+pub(crate) fn register_sender(id: &str, app_name: &str) -> Result<(), String> {
     use windows::core::HSTRING;
     use windows::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE,
@@ -314,9 +356,16 @@ mod tests {
 
     #[test]
     fn an_app_keeps_one_sender_id_and_two_apps_do_not_share_one() {
-        let notes = app_user_model_id("Notes");
-        assert_eq!(notes, app_user_model_id("Notes"), "stable across runs");
-        assert_ne!(notes, app_user_model_id("Notes 2"));
+        // Two publishers' "Notes": the identity is the lineage, so the two
+        // are two apps to Windows, and one keeps its id across runs.
+        let notes = app_user_model_id("dev.notes@aaaaaaaaaaaaaaaa");
+        assert_eq!(
+            notes,
+            app_user_model_id("dev.notes@aaaaaaaaaaaaaaaa"),
+            "stable across runs"
+        );
+        assert_ne!(notes, app_user_model_id("dev.notes@bbbbbbbbbbbbbbbb"));
+        assert_ne!(notes, app_user_model_id("dev.notes"), "unsigned is its own");
         // An AppUserModelID may not hold spaces and is at most 128 characters.
         let long = app_user_model_id(&"A very long app name ".repeat(40));
         for id in [&notes, &long] {
@@ -363,7 +412,14 @@ mod tests {
         use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
 
         let app = "Krate toast test";
-        match show(app, "Build finished", "3 tests passed & 0 failed <ok>") {
+        let identity = "dev.krate.toast-test@0123456789abcdef";
+        match show(
+            identity,
+            app,
+            "Build finished",
+            "3 tests passed & 0 failed <ok>",
+            None,
+        ) {
             Ok(()) => {}
             Err(why) => assert!(
                 why.contains("turned off") || why.contains("will not"),
@@ -373,7 +429,7 @@ mod tests {
 
         let path = HSTRING::from(format!(
             "Software\\Classes\\AppUserModelId\\{}",
-            app_user_model_id(app)
+            app_user_model_id(identity)
         ));
         let mut buf = [0u16; 128];
         let mut len = (buf.len() * 2) as u32;

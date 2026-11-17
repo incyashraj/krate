@@ -3,6 +3,10 @@ name = "open a contact's record"
 # row it is stored in. check-app runs these steps after the usability checks.
 [[step]]
 expect_text = "Row 1"
+# The contacts are in the app's own database on disk, read by Krate -- not
+# only drawn on screen (IC-743, test 1504).
+[[step]]
+expect_stored = "Grace Hopper"
 [[step]]
 click = "Grace Hopper"
 [[step]]

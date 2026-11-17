@@ -21,12 +21,16 @@ mod access;
 mod agent_provider;
 mod api_author;
 mod api_key;
+mod apk_proof;
 mod audit;
 mod authoring_context;
+mod engine_sweep;
 mod fleet;
 mod github_auth;
+mod keychain;
 mod krate_mode;
 mod lineedit;
+mod machine_key;
 mod maker_key;
 mod mcp;
 mod org;
@@ -175,12 +179,50 @@ enum GroupCommand {
 // and the other variants costs nothing; boxing `Run`'s fields to satisfy the
 // lint would only make every use of them noisier.
 #[allow(clippy::large_enum_variant)]
+/// `krate apk`.
+#[derive(Debug, Subcommand)]
+enum ApkAction {
+    /// Check an APK's signature and say which certificate signed it. Local:
+    /// nothing is sent anywhere.
+    Check {
+        apk: PathBuf,
+        /// Answer as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Prove you hold the key an APK is signed with: Krate writes a small
+    /// file for you to sign with that key, then checks your signed copy.
+    Prove {
+        apk: PathBuf,
+        /// The challenge file, signed with the app's key.
+        #[arg(long, value_name = "SIGNED_FILE")]
+        answer: Option<PathBuf>,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Send any spooled usage events, then exit. Spawned detached by the
     /// CLI itself; never meant to be typed by a person.
     #[command(hide = true)]
     UsageFlush,
+
+    /// Bring every app Krate made on this computer up to the newest engine
+    /// here, then move the secrets key out of its file when nothing older
+    /// is left to follow it (IC-984). Spawned detached by the CLI itself.
+    #[command(hide = true)]
+    EngineSweep,
+
+    /// Print this engine's build fingerprint, for a newer engine asking.
+    #[command(hide = true)]
+    EngineBuild,
+
+    /// An Android app: whether its signature holds and who signed it, and
+    /// proof that you hold its signing key (IC-800).
+    Apk {
+        #[command(subcommand)]
+        action: ApkAction,
+    },
 
     /// Run a WebAssembly component through the Krate runtime.
     Run {
@@ -2025,6 +2067,15 @@ fn run() -> Result<u8> {
     }
     let cli = Cli::parse_from(args);
 
+    // Once per engine build: bring older installed apps along (IC-984).
+    // Not for the two commands that ARE the sweep.
+    if !matches!(
+        cli.command,
+        Some(Command::EngineSweep | Command::EngineBuild | Command::UsageFlush)
+    ) {
+        engine_sweep::notice();
+    }
+
     let Some(command) = cli.command else {
         return tui::run();
     };
@@ -2292,6 +2343,12 @@ fn run() -> Result<u8> {
             usage::flush_spool_now();
             Ok(0)
         }
+        Command::EngineSweep => engine_sweep::sweep_now(),
+        Command::EngineBuild => Ok(engine_sweep::print_build()),
+        Command::Apk { action } => match action {
+            ApkAction::Check { apk, json } => apk_proof::check_command(&apk, json),
+            ApkAction::Prove { apk, answer } => apk_proof::prove_command(&apk, answer.as_deref()),
+        },
         Command::Telemetry { state } => usage::telemetry_command(&state),
         Command::Policy { json, action } => match action {
             None => fleet::show(json),
@@ -6086,7 +6143,7 @@ fn account_sync_command(action: Option<SyncAction>, json: bool) -> Result<u8> {
     let account = Account::load(
         &device_dir,
         &id,
-        &machine_key(),
+        &machine_key().map_err(anyhow::Error::msg)?,
         &this_computers_name(identity.display_name()),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -6230,7 +6287,7 @@ fn sync_conflicts_command(
     use krate_runtime::account_sync_sql::{resolve_row_at, row_conflicts_at, sql_waits_at};
 
     let name = this_computers_name(identity.display_name());
-    let machine = machine_key();
+    let machine = machine_key().map_err(anyhow::Error::msg)?;
     let hub = shared_hub_url();
     let me = Me {
         device_dir,
@@ -7132,6 +7189,62 @@ fn blocked_entry(target: &str) -> Option<Blocked> {
     list.blocked.into_iter().find(|b| b.hash == hash)
 }
 
+/// What a blocklist signature begins with (cloud/worker/src/index.js).
+const BLOCKLIST_DOMAIN: &str = "krate-blocklist-v1\n";
+
+/// The hub's list, only when its signature holds under the pinned hub key
+/// and it is no older than the list already held: a mirror or a network in
+/// between can neither empty it, nor block an app with a forged one, nor
+/// hand back an older list that no longer names a removed app (IC-669,
+/// test 1311).
+fn read_signed_blocklist(
+    value: &serde_json::Value,
+    key: Option<[u8; 32]>,
+    held_issued_at: Option<u64>,
+) -> std::result::Result<Blocklist, String> {
+    let key = key.ok_or("this Krate has no hub key to check the blocklist with")?;
+    if value["schema"] != BLOCKLIST_SCHEMA {
+        return Err(format!(
+            "the hub answered with a {} list, which this Krate does not read",
+            value["schema"]
+        ));
+    }
+    let signature = value["signature"]
+        .as_str()
+        .and_then(|hex| {
+            (hex.len() == 128)
+                .then(|| {
+                    (0..64)
+                        .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok())
+                        .collect::<Option<Vec<u8>>>()
+                })
+                .flatten()
+        })
+        .ok_or("the hub's blocklist is not signed")?;
+    let body = serde_json::json!({
+        "schema": value["schema"],
+        "hub": value["hub"],
+        "issued_at": value["issued_at"],
+        "blocked": value["blocked"],
+    });
+    let signed = format!("{BLOCKLIST_DOMAIN}{}", krate_lease::canonical_json(&body));
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, key)
+        .verify(signed.as_bytes(), &signature)
+        .map_err(|_| "the blocklist's signature is not the hub's".to_string())?;
+    let list: Blocklist = serde_json::from_value(serde_json::json!({
+        "schema": value["schema"],
+        "hub": value["hub"],
+        "issued_at": value["issued_at"],
+        "fetched_at": 0,
+        "blocked": value["blocked"],
+    }))
+    .map_err(|err| format!("the blocklist did not read: {err}"))?;
+    if held_issued_at.is_some_and(|held| list.issued_at < held) {
+        return Err("the hub answered with a list older than the one held".to_string());
+    }
+    Ok(list)
+}
+
 fn blocklist_command(update: bool) -> Result<u8> {
     if update {
         let hub = org::hub_url(None)?;
@@ -7145,14 +7258,11 @@ fn blocklist_command(update: bool) -> Result<u8> {
         let body = response
             .into_string()
             .with_context(|| format!("{endpoint} did not answer"))?;
-        let mut list: Blocklist = serde_json::from_str(&body)
+        let value: serde_json::Value = serde_json::from_str(&body)
             .with_context(|| format!("{endpoint} did not answer with a blocklist"))?;
-        if list.schema != BLOCKLIST_SCHEMA {
-            anyhow::bail!(
-                "{endpoint} answered with a {} list, which this Krate does not read",
-                list.schema
-            );
-        }
+        let held = stored_blocklist().map(|l| l.issued_at);
+        let mut list = read_signed_blocklist(&value, krate_lease::lease_key(), held)
+            .map_err(|why| anyhow::anyhow!("{why}; the list you had is kept"))?;
         list.hub = hub.clone();
         list.fetched_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -7373,6 +7483,38 @@ fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u
         _ => {
             println!("Your publisher key: not made yet. It is made the first time you make");
             println!("or share an app, and every app you make is signed with it.");
+        }
+    }
+
+    // The key the passwords and tokens apps keep are sealed with (IC-038).
+    println!();
+    match machine_key::kept() {
+        Some(kept) => {
+            println!("Your secrets key: kept {}.", kept.describe());
+            println!("  The passwords and tokens apps keep here are sealed with it.");
+            if kept == machine_key::Kept::File {
+                println!("  An app's files copied alone cannot be read elsewhere; a copy of");
+                println!("  your whole home folder carries the key with it.");
+                if machine_key::stronger_keeper_here() {
+                    let keeper = if cfg!(windows) {
+                        "Windows"
+                    } else {
+                        "your keychain"
+                    };
+                    println!(
+                        "  It moves to {keeper} once every Krate on this computer can follow it."
+                    );
+                    if let Some(held) = engine_sweep::key_held_by() {
+                        println!("  Waiting on: {held}.");
+                    }
+                }
+            } else {
+                println!("  A copied disk, backup or home folder does not carry it.");
+            }
+        }
+        None => {
+            println!("Your secrets key: not made yet. It is made the first time an app");
+            println!("keeps a password or token here.");
         }
     }
     Ok(0)
@@ -18825,6 +18967,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         session_policy: policy,
         // The sender line on a notification, fixed at consent (IC-271).
         app_name: manifest.map(|m| m.app.name.clone()),
+        // Who the app is to the OS where it keeps things per app -- its
+        // own taskbar group and notification sender on Windows -- by
+        // lineage, the key its data is stored under (IC-278).
+        app_identity: storage.as_ref().map(StoragePrincipal::storage_key),
         test_time_millis: request.test_time_millis,
         frame_step_millis: request.frame_step_millis,
         test_locale: request.test_locale,
@@ -18903,6 +19049,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 check_keyboard: true,
                 check_stay_open: true,
                 task: task.map(load_task).transpose()?,
+                stores: Vec::new(),
             }),
             // `--task` on its own: the steps and nothing else, so a scripted
             // use of the app (two people taking turns in a team app) is not
@@ -18914,6 +19061,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 check_keyboard: false,
                 check_stay_open: false,
                 task: Some(load_task(task)?),
+                stores: Vec::new(),
             }),
             (None, None) => None,
         },
@@ -19214,6 +19362,23 @@ fn validate_app_args(app_args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Which installed app, if any, open-app should hand a document to (K-1277).
+///
+/// `running_as` is the payload of the installed app this process already
+/// is, when it is one. An installed app starts with no arguments and runs
+/// open-app on its own payload; once the lookup learned to find
+/// lineage-named installs (K-1266) it found ITSELF, opened itself with
+/// `open -n`, and every copy did the same -- a new app in the Dock every
+/// instant until the person killed them. Already the installed copy: run
+/// here, hand nothing off.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn hand_off_to(running_as: Option<&Path>, found: Option<PathBuf>) -> Option<PathBuf> {
+    if running_as.is_some() {
+        return None;
+    }
+    found
 }
 
 /// The installed `<App>.app` for this bundle, if `krate install` made one.
@@ -19712,36 +19877,23 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 
 #[cfg(target_os = "macos")]
 /// This engine build's identity, for deciding whether a wrapper's embedded
-/// engine copy is current. Version and git sha alone miss dirty rebuilds of
-/// the same commit, so the binary's length and mtime join them -- cheap to
-/// read, and any rebuild changes at least one of the four.
+/// engine copy is current (engine_sweep.rs says what it carries, IC-984).
 fn engine_fingerprint() -> String {
-    let (len, mtime) = std::env::current_exe()
-        .and_then(fs::metadata)
-        .map(|m| {
-            (
-                m.len(),
-                m.modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0),
-            )
-        })
-        .unwrap_or((0, 0));
-    format!(
-        "{}-{}-{len}-{mtime}",
-        env!("CARGO_PKG_VERSION"),
-        env!("KRATE_GIT_SHA"),
-    )
+    engine_sweep::fingerprint()
 }
 
 /// Where installed apps live by default on this machine.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
     if let Some(prefix) = prefix {
         return Ok(prefix.to_path_buf());
     }
+    // Per user, beside every other program installed for one person, so
+    // no administrator is asked.
+    #[cfg(windows)]
+    return std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .context("no LOCALAPPDATA folder");
     // One expression, not two cfg blocks: written as two, the first
     // compiles as a statement that falls through and the function returns
     // (). Caught by compiling the Linux path on macOS before it reached CI.
@@ -19749,6 +19901,7 @@ fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
     let relative = "Applications";
     #[cfg(target_os = "linux")]
     let relative = ".local/share";
+    #[cfg(not(windows))]
     home_dir()
         .map(|home| home.join(relative))
         .context("no home directory")
@@ -19761,7 +19914,7 @@ fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
 /// beside them: a separate index is a second source of truth that goes
 /// stale the moment somebody moves a folder in Finder, and the payload is
 /// already there and already authoritative.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
     let mut found = Vec::new();
     // On Linux the installer writes only under krate/apps, so only that is
@@ -19769,6 +19922,8 @@ fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
     // app.krate is not Krate's to list, or to remove (IC-278).
     #[cfg(target_os = "linux")]
     let root = &root.join("krate/apps");
+    #[cfg(windows)]
+    let root = &root.join("Krate").join("apps");
     let Ok(entries) = fs::read_dir(root) else {
         return found;
     };
@@ -19777,7 +19932,7 @@ fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
         // The payload each platform's installer writes.
         #[cfg(target_os = "macos")]
         let payload = path.join("Contents/Resources/app.krate");
-        #[cfg(target_os = "linux")]
+        #[cfg(not(target_os = "macos"))]
         let payload = path.join("app.krate");
         if !payload.is_file() {
             continue;
@@ -19797,14 +19952,14 @@ fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
 
 /// `krate installed`: what is on this machine.
 fn list_installed(prefix: Option<&Path>) -> Result<u8> {
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
         let _ = prefix;
         println!("Installing apps is not supported on this system yet.");
         println!("Open a .krate directly instead -- that is the ordinary way to run one.");
         Ok(0)
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     {
         let root = install_root(prefix)?;
         let apps = installed_apps(&root);
@@ -19831,12 +19986,12 @@ fn uninstall_app(
     export_to: Option<&Path>,
     dry_run: bool,
 ) -> Result<u8> {
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
         let _ = (app_id, prefix, delete_data, export_to, dry_run);
         bail!("installing apps is not supported on this system, so there is nothing to uninstall")
     }
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     {
         let root = install_root(prefix)?;
         let matches: Vec<_> = installed_apps(&root)
@@ -19921,6 +20076,14 @@ fn uninstall_app(
             if let Some(entry) = owned_desktop_entry(&root, path) {
                 let _ = fs::remove_file(entry);
             }
+            // The Start menu entry is named after the app's folder, in the
+            // folder only Krate writes to.
+            #[cfg(windows)]
+            if let Some(folder) = path.file_name() {
+                let mut entry = start_menu_dir(prefix)?.join(folder);
+                entry.as_mut_os_string().push(".lnk");
+                let _ = fs::remove_file(entry);
+            }
             fs::remove_dir_all(path).with_context(|| format!("removing {}", path.display()))?;
             println!("Removed {name} ({id}).");
         }
@@ -19978,13 +20141,13 @@ fn owned_desktop_entry(root: &Path, app: &Path) -> Option<PathBuf> {
 }
 
 /// The bundle an installed app runs, inside its installed object.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn installed_payload_path(installed: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
     {
         installed.join("Contents/Resources/app.krate")
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     {
         installed.join("app.krate")
     }
@@ -20062,7 +20225,7 @@ fn resolve_app_storage(app: &str, prefix: Option<&Path>) -> Result<(Manifest, St
     let bundle_path = if path.is_file() {
         path.to_path_buf()
     } else {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
         {
             let root = install_root(prefix)?;
             let found = installed_apps(&root)
@@ -20078,7 +20241,7 @@ fn resolve_app_storage(app: &str, prefix: Option<&Path>) -> Result<(Manifest, St
                 ),
             }
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         {
             let _ = prefix;
             bail!("{app} is not a .krate file, and installed apps are not supported on this system")
@@ -20462,7 +20625,7 @@ fn import_data(
 /// real installer keyed on lineage and the preview kept printing the
 /// display name alone, so the command that exists to say where a file
 /// will go said the wrong place. One function, both callers.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn install_directory_name(opened: &krate_bundle::OpenBundle) -> String {
     let manifest = opened.manifest();
     let principal = storage_principal(
@@ -20483,7 +20646,7 @@ fn install_directory_name(opened: &krate_bundle::OpenBundle) -> String {
     )
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 /// A short, stable tag for the app's lineage: its id, and its publisher
 /// when one is verified (IC-278).
 ///
@@ -20510,7 +20673,7 @@ fn install_lineage_tag(manifest: &Manifest, principal: Option<&StoragePrincipal>
     digest.iter().take(4).map(|b| format!("{b:02x}")).collect()
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 /// What a display name may contribute to a path: no separators, no dots
 /// that could make a hidden file or a traversal, nothing that needs
 /// quoting. The lineage tag carries the uniqueness, so this only has to
@@ -20561,8 +20724,16 @@ fn launcher_file_name(name: &str) -> String {
 /// new one is in place. One function for the Mac wrapper and the Linux
 /// payload, so the two cannot drift: Linux used to copy straight over the
 /// installed app, and an interrupted update left it half-written.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 fn publish_staged(staging: &Path, target: &Path, previous: &Path) -> Result<()> {
+    // An install cut short between the two renames below -- power lost, the
+    // terminal killed -- left the app only under the set-aside name, and
+    // the next install deleted it as leftovers. That set-aside copy is the
+    // last good install, so it goes back first (IC-278, rollback): if this
+    // install fails too, the person still has the app they had.
+    if !target.exists() && previous.exists() {
+        let _ = fs::rename(previous, target);
+    }
     let _ = fs::remove_dir_all(previous);
     let had_previous = target.exists();
     if had_previous {
@@ -20850,11 +21021,10 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
         format!(
             "[Desktop Entry]\nType=Application\nName={name}\nComment=Made with Krate\nExec={exec}\nTerminal=false\nCategories=Utility;\n{icon}",
             name = desktop_value(&name),
-            exec = desktop_exec(&[
-                engine.display().to_string(),
-                "launch".to_string(),
-                payload.display().to_string(),
-            ]),
+            exec = desktop_exec(&menu_launch_args(
+                &engine.display().to_string(),
+                &payload.display().to_string(),
+            )),
             icon = if have_icon {
                 format!("Icon={}\n", desktop_value(&icon_path.display().to_string()))
             } else {
@@ -20872,6 +21042,171 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 
     println!("Installed {name}: it is in your app menu with its own name and icon.");
     Ok(0)
+}
+
+/// Where installed apps' Start menu entries go: a "Krate Apps" folder that
+/// only Krate writes to, so uninstall never touches an entry it did not make.
+/// Under the prefix when one is given, so a test never edits a real menu.
+#[cfg(windows)]
+fn start_menu_dir(prefix: Option<&Path>) -> Result<PathBuf> {
+    let programs = match prefix {
+        Some(prefix) => prefix.join("Start Menu").join("Programs"),
+        None => std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .context("no APPDATA folder")?
+            .join("Microsoft\\Windows\\Start Menu\\Programs"),
+    };
+    Ok(programs.join("Krate Apps"))
+}
+
+/// Windows install (IC-278, per-artifact identity): the app's own copy
+/// under %LOCALAPPDATA%\Krate\apps, and a Start menu entry carrying the
+/// app's AppUserModelID -- the id its window takes when it runs -- so the
+/// entry, the window and its notifications are one app to Windows, under
+/// the app's name and icon rather than Krate's.
+#[cfg(windows)]
+fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Result<u8> {
+    let opened = krate_bundle::open(bundle_path)
+        .with_context(|| format!("reading {}", bundle_path.display()))?;
+    let manifest = opened.manifest();
+    let name = manifest.app.name.trim().to_string();
+    if name.is_empty() {
+        bail!("this app has no name in its manifest, so it cannot be installed");
+    }
+    // Lineage, as on the other systems (K-292): two publishers' "Notes"
+    // are two folders and two entries.
+    let folder = install_directory_name(&opened);
+    let apps = install_root(prefix)?.join("Krate").join("apps");
+    let app_dir = apps.join(&folder);
+    let menu = start_menu_dir(prefix)?;
+    let shortcut = menu.join(format!("{folder}.lnk"));
+    if dry_run {
+        println!("{}", shortcut.display());
+        return Ok(0);
+    }
+    fs::create_dir_all(&apps).with_context(|| format!("creating {}", apps.display()))?;
+    // Built beside and swapped in, as on the other systems: the installed
+    // app is never half-written.
+    let staging = apps.join(format!(".{folder}.installing"));
+    let _ = fs::remove_dir_all(&staging);
+    let _cleanup = RemoveOnDrop(staging.clone());
+    fs::create_dir_all(&staging)?;
+    fs::copy(bundle_path, staging.join("app.krate"))
+        .with_context(|| format!("copying the app into {}", staging.display()))?;
+    let have_icon = opened
+        .assets_path()
+        .map(|assets| assets.join("icon.png"))
+        .and_then(|icon| fs::read(icon).ok())
+        .and_then(|png| ico_from_png(&png))
+        .is_some_and(|ico| fs::write(staging.join("app.ico"), ico).is_ok());
+    publish_staged(
+        &staging,
+        &app_dir,
+        &apps.join(format!(".{folder}.replaced")),
+    )?;
+
+    // The opener, not krate.exe: it is built for the windows subsystem, so
+    // no console opens beside the app, and it says in a dialog when the
+    // app cannot open. krate.exe when the opener is not beside it.
+    let engine = shell_path(&current_engine_path()?);
+    let opener = engine.with_file_name("krate-open.exe");
+    let payload = format!("\"{}\"", shell_path(&app_dir.join("app.krate")).display());
+    let (target, arguments) = if opener.is_file() {
+        (opener, payload)
+    } else {
+        (engine, format!("launch {payload}"))
+    };
+    fs::create_dir_all(&menu).with_context(|| format!("creating {}", menu.display()))?;
+    let icon = app_dir.join("app.ico");
+    let app_id =
+        krate_adapter_windows::toast::app_user_model_id(&principal_of(&opened).storage_key());
+    krate_adapter_windows::shortcut::write(&krate_adapter_windows::shortcut::Shortcut {
+        path: &shortcut,
+        target: &target,
+        arguments: &arguments,
+        description: "Made with Krate",
+        icon: have_icon.then_some(icon.as_path()),
+        app_id: &app_id,
+    })
+    .map_err(anyhow::Error::msg)?;
+    println!("Installed {name}: it is in your Start menu with its own name and icon.");
+    Ok(0)
+}
+
+/// A path the Windows shell accepts in a shortcut: without the `\\?\`
+/// prefix `fs::canonicalize` adds. The shell refused a target written that
+/// way with "The parameter is incorrect" (CI, windows-2022, 2026-11-16).
+#[cfg(any(windows, test))]
+fn shell_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
+/// A one-image `.ico` holding the PNG as it is, the form Windows has read
+/// since Vista. `None` for bytes that are not a PNG.
+#[cfg(any(windows, test))]
+fn ico_from_png(png: &[u8]) -> Option<Vec<u8>> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if png.len() < 24 || !png.starts_with(SIGNATURE) || &png[12..16] != b"IHDR" {
+        return None;
+    }
+    let side = |at: usize| {
+        let pixels = u32::from_be_bytes(png[at..at + 4].try_into().expect("4 bytes"));
+        // 0 means 256 or more: the entry's byte cannot say more.
+        u8::try_from(pixels).unwrap_or(0)
+    };
+    let size = u32::try_from(png.len()).ok()?;
+    let mut ico = Vec::with_capacity(png.len() + 22);
+    ico.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
+    ico.extend_from_slice(&[side(16), side(20), 0, 0]);
+    ico.extend_from_slice(&1u16.to_le_bytes());
+    ico.extend_from_slice(&32u16.to_le_bytes());
+    ico.extend_from_slice(&size.to_le_bytes());
+    ico.extend_from_slice(&22u32.to_le_bytes());
+    ico.extend_from_slice(png);
+    Some(ico)
+}
+
+/// The script a Linux menu entry runs: the engine `krate install` recorded,
+/// or, when Krate has since moved, the one this person has now (IC-278,
+/// moved engine).
+///
+/// The entry used to name the engine's absolute path and nothing else, so
+/// reinstalling Krate somewhere else (`/usr/local/bin` one day,
+/// `~/.local/bin` the next) left every installed app in the menu doing
+/// nothing when clicked. The Mac wrapper carries its own engine; this finds
+/// one at click time instead, so an engine upgrade is picked up too.
+///
+/// Every path reaches the script as an argument, never as script text, so
+/// nothing an app or a folder name holds is read by the shell.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+const MENU_LAUNCH_SCRIPT: &str = "for e in \"$1\" \"$(command -v krate)\" \
+     \"$HOME/.local/bin/krate\" /usr/local/bin/krate; do \
+     [ -x \"$e\" ] && shift && exec \"$e\" \"$@\"; done; \
+     echo 'Krate is not installed, so this app cannot open. Get it at https://krate.tech' >&2; \
+     exit 127";
+
+/// The argument list of an installed app's menu entry: the launch script,
+/// then the recorded engine and what it is asked to do.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn menu_launch_args(engine: &str, payload: &str) -> Vec<String> {
+    [
+        "/bin/sh",
+        "-c",
+        MENU_LAUNCH_SCRIPT,
+        "krate",
+        engine,
+        "launch",
+        payload,
+    ]
+    .map(String::from)
+    .to_vec()
 }
 
 // Linux writes these; tests on every host check them, so a change made on
@@ -21092,6 +21427,91 @@ mod desktop_entry_tests {
             "\"/home/50%%off/%%f.krate\""
         );
     }
+
+    /// An installed app's menu entry still opens it after Krate moves
+    /// (IC-278, moved engine), and hands the app's path over untouched.
+    ///
+    /// Run for real: the `Exec=` value the installer writes is read back by
+    /// the specification's rules and those arguments are executed, with a
+    /// stand-in engine that records what it was given. Four cases: the
+    /// recorded engine is there; it moved and `krate` is on PATH; it moved
+    /// to ~/.local/bin, which a desktop session's PATH often lacks; Krate is
+    /// gone, which says so and exits 127 instead of doing nothing.
+    #[cfg(unix)]
+    #[test]
+    fn a_menu_entry_finds_krate_after_it_moves() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log = dir.path().join("ran.txt");
+        let stand_in = |path: &std::path::Path| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                path,
+                format!(
+                    "#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > '{}'\n",
+                    log.display()
+                ),
+            )
+            .unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let payload = "/x/50% off %f $HOME `id` \"q\" back\\slash/app.krate";
+        let recorded = dir.path().join("old place/krate");
+        let on_path = dir.path().join("path bin/krate");
+        let home = dir.path().join("home");
+        let local = home.join(".local/bin/krate");
+        let run = |path_dir: &std::path::Path| {
+            let _ = std::fs::remove_file(&log);
+            let args = menu_reads(&desktop_exec(&super::menu_launch_args(
+                &recorded.display().to_string(),
+                payload,
+            )))
+            .expect("the entry reads back");
+            let out = std::process::Command::new(&args[0])
+                .args(&args[1..])
+                .env("PATH", format!("{}:/usr/bin:/bin", path_dir.display()))
+                .env("HOME", &home)
+                .output()
+                .expect("run the entry");
+            let ran = std::fs::read_to_string(&log).unwrap_or_default();
+            (out, ran)
+        };
+        let expect = |ran: &str, engine: &std::path::Path, case: &str| {
+            assert_eq!(
+                ran,
+                format!("{}\nlaunch\n{payload}\n", engine.display()),
+                "{case}: the engine runs `launch` with the app's path untouched"
+            );
+        };
+        let empty = dir.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+
+        stand_in(&recorded);
+        stand_in(&on_path);
+        let (_, ran) = run(on_path.parent().unwrap());
+        expect(&ran, &recorded, "the recorded engine is preferred");
+
+        std::fs::remove_file(&recorded).unwrap();
+        let (_, ran) = run(on_path.parent().unwrap());
+        expect(&ran, &on_path, "moved, found on PATH");
+
+        stand_in(&local);
+        let (_, ran) = run(&empty);
+        expect(&ran, &local, "moved to ~/.local/bin, not on PATH");
+
+        std::fs::remove_file(&local).unwrap();
+        let (out, ran) = run(&empty);
+        if std::path::Path::new("/usr/local/bin/krate").exists() {
+            return; // this machine has Krate there; the last case cannot be staged
+        }
+        assert_eq!(out.status.code(), Some(127), "Krate gone: exit 127");
+        assert!(ran.is_empty(), "nothing ran");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("Krate is not installed"),
+            "it says why: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }
 
 /// The Krate mark as a PNG, for Linux launcher entries.
@@ -21105,7 +21525,7 @@ fn krate_icon_png_source() -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn install_app(_bundle_path: &Path, _prefix: Option<&Path>, _dry_run: bool) -> Result<u8> {
     bail!("on Windows the installer sets up file associations; run the .krate directly")
 }
@@ -21430,7 +21850,10 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
     // Launchpad does. Not installed: run it here, under the Krate name, which
     // is still better than not opening at all.
     #[cfg(target_os = "macos")]
-    if let Some(app) = installed_app_for(target) {
+    if let Some(app) = hand_off_to(
+        installed_app_payload().as_deref(),
+        installed_app_for(target),
+    ) {
         let handed_off = ProcessCommand::new("/usr/bin/open")
             .arg("-n")
             .arg(&app)
@@ -27813,7 +28236,7 @@ fn adopt_id_keyed_data_here(
     home: &Path,
     principal: &StoragePrincipal,
     maker: Option<&str>,
-    machine_key: &dyn Fn() -> Vec<u8>,
+    machine_key: &dyn Fn() -> std::result::Result<Vec<u8>, String>,
 ) -> std::result::Result<IdDataAdopted, String> {
     let (copy, app_id) = match principal {
         StoragePrincipal::Verified { publisher, app_id } if Some(publisher.as_str()) == maker => {
@@ -27880,7 +28303,7 @@ fn adopt_id_keyed_data_here(
             &new_base.with_extension("secrets"),
             &old.storage_key(),
             &principal.storage_key(),
-            &machine_key(),
+            &machine_key()?,
         )?;
     }
     if copy {
@@ -28088,13 +28511,22 @@ fn account_sync_context(
         }
         _ => krate_accountsync::publisher_label(None),
     };
+    // Without this computer's key the device's account key cannot be
+    // opened; the app runs, and only this run does not sync (IC-038).
+    let machine = match machine_key() {
+        Ok(key) => key,
+        Err(why) => {
+            eprintln!("krate: this run does not sync: {why}");
+            return None;
+        }
+    };
     Some(krate_runtime::account_sync_host::AccountSyncContext {
         hub: shared_hub_url(),
         token: identity.token.clone(),
         enabled: krate_runtime::account_sync_host::sync_wanted(store, &device_dir),
         device_dir,
         device_name: this_computers_name(identity.display_name()),
-        machine_key: machine_key(),
+        machine_key: machine,
         app_id: app_id.to_string(),
         publisher,
         background: true,
@@ -28196,59 +28628,19 @@ fn org_clock_skew_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// This computer's key, generated once and kept private to the user.
+/// This computer's key, made once and kept by the system's own keeper where
+/// there is one (`machine_key.rs`, IC-038).
 ///
 /// Secrets are encrypted with a key derived from this, so copying an app's
 /// secret file to another machine does not carry usable secrets with it. It
 /// never reaches an app: the runtime uses it to derive a per-app key and the
-/// app only ever sees plaintext it already stored.
+/// app only ever sees plaintext it already stored. It also protects this
+/// computer's organisation device key at rest (F-316).
 ///
-/// The key is 32 bytes from the operating system's own secure generator
-/// (getrandom: the kernel on Linux and macOS, BCryptGenRandom on Windows).
-/// It also protects this computer's organisation device key at rest (F-316),
-/// so it must never be guessable. Windows used to have no source here and
-/// fell back to a hash of the home path, the time and the process id.
-///
-/// Only a system whose generator fails outright falls back to that derived
-/// value, and it says so on stderr: an app keeps working, and the person is
-/// told the protection is weaker on this computer.
-pub(crate) fn machine_key() -> Vec<u8> {
-    let path = krate_home().join("machine.key");
-    if let Ok(existing) = fs::read(&path) {
-        if existing.len() >= 32 {
-            return existing;
-        }
-    }
-    let mut key = vec![0u8; 32];
-    let sourced = getrandom::fill(&mut key).is_ok();
-    if !sourced {
-        eprintln!(
-            "warning: this computer's random number generator did not answer, so Krate's \
-             machine key is derived from this install instead; secrets kept by apps are \
-             less protected here"
-        );
-        let mut hasher = Sha256::new();
-        hasher.update(krate_home().to_string_lossy().as_bytes());
-        hasher.update(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos().to_le_bytes())
-                .unwrap_or([0; 16]),
-        );
-        hasher.update(std::process::id().to_le_bytes());
-        key.copy_from_slice(&hasher.finalize());
-    }
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if fs::write(&path, &key).is_ok() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-        }
-    }
-    key
+/// `Err` is words for the person (a locked keychain): never a second key,
+/// which would make everything sealed with the first unreadable.
+pub(crate) fn machine_key() -> std::result::Result<Vec<u8>, String> {
+    machine_key::get()
 }
 
 /// The person's home directory, on every system Krate runs on.
@@ -28268,6 +28660,79 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod blocklist_signature_tests {
+    use super::*;
+    use ring::signature::KeyPair;
+
+    fn signed(seed: u8, body: serde_json::Value, domain: &str) -> (serde_json::Value, [u8; 32]) {
+        let pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&[seed; 32]).unwrap();
+        let bytes = format!("{domain}{}", krate_lease::canonical_json(&body));
+        let hex: String = pair
+            .sign(bytes.as_bytes())
+            .as_ref()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let mut value = body.clone();
+        value["signature"] = serde_json::Value::String(hex);
+        value["fetched_at"] = 0.into();
+        (value, pair.public_key().as_ref().try_into().unwrap())
+    }
+
+    fn list(issued_at: u64, hashes: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "schema": BLOCKLIST_SCHEMA,
+            "hub": "https://hub.example",
+            "issued_at": issued_at,
+            "blocked": hashes.iter().map(|h| serde_json::json!({"hash": h, "reason": "malware"})).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Only the hub's signed list is taken (IC-669, 1311): not an unsigned
+    /// one, not one signed by another key or as a lease, not one emptied
+    /// after signing, and not an older one than the list held.
+    #[test]
+    fn only_the_hubs_signed_current_blocklist_is_taken() {
+        let (good, key) = signed(9, list(200, &["aa"]), BLOCKLIST_DOMAIN);
+        let taken = read_signed_blocklist(&good, Some(key), Some(100)).expect("the hub's list");
+        assert_eq!(taken.blocked.len(), 1);
+
+        let mut unsigned = good.clone();
+        unsigned.as_object_mut().unwrap().remove("signature");
+        assert!(read_signed_blocklist(&unsigned, Some(key), None)
+            .unwrap_err()
+            .contains("not signed"));
+
+        let (other, _) = signed(10, list(200, &["aa"]), BLOCKLIST_DOMAIN);
+        assert!(
+            read_signed_blocklist(&other, Some(key), None).is_err(),
+            "another key"
+        );
+
+        let (as_lease, _) = signed(9, list(200, &["aa"]), "krate-lease-v1\n");
+        assert!(
+            read_signed_blocklist(&as_lease, Some(key), None).is_err(),
+            "a lease signature"
+        );
+
+        let mut emptied = good.clone();
+        emptied["blocked"] = serde_json::json!([]);
+        assert!(
+            read_signed_blocklist(&emptied, Some(key), None).is_err(),
+            "emptied after signing"
+        );
+
+        assert!(read_signed_blocklist(&good, Some(key), Some(300))
+            .unwrap_err()
+            .contains("older"));
+        assert!(
+            read_signed_blocklist(&good, None, None).is_err(),
+            "no key, no list"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -32181,7 +32646,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let signed = StoragePrincipal::Verified {
             publisher: MAKER.to_string(),
@@ -32238,7 +32703,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let theirs = StoragePrincipal::Verified {
             publisher: STRANGER.to_string(),
@@ -32269,7 +32734,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let signed = StoragePrincipal::Verified {
             publisher: MAKER.to_string(),
@@ -32348,7 +32813,7 @@ mod storage_identity_tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let key = vec![7u8; 32];
-        let machine = || key.clone();
+        let machine = || Ok(key.clone());
         let old = unsigned_data(home, "dev.krate.notes", &key);
         let alice = StoragePrincipal::HubOwned {
             tag: TAG.to_string(),
@@ -33220,7 +33685,7 @@ mod storage_identity_tests {
     /// installed object that collided, which is the shape that loses
     /// somebody an app they installed.
     #[test]
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     fn two_apps_with_one_name_do_not_share_an_installed_path() {
         let manifest = |id: &str, name: &str| {
             krate_manifest::Manifest::parse(&format!(
@@ -33493,7 +33958,87 @@ mod check_pass_tests {
     }
 }
 
-#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+#[cfg(test)]
+mod hand_off_tests {
+    use std::path::{Path, PathBuf};
+
+    /// An installed app never hands its own launch to an installed app --
+    /// itself -- which opened a new copy every instant (K-1277). A
+    /// document opened through the Player still goes to the installed copy.
+    #[test]
+    fn an_installed_app_runs_itself_instead_of_opening_itself_again() {
+        let installed = PathBuf::from("/Users/a/Applications/Notes (1a2b3c4d).app");
+        let payload = installed.join("Contents/Resources/app.krate");
+        assert_eq!(
+            super::hand_off_to(Some(&payload), Some(installed.clone())),
+            None,
+            "already the installed copy: run here"
+        );
+        assert_eq!(
+            super::hand_off_to(None, Some(installed.clone())),
+            Some(installed),
+            "from the Player: open the installed copy"
+        );
+        assert_eq!(super::hand_off_to(None::<&Path>, None), None);
+    }
+}
+
+#[cfg(test)]
+mod shell_path_tests {
+    /// A shortcut's target loses the verbatim prefix and nothing else.
+    #[test]
+    fn the_verbatim_prefix_is_dropped_for_the_shell() {
+        let plain = |p: &str| {
+            super::shell_path(std::path::Path::new(p))
+                .display()
+                .to_string()
+        };
+        assert_eq!(plain(r"\\?\C:\Users\a\krate.exe"), r"C:\Users\a\krate.exe");
+        assert_eq!(
+            plain(r"\\?\UNC\server\share\krate.exe"),
+            r"\\server\share\krate.exe"
+        );
+        assert_eq!(plain(r"C:\Users\a\krate.exe"), r"C:\Users\a\krate.exe");
+        assert_eq!(
+            plain(r"\\?\Volume{x}\krate.exe"),
+            r"\\?\Volume{x}\krate.exe"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ico_tests {
+    /// The Start menu icon is the app's own PNG inside a one-entry .ico
+    /// that points at it; anything that is not a PNG makes no icon.
+    #[test]
+    fn a_png_becomes_a_one_image_ico_and_nothing_else_does() {
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 48, 300);
+            encoder.set_color(png::ColorType::Rgba);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&vec![0u8; 48 * 300 * 4]).unwrap();
+        }
+        let ico = super::ico_from_png(&png).expect("an icon");
+        assert_eq!(
+            &ico[..6],
+            &[0, 0, 1, 0, 1, 0],
+            "an icon file with one image"
+        );
+        assert_eq!(ico[6], 48, "its width");
+        assert_eq!(ico[7], 0, "a side of 256 or more reads 0");
+        assert_eq!(
+            u32::from_le_bytes(ico[14..18].try_into().unwrap()) as usize,
+            png.len()
+        );
+        assert_eq!(u32::from_le_bytes(ico[18..22].try_into().unwrap()), 22);
+        assert_eq!(&ico[22..], &png[..], "the PNG as it was");
+        assert!(super::ico_from_png(b"GIF89a not a png at all").is_none());
+        assert!(super::ico_from_png(&png[..20]).is_none(), "a cut-short PNG");
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux", windows)))]
 mod publish_staged_tests {
     use super::publish_staged;
     use std::fs;
@@ -33571,6 +34116,36 @@ mod publish_staged_tests {
             "version 1"
         );
         assert!(!previous.exists());
+    }
+
+    fn app(dir: &std::path::Path, text: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("app.krate"), text).unwrap();
+    }
+    fn read(dir: &std::path::Path) -> String {
+        fs::read_to_string(dir.join("app.krate")).unwrap_or_default()
+    }
+
+    /// An install cut short between its two renames left the app only
+    /// under the set-aside name; the next install restores it before
+    /// anything else, so a second failure still leaves the person with it.
+    #[test]
+    fn an_install_cut_short_mid_swap_is_rolled_back_by_the_next() {
+        let root = tempfile::tempdir().unwrap();
+        let (staging, target, previous) = (
+            root.path().join(".a.installing"),
+            root.path().join("a"),
+            root.path().join(".a.replaced"),
+        );
+        app(&previous, "v1");
+        assert!(publish_staged(&staging, &target, &previous).is_err());
+        assert_eq!(read(&target), "v1", "the last good install is back");
+
+        // And a successful one then replaces it and leaves nothing behind.
+        app(&staging, "v2");
+        publish_staged(&staging, &target, &previous).unwrap();
+        assert_eq!(read(&target), "v2");
+        assert!(!previous.exists() && !staging.exists());
     }
 }
 

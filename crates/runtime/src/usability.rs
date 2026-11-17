@@ -88,6 +88,11 @@ pub struct UsabilityPlan {
     /// checks and before the watch (IC-743, test 1506). None means no task
     /// oracle: reaching readiness is then all that is judged.
     pub task: Option<Task>,
+    /// The app's own store files on disk -- its key-value store and its
+    /// database -- which an `expect_stored` step reads for itself (IC-743,
+    /// test 1504): what the app wrote, not what it says it wrote. Filled by
+    /// the runtime from the run's configuration, never by the app.
+    pub stores: Vec<PathBuf>,
 }
 
 /// An app's primary task as steps a driver can do and a state it can look
@@ -184,6 +189,22 @@ pub struct TaskStep {
     /// No label containing this may be on screen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect_no_text: Option<String>,
+    /// This text must be in the app's own store on disk -- a key or a value
+    /// of its key-value store, or its database -- read by the host, not
+    /// reported by the app (IC-743, test 1504). "Saved" on screen is the
+    /// app's word; this is the file's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_stored: Option<String>,
+    /// A notification whose title or body contains this must have been
+    /// handed to the host (test 1504). A check run shows none on screen;
+    /// the host keeps what it was asked to show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_notified: Option<String>,
+    /// The host must have sent a request whose method and address contain
+    /// this ("api.example.com", "POST https://x/orders") -- read from the
+    /// host's own record of what it let out, not from the app (test 1504).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_requested: Option<String>,
 }
 
 /// A `pick` step's name as a path inside the run's scratch folder: plain
@@ -221,6 +242,9 @@ impl TaskStep {
             self.wait_ms.is_some(),
             self.expect_text.is_some(),
             self.expect_no_text.is_some(),
+            self.expect_stored.is_some(),
+            self.expect_notified.is_some(),
+            self.expect_requested.is_some(),
         ]
         .iter()
         .filter(|s| **s)
@@ -250,7 +274,7 @@ impl TaskStep {
         }
         match set {
             1 => Ok(()),
-            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text or expect_no_text".to_string()),
+            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text, expect_no_text, expect_stored, expect_notified or expect_requested".to_string()),
             _ => Err(format!("a step does one thing, this one does {set}: {}", self.describe())),
         }
     }
@@ -297,6 +321,15 @@ impl TaskStep {
         }
         if let Some(t) = &self.expect_no_text {
             return format!("expect {t:?} not on screen");
+        }
+        if let Some(t) = &self.expect_stored {
+            return format!("expect {t:?} in the app's store");
+        }
+        if let Some(t) = &self.expect_notified {
+            return format!("expect a notification saying {t:?}");
+        }
+        if let Some(t) = &self.expect_requested {
+            return format!("expect a request to {t:?}");
         }
         "an empty step".to_string()
     }
@@ -427,7 +460,12 @@ impl TaskStep {
     /// Whether the step changes the app (and so needs a settle after it)
     /// or only looks.
     pub fn is_action(&self) -> bool {
-        self.expect_text.is_none() && self.expect_no_text.is_none() && self.shoot.is_none()
+        self.expect_text.is_none()
+            && self.expect_no_text.is_none()
+            && self.expect_stored.is_none()
+            && self.expect_notified.is_none()
+            && self.expect_requested.is_none()
+            && self.shoot.is_none()
     }
 }
 
@@ -468,7 +506,7 @@ impl Task {
         }
         if !self.steps.iter().any(|s| !s.is_action()) {
             return Err(format!(
-                "task {:?} never looks at the screen; add an expect_text so completing it means something",
+                "task {:?} never looks at the screen or the store; add an expect_text or an expect_stored so completing it means something",
                 self.name
             ));
         }

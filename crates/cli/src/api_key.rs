@@ -273,8 +273,8 @@ fn key_path(vendor: ApiVendor) -> PathBuf {
 /// A keystream from the machine key and the vendor name. The same shape the
 /// runtime's secret store uses: enough that a copied file is useless on
 /// another machine, and honest about being no more than that.
-fn keystream(vendor: ApiVendor, len: usize) -> Vec<u8> {
-    let machine = crate::machine_key();
+fn keystream(vendor: ApiVendor, len: usize) -> Result<Vec<u8>, String> {
+    let machine = crate::machine_key()?;
     let mut out = Vec::with_capacity(len);
     let mut counter: u64 = 0;
     while out.len() < len {
@@ -287,7 +287,7 @@ fn keystream(vendor: ApiVendor, len: usize) -> Vec<u8> {
         counter += 1;
     }
     out.truncate(len);
-    out
+    Ok(out)
 }
 
 fn file_read(vendor: ApiVendor) -> Option<String> {
@@ -295,7 +295,7 @@ fn file_read(vendor: ApiVendor) -> Option<String> {
     if raw.is_empty() {
         return None;
     }
-    let stream = keystream(vendor, raw.len());
+    let stream = keystream(vendor, raw.len()).ok()?;
     let plain: Vec<u8> = raw.iter().zip(stream).map(|(b, k)| b ^ k).collect();
     let key = String::from_utf8(plain).ok()?.trim().to_string();
     if key.is_empty() {
@@ -311,7 +311,7 @@ fn file_write(vendor: ApiVendor, key: &str) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|err| format!("could not make the key directory: {err}"))?;
     }
-    let stream = keystream(vendor, key.len());
+    let stream = keystream(vendor, key.len())?;
     let sealed: Vec<u8> = key
         .as_bytes()
         .iter()

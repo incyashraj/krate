@@ -99,6 +99,9 @@ pub struct Phase3GuiHost {
     /// one grant share a store that lives and dies with the run. An app cannot
     /// carry a token across runs because this is gone when the run ends.
     chosen_files: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
+    /// The requests the Phase 2 host sent for the app this run, shared:
+    /// what an `expect_requested` step reads (IC-743, test 1504).
+    net_log: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     /// Host-side vertical scroll offsets per (window, Scroll widget).
     /// Scrolling never involves the guest: wheel input adjusts these and
     /// re-lowers placements, matching native platform feel.
@@ -142,6 +145,15 @@ pub struct Phase3GuiHost {
     interrupts: std::cell::Cell<u32>,
     /// See [`Config::app_name`](crate::Config::app_name).
     app_name: Option<String>,
+    /// See [`Config::app_identity`](crate::Config::app_identity).
+    app_identity: Option<String>,
+    /// What a headless run's `notifications.post` would show, by id: the
+    /// stand-in check-app and tests read, since nothing is on screen.
+    pub(crate) notices: std::cell::RefCell<std::collections::BTreeMap<String, (String, String)>>,
+    /// Every notification a headless run was asked to show, in order: kept
+    /// instead of shown, so a check run never puts one on the person's
+    /// screen, and what an `expect_notified` step reads (IC-743, 1504).
+    pub(crate) notified: std::cell::RefCell<Vec<(String, String)>>,
     /// How many times the person has asked to close the window.
     ///
     /// The first request goes to the guest untouched. A second means the guest
@@ -617,6 +629,7 @@ impl Phase3GuiHost {
         Ok(Self {
             runtime,
             chosen_files: Default::default(),
+            net_log: Default::default(),
             windows: Vec::new(),
             scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -637,6 +650,9 @@ impl Phase3GuiHost {
             last_pump: std::cell::Cell::new(None),
             interrupts: std::cell::Cell::new(0),
             app_name: None,
+            app_identity: None,
+            notices: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            notified: std::cell::RefCell::new(Vec::new()),
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
             peeked_event: std::cell::RefCell::new(None),
@@ -751,6 +767,30 @@ impl Phase3GuiHost {
         self
     }
 
+    /// The app's lineage, for what the OS keeps per app (IC-278). Set after
+    /// the name: on Windows a windowed run takes it as the process's own
+    /// AppUserModelID here, before any window exists, so the taskbar shows
+    /// the app under its own name instead of every app under Krate's.
+    pub fn with_app_identity(mut self, identity: Option<String>) -> Self {
+        #[cfg(target_os = "windows")]
+        if !self.headless {
+            if let Some(identity) = identity.as_deref() {
+                let _ = krate_adapter_windows::identity::adopt(identity, &self.attribution());
+            }
+        }
+        self.app_identity = identity;
+        self
+    }
+
+    /// Who the app is to the OS: its lineage, or its name when the runtime
+    /// was given none (tests and tools with no manifest).
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    fn os_identity(&self) -> String {
+        self.app_identity
+            .clone()
+            .unwrap_or_else(|| self.attribution())
+    }
+
     /// What the OS shows as the sender of a notification.
     ///
     /// Never the notification's own title. The first version passed the
@@ -781,6 +821,12 @@ impl Phase3GuiHost {
         chosen: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
     ) -> Self {
         self.chosen_files = chosen;
+        self
+    }
+
+    /// Share the run's record of requests the Phase 2 host sent.
+    pub fn with_net_log(mut self, log: std::rc::Rc<std::cell::RefCell<Vec<String>>>) -> Self {
+        self.net_log = log;
         self
     }
 
@@ -969,6 +1015,69 @@ impl Phase3GuiHost {
         }
     }
 
+    /// Show a notification under the app's own id (IC-271), behind
+    /// `ui.notify`: replaced by the next under that id where the system
+    /// can, attributed like `notify.show`, and never answered with whether
+    /// anyone saw it (F-323). The id is checked: it becomes part of the
+    /// system's identifier.
+    pub(crate) fn notice_post(
+        &self,
+        id: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<(), crate::desktop_host::NotifyError> {
+        use crate::desktop_host::NotifyError;
+        let granted = self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Notify))
+            .is_ok();
+        if !granted {
+            return Err(NotifyError::Denied);
+        }
+        if !valid_reminder_id(id) {
+            return Err(NotifyError::InvalidContent(
+                "a notification id is letters, digits, - and _, up to 64".to_string(),
+            ));
+        }
+        crate::desktop_host::check_notification(title, body)?;
+        if self.headless {
+            self.notices
+                .borrow_mut()
+                .insert(id.to_string(), (title.to_string(), body.to_string()));
+            self.notified
+                .borrow_mut()
+                .push((title.to_string(), body.to_string()));
+            return Ok(());
+        }
+        crate::desktop_host::notify_as(
+            title,
+            body,
+            &self.attribution(),
+            &self.os_identity(),
+            Some(id),
+            true,
+        )
+    }
+
+    /// Take back the app's notification under `id` (IC-271). Unknown ids,
+    /// bad ids and an app without `ui.notify` are all quietly nothing.
+    pub(crate) fn notice_withdraw(&self, id: &str) {
+        let granted = self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Notify))
+            .is_ok();
+        if !granted || !valid_reminder_id(id) {
+            return;
+        }
+        if self.headless {
+            self.notices.borrow_mut().remove(id);
+            return;
+        }
+        crate::desktop_host::withdraw(&self.os_identity(), id);
+    }
+
     /// Schedule a reminder (IC-921), behind `ui.notify`: the id checked
     /// (it becomes part of the system's identifier), the text checked as a
     /// notification's is, the delay held to a second to a year.
@@ -1011,6 +1120,7 @@ impl Phase3GuiHost {
         #[cfg(target_os = "windows")]
         {
             return krate_adapter_windows::toast::schedule(
+                &self.os_identity(),
                 &sender,
                 id,
                 title,
@@ -1036,7 +1146,7 @@ impl Phase3GuiHost {
         if granted && valid_reminder_id(id) && !self.headless {
             #[cfg(target_os = "windows")]
             {
-                krate_adapter_windows::toast::cancel(&self.attribution(), id);
+                krate_adapter_windows::toast::cancel(&self.os_identity(), id);
                 return;
             }
             #[allow(unreachable_code)]
@@ -1055,7 +1165,7 @@ impl Phase3GuiHost {
         }
         #[cfg(target_os = "windows")]
         {
-            return krate_adapter_windows::toast::pending(&self.attribution());
+            return krate_adapter_windows::toast::pending(&self.os_identity());
         }
         #[allow(unreachable_code)]
         self.dispatcher().reminders().reminder_pending()
@@ -2712,6 +2822,71 @@ impl Phase3GuiHost {
             } else if let Some(driver) = self.usability.as_mut() {
                 driver.task_index += 1;
                 driver.report.task_steps_done = number;
+            }
+            return;
+        }
+        // Host-observed (IC-743, test 1504): the app's store on disk and the
+        // notifications handed to the host -- never the app's own words for
+        // them, which a label on screen is.
+        if let Some(text) = &step.expect_stored {
+            let stores = self
+                .usability
+                .as_ref()
+                .map(|d| d.plan.stores.clone())
+                .unwrap_or_default();
+            if stores_contain(&stores, text) {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.task_index += 1;
+                    driver.report.task_steps_done = number;
+                }
+            } else {
+                let why = if stores.is_empty() {
+                    format!("{text:?} cannot be looked for: this run gives the app no store")
+                } else {
+                    format!("{text:?} is not in the app's store on disk")
+                };
+                broke(self, why);
+            }
+            return;
+        }
+        if let Some(text) = &step.expect_requested {
+            let sent = self.net_log.borrow().clone();
+            if sent.iter().any(|line| line.contains(text.trim())) {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.task_index += 1;
+                    driver.report.task_steps_done = number;
+                }
+            } else {
+                broke(
+                    self,
+                    format!(
+                        "the host sent no request to {text:?}; it sent [{}]",
+                        sent.join(", ")
+                    ),
+                );
+            }
+            return;
+        }
+        if let Some(text) = &step.expect_notified {
+            let wanted = text.trim().to_lowercase();
+            let shown = self.notified.borrow().clone();
+            if shown.iter().any(|(t, b)| {
+                t.to_lowercase().contains(&wanted) || b.to_lowercase().contains(&wanted)
+            }) {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.task_index += 1;
+                    driver.report.task_steps_done = number;
+                }
+            } else {
+                let seen: Vec<String> =
+                    shown.iter().map(|(t, b)| format!("{t:?}: {b:?}")).collect();
+                broke(
+                    self,
+                    format!(
+                        "no notification saying {text:?} was handed to the host; it was asked to show [{}]",
+                        seen.join(", ")
+                    ),
+                );
             }
             return;
         }
@@ -6103,6 +6278,46 @@ impl ui::launcher::Host for Phase3GuiHost {
     }
 }
 
+/// Whether the app's own store files hold `text`: a key or a value of its
+/// key-value store (decoded from the file), or bytes of its database and its
+/// write-ahead log. Read from disk, so a write the app only claimed is not
+/// found (IC-743, test 1504).
+pub(crate) fn stores_contain(stores: &[std::path::PathBuf], text: &str) -> bool {
+    let wanted = text.trim();
+    if wanted.is_empty() {
+        return false;
+    }
+    let needle = wanted.as_bytes();
+    let holds = |bytes: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    stores.iter().any(|path| {
+        if let Ok(Some(entries)) = crate::store_host::load_entries(path) {
+            if entries
+                .iter()
+                .any(|(key, value)| key.contains(wanted) || holds(value))
+            {
+                return true;
+            }
+        }
+        let wal = path.with_extension(
+            path.extension()
+                .map(|e| format!("{}-wal", e.to_string_lossy()))
+                .unwrap_or_else(|| "wal".to_string()),
+        );
+        [path.clone(), wal]
+            .iter()
+            .filter_map(|p| std::fs::read(p).ok())
+            .any(|bytes| is_database(&bytes) && holds(&bytes))
+    })
+}
+
+/// SQLite's own header, or a write-ahead log's: the raw search is only for
+/// a database, so a key-value file is read only through its decoder.
+fn is_database(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"SQLite format 3\0")
+        || bytes.starts_with(&[0x37, 0x7f, 0x06, 0x82])
+        || bytes.starts_with(&[0x37, 0x7f, 0x06, 0x83])
+}
+
 impl ui::notify::Host for Phase3GuiHost {
     fn show(
         &mut self,
@@ -6117,16 +6332,39 @@ impl ui::notify::Host for Phase3GuiHost {
         // Attribution is the APP's name, fixed at consent, never the guest's
         // per-call title (IC-271, see `attribution`).
         let sender = self.attribution();
+        let identity = self.os_identity();
+        // A headless run -- check-app, a test, a picture -- keeps what it was
+        // asked to show and shows nothing: a check of someone's app must
+        // never put a notification on their screen (K-1279).
+        if self.headless && granted {
+            return Ok(crate::desktop_host::check_notification(&title, &body)
+                .map(|()| {
+                    self.notified
+                        .borrow_mut()
+                        .push((title.clone(), body.clone()))
+                })
+                .map_err(|err| match err {
+                    crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
+                    crate::desktop_host::NotifyError::InvalidContent(m) => {
+                        ui::notify::NotifyError::InvalidContent(m)
+                    }
+                    crate::desktop_host::NotifyError::Unavailable(m) => {
+                        ui::notify::NotifyError::Unavailable(m)
+                    }
+                }));
+        }
         Ok(
-            crate::desktop_host::notify(&title, &body, &sender, granted).map_err(|err| match err {
-                crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
-                crate::desktop_host::NotifyError::InvalidContent(m) => {
-                    ui::notify::NotifyError::InvalidContent(m)
-                }
-                crate::desktop_host::NotifyError::Unavailable(m) => {
-                    ui::notify::NotifyError::Unavailable(m)
-                }
-            }),
+            crate::desktop_host::notify(&title, &body, &sender, &identity, granted).map_err(
+                |err| match err {
+                    crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
+                    crate::desktop_host::NotifyError::InvalidContent(m) => {
+                        ui::notify::NotifyError::InvalidContent(m)
+                    }
+                    crate::desktop_host::NotifyError::Unavailable(m) => {
+                        ui::notify::NotifyError::Unavailable(m)
+                    }
+                },
+            ),
         )
     }
 }
@@ -8947,6 +9185,7 @@ mod tests {
             check_keyboard: false,
             check_stay_open: false,
             task: Some(task),
+            stores: Vec::new(),
         }
     }
 
@@ -8965,6 +9204,9 @@ mod tests {
             "type" => s.type_text = Some(value.to_string()),
             "expect_text" => s.expect_text = Some(value.to_string()),
             "expect_no_text" => s.expect_no_text = Some(value.to_string()),
+            "expect_stored" => s.expect_stored = Some(value.to_string()),
+            "expect_notified" => s.expect_notified = Some(value.to_string()),
+            "expect_requested" => s.expect_requested = Some(value.to_string()),
             _ => s.wait_ms = value.parse().ok(),
         }
         s
@@ -8996,6 +9238,91 @@ mod tests {
             .expect("set_root call")
             .expect("root");
         host
+    }
+
+    /// Host-observed oracles (IC-743, test 1504): an app's own words on
+    /// screen cannot stand in for what the host saw. "Saved" on a button
+    /// does not satisfy `expect_stored`; the store file on disk does. A
+    /// "Notified" label does not satisfy `expect_notified`; a notification
+    /// handed to the host does.
+    #[test]
+    fn an_apps_own_success_words_cannot_satisfy_a_host_observed_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let kv = dir.path().join("app.kv");
+        let stored = |plan_stores: Vec<std::path::PathBuf>, label: &str, wanted: &str| {
+            let mut plan = task_plan(crate::usability::Task {
+                name: "save".to_string(),
+                steps: vec![step("expect_stored", wanted)],
+            });
+            plan.stores = plan_stores;
+            let mut host = host_with_labelled_button(label, plan);
+            drive_until_task_reports(&mut host).task
+        };
+        // The app says "Saved: milk" and wrote nothing.
+        let said = stored(vec![kv.clone()], "Saved: milk", "milk");
+        assert!(
+            matches!(said, Some(crate::usability::Observation::Broke { ref detail }) if detail.contains("not in the app's store")),
+            "{said:?}"
+        );
+        // It wrote it: the host finds it in the file.
+        let mut store = crate::store_host::AppStore::open(kv.clone(), true);
+        store.set("item-1", b"buy milk".to_vec()).unwrap();
+        assert_eq!(
+            stored(vec![kv.clone()], "anything", "milk"),
+            Some(crate::usability::Observation::Held)
+        );
+        assert_eq!(
+            stored(vec![kv.clone()], "anything", "item-1"),
+            Some(crate::usability::Observation::Held)
+        );
+        // A run that gives the app no store says so rather than passing.
+        let none = stored(Vec::new(), "Saved: milk", "milk");
+        assert!(
+            matches!(none, Some(crate::usability::Observation::Broke { ref detail }) if detail.contains("no store")),
+            "{none:?}"
+        );
+
+        let notified = |shown: &[(&str, &str)], label: &str| {
+            let plan = task_plan(crate::usability::Task {
+                name: "remind".to_string(),
+                steps: vec![step("expect_notified", "lunch")],
+            });
+            let mut host = host_with_labelled_button(label, plan);
+            for (t, b) in shown {
+                host.notified
+                    .borrow_mut()
+                    .push((t.to_string(), b.to_string()));
+            }
+            drive_until_task_reports(&mut host).task
+        };
+        let requested = |sent: &[&str], label: &str| {
+            let plan = task_plan(crate::usability::Task {
+                name: "fetch rates".to_string(),
+                steps: vec![step("expect_requested", "api.rates.test")],
+            });
+            let mut host = host_with_labelled_button(label, plan);
+            for line in sent {
+                host.net_log.borrow_mut().push(line.to_string());
+            }
+            drive_until_task_reports(&mut host).task
+        };
+        assert!(matches!(
+            requested(&[], "Fetched from api.rates.test"),
+            Some(crate::usability::Observation::Broke { .. })
+        ));
+        assert_eq!(
+            requested(&["GET https://api.rates.test/latest"], "anything"),
+            Some(crate::usability::Observation::Held)
+        );
+
+        assert!(matches!(
+            notified(&[], "Notified: lunch"),
+            Some(crate::usability::Observation::Broke { .. })
+        ));
+        assert_eq!(
+            notified(&[("Reminder", "Lunch at one")], "anything"),
+            Some(crate::usability::Observation::Held)
+        );
     }
 
     /// The task oracle (IC-743, test 1506): a task whose expectation is on
@@ -10457,14 +10784,123 @@ mod notification_attribution_tests {
         let show_at = source
             .find("impl ui::notify::Host for Phase3GuiHost")
             .expect("notify impl");
-        let show = &source[show_at..show_at + 1500];
+        // To the end of the impl, not a fixed slice: a fixed window stops
+        // covering the call the moment the method above it grows.
+        let show_end = source[show_at..]
+            .find("\n}\n")
+            .map(|end| show_at + end)
+            .expect("the impl ends");
+        let show = &source[show_at..show_end];
         assert!(
-            show.contains("desktop_host::notify(&title, &body, &sender, granted)"),
+            show.contains("desktop_host::notify(&title, &body, &sender, &identity, granted)"),
             "show must pass the attribution as the sender"
         );
         assert!(
             !show.contains("notify(&title, &body, &title,"),
             "the guest's title must never be the sender line"
         );
+    }
+}
+
+#[cfg(test)]
+mod notice_tests {
+    use super::*;
+    use crate::desktop_host::NotifyError;
+
+    fn host(grants: &[&str]) -> Phase3GuiHost {
+        let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+        let policy = krate_policy::SessionPolicy::from_cli_grants(&grants).expect("policy");
+        Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host")
+    }
+
+    /// Posting again under an id replaces it, withdrawing takes it back,
+    /// and each id is its own (IC-271). Headless, the stand-in holds what a
+    /// screen would show.
+    #[test]
+    fn an_id_is_replaced_by_the_next_and_taken_back_by_withdraw() {
+        let host = host(&["ui.notify"]);
+        host.notice_post("upload", "Uploading", "3 of 10").unwrap();
+        host.notice_post("chat", "2 new messages", "").unwrap();
+        host.notice_post("upload", "Uploading", "7 of 10").unwrap();
+        let shown = host.notices.borrow().clone();
+        assert_eq!(shown.len(), 2, "one per id: {shown:?}");
+        assert_eq!(shown["upload"].1, "7 of 10", "the later one replaced it");
+        host.notice_withdraw("upload");
+        host.notice_withdraw("never-posted");
+        let shown = host.notices.borrow().clone();
+        assert_eq!(shown.keys().collect::<Vec<_>>(), ["chat"]);
+    }
+
+    /// A headless run keeps what it was asked to show and shows nothing:
+    /// a check of someone's app must never put a notification on their
+    /// screen (K-1279). Denied stays denied; bad text stays refused.
+    #[test]
+    fn a_headless_run_keeps_notifications_instead_of_showing_them() {
+        let mut host = host(&["ui.notify"]);
+        let answer = ui::notify::Host::show(&mut host, "Saved".into(), "3 photos".into()).unwrap();
+        assert!(answer.is_ok(), "{answer:?}");
+        host.notice_post("upload", "Uploading", "1 of 3").unwrap();
+        assert_eq!(
+            host.notified.borrow().clone(),
+            vec![
+                ("Saved".to_string(), "3 photos".to_string()),
+                ("Uploading".to_string(), "1 of 3".to_string())
+            ]
+        );
+        let mut denied = self::host(&[]);
+        assert!(matches!(
+            ui::notify::Host::show(&mut denied, "x".into(), "".into()).unwrap(),
+            Err(ui::notify::NotifyError::Denied)
+        ));
+        assert!(matches!(
+            ui::notify::Host::show(&mut host, "".into(), "".into()).unwrap(),
+            Err(ui::notify::NotifyError::InvalidContent(_))
+        ));
+        assert!(denied.notified.borrow().is_empty());
+        assert_eq!(host.notified.borrow().len(), 2, "a refused one is not kept");
+    }
+
+    /// Without `ui.notify` nothing is posted and nothing is taken back; an
+    /// id that could reach outside the app's own identifiers is refused;
+    /// the text is held to notify's rules.
+    #[test]
+    fn the_grant_the_id_and_the_text_are_checked() {
+        let denied = host(&[]);
+        assert!(matches!(
+            denied.notice_post("upload", "Uploading", ""),
+            Err(NotifyError::Denied)
+        ));
+        assert!(denied.notices.borrow().is_empty());
+
+        let host = host(&["ui.notify"]);
+        for id in ["", "a.b", "../x", "a b", "naïve", &"x".repeat(65)] {
+            assert!(
+                matches!(
+                    host.notice_post(id, "Title", "Body"),
+                    Err(NotifyError::InvalidContent(_))
+                ),
+                "id {id:?} must be refused"
+            );
+        }
+        assert!(matches!(
+            host.notice_post("ok", "", "Body"),
+            Err(NotifyError::InvalidContent(_))
+        ));
+        assert!(matches!(
+            host.notice_post("ok", "Title\nInjected", "Body"),
+            Err(NotifyError::InvalidContent(_))
+        ));
+        assert!(
+            host.notices.borrow().is_empty(),
+            "nothing refused was shown"
+        );
+
+        // A withdraw from an app without the grant does not reach another
+        // run's stand-in either.
+        host.notice_post("keep", "Kept", "").unwrap();
+        let other = super::notice_tests::host(&[]);
+        other.notice_withdraw("keep");
+        assert_eq!(host.notices.borrow().len(), 1);
     }
 }

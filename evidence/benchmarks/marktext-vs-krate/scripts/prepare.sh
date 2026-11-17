@@ -9,6 +9,7 @@ require_command swiftc
 python3 "$ROOT/fixtures/generate.py" --output-dir "$ROOT/fixtures"
 swift_build "$ROOT/scripts/window_probe.swift" "$ROOT/build/window-probe"
 swift_build "$ROOT/scripts/scroll_driver.swift" "$ROOT/build/scroll-driver"
+swift_build "$ROOT/scripts/content_probe.swift" "$ROOT/build/content-probe"
 "$ROOT/scripts/verify-inputs.sh"
 
 prepared="$ROOT/build/prepared"

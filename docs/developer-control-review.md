@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 78 boundaries reviewed, 69 of them WIT interfaces (69 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 41 optional.
+- 79 boundaries reviewed, 70 of them WIT interfaces (70 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 42 optional.
 - 6 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -77,6 +77,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:ui@0.1.0/location` | wit | one fix of where the phone is -- latitude, longitude, how far off it may be, altitude, speed and course when known -- and the three reasons there is none | when to ask, how often, and what to do with the position | none: location.read is opt-in, asked on Krate's sheet and by the phone itself | no | -- |
 | `krate:ui@0.1.0/menu` | wit | nothing yet: menu calls are declared and answer unsupported | any command scheme drawn in the app | the app's own drawn menus and key handling | no | -- |
 | `krate:ui@0.1.0/motion` | wit | one reading of the phone's sensors -- gravity, the push given it, its turning and the compass heading -- in the screen's own frame however the phone is turned | whether to read, how often, and what tilt or shake means to the app | none needed: no capability, and a device without sensors answers available() false | no | -- |
+| `krate:ui@0.1.0/notifications` | wit | a notification posted under the app's own id, replaced by the next under that id where the system can and taken back by it, attributed to the app's verified lineage, and never answered with whether it was seen or clicked | what to say, when to replace it, and when to take it back | notify for a one-off | no | -- |
 | `krate:ui@0.1.0/notify` | wit | that a notification is attributed to the app the person consented to, never to a title the app chose, and is a grant | when and what | draw the message in the app's own window | yes | recipient-permission |
 | `krate:ui@0.1.0/photos` | wit | picking photos through the system's own photo picker, returned as chosen files, and adding a PNG or JPEG to the library behind photos.add with add-only access | when to pick, how many, and what to add | dialog.open-file and save-file, which already exist | no | -- |
 | `krate:ui@0.1.0/pointer` | wit | that the person can always take a held pointer back: Escape and focus loss release it on every system | what the pointer does: aiming, turning a camera, dragging, menus | the mouse's own motion, unfiltered, while the pointer is held | yes | platform |

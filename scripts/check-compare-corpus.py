@@ -80,6 +80,45 @@ NEGATED = re.compile(
     re.I,
 )
 SCAN_SUFFIXES = (".md", ".tex", ".html", ".txt")
+
+# 1749: a number set against a FRAMEWORK, not one app built on it -- "13x
+# less memory than Electron apps" -- speaks for every app on that
+# framework, so it needs several compared apps behind it, in more than one
+# stratum. One notes app against one Electron editor permits the sentence
+# about those two apps and no wider one.
+FRAMEWORKS = ("electron", "tauri", "flutter", "wails", "qt", "react native", "neutralino")
+FRAMEWORK_MIN_APPS = 3
+FRAMEWORK_MIN_STRATA = 2
+_FW = "|".join(re.escape(f) for f in FRAMEWORKS)
+FRAMEWORK_CLAIMS = [
+    re.compile(
+        r"\d+(?:\.\d+)?\s*(?:x|\u00d7|times)\s+(?:less|more|smaller|faster|lighter|lower|fewer|quicker|leaner)\b"
+        rf"[^.]{{0,60}}?\bthan\s+(?:an?\s+|the\s+|typical\s+|most\s+)?({_FW})\b(?!\s+editor)",
+        re.I,
+    ),
+    re.compile(
+        rf"\b({_FW})\s+apps?\b[^.]{{0,60}}?\d+(?:\.\d+)?\s*(?:x|\u00d7|times)\s+(?:more|bigger|larger|slower|heavier)\b",
+        re.I,
+    ),
+]
+
+
+def framework_permitted(record, framework):
+    """Enough compared apps on `framework` for a framework-level sentence."""
+    apps = [a for a in record.get("apps", [])
+            if str((a.get("comparator") or {}).get("framework", "")).lower() == framework.lower()]
+    return len(apps) >= FRAMEWORK_MIN_APPS and len({a.get("stratum") for a in apps}) >= FRAMEWORK_MIN_STRATA
+
+
+def framework_claims(record, line):
+    """The framework-level sentences on one line the corpus does not back."""
+    out = []
+    for regex in FRAMEWORK_CLAIMS:
+        for m in regex.finditer(line):
+            fw = m.group(1)
+            if not NEGATED.search(line[: m.start()]) and not framework_permitted(record, fw):
+                out.append(fw)
+    return out
 # Beyond check-claims' skips: agent worktrees are copies, and benchmark run
 # directories are machine output that quotes the rule to enforce it.
 EXTRA_SKIP_PARTS = (".claude/", "/runs/")
@@ -157,6 +196,22 @@ def validate(record, profiles_dir=PROFILES):
             )
         if not app.get("profile"):
             p.append(f"{pre}: profile must name the measurement profile the numbers come from")
+        elif app.get("stratum") in STRATA:
+            # 1747: a stratum's numbers back that stratum's claims only, so a
+            # notes figure is never quoted as an editor or a games figure.
+            path = profiles_dir / f"{app['profile']}.json"
+            try:
+                claims = json.loads(path.read_text()).get("claims", []) if path.is_file() else []
+            except (json.JSONDecodeError, AttributeError):
+                claims = []
+            token = app["stratum"].split("-")[0].upper()
+            stray = [c for c in claims if token not in str(c).upper().split("-")]
+            if stray:
+                p.append(f"{pre}: profile {app['profile']} backs {', '.join(stray)}, which are not "
+                         f"{app['stratum']} claims; each stratum has its own claim cells (1747)")
+        fw = comp.get("framework")
+        if fw is not None and (not isinstance(fw, str) or fw.lower() not in FRAMEWORKS):
+            p.append(f"{pre}: comparator.framework must be one of {list(FRAMEWORKS)} (1749)")
     return p
 
 
@@ -222,6 +277,12 @@ def gated_phrases(record, root=ROOT, skip_parts=None, skip_files=None):
             continue
         scanned += 1
         for line_no, line in enumerate(text.splitlines(), 1):
+            for fw in framework_claims(record, line):
+                problems.append(
+                    f"{rel}:{line_no}: {line.strip()[:90]}\n      sets a number against {fw} itself; "
+                    f"that needs {FRAMEWORK_MIN_APPS} compared {fw} apps in {FRAMEWORK_MIN_STRATA} strata "
+                    "in the corpus. Name the apps compared instead (IC-822, 1749)"
+                )
             low = line.lower()
             named = [n for n in names if n.lower() in low]
             if not named:
@@ -372,6 +433,37 @@ def self_test():
         check("'the same app as <comparator>' is gated", any("c.md:1" in x for x in probs), f"{probs}")
         _, allowed = gated_phrases(_record(_app()), root=tmp, skip_parts=(), skip_files=())
         check("with every feature present the same sentences are permitted", allowed == [], f"{allowed}")
+
+        # 1749: a number against a framework needs several compared apps.
+        fw_docs = tmp / "fw"; fw_docs.mkdir()
+        (fw_docs / "f.md").write_text(
+            "Krate apps use 13x less memory than Electron apps.\n"
+            "Krate's Notes app used 13x less memory than MarkText, an Electron editor.\n"
+            "Electron apps take 50x more disk.\n"
+            "Krate does not claim to be 13x lighter than Electron.\n"
+        )
+        on_electron = lambda i, stratum: _app(id=f"a{i}", stratum=stratum, comparator=dict(_app()["comparator"], framework="Electron"))  # noqa: E731
+        one = _record(on_electron(0, "notes"))
+        _, fw = gated_phrases(one, root=fw_docs, skip_parts=(), skip_files=())
+        check("a number against Electron itself is gated with one Electron app compared", any("f.md:1" in x and "1749" in x for x in fw), f"{fw}")
+        check("'Electron apps take 50x more' is gated too", any("f.md:3" in x for x in fw), f"{fw}")
+        check("a number against one named app is not framework-level", not any("f.md:2" in x for x in fw), f"{fw}")
+        check("the rule being stated is not gated", not any("f.md:4" in x for x in fw), f"{fw}")
+        same_stratum = _record(*(on_electron(i, "notes") for i in range(3)))
+        _, fw = gated_phrases(same_stratum, root=fw_docs, skip_parts=(), skip_files=())
+        check("three Electron apps in ONE stratum are not enough", any("f.md:1" in x for x in fw), f"{fw}")
+        broad = _record(on_electron(0, "notes"), on_electron(1, "editor"), on_electron(2, "media"))
+        _, fw = gated_phrases(broad, root=fw_docs, skip_parts=(), skip_files=())
+        check("three Electron apps across strata permit the framework sentence", not any("1749" in x for x in fw), f"{fw}")
+        check("a framework the gate does not know is refused",
+              any("framework" in x for x in validate(_record(_app(comparator=dict(_app()["comparator"], framework="Swing"))), profiles)))
+
+        # 1747: a profile backs only its own stratum's claims.
+        (profiles / "P-T.json").write_text(json.dumps({"claims": ["C-EDITOR-PERFORMANCE"], "cells": [{"name": "open"}]}))
+        check("a notes app's profile backing an editor claim is refused",
+              any("1747" in x for x in validate(good, profiles)), f"{validate(good, profiles)}")
+        (profiles / "P-T.json").write_text(json.dumps({"claims": ["C-NOTES-PERFORMANCE"], "cells": [{"name": "open"}]}))
+        check("and its own stratum's claim is fine", validate(good, profiles) == [], f"{validate(good, profiles)}")
 
     if failures:
         print("check-compare-corpus self-test FAILED:\n")

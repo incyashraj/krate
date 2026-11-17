@@ -103,6 +103,26 @@ async function publish(e) {
   assert.strictEqual(list.schema, "krate.hub-blocklist.v1");
   assert.deepStrictEqual(list.blocked.map((b) => [b.hash, b.reason, b.emergency]), [[id, "impersonates a bank", false]]);
   assert.strictEqual(list.blocked[0].notice, `https://hub.example/takedown/${id}`);
+  // Unsigned only on a hub with no key; signed when it has one, over the
+  // list under its own domain, never readable as a lease (IC-669, 1311).
+  assert.strictEqual(list.signature, undefined, "this hub has no key, so the list says nothing it cannot prove");
+  {
+    const keyed = { ...e, ORG_LEASE_KEY: "33".repeat(32) };
+    const got = JSON.parse(await (await worker.fetch(req("/takedowns"), keyed)).text());
+    assert.match(got.signature, /^[0-9a-f]{128}$/);
+    const { canonicalJson } = await import("../src/org.js");
+    const { leaseKey } = await import("../src/org-lease.js");
+    const key = await leaseKey(keyed);
+    assert.strictEqual(got.key_id, key.keyId);
+    const unhex = (t) => Uint8Array.from(t.match(/../g), (h) => parseInt(h, 16));
+    const pub = await crypto.subtle.importKey("raw", unhex(key.publicKey), { name: "Ed25519" }, false, ["verify"]);
+    const body = { schema: got.schema, hub: got.hub, issued_at: got.issued_at, blocked: got.blocked };
+    const bytes = (domain) => new TextEncoder().encode(domain + canonicalJson(body));
+    assert.ok(await crypto.subtle.verify({ name: "Ed25519" }, pub, unhex(got.signature), bytes("krate-blocklist-v1\n")));
+    assert.ok(!(await crypto.subtle.verify({ name: "Ed25519" }, pub, unhex(got.signature), bytes("krate-lease-v1\n"))));
+    const emptied = { ...body, blocked: [] };
+    assert.ok(!(await crypto.subtle.verify({ name: "Ed25519" }, pub, unhex(got.signature), new TextEncoder().encode("krate-blocklist-v1\n" + canonicalJson(emptied)))), "an emptied list does not carry the signature");
+  }
 
   // Appeal: only the author.
   assert.strictEqual((await worker.fetch(post(`/takedown/${id}/appeal`, "bob", { text: "not mine to say" }), e)).status, 403);

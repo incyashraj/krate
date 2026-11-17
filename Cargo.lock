@@ -2472,9 +2472,21 @@ dependencies = [
  "krate-presenter-gpu",
  "pollster",
  "softbuffer",
+ "tempfile",
  "windows",
  "windows-future",
  "winit",
+]
+
+[[package]]
+name = "krate-apksig"
+version = "0.5.5"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide",
+ "ring",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2523,6 +2535,8 @@ dependencies = [
  "krate-accountsync",
  "krate-adapter-common",
  "krate-adapter-macos",
+ "krate-adapter-windows",
+ "krate-apksig",
  "krate-author",
  "krate-bundle",
  "krate-http",
@@ -2539,6 +2553,7 @@ dependencies = [
  "libc",
  "png 0.18.1",
  "rfd",
+ "ring",
  "serde",
  "serde_json",
  "sha2",
@@ -2851,6 +2866,7 @@ version = "0.1.0"
 dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.3.4",
+ "krate-apksig",
  "krate-bundle",
  "krate-orgdata",
  "krate-orgkeys",

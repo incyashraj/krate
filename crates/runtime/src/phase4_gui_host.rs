@@ -600,6 +600,33 @@ impl ui4::haptics::Host for Phase3GuiHost {
     }
 }
 
+/// Notifications the app replaces and takes back by its own id (IC-271).
+/// Phase 4 only, behind `ui.notify`.
+impl ui4::notifications::Host for Phase3GuiHost {
+    fn post(
+        &mut self,
+        id: String,
+        title: String,
+        body: String,
+    ) -> wasmtime::Result<Result<(), crate::phase3_gui_bindings::krate::ui::notify::NotifyError>>
+    {
+        use crate::desktop_host::NotifyError;
+        use crate::phase3_gui_bindings::krate::ui::notify::NotifyError as Wit;
+        Ok(self
+            .notice_post(&id, &title, &body)
+            .map_err(|err| match err {
+                NotifyError::Denied => Wit::Denied,
+                NotifyError::InvalidContent(m) => Wit::InvalidContent(m),
+                NotifyError::Unavailable(m) => Wit::Unavailable(m),
+            }))
+    }
+
+    fn withdraw(&mut self, id: String) -> wasmtime::Result<()> {
+        self.notice_withdraw(&id);
+        Ok(())
+    }
+}
+
 /// Reminders delivered with the app closed (IC-921). Phase 4 only, behind
 /// `ui.notify`.
 impl ui4::reminders::Host for Phase3GuiHost {

@@ -915,7 +915,7 @@ mod player {
             app_secrets: Some((
                 stores.secrets.clone(),
                 stores.secret_label.clone(),
-                machine_key(data_root),
+                Ok(machine_key(data_root)),
             )),
             // Its shared store (store.shared): a phone never said where, so
             // every shared call was refused and a list shared from a

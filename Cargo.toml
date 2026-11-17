@@ -36,6 +36,7 @@ members = [
     "crates/tools",
     "crates/author",
     "crates/port",
+    "crates/apksig",
 ]
 exclude = [
     "crates/c-runtime",

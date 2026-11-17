@@ -26,6 +26,11 @@ pub use browser::{delegation_to_json, keys_to_json, sign_frame};
 mod teamdata;
 pub use teamdata::org_data_to_json;
 
+/// The Android signing-key challenge (IC-800): the verifier `krate port`
+/// runs, at the hub's door.
+mod apk;
+pub use apk::{apk_check_to_json, apk_statement_to_json};
+
 /// Verification never needs randomness; a request for it is a bug, and it
 /// is answered as one rather than with bytes that are not random.
 fn no_randomness_here(_dest: &mut [u8]) -> Result<(), getrandom::Error> {
@@ -262,6 +267,28 @@ pub unsafe extern "C" fn krate_org_data(ptr: *const u8, len: u32) -> *mut u8 {
 pub unsafe extern "C" fn krate_delegation(ptr: *const u8, len: u32) -> *mut u8 {
     let bytes = std::slice::from_raw_parts(ptr, len as usize);
     answer(delegation_to_json(bytes))
+}
+
+/// [`apk_statement_to_json`] over the APK at `ptr`, answered the way
+/// [`krate_judge`] answers.
+///
+/// # Safety
+/// As [`krate_judge`].
+#[no_mangle]
+pub unsafe extern "C" fn krate_apk_statement(ptr: *const u8, len: u32) -> *mut u8 {
+    let bytes = std::slice::from_raw_parts(ptr, len as usize);
+    answer(apk_statement_to_json(bytes))
+}
+
+/// [`apk_check_to_json`] over the frame at `ptr`, answered the way
+/// [`krate_judge`] answers.
+///
+/// # Safety
+/// As [`krate_judge`].
+#[no_mangle]
+pub unsafe extern "C" fn krate_apk_check(ptr: *const u8, len: u32) -> *mut u8 {
+    let bytes = std::slice::from_raw_parts(ptr, len as usize);
+    answer(apk_check_to_json(bytes))
 }
 
 /// A length-prefixed copy of `json` in the module's memory.

@@ -9430,6 +9430,268 @@ fn reinstalling_an_app_leaves_no_moment_with_neither_copy() {
 /// Contents/MacOS, so "AC/DC" asked for a folder that did not exist and
 /// ".." named the folder above: both failed to install, and each left a
 /// hidden half-built wrapper behind in the person's Applications folder.
+/// An update signed by a NEW release key of the same publisher replaces the
+/// installed app in place, and a file claiming the app's id without that
+/// publisher's signature never lands on top of it (IC-278, key rotation).
+///
+/// Release keys rotate; the publisher's root does not. The installed path
+/// is keyed on the root, so a person who installed 1.0 gets 2.0 where 1.0
+/// was -- not a second copy beside it -- and an unsigned or foreign file
+/// with the same id gets a place of its own.
+#[test]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn an_update_across_a_release_key_rotation_replaces_the_installed_app() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let home = tempfile::tempdir().expect("home");
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).expect("write");
+        path
+    };
+    let key = |name: &str| {
+        write(
+            name,
+            &krate_bundle::signing::SigningKey::generate_pkcs8().expect("key"),
+        )
+    };
+    let (root, other_root) = (key("root.pkcs8"), key("other-root.pkcs8"));
+    let wasm = write(
+        "code.wasm",
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    );
+    let ok = |output: std::process::Output, what: &str| {
+        assert!(
+            output.status.success(),
+            "{what} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    // One release of com.example.bundle, signed by `release` under `root`,
+    // or left unsigned when `root` is None.
+    let release = |label: &str, version: &str, root: Option<&std::path::Path>| {
+        let manifest = write(
+            &format!("{label}.toml"),
+            BUNDLE_MANIFEST
+                .replace("version = \"0.1.0\"", &format!("version = \"{version}\""))
+                .as_bytes(),
+        );
+        let bundle = dir.path().join(format!("{label}.krate"));
+        ok(
+            krate()
+                .arg("pack")
+                .arg(&wasm)
+                .arg("--manifest")
+                .arg(&manifest)
+                .arg("-o")
+                .arg(&bundle)
+                .output()
+                .expect("pack"),
+            "pack",
+        );
+        if let Some(root) = root {
+            let release_key = key(&format!("{label}-release.pkcs8"));
+            let delegation = dir.path().join(format!("{label}-delegation.json"));
+            ok(
+                krate()
+                    .args(["delegate", "--namespace", "acme/*", "--days", "30"])
+                    .arg("--root")
+                    .arg(root)
+                    .arg("--key")
+                    .arg(&release_key)
+                    .arg("-o")
+                    .arg(&delegation)
+                    .output()
+                    .expect("delegate"),
+                "delegate",
+            );
+            ok(
+                krate()
+                    .arg("sign")
+                    .arg(&bundle)
+                    .arg("--key")
+                    .arg(&release_key)
+                    .args(["--namespace", "acme/demo"])
+                    .arg("--delegation")
+                    .arg(&delegation)
+                    .output()
+                    .expect("sign"),
+                "sign",
+            );
+        }
+        bundle
+    };
+    let install = |bundle: &std::path::Path| {
+        ok(
+            krate()
+                .arg("install")
+                .arg(bundle)
+                .arg("--prefix")
+                .arg(prefix.path())
+                .env("HOME", home.path())
+                .output()
+                .expect("install"),
+            "install",
+        );
+    };
+    // The installed payloads, by the folder they sit in.
+    let installed = || -> Vec<(String, Vec<u8>)> {
+        let mut found = Vec::new();
+        for root in [
+            prefix.path().to_path_buf(),
+            prefix.path().join("krate/apps"),
+        ] {
+            for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                for payload in [
+                    entry.path().join("Contents/Resources/app.krate"),
+                    entry.path().join("app.krate"),
+                ] {
+                    if let Ok(bytes) = std::fs::read(&payload) {
+                        found.push((name.clone(), bytes));
+                    }
+                }
+            }
+        }
+        found.sort();
+        found
+    };
+
+    let first = release("v1", "1.0.0", Some(&root));
+    install(&first);
+    let before = installed();
+    assert_eq!(before.len(), 1, "one app installed: {before:?}");
+
+    // 2.0, signed by a different release key the same root authorised.
+    let second = release("v2", "2.0.0", Some(&root));
+    install(&second);
+    let after = installed();
+    assert_eq!(after.len(), 1, "the update replaced it, no second copy");
+    assert_eq!(after[0].0, before[0].0, "in the same place");
+    assert_eq!(
+        after[0].1,
+        std::fs::read(&second).unwrap(),
+        "and it is 2.0 that is installed now"
+    );
+
+    // The same id unsigned, and signed by another publisher: each its own.
+    install(&release("plain", "9.0.0", None));
+    install(&release("foreign", "9.0.0", Some(&other_root)));
+    let all = installed();
+    assert_eq!(all.len(), 3, "three lineages, three places: {all:?}");
+    assert!(
+        all.iter().any(
+            |(place, bytes)| place == &before[0].0 && bytes == &std::fs::read(&second).unwrap()
+        ),
+        "the publisher's 2.0 is untouched by either: {all:?}"
+    );
+}
+
+/// On Windows an installed app is in the Start menu as itself (IC-278,
+/// per-artifact identity): its own entry, carrying an AppUserModelID of its
+/// own lineage, that opens its own installed copy. Two apps with one name
+/// are two entries with two ids; a reinstall replaces its entry; uninstall
+/// removes the entry with the app and leaves the other alone.
+#[test]
+#[cfg(windows)]
+fn a_windows_install_is_in_the_start_menu_as_itself() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let pack = |id: &str| {
+        let manifest = dir.path().join(format!("{id}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{id}\"\nname = \"Notes\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{id}.krate"));
+        let out = krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        bundle
+    };
+    let run = |args: &[&std::ffi::OsStr]| {
+        let out = krate()
+            .args(args)
+            .arg("--prefix")
+            .arg(prefix.path())
+            .output()
+            .expect("krate");
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let menu = prefix.path().join("Start Menu/Programs/Krate Apps");
+    let entries = || -> Vec<(std::path::PathBuf, String, String)> {
+        let mut found: Vec<_> = std::fs::read_dir(&menu)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "lnk"))
+            .map(|p| {
+                let (id, args) = krate_adapter_windows::shortcut::read(&p).expect("read entry");
+                (p, id, args)
+            })
+            .collect();
+        found.sort();
+        found
+    };
+
+    let (a, b) = (pack("dev.krate.notes-a"), pack("dev.krate.notes-b"));
+    run(&["install".as_ref(), a.as_os_str()]);
+    run(&["install".as_ref(), b.as_os_str()]);
+    let two = entries();
+    assert_eq!(two.len(), 2, "two Notes, two entries: {two:?}");
+    assert_ne!(two[0].1, two[1].1, "and two ids");
+    for (entry, id, args) in &two {
+        assert!(id.starts_with("Krate.App."), "{entry:?}: {id}");
+        let payload = args
+            .split('"')
+            .find(|part| part.ends_with("app.krate"))
+            .unwrap_or_else(|| panic!("{entry:?} opens no installed app: {args}"));
+        assert!(
+            std::path::Path::new(payload).starts_with(prefix.path().join("Krate").join("apps")),
+            "{entry:?} opens the installed copy: {payload}"
+        );
+        assert!(std::path::Path::new(payload).is_file(), "{payload}");
+    }
+
+    run(&["install".as_ref(), a.as_os_str()]);
+    assert_eq!(entries(), two, "a reinstall replaces its own entry");
+
+    run(&["uninstall".as_ref(), "dev.krate.notes-a".as_ref()]);
+    let left = entries();
+    assert_eq!(left.len(), 1, "uninstall took its entry: {left:?}");
+    let apps = std::fs::read_dir(prefix.path().join("Krate").join("apps"))
+        .expect("apps")
+        .flatten()
+        .count();
+    assert_eq!(apps, 1, "and its folder, and nothing else");
+}
+
 #[test]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
@@ -22625,6 +22887,13 @@ fn a_company_connection_reaches_the_api_and_the_app_never_holds_the_credential()
     let rotated = "Bearer sk-live-acme-rotated-11223344556677889900aabb";
     let secret_file = world.dir.path().join("secret.txt");
     std::fs::write(&secret_file, format!("{secret}\n")).expect("secret");
+    // Dan keeps a copy of his key after he is removed (below), so his
+    // computer's machine key must be one this test can read: a key that is
+    // already a file stays a file (machine_key.rs, IC-984). A fresh home on
+    // Windows would otherwise seal it with DPAPI, where only Krate reads it.
+    let dans_krate = world.homes["dan"].path().join(".krate");
+    std::fs::create_dir_all(&dans_krate).expect("Dan's krate home");
+    std::fs::write(dans_krate.join("machine.key"), [0x5au8; 32]).expect("Dan's machine key file");
 
     let root = world.acme();
     world.says(
@@ -27755,4 +28024,154 @@ fn a_fresh_homes_first_create_is_signed_with_its_own_key() {
         home.path().join(".krate/keys/maker.key").is_file(),
         "kept on this computer"
     );
+}
+
+/// An installed app made by an older engine is brought up to the newest
+/// one here, in place, with its payload and folder name kept; one made by a
+/// newer engine is left alone; a development build touches nothing unless
+/// a test says so (IC-984, K-1278).
+#[test]
+#[cfg(target_os = "macos")]
+fn the_newest_engine_brings_older_installed_apps_along() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let apps = home.path().join("Applications");
+    std::fs::create_dir_all(&apps).expect("apps");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("wasm");
+    let manifest = dir.path().join("krate.toml");
+    std::fs::write(&manifest, BUNDLE_MANIFEST).expect("manifest");
+    let bundle = dir.path().join("app.krate");
+    let out = krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .output()
+        .expect("pack");
+    assert!(
+        out.status.success(),
+        "pack: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = krate()
+        .arg("install")
+        .arg(&bundle)
+        .arg("--prefix")
+        .arg(&apps)
+        .env("HOME", home.path())
+        .output()
+        .expect("install");
+    assert!(
+        out.status.success(),
+        "install: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let app = std::fs::read_dir(&apps)
+        .expect("apps")
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "app"))
+        .expect("an installed .app");
+    let folder = app.file_name().unwrap().to_owned();
+    let resources = app.join("Contents/Resources");
+    let payload_before = std::fs::read(resources.join("app.krate")).expect("payload");
+    let engine = std::fs::read_dir(app.join("Contents/MacOS"))
+        .expect("MacOS")
+        .flatten()
+        .map(|e| e.path())
+        .next()
+        .expect("the engine copy");
+
+    // Make it what an older Krate left: its engine and its fingerprint.
+    let old_fingerprint = "0.1.28-a2c95fbf5be1-56262736-1787629953";
+    std::fs::write(resources.join("engine.fingerprint"), old_fingerprint).expect("old");
+    std::fs::write(&engine, b"an older engine").expect("old engine");
+    let sweep = |test_env: bool| {
+        let mut command = krate();
+        command.arg("engine-sweep").env("HOME", home.path());
+        if test_env {
+            command.env("KRATE_TEST_ENGINE_SWEEP", "1");
+        }
+        let out = command.output().expect("sweep");
+        assert!(
+            out.status.success(),
+            "sweep: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    // A development build leaves it, and says why.
+    let said = sweep(false);
+    assert!(said.contains("development build"), "{said}");
+    assert_eq!(std::fs::read(&engine).unwrap(), b"an older engine");
+
+    // The newest engine brings it along, under the same folder name.
+    let said = sweep(true);
+    assert!(said.contains("Brought up to date"), "{said}");
+    assert!(
+        apps.join(&folder).is_dir(),
+        "the same folder the Dock holds"
+    );
+    let fingerprint = std::fs::read_to_string(resources.join("engine.fingerprint")).unwrap();
+    assert!(
+        fingerprint.contains("-t"),
+        "a fingerprint that orders: {fingerprint}"
+    );
+    assert_ne!(
+        std::fs::read(&engine).unwrap(),
+        b"an older engine",
+        "a real engine again"
+    );
+    let size = std::fs::metadata(&engine).unwrap().len();
+    assert!(size > 1_000_000, "the engine itself, {size} bytes");
+    assert_eq!(
+        std::fs::read(resources.join("app.krate")).unwrap(),
+        payload_before
+    );
+    let leftovers: Vec<_> = std::fs::read_dir(&apps)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with('.'))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "no staging left behind: {leftovers:?}"
+    );
+    // It still opens as the app it was.
+    let run = krate()
+        .arg("run")
+        .arg("--headless")
+        .arg(resources.join("app.krate"))
+        .env("HOME", home.path())
+        .output()
+        .expect("run");
+    assert!(
+        run.status.success(),
+        "run: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    // One made by a newer engine is never rewritten by this one.
+    let future = "9.0.0-abcdefabcdef-1-1-t99999999999";
+    std::fs::write(resources.join("engine.fingerprint"), future).unwrap();
+    std::fs::write(&engine, b"a newer engine").unwrap();
+    let said = sweep(true);
+    assert!(!said.contains("Brought up to date"), "{said}");
+    assert_eq!(std::fs::read(&engine).unwrap(), b"a newer engine");
+    assert_eq!(
+        std::fs::read_to_string(resources.join("engine.fingerprint")).unwrap(),
+        future
+    );
+    // The sweep is recorded, so the next command does not run it again.
+    let record = std::fs::read_to_string(home.path().join(".krate/engine-sweep.json")).unwrap();
+    assert!(record.contains("\"fingerprint\""), "{record}");
 }

@@ -2256,9 +2256,20 @@ jobs:
           # per_page=1 answered a run 35 days old and per_page=30 one 13 days
           # old, while the nightly had succeeded two days earlier.
           since=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
-          last=$(gh api \
+          # A successful RUN is not a fuzz pass: a run started only to seed
+          # the corpus skips the fuzz job and still ends green (2026-11-16,
+          # run 43835769662). The newest run whose "Fuzz nightly" job itself
+          # succeeded is the one that counts.
+          runs=$(gh api \
             "repos/${{ github.repository }}/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success&created=%3E%3D${since}&per_page=100" \
-            --jq '[.workflow_runs[].created_at] | max // empty')
+            --jq '.workflow_runs | sort_by(.created_at) | reverse | .[] | "\(.id) \(.created_at)"')
+          last=""
+          while read -r id created; do
+            [ -n "$id" ] || continue
+            fuzzed=$(gh api "repos/${{ github.repository }}/actions/runs/${id}/jobs" \
+              --jq '[.jobs[] | select(.name == "Fuzz nightly" and .conclusion == "success")] | length')
+            if [ "$fuzzed" -gt 0 ]; then last=$created; break; fi
+          done <<< "$runs"
           if [ -z "$last" ]; then
             echo "::error::no successful fuzz nightly since ${since}: the fuzz signal is dark. A stable release cannot lean on a campaign that is not running -- fix the nightly (see K-244) or run it by hand (gh workflow run self-hosted-fuzz-nightly.yml) before releasing."
             exit 1
