@@ -84,8 +84,13 @@ final class Phone {
                 : new String[0];
     }
 
-    /** Null once posted; else why not. The app's name is the sender line. */
-    static synchronized String notify(Context context, String app, String title, String body) {
+    /**
+     * Null once posted; else why not. The app's name is the sender line. A
+     * non-empty tag (the app's id and its own, IC-271) replaces whatever
+     * shows under it; an empty one stands alone.
+     */
+    static synchronized String notify(
+            Context context, String app, String title, String body, String tag) {
         NotificationManager manager =
                 (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) {
@@ -108,9 +113,22 @@ final class Phone {
                 .setSubText(app)
                 .setAutoCancel(true)
                 .build();
-        manager.notify(nextId++, note);
+        if (tag == null || tag.isEmpty()) {
+            manager.notify(nextId++, note);
+        } else {
+            manager.notify(tag, 0, note);
+        }
         Log.i(KrateActivity.TAG, "notification posted");
         return null;
+    }
+
+    /** Take back the notification under a tag; nothing if none shows. */
+    static synchronized void withdraw(Context context, String tag) {
+        NotificationManager manager =
+                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null && tag != null && !tag.isEmpty()) {
+            manager.cancel(tag, 0);
+        }
     }
 
     // Speaking aloud.

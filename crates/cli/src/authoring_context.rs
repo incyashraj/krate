@@ -1225,7 +1225,7 @@ that is now done): `ui::notifications::post(\"upload\", \"Uploading\", \
 \"3 of 10 photos\")` -- the same id replaces it, and \
 `ui::notifications::withdraw(\"upload\")` takes it back once it no longer \
 holds; ids are letters, digits, `-` and `_`. Works on a Mac, Windows, \
-Linux and in the browser. Treat any notification as a courtesy -- show \
+Linux, Android, iPhone and in the browser. Treat any notification as a courtesy -- show \
 the same state in the window too, and never make a step depend on it \
 having appeared.\n\n\
 **Open in the browser** (`ui.open-url`, an explicit ask): \

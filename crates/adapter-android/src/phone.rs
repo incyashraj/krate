@@ -10,6 +10,38 @@ pub enum Asked {
     Refused,
 }
 
+/// The system tag of the running app's notification under `id` (IC-271):
+/// one phone app (Krate) posts for every app, so the tag carries the app's
+/// id and two apps' "upload" never replace each other. No app running, no
+/// tag: the notification then stands alone and cannot be taken back.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn notice_tag(app_id: Option<&str>, id: &str) -> Option<String> {
+    let app_id = app_id.filter(|a| !a.is_empty())?;
+    (!id.is_empty()).then(|| format!("krate-notice.{app_id}.{id}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::notice_tag;
+
+    #[test]
+    fn a_notice_tag_belongs_to_one_app() {
+        let a = notice_tag(Some("org.a.notes"), "upload").unwrap();
+        let b = notice_tag(Some("org.b.photos"), "upload").unwrap();
+        assert_ne!(a, b, "two apps' same id must not replace each other");
+        assert_eq!(notice_tag(Some("org.a.notes"), "upload").unwrap(), a);
+        assert_ne!(notice_tag(Some("org.a.notes"), "chat").unwrap(), a);
+        assert_eq!(notice_tag(None, "upload"), None);
+        assert_eq!(notice_tag(Some(""), "upload"), None);
+        assert_eq!(notice_tag(Some("org.a.notes"), ""), None);
+        // A reminder's system id starts krate.<app>.; a notice never does,
+        // whatever the app is called.
+        assert!(!a.starts_with(&crate::reminders::prefix_for("org.a.notes")));
+        let named_notice = notice_tag(Some("notice"), "x").unwrap();
+        assert!(!named_notice.starts_with("krate."), "{named_notice}");
+    }
+}
+
 #[cfg(target_os = "android")]
 mod real {
     use super::Asked;
@@ -147,17 +179,42 @@ mod real {
     }
 
     /// Post a notification, the app's name as its sender line, asking the
-    /// phone first on Android 13 and up.
-    pub fn notify(app: &str, title: &str, body: &str) -> Result<(), String> {
+    /// phone first on Android 13 and up. Under an id (IC-271) it carries
+    /// the running app's tag, so the next one under that id replaces it
+    /// and [`withdraw`] takes it back; without one it stands alone.
+    pub fn notify(app: &str, title: &str, body: &str, id: Option<&str>) -> Result<(), String> {
         if ask("krateNotifyAsk") == Asked::Refused {
             return Err("notifications were not allowed for Krate".to_string());
         }
+        let running = crate::reminders::current().map(|(app_id, _)| app_id);
+        let tag = id
+            .and_then(|id| super::notice_tag(running.as_deref(), id))
+            .unwrap_or_default();
         done_or_why(
             "posting a notification",
             "krateNotify",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-            &[app, title, body],
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            &[app, title, body, &tag],
         )
+    }
+
+    /// Take back the running app's notification under `id` (IC-271).
+    /// Quiet when there is none.
+    pub fn withdraw(id: &str) {
+        let running = crate::reminders::current().map(|(app_id, _)| app_id);
+        let Some(tag) = super::notice_tag(running.as_deref(), id) else {
+            return;
+        };
+        let _ = with_activity("taking back a notification", |env, activity| {
+            let tag = env.new_string(&tag)?;
+            env.call_method(
+                activity,
+                "krateNotifyWithdraw",
+                "(Ljava/lang/String;)V",
+                &[JValue::Object(&tag)],
+            )?
+            .v()
+        });
     }
 
     /// The phone's microphone question, asked before the first recording.

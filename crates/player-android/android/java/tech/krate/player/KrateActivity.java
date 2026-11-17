@@ -437,8 +437,14 @@ public class KrateActivity extends NativeActivity {
         return permissions.length == 0 ? GRANTED : krateAsk(permissions, true);
     }
 
-    public String krateNotify(String app, String title, String body) {
-        return Phone.notify(this, app, title, body);
+    /** Tag "" stands alone; any other replaces the one under it (IC-271). */
+    public String krateNotify(String app, String title, String body, String tag) {
+        return Phone.notify(this, app, title, body, tag);
+    }
+
+    /** Take back the notification under a tag, if it still shows. */
+    public void krateNotifyWithdraw(String tag) {
+        Phone.withdraw(this, tag);
     }
 
     public int krateMicAsk() {
