@@ -2594,6 +2594,35 @@ async function versionInfo(env, hash, base) {
 ///
 /// `?q=` searches and returns matches instead of shelves. `?cat=` returns one
 /// category. Both are capped, so no response is ever a thousand rows.
+/// How well an app's listing answers a search, or null when some word is
+/// nowhere in it (IC-669, 1315). A word that is the name, or a whole word of
+/// it, counts most; a part of the name less; the description and the author
+/// least. The whole query inside the name adds to it.
+function searchRelevance(meta, q, words) {
+  const name = String(meta.name || "").toLowerCase();
+  const description = String(meta.description || "").toLowerCase();
+  const author = String(meta.author || "").toLowerCase();
+  const nameWords = name.split(/[^a-z0-9]+/).filter(Boolean);
+  const matched = new Set();
+  let score = 0;
+  for (const w of words) {
+    let inName = 0;
+    if (name === w) inName = 8;
+    else if (nameWords.includes(w)) inName = 6;
+    else if (nameWords.some((t) => t.startsWith(w))) inName = 4;
+    else if (name.includes(w)) inName = 3;
+    const inDescription = description.includes(w) ? 1 : 0;
+    const inAuthor = author.includes(w) ? 1 : 0;
+    if (!inName && !inDescription && !inAuthor) return null;
+    if (inName) matched.add("name");
+    if (inDescription) matched.add("description");
+    if (inAuthor) matched.add("author");
+    score += inName + inDescription + inAuthor;
+  }
+  if (words.length > 1 && name.includes(q)) score += 4;
+  return { score, matched: [...matched] };
+}
+
 async function list(env, url) {
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
   const q = (url?.searchParams.get("q") || "").trim().toLowerCase().slice(0, 64);
@@ -2629,12 +2658,19 @@ async function list(env, url) {
 
   // Search and category filtering happen HERE, before any R2 work, so a
   // search for one app does not cost a thousand head requests.
+  //
+  // Ranked by relevance (IC-669, test 1315): every word must match; a word
+  // in the name counts for more than one in the description or the author.
+  // Relevance alone orders the results -- a verified publisher is shown on
+  // each row, never used to lift it, and nothing is paid for: Krate sells no
+  // placement. This used to be a substring of the whole query, newest first.
+  const relevanceOf = new Map();
   if (q) {
+    const words = q.split(/\s+/).filter(Boolean).slice(0, 8);
     apps = apps.filter((a) => {
-      const m = a.meta;
-      return `${m.name || ""} ${m.description || ""} ${m.author || ""}`
-        .toLowerCase()
-        .includes(q);
+      const r = searchRelevance(a.meta, q, words);
+      if (r) relevanceOf.set(a.id, r);
+      return Boolean(r);
     });
   }
   if (cat) apps = apps.filter((a) => (a.meta.category || "apps") === cat);
@@ -2654,8 +2690,25 @@ async function list(env, url) {
 
   let payload;
   if (q || cat) {
-    // A query wants results, not shelves.
-    payload = { query: q || null, category: cat || null, results: take(byNew, 60) };
+    // A query wants results, not shelves: the most relevant first, then the
+    // most opened, then the newest. A category alone is newest first.
+    const ranked = q
+      ? [...apps].sort(
+          (a, b) => relevanceOf.get(b.id).score - relevanceOf.get(a.id).score
+            || (opens.get(b.id) || 0) - (opens.get(a.id) || 0)
+            || (b.meta.published || 0) - (a.meta.published || 0),
+        )
+      : byNew;
+    payload = {
+      query: q || null,
+      category: cat || null,
+      results: take(ranked, 60),
+      ranking: {
+        order: q ? "relevance to the words searched, then opens, then newest" : "newest first",
+        verified_identity: "shown on every result; it never moves an app up",
+        paid_placement: "none: Krate sells no placement",
+      },
+    };
   } else {
     const cats = {};
     for (const a of apps) {
@@ -2729,6 +2782,13 @@ async function list(env, url) {
       url: a.meta.line ? `${base}/a/${a.meta.line}` : `${base}/a/${id}`,
       ...images.get(id),
       opens: opens.get(id) || 0,
+      // Who stands behind it, as facts apart from any ranking (1315): a
+      // publisher GitHub vouched for, and a signature that verified.
+      identity_checks: {
+        verified_publisher: Boolean(a.meta.author_url),
+        signed: Boolean(a.meta.signature && a.meta.signature.state === "valid"),
+      },
+      ...(relevanceOf.has(id) ? { matched: relevanceOf.get(id).matched } : {}),
       // The owner principal is for the hub's checks, not the gallery: an
       // account owner is a random account id that is nobody's business.
       meta: (({ owner, ...rest }) => rest)(a.meta),

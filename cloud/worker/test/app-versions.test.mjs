@@ -190,6 +190,47 @@ test("a blocked update is recoverable: the app's link goes back to the newest sa
   assert.equal(await opens(env, line), 451);
 });
 
+test("search ranks by relevance, shows verified identity apart from it, and sells no placement (IC-669, 1315)", async () => {
+  const env = hubEnv();
+  const pub = (who, v, name, description) =>
+    call(env, who, "POST", "/publish", {
+      bytes: build(v),
+      headers: { "x-krate-name": name, "x-krate-description": description },
+    });
+  const editor = await pub("alice", "0.1.0", "Photo Editor", "crop and colour your pictures");
+  const kit = await pub("bob", "0.2.0", "Photographer Kit", "tools for a shoot");
+  // Newest, and the least relevant: only its description says it.
+  const journal = await pub("carol", "0.3.0", "Daybook", "a photo a day journal");
+  for (const r of [editor, kit, journal]) assert.equal(r.status, 200, JSON.stringify(r.body));
+  // Published in one second, newest would be a tie and any order could pass;
+  // spread them so the least relevant is plainly the newest.
+  [editor, kit, journal].forEach((r, i) => {
+    const key = `app:${r.body.id}`;
+    env._kv.set(key, JSON.stringify({ ...JSON.parse(env._kv.get(key)), published: 1_000 + i * 1_000 }));
+  });
+
+  const search = async (q) => (await call(env, null, "GET", `/apps?q=${encodeURIComponent(q)}`)).body;
+  const photo = await search("photo");
+  assert.deepEqual(
+    photo.results.map((a) => a.meta.name),
+    ["Photo Editor", "Photographer Kit", "Daybook"],
+    "a word in the name ranks above a word in the description, however new",
+  );
+  assert.deepEqual(photo.results[0].matched, ["name"]);
+  assert.deepEqual(photo.results[2].matched, ["description"]);
+  assert.match(photo.ranking.order, /relevance/);
+  assert.match(photo.ranking.paid_placement, /^none/);
+  assert.match(photo.ranking.verified_identity, /never moves an app up/);
+  for (const a of photo.results) {
+    assert.equal(typeof a.identity_checks.verified_publisher, "boolean", "every result says who stands behind it");
+    assert.equal(typeof a.identity_checks.signed, "boolean");
+  }
+
+  // Every word must match: "photo editor" is one app, not three.
+  assert.deepEqual((await search("photo editor")).results.map((a) => a.meta.name), ["Photo Editor"]);
+  assert.deepEqual((await search("nothing like this")).results, []);
+});
+
 test("an unsigned app may take its first publisher", async () => {
   const env = hubEnv();
   const v1 = await publish(env, "alice", "0.1.0");
