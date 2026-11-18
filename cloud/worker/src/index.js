@@ -1184,6 +1184,9 @@ function listingFields(request) {
     name: textHeader(request, "x-krate-name") || "",
     description: textHeader(request, "x-krate-description") || "",
     category: shelfOf(header(request, "x-krate-category")),
+    // A maker key's handover from the key before it, signed by both
+    // (K-1290): read by the publisher check, trusted only if it verifies.
+    succession: (header(request, "x-krate-succession") || "").slice(0, 16_384),
   };
 }
 
@@ -1281,7 +1284,7 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     let refusal = null;
     try {
       const { line: existing } = await lineFor(env, owner, appIdForLine);
-      refusal = await publisherRefusal(env, existing, signedBy);
+      refusal = await publisherRefusal(env, existing, signedBy, fields.succession || "");
     } catch (_) {
       refusal = null; // a quota day: the line is skipped below as well
     }
@@ -4935,6 +4938,8 @@ async function bigStart(request, env) {
       name: String(ask.name || "").slice(0, 80),
       description: String(ask.description || "").slice(0, 280),
       category: shelfOf(ask.category),
+      // The maker key's handover, as the one-request door takes it (K-1290).
+      succession: String(ask.succession || "").slice(0, 16_384),
     },
     status: "uploading",
     created: Math.floor(Date.now() / 1000),

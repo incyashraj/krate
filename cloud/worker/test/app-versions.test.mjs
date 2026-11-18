@@ -269,6 +269,33 @@ test("a publisher's compromised key: its later releases are blocked, the app ste
   assert.equal(await opens(env, line), fresh.body.id);
 });
 
+test("a maker's new key carries its handover, and the app takes it as the same publisher (K-1290)", async () => {
+  const env = hubEnv();
+  // Key A hands over to key B, signed by both (krate identity --new-key).
+  const handover = readFileSync(join(here, "fixtures", "notes-succession-a-to-b.json"), "utf8");
+  const send = (name, succession) =>
+    call(env, "alice", "POST", "/publish", {
+      bytes: signed(name),
+      headers: { "x-krate-name": "Notes", ...(succession ? { "x-krate-succession": succession } : {}) },
+    });
+  const v1 = await send("notes-0.1.0-signed-a");
+  assert.equal(v1.status, 200, JSON.stringify(v1.body));
+
+  // A forged handover -- one signature changed -- is no handover.
+  const forged = JSON.parse(handover);
+  const sig = forged[0].old_signature;
+  forged[0].old_signature = (sig[0] === "0" ? "1" : "0") + sig.slice(1);
+  assert.equal((await send("notes-0.2.0-signed-b", JSON.stringify(forged))).status, 409);
+  // Nor is a handover naming other keys, or none at all.
+  const reversed = JSON.parse(handover).map((h) => ({ ...h, old: h.new, new: h.old }));
+  assert.equal((await send("notes-0.2.0-signed-b", JSON.stringify(reversed))).status, 409);
+  assert.equal((await send("notes-0.2.0-signed-b", "not json")).status, 409);
+
+  const next = await send("notes-0.2.0-signed-b", handover);
+  assert.equal(next.status, 200, JSON.stringify(next.body));
+  assert.deepEqual([next.body.url, next.body.version], [v1.body.url, 2], "the same app, its next version, under the new key");
+});
+
 test("an unsigned app may take its first publisher", async () => {
   const env = hubEnv();
   const v1 = await publish(env, "alice", "0.1.0");

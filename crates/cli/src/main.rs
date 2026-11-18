@@ -702,6 +702,24 @@ enum Command {
         /// finds it empty.
         #[arg(long, value_name = "APP_ID")]
         adopt: Option<String>,
+
+        /// Replace this computer's publisher key with a new one. The old key
+        /// and the new sign a handover, so every app you made keeps its data
+        /// when you next rebuild it; the old private half is removed.
+        #[arg(long)]
+        new_key: bool,
+
+        /// Your publisher key may be in someone else's hands. Tells Krate
+        /// Cloud first -- every release it signed that reached the hub since
+        /// --since is blocked, and each app goes back to its last safe
+        /// version -- then makes you a new key, as --new-key does.
+        #[arg(long)]
+        report_compromised: bool,
+
+        /// With --report-compromised: from when (YYYY-MM-DD, UTC) releases
+        /// signed by the old key are not to be trusted. Default: all of them.
+        #[arg(long, value_name = "DATE", requires = "report_compromised")]
+        since: Option<String>,
     },
 
     /// Sign a bundle with a publisher key, so a recipient can check it came
@@ -2308,7 +2326,16 @@ fn run() -> Result<u8> {
             isolate,
             share,
             adopt,
-        } => identity_command(isolate, share, adopt.as_deref()),
+            new_key,
+            report_compromised,
+            since,
+        } => {
+            if new_key || report_compromised {
+                new_key_command(report_compromised, since.as_deref())
+            } else {
+                identity_command(isolate, share, adopt.as_deref())
+            }
+        }
         Command::Card {
             bundle,
             output,
@@ -7427,6 +7454,109 @@ fn revocations_command(import: Option<&Path>) -> Result<u8> {
 }
 
 /// Show and set this machine's development identity (IC-737).
+/// Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's
+/// days_from_civil), so a date needs no calendar crate.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// `YYYY-MM-DD` (UTC midnight) as unix seconds.
+fn since_date(text: &str) -> Result<u64> {
+    let parts: Vec<&str> = text.trim().split('-').collect();
+    let bad = || anyhow::anyhow!("--since takes a date like 2026-11-01, not \"{text}\"");
+    let [y, m, d] = parts.as_slice() else {
+        return Err(bad());
+    };
+    let (y, m, d): (i64, i64, i64) = (
+        y.parse().map_err(|_| bad())?,
+        m.parse().map_err(|_| bad())?,
+        d.parse().map_err(|_| bad())?,
+    );
+    if !(1970..=9999).contains(&y) || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return Err(bad());
+    }
+    Ok((days_from_civil(y, m, d) * 86_400) as u64)
+}
+
+/// `krate identity --new-key` and `--report-compromised` (K-1290, IC-669).
+fn new_key_command(report: bool, since: Option<&str>) -> Result<u8> {
+    let Some(old) = maker_key::public() else {
+        anyhow::bail!(
+            "this computer has no publisher key yet, so there is nothing to replace. \
+             One is made the first time you make an app."
+        );
+    };
+    let since = since.map(since_date).transpose()?.unwrap_or(0);
+    if report {
+        // The hub first, while the old key is still the one on record: if
+        // the report cannot be made, nothing here changes either.
+        let Some(identity) = github_auth::current() else {
+            anyhow::bail!(
+                "reporting your key needs a sign-in to Krate Cloud -- run `krate login`, then \
+                 this again. (`krate identity --new-key` replaces the key without telling the hub.)"
+            );
+        };
+        let hub = org::hub_url(None)?;
+        let endpoint = format!("{}/publisher-keys/compromised", hub.trim_end_matches('/'));
+        let body = serde_json::json!({ "key": old, "since": since });
+        let answer = ureq::post(&endpoint)
+            .set("Authorization", &format!("Bearer {}", identity.token))
+            .set("Content-Type", "application/json")
+            .send_string(&body.to_string());
+        match answer {
+            Ok(response) => {
+                let value: serde_json::Value =
+                    serde_json::from_str(&response.into_string().unwrap_or_default())
+                        .unwrap_or_default();
+                let blocked = value["blocked"].as_array().map(Vec::len).unwrap_or(0);
+                let moved = value["moved"].as_array().map(Vec::len).unwrap_or(0);
+                println!(
+                    "Krate Cloud blocked {blocked} release{} signed by your old key{}.",
+                    if blocked == 1 { "" } else { "s" },
+                    if moved > 0 {
+                        format!("; {moved} app{} went back to its last safe version", if moved == 1 { "" } else { "s" })
+                    } else {
+                        String::new()
+                    }
+                );
+            }
+            Err(ureq::Error::Status(403, response)) => {
+                // Not this account's key on the hub: nothing there to block,
+                // and the key here is still worth replacing.
+                println!(
+                    "Krate Cloud: {}",
+                    response.into_string().unwrap_or_default().trim()
+                );
+            }
+            Err(ureq::Error::Status(code, response)) => anyhow::bail!(
+                "Krate Cloud did not take the report ({code}): {}. Nothing was changed.",
+                response.into_string().unwrap_or_default().trim()
+            ),
+            Err(err) => anyhow::bail!(
+                "could not reach Krate Cloud at {hub} to report the key ({err}). Nothing was changed."
+            ),
+        }
+    }
+    let (old, new) = maker_key::rotate(unix_now())?;
+    println!(
+        "Your new publisher key is {}..., kept {}.",
+        &new.public[..12],
+        new.kept.describe()
+    );
+    println!(
+        "The old one ({}...) signed the handover and its private half is gone from this computer.",
+        &old[..12]
+    );
+    println!("Apps you made keep their data: rebuild or change one and it moves to the new key when it next opens.");
+    Ok(0)
+}
+
 fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u8> {
     let flag = krate_home().join("keys").join("isolate-development");
     if isolate && share {
@@ -9799,13 +9929,31 @@ fn publish_bundle(
         // a header, so the author shown on an app's page is a real account.
         request = request.set("Authorization", &format!("Bearer {}", identity.token));
     }
+    // A maker key that took over from an older one carries the handover,
+    // signed by both, so the hub takes the new key as the same publisher
+    // for apps the old one signed (K-1290). Public facts only: two public
+    // keys, a time and two signatures.
+    if let Some(maker) = maker_key::public() {
+        let chain = maker_key::chain_to(&maker);
+        if !chain.is_empty() {
+            if let Ok(header) = serde_json::to_string(&chain) {
+                request = request.set("X-Krate-Succession", &header);
+            }
+        }
+    }
 
     // Over the door's one request: the big-file path, in parts (IC-945).
     let big_body = if bytes.len() > PUBLISH_DOOR_BYTES {
         let Some(identity) = &identity else {
             anyhow::bail!("not signed in. Sign in first, then publish again.");
         };
+        let succession = maker_key::public()
+            .map(|maker| maker_key::chain_to(&maker))
+            .filter(|chain| !chain.is_empty())
+            .and_then(|chain| serde_json::to_string(&chain).ok())
+            .unwrap_or_default();
         let fields = serde_json::json!({
+            "succession": succession,
             "name": app_name,
             "description": description.unwrap_or(""),
             "category": classify_app(&app_name, description.unwrap_or("")),
@@ -18735,6 +18883,27 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // of an unsigned app a hub vouched for gets a copy of it, once (K-1172).
     // Before anything reads a store, so the app never starts on a second,
     // empty one beside its data.
+    // An app signed by a maker key that took over from older ones takes
+    // their data first (K-1290), so the id-keyed move below never fills the
+    // new store ahead of it.
+    if let Some(principal @ StoragePrincipal::Verified { publisher, .. }) = &storage {
+        if maker_key::public().as_deref() == Some(publisher.as_str()) {
+            match adopt_predecessor_key_data(
+                &store_home,
+                principal,
+                &maker_key::predecessors_of(publisher),
+                &machine_key,
+            ) {
+                Ok(pieces) if !pieces.is_empty() => eprintln!(
+                    "krate: {} is signed with your new key; its saved data ({}) moved with it",
+                    manifest.map(|m| m.app.name.as_str()).unwrap_or("this app"),
+                    pieces.join(", ")
+                ),
+                Ok(_) => {}
+                Err(words) => anyhow::bail!("{words}. Nothing was lost; open it again to finish."),
+            }
+        }
+    }
     if let Some(principal) = &storage {
         match adopt_id_keyed_data_here(
             &store_home,
@@ -28520,6 +28689,87 @@ fn adopt_id_keyed_data_here(
         (false, false) => IdDataAdopted::Moved(taken),
         (false, true) => IdDataAdopted::Copied(taken),
     })
+}
+
+/// The first open of an app signed by a maker key that took over from older
+/// ones (K-1290) takes what each older key's store for the same app held,
+/// once, newest first: renamed, never copied, secrets sealed again under the
+/// new name, and settled in `<its store>.from-key` (each old key, then
+/// `done`). `predecessors` comes from handovers signed by both keys
+/// (maker_key::predecessors_of), so a hand-made file moves nothing. Pieces
+/// the new store already has are left where they are.
+fn adopt_predecessor_key_data(
+    home: &Path,
+    principal: &StoragePrincipal,
+    predecessors: &[String],
+    machine_key: &dyn Fn() -> std::result::Result<Vec<u8>, String>,
+) -> std::result::Result<Vec<String>, String> {
+    let StoragePrincipal::Verified { app_id, .. } = principal else {
+        return Ok(Vec::new());
+    };
+    if predecessors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let new_base = principal_store_path_in(home, principal);
+    let record = new_base.with_extension("from-key");
+    let said = |e: std::io::Error| {
+        format!("{app_id}'s saved data could not be moved to its new key ({e})")
+    };
+    let settled = fs::read_to_string(&record).unwrap_or_default();
+    if settled.lines().any(|l| l == "done") {
+        return Ok(Vec::new());
+    }
+    if let Some(parent) = record.parent() {
+        fs::create_dir_all(parent).map_err(said)?;
+    }
+    let mut taken = Vec::new();
+    for old in predecessors {
+        let before = StoragePrincipal::Verified {
+            publisher: old.clone(),
+            app_id: app_id.clone(),
+        };
+        let old_base = principal_store_path_in(home, &before);
+        if old_base == new_base {
+            continue;
+        }
+        let mut moved_here = false;
+        for piece in ID_DATA_PIECES {
+            if move_store_piece(
+                &old_base.with_extension(piece),
+                &new_base.with_extension(piece),
+            )
+            .map_err(said)?
+            {
+                moved_here = true;
+                if piece == "secrets" {
+                    reseal_moved_secrets(
+                        &new_base.with_extension("secrets"),
+                        &before.storage_key(),
+                        &principal.storage_key(),
+                        &machine_key()?,
+                    )?;
+                }
+                taken.push(piece.to_string());
+            }
+        }
+        if moved_here {
+            fs::write(&record, format!("{old}\n")).map_err(said)?;
+        }
+    }
+    let done = record.with_extension("from-key-tmp");
+    fs::write(
+        &done,
+        format!(
+            "{}done\n",
+            predecessors
+                .iter()
+                .map(|k| format!("{k}\n"))
+                .collect::<String>()
+        ),
+    )
+    .map_err(said)?;
+    fs::rename(&done, &record).map_err(said)?;
+    Ok(taken)
 }
 
 /// Rename `from` to `to` when `from` is there and `to` is not: one rename

@@ -154,18 +154,68 @@ async function currentAuthority(env, line) {
   }
 }
 
+const SUCCESSION_DOMAIN = "krate-maker-succession-v1\n";
+
+function bytesOfHex(text) {
+  const t = String(text || "");
+  if (!/^(?:[0-9a-f]{2})+$/.test(t)) return null;
+  return new Uint8Array(t.match(/../g).map((h) => parseInt(h, 16)));
+}
+
+async function signedBy(publicHex, signatureHex, message) {
+  const key = bytesOfHex(publicHex);
+  const signature = bytesOfHex(signatureHex);
+  if (!key || key.length !== 32 || !signature || signature.length !== 64) return false;
+  try {
+    const imported = await crypto.subtle.importKey("raw", key, { name: "Ed25519" }, false, ["verify"]);
+    return await crypto.subtle.verify({ name: "Ed25519" }, imported, signature, message);
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Does the handover chain (the `x-krate-succession` header: a JSON list,
+/// oldest first, of {old, new, at, old_signature, new_signature}) lead from
+/// `from` to `to`, every step signed by both its keys over
+/// "krate-maker-succession-v1\n<old>\n<new>\n<at>"? Anything that does not
+/// parse or verify links nothing.
+export async function handoverLinks(succession, from, to) {
+  let chain;
+  try {
+    chain = JSON.parse(succession || "[]");
+  } catch (_) {
+    return false;
+  }
+  if (!Array.isArray(chain) || chain.length > 16) return false;
+  let at = from;
+  const start = chain.findIndex((step) => step && step.old === from);
+  if (start < 0) return false;
+  for (const step of chain.slice(start)) {
+    if (!step || step.old !== at || typeof step.new !== "string" || step.new === step.old) return false;
+    const message = new TextEncoder().encode(`${SUCCESSION_DOMAIN}${step.old}\n${step.new}\n${step.at}`);
+    if (!(await signedBy(step.old, step.old_signature, message))) return false;
+    if (!(await signedBy(step.new, step.new_signature, message))) return false;
+    at = step.new;
+    if (at === to) return true;
+  }
+  return false;
+}
+
 /// Why an update may not join this line, or null (K-1286, IC-389). A signed
 /// app's data lives under its publisher's key, so a version signed by
 /// another key -- or not signed at all -- would open with nothing for
 /// everyone who updated. An unsigned app may become signed: that is how an
 /// app gets its first publisher.
-export async function publisherRefusal(env, line, authority) {
+export async function publisherRefusal(env, line, authority, succession = "") {
   if (!line || !line.versions || !line.versions.length) return null;
   const now = await currentAuthority(env, line);
   if (!now || now === authority) return null;
   // A key its publisher reported compromised (IC-669) gives way to a new
   // one: that is the way back for an app whose key was stolen.
   if (await env.APPS.get(`compromised:${now}`)) return null;
+  // A maker who replaced their key carries the handover (K-1290): the old
+  // key and the new both signed that one follows the other.
+  if (authority && (await handoverLinks(succession, now, authority))) return null;
   const short = (k) => `${String(k).slice(0, 16)}...`;
   if (!authority) {
     return (

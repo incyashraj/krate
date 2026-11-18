@@ -27626,6 +27626,115 @@ fn maker_public(home: &std::path::Path) -> String {
         .to_string()
 }
 
+/// K-1290: a maker's new key keeps their apps' data. `krate identity
+/// --new-key` has the old key and the new sign a handover and removes the old
+/// private half; the first open of an app signed by the new key takes what
+/// the old key's store for it held, once; a handover whose signatures do not
+/// hold moves nothing; and reporting a key compromised without a sign-in
+/// changes nothing and sends nothing.
+#[test]
+fn a_new_maker_key_takes_its_apps_data_with_it() {
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    let store = home.path().join(".krate/store");
+    let (url, count) = counting_listener();
+    let identity = |args: &[&str]| {
+        krate()
+            .arg("identity")
+            .args(args)
+            .env("HOME", home.path())
+            .env("KRATE_HUB_URL", &url)
+            .env("KRATE_USAGE_URL", format!("{url}/usage"))
+            .output()
+            .expect("identity")
+    };
+
+    let first = pack_minimal(dir.path(), home.path(), "dev.krate.rot", "rot", true);
+    let old = maker_public(home.path());
+    assert_eq!(signer_of(&first).as_deref(), Some(old.as_str()));
+    std::fs::create_dir_all(&store).unwrap();
+    let old_store = store.join(format!("dev.krate.rot@{}.kv", &old[..16]));
+    std::fs::write(&old_store, b"kept through the new key").unwrap();
+    let old_private = std::fs::read(home.path().join(".krate/keys/maker.key")).unwrap();
+
+    // Reporting needs a sign-in: without one nothing changes and nothing is sent.
+    let refused = identity(&["--report-compromised", "--since", "2026-11-01"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("krate login"));
+    assert_eq!(
+        maker_public(home.path()),
+        old,
+        "a refused report keeps the key"
+    );
+    assert_eq!(
+        count.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "and sends nothing"
+    );
+
+    let rotated = identity(&["--new-key"]);
+    let said = String::from_utf8_lossy(&rotated.stdout).to_string()
+        + &String::from_utf8_lossy(&rotated.stderr);
+    assert!(rotated.status.success(), "{said}");
+    let new = maker_public(home.path());
+    assert_ne!(new, old, "a new key");
+    assert_ne!(
+        std::fs::read(home.path().join(".krate/keys/maker.key")).unwrap(),
+        old_private,
+        "the old private half is gone"
+    );
+    assert!(home
+        .path()
+        .join(format!(".krate/keys/maker.retired-{}.pub", &old[..16]))
+        .exists());
+
+    // A rebuild is signed by the new key, and its first open takes the data.
+    let second = pack_minimal(dir.path(), home.path(), "dev.krate.rot", "rot-again", true);
+    assert_eq!(signer_of(&second).as_deref(), Some(new.as_str()));
+    let ran = run_headless(&second, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let new_store = store.join(format!("dev.krate.rot@{}.kv", &new[..16]));
+    assert_eq!(
+        std::fs::read(&new_store).expect("moved"),
+        b"kept through the new key"
+    );
+    assert!(!old_store.exists(), "moved, not copied");
+    // Once: data written at the old name afterwards stays there.
+    std::fs::write(&old_store, b"an old build wrote this later").unwrap();
+    assert!(run_headless(&second, home.path()).status.success());
+    assert_eq!(
+        std::fs::read(&new_store).unwrap(),
+        b"kept through the new key"
+    );
+
+    // A handover whose signature does not hold moves nothing.
+    let succession = home.path().join(".krate/keys/succession.json");
+    let mut list: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&succession).unwrap()).unwrap();
+    let sig = list[0]["new_signature"].as_str().unwrap().to_string();
+    let flipped = match sig.strip_prefix('0') {
+        Some(rest) => format!("1{rest}"),
+        None => format!("0{}", &sig[1..]),
+    };
+    list[0]["new_signature"] = serde_json::json!(flipped);
+    std::fs::write(&succession, serde_json::to_vec(&list).unwrap()).unwrap();
+    let other_old = store.join(format!("dev.krate.other@{}.kv", &old[..16]));
+    std::fs::write(&other_old, b"not on a forged handover").unwrap();
+    let other = pack_minimal(dir.path(), home.path(), "dev.krate.other", "other", true);
+    assert!(run_headless(&other, home.path()).status.success());
+    assert!(
+        other_old.exists(),
+        "a handover that does not verify moves nothing"
+    );
+    assert!(!store
+        .join(format!("dev.krate.other@{}.kv", &new[..16]))
+        .exists());
+}
+
 fn run_headless(bundle: &std::path::Path, home: &std::path::Path) -> std::process::Output {
     krate()
         .arg("run")
