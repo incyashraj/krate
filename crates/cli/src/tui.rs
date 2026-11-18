@@ -544,6 +544,9 @@ fn change_an_app(bundle: &Path) -> Result<()> {
     // still in history -- so the change can be made by asking again with both
     // the original request and the change, rather than dead-ending someone who
     // just told us what they wanted.
+    // What the change begins from, taken as its source is taken, so the
+    // file can be held to it when the change replaces it (IC-397).
+    let parent = crate::derived_from_of(bundle);
     let source = match crate::bundle_source_dir(bundle)? {
         Some(source) => Some(source),
         None => {
@@ -613,7 +616,7 @@ fn change_an_app(bundle: &Path) -> Result<()> {
             provider,
             bundle,
             &attachments,
-            crate::derived_from_of(bundle),
+            parent.clone(),
             &progress,
         ),
         None => {

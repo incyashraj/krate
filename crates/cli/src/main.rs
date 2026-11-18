@@ -11919,6 +11919,47 @@ impl StagedOutput {
     }
 }
 
+/// When `destination` is no longer the file a change began from -- its
+/// archive digest is not `parent_archive` -- move the finished build to a
+/// numbered `<name>.changed.krate` beside it instead, and say where
+/// (IC-397). None when the parent is unchanged and the build may replace it.
+fn keep_if_parent_moved(
+    staged: &mut StagedOutput,
+    destination: &Path,
+    parent_archive: &str,
+) -> Result<Option<PathBuf>> {
+    let now = fs::read(destination)
+        .with_context(|| format!("read {} before replacing it", destination.display()))?;
+    if krate_bundle::provenance::digest_archive_bytes(&now).digest == parent_archive {
+        return Ok(None);
+    }
+    let dir = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let stem = destination
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "app".to_string());
+    let mut n = 1;
+    let kept = loop {
+        let name = if n == 1 {
+            format!("{stem}.changed.krate")
+        } else {
+            format!("{stem}.changed-{n}.krate")
+        };
+        let candidate = dir.join(name);
+        if !candidate.exists() {
+            break candidate;
+        }
+        n += 1;
+    };
+    staged.destination = kept.clone();
+    staged.promote()?;
+    Ok(Some(kept))
+}
+
 /// Whether a finished build should take the destination's place
 /// (IC-397, test 491).
 ///
@@ -12549,6 +12590,26 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     let replacing_existing = req.output.exists();
     let committed = should_commit(acceptance.accepted, replacing_existing);
     if committed {
+        // The app being changed must still be the one this change was made
+        // from (IC-397). The lock on the destination keeps a second `krate`
+        // out (K-310), not another program: a file synced, copied over or
+        // saved by something else while the AI worked would be replaced
+        // without anyone knowing what was lost. Its bytes are held to the
+        // digest the fork record took when the change began.
+        if replacing_existing && req.changed_from.as_deref() == Some(req.output.as_path()) {
+            if let Some(parent) = &req.derived_from {
+                if let Some(kept) = keep_if_parent_moved(&mut staged, &req.output, &parent.archive)?
+                {
+                    anyhow::bail!(
+                        "{} changed while this change was being made -- something else wrote \
+                         to it -- so it was not replaced. The changed app is kept at {}; \
+                         open both and keep the one you want.",
+                        req.output.display(),
+                        kept.display()
+                    );
+                }
+            }
+        }
         staged.promote()?;
     }
 
@@ -32104,6 +32165,57 @@ mod revise_transaction_tests {
         fs::write(staged.path(), b"fresh").expect("write");
         staged.promote().expect("promote");
         assert_eq!(fs::read(&out).expect("read"), b"fresh");
+    }
+
+    /// A change replaces the app only while it is still the file the change
+    /// began from (IC-397). Written over by something else meanwhile, the
+    /// app stays as that something left it and the change is kept beside it.
+    #[test]
+    fn a_change_does_not_replace_an_app_something_else_rewrote_meanwhile() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("notes.krate");
+        fs::write(&out, b"the app the change began from").expect("write parent");
+        let began = krate_bundle::provenance::digest_archive_bytes(&fs::read(&out).unwrap()).digest;
+
+        // Unchanged: the build may replace it, and nothing has moved yet.
+        let mut staged = StagedOutput::beside(&out).expect("stage");
+        fs::write(staged.path(), b"the changed app").expect("write staged");
+        assert_eq!(
+            keep_if_parent_moved(&mut staged, &out, &began).expect("check"),
+            None
+        );
+        staged.promote().expect("promote");
+        assert_eq!(fs::read(&out).unwrap(), b"the changed app");
+
+        // Rewritten by something else while the next change was made.
+        let began = krate_bundle::provenance::digest_archive_bytes(&fs::read(&out).unwrap()).digest;
+        fs::write(&out, b"a sync tool's copy").expect("overwrite");
+        let mut staged = StagedOutput::beside(&out).expect("stage");
+        fs::write(staged.path(), b"the second change").expect("write staged");
+        let kept = keep_if_parent_moved(&mut staged, &out, &began)
+            .expect("check")
+            .expect("a moved parent keeps the change elsewhere");
+        assert_eq!(
+            fs::read(&out).unwrap(),
+            b"a sync tool's copy",
+            "the other program's file stands"
+        );
+        assert_eq!(
+            fs::read(&kept).unwrap(),
+            b"the second change",
+            "and the change is not lost"
+        );
+        assert_eq!(kept.file_name().unwrap(), "notes.changed.krate");
+        assert!(!staged.path().exists(), "no staging file left behind");
+
+        // A second time, the name is numbered rather than overwritten.
+        let mut staged = StagedOutput::beside(&out).expect("stage");
+        fs::write(staged.path(), b"a third change").expect("write staged");
+        let again = keep_if_parent_moved(&mut staged, &out, &began)
+            .expect("check")
+            .expect("moved");
+        assert_eq!(again.file_name().unwrap(), "notes.changed-2.krate");
+        assert_eq!(fs::read(&kept).unwrap(), b"the second change");
     }
 
     /// The commit decision, on its own (IC-397, test 491).
