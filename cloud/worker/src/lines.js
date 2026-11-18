@@ -179,6 +179,37 @@ export async function publisherRefusal(env, line, authority) {
   );
 }
 
+/// A version taken down while it is the one an app's link opens: the line
+/// steps back to the newest earlier version that is not taken down and
+/// whose bytes are still held (IC-669, test 1311 -- a malicious update is
+/// blocked, recorded and recoverable to a safe version). Returns the move
+/// to record with the takedown, or null when the hash is not a line's
+/// current version or nothing safe is left (the link then answers 451).
+export async function stepBackFrom(env, hash) {
+  let row;
+  try {
+    row = JSON.parse((await env.APPS.get(`app:${hash}`)) || "null");
+  } catch (_) {
+    row = null;
+  }
+  if (!row || !row.line) return null;
+  const line = await readLine(env, row.line);
+  if (!line) return null;
+  const now = line.versions.find((v) => v.n === line.current);
+  if (!now || now.hash !== hash) return null;
+  const earlier = line.versions.filter((v) => v.n < now.n).sort((a, b) => b.n - a.n);
+  for (const v of earlier) {
+    if (await env.APPS.get(`takedown:${v.hash}`)) continue;
+    if (!(await env.BUNDLES.head(v.hash))) continue;
+    line.current = v.n;
+    line.updated = Math.floor(Date.now() / 1000);
+    await env.APPS.put(`line:${line.id}`, JSON.stringify(line));
+    await settleRows(env, line);
+    return { line: line.id, from: now.n, to: v.n, to_hash: v.hash };
+  }
+  return { line: line.id, from: now.n, to: null, to_hash: null };
+}
+
 /// Mark which of a line's builds is the gallery's row: the current one
 /// listed, every other one superseded (kept, with its link, off the shelf).
 export async function settleRows(env, line) {

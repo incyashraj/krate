@@ -60,6 +60,7 @@ import {
   linesRoute,
   publisherRefusal,
   settleRows,
+  stepBackFrom,
   storeTagOf,
   versionOf,
 } from "./lines.js";
@@ -2006,6 +2007,20 @@ async function takedownPut(request, hash, env) {
     await env.BUNDLES.delete(`shot:${hash}`);
     await env.BUNDLES.delete(`icon:${hash}`);
   }
+  // A blocked update is recoverable (IC-669, 1311): when it is the version
+  // an app's link opens, the link goes back to the newest earlier version
+  // that is not blocked, and the takedown records the move. Only the owner
+  // chooses a version current again after a restore.
+  let stepped = null;
+  try {
+    stepped = await stepBackFrom(env, hash);
+  } catch (_) {
+    stepped = null; // a quota day: the link answers 451 until the owner picks a version
+  }
+  if (stepped) {
+    record.stepped_back = stepped;
+    await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
+  }
   return json({ ok: true, takedown: record });
 }
 
@@ -2100,10 +2115,15 @@ async function takedownRestore(request, hash, env) {
   await env.APPS.put(`takedown-closed:${hash}`, JSON.stringify(record));
   await env.APPS.delete(`takedown:${hash}`);
   const bytes = await env.BUNDLES.head(hash);
+  const stepped = record.stepped_back && record.stepped_back.to ? record.stepped_back : null;
   return json({
     ok: true,
     restored: Boolean(bytes),
-    note: bytes ? "the listing is back as it was" : "the bytes were removed with the takedown; the author must publish again",
+    note: !bytes
+      ? "the bytes were removed with the takedown; the author must publish again"
+      : stepped
+        ? `the listing is back; the app's link stays on version ${stepped.to}, where the takedown moved it, until its publisher makes version ${stepped.from} current again`
+        : "the listing is back as it was",
   });
 }
 

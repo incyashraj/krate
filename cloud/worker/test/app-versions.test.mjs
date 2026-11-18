@@ -153,6 +153,43 @@ test("another file of a release the app already has is that version, not the nex
   }
 });
 
+test("a blocked update is recoverable: the app's link goes back to the newest safe version (IC-669, 1311)", async () => {
+  const env = hubEnv();
+  env.KRATE_ADMINS = "root";
+  const v1 = await publish(env, "alice", "0.1.0");
+  const v2 = await publish(env, "alice", "0.2.0");
+  const v3 = await publish(env, "alice", "0.3.0");
+  const line = v1.body.url.split("/a/")[1];
+  assert.equal(await opens(env, line), v3.body.id);
+
+  const takedown = (hash) =>
+    call(env, "root", "POST", `/admin/takedown/${hash}`, { json: { reason: "malware in this update" } });
+
+  // An older version blocked: the app's link does not move.
+  const old = await takedown(v2.body.id);
+  assert.equal(old.status, 200, JSON.stringify(old.body));
+  assert.equal(old.body.takedown.stepped_back, undefined, "blocking a version nobody opens moves nothing");
+  assert.equal(await opens(env, line), v3.body.id);
+
+  // The current version blocked: the link goes to v1, skipping blocked v2,
+  // and the takedown says so.
+  const now = await takedown(v3.body.id);
+  assert.deepEqual(
+    [now.body.takedown.stepped_back.from, now.body.takedown.stepped_back.to, now.body.takedown.stepped_back.to_hash],
+    [3, 1, v1.body.id],
+    "the move is on the takedown's record",
+  );
+  assert.equal(await opens(env, line), v1.body.id, "the app's link opens the newest safe version");
+  assert.equal(await opens(env, v3.body.id), 451, "the blocked build itself stays blocked");
+  const meta = await call(env, null, "GET", `/meta/${line}`);
+  assert.equal(meta.body.id, v1.body.id);
+
+  // Nothing safe left: the link answers as the blocked build does.
+  const last = await takedown(v1.body.id);
+  assert.equal(last.body.takedown.stepped_back.to, null);
+  assert.equal(await opens(env, line), 451);
+});
+
 test("an unsigned app may take its first publisher", async () => {
   const env = hubEnv();
   const v1 = await publish(env, "alice", "0.1.0");
