@@ -163,6 +163,9 @@ export async function publisherRefusal(env, line, authority) {
   if (!line || !line.versions || !line.versions.length) return null;
   const now = await currentAuthority(env, line);
   if (!now || now === authority) return null;
+  // A key its publisher reported compromised (IC-669) gives way to a new
+  // one: that is the way back for an app whose key was stolen.
+  if (await env.APPS.get(`compromised:${now}`)) return null;
   const short = (k) => `${String(k).slice(0, 16)}...`;
   if (!authority) {
     return (

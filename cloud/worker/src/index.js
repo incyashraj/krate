@@ -298,6 +298,8 @@ const RATE_LIMITS = {
   // Requests to /scim/v2/ with no token or a wrong one (IC-955). They are
   // never audited, so this is what bounds them.
   "scim/refused": 20,
+  // A compromised-key report reads every line the hub holds.
+  "publisher-keys/compromised": 5,
 };
 
 /// Who is asking, as far as the edge can tell.
@@ -751,6 +753,12 @@ export default {
       }
       if (request.method === "POST" && pathname === "/keys") {
         return cors(await putKey(request, env));
+      }
+      // A publisher reporting their own signing key compromised (IC-669).
+      if (request.method === "POST" && pathname === "/publisher-keys/compromised") {
+        const over = await rateLimited(request, env, "publisher-keys/compromised");
+        if (over) return cors(over);
+        return cors(await reportCompromisedKey(request, env));
       }
       if (request.method === "POST" && pathname === "/keys/forget") {
         return cors(await forgetKey(request, env));
@@ -1250,6 +1258,24 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
   // under the current version's signing key. Asked before anything is
   // written, so a refused update leaves nothing behind.
   const signedBy = (judgement.release && judgement.release.authority) || null;
+  // A key its publisher reported compromised signs nothing more here
+  // (IC-669), whoever sends it.
+  if (signedBy) {
+    let reported = null;
+    try {
+      reported = JSON.parse((await env.APPS.get(`compromised:${signedBy}`)) || "null");
+    } catch (_) {
+      reported = null;
+    }
+    if (reported) {
+      return text(
+        `this app is signed by a publisher key reported compromised on ` +
+          `${new Date(reported.at * 1000).toISOString().slice(0, 10)}, so it is not published. ` +
+          "Sign it with a new key and publish it again.",
+        409,
+      );
+    }
+  }
   const appIdForLine = judgement.manifest && judgement.manifest.app && judgement.manifest.app.id;
   if (!fields.quiet && appIdForLine) {
     let refusal = null;
@@ -2022,6 +2048,99 @@ async function takedownPut(request, hash, env) {
     await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
   }
   return json({ ok: true, takedown: record });
+}
+
+/// POST /publisher-keys/compromised {key, since?, reason?} (IC-669: publisher
+/// compromise). The account that published apps signed by `key` -- the
+/// publisher root, as `krate identity` shows it -- says it is no longer
+/// theirs alone. Every version of that account's apps signed by it that
+/// reached the hub at or after `since` (unix seconds; the hub's own arrival
+/// time, which a thief cannot backdate the way a signature's time can be)
+/// is taken down as an emergency, each app's link steps back to its newest
+/// safe version, and the hub refuses anything signed by the key from then
+/// on. The takedowns join the signed blocklist installed copies honour
+/// offline. Only that account's own apps are touched, so a stolen account
+/// can do no more with this than block its own apps, which an admin can
+/// restore. A line created in the last ~30 s may be missed: KV's listing
+/// lags its writes.
+async function reportCompromisedKey(request, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first: krate login", 401);
+  const owner = ownerOf(identity);
+  const body = await readJson(request);
+  const key = String((body && body.key) || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(key)) {
+    return text("name the key by its public key, 64 hex characters -- `krate identity` shows yours", 400);
+  }
+  const since = Number.isFinite(Number(body.since)) ? Math.max(0, Math.floor(Number(body.since))) : 0;
+  const reason = String(body.reason || "").trim().slice(0, 500) || "its publisher reported the signing key compromised";
+  const now = Math.floor(Date.now() / 1000);
+
+  // This account's versions signed by the key.
+  const hits = [];
+  let signedAny = false;
+  for (const name of await listAllKeys(env.APPS, "line:")) {
+    let line;
+    try {
+      line = JSON.parse((await env.APPS.get(name)) || "null");
+    } catch (_) {
+      line = null;
+    }
+    if (!line || line.owner !== owner) continue;
+    for (const v of line.versions || []) {
+      let authority = "authority" in v ? v.authority : null;
+      if (!("authority" in v)) {
+        try {
+          const row = JSON.parse((await env.APPS.get(`app:${v.hash}`)) || "null");
+          authority = (row && row.release && row.release.authority) || null;
+        } catch (_) {
+          authority = null;
+        }
+      }
+      if (authority !== key) continue;
+      signedAny = true;
+      if ((v.at || 0) >= since) hits.push(v.hash);
+    }
+  }
+  if (!signedAny) {
+    return text("none of your apps on this hub is signed by that key, so it is not yours to report", 403);
+  }
+  await env.APPS.put(
+    `compromised:${key}`,
+    JSON.stringify({ key, since, owner, by: identity.login, at: now, reason }),
+  );
+
+  const blocked = [];
+  for (const hash of hits) {
+    if (await env.APPS.get(`takedown:${hash}`)) continue;
+    await env.APPS.put(
+      `takedown:${hash}`,
+      JSON.stringify({
+        hash,
+        reason: `signed by a publisher key reported compromised (${key.slice(0, 16)}...): ${reason}`,
+        scope: "listing",
+        emergency: true,
+        notice: "",
+        by: `publisher:${identity.login}`,
+        at: now,
+        appeal: { state: "none" },
+        compromise: { key, since },
+      }),
+    );
+    blocked.push(hash);
+  }
+  // Every block first, so a step back never lands on a version blocked
+  // a moment later.
+  const moved = [];
+  for (const hash of blocked) {
+    const stepped = await stepBackFrom(env, hash);
+    if (!stepped) continue;
+    moved.push(stepped);
+    const record = JSON.parse(await env.APPS.get(`takedown:${hash}`));
+    record.stepped_back = stepped;
+    await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
+  }
+  return json({ ok: true, key, since, blocked, moved });
 }
 
 /// Every open takedown, for clients to hold and honour offline (IC-669,

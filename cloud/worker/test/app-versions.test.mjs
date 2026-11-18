@@ -231,6 +231,44 @@ test("search ranks by relevance, shows verified identity apart from it, and sell
   assert.deepEqual((await search("nothing like this")).results, []);
 });
 
+test("a publisher's compromised key: its later releases are blocked, the app steps back, the key signs nothing more (IC-669)", async () => {
+  const env = hubEnv();
+  const v1 = await publishBytes(env, "alice", signed("notes-0.1.0-signed-a"));
+  const v2 = await publishBytes(env, "alice", signed("notes-0.2.0-signed-a"));
+  assert.deepEqual([v1.status, v2.status, v2.body.version], [200, 200, 2]);
+  const line = v1.body.url.split("/a/")[1];
+  const keyA = row(env, v1.body.id).release.authority;
+  // v1 reached the hub before the theft, v2 after: arrival times apart.
+  const stored = JSON.parse(env._kv.get(`line:${line}`));
+  stored.versions[0].at = 1_000;
+  stored.versions[1].at = 3_000;
+  env._kv.set(`line:${line}`, JSON.stringify(stored));
+  const report = (who, body) => call(env, who, "POST", "/publisher-keys/compromised", { json: body });
+
+  assert.equal((await report("bob", { key: keyA })).status, 403, "only the account that published with the key may report it");
+  assert.equal((await report("alice", { key: "not a key" })).status, 400);
+  assert.equal(env._kv.get(`compromised:${keyA}`), undefined, "a refused report records nothing");
+
+  const ok = await report("alice", { key: keyA, since: 2_000, reason: "my laptop was stolen" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.deepEqual(ok.body.blocked, [v2.body.id], "only what arrived after the theft is blocked");
+  assert.equal(await opens(env, v2.body.id), 451);
+  assert.equal(await opens(env, line), v1.body.id, "the app's link steps back to the safe version");
+  const blocklist = await call(env, null, "GET", "/takedowns");
+  assert.ok(blocklist.body.blocked.some((b) => b.hash === v2.body.id && b.emergency), "it joins the offline blocklist");
+
+  // The key signs nothing more, even a rotated key of it.
+  const again = await publishBytes(env, "alice", signed("notes-0.3.0-signed-a-rotated"));
+  assert.equal(again.status, 409);
+  assert.match(String(again.body), /reported compromised/);
+
+  // A new key is the way back for the app.
+  const fresh = await publishBytes(env, "alice", signed("notes-0.2.0-signed-b"));
+  assert.equal(fresh.status, 200, JSON.stringify(fresh.body));
+  assert.deepEqual([fresh.body.url, fresh.body.version], [v1.body.url, 3]);
+  assert.equal(await opens(env, line), fresh.body.id);
+});
+
 test("an unsigned app may take its first publisher", async () => {
   const env = hubEnv();
   const v1 = await publish(env, "alice", "0.1.0");
