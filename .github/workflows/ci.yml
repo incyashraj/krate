@@ -272,6 +272,17 @@ jobs:
         run: |
           cargo build -p krate-cli --bin krate
           KRATE_BIN="$PWD/target/debug/krate" sh scripts/test-cold-make.sh "$RUNNER_TEMP/cold-make"
+      # `krate revise` as the transaction IC-397 asks for, end to end: a real
+      # app from a built-in template, real builds of the changed source, the
+      # real commit, with a stubbed agent. Before this, revise was only ever
+      # unit-tested in parts, because it needs an AI -- and the parts passing
+      # did not stop it calling the person's own signed app an "unsigned
+      # fork" on every change (K-1289). The changes run offline.
+      - name: Walk krate revise as a transaction with a stubbed agent
+        shell: bash
+        timeout-minutes: 20
+        run: |
+          KRATE_BIN="$PWD/target/debug/krate" sh scripts/test-revise-transaction.sh "$RUNNER_TEMP/revise-txn"
       - name: krate create fails clearly when build tools are missing
         shell: bash
         run: |

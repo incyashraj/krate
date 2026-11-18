@@ -5463,19 +5463,50 @@ fn claim_destination(destination: &Path) -> Result<RevisionClaim> {
     }
 }
 
-/// Who signed this bundle, if anyone (K-311).
-///
-/// `None` is unsigned. A signature that is present but does not verify is
-/// still a signature the person should hear about, so it is reported in
-/// the verdict's own words rather than folded into "unsigned".
-fn signer_of(bundle: &Path) -> Result<Option<String>> {
+/// Who signed this bundle, when it is not this computer's own maker key
+/// (K-1289). Since IC-983 every app a person makes is signed with their
+/// maker key, and a revision is signed with it again -- so their own app,
+/// changed, is still theirs and signed. Calling that an "unsigned fork" and
+/// keeping a `.signed.krate` copy on every change (even a change that
+/// failed) was K-311's rule applied to the person's own releases. A file
+/// signed by anyone else -- or by this key with maker signing off -- is a
+/// fork as before.
+fn someone_elses_signature(bundle: &Path) -> Result<Option<String>> {
     let opened = krate_bundle::open(bundle)?;
-    Ok(opened.signature_verdict()?.map(|verdict| match verdict {
-        krate_bundle::signing::Verdict::Valid { public_key } => {
-            format!("key {}", &hex_of(&public_key)[..12])
+    let mine = (!maker_key::signing_off())
+        .then(maker_key::public)
+        .flatten();
+    Ok(opened
+        .signature_verdict()?
+        .and_then(|verdict| match verdict {
+            krate_bundle::signing::Verdict::Valid { public_key } => {
+                let hex = hex_of(&public_key);
+                (mine.as_deref() != Some(hex.as_str())).then(|| format!("key {}", &hex[..12]))
+            }
+            other => Some(format!("a signature that does not verify ({other})")),
+        }))
+}
+
+/// Removes `copy` when it is byte-for-byte the file at `original`, which is
+/// what a kept signed original is when the change it was kept for never
+/// replaced anything (K-1289). After a change that landed -- or a file
+/// something else rewrote meanwhile -- they differ and the copy stays.
+struct DropIfIdentical {
+    copy: Option<PathBuf>,
+    original: PathBuf,
+}
+
+impl Drop for DropIfIdentical {
+    fn drop(&mut self) {
+        let Some(copy) = &self.copy else {
+            return;
+        };
+        if let (Ok(a), Ok(b)) = (fs::read(copy), fs::read(&self.original)) {
+            if a == b {
+                let _ = fs::remove_file(copy);
+            }
         }
-        other => format!("a signature that does not verify ({other})"),
-    }))
+    }
 }
 
 /// Keep a signed original beside the file a revision is about to replace
@@ -5708,10 +5739,16 @@ fn revise_cli(
     // fork, and the person is told so rather than left holding an unsigned
     // file where a signed one used to be (K-311). When the result replaces
     // the input, the signed original is kept beside it first.
-    let signer = signer_of(bundle)?;
+    let signer = someone_elses_signature(bundle)?;
     let kept = match &signer {
         Some(_) if out == bundle => Some(keep_signed_original(bundle)?),
         _ => None,
+    };
+    // A change that did not land leaves the original where it was, so its
+    // copy would be a second identical file (K-1289).
+    let _tidy = DropIfIdentical {
+        copy: kept.clone(),
+        original: bundle.to_path_buf(),
     };
     // The result says what it was changed from (IC-397, test 494).
     let derived_from = derived_from_of(bundle);
@@ -32018,7 +32055,7 @@ mod revise_transaction_tests {
         let dir = tempfile::tempdir().expect("dir");
         let bundle = tiny_bundle(dir.path(), false);
         assert_eq!(
-            signer_of(&bundle).expect("open"),
+            someone_elses_signature(&bundle).expect("open"),
             None,
             "an unsigned app has no signer to name"
         );
@@ -32028,7 +32065,7 @@ mod revise_transaction_tests {
         krate_bundle::sign_bundle(&bundle, &key, "dev.krate.txn", "0.1.0", 1_700_000_000)
             .expect("sign");
         let signed_bytes = fs::read(&bundle).expect("read");
-        let signer = signer_of(&bundle)
+        let signer = someone_elses_signature(&bundle)
             .expect("open")
             .expect("a signed app names its signer");
         assert!(
