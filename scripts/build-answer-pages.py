@@ -888,7 +888,7 @@ CLAUDE_PROMPT = ("Using the Krate connector, make me a simple habit tracker app 
                  "and my laptop, and give me the link.")
 ADD_CONNECTOR = f"""<ol>
 <li>On claude.ai, go to <a href="https://claude.ai/customize/connectors">Customize &gt; Connectors</a>, choose <strong>Add</strong>, then <strong>Add custom connector</strong>.</li>
-<li>Name it Krate and enter this server URL, then keep the settings Claude marks Detected and click <strong>Add</strong>:</li>
+<li>Name it Krate and enter this server URL, then choose <strong>Sign in when needed</strong> and click <strong>Add</strong>:</li>
 </ol>
 <pre class="answer-cmd">{CONNECTOR_URL}</pre>
 <p>Claude then asks you to sign in to Krate, with GitHub, Google or an email link, and to allow it to build apps you ask for and publish them to your account. <a href="{CLAUDE_GUIDE}#add-the-connector">The full steps</a>.</p>"""

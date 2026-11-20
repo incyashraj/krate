@@ -925,7 +925,7 @@ Yes. Add the Krate connector to Claude, ask for the app in plain words, and Clau
 
 - On claude.ai, go to Customize > Connectors (https://claude.ai/customize/connectors), choose Add, then Add custom connector.
 
-- Name it Krate and enter this server URL, then keep the settings Claude marks Detected and click Add:
+- Name it Krate and enter this server URL, then choose Sign in when needed and click Add:
 
 https://hub.krate.tech/mcp
 
@@ -973,7 +973,7 @@ Have Claude build it with the Krate connector, then send the link Claude gives y
 
 - On claude.ai, go to Customize > Connectors (https://claude.ai/customize/connectors), choose Add, then Add custom connector.
 
-- Name it Krate and enter this server URL, then keep the settings Claude marks Detected and click Add:
+- Name it Krate and enter this server URL, then choose Sign in when needed and click Add:
 
 https://hub.krate.tech/mcp
 
