@@ -226,6 +226,18 @@ Reaching the operating system through `std` instead of through Krate pulls
 `wasi:*` imports in, and the app is rejected at the import check. Everything
 below is in service of writing an app that passes that check.
 
+## The first-build failures, before you write a line
+
+Start `src/lib.rs` with `use krate::prelude::*;`. A Krate app is `no_std`,
+and in `no_std` the float methods -- `x.floor()`, `round`, `ceil`, `sqrt`,
+`sin`, `cos`, `atan2`, `powf`, `rem_euclid` -- do not exist on `f32` or
+`f64`. The prelude brings them back with `std`'s meanings (it holds
+`krate::math::F32Ext` and `F64Ext`). Without it the build fails with
+\"no method named `floor` found for type `f32`\" -- the first app built
+from this file through Claude's connector failed exactly so. Never hand-write a
+floor by casting to an integer: that rounds toward zero, wrong for every
+negative number.
+
 ## Before you doubt: these are all real
 
 Past builds concluded, mid-run, that Krate \"cannot\" do things it does --

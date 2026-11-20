@@ -24670,7 +24670,74 @@ fn build_fix(detail: &str) -> String {
                 the `krate` dependency in Cargo.toml."
             .to_string();
     }
+    // `std`'s float maths called in a no_std guest: `x.floor()` on an f32.
+    // The SDK has every one of them behind one import, so the fix is a line,
+    // not a rewrite -- and without saying so an author hand-writes a floor
+    // by casting, which rounds negatives the wrong way. The first app Claude
+    // built through the hub's connector failed exactly here (2026-11-20).
+    if let Some(method) = missing_float_method(detail) {
+        return format!(
+            "`{method}` is a `std` float method, and a Krate app is `no_std`. Do not \
+             write your own: add `use krate::prelude::*;` at the top of src/lib.rs (it \
+             brings `krate::math::F32Ext` and `F64Ext`, which give `f32` and `f64` \
+             `{method}` and the rest of `std`'s maths with the same meanings), then \
+             build again. A file other than src/lib.rs that calls it needs the same \
+             line."
+        );
+    }
     generic.to_string()
+}
+
+/// The float method rustc says is missing, when it is one the SDK's maths
+/// traits provide: "no method named `floor` found for type `f32`".
+fn missing_float_method(detail: &str) -> Option<&str> {
+    const PROVIDED: &[&str] = &[
+        "floor",
+        "ceil",
+        "round",
+        "trunc",
+        "abs",
+        "sqrt",
+        "cbrt",
+        "exp",
+        "exp2",
+        "ln",
+        "log2",
+        "log10",
+        "sin",
+        "cos",
+        "tan",
+        "asin",
+        "acos",
+        "atan",
+        "sinh",
+        "cosh",
+        "tanh",
+        "powf",
+        "atan2",
+        "hypot",
+        "copysign",
+        "fract",
+        "powi",
+        "sin_cos",
+        "rem_euclid",
+        "mul_add",
+    ];
+    for line in detail.lines() {
+        let Some(rest) = line.split("no method named `").nth(1) else {
+            continue;
+        };
+        let Some((method, after)) = rest.split_once('`') else {
+            continue;
+        };
+        let on_float = after.contains("for type `f32`")
+            || after.contains("for type `f64`")
+            || after.contains("for type `{float}`");
+        if on_float && PROVIDED.contains(&method) {
+            return Some(method);
+        }
+    }
+    None
 }
 
 /// Turn a set of non-krate imports into a specific, actionable fix.
@@ -31983,6 +32050,39 @@ mod check_app_tests {
         assert!(
             fix.contains("features = [\"std\"]"),
             "a std guest needs the std feature, not the no_std treatment:\n{fix}"
+        );
+
+        // std's float maths in a no_std guest: the exact words rustc gave
+        // the first app Claude built through the connector. The fix names
+        // the one import, not "fix the compiler errors".
+        let floor =
+            "error[E0599]: no method named `floor` found for type `f32` in the current scope\n\
+                     --> src/lib.rs:356:51\n";
+        let fix = build_fix(floor);
+        assert!(
+            fix.contains("use krate::prelude::*;") && fix.contains("`floor`"),
+            "a missing float method names the import that provides it:\n{fix}"
+        );
+        assert!(
+            build_fix("error[E0599]: no method named `sqrt` found for type `{float}` in the current scope")
+                .contains("use krate::prelude::*;"),
+            "an untyped float literal is the same case"
+        );
+        // A missing method the SDK does NOT provide keeps the general advice:
+        // the import would not help, and saying it would send the author round.
+        let fix = build_fix(
+            "error[E0599]: no method named `to_bits_le` found for type `f32` in the current scope",
+        );
+        assert!(
+            fix.contains("Fix the compiler errors above"),
+            "only methods the maths traits provide get the import advice:\n{fix}"
+        );
+        let fix = build_fix(
+            "error[E0599]: no method named `floor` found for struct `Grid` in the current scope",
+        );
+        assert!(
+            fix.contains("Fix the compiler errors above"),
+            "a floor on the app's own type is not the float case:\n{fix}"
         );
 
         // An ordinary compile error keeps the general advice.
