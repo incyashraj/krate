@@ -124,8 +124,6 @@ import { mcpRoute, mcpCors, mcpPreflight } from "./mcp.js";
 // ... and its sign-in and builds (IC-989 phase 2).
 import { oauthRoute, bearerOf, connectorsRoute } from "./mcp-oauth.js";
 import { fetchGuide, buildAllowance, noteBuild, compile as compileOnBuilder, jobStatus, jobFile, readRecord, writeRecord } from "./mcp-build.js";
-// ... and the same builds for a chat with no Krate tool: paste its answer.
-import { pasteBuildRoute } from "./paste-build.js";
 export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
@@ -314,9 +312,6 @@ const RATE_LIMITS = {
   // Its OAuth doors (IC-989 phase 2): registering, approving and trading a
   // code or refresh token. A client signs in once and refreshes hourly.
   oauth: 30,
-  // The paste page's build door (paste-build.js): a person pressing Build.
-  // The account's own 10 an hour is the real limit; this bounds the reads.
-  build: 20,
 };
 
 /// Who is asking, as far as the edge can tell.
@@ -685,16 +680,6 @@ export default {
           if (over) return mcpCors(over);
         }
         return await mcpRoute(request, mcpDeps(env));
-      }
-      // The same builds for any AI chat with no Krate tool: the person
-      // pastes the chat's answer at /build (paste-build.js).
-      if (pathname === "/build" || pathname.startsWith("/build/")) {
-        const res = await pasteBuildRoute(request, url, {
-          ...mcpDeps(env),
-          whoIs: (r) => connectorIdentity(r, env),
-          rateLimited: (r) => rateLimited(r, env, "build"),
-        });
-        if (res) return res;
       }
       // Its sign-in (IC-989 phase 2): OAuth metadata, registration, the
       // consent page, codes and tokens (mcp-oauth.js).
@@ -4110,8 +4095,7 @@ function signInStart(from, nonce, appNonce) {
   const player = /^player:(?:[0-9a-f]{64}|org\/[a-z][a-z0-9-]{1,38}\/[a-z0-9][a-z0-9._-]{0,127})$/.test(from || "") ? from : null;
   // `oauth`: a connector's consent page on this hub (IC-989), which takes
   // the session only with its own nonce, as /login/done does.
-  // `build`: the paste page on this hub (paste-build.js), the same way.
-  const fixed = from === "app" || from === "oauth" || from === "build" ? from : null;
+  const fixed = from === "app" || from === "oauth" ? from : null;
   return { from: fixed || player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
 }
 
@@ -4159,13 +4143,6 @@ function deliver(start, user, token) {
     return new Response(null, {
       status: 302,
       headers: { location: `/oauth/authorize/done#${hand.toString()}`, "cache-control": "no-store" },
-    });
-  }
-  // The paste page (paste-build.js): a fixed path on this hub.
-  if (start.from === "build") {
-    return new Response(null, {
-      status: 302,
-      headers: { location: `/build#${hand.toString()}`, "cache-control": "no-store" },
     });
   }
   const suffix = start.from === "app" ? "?app=1" : "";
