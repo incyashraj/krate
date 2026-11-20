@@ -146,6 +146,26 @@ fn embed_sdk() {
         let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         files.push((format!("crates/bindings-rust/{rel}"), bytes));
     }
+    // Feature modules that live in their own directory (`sheets`, IC-993),
+    // discovered so a new file there cannot be left out of the shipped SDK.
+    // `tests.rs` is test-only: it reads fixtures the SDK does not carry.
+    for module in ["src/sheets"] {
+        let dir = bindings.join(module);
+        println!("cargo:rerun-if-changed={}", dir.display());
+        let mut names: Vec<String> = fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read dir {}: {e}", dir.display()))
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".rs") && name != "tests.rs")
+            .collect();
+        names.sort();
+        for name in names {
+            let path = dir.join(&name);
+            println!("cargo:rerun-if-changed={}", path.display());
+            let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            files.push((format!("crates/bindings-rust/{module}/{name}"), bytes));
+        }
+    }
     let cargo_toml = bindings.join("Cargo.toml");
     println!("cargo:rerun-if-changed={}", cargo_toml.display());
     let root_manifest = repo_root.join("Cargo.toml");

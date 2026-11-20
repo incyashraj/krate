@@ -139,6 +139,13 @@ mod tests {
 
         assert!(paths.contains(&"crates/bindings-rust/Cargo.toml"));
         assert!(paths.contains(&"crates/bindings-rust/src/lib.rs"));
+        // `features = ["sheets"]` needs the module's own directory (IC-993);
+        // its tests read fixtures the SDK does not carry, so they stay out.
+        for file in ["mod.rs", "zip.rs", "xml.rs", "xlsx.rs", "ods.rs", "csv.rs"] {
+            let path = format!("crates/bindings-rust/src/sheets/{file}");
+            assert!(paths.contains(&path.as_str()), "{path} is not shipped");
+        }
+        assert!(!paths.contains(&"crates/bindings-rust/src/sheets/tests.rs"));
     }
 
     #[test]

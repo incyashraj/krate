@@ -2162,6 +2162,9 @@ pub mod usb {
 /// spooler; Windows prints PNG pages and raw label language, not PDF). In a
 /// browser tab and on a phone every call answers `PrintError::Unavailable`
 /// with words saying so.
+#[cfg(any(feature = "sheets", test))]
+pub mod sheets;
+
 pub mod print {
     use crate::bindings::krate::print::printers as host;
     pub use crate::bindings::krate::print::printers::{

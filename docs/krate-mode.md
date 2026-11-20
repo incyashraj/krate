@@ -581,6 +581,66 @@ These are not paths. Get the value first -- `io::stdio::stdout()`,
 - `<OutputStream>.write_line(value: &str) -> Result<(), IoError>`
 - `<OutputStream>.write_text(value: &str) -> Result<(), IoError>`
 
+## Spreadsheets: `krate::sheets` (Excel, LibreOffice, CSV)
+
+An app reads the workbook a person opens and writes the one they save. Turn on the `sheets` feature of the `krate` dependency -- `features = ["gui", "sheets"]` (a CLI app: `features = ["sheets"]`). It runs inside the app, `no_std`, with no capability of its own: the bytes come from `ui.dialog:file-open` (or a drop) and go back through `ui.dialog:file-save`, the same in a browser tab as on a desktop.
+
+- `sheets::read(&bytes) -> Result<Workbook, SheetError>` -- an `.xlsx`/`.xlsm` (Excel's own, or one another program exported), an `.ods` (LibreOffice) or a `.csv`, recognised from the bytes. An old binary `.xls` is `Err(SheetError::OldExcel)`; show `e.message()`, which tells the person to save it as `.xlsx`.
+- `Workbook { sheets: Vec<Sheet> }`, `book.sheet("Orders")` (ignores case).
+- `Sheet { name: String, rows: Vec<Vec<Cell>> }`: `sheet.get(row, col) -> &Cell` (from 0; `Cell::Empty` past the end -- never index `rows[r][c]`), `sheet.height()`, `sheet.width()`, `sheet.set(row, col, cell)`, `sheet.push_row(vec![..])`, `Sheet::new("name")`, `Sheet::column_name(27)` -> `"AB"`.
+- `Cell::{Empty, Text(String), Number(f64), Bool(bool), Date(DateTime), Error(String)}`. A formula comes through as the value it last calculated; dates are recognised from the cell's format. `cell.to_text()` is what the cell shows (`0.1 + 0.2` shows `0.3`, dates `2024-03-15`), `cell.as_number()` reads a number or numeric text, `cell.as_str()`, `cell.is_empty()`. Build cells with `Cell::from("text")`, `Cell::from(12.5)`, `Cell::from(3)`, `Cell::from(true)`.
+- `DateTime { year, month, day, hour, minute, second }`: `DateTime::date(2024, 3, 15).at(9, 30, 0)`, `.to_text()`, `.to_iso()`, `DateTime::parse_iso(s)`, `.day_number()` (the same count as `krate::locale::today()`, so "overdue" is `d.day_number() < krate::locale::today()`), `DateTime::from_serial(45366.0)` / `.to_serial()` for Excel's date numbers.
+- `sheets::write_xlsx(&workbook) -> Vec<u8>` -- a standard `.xlsx` workbook, every type kept, dates as dates, sheet names made acceptable to Excel. `sheets::write_csv(&sheet) -> String` and `sheets::read_csv(&text) -> Sheet` (cells from CSV are text; `as_number()` reads them).
+
+Formatting, merged-cell layout, charts and the formulas themselves are not read or written; values are. A value hidden under a merged range is dropped, as the sheet shows it.
+
+Open a workbook, show it as a table, export a summary:
+
+```rust
+use alloc::vec;
+use krate::gfx::{canvas2d, types as gfx};
+use krate::sheets::{self, Cell, Sheet, Workbook};
+use krate::ui::dialog;
+
+// Open: the person's pick is the permission (`ui.dialog:file-open`).
+fn open_workbook(win: u64) -> Result<Option<Workbook>, &'static str> {
+    let Ok(Some(chosen)) = dialog::open_file(win, "Open a workbook", "xlsx,xlsm,ods,csv") else {
+        return Ok(None); // they cancelled
+    };
+    let bytes = krate::fs::read_chosen(&chosen.token).map_err(|_| "That file could not be read.")?;
+    sheets::read(&bytes).map(Some).map_err(|e| e.message())
+}
+
+// Show: a grid of `to_text()`, a page at a time.
+fn draw_table(canvas: u64, sheet: &Sheet, first_row: usize, ink: gfx::Color) {
+    for r in first_row..sheet.height().min(first_row + 30) {
+        let y = 28.0 + (r - first_row) as f32 * 22.0;
+        for c in 0..sheet.width().min(8) {
+            let text = sheet.get(r, c).to_text();
+            let at = gfx::Point { x: 16.0 + c as f32 * 120.0, y };
+            let _ = canvas2d::draw_text(canvas, &text, at, 14.0, ink);
+        }
+    }
+}
+
+// Export: a new sheet, saved where the person says (`ui.dialog:file-save`).
+fn export_totals(win: u64, sheet: &Sheet) {
+    let mut out = Sheet::new("Totals");
+    out.push_row(vec![Cell::from("Item"), Cell::from("Total")]);
+    for row in sheet.rows.iter().skip(1) {
+        let name = row.first().map(Cell::to_text).unwrap_or_default();
+        let total: f64 = row.iter().skip(1).filter_map(Cell::as_number).sum();
+        out.push_row(vec![Cell::from(name), Cell::from(total)]);
+    }
+    let bytes = sheets::write_xlsx(&Workbook { sheets: vec![out] });
+    if let Ok(Some(chosen)) = dialog::save_file(win, "Save the totals", "totals.xlsx", "xlsx") {
+        let _ = krate::fs::write_chosen(&chosen.token, &bytes);
+    }
+}
+```
+
+`apps/krate-sheets-probe` reads an Excel file and a LibreOffice file, writes both back, and checks every value. An app that turns a team's workbook into an app keeps the data in `store.sql` or `store.kv` after the first import, and offers Export so the spreadsheet is never a dead end.
+
 ---
 
 # 2. Capabilities: what a manifest may declare
