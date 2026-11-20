@@ -68,7 +68,7 @@ await writeFile(krateBin, `#!/bin/sh
 echo "$1|uid=$(id -u)|home=$HOME|tmp=$TMPDIR|user=\${USER:-}|secret=\${KRATE_BUILDER_SECRET:-none}|anthropic=\${ANTHROPIC_API_KEY:-none}|openai=\${OPENAI_API_KEY:-none}|fly=\${FLY_API_TOKEN:-none}|cwd=$(pwd)" >> "${calls}"
 case "$1" in
   --version) echo "krate 9.9.9-test"; exit 0 ;;
-  authoring-context) echo "# pack"; exit 0 ;;
+  krate-mode) echo "# Krate Mode"; exit 0 ;;
   plan) echo '{"plan":"a small notes app","needs":[]}'; exit 0 ;;
   port) echo '{"verdict":"portable","source":"x"}'; exit 0 ;;
   judge) echo '{"ok":true,"judgement":{}}'; exit 0 ;;
@@ -201,11 +201,11 @@ test("every door hands its children to the build user, with only the key that do
       { path: "manifest.toml", data: b64(MANIFEST) },
       { path: "src/lib.rs", data: b64("#![no_std]\nextern crate alloc;\n") },
     ],
-  });
+  }, { "x-krate-account": "hub:github:alice" });
   assert.equal(compile.status, 202, b.log());
   const compiled = (await compile.json()).id;
   await until(async () => {
-    const job = await (await fetch(`${b.base}/build/${compiled}`, { headers: { authorization: "Bearer dev" } })).json();
+    const job = await (await fetch(`${b.base}/build/${compiled}`, { headers: { "x-krate-builder": SECRET, "x-krate-account": "hub:github:alice" } })).json();
     return job.state === "done" || job.state === "failed" ? job : null;
   });
 
@@ -219,7 +219,7 @@ test("every door hands its children to the build user, with only the key that do
 
   const seen = await engineCalls();
   const verbs = new Set(seen.map((c) => c.verb));
-  for (const verb of ["plan", "create", "run", "pack", "check-app", "--version", "authoring-context", "port", "judge"]) {
+  for (const verb of ["plan", "create", "run", "pack", "check-app", "--version", "krate-mode", "port", "judge"]) {
     assert.ok(verbs.has(verb), `the engine was never asked to ${verb}: ${[...verbs].join(", ")}\n${b.log()}`);
   }
   for (const c of seen) {

@@ -2,11 +2,24 @@
 // service's guide and compile doors, each account's build limits, and the
 // record of whose build an id is.
 //
-// The hub talks to the builder with the secret the two share
-// (KRATE_BUILDER_SECRET) and names the account a job is for as
-// `hub:<owner principal>`; the builder keeps that job to that account. The
-// compile door runs check-app and pack only -- no model -- so nothing here
-// can spend Krate's AI key.
+// The contract with the builder (cloud/builder/src/server.js):
+//
+//   POST /compile           x-krate-builder: <secret>, x-krate-account: hub:<owner>
+//                           { name, files: [{ path, data: base64 }] }
+//                           -> 202 { id } | 4xx/5xx { error }
+//   GET  /build/<id>        same two headers
+//                           -> { state: building|done|failed, stage, line,
+//                                error, check: check-app's { stage, kind,
+//                                detail, fix } on a failed check, result }
+//   GET  /build/<id>/file   same two headers -> the UNSIGNED .krate; the hub
+//                           signs it as the account (signAsAccount) when it
+//                           publishes it
+//   GET  /guide             x-krate-builder only -> text/markdown
+//
+// The builder keeps a job to the account it was started for, and counts its
+// own per-account limits on that same `hub:<owner>`. The compile door runs
+// check-app and pack only -- no model -- so nothing here can spend Krate's
+// AI key. test/mcp-build-e2e.test.mjs runs this against the real builder.
 
 /** A build an account may start: this many an hour and a day (env overrides). */
 export function buildLimits(env) {
@@ -98,7 +111,18 @@ export async function compile(env, owner, name, files) {
     if (/^[0-9a-f]{32}$/.test(body.id || "")) return { id: body.id };
     return { status: 502, words: "Krate's build service gave no build id." };
   }
-  return { status: res.status, words: (await res.text().catch(() => "")).slice(0, 500) || `the build service answered ${res.status}` };
+  // The builder refuses in JSON { error } -- words written for the model
+  // (a path it does not take, a crate it does not allow) -- and a plain
+  // text body from anything in front of it.
+  const said = await res.text().catch(() => "");
+  let words = said;
+  try {
+    const parsed = JSON.parse(said);
+    if (parsed && typeof parsed.error === "string") words = parsed.error;
+  } catch (_) {
+    /* plain text */
+  }
+  return { status: res.status, words: words.slice(0, 500) || `the build service answered ${res.status}` };
 }
 
 /** The builder's record of one job: its JSON, or { status } when it has none. */

@@ -3,14 +3,18 @@
  * The hub's connector sends source a chat model wrote; the builder checks
  * and packs it with `krate check-app` and `krate pack` and NO model of
  * ours. Drives the REAL server with a fake hub and a fake `krate`, like
- * port.test.mjs. Pinned here:
- *   - accepted source becomes a job that ends done, signed by the hub as
- *     the account, with the SDK placeholder resolved before the build;
+ * port.test.mjs. The hub asks with its secret and vouches for the account
+ * (`x-krate-account: hub:<owner>`); no person's session is involved.
+ * Pinned here:
+ *   - accepted source becomes a job that ends done with the UNSIGNED file
+ *     (the hub signs it when it publishes), the SDK placeholder resolved
+ *     before the build, and the job kept to the vouched account;
  *   - a check-app failure comes back as check-app's own stage, words and fix;
  *   - traversal, links, build scripts, too many or too big files, no
  *     manifest, a git dependency or an include of /proc are refused before
  *     anything is written or spawned;
- *   - no hub secret, no compile; per-account limits per hour and per day,
+ *   - no hub secret or no vouched account, no compile; per-account limits
+ *     (on the vouched account) per hour and per day,
  *     one at a time, and a wall clock;
  *   - nothing on this path ever runs a model, sees a key, or touches the
  *     AI allowance (no case, no plan count, no key, no spend).
@@ -25,7 +29,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as probeServer } from "node:net";
-import { CARGO_TEMPLATE } from "../src/compile.js";
+import { CARGO_TEMPLATE, cargoTemplateFor, cargoTomlProblem, connectorGuide, resolveSdkPlaceholders } from "../src/compile.js";
 
 const freePort = () => new Promise((resolve, reject) => {
   const probe = probeServer();
@@ -73,10 +77,12 @@ await writeFile(krateBin, `#!/bin/sh
 echo "$* | key=\${ANTHROPIC_API_KEY:+set} secret=\${KRATE_BUILDER_SECRET:+set}" >> "${calls}"
 case "$1" in
   --version) echo "krate 9.9.9-test"; exit 0 ;;
-  authoring-context)
-    echo "# The Krate authoring pack (fake)"
-    echo "files in the folder: $(ls -A "$2" | wc -l | tr -d ' ')"
-    echo 'krate = { path = "<sdk>/crates/bindings-rust", features = ["gui"] }'
+  krate-mode)
+    echo "# Krate Mode (fake)"
+    echo 'krate = { path = "PREFIX/crates/bindings-rust", features = ["gui"] }'
+    echo "---"
+    echo "# The handoff: you cannot build this, and you must say so"
+    echo "Tell the person to run krate check-app."
     exit 0 ;;
   check-app)
     dir="$2"
@@ -119,7 +125,7 @@ const stateDir = await mkdtemp(join(tmpdir(), "krate-compile-state-"));
 // dave has used his day already, written before the server started: the
 // ledger lives on the volume, so a wake does not forget it.
 const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-await writeFile(join(stateDir, "compiles.json"), JSON.stringify({ accounts: { dave: [twoHoursAgo, twoHoursAgo + 1, twoHoursAgo + 2, twoHoursAgo + 3] } }));
+await writeFile(join(stateDir, "compiles.json"), JSON.stringify({ accounts: { "hub:github:dave": [twoHoursAgo, twoHoursAgo + 1, twoHoursAgo + 2, twoHoursAgo + 3] } }));
 
 const server = spawn("node", ["cloud/builder/src/server.js"], {
   env: {
@@ -172,20 +178,21 @@ const app = (lib = "#![no_std]\nextern crate alloc;\n", extra = []) => [
   { path: "src/lib.rs", data: b64(lib) },
   ...extra,
 ];
-const compile = (body, { token = "alice-token", secret = SECRET } = {}) => fetch(`${BUILDER}/compile`, {
+// The hub's own headers: its secret, and the account it vouches for.
+const asHub = (who = "alice", secret = SECRET) => ({
+  ...(secret ? { "x-krate-builder": secret } : {}),
+  ...(who ? { "x-krate-account": `hub:github:${who}` } : {}),
+});
+const compile = (body, { who = "alice", secret = SECRET } = {}) => fetch(`${BUILDER}/compile`, {
   method: "POST",
-  headers: {
-    "content-type": "application/json",
-    authorization: `Bearer ${token}`,
-    ...(secret ? { "x-krate-builder": secret } : {}),
-  },
+  headers: { "content-type": "application/json", ...asHub(who, secret) },
   body: JSON.stringify(body),
 });
-const status = (id, token = "alice-token") => fetch(`${BUILDER}/build/${id}`, { headers: { authorization: `Bearer ${token}` } }).then((r) => r.json());
-async function settled(id, token) {
+const status = (id, who = "alice") => fetch(`${BUILDER}/build/${id}`, { headers: asHub(who) }).then((r) => r.json());
+async function settled(id, who) {
   let job;
   for (let i = 0; i < 150; i += 1) {
-    job = await status(id, token);
+    job = await status(id, who);
     if (job.state !== "building") return job;
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -200,12 +207,28 @@ async function compileDirs() {
   return (await readdir(scratch)).filter((n) => n.startsWith("krate-compile-"));
 }
 
-test("no hub secret, no compile; a wrong one or no account is refused too", async () => {
-  for (const [opts, code] of [[{ secret: null }, 403], [{ secret: "guess" }, 403], [{ token: "nobody" }, 401]]) {
+test("no hub secret, no compile; a wrong one or no vouched account is refused too", async () => {
+  for (const [opts, code] of [[{ secret: null }, 403], [{ secret: "guess" }, 403], [{ who: null }, 400]]) {
     const res = await compile({ name: "x", files: app() }, opts);
     assert.equal(res.status, code, JSON.stringify(opts));
     assert.ok((await res.json()).error, "refusals carry { error }");
   }
+  // An account that is not in the hub's namespace is no account.
+  for (const named of ["alice", "github:alice", "hub:", "hub:github:", "hub:github:a b"]) {
+    const res = await fetch(`${BUILDER}/compile`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-krate-builder": SECRET, "x-krate-account": named },
+      body: JSON.stringify({ name: "x", files: app() }),
+    });
+    assert.equal(res.status, 400, named);
+  }
+  // A person's own session is not the hub: no secret, no compile.
+  const session = await fetch(`${BUILDER}/compile`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer alice-token" },
+    body: JSON.stringify({ name: "x", files: app() }),
+  });
+  assert.equal(session.status, 403);
   const guide = await fetch(`${BUILDER}/guide`, { headers: { authorization: "Bearer alice-token" } });
   assert.equal(guide.status, 403, "the guide is the hub's too");
 });
@@ -266,7 +289,7 @@ test("bad uploads are refused before anything is written or spawned", async () =
   assert.deepEqual(await engineCalls(), [], "the engine was never run for a refusal");
 });
 
-test("accepted source is checked, packed and signed as the account, with the SDK resolved", async () => {
+test("accepted source is checked and packed, unsigned for the hub to sign, with the SDK resolved", async () => {
   const res = await compile({ name: "Tide clock", files: app(undefined, [{ path: "assets/icon.png", data: b64("png") }, { path: "src/tides.rs", data: b64("pub fn f(){}") }]) });
   const body = await res.json();
   assert.equal(res.status, 202, JSON.stringify(body));
@@ -280,11 +303,18 @@ test("accepted source is checked, packed and signed as the account, with the SDK
   assert.equal(job.check.dir, undefined, "the box's own folder is not sent back");
   assert.equal(job.result.download, `/build/${body.id}/file`);
 
-  const file = await fetch(`${BUILDER}${job.result.download}`, { headers: { authorization: "Bearer alice-token" } });
+  const file = await fetch(`${BUILDER}${job.result.download}`, { headers: asHub("alice") });
   assert.equal(file.status, 200);
-  assert.equal(Buffer.from(await file.arrayBuffer()).toString(), "PK-fake-bundle|SIGNED-AS-alice", "signed by the hub as the person");
-  // Somebody else cannot see or take it.
-  assert.equal((await fetch(`${BUILDER}/build/${body.id}/file`, { headers: { authorization: "Bearer bob-token" } })).status, 404);
+  assert.equal(Buffer.from(await file.arrayBuffer()).toString(), "PK-fake-bundle", "unsigned: the hub signs it as the account it vouched for");
+  assert.ok(!hubHits.includes("/sign/web-build"), "the builder asked nobody to sign it");
+  // Somebody else cannot see or take it -- another vouched account, the
+  // hub's secret with no account, or alice's own Studio session (a
+  // different namespace from the account the hub vouched for).
+  assert.equal((await fetch(`${BUILDER}/build/${body.id}/file`, { headers: asHub("bob") })).status, 404);
+  assert.equal((await fetch(`${BUILDER}/build/${body.id}`, { headers: asHub("bob") })).status, 404);
+  assert.equal((await fetch(`${BUILDER}/build/${body.id}`, { headers: asHub(null) })).status, 401);
+  assert.equal((await fetch(`${BUILDER}/build/${body.id}/file`, { headers: { authorization: "Bearer alice-token" } })).status, 404);
+  assert.equal((await fetch(`${BUILDER}/build/${body.id}/stop`, { method: "POST", headers: asHub("bob") })).status, 404);
 
   const cargo = await readFile(join(seen, "Cargo.toml"), "utf8");
   assert.doesNotMatch(cargo, /\{KRATE_SDK\}/, "the placeholder was resolved before the build");
@@ -292,19 +322,20 @@ test("accepted source is checked, packed and signed as the account, with the SDK
   const files = await readFile(join(seen, "files.txt"), "utf8");
   for (const f of ["./Cargo.toml", "./manifest.toml", "./src/lib.rs", "./src/tides.rs", "./assets/icon.png"]) assert.match(files, new RegExp(f.replace(/\./g, "\\.")));
   assert.match(await readFile(join(seen, "packed-from.txt"), "utf8"), /target\/wasm32-wasip1\/release\/your_app\.wasm/, "packed from the component check-app built");
-  // A compiled app's change goes back through the person's own AI.
+  // A compiled app's change goes back through the person's own AI: the
+  // revise door (a session's, which runs our model) never reaches it.
   const revise = await fetch(`${BUILDER}/build/${body.id}/revise`, {
     method: "POST", headers: { "content-type": "application/json", authorization: "Bearer alice-token" }, body: JSON.stringify({ change: "make it blue" }),
   });
-  assert.equal(revise.status, 409);
+  assert.equal(revise.status, 404);
   for (let i = 0; i < 50 && (await compileDirs()).length; i += 1) await new Promise((r) => setTimeout(r, 50));
   assert.deepEqual(await compileDirs(), [], "the job folder is gone once the bundle is kept");
 });
 
 test("a check-app failure answers with its own stage, words and fix", async () => {
-  const res = await compile({ name: "Broken", files: app("fn f() { x }\n// FAIL_BUILD\n") }, { token: "bob-token" });
+  const res = await compile({ name: "Broken", files: app("fn f() { x }\n// FAIL_BUILD\n") }, { who: "bob" });
   assert.equal(res.status, 202);
-  const job = await settled((await res.json()).id, "bob-token");
+  const job = await settled((await res.json()).id, "bob");
   assert.equal(job.state, "failed");
   assert.equal(job.check.ok, false);
   assert.equal(job.check.stage, "build");
@@ -317,47 +348,69 @@ test("a check-app failure answers with its own stage, words and fix", async () =
 
 test("limits: one at a time, so many an hour and a day, and a wall clock", async () => {
   // One at a time, and a compile past the clock is stopped and said so.
-  const slow = await compile({ files: app("// SLOW\n") }, { token: "carol-token" });
+  const slow = await compile({ files: app("// SLOW\n") }, { who: "carol" });
   assert.equal(slow.status, 202);
-  const second = await compile({ files: app() }, { token: "carol-token" });
+  const second = await compile({ files: app() }, { who: "carol" });
   assert.equal(second.status, 429, "a second compile while one runs");
   assert.match((await second.json()).error, /already being built/);
-  const timedOut = await settled((await slow.json()).id, "carol-token");
+  const timedOut = await settled((await slow.json()).id, "carol");
   assert.equal(timedOut.state, "failed");
   assert.match(timedOut.error, /took longer than/);
   // carol has used one; two more fit the hour of three, the fourth does not.
   for (let i = 0; i < 2; i += 1) {
-    const ok = await compile({ files: app() }, { token: "carol-token" });
+    const ok = await compile({ files: app() }, { who: "carol" });
     assert.equal(ok.status, 202);
-    assert.equal((await settled((await ok.json()).id, "carol-token")).state, "done");
+    assert.equal((await settled((await ok.json()).id, "carol")).state, "done");
   }
-  const over = await compile({ files: app() }, { token: "carol-token" });
+  const over = await compile({ files: app() }, { who: "carol" });
   assert.equal(over.status, 429);
   assert.match((await over.json()).error, /3 builds in an hour/);
   // dave's four from two hours ago were read back from the volume.
-  const daily = await compile({ files: app() }, { token: "dave-token" });
+  const daily = await compile({ files: app() }, { who: "dave" });
   assert.equal(daily.status, 429);
   assert.match((await daily.json()).error, /4 builds today/);
   // A refused upload never used one up: alice is still under her hour.
   const saved = JSON.parse(await readFile(join(stateDir, "compiles.json"), "utf8"));
-  assert.equal(saved.accounts.alice.length, 1, "only the accepted compile was counted");
-  assert.equal(saved.accounts.carol.length, 3);
+  assert.equal(saved.accounts["hub:github:alice"].length, 1, "only the accepted compile was counted, on the vouched account");
+  assert.equal(saved.accounts["hub:github:carol"].length, 3);
 });
 
-test("the guide is the engine's authoring pack for a fresh folder, then how to send source, made once", async () => {
-  const get = () => fetch(`${BUILDER}/guide`, { headers: { authorization: "Bearer alice-token", "x-krate-builder": SECRET } });
+test("the guide is the engine's Krate Mode without its handoff, then how to send source, made once", async () => {
+  // The hub's secret is all it takes: the same text for everyone.
+  const get = () => fetch(`${BUILDER}/guide`, { headers: { "x-krate-builder": SECRET } });
   const first = await get();
   assert.equal(first.status, 200);
   assert.match(first.headers.get("content-type"), /text\/markdown/);
   const text = await first.text();
-  assert.match(text, /^# The Krate authoring pack \(fake\)/);
-  assert.match(text, /files in the folder: 0/, "a fresh, empty folder");
+  assert.match(text, /^# Krate Mode \(fake\)/);
+  assert.doesNotMatch(text, /you cannot build this|Tell the person to run/, "Krate Mode's handoff is cut: this door builds");
   assert.match(text, /# Sending the app to Krate to build/);
   assert.match(text, /\{KRATE_SDK\}\/crates\/bindings-rust/);
   assert.match(text, /wit-bindgen-rt, libm/);
   assert.equal(await (await get()).text(), text);
-  const packs = (await engineCalls()).filter((c) => c.startsWith("authoring-context"));
-  assert.equal(packs.length, 1, "computed once per engine version");
+  const modes = (await engineCalls()).filter((c) => c.startsWith("krate-mode"));
+  assert.equal(modes.length, 1, "computed once per engine version");
+});
+
+test("the guide's template keeps only the WIT packages the SDK has; PREFIX is the SDK too", () => {
+  const all = CARGO_TEMPLATE.match(/^"krate:[a-z0-9-]+"/gm).map((l) => l.slice(7, -1));
+  assert.ok(all.includes("serial") && all.includes("ui"), all.join(","));
+  const older = cargoTemplateFor(all.filter((n) => n !== "serial"));
+  assert.doesNotMatch(older, /krate:serial/, "an engine without serial gets no serial line");
+  assert.match(older, /"krate:ui" = /);
+  assert.equal(cargoTemplateFor(null), CARGO_TEMPLATE, "an unreadable SDK drops nothing");
+  const guide = connectorGuide("# Mode\nbody\n\n---\n\n# The handoff: you cannot build this\nrun it yourself\n", { present: ["ui"] });
+  assert.match(guide, /^# Mode\nbody\n\n---\n\n# Sending the app/);
+  assert.doesNotMatch(guide, /krate:gfx/);
+  // Krate Mode writes PREFIX/...; it is accepted and resolved only as the
+  // start of a path.
+  const cargo = CARGO_TEMPLATE.replaceAll("{KRATE_SDK}", "PREFIX").replace('name = "your-app"', 'name = "your-app"\ndescription = "PREFIX stays"');
+  assert.equal(cargoTomlProblem(cargo), null);
+  const resolved = resolveSdkPlaceholders(cargo, "/sdk/1");
+  assert.match(resolved, /path = "\/sdk\/1\/crates\/bindings-rust"/);
+  assert.match(resolved, /"PREFIX stays"/);
+  assert.doesNotMatch(resolved, /"PREFIX\//);
+  assert.match(cargoTomlProblem(cargo.replace("PREFIX/crates", "PREFIXX/crates")), /only path/);
 });
 
 test("nothing on this path runs a model, sees a key, or touches the AI allowance", async () => {
@@ -366,7 +419,7 @@ test("nothing on this path runs a model, sees a key, or touches the AI allowance
   for (const call of all) {
     const [args, env] = call.split(" | ");
     const sub = args.split(" ")[0];
-    assert.ok(["--version", "authoring-context", "check-app", "pack"].includes(sub), `unexpected engine command: ${args}`);
+    assert.ok(["--version", "krate-mode", "check-app", "pack"].includes(sub), `unexpected engine command: ${args}`);
     assert.doesNotMatch(args, /--agent|--author-cmd/, args);
     assert.equal(env, "key= secret=", `a child saw a secret: ${call}`);
   }

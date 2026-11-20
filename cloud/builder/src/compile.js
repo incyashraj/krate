@@ -131,8 +131,10 @@ export function checkCompileSource(files, { crates = DEFAULT_COMPILE_CRATES } = 
 
 /* The SDK placeholders a Cargo.toml may use. `{KRATE_SDK}` is what a
  * bundle carries in place of a machine's SDK path; `<sdk>` is how the
- * authoring guide writes it. Both mean "Krate's SDK on the build machine". */
-export const SDK_PLACEHOLDERS = ["{KRATE_SDK}", "<sdk>"];
+ * authoring pack writes it and `PREFIX` how Krate Mode's templates do (the
+ * guide this door hands out). All mean "Krate's SDK on the build machine",
+ * and only as the start of a path: `PREFIX/crates/bindings-rust`. */
+export const SDK_PLACEHOLDERS = ["{KRATE_SDK}", "<sdk>", "PREFIX"];
 
 /* A line with its comment removed (a `#` outside a string). */
 function stripComment(line) {
@@ -282,11 +284,15 @@ export function sourceReadProblem(files) {
   return null;
 }
 
-/* Point every SDK placeholder at this machine's SDK. */
+/* Point every SDK placeholder at this machine's SDK. A bare word
+ * (`PREFIX`) only where it starts a path, so the word elsewhere stays. */
 export function resolveSdkPlaceholders(text, root) {
   const at = String(root).replace(/\\/g, "/").replace(/\/+$/, "");
   let out = String(text);
-  for (const p of SDK_PLACEHOLDERS) out = out.split(p).join(at);
+  for (const p of SDK_PLACEHOLDERS) {
+    if (/^[A-Z]+$/.test(p)) out = out.replace(new RegExp(`(["'])${p}(?=/|\\1)`, "g"), `$1${at}`);
+    else out = out.split(p).join(at);
+  }
   return out;
 }
 
@@ -457,6 +463,7 @@ world = "gui"
 "krate:store" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/store" }
 "krate:random" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/random" }
 "krate:process" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/process" }
+"krate:serial" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/serial" }
 "krate:ui" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/gpu" }
@@ -471,29 +478,62 @@ codegen-units = 1
 opt-level = "s"
 `;
 
-/* What the guide adds after the engine's authoring pack: how to hand the
- * source over. The pack is written for an agent working inside a starter
- * folder; a chat model starts from nothing, so it gets the starter's
- * Cargo.toml and the rules of this door. */
-export const guideAppendix = (crates = DEFAULT_COMPILE_CRATES) => `
+/* The template with only the WIT packages this machine's SDK has. The
+ * guide's template follows the newest starter (test/compile.test.mjs holds
+ * them together), and the engine on the builder can be a release behind:
+ * a dependency on a WIT folder its SDK lacks fails every build. `present`
+ * is the SDK's wit/krate/phase4/deps listing, or null when it could not be
+ * read -- then nothing is dropped. */
+export function cargoTemplateFor(present) {
+  if (!present) return CARGO_TEMPLATE;
+  const have = new Set(present);
+  return CARGO_TEMPLATE.split("\n").filter((line) => {
+    const m = /^"krate:([a-z0-9-]+)" = \{ path = "\{KRATE_SDK\}\/wit\/krate\/phase4\/deps\/([a-z0-9-]+)" \}$/.exec(line);
+    return !m || have.has(m[2]);
+  }).join("\n");
+}
+
+/* The guide a chat model reads before it writes an app for this door.
+ *
+ * The engine's Krate Mode text (`krate krate-mode`): the whole API, the
+ * permission catalog, the no_std rules and two worked examples, written for
+ * a chat model with no compiler -- about 110 KB, against 195 KB for the
+ * authoring pack (`krate authoring-context`), which is written for an agent
+ * working in a starter folder and repeats what a tool result does not need.
+ * Krate Mode ends with "The handoff: you cannot build this"; this door CAN
+ * build, so that part is cut and replaced by how to send the files. */
+export function connectorGuide(mode, { crates = DEFAULT_COMPILE_CRATES, present = null } = {}) {
+  let text = String(mode || "");
+  const handoff = /^# The handoff\b.*$/m.exec(text);
+  if (handoff) text = text.slice(0, handoff.index);
+  text = text.trimEnd().replace(/\n-{3,}\s*$/, "").trimEnd();
+  return text + guideAppendix(crates, cargoTemplateFor(present));
+}
+
+/* What the guide adds after Krate Mode: how to hand the source over. A
+ * chat model starts from nothing, so it gets the starter's Cargo.toml and
+ * the rules of this door. */
+export const guideAppendix = (crates = DEFAULT_COMPILE_CRATES, template = CARGO_TEMPLATE) => `
 
 ---
 
 # Sending the app to Krate to build
 
-You write the source; Krate builds it with no AI of its own. Send these
-files:
+This part replaces any advice above to hand the files to the person to
+build: you can build. Send the files to Krate's build tool and it compiles,
+checks and packs them with no AI of its own; the answer is either the app
+or check-app's own words about what to fix. Send these files:
 
 - \`Cargo.toml\` -- start from the one below. Change only \`name\` (and the
   \`krate:<name>\` package to match). The only other crates this build
-  takes are ${crates.join(", ")}, by crates.io version. Where this guide
-  says \`<sdk>\`, write \`{KRATE_SDK}\`: the build machine puts its own
-  SDK there.
+  takes are ${crates.join(", ")}, by crates.io version. Where a template
+  above says \`PREFIX\`, write \`{KRATE_SDK}\`: the build machine puts
+  its own SDK there.
 - \`manifest.toml\` -- \`[app]\` with \`id\`, \`name\`, \`version\`,
   \`entry = "target/wasm32-wasip1/release/<name with _ for ->.wasm"\` and
-  \`world = "krate:app/gui@0.2.0"\`, then one \`[[capabilities]]\` per
-  permission the app uses (section 2 lists them). A window needs
-  \`ui.window:create\`.
+  \`world = "krate:app/gui@0.2.0"\` (a CLI app: \`krate:app/cli@0.1.0\`),
+  then one \`[[capabilities]]\` per permission the app uses (section 2
+  lists them). A window needs \`ui.window:create\`.
 - \`src/lib.rs\` and any other files under \`src/\`.
 - \`assets/...\` if the app ships images, fonts or sounds.
 
@@ -503,11 +543,11 @@ build script, \`[build-dependencies]\`, \`[patch]\`, git or path dependencies
 \`include_str!\`/\`include_bytes!\`/\`#[path]\` naming anything but one plain
 relative path inside the app.
 
-The build runs \`krate check-app\` -- build, import check, a headless run,
-usability -- and packs the app only when every stage passes. When it fails,
-the answer names the stage, what went wrong and the fix: correct the code
-and send it again.
+The build runs \`krate check-app\` -- build, import check, a headless run
+with the bare argument \`quick\`, usability -- and packs the app only when
+every stage passes. When it fails, the answer names the stage, what went
+wrong and the fix: correct the code and send every file again.
 
 \`\`\`toml
-${CARGO_TEMPLATE}\`\`\`
+${template}\`\`\`
 `;

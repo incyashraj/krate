@@ -624,7 +624,9 @@ async function buildStatus(args, deps) {
       true,
     );
   }
-  if (job.state === "working") {
+  // "building" is the builder's word for a compile in progress; "working"
+  // is a build's, kept so an older builder still reads as in progress.
+  if (job.state === "building" || job.state === "working") {
     return answer2(
       { build_id: id, status: "building", name: rec.name, stage: String(job.stage || "") },
       `Still building "${rec.name}"${job.line ? `: ${job.line}` : ""}. Call build_status again in about 30 seconds.`,

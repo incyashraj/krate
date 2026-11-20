@@ -42,7 +42,7 @@ globalThis.fetch = async (input, init = {}) => {
     if (path === "/compile") {
       const body = JSON.parse(init.body);
       const id = randomBytes(16).toString("hex");
-      builder.jobs.set(id, { account, state: "working", body, check: null });
+      builder.jobs.set(id, { account, state: "building", body, check: null });
       return reply({ id }, 202);
     }
     const m = /^\/build\/([0-9a-f]{32})(\/file)?$/.exec(path);

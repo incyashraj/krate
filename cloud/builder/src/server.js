@@ -35,7 +35,7 @@ import {
   checkCompileSource,
   crateFileName,
   ensureSdk,
-  guideAppendix,
+  connectorGuide,
   lastJsonObject,
   manifestFacts,
   resolveSdkPlaceholders,
@@ -300,6 +300,18 @@ function fromHub(req) {
   if (!expected || !offered) return false;
   const digest = (s) => createHash("sha256").update(s).digest();
   return timingSafeEqual(digest(expected), digest(offered));
+}
+
+/** The account the hub vouches for on this request (IC-989): the builder
+ * secret, and `x-krate-account: hub:<owner principal>` -- `hub:github:alice`,
+ * `hub:account:<id>`. Null without both. The `hub:` prefix is a namespace no
+ * session's account (a login, an address) can be, so a connector's job and
+ * a person's own Studio job can never be mistaken for each other. */
+const HUB_ACCOUNT = /^hub:[a-z]+:[A-Za-z0-9@._+-]{1,200}$/;
+function hubAccount(req) {
+  if (!fromHub(req)) return null;
+  const named = String(req.headers["x-krate-account"] || "");
+  return HUB_ACCOUNT.test(named) ? named : null;
 }
 let stateWritable = false;
 
@@ -1114,7 +1126,7 @@ async function compileSettle(job, fields) {
   return cleanup(job, { keepFile: job.state === "done" });
 }
 
-async function startCompile({ token, account, name, files }) {
+async function startCompile({ account, name, files }) {
   const id = randomBytes(16).toString("hex");
   const dir = await sandbox.scratch("krate-compile-");
   const job = {
@@ -1137,14 +1149,14 @@ async function startCompile({ token, account, name, files }) {
   activeByAccount.set(account, id);
   await persistJob(job);
   await audit({ action: "compile", account, job: id, files: files.length });
-  runCompile(job, { token, name, files }).catch((err) => {
+  runCompile(job, { name, files }).catch((err) => {
     console.error(`[compile] ${id}: ${err && err.message}`);
     return compileSettle(job, { state: "failed", error: "Something broke on our side while building this. Try again." });
   });
   return job;
 }
 
-async function runCompile(job, { token, name, files }) {
+async function runCompile(job, { name, files }) {
   const deadline = job.started + COMPILE_TIMEOUT_MS;
   const app = join(job.dir, "app");
   // Every path was checked before the job existed (checkCompileSource);
@@ -1216,10 +1228,9 @@ async function runCompile(job, { token, name, files }) {
     });
   }
 
-  // Signed as the person's account by the hub, exactly as a web build is
-  // (IC-983): this box holds no signing key.
-  const signed = await signedAsTheAccount(token, await readFile(job.output));
-  if (signed) await writeFile(job.output, signed);
+  // Unsigned: the hub signs it as the account it vouched for, when it
+  // publishes it (signAsAccount, IC-983). This box holds no signing key and,
+  // on this path, no person's session to ask for one with.
   const bytes = await readFile(job.output);
   const facts = manifestFacts(await readFile(join(app, "manifest.toml"), "utf8").catch(() => ""));
   return compileSettle(job, {
@@ -1233,17 +1244,17 @@ async function runCompile(job, { token, name, files }) {
       shot: null,
       verdict: null,
       verdict_detail: null,
-      signed: Boolean(signed),
+      signed: false,
       bytes,
     },
   });
 }
 
 /* The guide the connector hands a chat model before it writes an app: the
- * engine's own authoring pack (`krate authoring-context`, the API, the
- * permission catalog, the no_std rules, a worked example) for a fresh app
- * folder, then how to hand the source to /compile. Computed once per
- * engine version and kept on the volume: it is the same text for everyone. */
+ * engine's own Krate Mode text (`krate krate-mode`: the API, the permission
+ * catalog, the no_std rules, worked examples), then how to hand the source
+ * to /compile (compile.js, connectorGuide). Computed once per engine
+ * version and kept on the volume: it is the same text for everyone. */
 const guides = new Map(); // engine version -> Promise<text|null>
 
 function engineOutput(args, timeoutMs = 60_000) {
@@ -1263,28 +1274,29 @@ async function authoringGuide() {
   if (!version) return null;
   if (!guides.has(version)) {
     guides.set(version, (async () => {
-      const file = join(STATE_DIR, "guides", `${createHash("sha256").update(version).digest("hex").slice(0, 32)}.md`);
+      // The text's source is in the key: a guide kept from another source
+      // (the authoring pack, before) is never served as this one.
+      const file = join(STATE_DIR, "guides", `${createHash("sha256").update(`krate-mode\n${version}`).digest("hex").slice(0, 32)}.md`);
       const kept = await readFile(file, "utf8").catch(() => null);
       if (kept) return kept;
-      const fresh = await sandbox.scratch("krate-guide-");
-      try {
-        const pack = await engineOutput(["authoring-context", fresh]);
-        if (!pack || !pack.trim()) return null;
-        if (stateWritable) {
-          await mkdir(dirname(file), { recursive: true }).catch(() => {});
-          await writeFile(file, pack).catch(() => {});
-        }
-        return pack;
-      } finally {
-        await rm(fresh, { recursive: true, force: true }).catch(() => {});
+      const mode = await engineOutput(["krate-mode"]);
+      if (!mode || !mode.trim()) return null;
+      if (stateWritable) {
+        await mkdir(dirname(file), { recursive: true }).catch(() => {});
+        await writeFile(file, mode).catch(() => {});
       }
+      return mode;
     })().then((text) => {
       if (!text) guides.delete(version); // not cached: try again next time
       return text;
     }));
   }
-  const pack = await guides.get(version);
-  return pack ? pack.trimEnd() + guideAppendix(COMPILE_CRATES) : null;
+  const mode = await guides.get(version);
+  if (!mode) return null;
+  // The template names only the WIT packages this engine's SDK carries.
+  const sdk = await sdkRoot();
+  const present = sdk ? await readdir(join(sdk, "wit", "krate", "phase4", "deps")).catch(() => null) : null;
+  return connectorGuide(mode, { crates: COMPILE_CRATES, present });
 }
 
 /* `krate plan <request>`: the engine's own pre-build answer, as JSON text.
@@ -1874,15 +1886,15 @@ const server = createServer(async (req, res) => {
 
     // Compile source somebody else wrote (IC-989 phase 2): the hub's
     // connector sends what a chat model wrote; this checks and packs it
-    // with no model at all. Both credentials, as /keys/use and the signing
-    // door take them: the builder secret says the hub is asking, the
-    // person's session says whose app -- and is what the hub signs with.
-    // Every refusal is JSON { error }, so the connector can hand the words
-    // straight back to the model.
+    // with no model at all. The hub asks with its secret and vouches for
+    // the account (`x-krate-account: hub:<owner>`): the person signed in to
+    // the hub, not here, and the hub signs the finished file as them when it
+    // publishes it. Every refusal is JSON { error }, so the connector can
+    // hand the words straight back to the model.
     if (req.method === "POST" && url.pathname === "/compile") {
       if (!fromHub(req)) return json(res, 403, { error: "Only Krate's hub may ask for a compile." });
-      const account = await resolveAccount(token);
-      if (!account) return json(res, 401, { error: "Sign in first." });
+      const account = hubAccount(req);
+      if (!account) return json(res, 400, { error: "The hub names the account a compile is for (x-krate-account: hub:<owner>)." });
       let body;
       try {
         body = await readBody(req);
@@ -1913,7 +1925,7 @@ const server = createServer(async (req, res) => {
       let job;
       try {
         job = await startCompile({
-          token, account,
+          account,
           name: String(body.name || "").trim().replace(/[\u0000-\u001f]+/g, " ").slice(0, 80),
           files: checked.files,
         });
@@ -1926,10 +1938,9 @@ const server = createServer(async (req, res) => {
     }
 
     // The words a chat model reads before it writes an app for /compile.
+    // The same text for everyone, so the hub's secret is all it takes.
     if (req.method === "GET" && url.pathname === "/guide") {
       if (!fromHub(req)) return json(res, 403, { error: "Only Krate's hub may ask for the guide." });
-      const account = await resolveAccount(token);
-      if (!account) return json(res, 401, { error: "Sign in first." });
       const text = await authoringGuide();
       if (!text) return json(res, 502, { error: "The guide could not be made just now. Try again in a minute." });
       res.setHeader("content-type", "text/markdown; charset=utf-8");
@@ -2138,8 +2149,10 @@ const server = createServer(async (req, res) => {
       // only secret, and anyone holding it could read the status, download
       // the finished app, or kill the build. Now the token is resolved to an
       // account and compared -- and a job that is not yours looks exactly
-      // like a job that does not exist, so a probe learns nothing.
-      const account = await resolveAccount(token);
+      // like a job that does not exist, so a probe learns nothing. The hub
+      // asks for a connector's job with its secret and the account it
+      // vouches for (IC-989); everyone else with their own sign-in.
+      const account = hubAccount(req) || (await resolveAccount(token));
       if (!account) return send(res, 401, "Sign in first.");
       const job = jobs.get(id);
       if (!job || job.account !== account) {
@@ -2219,7 +2232,7 @@ const server = createServer(async (req, res) => {
 
       // Owned, like every other operation: stopping somebody else's build
       // is denying them the thing they are paying attention to.
-      const account = await resolveAccount(token);
+      const account = hubAccount(req) || (await resolveAccount(token));
       if (!account) return send(res, 401, "Sign in first.");
       const job = jobs.get(id);
       if (!job || job.account !== account) {

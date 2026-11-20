@@ -100,18 +100,27 @@ GET  /guide                          -> text/markdown
 ```
 
 `/compile` and `/guide` are the hub's (IC-989 phase 2, "Claude writes,
-Krate builds"): both need the builder secret in `x-krate-builder` and the
-person's session as the bearer. `/compile` takes source a chat model wrote
--- `data` is base64; Cargo.toml, Cargo.lock, manifest.toml, krate-check.toml,
+Krate builds"). Both need the builder secret in `x-krate-builder`.
+`/compile`, and reading its job, also need `x-krate-account: hub:<owner>`
+-- `hub:github:alice`, `hub:account:<id>` -- the account the hub vouches
+for; there is no person's session on this path, and the per-account limits
+count on that account. `/compile` takes source a chat model wrote -- `data`
+is base64; Cargo.toml, Cargo.lock, manifest.toml, krate-check.toml,
 `src/**`, `assets/**` and nothing else -- runs `krate check-app --json` and
 `krate pack`, and never a model. It answers at once with a job id; the job
-reads through `GET /build/<id>` as `state: "building" | "done" | "failed"`,
-with `check` (check-app's own verdict: `stage`, `detail`, `fix`) so the
-model can correct its code, and the bundle -- signed as the account by
-the hub, as a web build is -- comes from `/build/<id>/file`. Write the SDK
-in Cargo.toml as `{KRATE_SDK}`; the builder puts its own path there. The
-guide is `krate authoring-context` for a fresh folder plus how to send
-the source, made once per engine version.
+reads through `GET /build/<id>` (same two headers) as
+`state: "building" | "done" | "failed"`, with `check` (check-app's own
+verdict: `stage`, `kind`, `detail`, `fix`) so the model can correct its
+code. `/build/<id>/file` is the UNSIGNED bundle: the hub signs it as the
+account (`signAsAccount`), judges it and publishes it unlisted. Write the
+SDK in Cargo.toml as `{KRATE_SDK}` (or Krate Mode's `PREFIX`); the builder
+puts its own path there. The guide is `krate krate-mode` (about 110 KB: the
+API, the permission catalog, the no_std rules, worked examples -- the
+authoring pack is 195 KB and written for an agent in a starter folder) with
+its "you cannot build this" handoff cut, then how to send the source and a
+Cargo.toml naming only the WIT packages this engine's SDK has. Made once
+per engine version. `cloud/worker/test/mcp-build-e2e.test.mjs` runs the
+hub's tools against this server.
 
 ## What a build can reach (K-1293)
 
