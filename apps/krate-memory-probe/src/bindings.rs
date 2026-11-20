@@ -6262,6 +6262,975 @@ pub mod krate {
             }
         }
     }
+    pub mod print {
+        /// Printing to a printer the person picks (IC-986): documents and labels,
+        /// without a dialog every time -- a shipping label after every packed box,
+        /// a job traveller with every work order.
+        ///
+        /// The app never lists the computer's printers and never names one. It
+        /// asks to `pick`; Krate shows the person the system's list of printers,
+        /// and the one they choose is the app's. That pick is remembered for this
+        /// app, so the next run's `remembered` answers the same printer and nothing
+        /// is asked. The person takes it back with
+        /// `krate permissions --forget <app id>`; the next print then asks again.
+        /// A pick is remembered only for an app whose publisher Krate can check
+        /// again next time (a signed app, or this computer's own); any other app's
+        /// pick lasts for the run.
+        ///
+        /// Behind `device.printer`, which the manifest declares (with a rationale)
+        /// and the person allows. Without it every call answers `not-allowed` with
+        /// words that name the capability, and no list is shown.
+        ///
+        /// A job is a PDF, one PNG page, or raw printer language (ZPL, EPL,
+        /// ESC/POS) sent to a label or receipt printer unchanged. A job is at most
+        /// 16 MiB, and at most 100 copies.
+        ///
+        /// A computer only: macOS and Linux print through CUPS, Windows through
+        /// its print spooler. In a browser tab and on a phone every call answers
+        /// `unavailable` with words that say so.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod printers {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// A printer the person picked. Numbers are never reused within a run
+            /// and mean nothing to another run.
+            pub type PrinterHandle = u64;
+            /// A printer the person picked, now or on an earlier run.
+            #[derive(Clone)]
+            pub struct Printer {
+                /// The handle the app uses for this printer from now on.
+                pub handle: PrinterHandle,
+                /// The printer's name as the computer shows it, to show the person:
+                /// "Zebra ZD421", "Office LaserJet".
+                pub name: _rt::String,
+            }
+            impl ::core::fmt::Debug for Printer {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Printer")
+                        .field("handle", &self.handle)
+                        .field("name", &self.name)
+                        .finish()
+                }
+            }
+            /// What a document's bytes are.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum DocumentFormat {
+                /// A PDF file, any number of pages.
+                Pdf,
+                /// One page as a PNG picture, scaled to fit the paper.
+                Png,
+            }
+            impl ::core::fmt::Debug for DocumentFormat {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        DocumentFormat::Pdf => {
+                            f.debug_tuple("DocumentFormat::Pdf").finish()
+                        }
+                        DocumentFormat::Png => {
+                            f.debug_tuple("DocumentFormat::Png").finish()
+                        }
+                    }
+                }
+            }
+            impl DocumentFormat {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> DocumentFormat {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => DocumentFormat::Pdf,
+                        1 => DocumentFormat::Png,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            /// A paper or label size in millimetres.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct PaperMm {
+                /// Across, from 10 to 1000 millimetres.
+                pub width: u32,
+                /// Down, from 10 to 1000 millimetres.
+                pub height: u32,
+            }
+            impl ::core::fmt::Debug for PaperMm {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("PaperMm")
+                        .field("width", &self.width)
+                        .field("height", &self.height)
+                        .finish()
+                }
+            }
+            /// The paper to print on.
+            #[derive(Clone, Copy)]
+            pub enum PaperSize {
+                /// Whatever the printer is set up with.
+                PrinterDefault,
+                /// A4, 210 by 297 millimetres.
+                A4,
+                /// A5, 148 by 210 millimetres.
+                A5,
+                /// A6, 105 by 148 millimetres.
+                A6,
+                /// US Letter, 8.5 by 11 inches.
+                Letter,
+                /// US Legal, 8.5 by 14 inches.
+                Legal,
+                /// Any other size, such as a 100 by 150 millimetre label.
+                Custom(PaperMm),
+            }
+            impl ::core::fmt::Debug for PaperSize {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        PaperSize::PrinterDefault => {
+                            f.debug_tuple("PaperSize::PrinterDefault").finish()
+                        }
+                        PaperSize::A4 => f.debug_tuple("PaperSize::A4").finish(),
+                        PaperSize::A5 => f.debug_tuple("PaperSize::A5").finish(),
+                        PaperSize::A6 => f.debug_tuple("PaperSize::A6").finish(),
+                        PaperSize::Letter => f.debug_tuple("PaperSize::Letter").finish(),
+                        PaperSize::Legal => f.debug_tuple("PaperSize::Legal").finish(),
+                        PaperSize::Custom(e) => {
+                            f.debug_tuple("PaperSize::Custom").field(e).finish()
+                        }
+                    }
+                }
+            }
+            /// A document to print.
+            #[derive(Clone)]
+            pub struct Document {
+                /// What `bytes` are: they must start the way that format starts.
+                pub format: DocumentFormat,
+                /// The document, at most 16 MiB.
+                pub bytes: _rt::Vec<u8>,
+                /// How many copies, from 1 to 100.
+                pub copies: u32,
+                /// The paper to print on.
+                pub paper: PaperSize,
+                /// The job's name in the printer's queue, at most 200 characters:
+                /// "Traveller WO-1042". Empty names it after the app.
+                pub title: _rt::String,
+            }
+            impl ::core::fmt::Debug for Document {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Document")
+                        .field("format", &self.format)
+                        .field("bytes", &self.bytes)
+                        .field("copies", &self.copies)
+                        .field("paper", &self.paper)
+                        .field("title", &self.title)
+                        .finish()
+                }
+            }
+            /// What became of a job the app sent.
+            #[derive(Clone)]
+            pub enum PrintOutcome {
+                /// The computer took the job into the printer's queue. The words are
+                /// the job as the computer names it ("Zebra_ZD421-42"), to show or log.
+                Queued(_rt::String),
+                /// The computer would not take the job, with its own words: the
+                /// printer is paused, out of paper, or refused the format.
+                Failed(_rt::String),
+                /// The printer is no longer set up on this computer: removed, renamed,
+                /// or its driver uninstalled. Offer to pick again. The words say which
+                /// printer.
+                Gone(_rt::String),
+            }
+            impl ::core::fmt::Debug for PrintOutcome {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        PrintOutcome::Queued(e) => {
+                            f.debug_tuple("PrintOutcome::Queued").field(e).finish()
+                        }
+                        PrintOutcome::Failed(e) => {
+                            f.debug_tuple("PrintOutcome::Failed").field(e).finish()
+                        }
+                        PrintOutcome::Gone(e) => {
+                            f.debug_tuple("PrintOutcome::Gone").field(e).finish()
+                        }
+                    }
+                }
+            }
+            /// Why a call was refused before any job was sent.
+            #[derive(Clone)]
+            pub enum PrintError {
+                /// The app did not declare `device.printer`, the person did not allow
+                /// it, or the organisation that manages the computer does not allow
+                /// printing. The words say which and name the capability.
+                NotAllowed(_rt::String),
+                /// No printer is set up on this computer, or this place cannot print:
+                /// a browser tab, a phone.
+                Unavailable(_rt::String),
+                /// No printer has this handle in this run: never picked, or the app
+                /// made it up.
+                UnknownHandle,
+                /// A job Krate does not accept, with words: empty, larger than 16 MiB,
+                /// copies out of range, a paper size out of range, or bytes that are
+                /// not the format they claim.
+                BadJob(_rt::String),
+            }
+            impl ::core::fmt::Debug for PrintError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        PrintError::NotAllowed(e) => {
+                            f.debug_tuple("PrintError::NotAllowed").field(e).finish()
+                        }
+                        PrintError::Unavailable(e) => {
+                            f.debug_tuple("PrintError::Unavailable").field(e).finish()
+                        }
+                        PrintError::UnknownHandle => {
+                            f.debug_tuple("PrintError::UnknownHandle").finish()
+                        }
+                        PrintError::BadJob(e) => {
+                            f.debug_tuple("PrintError::BadJob").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for PrintError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+            impl std::error::Error for PrintError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// The printer the person picked for this app before, if it is still
+            /// set up on this computer. Never asks anyone: none when nothing was
+            /// picked, the pick was forgotten, or the printer is gone.
+            pub fn remembered() -> Result<Option<Printer>, PrintError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 24 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 24
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:print/printers@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "remembered"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result19 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = i32::from(*ptr0.add(8).cast::<u8>());
+                                match l3 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l4 = *ptr0.add(16).cast::<i64>();
+                                            let l5 = *ptr0.add(24).cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            Printer {
+                                                handle: l4 as u64,
+                                                name: _rt::string_lift(bytes7),
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(*ptr0.add(8).cast::<u8>());
+                                let v18 = match l8 {
+                                    0 => {
+                                        let e18 = {
+                                            let l9 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        PrintError::NotAllowed(e18)
+                                    }
+                                    1 => {
+                                        let e18 = {
+                                            let l12 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        PrintError::Unavailable(e18)
+                                    }
+                                    2 => PrintError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e18 = {
+                                            let l15 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        PrintError::BadJob(e18)
+                                    }
+                                };
+                                v18
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result19
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask the person to choose a printer. `title` is a short line for the
+            /// list ("Choose the label printer"), at most 200 characters.
+            ///
+            /// Some(printer) when they chose one, which is remembered for this app
+            /// in place of any earlier pick. None when they cancelled or no person
+            /// is there to choose (a run with no window and no display); an earlier
+            /// pick is then kept.
+            pub fn pick(title: &str) -> Result<Option<Printer>, PrintError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 24 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 24
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:print/printers@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "pick"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result20 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(*ptr1.add(8).cast::<u8>());
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1.add(16).cast::<i64>();
+                                            let l6 = *ptr1.add(24).cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            Printer {
+                                                handle: l5 as u64,
+                                                name: _rt::string_lift(bytes8),
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(*ptr1.add(8).cast::<u8>());
+                                let v19 = match l9 {
+                                    0 => {
+                                        let e19 = {
+                                            let l10 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        PrintError::NotAllowed(e19)
+                                    }
+                                    1 => {
+                                        let e19 = {
+                                            let l13 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        PrintError::Unavailable(e19)
+                                    }
+                                    2 => PrintError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e19 = {
+                                            let l16 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        PrintError::BadJob(e19)
+                                    }
+                                };
+                                v19
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result20
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Print a document on a printer the person picked.
+            pub fn print_document(
+                printer: PrinterHandle,
+                document: &Document,
+            ) -> Result<PrintOutcome, PrintError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let Document {
+                        format: format0,
+                        bytes: bytes0,
+                        copies: copies0,
+                        paper: paper0,
+                        title: title0,
+                    } = document;
+                    let vec1 = bytes0;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let (result3_0, result3_1, result3_2) = match paper0 {
+                        PaperSize::PrinterDefault => (0i32, 0i32, 0i32),
+                        PaperSize::A4 => (1i32, 0i32, 0i32),
+                        PaperSize::A5 => (2i32, 0i32, 0i32),
+                        PaperSize::A6 => (3i32, 0i32, 0i32),
+                        PaperSize::Letter => (4i32, 0i32, 0i32),
+                        PaperSize::Legal => (5i32, 0i32, 0i32),
+                        PaperSize::Custom(e) => {
+                            let PaperMm { width: width2, height: height2 } = e;
+                            (6i32, _rt::as_i32(width2), _rt::as_i32(height2))
+                        }
+                    };
+                    let vec4 = title0;
+                    let ptr4 = vec4.as_ptr().cast::<u8>();
+                    let len4 = vec4.len();
+                    let ptr5 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:print/printers@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "print-document"]
+                        fn wit_import6(
+                            _: i64,
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import6(
+                        _: i64,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import6(
+                            _rt::as_i64(printer),
+                            format0.clone() as i32,
+                            ptr1.cast_mut(),
+                            len1,
+                            _rt::as_i32(copies0),
+                            result3_0,
+                            result3_1,
+                            result3_2,
+                            ptr4.cast_mut(),
+                            len4,
+                            ptr5,
+                        )
+                    };
+                    let l7 = i32::from(*ptr5.add(0).cast::<u8>());
+                    let result30 = match l7 {
+                        0 => {
+                            let e = {
+                                let l8 = i32::from(
+                                    *ptr5.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v18 = match l8 {
+                                    0 => {
+                                        let e18 = {
+                                            let l9 = *ptr5
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr5
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        PrintOutcome::Queued(e18)
+                                    }
+                                    1 => {
+                                        let e18 = {
+                                            let l12 = *ptr5
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr5
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        PrintOutcome::Failed(e18)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 2, "invalid enum discriminant");
+                                        let e18 = {
+                                            let l15 = *ptr5
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr5
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        PrintOutcome::Gone(e18)
+                                    }
+                                };
+                                v18
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l19 = i32::from(
+                                    *ptr5.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v29 = match l19 {
+                                    0 => {
+                                        let e29 = {
+                                            let l20 = *ptr5
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr5
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        PrintError::NotAllowed(e29)
+                                    }
+                                    1 => {
+                                        let e29 = {
+                                            let l23 = *ptr5
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr5
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        PrintError::Unavailable(e29)
+                                    }
+                                    2 => PrintError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e29 = {
+                                            let l26 = *ptr5
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr5
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 = _rt::Vec::from_raw_parts(
+                                                l26.cast(),
+                                                len28,
+                                                len28,
+                                            );
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        PrintError::BadJob(e29)
+                                    }
+                                };
+                                v29
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result30
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Send raw printer language -- ZPL, EPL, ESC/POS -- to a printer the
+            /// person picked, byte for byte, with no conversion: what a label or
+            /// receipt printer reads. `bytes` is at most 16 MiB; `copies` from 1 to
+            /// 100 sends it that many times; `title` names the job as for a
+            /// document.
+            pub fn print_raw(
+                printer: PrinterHandle,
+                bytes: &[u8],
+                copies: u32,
+                title: &str,
+            ) -> Result<PrintOutcome, PrintError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = bytes;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = title;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:print/printers@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "print-raw"]
+                        fn wit_import3(
+                            _: i64,
+                            _: *mut u8,
+                            _: usize,
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import3(
+                            _rt::as_i64(printer),
+                            ptr0.cast_mut(),
+                            len0,
+                            _rt::as_i32(&copies),
+                            ptr1.cast_mut(),
+                            len1,
+                            ptr2,
+                        )
+                    };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result27 = match l4 {
+                        0 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v15 = match l5 {
+                                    0 => {
+                                        let e15 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        PrintOutcome::Queued(e15)
+                                    }
+                                    1 => {
+                                        let e15 = {
+                                            let l9 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        PrintOutcome::Failed(e15)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 2, "invalid enum discriminant");
+                                        let e15 = {
+                                            let l12 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        PrintOutcome::Gone(e15)
+                                    }
+                                };
+                                v15
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l16 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v26 = match l16 {
+                                    0 => {
+                                        let e26 = {
+                                            let l17 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        PrintError::NotAllowed(e26)
+                                    }
+                                    1 => {
+                                        let e26 = {
+                                            let l20 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        PrintError::Unavailable(e26)
+                                    }
+                                    2 => PrintError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e26 = {
+                                            let l23 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        PrintError::BadJob(e26)
+                                    }
+                                };
+                                v26
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result27
+                }
+            }
+        }
+    }
     pub mod process {
         /// Programs on the computer the app opens on (IC-977): a compiler, a
         /// formatter, a language server, a debugger, and the person's own shell in a
@@ -15188,8 +16157,8 @@ pub(crate) use __export_cli_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 7866] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc0<\x01A\x02\x01AF\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 8429] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf3@\x01A\x02\x01AH\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -15373,9 +16342,22 @@ j\0\x01\x0b\x01@\x02\x04port\x01\x08settings\x09\0\x0f\x04\0\x04open\x01\x10\x01
 ky\x01p}\x01j\x01\x12\x01\x0b\x01@\x03\x04port\x01\x03maxy\x0atimeout-ms\x11\0\x13\
 \x04\0\x04read\x01\x14\x01@\x02\x04port\x01\x05bytes\x12\0\x0f\x04\0\x05write\x01\
 \x15\x01@\x01\x04port\x01\x01\0\x04\0\x05close\x01\x16\x03\0\x18krate:serial/por\
-ts@0.1.0\x05(\x01@\0\0z\x04\0\x03run\x01)\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\
-\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-compone\
-nt\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+ts@0.1.0\x05(\x01B\x1c\x01w\x04\0\x0eprinter-handle\x03\0\0\x01r\x02\x06handle\x01\
+\x04names\x04\0\x07printer\x03\0\x02\x01m\x02\x03pdf\x03png\x04\0\x0fdocument-fo\
+rmat\x03\0\x04\x01r\x02\x05widthy\x06heighty\x04\0\x08paper-mm\x03\0\x06\x01q\x07\
+\x0fprinter-default\0\0\x02a4\0\0\x02a5\0\0\x02a6\0\0\x06letter\0\0\x05legal\0\0\
+\x06custom\x01\x07\0\x04\0\x0apaper-size\x03\0\x08\x01p}\x01r\x05\x06format\x05\x05\
+bytes\x0a\x06copiesy\x05paper\x09\x05titles\x04\0\x08document\x03\0\x0b\x01q\x03\
+\x06queued\x01s\0\x06failed\x01s\0\x04gone\x01s\0\x04\0\x0dprint-outcome\x03\0\x0d\
+\x01q\x04\x0bnot-allowed\x01s\0\x0bunavailable\x01s\0\x0eunknown-handle\0\0\x07b\
+ad-job\x01s\0\x04\0\x0bprint-error\x03\0\x0f\x01k\x03\x01j\x01\x11\x01\x10\x01@\0\
+\0\x12\x04\0\x0aremembered\x01\x13\x01@\x01\x05titles\0\x12\x04\0\x04pick\x01\x14\
+\x01j\x01\x0e\x01\x10\x01@\x02\x07printer\x01\x08document\x0c\0\x15\x04\0\x0epri\
+nt-document\x01\x16\x01@\x04\x07printer\x01\x05bytes\x0a\x06copiesy\x05titles\0\x15\
+\x04\0\x09print-raw\x01\x17\x03\0\x1akrate:print/printers@0.1.0\x05)\x01@\0\0z\x04\
+\0\x03run\x01*\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
