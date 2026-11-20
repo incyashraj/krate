@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -63,7 +63,7 @@ const settle = (judge) => Promise.all([...judge.inFlight.values()]);
 
 /* ---- a stand-in krate: its answer is whatever the test wrote ----------- */
 const fakeKrate = join(work, "fake-krate");
-await writeFile(fakeKrate, `#!/bin/sh\ncat "${join(work, "answer.json")}"\n`);
+await writeFile(fakeKrate, `#!/bin/sh\necho "$@" >> "${join(work, "args.log")}"\ncat "${join(work, "answer.json")}"\n`);
 await chmod(fakeKrate, 0o755);
 
 {
@@ -94,7 +94,14 @@ await chmod(fakeKrate, 0o755);
   await settle(judge);
   assert.match(hub.verdicts[2].problem, /bytes arrived where/);
 
+  // The file it judged was not at a path the upload's id alone names: a
+  // build user that learns an id cannot open the upload (K-1297).
+  const judged = (await readFile(join(work, "args.log"), "utf8")).trim().split(/\s+/).find((a) => a.includes("job1aaaa"));
+  assert.ok(judged, "the engine was handed the upload");
+  assert.match(judged, /job1aaaa-[0-9a-f]{32}\.bin$/, `an unguessable name: ${judged}`);
+
   // Nothing is left on the box.
+  assert.ok(!existsSync(judged));
   assert.ok(!existsSync(join(work, "j", "job1aaaa.bin")));
   hub.close();
 }

@@ -9,7 +9,7 @@
  * Every call to and from the hub carries the builder secret. The hub asks
  * again for anything still judging, so a failure here only delays.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -106,7 +106,10 @@ export function createJudge({ hub, secret, dir, krate = "krate", tar = "tar", sp
   const inFlight = new Map();
 
   async function work(job) {
-    const file = join(dir, `${job.id}.bin`);
+    // Named by the upload's id AND 128 random bits that never leave this
+    // process: the folder cannot be listed, and the id alone (which a
+    // build user might learn) no longer names a path it can open (K-1297).
+    const file = join(dir, `${job.id}-${randomBytes(16).toString("hex")}.bin`);
     try {
       // In production the judge runs as the build user (K-1293): it may
       // read this file by its exact path, and neither list the folder nor
