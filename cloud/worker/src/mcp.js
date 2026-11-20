@@ -917,15 +917,6 @@ async function answer(message, deps) {
   }
 }
 
-/**
- * One tool, called for a person the hub already knows (the paste page,
- * paste-build.js): the same handlers, limits and words as /mcp. Answers
- * { result } | { error: { code, message } } | { signIn: true }.
- */
-export async function callToolAs(deps, who, name, args) {
-  return answer({ method: "tools/call", params: { name, arguments: args } }, { ...deps, who });
-}
-
 /** A write tool asked for with no sign-in, as a tool result: words, and the challenge in _meta. */
 export function signInResult(base) {
   const words = "Sign in to Krate to build and publish apps.";

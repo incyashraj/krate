@@ -89,6 +89,14 @@ The result is **one `.krate` file that runs unchanged on macOS, Windows, and
 Linux** -- no per-app installer and no per-platform build. The person you send
 it to installs the Krate player once; every app after that is just the file.
 
+**In a chat, Krate builds it for you.** If this chat has Krate's tools
+(`build_app`, `build_status`), write the files and send them to `build_app`;
+the person gets a link that opens the app on any phone or computer. If it does
+not, tell the person the one step that adds them, then build: add the Krate
+connector from your assistant's connector or app directory, or as a custom
+connector with the address `https://hub.krate.tech/mcp`. Do not ask the person
+to copy files anywhere.
+
 ";
 
 const OUTPUT_RULES: &str = "\
