@@ -363,6 +363,20 @@ rather than guessed about.
 
 Not in `v0.5.5-rc9` yet; built, tested and merged:
 
+- **Make an app in your Claude chat.** Add Krate to Claude as a connector
+  (`https://hub.krate.tech/mcp`) and ask for an app in plain words: Claude
+  writes it, Krate builds and checks it, and you get a link that opens on any
+  phone or computer, with nothing to install. If a build fails, Claude gets
+  Krate's own words and fixes it. In Claude Code, the
+  [Krate plugin](https://github.com/incyashraj/krate-claude-plugin) adds the
+  same connector. [How it works](https://krate.tech/docs/pages/make-an-app-with-claude.html).
+- **Apps know the person's local time.** `krate::locale::today()` and
+  `local_now()` give the local date and time as numbers, daylight saving
+  included, on desktop and in a browser tab.
+- **Apps reach the factory floor.** Serial ports (`device.serial`), label and
+  receipt printers the person picks once (`device.printer`, raw ZPL, EPL or
+  ESC/POS), and serving on the computer or the local network
+  (`net.listen:<port>`), each behind the permission wall.
 - **Every app you make is signed as you, from its first file.** One
   publisher key per person per computer, made with no account and no
   question. Your app keeps its data through every rebuild, and no other app
