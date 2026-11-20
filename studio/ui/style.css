@@ -177,7 +177,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 .btn-primary:hover { background: var(--blue-soft); border-color: var(--blue-soft); }
 
 .btn-ghost { border-color: transparent; color: var(--muted); }
-.btn-ghost:hover { color: var(--text); border-color: transparent; background: var(--film); }
+.btn-ghost:hover { color: var(--text); border-color: transparent; background: var(--hover); }
 .btn-big { padding: 12px 28px; font-size: 14.5px; }
 
 .icon-btn {
@@ -189,7 +189,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.icon-btn:hover { color: var(--text); background: var(--film); }
+.icon-btn:hover { color: var(--text); background: var(--hover); }
 
 /* ---- titlebar --------------------------------------------------------- */
 
@@ -235,7 +235,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   border: none; background: transparent; color: var(--muted);
   cursor: default;
 }
-.win-controls button:hover { background: var(--panel-raised); color: var(--text); }
+.win-controls button:hover { background: var(--hover); color: var(--text); }
 #winClose:hover { background: #e81123; color: #fff; }
 .win-controls.hidden { display: none; }
 
@@ -1335,7 +1335,7 @@ body.light ::-webkit-scrollbar-thumb:hover { background: rgba(12, 16, 23, 0.34);
   color: var(--faint); font-family: var(--sans); font-size: 11px;
   padding: 2px 6px; border-radius: 6px;
 }
-.term-copy:hover { color: var(--text); background: var(--film-strong); }
+.term-copy:hover { color: var(--text); background: var(--hover); }
 .term-log {
   flex: 1; margin: 0; padding: 9px 11px 11px; overflow-y: auto;
   font: 11px/1.65 var(--mono); color: #b9bfc9;
@@ -1520,7 +1520,7 @@ body.resizing .divider { background: var(--blue); }
   white-space: nowrap; flex: none;
   transition: color 0.15s, background 0.15s;
 }
-.tool:hover { color: var(--text); background: var(--panel-raised); }
+.tool:hover { color: var(--text); background: var(--hover); }
 .tool svg { flex: none; }
 #openKrateBtn { margin-left: auto; }
 .tool-note {
@@ -1534,7 +1534,7 @@ body.resizing .divider { background: var(--blue); }
   font-size: 13px; cursor: pointer; transition: color 0.15s, background 0.15s;
   -webkit-app-region: no-drag;
 }
-.link-btn:hover { color: var(--text); background: var(--panel-raised); }
+.link-btn:hover { color: var(--text); background: var(--hover); }
 
 /* ---- Krate Cloud ------------------------------------------------------- */
 
@@ -2097,7 +2097,7 @@ body.light .bigbar:focus-within {
   border: 0; padding: 5px 9px; gap: 6px; font-size: 12px;
   border-radius: 9px; margin-left: 2px;
 }
-.bigbar-row .aichip:hover { background: var(--film); color: var(--text); }
+.bigbar-row .aichip:hover { background: var(--hover); color: var(--text); }
 .bigbar-row .aichip .dot { width: 5px; height: 5px; }
 .bigbar-row .aichip .chev { font-size: 11px; }
 
@@ -2712,7 +2712,7 @@ body.light .set-scroll::-webkit-scrollbar-thumb { background: rgba(12, 16, 23, 0
   color: var(--faint); cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.set-close:hover { background: var(--film); color: var(--text); }
+.set-close:hover { background: var(--hover); color: var(--text); }
 
 /* ---- the section list --------------------------------------------------
  * A vertical list now that it has a rail to live in, rather than the
@@ -2726,7 +2726,7 @@ body.light .set-scroll::-webkit-scrollbar-thumb { background: rgba(12, 16, 23, 0
   font: 400 13px var(--sans); text-align: left; cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.set-nav button:hover { background: var(--film); color: var(--text); }
+.set-nav button:hover { background: var(--hover); color: var(--text); }
 .set-nav button.on {
   background: var(--film-strong); color: var(--text);
   box-shadow: inset 0 0 0 1px var(--glass-edge-soft);
@@ -3762,7 +3762,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   margin-left: auto; padding: 2px 8px; border-radius: 6px;
   color: var(--quiet, rgba(255,255,255,0.35)); font-size: 15px; line-height: 1;
 }
-.apps-finish .apps-x:hover { color: var(--text); background: var(--film); }
+.apps-finish .apps-x:hover { color: var(--text); background: var(--hover); }
 
 /* Support threads inside the sheet. */
 #supTickets { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; max-height: 300px; overflow-y: auto; }
@@ -3874,7 +3874,7 @@ body.side-restoring .shelf { transition: none !important; }
   padding: 0 6px; background: none; border: 0; cursor: pointer;
   border-radius: 8px; transition: background 0.15s;
 }
-.side-mark:hover { background: var(--film); }
+.side-mark:hover { background: var(--hover); }
 .side-mark img { width: 22px; height: 22px; opacity: 1; flex: none; }
 .side-mark span {
   font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
@@ -3899,7 +3899,7 @@ body.side-restoring .shelf { transition: none !important; }
    label; the same glyph at full strength reads as a destination, and the
    difference between the two is what makes a list scannable. */
 .side-row svg { flex: none; opacity: 0.72; transition: opacity 0.15s; }
-.side-row:hover { background: var(--film); color: var(--text); }
+.side-row:hover { background: var(--hover); color: var(--text); }
 .side-row:hover svg { opacity: 0.95; }
 
 /* The selected row is a RAISED pane, not a lighter rectangle.
@@ -4023,7 +4023,7 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
   background: none; border: 0; color: var(--faint); cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.side-bell:hover { color: var(--text); background: var(--film); }
+.side-bell:hover { color: var(--text); background: var(--hover); }
 .bell-dot {
   position: absolute; top: 5px; right: 6px;
   width: 6px; height: 6px; border-radius: 50%; background: #ff6b6b;
@@ -4096,7 +4096,7 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
   color: var(--muted); background: none; border: 0;
   transition: background 0.15s, color 0.15s;
 }
-.bigbar-row .tool.plus:hover { background: var(--film-strong); color: var(--text); }
+.bigbar-row .tool.plus:hover { background: var(--hover); color: var(--text); }
 
 /* "Plan": a word, not a button. It is an alternative to sending, and
    dressing it as a control would make the send arrow look like one of two
@@ -4107,7 +4107,7 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
   font-family: var(--sans); font-size: 13.5px; cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.bar-btn:hover { color: var(--text); background: var(--film); }
+.bar-btn:hover { color: var(--text); background: var(--hover); }
 
 .bigbar-row .tool.wave {
   width: 30px; height: 30px; padding: 0; border-radius: 8px;
@@ -4115,7 +4115,7 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
   color: var(--muted); background: none; border: 0;
   transition: background 0.15s, color 0.15s;
 }
-.bigbar-row .tool.wave:hover { background: var(--film-strong); color: var(--text); }
+.bigbar-row .tool.wave:hover { background: var(--hover); color: var(--text); }
 
 /* The send: a filled circle, the one solid thing in the box. */
 /* Quiet until there is something to send, then bright.
@@ -4192,7 +4192,7 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
   color: var(--muted); cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.shelf-grip:hover { color: var(--text); background: var(--film); }
+.shelf-grip:hover { color: var(--text); background: var(--hover); }
 .shelf-grip .chev { transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
 /* Open: the chevron points down, towards the shelf it will fold away. */
 .shelf-grip .chev { transform: rotate(0deg); }
@@ -4948,7 +4948,7 @@ body.side-resizing .shelf { transition: none; }
   cursor: pointer; text-align: left;
   transition: background 0.14s, color 0.14s;
 }
-.sess-row:hover { background: var(--film); color: var(--text); }
+.sess-row:hover { background: var(--hover); color: var(--text); }
 .sess-row.on { background: var(--film-strong); color: var(--text); }
 
 /* The open session, in 5px.
@@ -4989,7 +4989,7 @@ body.light .sess-dot.here { background: #16a34a; }
   color: var(--faint); padding: 2px 3px; border-radius: 5px; line-height: 0;
 }
 .sess-row:hover .sess-kebab { opacity: 1; }
-.sess-kebab:hover { color: var(--text); background: var(--film-strong); }
+.sess-kebab:hover { color: var(--text); background: var(--hover); }
 .side-sessions .side-empty {
   padding: 6px 9px; font-size: 12px; color: var(--ghost);
 }
