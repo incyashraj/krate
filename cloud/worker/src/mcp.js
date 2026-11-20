@@ -288,7 +288,7 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        build_id: { type: "string", minLength: 32, maxLength: 32, description: "The id build_app answered" },
+        build_id: { type: "string", minLength: 32, maxLength: 32, description: "The build id a build answered with" },
       },
       required: ["build_id"],
       additionalProperties: false,
