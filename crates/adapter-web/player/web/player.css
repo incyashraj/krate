@@ -213,3 +213,14 @@ body.has-made #stage { padding-bottom: 4px; }
   .made .mk .by { display: none; }
   .made .mk .own::before { display: none; }
 }
+
+/* Printing what the app's window shows (krate:ui/print): its pages, and
+   nothing else of the Player, each page fitted to the paper. */
+#printPages { display: none; }
+@media print {
+  body.printing > *:not(#printPages) { display: none !important; }
+  body.printing { background: #fff; margin: 0; }
+  body.printing #printPages { display: block; }
+  #printPages img { display: block; width: 100%; height: auto; max-height: 100vh; object-fit: contain; break-after: page; }
+  #printPages img:last-child { break-after: auto; }
+}

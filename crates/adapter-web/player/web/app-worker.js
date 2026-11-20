@@ -120,6 +120,9 @@ self.onmessage = async ({ data }) => {
       // What this browser has of the device's senses (IC-974), as the page
       // found it: a worker cannot see geolocation itself.
       senses: data.senses,
+      // Whether it has Web Serial and WebUSB, and the USB models the person
+      // allowed (IC-992, devices.js).
+      devices: data.devices,
       sleepCell: new Int32Array(new SharedArrayBuffer(4)),
       // Sound: the page's shared stats and command ring (audio.js), and the
       // streams and sounds this run makes, posted to the page.
@@ -158,6 +161,17 @@ self.onmessage = async ({ data }) => {
         if (fit.width === lw && fit.height === lh) return;
         ui.set_size(id, fit.width, fit.height, true);
         attachFrame(id);
+      },
+      // What window `id` shows now, for printing it (krate:ui/print): its
+      // last painted frame, RGBA, after any change is painted. Null for a
+      // window that is not the app's.
+      capture: (id) => {
+        present();
+        const size = ui.frame_size(id);
+        const ptr = size.length ? ui.frame_ptr(id) : 0;
+        if (!ptr) return null;
+        const [pw, ph, lw, lh] = size;
+        return { width: pw, height: ph, logicalWidth: lw, logicalHeight: lh, rgba: new Uint8Array(player.memory.buffer, ptr, pw * ph * 4).slice() };
       },
       screen: (id) => {
         const size = ui.frame_size(id);
