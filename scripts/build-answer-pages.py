@@ -880,6 +880,70 @@ PAGES += [
 ]
 
 
+# Apps made in a Claude chat, through the Krate connector (IC-989): what the
+# hub's /mcp does today, in cloud/worker/src/mcp.js and mcp-oauth.js.
+CONNECTOR_URL = "https://hub.krate.tech/mcp"
+CLAUDE_GUIDE = "/docs/pages/make-an-app-with-claude.html"
+CLAUDE_PROMPT = ("Using the Krate connector, make me a simple habit tracker app that works on my phone "
+                 "and my laptop, and give me the link.")
+ADD_CONNECTOR = f"""<ol>
+<li>On claude.ai, go to <a href="https://claude.ai/customize/connectors">Customize &gt; Connectors</a>, choose <strong>Add</strong>, then <strong>Add custom connector</strong>.</li>
+<li>Name it Krate and enter this server URL, then keep the settings Claude marks Detected and click <strong>Add</strong>:</li>
+</ol>
+<pre class="answer-cmd">{CONNECTOR_URL}</pre>
+<p>Claude then asks you to sign in to Krate, with GitHub, Google or an email link, and to allow it to build apps you ask for and publish them to your account. <a href="{CLAUDE_GUIDE}#add-the-connector">The full steps</a>.</p>"""
+
+PAGES += [
+    {
+        "slug": "claude-app-phone-and-computer.html",
+        "title": "Can Claude make an app for my phone and computer? | Krate",
+        "description": "Yes. Add the Krate connector to Claude and ask for an app. You get a link that opens it in any browser, phones included, and it runs natively on Mac, Windows and Linux.",
+        "h1": "Can Claude make an app that runs on my phone and computer?",
+        "lead": f"Yes. Add the Krate connector to Claude, ask for the app in plain words, and Claude gives you a link: {LINK_OPENS}. With the Krate runtime installed, the same app also runs natively on Mac, Windows and Linux.",
+        "faq": [
+            ("Do I need to know how to code?", "<p>No. Claude writes the code, and Krate builds and checks it before you get a link.</p>"),
+            ("Do I need to install anything on my phone?", "<p>No. The link opens the app in the phone's browser, with nothing to install and no account.</p>"),
+            ("Does Krate use its own AI for this?", "<p>No. The AI is Claude. Krate compiles and checks the files Claude sends and never sees the conversation.</p>"),
+            ("Do I need a Krate account?", "<p>To build, yes: you sign in once with GitHub, Google or an email link, and the apps are published to that account. The people you send a link to need no account.</p>"),
+        ],
+        "entry_actions": [("Add the Krate connector", CLAUDE_GUIDE + "#add-the-connector"),
+                          ("See an example request", "#ask-for-it-in-plain-words")],
+        "sections": [
+            ("Add Krate to Claude", ADD_CONNECTOR),
+            ("Ask for it in plain words", f"""<p>Say what the app is for and what it should show first. For example:</p>
+<pre class="answer-cmd">{CLAUDE_PROMPT}</pre>
+<p>Claude reads Krate's guide and writes the app. Krate compiles it, confirms it uses only Krate's API and runs it once. If the check fails, Claude gets Krate's own words on what to fix and builds again. A build usually takes one to five minutes.</p>"""),
+            ("What you get back", f"""<p>A link that opens the app in any modern browser, on your phone and on your laptop, with nothing to install and no account. Claude also gives you the app's own link, which opens it natively in the <a href="/download/">Krate runtime</a> on Mac, Windows and Linux, as a real window with no browser inside.</p>
+<p>The app is unlisted on your Krate account: only people with the link can open it. See <a href="/share-an-app-claude-made.html">how to share it</a>.</p>"""),
+            ("Why one app opens on every screen", """<p>A Krate app is one small <code>.krate</code> file. Krate's browser Player opens it from a link, and the Krate runtime opens the same file natively on each desktop, so there is no separate build for phones, Mac, Windows or Linux. The app starts with no access to files or the network and asks before it touches anything. <a href="/portable-desktop-app-format.html">More on the format</a>.</p>"""),
+        ],
+    },
+    {
+        "slug": "share-an-app-claude-made.html",
+        "title": "How do I share an app Claude made? Send one link | Krate",
+        "description": "Build it with the Krate connector in Claude and send the link it gives you. It opens in any browser, phones included, with nothing to install and no account.",
+        "h1": "How do I share an app Claude made?",
+        "lead": f"Have Claude build it with the Krate connector, then send the link Claude gives you: {LINK_OPENS}. The app is unlisted on your Krate account, so only people with the link can open it.",
+        "faq": [
+            ("Does the person I send it to need Claude?", "<p>No. They need nothing but a browser: no Claude, no Krate account and nothing to install.</p>"),
+            ("Is my app public?", "<p>No. An app built through the connector is published unlisted: only people with its link can open it.</p>"),
+            ("Can they run it as a desktop app?", '<p>Yes. With the <a href="/download/">Krate runtime</a> installed, the app\'s own link opens it natively on Mac, Windows and Linux.</p>'),
+            ("Can I send it by email or in a chat?", "<p>Yes. It is a link, so it goes anywhere a link goes.</p>"),
+        ],
+        "entry_actions": [("Add the Krate connector", CLAUDE_GUIDE + "#add-the-connector"),
+                          ("Send the link", "#send-the-link")],
+        "sections": [
+            ("Build it with the Krate connector", f"""{ADD_CONNECTOR}
+<p>Then ask for the app in plain words, and ask Claude for the link:</p>
+<pre class="answer-cmd">{CLAUDE_PROMPT}</pre>"""),
+            ("Send the link", """<p>Claude gives you two links. The browser link opens the app in any modern browser, phones included: paste it into a chat, an email or a text. The app's own link opens it natively in the Krate runtime on Mac, Windows and Linux.</p>
+<p>Neither needs the other person to have Claude or a Krate account.</p>"""),
+            ("What the person you send it to sees", """<p>Before the app opens, they see what it asks for and decide. It starts with no access to their files or the network, hosts it did not declare stay unreachable, and it keeps its data in storage of its own. See <a href="/run-ai-generated-code-safely.html">how permissions work</a>.</p>"""),
+            ("Already have a .krate file?", """<p>Publish it with <code>krate publish app.krate</code> or from the <a href="/publish/">publish page</a> and send the link that comes back. <a href="/share-an-app-made-with-ai.html#send-it-as-a-link-or-a-file">Sending a .krate as a link or a file</a>.</p>"""),
+        ],
+    },
+]
+
 class MetadataTests(unittest.TestCase):
     def test_head_is_built_per_page_never_borrowed(self):
         # The head used to be lifted from the homepage and its identity
@@ -952,6 +1016,21 @@ class MetadataTests(unittest.TestCase):
         self.assertIn('href="/docs/porting.html"', result)
         self.assertIn("https://hub.krate.tech/a/v", result)
         self.assertIn("Publishing needs a Krate account; opening never does", result)
+
+    def test_claude_pages_give_the_connector_and_the_guide(self):
+        # The two answers people type about Claude: each names the connector
+        # address, links the guide's steps and carries the request that made
+        # a working app on 2026-11-20.
+        guide = ROOT / "docs" / "pages" / "make-an-app-with-claude.html"
+        self.assertTrue(guide.is_file(), guide)
+        for slug in ("claude-app-phone-and-computer.html", "share-an-app-claude-made.html"):
+            with self.subTest(slug=slug):
+                result = render(next(p for p in PAGES if p["slug"] == slug))
+                self.assertIn(CONNECTOR_URL, result)
+                self.assertIn(f'href="{CLAUDE_GUIDE}#add-the-connector"', result)
+                self.assertIn(html.escape(CLAUDE_PROMPT), result)
+                self.assertIn("never sees" if slug.startswith("claude-app") else "unlisted", result)
+        self.assertIn('id="add-the-connector"', guide.read_text())
 
     def test_portability_proof_links_the_tested_file_and_per_host_evidence(self):
         page = next(p for p in PAGES if p["slug"] == "portable-desktop-app-format.html")
