@@ -100,7 +100,7 @@ test("tools/list: every tool is titled, named within 64 characters, with both sc
   const env = hubEnv();
   const r = await rpc(env, "tools/list", {});
   const tools = r.body.result.tools;
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["build_app", "build_status", "get_app", "get_krate_guide", "list_featured", "search_apps"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["build_app", "build_status", "fetch", "get_app", "get_krate_guide", "list_featured", "search", "search_apps"]);
   const WRITE = new Set(["build_app", "build_status"]);
   for (const t of tools) {
     assert.ok(t.name.length <= 64 && /^[a-z_]+$/.test(t.name), t.name);
@@ -116,6 +116,19 @@ test("tools/list: every tool is titled, named within 64 characters, with both sc
     }
     assert.ok(!/\b(call|read it|send|do not|don't|you should|always|never paste)\b/i.test(t.description), `${t.name}'s description instructs: ${t.description}`);
     assert.equal(t.annotations.openWorldHint, false);
+    // ChatGPT's directory: every hint set, true or false, never left out.
+    for (const hint of ["readOnlyHint", "destructiveHint", "openWorldHint"]) {
+      assert.equal(typeof t.annotations[hint], "boolean", `${t.name} sets ${hint}`);
+    }
+    // ... and which tools need a sign-in, and a short running line.
+    assert.deepEqual(
+      t._meta.securitySchemes,
+      WRITE.has(t.name) ? [{ type: "oauth2", scopes: ["krate.apps"] }] : [{ type: "noauth" }],
+      `${t.name}'s securitySchemes`,
+    );
+    for (const k of ["openai/toolInvocation/invoking", "openai/toolInvocation/invoked"]) {
+      assert.ok(typeof t._meta[k] === "string" && t._meta[k].length > 0 && t._meta[k].length <= 64, `${t.name} ${k}`);
+    }
     assert.equal(t.inputSchema.type, "object");
     assert.equal(t.outputSchema.type, "object");
     if (WRITE.has(t.name)) {
@@ -224,6 +237,53 @@ test("list_featured is the Start here and newest shelves", async () => {
   assert.deepEqual(s.newest.map((a) => a.name), ["Markdown Editor", "Pad"]);
   assert.equal(s.start_here[0].permissions, null, "no recorded permissions reads as not recorded, not as none");
   assert.match(r.body.result.content[0].text, /Start here:/);
+});
+
+test("search and fetch answer OpenAI's shapes: results of id, title, url; one document of id, title, text, url", async () => {
+  const env = hubEnv();
+  const notes = await publish(env, "alice", NOTES, { "x-krate-name": "Notes", "x-krate-description": "quick notes" });
+  await publish(env, "bob", BOUNCE, { "x-krate-name": "Bounce Notes", "x-krate-unlisted": "1" });
+
+  const s = (await tool(env, "search", { query: "notes" })).body.result;
+  assert.equal(s.isError, undefined);
+  // The text is the same object as JSON, which is what ChatGPT parses.
+  assert.deepEqual(JSON.parse(s.content[0].text), s.structuredContent);
+  const results = s.structuredContent.results;
+  assert.deepEqual(results.map((r) => Object.keys(r).sort()), [["id", "title", "url"], ["id", "title", "url"]]);
+  assert.deepEqual(results[0], { id: notes.line, title: "Notes -- quick notes", url: notes.url });
+  assert.deepEqual(results[1], { id: "krate-guide", title: "How to make a Krate app (Krate's guide)", url: "https://krate.tech/krate-mode.md" });
+  assert.ok(!JSON.stringify(s).includes("Bounce"), "an unlisted app is never a result");
+
+  const f = (await tool(env, "fetch", { id: results[0].id })).body.result;
+  assert.deepEqual(JSON.parse(f.content[0].text), f.structuredContent);
+  const doc = f.structuredContent;
+  assert.equal(doc.id, notes.line);
+  assert.equal(doc.title, "Notes");
+  assert.equal(doc.url, notes.url);
+  assert.match(doc.text, /keep its own database/, "the permissions in plain words");
+  assert.equal(doc.metadata.browser_link, `https://hub.example/run/${notes.line}`);
+  assert.ok(!JSON.stringify(doc).includes("github:alice"), "the owner principal never leaves");
+
+  const byLink = (await tool(env, "fetch", { id: notes.url })).body.result;
+  assert.equal(byLink.structuredContent.id, notes.line);
+  const missing = (await tool(env, "fetch", { id: "v000000000aa" })).body.result;
+  assert.equal(missing.isError, true);
+  assert.equal((await tool(env, "fetch", {})).body.error.code, -32602);
+});
+
+test("a write tool with no sign-in, from ChatGPT, is a tool result carrying the challenge in _meta", async () => {
+  const env = hubEnv();
+  const asked = await rpc(env, "tools/call", { name: "build_status", arguments: { build_id: "0".repeat(32) } }, { headers: { "user-agent": "openai-mcp/1.0.0" } });
+  assert.equal(asked.status, 200);
+  const r = asked.body.result;
+  assert.equal(r.isError, true);
+  const [challenge] = r._meta["mcp/www_authenticate"];
+  assert.match(challenge, /^Bearer resource_metadata="https:\/\/hub\.example\/\.well-known\/oauth-protected-resource\/mcp"/);
+  assert.match(challenge, /error="insufficient_scope"/);
+  assert.match(challenge, /error_description="[^"]+"/);
+  // Anything else -- Claude included -- still gets the HTTP 401 it signs in from.
+  const plain = await rpc(env, "tools/call", { name: "build_status", arguments: { build_id: "0".repeat(32) } }, { headers: { "user-agent": "Claude-User" } });
+  assert.equal(plain.status, 401);
 });
 
 test("unknown methods, unknown tools and bad arguments are JSON-RPC errors", async () => {

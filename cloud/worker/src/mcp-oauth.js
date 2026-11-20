@@ -161,6 +161,10 @@ function authorizationServer(base) {
       registration_endpoint: `${base}/oauth/register`,
       revocation_endpoint: `${base}/oauth/revoke`,
       client_id_metadata_document_supported: true,
+      // Every redirect back to a client -- a code, a refusal, an error --
+      // carries iss (RFC 9207). ChatGPT then uses its one fixed redirect,
+      // https://chatgpt.com/connector_platform_oauth_redirect.
+      authorization_response_iss_parameter_supported: true,
       response_types_supported: ["code"],
       response_modes_supported: ["query"],
       grant_types_supported: ["authorization_code", "refresh_token"],

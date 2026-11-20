@@ -26,7 +26,7 @@
 // JSON-RPC batches are refused: MCP 2025-06-18 removed them, and the
 // streamable HTTP clients that matter never send one.
 
-import { signInNeeded } from "./mcp-oauth.js";
+import { signInNeeded, resourceMetadataUrl, MCP_SCOPE } from "./mcp-oauth.js";
 
 /** The protocol versions this server speaks, newest first. */
 export const MCP_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -125,7 +125,9 @@ const APP_DETAIL = {
   required: [...APP.required, "published", "versions"],
 };
 
-const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
+// Every hint said out loud, true or false: ChatGPT's app directory refuses a
+// tool that leaves readOnlyHint, destructiveHint or openWorldHint unset.
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 /** A tool that makes something new on the person's account and removes nothing. */
 const WRITES = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 
@@ -243,6 +245,67 @@ export const TOOLS = [
     },
     annotations: READ_ONLY,
   },
+  // The two names ChatGPT's deep research and company knowledge look for
+  // (OpenAI's MCP guide): `search` answers { results: [{ id, title, url }] }
+  // and `fetch` one { id, title, text, url, metadata }, each also as JSON
+  // text. They read the same gallery as the tools above, plus the guide.
+  {
+    name: "search",
+    title: "Search Krate",
+    description:
+      "Searches Krate's public apps and Krate's guide to making an app. Each result has an id, a title and a link; " +
+      "the guide's id is krate-guide.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", minLength: 1, maxLength: 64, description: "Words to look for, e.g. \"markdown editor\"" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        results: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { id: { type: "string" }, title: { type: "string" }, url: { type: "string" } },
+            required: ["id", "title", "url"],
+          },
+        },
+      },
+      required: ["results"],
+    },
+    annotations: READ_ONLY,
+  },
+  {
+    name: "fetch",
+    title: "Open a Krate result",
+    description:
+      "One Krate app or Krate's guide in full, by the id a result carries: an app's details and permissions in plain " +
+      "words, or the whole guide to making an app.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", minLength: 1, maxLength: 512, description: "A result's id, an app's link, or krate-guide" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        title: { type: "string" },
+        text: { type: "string" },
+        url: { type: "string" },
+        metadata: { type: "object" },
+      },
+      required: ["id", "title", "text", "url"],
+    },
+    annotations: READ_ONLY,
+  },
   {
     name: "build_app",
     title: "Build and publish a Krate app",
@@ -302,6 +365,30 @@ export const TOOLS = [
 // (MCP 2025-06-18 and later), and flags every tool without one; an older
 // client reads the top-level title. One source: the top-level title, copied.
 for (const tool of TOOLS) tool.annotations = { title: tool.title, ...tool.annotations };
+
+// What ChatGPT reads beside the spec (OpenAI Apps SDK, "Authentication"):
+// which tools need a sign-in, so a connector added as "OAuth or no
+// authentication" signs the person in only when a build is asked for; and
+// the short line it shows while a tool runs (64 characters at most). Kept in
+// _meta, which every MCP client passes over untouched.
+const INVOKING = {
+  search_apps: ["Searching Krate's apps", "Searched Krate's apps"],
+  get_app: ["Reading the app", "Read the app"],
+  list_featured: ["Reading Krate's front shelves", "Read Krate's front shelves"],
+  get_krate_guide: ["Reading Krate's guide", "Read Krate's guide"],
+  search: ["Searching Krate", "Searched Krate"],
+  fetch: ["Opening the Krate result", "Opened the Krate result"],
+  build_app: ["Sending the files to Krate", "Krate is building it"],
+  build_status: ["Asking Krate how the build went", "Krate answered"],
+};
+for (const tool of TOOLS) {
+  const [invoking, invoked] = INVOKING[tool.name];
+  tool._meta = {
+    securitySchemes: NEEDS_SIGN_IN.has(tool.name) ? [{ type: "oauth2", scopes: [MCP_SCOPE] }] : [{ type: "noauth" }],
+    "openai/toolInvocation/invoking": invoking,
+    "openai/toolInvocation/invoked": invoked,
+  };
+}
 
 // --------------------------------------------------------------- arguments
 
@@ -501,6 +588,58 @@ async function listFeatured(_args, deps) {
     content: [{ type: "text", text: parts.length ? parts.join("\n\n") : "The Krate gallery has no public apps yet." }],
     structuredContent: { start_here: startHere, newest, newest_label: newShelf.label || "Newest" },
   };
+}
+
+/** The guide's place in search and fetch, and the address anyone can open it at. */
+export const GUIDE_ID = "krate-guide";
+const GUIDE_URL = "https://krate.tech/krate-mode.md";
+const GUIDE_TITLE = "How to make a Krate app (Krate's guide)";
+
+/** OpenAI's shape: the object, and the same object as JSON text. */
+const asDocument = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj) }], structuredContent: obj });
+
+async function search(args, deps) {
+  const query = args.query.trim().slice(0, 64);
+  const payload = await deps.gallery(new URLSearchParams({ q: query }));
+  if (!payload) return failure("The Krate gallery could not be read just now. Try again in a minute.");
+  const results = (payload.results || []).slice(0, 10).map((r) => {
+    const app = appOf(deps, r);
+    const title = app.description ? `${app.name} -- ${app.description}` : app.name;
+    return { id: (r.meta && r.meta.line) || r.id, title: title.slice(0, 200), url: app.link };
+  });
+  // The guide answers every search: it is how a new app gets made.
+  results.push({ id: GUIDE_ID, title: GUIDE_TITLE, url: GUIDE_URL });
+  return asDocument({ results });
+}
+
+async function fetchOne(args, deps) {
+  const asked = args.id.trim();
+  if (asked === GUIDE_ID) {
+    const guide = await deps.guide();
+    if (!guide) return failure("Krate's guide could not be fetched just now. Try again in a minute.");
+    return asDocument({ id: GUIDE_ID, title: GUIDE_TITLE, text: guide, url: GUIDE_URL, metadata: { characters: guide.length } });
+  }
+  const ref = refOf(asked);
+  const found = ref ? await deps.findApp(ref) : null;
+  // The same rules as get_app: an unlisted or removed app has no public face here.
+  if (!found || found.takedown || !found.row || found.row.unlisted) {
+    return failure(`No public Krate app has the id ${asked.slice(0, 80)}.`);
+  }
+  const app = appOf(deps, { id: found.hash, meta: found.row, shot: found.shot || null });
+  return asDocument({
+    id: found.row.line || found.hash,
+    title: app.name,
+    text: appText(app),
+    url: app.link,
+    metadata: {
+      publisher: app.publisher,
+      category: app.category,
+      size_bytes: app.size_bytes,
+      browser_link: app.browser_link,
+      signed: app.signed,
+      verified_publisher: app.verified_publisher,
+    },
+  });
 }
 
 /** A tool that ran and could not do what was asked: said in words, isError. */
@@ -716,6 +855,8 @@ const HANDLERS = {
   get_app: getApp,
   list_featured: listFeatured,
   get_krate_guide: getGuide,
+  search,
+  fetch: fetchOne,
   build_app: buildApp,
   build_status: buildStatus,
 };
@@ -777,6 +918,30 @@ async function answer(message, deps) {
 }
 
 /**
+ * One tool, called for a person the hub already knows (the paste page,
+ * paste-build.js): the same handlers, limits and words as /mcp. Answers
+ * { result } | { error: { code, message } } | { signIn: true }.
+ */
+export async function callToolAs(deps, who, name, args) {
+  return answer({ method: "tools/call", params: { name, arguments: args } }, { ...deps, who });
+}
+
+/** A write tool asked for with no sign-in, as a tool result: words, and the challenge in _meta. */
+export function signInResult(base) {
+  const words = "Sign in to Krate to build and publish apps.";
+  return {
+    isError: true,
+    content: [{ type: "text", text: `${words} Krate needs to know whose account the app goes to.` }],
+    _meta: {
+      "mcp/www_authenticate": [
+        `Bearer resource_metadata="${resourceMetadataUrl(base)}", scope="${MCP_SCOPE}", ` +
+          `error="insufficient_scope", error_description="${words}"`,
+      ],
+    },
+  };
+}
+
+/**
  * The /mcp route. `deps` reaches the gallery code in index.js:
  *   base                 the hub's public address
  *   gallery(params)      the /apps payload for ?q= / ?cat= (or the shelves), or null
@@ -831,6 +996,15 @@ export async function mcpRoute(request, deps) {
   const out = await answer(message, deps);
   // A write tool with no sign-in: the 401 whose header starts the client's
   // OAuth sign-in (MCP authorization).
-  if (out.signIn) return mcpCors(signInNeeded(deps.base));
+  if (out.signIn) {
+    // ChatGPT shows its "connect your account" card for a tool result that
+    // carries the challenge in _meta, not for an HTTP 401 (OpenAI Apps SDK,
+    // "Authentication"); Claude starts its sign-in from the 401. Each gets
+    // the one it acts on.
+    if (/openai/i.test(request.headers.get("user-agent") || "")) {
+      return jsonResponse({ jsonrpc: "2.0", id: message.id, result: signInResult(deps.base) });
+    }
+    return mcpCors(signInNeeded(deps.base));
+  }
   return jsonResponse({ jsonrpc: "2.0", id: message.id, ...out });
 }
