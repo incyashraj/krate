@@ -29,7 +29,7 @@ import {
 import { dirname, join } from "node:path";
 import { createGifts } from "./gift.js";
 import { createJudge } from "./judge.js";
-import { createSandbox } from "./sandbox.js";
+import { BUSY, createSandbox } from "./sandbox.js";
 import {
   DEFAULT_COMPILE_CRATES,
   checkCompileSource,
@@ -166,6 +166,19 @@ function claimBuildSlot(account) {
   return true;
 }
 
+/* A build user from the pool for the job this account just claimed a slot
+ * for (sandbox.js, K-1297), or null when every build user is busy -- then
+ * the account's slot is let go, and the door says BUSY. */
+async function leaseFor(account) {
+  let lease = null;
+  try {
+    lease = await sandbox.lease();
+  } finally {
+    if (!lease) activeByAccount.delete(account);
+  }
+  return lease;
+}
+
 function planAllowance(account) {
   const now = Date.now();
   const recent = (plansByAccount.get(account) || []).filter((at) => now - at < PLAN_WINDOW_MS);
@@ -276,8 +289,9 @@ async function savePlans() {
 const STATE_DIR = process.env.KRATE_STATE_DIR || "/work/state";
 const JOBS_DIR = join(STATE_DIR, "jobs");
 
-/* Every child that builds or runs a stranger's code starts here: as the
- * build user, with an allow-listed environment (sandbox.js, K-1293). */
+/* Every child that builds or runs a stranger's code starts here: as a build
+ * user leased from the pool for that one job, with an allow-listed
+ * environment (sandbox.js, K-1293, K-1297). */
 const sandbox = createSandbox();
 
 /* Judging for the hub's big-file path (IC-945): the hub asks, this box reads
@@ -290,7 +304,8 @@ const judge = createJudge({
   // this at a root-owned 0711 directory it can read in but not list.
   dir: process.env.KRATE_JUDGE_DIR || join(STATE_DIR, "judge"),
   krate: KRATE,
-  spawnImpl: (cmd, args, opts) => sandbox.spawn(cmd, args, opts),
+  // Each judging run takes a build user of its own and hands it back.
+  spawnImpl: (cmd, args, opts) => sandbox.spawnOnce(cmd, args, opts),
 });
 
 /** Is this request from the hub? It carries the secret only the two hold. */
@@ -723,14 +738,14 @@ function killTree(proc, signal) {
  * the same command the desktop runs, so a change made in a tab and a change
  * made in Studio cannot come out different. `revise` names the finished job
  * it starts from: { parentId, source, change, caseId, name }. */
-async function startBuild({ request, token, account, device, revise = null, shape = "", attachments = [], byok = false, port = null }) {
+async function startBuild({ request, token, account, device, revise = null, shape = "", attachments = [], byok = false, port = null, lease }) {
   // 128 random bits. The id appears in URLs and is all a page holds, so it
   // must not be guessable -- the truncated UUID this used to be was the only
   // thing between anyone on the internet and another person's app file.
   // Ownership is checked on every operation now, but the id stays opaque:
   // two locks, and this one also keeps 404 and 403 indistinguishable.
   const id = randomBytes(16).toString("hex");
-  const dir = await sandbox.scratch("krate-build-");
+  const dir = await lease.scratch("krate-build-");
   const output = join(dir, "app.krate");
   const shotPath = join(dir, "frame.png");
 
@@ -749,6 +764,8 @@ async function startBuild({ request, token, account, device, revise = null, shap
     // A change's copy of the app it starts from, removed with the job:
     // every change used to leave a whole app in $TMPDIR forever (K-911).
     sourceDir: revise ? dirname(revise.source) : null,
+    // The build user this job runs as, its alone until the job ends (K-1297).
+    lease,
   };
   jobs.set(id, job);
   activeByAccount.set(account, id);
@@ -811,7 +828,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
   } catch (e) {
     console.warn(`[build] could not write attachments: ${e.message}`);
   }
-  await sandbox.handOver(dir);
+  await lease.handOver(dir);
   // Options first and `--` before the person's words, so a request that
   // starts with "-" -- any pasted bullet list -- is text, not an option
   // the engine refuses (K-889).
@@ -835,7 +852,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // nothing. This is the single biggest lever on how long a build takes,
   // and the browser was not using it.
   if (shape && /^[a-z0-9-]{1,40}$/i.test(shape)) extra.KRATE_STARTER_SHAPE = shape;
-  const proc = sandbox.spawn(KRATE, args, { cwd: dir, key: agentKey(theirKey), extra, detached: GROUP });
+  const proc = lease.spawn(KRATE, args, { cwd: dir, key: agentKey(theirKey), extra, detached: GROUP });
   job.proc = proc;
   // A child that cannot start emits "error", and an unhandled "error" event
   // took the whole service down with every build in flight (K-890). It is
@@ -847,6 +864,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
     job.finished = Date.now();
     if (activeByAccount.get(account) === job.id) activeByAccount.delete(account);
     console.error(`[build] could not start the engine: ${e.message}`);
+    await releaseJob(job);
     await persistJob(job);
     await audit({ action: "spawn-failed", account, job: job.id });
     await caseAttempt(token, device, job.caseId, "failed");
@@ -919,6 +937,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
     const ported = code === 7 && !job.error && job.port && (await stat(output).catch(() => null));
     if ((code !== 0 || job.error) && !offRequest && !ported) {
       const timedOut = Boolean(job.error);
+      await releaseJob(job);
       job.state = "failed";
       job.error = job.error || plainFailure(tail);
       job.finished = Date.now();
@@ -953,7 +972,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
       // renderer the desktop uses, so the preview cannot flatter it.
       job.stage = "done";
       job.line = "taking its picture";
-      job.shot = await takeShot(output, shotPath);
+      job.shot = await takeShot(output, shotPath, job.lease);
       // The engine's own record of the build: what the app asks the
       // person for (the done card shows it, as Studio does on a desktop)
       // and, when the app is not what was asked, the reason.
@@ -1012,6 +1031,9 @@ async function startBuild({ request, token, account, device, revise = null, shap
         // product; we are not its host.
         bytes,
       };
+      // Everything of the build's is read: its user goes back to the pool
+      // before anyone polling can see "done" (K-1297).
+      await releaseJob(job);
       job.state = "done";
       job.finished = Date.now();
       // The bundle goes to the volume before the record says "done", so a
@@ -1066,32 +1088,34 @@ async function startBuild({ request, token, account, device, revise = null, shap
  * tool call must not hold a request open for that long.
  */
 
-/* A compile's children get no key at all (sandbox.spawn with no `key`):
+/* A compile's children get no key at all (lease.spawn with no `key`):
  * the code being compiled is a stranger's, and no model is involved. */
 
-/* Where this engine's SDK is, found once per process (compile.js). */
-let sdkRootPromise = null;
-function sdkRoot() {
-  if (!sdkRootPromise) {
-    sdkRootPromise = ensureSdk({
-      krate: KRATE,
-      env: sandbox.childEnv(),
-      spawnImpl: sandbox.spawn,
-      scratch: () => sandbox.scratch("krate-sdk-nudge-"),
-      handOver: sandbox.handOver,
-    }).then((root) => {
-      if (!root) sdkRootPromise = null; // try again on the next compile
-      return root;
-    });
-  }
-  return sdkRootPromise;
+/* Where the engine's SDK is for one lease (compile.js). The lease's home is
+ * empty when a job takes it (K-1297), so each job lays the SDK down from
+ * the engine binary into its own home: a few MB, nothing shared. */
+function sdkRoot(lease) {
+  return ensureSdk({
+    krate: KRATE,
+    env: lease.env(),
+    spawnImpl: lease.spawn,
+    scratch: () => lease.scratch("krate-sdk-nudge-"),
+    handOver: lease.handOver,
+  });
+}
+
+/* A job's build user goes back to the pool: every process of it killed and
+ * its home emptied (sandbox.js). Every way a job ends comes through here,
+ * before the end is visible to anyone polling it. */
+async function releaseJob(job) {
+  if (job.lease) await job.lease.release();
 }
 
 /* One engine run inside a compile: its own process group, the job's
  * remaining wall clock, output kept for the verdict. */
 function runCompileStep(job, args, deadline) {
   return new Promise((resolve) => {
-    const proc = sandbox.spawn(KRATE, args, { cwd: job.dir, detached: GROUP });
+    const proc = job.lease.spawn(KRATE, args, { cwd: job.dir, detached: GROUP });
     job.proc = proc;
     let out = "";
     let err = "";
@@ -1107,6 +1131,7 @@ function runCompileStep(job, args, deadline) {
 async function compileSettle(job, fields) {
   if (job.settled) return;
   job.settled = true;
+  await releaseJob(job);
   if (activeByAccount.get(job.account) === job.id) activeByAccount.delete(job.account);
   compilesRunning = Math.max(0, compilesRunning - 1);
   job.proc = null;
@@ -1126,9 +1151,9 @@ async function compileSettle(job, fields) {
   return cleanup(job, { keepFile: job.state === "done" });
 }
 
-async function startCompile({ account, name, files }) {
+async function startCompile({ account, name, files, lease }) {
   const id = randomBytes(16).toString("hex");
-  const dir = await sandbox.scratch("krate-compile-");
+  const dir = await lease.scratch("krate-compile-");
   const job = {
     id, kind: "compile", account, device: "", request: name || "Compile", dir,
     output: join(dir, "app.krate"),
@@ -1144,6 +1169,7 @@ async function startCompile({ account, name, files }) {
     finished: null,
     proc: null,
     sourceDir: null,
+    lease,
   };
   jobs.set(id, job);
   activeByAccount.set(account, id);
@@ -1167,13 +1193,13 @@ async function runCompile(job, { name, files }) {
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, file.bytes, { flag: "wx" });
   }
-  const sdk = await sdkRoot();
+  const sdk = await sdkRoot(job.lease);
   if (!sdk) {
     return compileSettle(job, { state: "failed", error: "The build machine could not prepare Krate's SDK. Nothing was counted against your AI allowance; try again in a minute." });
   }
   const cargoPath = join(app, "Cargo.toml");
   await writeFile(cargoPath, resolveSdkPlaceholders(await readFile(cargoPath, "utf8"), sdk));
-  await sandbox.handOver(job.dir);
+  await job.lease.handOver(job.dir);
   if (job.state !== "working") return compileSettle(job, {});
 
   // Paths in the engine's words are this machine's; the caller wrote
@@ -1257,15 +1283,22 @@ async function runCompile(job, { name, files }) {
  * version and kept on the volume: it is the same text for everyone. */
 const guides = new Map(); // engine version -> Promise<text|null>
 
-function engineOutput(args, timeoutMs = 60_000) {
+async function engineOutput(args, timeoutMs = 60_000) {
+  let proc;
+  try {
+    // A build user of its own for the one run, handed back when it closes.
+    proc = await sandbox.spawnOnce(KRATE, args, { detached: GROUP });
+  } catch (e) {
+    return null;
+  }
   return new Promise((resolve) => {
-    const proc = sandbox.spawn(KRATE, args, { detached: GROUP });
     let out = "";
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", () => {});
     const killer = setTimeout(() => killTree(proc, "SIGKILL"), timeoutMs);
-    proc.on("error", () => { clearTimeout(killer); resolve(null); });
-    proc.on("close", (code) => { clearTimeout(killer); resolve(code === 0 ? out : null); });
+    // Answered once the build user is back in the pool (sandbox.js).
+    proc.on("error", () => { clearTimeout(killer); proc.handedBack.then(() => resolve(null)); });
+    proc.on("close", (code) => { clearTimeout(killer); proc.handedBack.then(() => resolve(code === 0 ? out : null)); });
   });
 }
 
@@ -1294,9 +1327,26 @@ async function authoringGuide() {
   const mode = await guides.get(version);
   if (!mode) return null;
   // The template names only the WIT packages this engine's SDK carries.
-  const sdk = await sdkRoot();
-  const present = sdk ? await readdir(join(sdk, "wit", "krate", "phase4", "deps")).catch(() => null) : null;
-  return connectorGuide(mode, { crates: COMPILE_CRATES, present });
+  if (!guideDeps.has(version)) {
+    guideDeps.set(version, sdkPackages().then((list) => {
+      if (!list) guideDeps.delete(version);
+      return list;
+    }));
+  }
+  return connectorGuide(mode, { crates: COMPILE_CRATES, present: await guideDeps.get(version) });
+}
+
+/* The WIT packages of this engine's SDK, laid down in a lease of its own. */
+const guideDeps = new Map(); // engine version -> Promise<string[]|null>
+async function sdkPackages() {
+  const lease = await sandbox.lease().catch(() => null);
+  if (!lease) return null;
+  try {
+    const sdk = await sdkRoot(lease);
+    return sdk ? await readdir(join(sdk, "wit", "krate", "phase4", "deps")).catch(() => null) : null;
+  } finally {
+    await lease.release();
+  }
 }
 
 /* `krate plan <request>`: the engine's own pre-build answer, as JSON text.
@@ -1403,9 +1453,9 @@ async function writeProject(project, dir) {
 
 /* `krate port <dir> --format json`: the engine's read-only plan for an
  * uploaded project. No model, no allowance, bounded by time. */
-function portPlan(root) {
+function portPlan(root, lease) {
   return new Promise((resolve) => {
-    const proc = sandbox.spawn(KRATE, ["port", "--format", "json", "--", root], { detached: GROUP });
+    const proc = lease.spawn(KRATE, ["port", "--format", "json", "--", root], { detached: GROUP });
     let out = "";
     let err = "";
     proc.stdout.on("data", (b) => { out += b.toString(); });
@@ -1422,16 +1472,16 @@ function portPlan(root) {
   });
 }
 
-async function planRequest(request, theirKey = null, attachments = []) {
+async function planRequest(request, theirKey = null, attachments = [], lease) {
   // The plan reads what was attached too: `krate plan --attach` exists
   // precisely so the questions can be about the file rather than only the
   // sentence. Written to a temp dir that is removed once the plan answers.
-  const holding = await sandbox.scratch("krate-plan-");
+  const holding = await lease.scratch("krate-plan-");
   let files = [];
   try {
     files = await writeAttachments(attachments, holding);
   } catch (e) { /* a plan without the file is better than no plan */ }
-  await sandbox.handOver(holding);
+  await lease.handOver(holding);
   const attachArgs = files.flatMap((f) => ["--attach", f]);
   return new Promise((resolve) => {
     const finish = (value) => {
@@ -1440,7 +1490,7 @@ async function planRequest(request, theirKey = null, attachments = []) {
     };
     let out = "";
     let err = "";
-    const proc = sandbox.spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { key: agentKey(theirKey), detached: GROUP });
+    const proc = lease.spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { key: agentKey(theirKey), detached: GROUP });
     const killer = setTimeout(() => killTree(proc, "SIGKILL"), PLAN_TIMEOUT_MS);
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
@@ -1465,7 +1515,7 @@ async function planRequest(request, theirKey = null, attachments = []) {
 /* Run the finished app once, headless, and keep the frame. A build with no
  * picture is still a build -- the app is the product -- so a failure here
  * is swallowed rather than allowed to fail the job. */
-async function takeShot(bundle, shotPath) {
+async function takeShot(bundle, shotPath, lease) {
   return new Promise((resolve) => {
     // --auto-grant, NOT --consent. `--consent` opens a native permission
     // window on macOS and falls back to a TERMINAL PROMPT everywhere else --
@@ -1483,7 +1533,7 @@ async function takeShot(bundle, shotPath) {
     // at all: not Krate's, not the person's, not the service's secret. The
     // sandbox already keeps a guest from reading them; there is no reason
     // to hand the process them in the first place.
-    const proc = sandbox.spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
+    const proc = lease.spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
       extra: { KRATE_SHOOT_AFTER_MS: "1200" },
     });
     // Why a picture failed, kept for the log.
@@ -1635,7 +1685,9 @@ async function caseAttempt(token, device, caseId, outcome, note) {
 }
 
 async function cleanup(job, opts = {}) {
-  // The bytes are already in memory by now; the directory is scratch.
+  // The bytes are already in memory by now; the directory is scratch, and
+  // the build user goes back to the pool with its home emptied (K-1297).
+  await releaseJob(job);
   try { await rm(job.dir, { recursive: true, force: true }); } catch (e) {}
   if (job.sourceDir && /krate-(revise|port)-/.test(job.sourceDir)) {
     try { await rm(job.sourceDir, { recursive: true, force: true }); } catch (e) {}
@@ -1776,6 +1828,9 @@ const server = createServer(async (req, res) => {
         // Whether builds run as their own user (K-1293). "none" in
         // production means every build door below answers 503.
         isolation: sandbox.isolated ? "build-user" : "none",
+        // Build users, one per running job (K-1297): how many, how many
+        // free. Null where nothing switches (a laptop): no pool there.
+        slots: Number.isFinite(sandbox.size) ? { size: sandbox.size, free: sandbox.free() } : null,
       });
     }
 
@@ -1841,16 +1896,19 @@ const server = createServer(async (req, res) => {
       if (!claimBuildSlot(allowed.account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
+      const lease = await leaseFor(allowed.account);
+      if (!lease) return send(res, 503, BUSY);
       let job;
       try {
         job = await startBuild({
           request, token, account: allowed.account, device, shape,
-          attachments: body.attachments, byok: Boolean(allowed.byok),
+          attachments: body.attachments, byok: Boolean(allowed.byok), lease,
         });
       } catch (err) {
         // The slot is ours until a job owns it; a start that threw must
-        // not lock the account out of building.
+        // not lock the account out of building, nor keep its build user.
         activeByAccount.delete(allowed.account);
+        await lease.release();
         // The hub's wall, in the same JSON shape as the one-app wall, so
         // Studio shows its sentence and the ways on.
         if (err && err.wall) return json(res, err.status, { wall: true, ...err.wall, message: err.message });
@@ -1866,22 +1924,26 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const account = await resolveAccount(token);
       if (!account) return send(res, 401, "Sign in first.");
-      const dir = await sandbox.scratch("krate-port-plan-");
+      const lease = await sandbox.lease();
+      if (!lease) return send(res, 503, BUSY);
+      // The build user is handed back before the answer goes out.
+      let answer;
       try {
+        const dir = await lease.scratch("krate-port-plan-");
         const root = await writeProject(body.project, dir);
-        await sandbox.handOver(dir);
-        const answer = await portPlan(root);
-        await audit({ action: "port-plan", account, ok: answer.ok });
-        if (!answer.ok) return send(res, 502, answer.message);
-        res.statusCode = 200;
-        res.setHeader("content-type", "application/json");
-        return res.end(answer.text);
+        await lease.handOver(dir);
+        answer = await portPlan(root, lease);
       } catch (err) {
+        await lease.release();
         if (err && err.status) return send(res, err.status, err.message);
         throw err;
-      } finally {
-        await rm(dir, { recursive: true, force: true }).catch(() => {});
       }
+      await lease.release();
+      await audit({ action: "port-plan", account, ok: answer.ok });
+      if (!answer.ok) return send(res, 502, answer.message);
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      return res.end(answer.text);
     }
 
     // Compile source somebody else wrote (IC-989 phase 2): the hub's
@@ -1914,9 +1976,13 @@ const server = createServer(async (req, res) => {
       if (!claimBuildSlot(account)) {
         return json(res, 429, { error: "One app is already being built for this account. Wait for it to finish, then send this again." });
       }
+      // A build user before anything is counted: a busy box uses up nothing.
+      const lease = await leaseFor(account);
+      if (!lease) return json(res, 503, { error: BUSY });
       const room = compileAllowance(account);
       if (!room.ok) {
         activeByAccount.delete(account);
+        await lease.release();
         await audit({ action: "compile-refused", account, why: "limit" });
         return json(res, 429, { error: room.message });
       }
@@ -1928,10 +1994,12 @@ const server = createServer(async (req, res) => {
           account,
           name: String(body.name || "").trim().replace(/[\u0000-\u001f]+/g, " ").slice(0, 80),
           files: checked.files,
+          lease,
         });
       } catch (err) {
         compilesRunning = Math.max(0, compilesRunning - 1);
         activeByAccount.delete(account);
+        await lease.release();
         throw err;
       }
       return json(res, 202, { id: job.id });
@@ -1966,26 +2034,24 @@ const server = createServer(async (req, res) => {
       if (!claimBuildSlot(allowed.account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
+      const lease = await leaseFor(allowed.account);
+      if (!lease) return send(res, 503, BUSY);
       let job;
       try {
         // The project is written before the job starts, so a bad upload
         // is refused with a reason and never claims a case.
-        const holding = await sandbox.scratch("krate-port-");
-        let root;
-        try {
-          root = await writeProject(body.project, holding);
-          await sandbox.handOver(holding);
-        } catch (err) {
-          await rm(holding, { recursive: true, force: true }).catch(() => {});
-          throw err;
-        }
+        const holding = await lease.scratch("krate-port-");
+        const root = await writeProject(body.project, holding);
+        await lease.handOver(holding);
         job = await startBuild({
           request, token, account: allowed.account, device, byok: Boolean(allowed.byok),
-          port: { source: root, work: join(holding, "work"), name },
+          port: { source: root, work: join(holding, "work"), name }, lease,
         });
         job.sourceDir = holding;
       } catch (err) {
         activeByAccount.delete(allowed.account);
+        // Its home, the upload in it, is emptied with it.
+        await lease.release();
         // The hub's wall, in the same JSON shape as the one-app wall, so
         // Studio shows its sentence and the ways on.
         if (err && err.wall) return json(res, err.status, { wall: true, ...err.wall, message: err.message });
@@ -2035,7 +2101,14 @@ const server = createServer(async (req, res) => {
         // mid-plan still remembers the plan was asked for.
         await savePlans();
       }
-      const answer = await planRequest(request, theirs, body.attachments);
+      const lease = await sandbox.lease();
+      if (!lease) return send(res, 503, BUSY);
+      let answer;
+      try {
+        answer = await planRequest(request, theirs, body.attachments, lease);
+      } finally {
+        await lease.release();
+      }
       // What it cost, and whose money (K-862). A plan answered without a
       // price line is charged the high guess on our key, never zero.
       const usd = answer.spend ? answer.spend.usd : (answer.ok && !theirs ? PLAN_UNPRICED_USD : 0);
@@ -2089,6 +2162,8 @@ const server = createServer(async (req, res) => {
       if (!claimBuildSlot(account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
+      const lease = await leaseFor(account);
+      if (!lease) return send(res, 503, BUSY);
       // One free change, like one free app. Asked before any work starts,
       // and before the source is copied, so a refusal costs nothing.
       //
@@ -2113,6 +2188,7 @@ const server = createServer(async (req, res) => {
         // unreleased claim locks this account out of building for the life
         // of the process.
         activeByAccount.delete(account);
+        await lease.release();
         return json(res, 402, {
           wall: true,
           download: Boolean(mayRevise.download),
@@ -2122,19 +2198,21 @@ const server = createServer(async (req, res) => {
       // The source the change starts from is the file that was made -- the
       // one the person could have downloaded -- copied into the new job's
       // own directory so nothing edits a finished result in place.
-      const sourceDir = await sandbox.scratch("krate-revise-");
-      const source = join(sourceDir, "app.krate");
-      await writeFile(source, bytes);
-      await sandbox.handOver(sourceDir);
       let next;
       try {
+        const sourceDir = await lease.scratch("krate-revise-");
+        const source = join(sourceDir, "app.krate");
+        await writeFile(source, bytes);
+        await lease.handOver(sourceDir);
         next = await startBuild({
           request: job.request, token, account, device,
           attachments: body.attachments,
           revise: { parentId: id, source, change, caseId: mayRevise.caseId, name: job.result.name },
+          lease,
         });
       } catch (err) {
         activeByAccount.delete(account);
+        await lease.release();
         throw err;
       }
       return json(res, 200, { id: next.id, parent: id });
@@ -2303,6 +2381,9 @@ function send(res, status, body) {
 // State first, then the port: a request that arrives before the old records
 // are loaded would answer "no such build" about a job the disk knows.
 await initState();
+// The shared toolchain is checked before the first build can be asked for
+// (sandbox.js, K-1297): a box where a build user could write it refuses.
+await sandbox.ready;
 server.listen(PORT, () => {
   console.log(`krate builder on :${PORT} (engine: ${KRATE}, agent: ${AGENT})`);
   gifts.warm();

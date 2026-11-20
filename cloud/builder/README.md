@@ -81,7 +81,8 @@ KRATE_BIN=/path/to/krate KRATE_AGENT=claude node src/server.js
 | `KRATE_COMPILE_TIMEOUT_MS` | Wall clock for one compile, check and pack together. Default 10 minutes, for a cold dependency cache |
 | `KRATE_COMPILE_CRATES` | The crates.io crates uploaded source may depend on, comma-separated. Default `wit-bindgen-rt,libm` (K-1293) |
 | `KRATE_SDK_ROOT` | Where the SDK is, for `/compile`. Unset, the engine's own cache is used |
-| `KRATE_BUILD_USER` | The user every build runs as (K-1293). Default `kratebuild`. The service must be root to hand builds to it; with `FLY_APP_NAME` set and no such user, every build door answers 503 |
+| `KRATE_BUILD_USER` | The build users' name (K-1293): `kratebuild`, or with `KRATE_BUILD_SLOTS` the pool `kratebuild1..N`. The service must be root to hand builds to it; with `FLY_APP_NAME` set and no such user, every build door answers 503 |
+| `KRATE_BUILD_SLOTS` | How many build users, and so how many jobs at once (K-1297). The image sets it from `BUILD_SLOTS` (6) and makes that many users. Unset: the one `KRATE_BUILD_USER`, one job at a time |
 | `KRATE_BUILD_ENV_PASS` | Extra environment names a build may see, comma-separated (a new engine setting, a test hook). A name that reads like a credential is refused |
 | `KRATE_JUDGE_DIR` | Where uploads being judged land. `/work/judge` in the image: root's, 0711, so the judge reads by exact path only |
 | `KRATE_BUILDER_SECRET` | The secret the hub's `/keys/use` asks for before it hands out a person's own API key (K-861). A Fly secret here and a Worker secret on the hub, the same value on both; unset, bring-your-own-key builds fall back to the funded path |
@@ -131,8 +132,9 @@ compile time -- `include_str!("/proc/1/environ")` -- and send the bytes
 back in the bundle or a compiler error.
 
 **The boundary is the uid.** The service runs as root and holds the hub
-secret and the Anthropic key; every build-time child runs as `kratebuild`
-(`src/sandbox.js`, the one function every such child is started through).
+secret and the Anthropic key; every build-time child runs as a build user
+leased for its job from a pool, `kratebuild1..N` (`KRATE_BUILD_SLOTS`,
+`src/sandbox.js`, the one place every such child is started through).
 A process root handed to another uid cannot read root's
 `/proc/<pid>/environ`, and `/work/state` -- jobs, other people's finished
 apps, the ledgers -- is root's and 0700. `/health` says
@@ -167,9 +169,20 @@ server spawns, that neither the service's nor PID 1's environ can be read,
 that `/work/state` cannot be listed, and that the secret appears nowhere a
 build can see. It never prints the secret.
 
-Not covered by the uid: builds share one user, so two builds running at the
-same moment can read each other's files and environment, and the caches in
-`/work/build` are shared between them (K-1297).
+**One build user per running job (K-1297).** Two builds at once never
+share a uid, so neither can read the other's `/proc/<pid>/environ` (a
+person's own API key) or its folders: each lease's home,
+`/work/build/<n>`, is 0700 to its own uid and holds everything the build
+writes -- HOME, TMPDIR, its own `CARGO_HOME` (the crates it fetches), the
+engine's SDK and compile cache. When the job ends -- done, failed, stopped
+or timed out -- every process of that uid is killed and the home emptied
+before the uid goes back to the pool; a uid that will not let go is retired
+until restart. What every build shares -- `RUSTUP_HOME`, the image's
+`CARGO_HOME`, `/usr/local/bin`, wasi-sdk -- is root's and read-only to
+build users, and a production box where it is not refuses to build. With
+every build user leased, a door answers 503 "busy"; `/health` says
+`"slots":{"size":N,"free":n}`. The cost: no compile cache survives a job, so
+every build compiles the SDK's crates and fetches its crates itself.
 
 ## The two guards that matter
 

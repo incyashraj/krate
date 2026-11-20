@@ -9,19 +9,19 @@
 # image looks right, and the running machine has an empty root-owned
 # directory the service cannot write to.
 #
-# Two owners on the volume (K-1293, see the Dockerfile):
+# Two owners on the volume (K-1293, K-1297, see the Dockerfile):
 #
 #   /work            root 0755   the way in, nothing more
 #   /work/state      root 0700   jobs, finished apps, ledgers: the service's
 #   /work/tmp        root 0700   the service's own scratch
 #   /work/judge      root 0711   uploads being judged: read by exact path only
-#   /work/build      kratebuild 0700   the build user's home: caches, scratch
+#   /work/build      root 0755   the build users' homes, one per slot:
+#   /work/build/<n>  kratebuild<n> 0700, made fresh for each job and emptied
+#                    after it (src/sandbox.js)
 #
-# A build runs as kratebuild and so can reach its own home and nothing of
-# the service's: not another person's finished app, not a ledger.
+# A build runs as the build user its job leased and so can reach its own
+# home and nothing else: not the service's files, not another job's.
 set -eu
-
-BUILD_USER="${KRATE_BUILD_USER:-kratebuild}"
 
 if [ "$(id -u)" != "0" ]; then
   # Started as somebody else (`docker run --user`): nothing here can hand a
@@ -39,19 +39,15 @@ chmod 0711 /work/judge
 # here. They are the service's now.
 chown -R root:root /work/state /work/tmp
 
-home="$(getent passwd "$BUILD_USER" | cut -d: -f6 || true)"
-if [ -n "$home" ]; then
-  mkdir -p "$home"
-  # The warm cache the old layout kept at /work/.cache (the SDK, the
-  # compiled-dependency cache) moves once into the build user's home, so
-  # the first build after this change is not a cold one.
-  if [ -d /work/.cache ] && [ ! -e "$home/.cache" ]; then
-    mv /work/.cache "$home/.cache"
-  fi
-  mkdir -p "$home/tmp" "$home/.cache" "$home/.krate"
-  chown -R "$BUILD_USER:$BUILD_USER" "$home"
-  chmod 0700 "$home"
-fi
+# The build users' homes start empty on every boot: nothing a build wrote
+# in an earlier life of this machine (a compile cache, a fetched crate, a
+# job's files) is there for the next one (K-1297). That includes the old
+# layout's shared caches, /work/build/.cache and /work/.cache, which every
+# build could write.
+rm -rf /work/build /work/.cache
+mkdir -p /work/build
+chown root:root /work/build
+chmod 0755 /work/build
 
 # Node runs as root and is this container's main process, so it gets the
 # stop signal itself and ends the builds in flight politely (server.js).

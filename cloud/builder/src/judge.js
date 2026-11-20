@@ -22,26 +22,31 @@ import { pipeline } from "node:stream/promises";
 // `spawnImpl` is the builder's sandbox (K-1293): an upload is a stranger's
 // bytes, so the engine that reads them runs as the build user with no
 // secret in its environment. The default is for the tests.
-function run(program, args, { timeoutMs = 10 * 60 * 1000, spawnImpl = spawn } = {}) {
+//
+// The builder's spawnImpl answers a promise (it takes a build user from the
+// pool first, K-1297); a plain spawn answers the child. Both are taken.
+async function run(program, args, { timeoutMs = 10 * 60 * 1000, spawnImpl = spawn } = {}) {
+  let child;
+  try {
+    child = await spawnImpl(program, args, { stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    return { code: -1, stdout: "", stderr: String(err && err.message || err) };
+  }
   return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawnImpl(program, args, { stdio: ["ignore", "pipe", "pipe"] });
-    } catch (err) {
-      return resolve({ code: -1, stdout: "", stderr: String(err && err.message || err) });
-    }
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+    // The builder's child says when its build user is back in the pool.
+    const back = () => child.handedBack || Promise.resolve();
     child.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ code: -1, stdout, stderr: String(err) });
+      back().then(() => resolve({ code: -1, stdout, stderr: String(err) }));
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve({ code, stdout, stderr });
+      back().then(() => resolve({ code, stdout, stderr }));
     });
   });
 }

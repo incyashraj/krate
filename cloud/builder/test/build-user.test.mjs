@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as probeServer } from "node:net";
@@ -65,7 +65,7 @@ const work = await mkdtemp(join(tmpdir(), "krate-build-user-"));
 const calls = join(work, "calls.log");
 const krateBin = join(work, "krate");
 await writeFile(krateBin, `#!/bin/sh
-echo "$1|uid=$(id -u)|home=$HOME|tmp=$TMPDIR|user=\${USER:-}|secret=\${KRATE_BUILDER_SECRET:-none}|anthropic=\${ANTHROPIC_API_KEY:-none}|openai=\${OPENAI_API_KEY:-none}|fly=\${FLY_API_TOKEN:-none}|cwd=$(pwd)" >> "${calls}"
+echo "$1|uid=$(id -u)|home=$HOME|tmp=$TMPDIR|cargo=\${CARGO_HOME:-none}|user=\${USER:-}|secret=\${KRATE_BUILDER_SECRET:-none}|anthropic=\${ANTHROPIC_API_KEY:-none}|openai=\${OPENAI_API_KEY:-none}|fly=\${FLY_API_TOKEN:-none}|cwd=$(pwd)" >> "${calls}"
 case "$1" in
   --version) echo "krate 9.9.9-test"; exit 0 ;;
   krate-mode) echo "# Krate Mode"; exit 0 ;;
@@ -80,6 +80,8 @@ case "$1" in
   run) exit 1 ;;
   check-app)
     dir="$2"
+    # A slow build: its pid where the test can see it, then a long wait.
+    if grep -q SLOW "$dir/src/lib.rs"; then echo $$ > "$HOME/../$(basename "$HOME").pid"; sleep 30; fi
     crate=$(grep -m1 '^name' "$dir/Cargo.toml" | sed 's/.*"\\(.*\\)".*/\\1/' | tr '-' '_')
     mkdir -p "$dir/target/wasm32-wasip1/release"
     printf 'wasm' > "$dir/target/wasm32-wasip1/release/$crate.wasm"
@@ -135,7 +137,7 @@ async function startBuilder(extra) {
     try { if ((await fetch(`${base}/health`)).ok) break; } catch (e) {}
     await sleep(100);
   }
-  return { base, proc, log: () => log };
+  return { base, proc, stateDir, log: () => log };
 }
 
 async function engineCalls() {
@@ -169,16 +171,27 @@ rationale = "Open the window"
 required = true
 `;
 
-test("every door hands its children to the build user, with only the key that door needs", async () => {
+/* A pool of build users, every one of them this very user (a test cannot
+ * be root), each with its own home under `pool-<name>/`. */
+async function poolOf(name, n) {
   const me = process.getuid();
-  const buildHome = join(work, "build-home");
-  await mkdir(buildHome);
-  const passwd = join(work, "passwd");
-  await writeFile(passwd, `kratebuild:x:${me}:${process.getgid()}::${buildHome}:/bin/sh\n`);
-  const b = await startBuilder({ KRATE_BUILD_PASSWD: passwd });
-  const health = await (await fetch(`${b.base}/health`)).json();
+  const root = join(work, `pool-${name}`);
+  await mkdir(root);
+  const homes = Array.from({ length: n }, (_, i) => join(root, String(i + 1)));
+  const file = join(work, `passwd-${name}`);
+  await writeFile(file, homes.map((h, i) => `kratebuild${i + 1}:x:${me}:${process.getgid()}::${h}:/bin/sh\n`).join(""));
+  return { file, homes, root, env: { KRATE_BUILD_PASSWD: file, KRATE_BUILD_SLOTS: String(n) } };
+}
+const health = async (b) => (await fetch(`${b.base}/health`)).json();
+
+test("every door hands its children to a build user of its own, with only the key that door needs", async () => {
+  const me = process.getuid();
+  const pool = await poolOf("doors", 2);
+  const b = await startBuilder(pool.env);
+  const said = await health(b);
   // This user, not root, so no boundary -- the server says so honestly.
-  assert.equal(health.isolation, "none");
+  assert.equal(said.isolation, "none");
+  assert.deepEqual(said.slots, { size: 2, free: 2 });
 
   // /plan: a model call on the house key.
   const plan = await post(b.base, "/plan", { request: "a notes app" });
@@ -233,17 +246,96 @@ test("every door hands its children to the build user, with only the key that do
       assert.equal(c.anthropic, "none", "a gift needs no key");
       continue;
     }
-    // The build user's own home and scratch, which only the switching path sets.
+    // A build user's own home, scratch and cargo home, which only the
+    // switching path sets.
     assert.equal(c.uid, String(me));
-    assert.equal(c.home, buildHome, `\`krate ${c.verb}\` ran outside the build user's home`);
-    assert.equal(c.tmp, join(buildHome, "tmp"), `\`krate ${c.verb}\` got the service's TMPDIR`);
-    assert.equal(c.user, "kratebuild");
+    const slot = pool.homes.indexOf(c.home);
+    assert.ok(slot >= 0, `\`krate ${c.verb}\` ran outside a build user's home: ${c.home}`);
+    assert.equal(c.tmp, join(c.home, "tmp"), `\`krate ${c.verb}\` got the service's TMPDIR`);
+    assert.equal(c.cargo, join(c.home, ".cargo"), `\`krate ${c.verb}\` shared a cargo home`);
+    assert.equal(c.user, `kratebuild${slot + 1}`);
     const wantsKey = c.verb === "plan" || c.verb === "create";
     assert.equal(c.anthropic, wantsKey ? HOUSE_KEY : "none", `\`krate ${c.verb}\` key`);
   }
-  // A build's own folder is in the build user's scratch, not the service's.
+  // A build's own folder is in its build user's scratch, not the service's.
   const created = seen.find((c) => c.verb === "create");
-  assert.ok(created.cwd.startsWith(join(await realpath(buildHome), "tmp") + "/krate-build-"), created.cwd);
+  assert.ok(created.cwd.startsWith(join(await realpath(pool.root), created.home.split("/").pop(), "tmp") + "/krate-build-"), created.cwd);
+  // Every job handed its user back, its home emptied.
+  await until(async () => (await health(b)).slots.free === 2);
+  assert.deepEqual(await readdir(pool.root), [], "no build user's home outlives its job");
+  b.proc.kill("SIGTERM");
+});
+
+test("two jobs at once run as two build users; a third is told busy; a stopped and a timed-out job hand theirs back", async () => {
+  await writeFile(calls, "");
+  const pool = await poolOf("busy", 2);
+  // More compiles allowed than build users, so the pool is what says busy.
+  const b = await startBuilder({ ...pool.env, KRATE_COMPILE_TIMEOUT_MS: "2500", KRATE_COMPILE_CONCURRENT: "5" });
+  const asHub = (who) => ({ "x-krate-builder": SECRET, "x-krate-account": `hub:github:${who}` });
+  const slow = (who) => post(b.base, "/compile", {
+    name: "Slow",
+    files: [
+      { path: "Cargo.toml", data: b64(CARGO_TEMPLATE) },
+      { path: "manifest.toml", data: b64(MANIFEST) },
+      { path: "src/lib.rs", data: b64("#![no_std]\n// SLOW\n") },
+    ],
+  }, asHub(who));
+  const first = await slow("alice");
+  assert.equal(first.status, 202, b.log());
+  const second = await slow("bob");
+  assert.equal(second.status, 202, b.log());
+  // Both are in check-app: two pids, written in two different homes' names.
+  const pidFiles = pool.homes.map((h) => `${h}.pid`);
+  await until(async () => (await Promise.all(pidFiles.map((f) => readFile(f, "utf8").catch(() => "")))).every(Boolean));
+  const pids = await Promise.all(pidFiles.map(async (f) => Number(await readFile(f, "utf8"))));
+  const running = (await engineCalls()).filter((c) => c.verb === "check-app");
+  assert.equal(new Set(running.map((c) => c.home)).size, 2, "two jobs, two homes");
+  assert.equal(new Set(running.map((c) => c.user)).size, 2, "two jobs, two build users");
+  assert.deepEqual((await health(b)).slots, { size: 2, free: 0 });
+  // Each job's folder is its own build user's, 0700.
+  for (const c of running) assert.equal((await stat(c.cwd)).mode & 0o777, 0o700, c.cwd);
+
+  // A third job, anyone's, waits for a free build user: refused, not counted.
+  const third = await slow("carol");
+  assert.equal(third.status, 503);
+  assert.match((await third.json()).error, /busy/);
+  const ledger = JSON.parse(await readFile(join(b.stateDir, "compiles.json"), "utf8"));
+  assert.equal(ledger.accounts["hub:github:carol"], undefined, "a busy refusal uses up nothing");
+
+  // Stopped: its process is killed and its build user is back.
+  const aliceId = (await first.json()).id;
+  const stop = await fetch(`${b.base}/build/${aliceId}/stop`, { method: "POST", headers: asHub("alice") });
+  assert.equal(stop.status, 200);
+  await until(async () => (await health(b)).slots.free === 1);
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return false; } };
+  await until(async () => !alive(pids[0]) || !alive(pids[1]));
+  // Timed out: the same.
+  const bobId = (await second.json()).id;
+  const bob = await until(async () => {
+    const job = await (await fetch(`${b.base}/build/${bobId}`, { headers: asHub("bob") })).json();
+    return job.state === "failed" ? job : null;
+  });
+  assert.match(bob.error, /took longer than/);
+  await until(async () => (await health(b)).slots.free === 2);
+  assert.ok(!alive(pids[0]) && !alive(pids[1]), "neither job's check-app outlived it");
+  assert.deepEqual(await readdir(pool.root).then((n) => n.filter((x) => !x.endsWith(".pid"))), [], "both homes emptied");
+  // And the box builds again: a third person's job on a recycled user.
+  const again = await post(b.base, "/compile", {
+    name: "Quick",
+    files: [
+      { path: "Cargo.toml", data: b64(CARGO_TEMPLATE) },
+      { path: "manifest.toml", data: b64(MANIFEST) },
+      { path: "src/lib.rs", data: b64("#![no_std]\n") },
+    ],
+  }, asHub("carol"));
+  assert.equal(again.status, 202);
+  const carolId = (await again.json()).id;
+  const carol = await until(async () => {
+    const job = await (await fetch(`${b.base}/build/${carolId}`, { headers: asHub("carol") })).json();
+    return job.state === "done" || job.state === "failed" ? job : null;
+  });
+  assert.equal(carol.state, "done", b.log());
+  await until(async () => (await health(b)).slots.free === 2);
   b.proc.kill("SIGTERM");
 });
 
