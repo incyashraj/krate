@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/index.js";
+import { assertLayout } from "./mail-layout-tools.mjs";
 
 const KV = new Map();
 const env = {
@@ -230,6 +231,13 @@ test("a sign-up tells the founder at once, with the welcome ready in Gmail; noth
   assert.ok(note.text.includes("Email:  kj@example.com"));
   assert.ok(note.text.includes("Signed in with: github"));
   const compose = new URL(note.text.match(/https:\/\/mail\.google\.com\/mail\/\S+/)[0]);
+  // The designed copy: the same facts, the welcome as the button.
+  // The compose link is pages long: on the button only, spelled out in the text.
+  const composeHref = note.text.match(/https:\/\/mail\.google\.com\/mail\/\S+/)[0].replace(/&/g, "&amp;");
+  assert.ok(note.html.includes('src="https://krate.tech/krate-mark-3d-96.png" width="28" height="28" alt="Krate"'), "the logo");
+  assert.equal(note.html.split(`href="${composeHref}"`).length - 1, 1, "the welcome on the button, once");
+  assert.ok(note.html.includes(">Write the welcome</a>"));
+  assert.ok(note.html.includes(">kj@example.com</td>"), "the address in the facts");
   assert.equal(compose.searchParams.get("to"), "kj@example.com");
   assert.equal(compose.searchParams.get("cc"), "yashraj@krate.tech");
   assert.equal(compose.searchParams.get("authuser"), "incyashraj@gmail.com");

@@ -36,6 +36,7 @@
 // has its own switch here, named at the foot of every one of these mails.
 import { Org, extendOrg, allows, displayOf } from "./org.js";
 import { gmail, addressFor, mailReady } from "./org-mail.js";
+import { emailHtml } from "./mail-layout.js";
 // The same moments post to the organisation's Slack and Teams channels.
 import { postChat } from "./org-chat.js";
 import "./org-insights.js";
@@ -191,6 +192,17 @@ const ops = {
     const orgName = this.org().name;
     const link = (tab, digest) => `${site}/org/?o=${encodeURIComponent(ctx.slug)}&tab=${tab}${digest ? `&c=${digest}` : ""}`;
     const footer = (why) => `\n\nYou get this because ${why} in ${orgName} on Krate. Turn it off under Notifications on that page.`;
+    // The same words, designed (mail-layout.js); the footer becomes the
+    // small print under the card.
+    const designed = (subject, { heading, blocks, button, why }) =>
+      emailHtml({
+        title: subject,
+        preheader: heading,
+        heading,
+        blocks,
+        button,
+        footer: [`You get this because ${why} in ${orgName} on Krate. Turn it off under Notifications on that page.`],
+      });
     const wants = (principal, kind) => {
       const m = this.member(principal);
       return Boolean(m && m.state === "active" && prefsOf(m.notify)[kind].email);
@@ -210,18 +222,42 @@ const ops = {
             principal: m.principal,
             subject: `${appWords(c)} waits for your approval`,
             text: `${personWords(c.uploaded_by)} sent ${appWords(c)} to ${orgName}. It waits for someone who approves to look at it.${c.note ? `\n\nTheir note: ${clip(c.note, 1000)}` : ""}\n\nSee its code and what it can do, then approve or decline it: ${link("waiting", c.digest)}${footer("you approve apps")}`,
+            html: designed(`${appWords(c)} waits for your approval`, {
+              heading: `${appWords(c)} waits for your approval`,
+              blocks: [
+                `${personWords(c.uploaded_by)} sent ${appWords(c)} to ${orgName}. It waits for someone who approves to look at it.`,
+                ...(c.note ? ["Their note:", { quote: clip(c.note, 1000) }] : []),
+                "See its code and what it can do, then approve or decline it.",
+              ],
+              button: { label: "Review it", url: link("waiting", c.digest) },
+              why: "you approve apps",
+            }),
           }));
       } else if (event === "approved" && c.state === "released" && c.approved_by && c.approved_by !== c.uploaded_by && wants(c.uploaded_by, "version-decided")) {
         mails = [{
           principal: c.uploaded_by,
           subject: `${appWords(c)} is approved`,
           text: `${personWords(c.approved_by)} approved ${appWords(c)}. ${pilotOf(this, c) ? `It goes to the ${pilotOf(this, c)} group in ${orgName} first; everyone else gets it when it is released to everyone.` : `It is released: everyone it is for in ${orgName} can open it now.`}\n\nSee it: ${link("apps")}${footer("you sent it")}`,
+          html: designed(`${appWords(c)} is approved`, {
+            heading: `${appWords(c)} is approved`,
+            blocks: [
+              `${personWords(c.approved_by)} approved ${appWords(c)}. ${pilotOf(this, c) ? `It goes to the ${pilotOf(this, c)} group in ${orgName} first; everyone else gets it when it is released to everyone.` : `It is released: everyone it is for in ${orgName} can open it now.`}`,
+            ],
+            button: { label: "See it", url: link("apps") },
+            why: "you sent it",
+          }),
         }];
       } else if (event === "declined" && c.state === "declined" && wants(c.uploaded_by, "version-decided")) {
         mails = [{
           principal: c.uploaded_by,
           subject: `${appWords(c)} was declined`,
           text: `${personWords(c.declined_by)} declined ${appWords(c)}: ${clip(c.decline_reason, 500)}\n\nSend a new version once it is fixed. See it: ${link("waiting")}${footer("you sent it")}`,
+          html: designed(`${appWords(c)} was declined`, {
+            heading: `${appWords(c)} was declined`,
+            blocks: [`${personWords(c.declined_by)} declined ${appWords(c)}:`, { quote: clip(c.decline_reason, 500) }, "Send a new version once it is fixed."],
+            button: { label: "See it", url: link("waiting") },
+            why: "you sent it",
+          }),
         }];
       }
     } else if (event === "request") {
@@ -234,6 +270,12 @@ const ops = {
           principal: m.principal,
           subject: `${personWords(r.asked_by)} asked ${orgName} for an app`,
           text: `${personWords(r.asked_by)} asked for an app: "${clip(r.text, 1000)}"\n\nAnswer it: ${link("requests")}${footer("you turned on mail for app requests")}`,
+          html: designed(`${personWords(r.asked_by)} asked ${orgName} for an app`, {
+            heading: `${personWords(r.asked_by)} asked ${orgName} for an app`,
+            blocks: [`${personWords(r.asked_by)} asked for an app:`, { quote: clip(r.text, 1000) }],
+            button: { label: "Answer it", url: link("requests") },
+            why: "you turned on mail for app requests",
+          }),
         }));
     }
     if (!key || !mails.length) return this.ok({ mails: [] });
@@ -267,7 +309,7 @@ export async function sendNotices(n, event) {
     for (const m of (plan && plan.body && plan.body.mails) || []) {
       const to = await addressFor(n.env, m.principal);
       if (!to) continue;
-      const problem = await gmail(n.env, n.smtpSend, { to, subject: m.subject, text: m.text, cc: null });
+      const problem = await gmail(n.env, n.smtpSend, { to, subject: m.subject, text: m.text, html: m.html, cc: null });
       if (!problem) sent += 1;
     }
     return sent;
