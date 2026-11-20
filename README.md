@@ -313,8 +313,8 @@ pick, every path ends at the same `.krate` file:
 - **Claude Code plugin**: in Claude Code, run
   `/plugin install krate --marketplace incyashraj/krate-claude-plugin` (or,
   in a terminal, `claude plugin marketplace add incyashraj/krate-claude-plugin`
-  and then `claude plugin install krate@krate`). It connects Krate's MCP
-  server and teaches Claude to make, check, package and publish Krate apps.
+  and then `claude plugin install krate@krate`). It teaches Claude to
+  make, check, package and publish Krate apps with Krate's own commands.
   Install Krate itself first. Source:
   [krate-claude-plugin](https://github.com/incyashraj/krate-claude-plugin).
 - **MCP**: `krate mcp` is a server Claude Desktop or Cursor can call; add
