@@ -2823,6 +2823,10 @@ function friendlyAsk(cap) {
     // IC-986: the printer the person picks, nothing else.
     "device.printer": "print to a printer you choose",
   };
+  // IC-987: the manifest crate's words, with the port the person is asked
+  // about.
+  const listen = /^net\.listen:(\d+)$/.exec(cap);
+  if (listen) return `let other devices on your network open this app on port ${listen[1]}`;
   return map[cap] || map[cap.split(":")[0]] || cap;
 }
 
@@ -4938,6 +4942,8 @@ const CAP_WORDS = {
   "device.serial": "Talk to a serial device you choose",
   // IC-986: the printer the person picks, nothing else.
   "device.printer": "Print to a printer you choose",
+  // IC-987: shown with its port, "(8080)".
+  "net.listen": "Let other devices on your network open this app on a port",
   "memory.budget": "Use more memory than apps normally get",
   "audio.playback": "Play sound",
   "audio.capture": "Record from the microphone",
@@ -5399,6 +5405,8 @@ const CAPS_REACH_OUT = new Set([
   // Paper and labels out in the world, on a printer the person picks
   // (IC-986).
   "device.printer",
+  // Other devices on the network reaching in (IC-987).
+  "net.listen",
   // Acts on the desktop outside its own window.
   "ui.open-url",
   "ui.notify",

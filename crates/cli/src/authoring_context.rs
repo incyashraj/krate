@@ -973,6 +973,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "store.secret" => "secrets encrypted at rest (passwords, tokens); not the OS keychain",
         "random.bytes" => "entropy (also what getrandom/rand need)",
         "net.connect" => "reach a host and port",
+        "net.listen" => "let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration (section 2c, rule 7b)",
         "net.connection" => "an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8)",
         "time.clock" => "wall-clock time",
         "time.monotonic" => "a monotonic timer",
@@ -1061,8 +1062,31 @@ socket exists. Nothing blocks: ask `tcp-status`, `tcp-read` and \
 `udp-receive` from the loop. `std::net` cannot open sockets in an app; in \
 Rust use the `net-krate` crate's `TcpStream`, `UdpSocket` and \
 `lookup_host`, which have std's shape (and tokio and quinn adapters). A \
-UDP socket hears only addresses it sent to, and an app cannot listen for \
-incoming connections yet.\n\n\
+UDP socket hears only addresses it sent to.\n\n\
+7b. **Serving the people on the network.** A factory or lab app that the \
+floor's tablets and other computers open in a browser, or a tool other \
+programs on this computer talk to, listens on one port: declare \
+`net.listen:<port>` (1024 or above; 8080 is the usual choice) with a \
+rationale. `krate::net::listen::Listener::open(8080, Scope::LocalNetwork)?` \
+lets other devices in -- mark it `required = true`, because the person is \
+asked \"let other devices on your network open this app on port 8080\" -- \
+and `Scope::ThisComputer` binds 127.0.0.1 only, which needs the declaration \
+but no question (mark it `required = false` when that is all the app does). \
+Nothing blocks: each turn of the loop, `while let Some(conn) = \
+listener.accept()? { ... }` takes the devices that arrived, and \
+`conn.read(4096)` (`Data`, `Pending`, `Closed`) and `conn.write(bytes)?` \
+work like a dialled connection; write the whole answer, then drop the \
+connection -- what was written still arrives. For a page, answer \
+`HTTP/1.1 200 OK` with `Content-Type`, `Content-Length` and \
+`Connection: close` headers. Tell the person what to open on the other \
+device: `http://` this computer's network address (its network settings \
+show it), then `:8080`; the app cannot read the address itself yet. \
+Refusals are words \
+(`krate::net::listen::words(&err)`): `NotAllowed` names \
+`net.listen:<port>`, `InUse` is another program on the port, `BadPort` is \
+below 1024, `TooMany` is 32 devices already connected. Every listener closes \
+when the app ends. A computer only: a browser tab and a phone answer \
+`Unavailable`.\n\n\
 8. **An organisation's own API: a company connection.** When the app is \
 for an organisation (\"for finance, reading the Finance API\") and its admin \
 set that API up as a connection, declare `net.connection:<name>` (the name \

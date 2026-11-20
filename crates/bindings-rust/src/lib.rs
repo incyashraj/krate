@@ -1389,10 +1389,129 @@ pub mod net {
     /// ```
     pub mod sockets {
         pub use crate::bindings::krate::net::sockets::{
-            close, lookup, poll_lookup, tcp_connect, tcp_read, tcp_status, tcp_write, udp_bind,
-            udp_local_port, udp_receive, udp_send, ConnectStatus, Datagram, LookupStatus,
-            ReadResult,
+            close, lookup, poll_lookup, tcp_accept, tcp_connect, tcp_listen, tcp_local_port,
+            tcp_read, tcp_status, tcp_write, udp_bind, udp_local_port, udp_receive, udp_send,
+            ConnectStatus, Datagram, ListenError, ListenScope, LookupStatus, ReadResult,
         };
+    }
+
+    /// Serving the people on the network (IC-987): a factory or lab app
+    /// that tablets and the floor's other computers open in a browser, or a
+    /// tool other programs on this computer talk to.
+    ///
+    /// Declare `net.listen:<port>` (1024 or above) with a rationale. A
+    /// [`Listener`] for [`Scope::ThisComputer`] needs only the declaration;
+    /// one for [`Scope::LocalNetwork`] also needs the person's yes, which
+    /// the consent screen asks as "let other devices on your network open
+    /// this app on port N". Nothing here blocks: ask [`Listener::accept`]
+    /// from the app's loop, and read and write each [`Connection`] the same
+    /// way. Dropping either closes it, and every one closes when the app
+    /// ends.
+    ///
+    /// ```ignore
+    /// use krate::net::listen::{Listener, Scope};
+    /// let server = Listener::open(8080, Scope::LocalNetwork)?;
+    /// // each turn of the loop:
+    /// while let Some(conn) = server.accept()? {
+    ///     clients.push(conn);
+    /// }
+    /// for conn in &clients {
+    ///     if let ReadResult::Data(bytes) = conn.read(4096) { /* a request */ }
+    /// }
+    /// ```
+    pub mod listen {
+        use super::NetError;
+        use crate::bindings::krate::net::sockets as host;
+        pub use crate::bindings::krate::net::sockets::{
+            ConnectStatus, ListenError, ListenScope as Scope, ReadResult,
+        };
+        use alloc::string::String;
+
+        /// A port this app listens on. Dropped, it is closed: the
+        /// connections it accepted stay open until each is dropped.
+        pub struct Listener {
+            handle: u64,
+        }
+
+        impl Listener {
+            /// Listen on `port`, which the manifest declares as
+            /// `net.listen:<port>`.
+            pub fn open(port: u16, scope: Scope) -> Result<Self, ListenError> {
+                host::tcp_listen(port, scope).map(|handle| Self { handle })
+            }
+
+            /// The next device that connected, or `None`. Never waits.
+            pub fn accept(&self) -> Result<Option<Connection>, ListenError> {
+                host::tcp_accept(self.handle).map(|c| c.map(|handle| Connection { handle }))
+            }
+
+            /// The port it listens on.
+            pub fn port(&self) -> Result<u16, ListenError> {
+                host::tcp_local_port(self.handle)
+            }
+
+            /// The raw handle, for the `sockets` calls.
+            pub fn handle(&self) -> u64 {
+                self.handle
+            }
+        }
+
+        impl Drop for Listener {
+            fn drop(&mut self) {
+                host::close(self.handle);
+            }
+        }
+
+        /// One device connected to a [`Listener`]. Dropped, it is closed.
+        pub struct Connection {
+            handle: u64,
+        }
+
+        impl Connection {
+            /// Take up to `max_bytes` of what the device sent. Never waits:
+            /// `Pending` means nothing new, `Closed` that it finished.
+            pub fn read(&self, max_bytes: u32) -> ReadResult {
+                host::tcp_read(self.handle, max_bytes)
+            }
+
+            /// Queue bytes to send; returns how many were taken, which is
+            /// fewer when the queue is full (send the rest later).
+            pub fn write(&self, bytes: &[u8]) -> Result<u32, NetError> {
+                host::tcp_write(self.handle, bytes)
+            }
+
+            /// Who connected, as "ip:port".
+            pub fn peer(&self) -> Option<String> {
+                match host::tcp_status(self.handle) {
+                    ConnectStatus::Connected(peer) => Some(peer),
+                    _ => None,
+                }
+            }
+
+            /// The raw handle, for the `sockets` calls.
+            pub fn handle(&self) -> u64 {
+                self.handle
+            }
+        }
+
+        impl Drop for Connection {
+            fn drop(&mut self) {
+                host::close(self.handle);
+            }
+        }
+
+        /// Words to show the person for a refusal.
+        pub fn words(err: &ListenError) -> &str {
+            match err {
+                ListenError::NotAllowed(why)
+                | ListenError::InUse(why)
+                | ListenError::BadPort(why)
+                | ListenError::TooMany(why)
+                | ListenError::Unavailable(why)
+                | ListenError::Failed(why) => why,
+                ListenError::UnknownHandle => "that listener is not open in this app",
+            }
+        }
     }
 
     /// Send a lower-level HTTP or HTTPS request record.

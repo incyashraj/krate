@@ -589,8 +589,11 @@ impl Default for SessionPolicy {
 /// capability breaks the build here instead of silently becoming grantable.
 pub fn reaches_outside_the_run(cap: &Capability) -> bool {
     const REACHES_OUTSIDE: &[&str] = &[
-        // The network, in every form it exists.
+        // The network, in every form it exists: reaching out, and other
+        // devices reaching in (IC-987). A listener for this computer alone
+        // needs only the declaration, so an automated run keeps it.
         "net.connect",
+        "net.listen",
         "store.shared",
         // The person's hardware.
         "audio.capture",
@@ -816,6 +819,11 @@ fn capability_allows(grant: &Capability, required: &Capability) -> bool {
             // A program is named exactly (IC-977): `process.run:cargo` runs
             // cargo and nothing else, whatever the name looks like.
             if grant.module() == "process" && grant.action() == "run" {
+                return grant_resource == required_resource;
+            }
+            // A listening port is named exactly (IC-987): `net.listen:8080`
+            // opens 8080 and no other port, never a pattern of them.
+            if grant.module() == "net" && grant.action() == "listen" {
                 return grant_resource == required_resource;
             }
             // `fs.list:images/**` must cover listing `images` itself. The glob
@@ -1086,6 +1094,34 @@ mod tests {
     /// been using all session would go looking for a permission prompt when
     /// what it should do is stop. Both withdrawals must also bite on
     /// `allows`, since that is the path the runtime actually calls.
+    /// A listening port is granted exactly (IC-987): `net.listen:8080` opens
+    /// 8080 and no other port, and a declared port the person did not allow
+    /// is a denial, not an undeclared call -- the difference the runtime
+    /// uses to still let the app listen for this computer alone.
+    #[test]
+    fn a_listening_port_is_granted_exactly_and_a_declared_one_is_denied_not_undeclared() {
+        let declared: BTreeSet<Capability> = [cap("net.listen:8080")].into_iter().collect();
+        let granted = SessionPolicy::from_grants([cap("net.listen:8080")]);
+        assert!(granted
+            .decide(&cap("net.listen:8080"), Some(&declared))
+            .is_granted());
+        assert_eq!(
+            granted
+                .decide(&cap("net.listen:8081"), Some(&declared))
+                .refusal(),
+            Some(&Refusal::Undeclared)
+        );
+        let everything = SessionPolicy::from_grants([cap("net.listen:8081")]);
+        assert!(!everything.allows(&cap("net.listen:8080")));
+        let nothing = SessionPolicy::from_grants([]);
+        assert_eq!(
+            nothing
+                .decide(&cap("net.listen:8080"), Some(&declared))
+                .refusal(),
+            Some(&Refusal::Denied)
+        );
+    }
+
     #[test]
     fn an_expired_grant_is_reported_as_expired_and_not_as_revoked() {
         let declared: BTreeSet<Capability> = [cap("audio.capture")].into_iter().collect();
@@ -1769,6 +1805,7 @@ mod tests {
             "process.terminal",
             "device.serial",
             "device.printer",
+            "net.listen:8080",
         ] {
             let cap = outside.parse().expect("parse capability");
             assert!(
@@ -1822,6 +1859,7 @@ mod tests {
             "process.terminal",
             "device.serial",
             "device.printer",
+            "net.listen",
         ] {
             assert!(
                 known.contains(entry),

@@ -20,6 +20,7 @@ written from memory.
 | Input | Keyboard, pointer, wheel |
 | Devices | A serial device the person picks: an instrument, a sensor, an Arduino (macOS, Windows and Linux) |
 | Printing | The print dialog for what a window shows, and documents and labels (PDF, PNG, ZPL, EPL, ESC/POS) to a printer the person picks once (macOS, Windows and Linux) |
+| Serving | One declared port other devices on the network open, a factory or lab app the floor's tablets use; or this computer only (macOS, Windows and Linux) |
 
 ## Not yet
 
@@ -32,7 +33,6 @@ written from memory.
 | Screen capture | Screenshot and recording tools |
 | Tray and menu bar | Utilities that live at the edge of the screen |
 | Scheduled wake | Reminders that fire with the app closed |
-| Local server | Receiving webhooks, serving a page on the LAN |
 
 ## Deliberately never
 

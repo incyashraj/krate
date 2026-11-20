@@ -24482,6 +24482,10 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "process.run" | "process.terminal" => Some(":process/"),
             "device.serial" => Some(":serial/"),
             "device.printer" => Some(":print/"),
+            // Listening (IC-987): the sockets interface, not just any of net.
+            // Optional is fine here -- it is how an app that serves only this
+            // computer declares its port without a question.
+            "net.listen" => Some(":net/sockets"),
             // System and always-on families carry no signal here.
             _ => None,
         };
@@ -31485,6 +31489,22 @@ again: {} -> {}",
         let problem = manifest_overreach(&printer(false), &print_imports)
             .expect("must refuse an optional printer ask");
         assert!(problem.contains("marks it optional"), "{problem}");
+
+        // A listening port (IC-987): with the sockets import, clean, and
+        // optional too (this computer only, no question); with only the
+        // HTTP client, refused.
+        let listen = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"net.listen:8080\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let sockets_imports = vec!["krate:net/sockets@0.1.0".to_string()];
+        assert!(manifest_overreach(&listen(true), &sockets_imports).is_none());
+        assert!(manifest_overreach(&listen(false), &sockets_imports).is_none());
+        let http_only = vec!["krate:net/http-client@0.1.0".to_string()];
+        let problem = manifest_overreach(&listen(true), &http_only)
+            .expect("must refuse a listen ask with no sockets import");
+        assert!(problem.contains(":net/sockets"), "{problem}");
     }
 
     /// The install loop must stop when a pass changes nothing.

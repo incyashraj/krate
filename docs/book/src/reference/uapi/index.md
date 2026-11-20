@@ -627,6 +627,7 @@ HTTP client calls. Phase 2 starts with simple request and response bodies.
 Accepted capability strings for this module, generated from the runtime manifest table:
 
 - `net.connect:<host>:<port>` - manifest or session grant
+- `net.listen:<port>` - manifest or session grant
 - `net.connection:<connection-name>` - manifest or session grant
 
 - `get` and `fetch` require a matching `net.connect:HOST:PORT` grant before the adapter opens a socket.
@@ -691,6 +692,7 @@ krate::io::stdio::println(&body)?;
 Accepted capability strings for this module, generated from the runtime manifest table:
 
 - `net.connect:<host>:<port>` - manifest or session grant
+- `net.listen:<port>` - manifest or session grant
 - `net.connection:<connection-name>` - manifest or session grant
 
 ### Functions
@@ -733,7 +735,28 @@ Accepted capability strings for this module, generated from the runtime manifest
 > to, or none. Never blocks.
 
 - `udp-receive(handle: u64) -> option<datagram>`
-> Close a TCP connection or UDP socket. Safe on a handle already closed.
+> Listen for TCP connections on `port` (IC-987). Only a port the
+> manifest declares as `net.listen:<port>`, never one below 1024, and
+> never one something else already listens on. `this-computer` binds the
+> loopback address and needs only the declaration; `local-network` binds
+> every address of this computer and needs the person's yes too.
+> Returns a listener handle at once.
+
+- `tcp-listen(port: u16, scope: listen-scope) -> result<u64, listen-error>`
+> The next connection waiting on a listener, or none. Never blocks: ask
+> from the app's loop. The handle it returns is a connection like one
+> `tcp-connect` made: `tcp-status` says who connected, `tcp-read`,
+> `tcp-write` and `close` work on it. At most 32 connections from other
+> devices are open at once; past that this answers `too-many` and the
+> device waits until the app closes one.
+
+- `tcp-accept(listener: u64) -> result<option<u64>, listen-error>`
+> The local port of a listener or a connected TCP connection.
+
+- `tcp-local-port(handle: u64) -> result<u16, listen-error>`
+> Close a TCP connection, a UDP socket or a listener. Safe on a handle
+> already closed. Closing a listener leaves the connections it accepted
+> open until each is closed or the run ends.
 
 - `close(handle: u64)`
 
@@ -790,6 +813,53 @@ Accepted capability strings for this module, generated from the runtime manifest
 > The connection broke, with the reason.
 
 - `failed`: `net-error`
+
+#### `listen-scope` enum
+
+> Who may open a listener (IC-987).
+
+> Programs on this computer only: the listener is bound to the loopback
+> address (127.0.0.1), which nothing outside the computer can reach.
+> Needs `net.listen:<port>` declared; the person is not asked.
+
+- `this-computer`
+> Other devices on the same network too: tablets on a factory floor,
+> the lab's other computers. Needs `net.listen:<port>` declared and the
+> person's yes ("let other devices on your network open this app on
+> port N").
+
+- `local-network`
+
+#### `listen-error` variant
+
+> Why a listener could not be opened or used. Every case but
+> `unknown-handle` carries words to show the person.
+
+> The manifest does not declare `net.listen:<port>` for this port, the
+> person did not let other devices in, or the organisation that manages
+> the computer does not allow it. The words name the capability.
+
+- `not-allowed`: `string`
+> Another program on this computer, or another listener of this app,
+> already listens on the port.
+
+- `in-use`: `string`
+> The port is below 1024, which belongs to the system.
+
+- `bad-port`: `string`
+> This app already holds as many listeners, or as many connections from
+> other devices, as it may at once. Close one first.
+
+- `too-many`: `string`
+> Listening is not possible here: a browser tab or a phone.
+
+- `unavailable`: `string`
+> Never issued, already closed, or not a listener.
+
+- `unknown-handle`
+> The system refused, with its reason.
+
+- `failed`: `string`
 
 #### `datagram` record
 
@@ -946,6 +1016,7 @@ Shared network request, response, and error types.
 Accepted capability strings for this module, generated from the runtime manifest table:
 
 - `net.connect:<host>:<port>` - manifest or session grant
+- `net.listen:<port>` - manifest or session grant
 - `net.connection:<connection-name>` - manifest or session grant
 
 ### Functions

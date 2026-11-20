@@ -1379,6 +1379,14 @@ fn plain_capability(cap: &str) -> Option<String> {
         "device.serial" => "talk to a serial device you choose",
         // A printer the person picks (IC-986).
         "device.printer" => "print to a printer you choose",
+        // Other devices on the network reaching in (IC-987): the manifest
+        // crate's words, with the port.
+        "net.listen" => {
+            return cap
+                .parse::<krate_manifest::Capability>()
+                .ok()
+                .map(|cap| cap.plain());
+        }
         // A program or a terminal (IC-977): the card's own words, which say
         // what a program can do.
         "process.run" | "process.terminal" => {
@@ -1799,6 +1807,12 @@ mod tests {
         assert_eq!(
             plain_capability("process.terminal").as_deref(),
             Some("open a terminal on this computer: it can do anything you can")
+        );
+        // A listening port (IC-987): the manifest crate's words, port and
+        // all.
+        assert_eq!(
+            plain_capability("net.listen:8080").as_deref(),
+            Some("let other devices on your network open this app on port 8080")
         );
         // A serial device is the one the person picks (IC-985), and the
         // line is the manifest crate's own words.

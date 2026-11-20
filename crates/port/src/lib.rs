@@ -1157,8 +1157,37 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "A protocol over TCP or UDP",
-        "Krate's `krate:net/sockets` covers this: TCP connections and UDP datagrams judged against the same `net.connect:<host>:<port>` grant a fetch uses. In Rust use net-krate's std-like `TcpStream`/`UdpSocket` (and its tokio and quinn adapters) in place of std::net, which wasm32-wasip1 cannot open. Listening for incoming connections is not offered yet.",
+        "Krate's `krate:net/sockets` covers this: TCP connections and UDP datagrams judged against the same `net.connect:<host>:<port>` grant a fetch uses. In Rust use net-krate's std-like `TcpStream`/`UdpSocket` (and its tokio and quinn adapters) in place of std::net, which wasm32-wasip1 cannot open. A server that listens is the `net.listen` finding.",
         Some("net.connect"),
+    );
+    // A program that serves: an HTTP server other devices open, a local API
+    // other programs call. Krate listens on one declared port (IC-987).
+    detect_pattern(
+        analysis,
+        "listen",
+        &[
+            "tcplistener::bind",
+            "tokio::net::tcplistener",
+            "axum::serve",
+            "httpserver::new",
+            "warp::serve",
+            "http.server",
+            "socketserver.",
+            "app.run(host",
+            "uvicorn.run(",
+            "http.createserver",
+            "app.listen(",
+            "server.listen(",
+            "http.listenandserve",
+            "net.listen(",
+            "tcplistener(",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "A server other devices or programs open",
+        "Krate's `krate:net/sockets` listens on one port the manifest declares as `net.listen:<port>` (1024 or above): `krate::net::listen::Listener::open(port, Scope::LocalNetwork)` lets other devices on the network in after the person agrees, `Scope::ThisComputer` serves this computer only and needs just the declaration. Accept from the event loop (`accept()` never waits) and read and write each connection like a dialled one; answer HTTP by hand or with a small parser, since server frameworks that own the socket (axum, actix, express, Flask's server) cannot bind one in an app. A computer only: a browser tab and a phone cannot listen.",
+        Some("net.listen"),
     );
     // Files dragged onto the window. Worth naming because it is the one way an
     // app receives a file without a dialog, and people do not think of a drop
@@ -2928,6 +2957,22 @@ dependencies = [
             .iter()
             .any(|finding| finding.id == "microphone"));
         assert!(!plan.findings.iter().any(|finding| finding.id == "hardware"));
+    }
+
+    /// A program that serves maps to net.listen (IC-987).
+    #[test]
+    fn a_server_that_listens_maps_to_net_listen() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("server.py"),
+            "import http.server\nhttp.server.HTTPServer(('', 8080), Handler).serve_forever()\n",
+        )
+        .unwrap();
+        let plan = analyze(dir.path()).unwrap();
+        assert!(plan
+            .suggested_capabilities
+            .contains(&"net.listen".to_string()));
+        assert!(plan.findings.iter().any(|finding| finding.id == "listen"));
     }
 
     /// A serial port maps to device.serial (IC-985), not to the hardware

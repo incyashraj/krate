@@ -6535,6 +6535,120 @@ mod tests {
         assert!(matches!(host.remembered().expect("no trap"), Ok(None)));
     }
 
+    /// Listening (IC-987) needs `net.listen:<port>` declared, always; for
+    /// other devices on the network it needs the person's yes too, and for
+    /// this computer alone it does not. Refused, nothing binds, and the
+    /// words name the capability.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn listening_needs_the_declaration_and_for_the_network_the_persons_yes() {
+        use phase2_bindings::krate::net::sockets::{Host, ListenError, ListenScope};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let host_with = |grants: &[&str], declared: Option<&[&str]>| {
+            let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+        };
+        let port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").expect("a free port");
+            l.local_addr().expect("addr").port()
+        };
+        let cap = format!("net.listen:{port}");
+        let said = |answer: std::result::Result<u64, ListenError>| match answer {
+            Err(ListenError::NotAllowed(words)) => words,
+            other => panic!("refused by name, got {other:?}"),
+        };
+        let undeclared = format!(
+            "this app did not declare net.listen:{port}, so it cannot listen on port {port}"
+        );
+
+        // Allowed on the command line, never declared; and no manifest at
+        // all: neither scope.
+        for mut host in [
+            host_with(&[cap.as_str()], Some(&[])),
+            host_with(&[cap.as_str()], None),
+        ] {
+            for scope in [ListenScope::ThisComputer, ListenScope::LocalNetwork] {
+                assert_eq!(
+                    said(host.tcp_listen(port, scope).expect("no trap")),
+                    undeclared
+                );
+            }
+        }
+        // Another port than the one declared: refused by its own name.
+        let mut host = host_with(&[cap.as_str()], Some(&[cap.as_str()]));
+        let other = if port == u16::MAX { port - 1 } else { port + 1 };
+        assert!(said(
+            host.tcp_listen(other, ListenScope::ThisComputer)
+                .expect("no trap")
+        )
+        .contains(&format!("net.listen:{other}")));
+        // A system port, in words, before any declaration is looked at.
+        assert!(matches!(
+            host.tcp_listen(80, ListenScope::ThisComputer).expect("no trap"),
+            Err(ListenError::BadPort(words)) if words.contains("below 1024")
+        ));
+
+        // Declared, and the person said no: the network is refused by name,
+        // this computer alone still listens.
+        let mut host = host_with(&[], Some(&[cap.as_str()]));
+        assert_eq!(
+            said(
+                host.tcp_listen(port, ListenScope::LocalNetwork)
+                    .expect("no trap")
+            ),
+            format!(
+                "you did not let other devices on your network open this app on port {port} \
+                 (net.listen:{port}); it can still listen for this computer only"
+            )
+        );
+        let listener = host
+            .tcp_listen(port, ListenScope::ThisComputer)
+            .expect("no trap")
+            .expect("this computer needs only the declaration");
+        assert!(matches!(
+            host.tcp_local_port(listener).expect("no trap"),
+            Ok(at) if at == port
+        ));
+        host.close(listener).expect("no trap");
+
+        // Declared and allowed: the network too.
+        let mut host = host_with(&[cap.as_str()], Some(&[cap.as_str()]));
+        let listener = host
+            .tcp_listen(port, ListenScope::LocalNetwork)
+            .expect("no trap")
+            .expect("declared and allowed");
+        assert!(matches!(
+            host.tcp_accept(listener).expect("no trap"),
+            Ok(None)
+        ));
+        drop(host);
+        assert!(
+            std::net::TcpListener::bind(("127.0.0.1", port)).is_ok(),
+            "the host gone, its listener is gone"
+        );
+    }
+
     /// RUSTSEC-2026-0269 is a filesystem sandbox escape through a trailing
     /// slash. Wasmtime 46.0.3 patches it there; this checks the same thing one
     /// layer up, in our own path handling, so the containment does not rest on

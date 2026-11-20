@@ -7229,6 +7229,187 @@ fn an_app_talks_only_to_the_serial_device_the_person_picks() {
     }
 }
 
+/// An app serves the people on its network on the one port it declares,
+/// and stops when the run does (krate:net/sockets listening, IC-987).
+///
+/// `serve-probe.wasm` is apps/krate-serve-probe built. This test is the
+/// device: it connects, asks for a page over HTTP and reads the answer.
+#[test]
+fn an_app_serves_only_the_port_it_declares_and_stops_with_the_run() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/serve-probe.wasm")).expect("probe");
+    let free_port = || {
+        let l = TcpListener::bind("127.0.0.1:0").expect("a free port");
+        l.local_addr().expect("addr").port()
+    };
+    let port = free_port();
+    // Something else already listens here, for the whole test.
+    let busy = TcpListener::bind("127.0.0.1:0").expect("another program");
+    let busy_port = busy.local_addr().expect("addr").port();
+    let pack = |name: &str, ports: &[u16]| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        let mut text = format!(
+            "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+             [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+             [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n"
+        );
+        // Optional: the person is never asked, so without a grant the app
+        // runs with this computer alone -- the case this test needs. (A
+        // required one the person refused would not open at all.)
+        for port in ports {
+            text.push_str(&format!(
+                "\n[[capabilities]]\ncap = \"net.listen:{port}\"\nrationale = \"the floor's tablets open it\"\nrequired = false\n"
+            ));
+        }
+        std::fs::write(&manifest, text).expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        assert!(krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        bundle
+    };
+    let serves = pack("serve-probe", &[port, busy_port]);
+    let quiet = pack("serve-quiet", &[]);
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+    let run = |bundle: &std::path::Path, grants: &[&str], args: &[String]| {
+        let out = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .arg("--")
+            .args(args)
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let check = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+    let p = port.to_string();
+
+    // Never declared: refused by name, in either scope, whatever was granted.
+    for scope in ["this-computer", "local-network"] {
+        assert_eq!(
+            run(&quiet, &all, &check(&["listen", &p, scope])),
+            format!(
+                "listen: not-allowed: this app did not declare net.listen:{port}, so it cannot \
+                 listen on port {port}"
+            )
+        );
+    }
+    // Declared, but another port: refused by that port's name.
+    let other = [port.wrapping_add(1), port.wrapping_sub(1)]
+        .into_iter()
+        .find(|o| *o >= 1024 && *o != busy_port)
+        .expect("a neighbouring port");
+    assert!(
+        run(&serves, &all, &check(&["listen", &other.to_string()])).starts_with(&format!(
+            "listen: not-allowed: this app did not declare net.listen:{other}"
+        ))
+    );
+    // A system port is refused in words.
+    assert!(run(&serves, &all, &check(&["listen", "80"]))
+        .starts_with("listen: bad-port: port 80 is below 1024"));
+    // Declared, not allowed: other devices are refused by name; this
+    // computer alone needs only the declaration.
+    assert_eq!(
+        run(&serves, &basics, &check(&["listen", &p, "local-network"])),
+        format!(
+            "listen: not-allowed: you did not let other devices on your network open this app \
+             on port {port} (net.listen:{port}); it can still listen for this computer only"
+        )
+    );
+    assert_eq!(
+        run(&serves, &basics, &check(&["listen", &p, "this-computer"])),
+        format!("listen: listening on {port}")
+    );
+    // A port another program holds: refused in words.
+    assert_eq!(
+        run(&serves, &all, &check(&["listen", &busy_port.to_string()])),
+        format!(
+            "listen: in-use: another program on this computer is already listening on port \
+             {busy_port}; close it, or choose another port"
+        )
+    );
+
+    // Serving: the app listens, this test is the device, the page arrives.
+    for (grants, scope) in [(&basics[..], "this-computer"), (&all[..], "local-network")] {
+        let child = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&serves)
+            .args(grants)
+            .args(["--", "serve", &p, scope])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut device = loop {
+            match std::net::TcpStream::connect(("127.0.0.1", port)) {
+                Ok(stream) => break stream,
+                Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+                Err(e) => panic!("the app never listened on {port}: {e}"),
+            }
+        };
+        device
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("timeout");
+        device
+            .write_all(b"GET /line-3 HTTP/1.1\r\nHost: krate\r\n\r\n")
+            .expect("ask");
+        let mut page = String::new();
+        device
+            .read_to_string(&mut page)
+            .expect("the page, then the end");
+        assert!(page.starts_with("HTTP/1.1 200 OK\r\n"), "{page}");
+        assert!(page.ends_with("<h1>Served by a Krate app</h1>"), "{page}");
+        let out = child.wait_with_output().expect("the app ends");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "serve: served GET /line-3 to this computer"
+        );
+    }
+
+    // The app leaves its listener open: the run ending closes the port.
+    assert_eq!(
+        run(&serves, &all, &check(&["hold", &p, "local-network"])),
+        "hold: left open"
+    );
+    assert!(
+        std::net::TcpStream::connect_timeout(
+            &SocketAddr::from(([127, 0, 0, 1], port)),
+            Duration::from_millis(500)
+        )
+        .is_err(),
+        "nothing listens on {port} once the run is over"
+    );
+    assert!(
+        TcpListener::bind(("0.0.0.0", port)).is_ok(),
+        "port {port} is free again once the run is over"
+    );
+    drop(busy);
+}
+
 /// The far end of a pseudo-terminal: the stand-in serial device.
 #[cfg(unix)]
 struct Pty {

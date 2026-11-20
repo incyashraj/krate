@@ -220,8 +220,14 @@ interface ws {
 ///
 /// Everything here returns immediately. Connections and lookups run on host
 /// threads; the app asks how they are doing from its own loop, as it does a
-/// WebSocket, so a stalled server can never freeze a frame. Listening for
-/// incoming connections is not here yet.
+/// WebSocket, so a stalled server can never freeze a frame.
+///
+/// An app can also serve (IC-987): `tcp-listen` opens one port the manifest
+/// declares as `net.listen:<port>`, and `tcp-accept` hands over each device
+/// that connects as a connection that reads, writes and closes like a dialled
+/// one. A listener for this computer only needs the declaration; one other
+/// devices on the network can open needs the person's yes as well. Every
+/// listener closes when the run ends.
 interface sockets {
   use types.{net-error};
 
@@ -260,6 +266,42 @@ interface sockets {
     closed,
     /// The connection broke, with the reason.
     failed(net-error),
+  }
+
+  /// Who may open a listener (IC-987).
+  enum listen-scope {
+    /// Programs on this computer only: the listener is bound to the loopback
+    /// address (127.0.0.1), which nothing outside the computer can reach.
+    /// Needs `net.listen:<port>` declared; the person is not asked.
+    this-computer,
+    /// Other devices on the same network too: tablets on a factory floor,
+    /// the lab's other computers. Needs `net.listen:<port>` declared and the
+    /// person's yes ("let other devices on your network open this app on
+    /// port N").
+    local-network,
+  }
+
+  /// Why a listener could not be opened or used. Every case but
+  /// `unknown-handle` carries words to show the person.
+  variant listen-error {
+    /// The manifest does not declare `net.listen:<port>` for this port, the
+    /// person did not let other devices in, or the organisation that manages
+    /// the computer does not allow it. The words name the capability.
+    not-allowed(string),
+    /// Another program on this computer, or another listener of this app,
+    /// already listens on the port.
+    in-use(string),
+    /// The port is below 1024, which belongs to the system.
+    bad-port(string),
+    /// This app already holds as many listeners, or as many connections from
+    /// other devices, as it may at once. Close one first.
+    too-many(string),
+    /// Listening is not possible here: a browser tab or a phone.
+    unavailable(string),
+    /// Never issued, already closed, or not a listener.
+    unknown-handle,
+    /// The system refused, with its reason.
+    failed(string),
   }
 
   /// One datagram that arrived on a UDP socket.
@@ -310,6 +352,27 @@ interface sockets {
   /// to, or none. Never blocks.
   udp-receive: func(handle: u64) -> option<datagram>;
 
-  /// Close a TCP connection or UDP socket. Safe on a handle already closed.
+  /// Listen for TCP connections on `port` (IC-987). Only a port the
+  /// manifest declares as `net.listen:<port>`, never one below 1024, and
+  /// never one something else already listens on. `this-computer` binds the
+  /// loopback address and needs only the declaration; `local-network` binds
+  /// every address of this computer and needs the person's yes too.
+  /// Returns a listener handle at once.
+  tcp-listen: func(port: u16, scope: listen-scope) -> result<u64, listen-error>;
+
+  /// The next connection waiting on a listener, or none. Never blocks: ask
+  /// from the app's loop. The handle it returns is a connection like one
+  /// `tcp-connect` made: `tcp-status` says who connected, `tcp-read`,
+  /// `tcp-write` and `close` work on it. At most 32 connections from other
+  /// devices are open at once; past that this answers `too-many` and the
+  /// device waits until the app closes one.
+  tcp-accept: func(listener: u64) -> result<option<u64>, listen-error>;
+
+  /// The local port of a listener or a connected TCP connection.
+  tcp-local-port: func(handle: u64) -> result<u16, listen-error>;
+
+  /// Close a TCP connection, a UDP socket or a listener. Safe on a handle
+  /// already closed. Closing a listener leaves the connections it accepted
+  /// open until each is closed or the run ends.
   close: func(handle: u64);
 }

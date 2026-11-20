@@ -97,6 +97,7 @@ impl UapiCall {
             Self::Fs(call) => call.to_capability_string(),
             Self::Net(NetCall::Connect { host, port }) => format!("net.connect:{host}:{port}"),
             Self::Net(NetCall::Connection { name }) => format!("net.connection:{name}"),
+            Self::Net(NetCall::Listen { port }) => format!("net.listen:{port}"),
             Self::Time(call) => format!("time.{call}"),
             Self::Locale(call) => format!("locale.{call}"),
             Self::Ui(call) => call.to_capability_string(),
@@ -318,6 +319,12 @@ pub enum NetCall {
     /// runtime add the connection's credential to a request to its address.
     Connection {
         name: String,
+    },
+    /// Listen on one port for other programs or devices to connect
+    /// (IC-987). The scope -- this computer or the network -- is the host's
+    /// to judge on top: the capability is the port.
+    Listen {
+        port: u16,
     },
 }
 
@@ -857,6 +864,7 @@ mod tests {
             UapiCall::Process(ProcessCall::Terminal),
             UapiCall::Device(DeviceCall::Serial),
             UapiCall::Device(DeviceCall::Printer),
+            UapiCall::Net(NetCall::Listen { port: 8080 }),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

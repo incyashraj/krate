@@ -416,6 +416,10 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `net::get_text(url: &str) -> Result<String, NetError>`
 - `net::poll(handle: u64) -> FetchStatus`
 
+### `net::listen`
+
+- `net::listen::words(err: &ListenError) -> &str`
+
 ### `net::ws`
 
 - `net::ws::close(handle: u64) -> ()`
@@ -586,6 +590,7 @@ people can send. check-app ends with a note naming any it found.
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |
+| `net.listen:<port>` | no | computer only | let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration (section 2c, rule 7b) |
 | `net.connection:<connection-name>` | no | computer only | an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8) |
 | `time.clock` | yes | yes | wall-clock time |
 | `time.monotonic` | yes | yes | a monotonic timer |
@@ -886,6 +891,9 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 - `sockets::udp-local-port: func(handle: u64) -> result<u16, net-error>`
 - `sockets::udp-send: func(handle: u64, host: string, port: u16, data: list<u8>) -> result<_, net-error>`
 - `sockets::udp-receive: func(handle: u64) -> option<datagram>`
+- `sockets::tcp-listen: func(port: u16, scope: listen-scope) -> result<u64, listen-error>`
+- `sockets::tcp-accept: func(listener: u64) -> result<option<u64>, listen-error>`
+- `sockets::tcp-local-port: func(handle: u64) -> result<u16, listen-error>`
 - `sockets::close: func(handle: u64)`
 
 ## `random`

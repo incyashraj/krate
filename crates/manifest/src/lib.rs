@@ -161,6 +161,14 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
         "<host>:<port>",
         false,
     ),
+    // Serving the people on the network (IC-987): a factory or lab app that
+    // tablets and the floor's other computers open. Scoped to one port, 1024
+    // or above, so the person is asked about exactly the door that opens and
+    // a system port can never be declared. Never default-granted. The app
+    // picks the scope when it listens: other devices need the person's yes;
+    // this computer alone (loopback) needs only the declaration, because
+    // nothing outside the computer can reach it. Never in a tab or on a phone.
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase2, "net", "listen", "<port>", false),
     // A company connection (IC-952): an organisation's admin set up an API's
     // address and credential once, under this name, and the runtime adds the
     // credential to this app's requests to that address. The app never holds
@@ -821,6 +829,14 @@ impl Capability {
                 ),
                 None => "use one of your organisation's connections".to_string(),
             },
+            // IC-987: the question is about other devices; this computer
+            // alone is never asked.
+            ("net", "listen") => match resource {
+                Some(port) => {
+                    format!("let other devices on your network open this app on port {port}")
+                }
+                None => "let other devices on your network open this app".to_string(),
+            },
             ("ui", "window") => "open a window on your screen".to_string(),
             ("ui", "clipboard") if cap.resource() == Some("read") => {
                 "read from the clipboard".to_string()
@@ -1220,6 +1236,10 @@ fn validate_capability_resource(
         return validate_connection_name(resource);
     }
 
+    if module == "net" && action == "listen" {
+        return validate_listen_port(resource).map(|_| ());
+    }
+
     // A group name is refused rather than flattened: two names reducing to
     // one directory would share a store nobody meant to share.
     if module == "store" && action == "group" {
@@ -1255,10 +1275,43 @@ fn canonicalize_capability_resource(module: &str, action: &str, resource: &str) 
     if module == "net" && action == "connect" {
         return canonicalize_connect_resource(resource);
     }
+    if module == "net" && action == "listen" {
+        return validate_listen_port(resource)
+            .ok()
+            .map(|port| port.to_string());
+    }
     if module == "ui" || module == "gfx" {
         return Some(resource.to_ascii_lowercase());
     }
     Some(resource.to_string())
+}
+
+/// The lowest port an app may listen on (IC-987). Below it the ports belong
+/// to the system (a web server's 80, a mail server's 25), and on most
+/// computers only an administrator may open one.
+pub const LOWEST_LISTEN_PORT: u16 = 1024;
+
+/// `net.listen:<port>` names exactly one port, 1024 to 65535 (IC-987): no
+/// wildcard, no range, no 0 (which would let the system pick a port the
+/// person was never told about).
+fn validate_listen_port(resource: &str) -> std::result::Result<u16, String> {
+    let port: u16 = resource
+        .parse()
+        .ok()
+        .filter(|_| resource.bytes().all(|b| b.is_ascii_digit()))
+        .ok_or_else(|| {
+            format!(
+                "`{resource}` is not a port: net.listen names one port by its number, \
+                 such as `net.listen:8080`"
+            )
+        })?;
+    if port < LOWEST_LISTEN_PORT {
+        return Err(format!(
+            "port {port} is below {LOWEST_LISTEN_PORT}: those ports belong to the system, so \
+             an app listens on {LOWEST_LISTEN_PORT} or above (8080 is the usual choice)"
+        ));
+    }
+    Ok(port)
 }
 
 fn validate_ui_resource(action: &str, resource: &str) -> std::result::Result<(), String> {
@@ -1722,6 +1775,41 @@ mod tests {
         ] {
             assert!(named.parse::<Capability>().is_err(), "{named}");
         }
+    }
+
+    /// `net.listen:<port>` (IC-987) names one port, 1024 or above, never
+    /// granted without asking, never in a tab, and its consent line is about
+    /// other devices on the network.
+    #[test]
+    fn a_listening_port_is_one_number_at_1024_or_above() {
+        let cap: Capability = "net.listen:08080".parse().expect("net.listen:08080");
+        assert_eq!(cap.to_string(), "net.listen:8080");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        assert!(!cap.works_in_a_tab(), "a tab cannot listen");
+        assert_eq!(
+            cap.plain(),
+            "let other devices on your network open this app on port 8080"
+        );
+        assert!("net.listen:1024".parse::<Capability>().is_ok());
+        assert!("net.listen:65535".parse::<Capability>().is_ok());
+        for refused in [
+            "net.listen",
+            "net.listen:0",
+            "net.listen:80",
+            "net.listen:1023",
+            "net.listen:65536",
+            "net.listen:*",
+            "net.listen:8080-8090",
+            "net.listen:+8080",
+            "net.listen:localhost:8080",
+        ] {
+            assert!(refused.parse::<Capability>().is_err(), "{refused}");
+        }
+        let low = "net.listen:443"
+            .parse::<Capability>()
+            .expect_err("a system port")
+            .to_string();
+        assert!(low.contains("below 1024"), "{low}");
     }
 
     /// `process.run` names one program by its bare name (IC-977): a folder,

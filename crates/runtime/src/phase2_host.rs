@@ -565,6 +565,71 @@ impl<'a> Phase2Host<'a> {
         }
     }
 
+    /// May this run listen on `port` for this scope (`net.listen`, IC-987)?
+    ///
+    /// Always the declaration: an app listens only on a port its manifest
+    /// names as `net.listen:<port>`, and never on one below 1024. For other
+    /// devices on the network, the person's yes too. For this computer
+    /// alone the declaration is enough -- the person is not asked, because
+    /// nothing outside the computer reaches a loopback port -- so a person
+    /// who said no (or was never asked) still leaves the app its loopback
+    /// listener. An organisation that forbids it forbids both. The words name
+    /// the capability, so a refusal says what to declare or allow.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_listen(
+        &self,
+        port: u16,
+        scope: net::sockets::ListenScope,
+    ) -> Result<(), net::sockets::ListenError> {
+        use crate::uapi::{NetCall, UapiCall};
+        use krate_policy::{Decision, Refusal};
+        use net::sockets::{ListenError, ListenScope};
+        let lowest = crate::async_sockets::LOWEST_LISTEN_PORT;
+        if port < lowest {
+            return Err(ListenError::BadPort(format!(
+                "port {port} is below {lowest}: those ports belong to the system, so an app \
+                 listens on {lowest} or above (8080 is the usual choice)"
+            )));
+        }
+        let undeclared = || {
+            ListenError::NotAllowed(format!(
+                "this app did not declare net.listen:{port}, so it cannot listen on port {port}"
+            ))
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        let decision = match self
+            .guard
+            .decide(&UapiCall::Net(NetCall::Listen { port }), Some(declared))
+        {
+            Ok((_, decision)) => decision,
+            Err(_) => return Err(undeclared()),
+        };
+        match decision {
+            Decision::Granted { .. } => Ok(()),
+            Decision::Refused {
+                reason: Refusal::Undeclared,
+            } => Err(undeclared()),
+            Decision::Refused {
+                reason: Refusal::Organisation,
+            } => Err(ListenError::NotAllowed(format!(
+                "the organisation that manages this computer does not allow apps to listen on \
+                 port {port} (net.listen:{port})"
+            ))),
+            Decision::Refused { .. } => match scope {
+                ListenScope::ThisComputer => Ok(()),
+                ListenScope::LocalNetwork => Err(ListenError::NotAllowed(format!(
+                    "you did not let other devices on your network open this app on port \
+                     {port} (net.listen:{port}); it can still listen for this computer only"
+                ))),
+            },
+        }
+    }
+
     /// The real folder for a program to run in: the app's own folder or one
     /// the person picked, by the file calls' own rules.
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
@@ -2498,10 +2563,82 @@ impl net::sockets::Host for Phase2Host<'_> {
             }))
     }
 
+    fn tcp_listen(
+        &mut self,
+        port: u16,
+        scope: net::sockets::ListenScope,
+    ) -> wasmtime::Result<Result<u64, net::sockets::ListenError>> {
+        if !LISTENS_HERE {
+            return Ok(Err(no_listening_here()));
+        }
+        if let Err(err) = self.admit_listen(port, scope) {
+            return Ok(Err(err));
+        }
+        let this_computer = matches!(scope, net::sockets::ListenScope::ThisComputer);
+        Ok(self
+            .async_sockets
+            .tcp_listen(port, this_computer)
+            .map_err(listen_fault_to_wit))
+    }
+
+    fn tcp_accept(
+        &mut self,
+        listener: u64,
+    ) -> wasmtime::Result<Result<Option<u64>, net::sockets::ListenError>> {
+        if !LISTENS_HERE {
+            return Ok(Err(no_listening_here()));
+        }
+        Ok(self
+            .async_sockets
+            .tcp_accept(listener)
+            .map_err(listen_fault_to_wit))
+    }
+
+    fn tcp_local_port(
+        &mut self,
+        handle: u64,
+    ) -> wasmtime::Result<Result<u16, net::sockets::ListenError>> {
+        Ok(self
+            .async_sockets
+            .tcp_local_port(handle)
+            .map_err(listen_fault_to_wit))
+    }
+
     fn close(&mut self, handle: u64) -> wasmtime::Result<()> {
         self.async_sockets.close(handle);
         Ok(())
     }
+}
+
+/// Listening is for Krate on a computer (IC-987): a phone answers every
+/// listen in words, as a tab does.
+#[cfg(not(target_arch = "wasm32"))]
+const LISTENS_HERE: bool = cfg!(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+));
+
+#[cfg(not(target_arch = "wasm32"))]
+fn listen_fault_to_wit(fault: crate::async_sockets::ListenFault) -> net::sockets::ListenError {
+    use crate::async_sockets::ListenFault;
+    use net::sockets::ListenError;
+    match fault {
+        ListenFault::InUse(why) => ListenError::InUse(why),
+        ListenFault::BadPort(why) => ListenError::BadPort(why),
+        ListenFault::TooMany(why) => ListenError::TooMany(why),
+        ListenFault::UnknownHandle => ListenError::UnknownHandle,
+        ListenFault::Failed(why) => ListenError::Failed(why),
+    }
+}
+
+/// Where listening is not possible: a browser tab or a phone (IC-987).
+fn no_listening_here() -> net::sockets::ListenError {
+    net::sockets::ListenError::Unavailable(
+        "other devices can open an app only in Krate on a computer (macOS, Windows or Linux), \
+         not in a browser tab or on a phone"
+            .to_string(),
+    )
 }
 
 /// A browser tab has no raw sockets; every call says so.
@@ -2557,6 +2694,25 @@ impl net::sockets::Host for Phase2Host<'_> {
     }
     fn udp_receive(&mut self, _handle: u64) -> wasmtime::Result<Option<net::sockets::Datagram>> {
         Ok(None)
+    }
+    fn tcp_listen(
+        &mut self,
+        _port: u16,
+        _scope: net::sockets::ListenScope,
+    ) -> wasmtime::Result<Result<u64, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_accept(
+        &mut self,
+        _listener: u64,
+    ) -> wasmtime::Result<Result<Option<u64>, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_local_port(
+        &mut self,
+        _handle: u64,
+    ) -> wasmtime::Result<Result<u16, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
     }
     fn close(&mut self, _handle: u64) -> wasmtime::Result<()> {
         Ok(())
