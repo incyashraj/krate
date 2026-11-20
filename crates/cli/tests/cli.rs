@@ -7104,6 +7104,213 @@ fn an_app_runs_only_the_programs_it_names_and_they_end_with_it() {
     }
 }
 
+/// An app talks to a serial device the person picks, and nothing else
+/// (krate:serial, IC-985).
+///
+/// `serial-probe.wasm` is apps/krate-serial-probe built. The person's pick
+/// is scripted with KRATE_SERIAL_PICK, as a test or a script drives it; a
+/// pseudo-terminal stands in for the device on macOS and Linux, its other end
+/// held here, answering PONG to PING.
+#[test]
+fn an_app_talks_only_to_the_serial_device_the_person_picks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/serial-probe.wasm")).expect("probe");
+    let pack = |name: &str, serial: bool| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+                 [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n{}",
+                if serial {
+                    "\n[[capabilities]]\ncap = \"device.serial\"\nrationale = \"the device\"\nrequired = false\n"
+                } else {
+                    ""
+                }
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        assert!(krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        bundle
+    };
+    let asks = pack("serial-probe", true);
+    let never_asked = pack("serial-quiet", false);
+    let run = |bundle: &std::path::Path, grants: &[&str], pick: &str, check: &str| {
+        let out = krate()
+            .current_dir(dir.path())
+            .env("KRATE_SERIAL_PICK", pick)
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .args(["--", check])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+
+    // No capability, no list and no device -- refused by name.
+    assert_eq!(
+        run(&never_asked, &all, "cancel", "pick"),
+        "pick: not-allowed: this app did not ask for device.serial, so it cannot talk to a \
+         serial device"
+    );
+    assert_eq!(
+        run(&asks, &basics, "cancel", "pick"),
+        "pick: not-allowed: you did not allow this app to talk to a serial device (device.serial)"
+    );
+    // The person cancels: no device.
+    assert_eq!(run(&asks, &all, "cancel", "pick"), "pick: none");
+    // A pick names a serial device, never an ordinary file.
+    let file = dir.path().join("not-a-port.txt");
+    std::fs::write(&file, b"x").expect("file");
+    let file = file.to_string_lossy().to_string();
+    assert!(
+        run(&asks, &all, &file, "pick").starts_with("pick: unavailable: KRATE_SERIAL_PICK names"),
+        "a file is not a serial device"
+    );
+
+    #[cfg(unix)]
+    {
+        // The device: write PING, read PONG, a quiet read ends empty, and
+        // the closed handle is spent.
+        let device = Pty::open();
+        let answering = device.answer_ping();
+        assert_eq!(
+            run(&asks, &all, &device.path, "talk"),
+            "talk: heard PONG, then nothing for 100 ms, closed: unknown-handle"
+        );
+        assert_eq!(answering.join().expect("device"), b"PING\n");
+        // The pick says which device it is, as the computer names it.
+        assert_eq!(
+            run(&asks, &all, &device.path, "pick"),
+            format!("pick: picked {}", device.path)
+        );
+        // Handles the person never gave reach nothing.
+        assert_eq!(
+            run(&asks, &all, &device.path, "forge"),
+            "forge: unopened=not-open next=unknown-handle zero=unknown-handle"
+        );
+        assert!(
+            run(&asks, &all, &device.path, "bad").starts_with("bad: bad-settings: a baud rate is"),
+            "a baud rate of 0 is refused in words"
+        );
+
+        // The app leaves the port open: the run ending closes it, and the
+        // exclusive lock goes with it.
+        let held = Pty::open();
+        let hearing = held.collect_until(b"HELD\n");
+        assert_eq!(run(&asks, &all, &held.path, "hold"), "hold: left open");
+        assert_eq!(hearing.join().expect("device"), b"HELD\n");
+        assert!(
+            held.free(),
+            "{} is free again once the run is over",
+            held.path
+        );
+    }
+}
+
+/// The far end of a pseudo-terminal: the stand-in serial device.
+#[cfg(unix)]
+struct Pty {
+    master: std::sync::Arc<std::fs::File>,
+    path: String,
+}
+
+#[cfg(unix)]
+impl Pty {
+    fn open() -> Self {
+        use std::os::fd::FromRawFd;
+        // SAFETY: plain libc calls on a descriptor this function owns; the
+        // name ptsname returns is copied before anything else runs.
+        unsafe {
+            let fd = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
+            assert!(fd >= 0, "a pseudo-terminal");
+            assert_eq!(libc::grantpt(fd), 0);
+            assert_eq!(libc::unlockpt(fd), 0);
+            let name = libc::ptsname(fd);
+            assert!(!name.is_null());
+            let path = std::ffi::CStr::from_ptr(name)
+                .to_string_lossy()
+                .into_owned();
+            let flags = libc::fcntl(fd, libc::F_GETFL);
+            libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+            Self {
+                master: std::sync::Arc::new(std::fs::File::from_raw_fd(fd)),
+                path,
+            }
+        }
+    }
+
+    /// Read what the app sends until it ends with `end` (ten seconds at
+    /// most), answering PONG to a PING when `answer` is set.
+    fn listen(&self, end: &'static [u8], answer: bool) -> thread::JoinHandle<Vec<u8>> {
+        let master = self.master.clone();
+        thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut heard = Vec::new();
+            let mut buf = [0u8; 256];
+            while Instant::now() < deadline && !heard.ends_with(end) {
+                // Nothing yet, or no app on the other end yet (EIO on
+                // Linux until the slave is opened): look again shortly.
+                match (&*master).read(&mut buf) {
+                    Ok(n) if n > 0 => heard.extend_from_slice(&buf[..n]),
+                    _ => thread::sleep(Duration::from_millis(5)),
+                }
+            }
+            if answer && heard.ends_with(end) {
+                (&*master).write_all(b"PONG\n").expect("answer");
+            }
+            heard
+        })
+    }
+
+    fn answer_ping(&self) -> thread::JoinHandle<Vec<u8>> {
+        self.listen(b"PING\n", true)
+    }
+
+    fn collect_until(&self, end: &'static [u8]) -> thread::JoinHandle<Vec<u8>> {
+        self.listen(end, false)
+    }
+
+    /// Nobody holds the device: it opens, and its exclusive lock is free.
+    fn free(&self) -> bool {
+        let path = std::ffi::CString::new(self.path.clone()).expect("path");
+        // SAFETY: a descriptor opened, locked and closed here.
+        unsafe {
+            let fd = libc::open(
+                path.as_ptr(),
+                libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK,
+            );
+            if fd < 0 {
+                return false;
+            }
+            let locked = libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) == 0;
+            libc::close(fd);
+            locked
+        }
+    }
+}
+
 /// A program ends with Krate however Krate is stopped (krate:process,
 /// IC-977): `kill` and the terminal closing. A program leads its own process
 /// group, so a signal sent to Krate never reaches it; Krate has to end it on

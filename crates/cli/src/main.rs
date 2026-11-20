@@ -11050,7 +11050,7 @@ impl Wall {
                  result where you need it."
             }
             Wall::Hardware => {
-                "Krate has no capability for MIDI, Bluetooth, USB or serial \
+                "Krate has no capability for MIDI, Bluetooth or raw USB \
                  devices, so an app cannot reach one. I can build the same idea \
                  driven by the keyboard, the mouse, or a file you give it."
             }
@@ -11123,28 +11123,31 @@ fn wall_in_request(request: &str) -> Option<Wall> {
         return Some(Wall::OtherApps);
     }
 
-    // Physical devices with no capability of any kind.
-    if any(&[
-        "midi",
-        "bluetooth",
-        " usb",
-        "usb ",
-        "serial port",
-        "gamepad",
-        "game controller",
-        "arduino",
-    ]) && any(&[
-        "connect",
-        "connected",
-        "my ",
-        "read",
-        "listen",
-        "play",
-        "device",
-        "controller",
-        "keyboard",
-        "piano",
-    ]) {
+    // Physical devices with no capability of any kind. A serial device has
+    // one now (device.serial, IC-985) -- an Arduino, an instrument, a board
+    // on a USB serial line -- so a request that names serial is buildable.
+    if !any(&["serial"])
+        && any(&[
+            "midi",
+            "bluetooth",
+            " usb",
+            "usb ",
+            "gamepad",
+            "game controller",
+        ])
+        && any(&[
+            "connect",
+            "connected",
+            "my ",
+            "read",
+            "listen",
+            "play",
+            "device",
+            "controller",
+            "keyboard",
+            "piano",
+        ])
+    {
         return Some(Wall::Hardware);
     }
 
@@ -24426,6 +24429,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "ui.dialog" => Some(":ui/dialog"),
             "ui.clipboard" => Some(":ui/clipboard"),
             "process.run" | "process.terminal" => Some(":process/"),
+            "device.serial" => Some(":serial/"),
             // System and always-on families carry no signal here.
             _ => None,
         };
@@ -24452,7 +24456,11 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
         // an app reaches for in passing.
         let defining = matches!(
             family,
-            "camera.capture" | "audio.capture" | "location.read" | "bluetooth.connect"
+            "camera.capture"
+                | "audio.capture"
+                | "location.read"
+                | "bluetooth.connect"
+                | "device.serial"
         );
         if defining && !request.required {
             return Some(format!(
@@ -30381,6 +30389,9 @@ mod wall_tests {
             // it down, "might not work here" is not this gate's question.
             "an app that shows my webcam feed with a photo button",
             "a camera app that takes a picture",
+            // A serial device has a capability (device.serial, IC-985).
+            "an app that reads my arduino over the serial port and plots it",
+            "a terminal for my lab instrument on its usb serial line",
         ];
         for request in buildable {
             assert_eq!(
@@ -31387,6 +31398,23 @@ again: {} -> {}",
         );
         let dialog_imports = vec!["krate:ui/dialog@0.1.0".to_string()];
         assert!(manifest_overreach(&picker, &dialog_imports).is_none());
+
+        // A serial device (IC-985): asked for with the import, clean; asked
+        // for without it, refused; and never optional, because it is the
+        // app's reason to exist and an optional ask is never put to anyone.
+        let serial = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"device.serial\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let serial_imports = vec!["krate:serial/ports@0.1.0".to_string()];
+        assert!(manifest_overreach(&serial(true), &serial_imports).is_none());
+        let problem = manifest_overreach(&serial(true), &fs_imports)
+            .expect("must refuse a serial ask with no serial import");
+        assert!(problem.contains(":serial/"), "{problem}");
+        let problem = manifest_overreach(&serial(false), &serial_imports)
+            .expect("must refuse an optional serial ask");
+        assert!(problem.contains("marks it optional"), "{problem}");
     }
 
     /// The install loop must stop when a pass changes nothing.

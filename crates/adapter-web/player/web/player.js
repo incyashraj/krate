@@ -151,6 +151,7 @@ const WHAT = {
   'krate:ui/sign-in': 'signing in to another service',
   'krate:ui/web-page': 'web pages inside it',
   'krate:process/processes': 'programs and a terminal on your computer',
+  'krate:serial/ports': 'a serial device',
 };
 const whatOf = (iface) => WHAT[iface.replace(/@.*$/, '')] || 'something only Krate on a computer has';
 

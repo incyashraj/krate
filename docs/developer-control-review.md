@@ -15,9 +15,9 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 79 boundaries reviewed, 70 of them WIT interfaces (70 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 42 optional.
-- 5 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
+- 80 boundaries reviewed, 71 of them WIT interfaces (71 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 43 optional.
+- 6 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
 
@@ -55,6 +55,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:process@0.1.0/processes` | wit | that a program runs only when the manifest names it by its bare name and the person allowed it, is found on the person's PATH or in ~/.cargo/bin without the app learning where, runs in the app's own folder or one the person picked, gets the person's environment without Krate's, and ends with the app, its whole process group with it | which programs, their arguments and input, how output is read and shown, whether to offer a terminal | none needed: a program is the person's own tool, and not running one costs the app nothing else | no | -- |
 | `krate:random@0.1.0/bytes` | wit | where operating-system randomness comes from | any PRNG or crate over it (rand, uuid, getrandom route here) | seed the app's own generator from it, or use none | no | -- |
 | `krate:resources@0.1.0/assets` | wit | that the app's own bundled files are readable with no grant, because they are the app's | what is bundled and in what format | embed bytes in the component itself | no | -- |
+| `krate:serial@0.1.0/ports` | wit | that an app reaches a serial device only when it declared device.serial, the person allowed it, and the person picked that one device from the computer's own list; the app never lists or names a port, a pick reaches one device until it is closed or the run ends, the device is opened exclusively, and reads and writes are bounded | when to ask, the line speed, data bits, parity, stop bits and waits, the protocol spoken over the wire | none needed: an app that does not talk to a device loses nothing else | no | -- |
 | `krate:speech@0.1.0/synthesis` | wit | that speech is sound: allowed by audio.playback, replaced rather than queued, and stopped when the app stops | what is said, when, in which of the computer's voices and at what speed | audio/playback with the app's own synthesizer or recorded clips | no | -- |
 | `krate:speech@0.1.0/transcription` | wit | nothing: an optional local recogniser over audio the app already holds | any model or recogniser shipped in assets, or a service the app calls itself over the network boundary | audio/capture frames processed by the app | no | -- |
 | `krate:store@0.1.0/group` | wit | that a group's data is reachable only by apps whose signed publisher names them in the group's list, and that a removal is not undone by an older list | whether to share at all, what is shared, and which of the publisher's apps belong | shared under an invite code, or http-client or ws to a service the developer runs | no | -- |
@@ -109,6 +110,7 @@ Where a developer's choice is narrower than the principle says it should be. Eac
 
 - `krate:gfx@0.1.0/canvas2d`: a developer's own GPU renderer goes through krate:gpu, which presents by copying each frame into the canvas through the CPU until the presenter shares its device (K-407); scene3d is software
 - `krate:net@0.1.0/sockets`: listening for incoming connections is not offered yet, so an app cannot host a server (IC-935)
+- `krate:serial@0.1.0/ports`: USB bulk transfers and HID devices are not offered yet; a browser tab and a phone answer unavailable
 - `krate:speech@0.1.0/transcription`: the recogniser reads one model family; another engine means the app ships its own
 - `krate:ui@0.1.0/menu`: set-items answers unsupported on every host (IC-745)
 - `the WebAssembly component contract`: the SDK and Studio build with cargo-component only; a developer's own build tool is accepted by the validator but not by the make flow (IC-175: custom build tool)

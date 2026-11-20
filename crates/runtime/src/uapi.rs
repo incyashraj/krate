@@ -34,6 +34,23 @@ pub enum UapiCall {
     Memory(MemoryCall),
     /// A program or a terminal on the computer (IC-977).
     Process(ProcessCall),
+    /// A device the person picks (IC-985): a serial port.
+    Device(DeviceCall),
+}
+
+/// Reaching a device the person picks (IC-985). One kind so far: a serial
+/// port, picked from the system's list, never named by the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceCall {
+    Serial,
+}
+
+impl fmt::Display for DeviceCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Serial => "serial",
+        })
+    }
 }
 
 /// Starting something on the computer: one program by its bare name, or the
@@ -89,6 +106,7 @@ impl UapiCall {
             Self::Random(call) => format!("random.{call}"),
             Self::Memory(call) => format!("memory.{call}"),
             Self::Process(call) => format!("process.{call}"),
+            Self::Device(call) => format!("device.{call}"),
         }
     }
 }
@@ -834,6 +852,7 @@ mod tests {
                 program: "cargo".to_string(),
             }),
             UapiCall::Process(ProcessCall::Terminal),
+            UapiCall::Device(DeviceCall::Serial),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

@@ -1710,9 +1710,30 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
     );
     detect_pattern(
         analysis,
-        "hardware",
+        "serial",
         &[
             "serialport",
+            "serial_port",
+            "tokio-serial",
+            "tokio_serial",
+            "pyserial",
+            "import serial",
+            "serial.serial(",
+            "navigator.serial",
+            "jserialcomm",
+            "system.io.ports",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Serial devices",
+        "Reach a serial device through Krate device.serial: the app never lists or names a port -- krate::serial::pick(title) shows the person the computer's serial devices and answers the one they choose (None if they cancel). Then open it with the baud rate, data bits, parity and stop bits the device expects, write bytes, and read with a short wait from the event loop. Handle Disconnected by offering to pick again. A computer only: a browser tab and a phone answer Unavailable.",
+        Some("device.serial"),
+    );
+    detect_pattern(
+        analysis,
+        "hardware",
+        &[
             "libusb",
             "hidapi",
             "videocapturedevice",
@@ -2885,6 +2906,24 @@ dependencies = [
             .findings
             .iter()
             .any(|finding| finding.id == "microphone"));
+        assert!(!plan.findings.iter().any(|finding| finding.id == "hardware"));
+    }
+
+    /// A serial port maps to device.serial (IC-985), not to the hardware
+    /// blocker it was before Krate had one.
+    #[test]
+    fn serial_port_use_maps_to_device_serial_instead_of_a_hardware_blocker() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("reader.py"),
+            "import serial\nport = serial.Serial('/dev/ttyUSB0', 115200)\n",
+        )
+        .unwrap();
+        let plan = analyze(dir.path()).unwrap();
+        assert!(plan
+            .suggested_capabilities
+            .contains(&"device.serial".to_string()));
+        assert!(plan.findings.iter().any(|finding| finding.id == "serial"));
         assert!(!plan.findings.iter().any(|finding| finding.id == "hardware"));
     }
 

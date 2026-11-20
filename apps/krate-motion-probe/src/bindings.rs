@@ -33031,6 +33031,1079 @@ pub mod krate {
             }
         }
     }
+    pub mod serial {
+        /// Serial devices the person picks (IC-985): a lab instrument, a field
+        /// sensor, a microcontroller board, a drone or robot on a USB serial line.
+        ///
+        /// The app never lists the computer's ports and never names one. It asks to
+        /// `pick`; Krate shows the person the system's list of serial devices, and
+        /// the one they choose is the app's for this run, and nothing else is. The
+        /// pick is the grant: one handle, one port, until the app closes it or the
+        /// run ends. A second device needs a second pick.
+        ///
+        /// Behind `device.serial`, which the manifest declares (with a rationale)
+        /// and the person allows. Without it `pick` answers `not-allowed` with words
+        /// that name the capability, and no list is shown.
+        ///
+        /// Every port closes when the run ends: when the app returns, stops with an
+        /// error, or its window closes. Reads and writes are bounded: at most 65536
+        /// bytes a call, and a wait of at most 60 seconds.
+        ///
+        /// Desktop only (macOS, Windows, Linux). In a browser tab and on a phone
+        /// every call answers `unavailable` with words that say so.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod ports {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// A port the person picked. Numbers are never reused within a run and
+            /// mean nothing to another run.
+            pub type PortHandle = u64;
+            /// A port the person picked.
+            #[derive(Clone)]
+            pub struct Port {
+                /// The handle the app uses for this port from now on.
+                pub handle: PortHandle,
+                /// The device's name as the computer gives it, to show the person:
+                /// "USB Serial (FTDI)", "COM3", "/dev/cu.usbmodem1101".
+                pub name: _rt::String,
+            }
+            impl ::core::fmt::Debug for Port {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Port")
+                        .field("handle", &self.handle)
+                        .field("name", &self.name)
+                        .finish()
+                }
+            }
+            /// Parity, the check bit after each character.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum Parity {
+                /// No parity bit. The usual setting (8N1).
+                None,
+                /// An odd parity bit.
+                Odd,
+                /// An even parity bit.
+                Even,
+            }
+            impl ::core::fmt::Debug for Parity {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        Parity::None => f.debug_tuple("Parity::None").finish(),
+                        Parity::Odd => f.debug_tuple("Parity::Odd").finish(),
+                        Parity::Even => f.debug_tuple("Parity::Even").finish(),
+                    }
+                }
+            }
+            impl Parity {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> Parity {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => Parity::None,
+                        1 => Parity::Odd,
+                        2 => Parity::Even,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            /// Stop bits after each character.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum StopBits {
+                /// One stop bit. The usual setting (8N1).
+                One,
+                /// Two stop bits.
+                Two,
+            }
+            impl ::core::fmt::Debug for StopBits {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        StopBits::One => f.debug_tuple("StopBits::One").finish(),
+                        StopBits::Two => f.debug_tuple("StopBits::Two").finish(),
+                    }
+                }
+            }
+            impl StopBits {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> StopBits {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => StopBits::One,
+                        1 => StopBits::Two,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            /// How to talk to the device. 9600 or 115200 baud, 8 data bits, no
+            /// parity and one stop bit (8N1) is what most devices expect.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct Settings {
+                /// Bits a second, from 50 to 4000000: 9600, 115200 and so on.
+                pub baud_rate: u32,
+                /// Bits in a character: 5, 6, 7 or 8.
+                pub data_bits: u8,
+                /// The parity bit.
+                pub parity: Parity,
+                /// The stop bits.
+                pub stop_bits: StopBits,
+                /// How long a `read` that names no wait of its own waits for the first
+                /// byte, in milliseconds, at most 60000. 0 answers at once with what
+                /// has already arrived.
+                pub read_timeout_ms: u32,
+            }
+            impl ::core::fmt::Debug for Settings {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Settings")
+                        .field("baud-rate", &self.baud_rate)
+                        .field("data-bits", &self.data_bits)
+                        .field("parity", &self.parity)
+                        .field("stop-bits", &self.stop_bits)
+                        .field("read-timeout-ms", &self.read_timeout_ms)
+                        .finish()
+                }
+            }
+            /// Why a call was refused or failed. Each case carries words to show a
+            /// person, except `unknown-handle` and `not-open`, which are the app's own
+            /// mistakes.
+            #[derive(Clone)]
+            pub enum SerialError {
+                /// The app did not declare `device.serial`, or the person did not allow
+                /// it. The words say which and name the capability.
+                NotAllowed(_rt::String),
+                /// No serial device is connected to this computer, or this place has
+                /// none: a browser tab, a phone.
+                Unavailable(_rt::String),
+                /// No port has this handle in this run: never picked, or closed.
+                UnknownHandle,
+                /// The port was picked and not opened yet: `open` it first.
+                NotOpen,
+                /// A setting Krate does not accept, with words: a baud rate, data bits
+                /// or a wait out of range, or a write longer than 65536 bytes.
+                BadSettings(_rt::String),
+                /// Another program has the device open.
+                Busy(_rt::String),
+                /// The device went away: unplugged, or switched off.
+                Disconnected(_rt::String),
+                /// The app already holds 8 ports; close one first.
+                TooMany(_rt::String),
+                /// The computer refused, with its words.
+                Failed(_rt::String),
+            }
+            impl ::core::fmt::Debug for SerialError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        SerialError::NotAllowed(e) => {
+                            f.debug_tuple("SerialError::NotAllowed").field(e).finish()
+                        }
+                        SerialError::Unavailable(e) => {
+                            f.debug_tuple("SerialError::Unavailable").field(e).finish()
+                        }
+                        SerialError::UnknownHandle => {
+                            f.debug_tuple("SerialError::UnknownHandle").finish()
+                        }
+                        SerialError::NotOpen => {
+                            f.debug_tuple("SerialError::NotOpen").finish()
+                        }
+                        SerialError::BadSettings(e) => {
+                            f.debug_tuple("SerialError::BadSettings").field(e).finish()
+                        }
+                        SerialError::Busy(e) => {
+                            f.debug_tuple("SerialError::Busy").field(e).finish()
+                        }
+                        SerialError::Disconnected(e) => {
+                            f.debug_tuple("SerialError::Disconnected").field(e).finish()
+                        }
+                        SerialError::TooMany(e) => {
+                            f.debug_tuple("SerialError::TooMany").field(e).finish()
+                        }
+                        SerialError::Failed(e) => {
+                            f.debug_tuple("SerialError::Failed").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for SerialError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+            #[cfg(feature = "std")]
+            impl std::error::Error for SerialError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask the person to choose one serial device. `title` is a short line
+            /// for the list ("Choose the plate reader"), at most 200 characters.
+            ///
+            /// Some(port) when they chose one, none when they cancelled or no person
+            /// is there to choose (a run with no window and no display). Picking
+            /// does not open the port: call `open` with the settings the device
+            /// expects.
+            pub fn pick(title: &str) -> Result<Option<Port>, SerialError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 24 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 24
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "pick"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result32 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(*ptr1.add(8).cast::<u8>());
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1.add(16).cast::<i64>();
+                                            let l6 = *ptr1.add(24).cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            Port {
+                                                handle: l5 as u64,
+                                                name: _rt::string_lift(bytes8),
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(*ptr1.add(8).cast::<u8>());
+                                let v31 = match l9 {
+                                    0 => {
+                                        let e31 = {
+                                            let l10 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        SerialError::NotAllowed(e31)
+                                    }
+                                    1 => {
+                                        let e31 = {
+                                            let l13 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        SerialError::Unavailable(e31)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e31 = {
+                                            let l16 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        SerialError::BadSettings(e31)
+                                    }
+                                    5 => {
+                                        let e31 = {
+                                            let l19 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        SerialError::Busy(e31)
+                                    }
+                                    6 => {
+                                        let e31 = {
+                                            let l22 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 = _rt::Vec::from_raw_parts(
+                                                l22.cast(),
+                                                len24,
+                                                len24,
+                                            );
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        SerialError::Disconnected(e31)
+                                    }
+                                    7 => {
+                                        let e31 = {
+                                            let l25 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 = _rt::Vec::from_raw_parts(
+                                                l25.cast(),
+                                                len27,
+                                                len27,
+                                            );
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        SerialError::TooMany(e31)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e31 = {
+                                            let l28 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l29 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len30 = l29;
+                                            let bytes30 = _rt::Vec::from_raw_parts(
+                                                l28.cast(),
+                                                len30,
+                                                len30,
+                                            );
+                                            _rt::string_lift(bytes30)
+                                        };
+                                        SerialError::Failed(e31)
+                                    }
+                                };
+                                v31
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result32
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Open a picked port with `settings`. Called again on an open port, it
+            /// changes the settings in place.
+            pub fn open(
+                port: PortHandle,
+                settings: Settings,
+            ) -> Result<(), SerialError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let Settings {
+                        baud_rate: baud_rate0,
+                        data_bits: data_bits0,
+                        parity: parity0,
+                        stop_bits: stop_bits0,
+                        read_timeout_ms: read_timeout_ms0,
+                    } = settings;
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open"]
+                        fn wit_import2(
+                            _: i64,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(port),
+                            _rt::as_i32(baud_rate0),
+                            _rt::as_i32(data_bits0),
+                            parity0.clone() as i32,
+                            stop_bits0.clone() as i32,
+                            _rt::as_i32(read_timeout_ms0),
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result27 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v26 = match l4 {
+                                    0 => {
+                                        let e26 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SerialError::NotAllowed(e26)
+                                    }
+                                    1 => {
+                                        let e26 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SerialError::Unavailable(e26)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e26 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        SerialError::BadSettings(e26)
+                                    }
+                                    5 => {
+                                        let e26 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        SerialError::Busy(e26)
+                                    }
+                                    6 => {
+                                        let e26 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        SerialError::Disconnected(e26)
+                                    }
+                                    7 => {
+                                        let e26 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        SerialError::TooMany(e26)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e26 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        SerialError::Failed(e26)
+                                    }
+                                };
+                                v26
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result27
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read at most `max` bytes (at most 65536): wait up to `timeout-ms`
+            /// (none: the `read-timeout-ms` the port was opened with; at most 60000)
+            /// for the first byte, then answer with what has arrived. Empty when the
+            /// wait ran out with nothing.
+            pub fn read(
+                port: PortHandle,
+                max: u32,
+                timeout_ms: Option<u32>,
+            ) -> Result<_rt::Vec<u8>, SerialError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let (result0_0, result0_1) = match timeout_ms {
+                        Some(e) => (1i32, _rt::as_i32(e)),
+                        None => (0i32, 0i32),
+                    };
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "read"]
+                        fn wit_import2(_: i64, _: i32, _: i32, _: i32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(port),
+                            _rt::as_i32(&max),
+                            result0_0,
+                            result0_1,
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result30 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v29 = match l7 {
+                                    0 => {
+                                        let e29 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SerialError::NotAllowed(e29)
+                                    }
+                                    1 => {
+                                        let e29 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        SerialError::Unavailable(e29)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e29 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        SerialError::BadSettings(e29)
+                                    }
+                                    5 => {
+                                        let e29 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        SerialError::Busy(e29)
+                                    }
+                                    6 => {
+                                        let e29 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        SerialError::Disconnected(e29)
+                                    }
+                                    7 => {
+                                        let e29 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        SerialError::TooMany(e29)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e29 = {
+                                            let l26 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 = _rt::Vec::from_raw_parts(
+                                                l26.cast(),
+                                                len28,
+                                                len28,
+                                            );
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        SerialError::Failed(e29)
+                                    }
+                                };
+                                v29
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result30
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Write every byte of `bytes` (at most 65536) to the device. Returns once
+            /// the device has taken them, waiting at most the port's
+            /// `read-timeout-ms` (at least one second) plus the time the bytes take on
+            /// the wire at its baud rate; past that, `failed`.
+            pub fn write(port: PortHandle, bytes: &[u8]) -> Result<(), SerialError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = bytes;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "write"]
+                        fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(_rt::as_i64(port), ptr0.cast_mut(), len0, ptr1)
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result27 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v26 = match l4 {
+                                    0 => {
+                                        let e26 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SerialError::NotAllowed(e26)
+                                    }
+                                    1 => {
+                                        let e26 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SerialError::Unavailable(e26)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e26 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        SerialError::BadSettings(e26)
+                                    }
+                                    5 => {
+                                        let e26 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        SerialError::Busy(e26)
+                                    }
+                                    6 => {
+                                        let e26 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        SerialError::Disconnected(e26)
+                                    }
+                                    7 => {
+                                        let e26 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        SerialError::TooMany(e26)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e26 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        SerialError::Failed(e26)
+                                    }
+                                };
+                                v26
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result27
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Close the port and give up the pick: the handle is spent, and talking
+            /// to the device again needs a new pick. Closing an unknown handle does
+            /// nothing.
+            pub fn close(port: PortHandle) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "close"]
+                        fn wit_import0(_: i64);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(port)) };
+                }
+            }
+        }
+    }
     pub mod speech {
         /// Local speech recognition over audio the app already received.
         ///
@@ -49606,9 +50679,9 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 32780] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x91\xff\x01\x01A\x02\
-\x01A\xd5\x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 33293] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x92\x83\x02\x01A\x02\
+\x01A\xd7\x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\
 \x09log-level\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eo\
 f\0\0\x0cinvalid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14k\
 rate:io/types@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\
@@ -49779,118 +50852,130 @@ in\x01\x11\x01@\x01\x06handle\x01\0\x10\x04\0\x0bclose-stdin\x01\x12\x01j\x01\x0
 \x0bread-stderr\x01\x14\x01k\x06\x01j\x01\x15\x01\x03\x01@\x02\x06handle\x01\x0a\
 timeout-msy\0\x16\x04\0\x04wait\x01\x17\x04\0\x04kill\x01\x12\x01@\x03\x06handle\
 \x01\x04cols{\x04rows{\0\x10\x04\0\x06resize\x01\x18\x01@\x01\x06handle\x01\x01\0\
-\x04\0\x07release\x01\x19\x03\0\x1dkrate:process/processes@0.1.0\x05'\x01B7\x01m\
-\x04\x06normal\x09minimized\x09maximized\x0afullscreen\x04\0\x0cwindow-state\x03\
-\0\0\x01r\x02\x05widthy\x06heighty\x04\0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\
-\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\x04\x01m\x03\x05light\x04dark\x07\
-unknown\x04\0\x05theme\x03\0\x06\x01m\x04\x07primary\x09secondary\x06middle\x05o\
-ther\x04\0\x0epointer-button\x03\0\x08\x01r\x04\x05shift\x7f\x07control\x7f\x03a\
-lt\x7f\x04meta\x7f\x04\0\x09modifiers\x03\0\x0a\x01kw\x01k\x09\x01r\x07\x06windo\
-ww\x06widget\x0c\x01xv\x01yv\x06button\x0d\x07pressed\x7f\x09modifiers\x0b\x04\0\
-\x0dpointer-event\x03\0\x0e\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x02dxv\
-\x02dyv\x09modifiers\x0b\x04\0\x0bwheel-event\x03\0\x10\x01r\x03\x06windoww\x06w\
-idgetw\x04texts\x04\0\x12text-changed-event\x03\0\x12\x01r\x05\x06windoww\x06wid\
-get\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\0\x09key-event\x03\0\x14\x01\
-q\x05\x11permission-denied\0\0\x0einvalid-window\0\0\x0einvalid-widget\0\0\x0bun\
-supported\x01s\0\x08platform\x01s\0\x04\0\x08ui-error\x03\0\x16\x01m\x12\x05stac\
-k\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05radio\x06switch\x06slider\x08\
-progress\x04text\x0atext-field\x09text-area\x09list-view\x09tree-view\x05image\x06\
-canvas\x07overlay\x04\0\x0bwidget-kind\x03\0\x18\x01r\x02\x06cursory\x06anchory\x04\
-\0\x0btext-cursor\x03\0\x1a\x01r\x04\x01r}\x01g}\x01b}\x01a}\x04\0\x05color\x03\0\
-\x1c\x01k\x1d\x01kv\x01r\x05\x05color\x1e\x07outline\x1e\x0doutline-widthv\x04si\
-ze\x1f\x04bold\x7f\x04\0\x0atext-style\x03\0\x20\x01r\x04\x0abackground\x1e\x06b\
-order\x1e\x0cborder-widthv\x0dcorner-radiusv\x04\0\x09box-style\x03\0\"\x01m\x0a\
-\x07default\x08top-left\x0atop-centre\x09top-right\x0bcentre-left\x06centre\x0cc\
-entre-right\x0bbottom-left\x0dbottom-centre\x0cbottom-right\x04\0\x09placement\x03\
-\0$\x01k!\x01k%\x01k#\x01r\x07\x05width\x1f\x06height\x1f\x04growv\x07paddingv\x04\
-text&\x05place'\x03box(\x04\0\x05style\x03\0)\x01ks\x01k\x7f\x01ky\x01k\x1b\x01r\
-\x0a\x02idw\x06parent\x0c\x04kind\x19\x05label+\x04role+\x05style*\x07checked,\x05\
-value\x1f\x08selected-\x0btext-cursor.\x04\0\x0bwidget-node\x03\0/\x01r\x03\x02i\
-dw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\01\x01r\x02\x04names\x05token\
-s\x04\0\x0bchosen-file\x03\03\x01q\x0d\x0fclose-requested\x01w\0\x07resized\x01\x03\
-\0\x10redraw-requested\x01w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\
-\x11\0\x0atext-input\x01s\0\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-\
-changed\x01\x0c\0\x0dtheme-changed\x01\x07\0\x0cfile-dropped\x014\0\x0dfile-hove\
-ring\x01\x7f\0\x04\0\x05event\x03\05\x03\0\x14krate:ui/types@0.1.0\x05(\x02\x03\0\
-\x1a\x08ui-error\x02\x03\0\x1a\x0bwindow-size\x02\x03\0\x1a\x0cwindow-state\x01B\
-\x16\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01*\x04\0\x0bwindow\
--size\x03\0\x02\x02\x03\x02\x01+\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\
-\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01\
-@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06\
-windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\
-\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09\
-set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x01@\x02\x06windoww\x07enabled\
-\x7f\0\x08\x04\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05,\x02\
-\x03\0\x1a\x0bwidget-node\x01B\x0e\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x02\
-\x03\x02\x01-\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04\
-root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\
-\0\x0bupsert-node\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-n\
-ode\x01\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07enable\
-d\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x05.\x01B\x0a\
-\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x01p}\x01r\x03\x05widthy\x06heighty\x04\
-rgba\x02\x04\0\x0cimage-pixels\x03\0\x03\x01j\0\x01\x01\x01@\x03\x06windoww\x06w\
-idgetw\x06pixels\x04\0\x05\x04\0\x0aset-pixels\x01\x06\x01@\x02\x06windoww\x06wi\
-dgetw\0\x05\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x05/\x02\x03\0\x1a\
-\x05event\x01B\x10\x02\x03\x02\x010\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\
-\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\
-\x05\x01@\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\x04\0\x11game\
-pad-connected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01\
-@\x01\x04axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x05\
-1\x02\x03\0\x1a\x0epointer-button\x01B\x13\x02\x03\x02\x012\x04\0\x0epointer-but\
-ton\x03\0\0\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\x02\x01o\x02vv\x01k\x04\x01\
-@\x01\x06windoww\0\x05\x04\0\x08position\x01\x06\x01@\x01\x06button\x01\0\x7f\x04\
-\0\x0bbutton-held\x01\x07\x01@\x01\x06windoww\0\x04\x04\0\x0btake-motion\x01\x08\
-\x01j\0\x01\x03\x01@\x01\x06windoww\0\x09\x04\0\x07capture\x01\x0a\x01@\x01\x06w\
-indoww\x01\0\x04\0\x07release\x01\x0b\x01@\x01\x06windoww\0\x7f\x04\0\x08capture\
-d\x01\x0c\x03\0\x16krate:ui/pointer@0.1.0\x053\x01B\x05\x01r\x03\x02idw\x01xv\x01\
-yv\x04\0\x0btouch-point\x03\0\0\x01p\x01\x01@\x01\x06windoww\0\x02\x04\0\x07touc\
-hes\x01\x03\x03\0\x14krate:ui/touch@0.1.0\x054\x01B\x04\x01@\x01\x06windoww\0\x7f\
-\x04\0\x05start\x01\0\x01@\x01\x06windoww\x01\0\x04\0\x04stop\x01\x01\x03\0\x19k\
-rate:ui/text-entry@0.1.0\x055\x01B\x0a\x01m\x03\x07compact\x06medium\x05large\x04\
-\0\x0asize-class\x03\0\0\x01m\x02\x05touch\x07pointer\x04\0\x0ainput-kind\x03\0\x02\
-\x01r\x04\x03topv\x05rightv\x06bottomv\x04leftv\x04\0\x06insets\x03\0\x04\x01r\x06\
-\x05widthv\x06heightv\x0bwidth-class\x01\x0cheight-class\x01\x05input\x03\x04saf\
-e\x05\x04\0\x0cscreen-facts\x03\0\x06\x01@\x01\x06windoww\0\x07\x04\0\x05facts\x01\
-\x08\x03\0\x15krate:ui/screen@0.1.0\x056\x02\x03\0\x1a\x0bchosen-file\x01B\x16\x02\
-\x03\x02\x017\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\x01)\x04\0\x08ui-error\x03\
-\0\x02\x01r\x02\x04names\x05tokens\x04\0\x0dchosen-folder\x03\0\x04\x01j\0\x01\x03\
-\x01@\x03\x06windoww\x05titles\x04bodys\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\
-\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01\
-k\x01\x01j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09\
-open-file\x01\x0c\x01@\x04\x06windoww\x05titles\x09suggesteds\x06filters\0\x0b\x04\
-\0\x09save-file\x01\x0d\x01k\x05\x01j\x01\x0e\x01\x03\x01@\x02\x06windoww\x05tit\
-les\0\x0f\x04\0\x0bopen-folder\x01\x10\x03\0\x15krate:ui/dialog@0.1.0\x058\x01B\x0b\
-\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x01m\x03\x07printed\x09cancelled\x10\
-opened-in-viewer\x04\0\x0dprint-outcome\x03\0\x02\x01j\x01\x03\x01\x01\x01@\x02\x06\
-windoww\x05titles\0\x04\x04\0\x06window\x01\x05\x01j\x01y\x01\x01\x01@\x01\x06wi\
-ndoww\0\x06\x04\0\x08add-page\x01\x07\x04\0\x06finish\x01\x05\x03\0\x14krate:ui/\
-print@0.1.0\x059\x01B\x08\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\
-\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\
-\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x05:\x02\x03\0\x1a\
-\x09menu-item\x01B\x08\x02\x03\x02\x01;\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01\
-)\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05ite\
-ms\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x05<\x01B\x05\
-\x01q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\x01s\0\x04\0\x0clau\
-nch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\x08open-url\x01\x03\
-\x03\0\x17krate:ui/launcher@0.1.0\x05=\x01B\x05\x01q\x03\x06denied\0\0\x0finvali\
-d-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\
-\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\0\x15krate:ui/notif\
-y@0.1.0\x05>\x02\x03\0(\x0cnotify-error\x01B\x07\x02\x03\x02\x01?\x04\0\x0cnotif\
-y-error\x03\0\0\x01j\0\x01\x01\x01@\x03\x02ids\x05titles\x04bodys\0\x02\x04\0\x04\
-post\x01\x03\x01@\x01\x02ids\x01\0\x04\0\x08withdraw\x01\x04\x03\0\x1ckrate:ui/n\
-otifications@0.1.0\x05@\x01B\x08\x01m\x07\x05light\x06medium\x05heavy\x09selecti\
-on\x07success\x07warning\x05error\x04\0\x04feel\x03\0\0\x01@\0\0\x7f\x04\0\x09av\
-ailable\x01\x02\x01@\x01\x04feel\x01\x01\0\x04\0\x04play\x01\x03\x01@\x01\x08str\
-engthv\x01\0\x04\0\x06impact\x01\x04\x03\0\x16krate:ui/haptics@0.1.0\x05A\x01B\x0a\
-\x01r\x03\x01xv\x01yv\x01zv\x04\0\x06vector\x03\0\0\x01kv\x01r\x04\x07gravity\x01\
-\x0cacceleration\x01\x08rotation\x01\x07heading\x02\x04\0\x07reading\x03\0\x03\x01\
-@\0\0\x7f\x04\0\x09available\x01\x05\x01k\x04\x01@\0\0\x06\x04\0\x04read\x01\x07\
-\x03\0\x15krate:ui/motion@0.1.0\x05B\x01B\x0a\x01kv\x01r\x07\x08latitudeu\x09lon\
-gitudeu\x08accuracyv\x08altitude\0\x05speed\0\x06course\0\x06age-msw\x04\0\x08po\
-sition\x03\0\x01\x01q\x03\x0bnot-allowed\0\0\x0bunavailable\0\0\x07finding\0\0\x04\
-\0\x0elocation-error\x03\0\x03\x01@\0\0\x7f\x04\0\x09available\x01\x05\x01j\x01\x02\
+\x04\0\x07release\x01\x19\x03\0\x1dkrate:process/processes@0.1.0\x05'\x01B\x1c\x01\
+w\x04\0\x0bport-handle\x03\0\0\x01r\x02\x06handle\x01\x04names\x04\0\x04port\x03\
+\0\x02\x01m\x03\x04none\x03odd\x04even\x04\0\x06parity\x03\0\x04\x01m\x02\x03one\
+\x03two\x04\0\x09stop-bits\x03\0\x06\x01r\x05\x09baud-ratey\x09data-bits}\x06par\
+ity\x05\x09stop-bits\x07\x0fread-timeout-msy\x04\0\x08settings\x03\0\x08\x01q\x09\
+\x0bnot-allowed\x01s\0\x0bunavailable\x01s\0\x0eunknown-handle\0\0\x08not-open\0\
+\0\x0cbad-settings\x01s\0\x04busy\x01s\0\x0cdisconnected\x01s\0\x08too-many\x01s\
+\0\x06failed\x01s\0\x04\0\x0cserial-error\x03\0\x0a\x01k\x03\x01j\x01\x0c\x01\x0b\
+\x01@\x01\x05titles\0\x0d\x04\0\x04pick\x01\x0e\x01j\0\x01\x0b\x01@\x02\x04port\x01\
+\x08settings\x09\0\x0f\x04\0\x04open\x01\x10\x01ky\x01p}\x01j\x01\x12\x01\x0b\x01\
+@\x03\x04port\x01\x03maxy\x0atimeout-ms\x11\0\x13\x04\0\x04read\x01\x14\x01@\x02\
+\x04port\x01\x05bytes\x12\0\x0f\x04\0\x05write\x01\x15\x01@\x01\x04port\x01\x01\0\
+\x04\0\x05close\x01\x16\x03\0\x18krate:serial/ports@0.1.0\x05(\x01B7\x01m\x04\x06\
+normal\x09minimized\x09maximized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01\
+r\x02\x05widthy\x06heighty\x04\0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05\
+widthv\x06heightv\x04\0\x04rect\x03\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\
+\0\x05theme\x03\0\x06\x01m\x04\x07primary\x09secondary\x06middle\x05other\x04\0\x0e\
+pointer-button\x03\0\x08\x01r\x04\x05shift\x7f\x07control\x7f\x03alt\x7f\x04meta\
+\x7f\x04\0\x09modifiers\x03\0\x0a\x01kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\
+\x01xv\x01yv\x06button\x0d\x07pressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-even\
+t\x03\0\x0e\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x02dxv\x02dyv\x09modif\
+iers\x0b\x04\0\x0bwheel-event\x03\0\x10\x01r\x03\x06windoww\x06widgetw\x04texts\x04\
+\0\x12text-changed-event\x03\0\x12\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07\
+pressed\x7f\x09modifiers\x0b\x04\0\x09key-event\x03\0\x14\x01q\x05\x11permission\
+-denied\0\0\x0einvalid-window\0\0\x0einvalid-widget\0\0\x0bunsupported\x01s\0\x08\
+platform\x01s\0\x04\0\x08ui-error\x03\0\x16\x01m\x12\x05stack\x04grid\x06scroll\x04\
+tabs\x06button\x08checkbox\x05radio\x06switch\x06slider\x08progress\x04text\x0at\
+ext-field\x09text-area\x09list-view\x09tree-view\x05image\x06canvas\x07overlay\x04\
+\0\x0bwidget-kind\x03\0\x18\x01r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\
+\0\x1a\x01r\x04\x01r}\x01g}\x01b}\x01a}\x04\0\x05color\x03\0\x1c\x01k\x1d\x01kv\x01\
+r\x05\x05color\x1e\x07outline\x1e\x0doutline-widthv\x04size\x1f\x04bold\x7f\x04\0\
+\x0atext-style\x03\0\x20\x01r\x04\x0abackground\x1e\x06border\x1e\x0cborder-widt\
+hv\x0dcorner-radiusv\x04\0\x09box-style\x03\0\"\x01m\x0a\x07default\x08top-left\x0a\
+top-centre\x09top-right\x0bcentre-left\x06centre\x0ccentre-right\x0bbottom-left\x0d\
+bottom-centre\x0cbottom-right\x04\0\x09placement\x03\0$\x01k!\x01k%\x01k#\x01r\x07\
+\x05width\x1f\x06height\x1f\x04growv\x07paddingv\x04text&\x05place'\x03box(\x04\0\
+\x05style\x03\0)\x01ks\x01k\x7f\x01ky\x01k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04\
+kind\x19\x05label+\x04role+\x05style*\x07checked,\x05value\x1f\x08selected-\x0bt\
+ext-cursor.\x04\0\x0bwidget-node\x03\0/\x01r\x03\x02idw\x05labels\x07enabled\x7f\
+\x04\0\x09menu-item\x03\01\x01r\x02\x04names\x05tokens\x04\0\x0bchosen-file\x03\0\
+3\x01q\x0d\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01\
+w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\
+\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-\
+changed\x01\x07\0\x0cfile-dropped\x014\0\x0dfile-hovering\x01\x7f\0\x04\0\x05eve\
+nt\x03\05\x03\0\x14krate:ui/types@0.1.0\x05)\x02\x03\0\x1b\x08ui-error\x02\x03\0\
+\x1b\x0bwindow-size\x02\x03\0\x1b\x0cwindow-state\x01B\x16\x02\x03\x02\x01*\x04\0\
+\x08ui-error\x03\0\0\x02\x03\x02\x01+\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\
+\x01,\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04si\
+ze\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\
+\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\
+\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\
+\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0e\
+request-redraw\x01\x09\x01@\x02\x06windoww\x07enabled\x7f\0\x08\x04\0\x0eset-ful\
+l-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05-\x02\x03\0\x1b\x0bwidget-node\
+\x01B\x0e\x02\x03\x02\x01*\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01.\x04\0\x0bw\
+idget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08\
+set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\
+\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocu\
+s-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-\
+enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x05/\x01B\x0a\x02\x03\x02\x01*\x04\0\
+\x08ui-error\x03\0\0\x01p}\x01r\x03\x05widthy\x06heighty\x04rgba\x02\x04\0\x0cim\
+age-pixels\x03\0\x03\x01j\0\x01\x01\x01@\x03\x06windoww\x06widgetw\x06pixels\x04\
+\0\x05\x04\0\x0aset-pixels\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x05\x04\0\x05\
+clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x050\x02\x03\0\x1b\x05event\x01B\x10\
+\x02\x03\x02\x011\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\
+\x03\x01ky\x01@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\x05\x01@\x01\x03\
+keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\x04\0\x11gamepad-connected\x01\
+\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01@\x01\x04axiss\0\
+v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x052\x02\x03\0\x1b\
+\x0epointer-button\x01B\x13\x02\x03\x02\x013\x04\0\x0epointer-button\x03\0\0\x02\
+\x03\x02\x01*\x04\0\x08ui-error\x03\0\x02\x01o\x02vv\x01k\x04\x01@\x01\x06window\
+w\0\x05\x04\0\x08position\x01\x06\x01@\x01\x06button\x01\0\x7f\x04\0\x0bbutton-h\
+eld\x01\x07\x01@\x01\x06windoww\0\x04\x04\0\x0btake-motion\x01\x08\x01j\0\x01\x03\
+\x01@\x01\x06windoww\0\x09\x04\0\x07capture\x01\x0a\x01@\x01\x06windoww\x01\0\x04\
+\0\x07release\x01\x0b\x01@\x01\x06windoww\0\x7f\x04\0\x08captured\x01\x0c\x03\0\x16\
+krate:ui/pointer@0.1.0\x054\x01B\x05\x01r\x03\x02idw\x01xv\x01yv\x04\0\x0btouch-\
+point\x03\0\0\x01p\x01\x01@\x01\x06windoww\0\x02\x04\0\x07touches\x01\x03\x03\0\x14\
+krate:ui/touch@0.1.0\x055\x01B\x04\x01@\x01\x06windoww\0\x7f\x04\0\x05start\x01\0\
+\x01@\x01\x06windoww\x01\0\x04\0\x04stop\x01\x01\x03\0\x19krate:ui/text-entry@0.\
+1.0\x056\x01B\x0a\x01m\x03\x07compact\x06medium\x05large\x04\0\x0asize-class\x03\
+\0\0\x01m\x02\x05touch\x07pointer\x04\0\x0ainput-kind\x03\0\x02\x01r\x04\x03topv\
+\x05rightv\x06bottomv\x04leftv\x04\0\x06insets\x03\0\x04\x01r\x06\x05widthv\x06h\
+eightv\x0bwidth-class\x01\x0cheight-class\x01\x05input\x03\x04safe\x05\x04\0\x0c\
+screen-facts\x03\0\x06\x01@\x01\x06windoww\0\x07\x04\0\x05facts\x01\x08\x03\0\x15\
+krate:ui/screen@0.1.0\x057\x02\x03\0\x1b\x0bchosen-file\x01B\x16\x02\x03\x02\x01\
+8\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\x01*\x04\0\x08ui-error\x03\0\x02\x01r\
+\x02\x04names\x05tokens\x04\0\x0dchosen-folder\x03\0\x04\x01j\0\x01\x03\x01@\x03\
+\x06windoww\x05titles\x04bodys\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x03\
+\x01@\x03\x06windoww\x05titles\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x01\x01\
+j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-f\
+ile\x01\x0c\x01@\x04\x06windoww\x05titles\x09suggesteds\x06filters\0\x0b\x04\0\x09\
+save-file\x01\x0d\x01k\x05\x01j\x01\x0e\x01\x03\x01@\x02\x06windoww\x05titles\0\x0f\
+\x04\0\x0bopen-folder\x01\x10\x03\0\x15krate:ui/dialog@0.1.0\x059\x01B\x0b\x02\x03\
+\x02\x01*\x04\0\x08ui-error\x03\0\0\x01m\x03\x07printed\x09cancelled\x10opened-i\
+n-viewer\x04\0\x0dprint-outcome\x03\0\x02\x01j\x01\x03\x01\x01\x01@\x02\x06windo\
+ww\x05titles\0\x04\x04\0\x06window\x01\x05\x01j\x01y\x01\x01\x01@\x01\x06windoww\
+\0\x06\x04\0\x08add-page\x01\x07\x04\0\x06finish\x01\x05\x03\0\x14krate:ui/print\
+@0.1.0\x05:\x01B\x08\x02\x03\x02\x01*\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\x01\
+\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\
+\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x05;\x02\x03\0\x1b\x09\
+menu-item\x01B\x08\x02\x03\x02\x01<\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01*\x04\
+\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05items\x04\
+\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x05=\x01B\x05\x01\
+q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\x01s\0\x04\0\x0claunch-\
+error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\x08open-url\x01\x03\x03\
+\0\x17krate:ui/launcher@0.1.0\x05>\x01B\x05\x01q\x03\x06denied\0\0\x0finvalid-co\
+ntent\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01\
+@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\0\x15krate:ui/notify@0.\
+1.0\x05?\x02\x03\0)\x0cnotify-error\x01B\x07\x02\x03\x02\x01@\x04\0\x0cnotify-er\
+ror\x03\0\0\x01j\0\x01\x01\x01@\x03\x02ids\x05titles\x04bodys\0\x02\x04\0\x04pos\
+t\x01\x03\x01@\x01\x02ids\x01\0\x04\0\x08withdraw\x01\x04\x03\0\x1ckrate:ui/noti\
+fications@0.1.0\x05A\x01B\x08\x01m\x07\x05light\x06medium\x05heavy\x09selection\x07\
+success\x07warning\x05error\x04\0\x04feel\x03\0\0\x01@\0\0\x7f\x04\0\x09availabl\
+e\x01\x02\x01@\x01\x04feel\x01\x01\0\x04\0\x04play\x01\x03\x01@\x01\x08strengthv\
+\x01\0\x04\0\x06impact\x01\x04\x03\0\x16krate:ui/haptics@0.1.0\x05B\x01B\x0a\x01\
+r\x03\x01xv\x01yv\x01zv\x04\0\x06vector\x03\0\0\x01kv\x01r\x04\x07gravity\x01\x0c\
+acceleration\x01\x08rotation\x01\x07heading\x02\x04\0\x07reading\x03\0\x03\x01@\0\
+\0\x7f\x04\0\x09available\x01\x05\x01k\x04\x01@\0\0\x06\x04\0\x04read\x01\x07\x03\
+\0\x15krate:ui/motion@0.1.0\x05C\x01B\x0a\x01kv\x01r\x07\x08latitudeu\x09longitu\
+deu\x08accuracyv\x08altitude\0\x05speed\0\x06course\0\x06age-msw\x04\0\x08positi\
+on\x03\0\x01\x01q\x03\x0bnot-allowed\0\0\x0bunavailable\0\0\x07finding\0\0\x04\0\
+\x0elocation-error\x03\0\x03\x01@\0\0\x7f\x04\0\x09available\x01\x05\x01j\x01\x02\
 \x01\x04\x01@\0\0\x06\x04\0\x07current\x01\x07\x03\0\x17krate:ui/location@0.1.0\x05\
-C\x01B\x1c\x01r\x02\x02idw\x04names\x04\0\x06device\x03\0\0\x01p}\x01r\x03\x07se\
+D\x01B\x1c\x01r\x02\x02idw\x04names\x04\0\x06device\x03\0\0\x01p}\x01r\x03\x07se\
 rvices\x0echaracteristics\x04data\x02\x04\0\x0cnotification\x03\0\x03\x01q\x05\x0b\
 not-allowed\0\0\x0bunavailable\0\0\x09not-found\0\0\x0cdisconnected\0\0\x06faile\
 d\x01s\0\x04\0\x0fbluetooth-error\x03\0\x05\x01@\0\0\x7f\x04\0\x09available\x01\x07\
@@ -49901,41 +50986,41 @@ ervices\x0echaracteristics\x04data\x02\x0dwith-response\x7f\0\x0d\x04\0\x05write
 \x01\x0e\x01@\x03\x06devicew\x07services\x0echaracteristics\0\x0d\x04\0\x09subsc\
 ribe\x01\x0f\x01p\x04\x01@\x01\x06devicew\0\x10\x04\0\x0dnotifications\x01\x11\x01\
 @\x01\x06devicew\0\x7f\x04\0\x09connected\x01\x12\x01@\x01\x06devicew\x01\0\x04\0\
-\x0adisconnect\x01\x13\x03\0\x18krate:ui/bluetooth@0.1.0\x05D\x01B\x0a\x01p}\x01\
+\x0adisconnect\x01\x13\x03\0\x18krate:ui/bluetooth@0.1.0\x05E\x01B\x0a\x01p}\x01\
 r\x02\x04names\x04data\0\x04\0\x0bshared-file\x03\0\x01\x01q\x02\x0bunavailable\x01\
 s\0\x07invalid\x01s\0\x04\0\x0bshare-error\x03\0\x03\x01ks\x01p\x02\x01j\x01\x7f\
 \x01\x04\x01@\x04\x06windoww\x04text\x05\x03url\x05\x05files\x06\0\x07\x04\0\x05\
-share\x01\x08\x03\0\x14krate:ui/share@0.1.0\x05E\x01B\x0c\x02\x03\x02\x017\x04\0\
+share\x01\x08\x03\0\x14krate:ui/share@0.1.0\x05F\x01B\x0c\x02\x03\x02\x018\x04\0\
 \x0bchosen-file\x03\0\0\x01q\x03\x0bnot-allowed\0\0\x0bunavailable\x01s\0\x07inv\
 alid\x01s\0\x04\0\x0cphotos-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\x02\
 \x06windoww\x05limity\0\x05\x04\0\x04pick\x01\x06\x01p}\x01j\0\x01\x03\x01@\x02\x06\
 windoww\x04data\x07\0\x08\x04\0\x04save\x01\x09\x03\0\x15krate:ui/photos@0.1.0\x05\
-F\x01B\x0a\x02\x03\x02\x01?\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01@\x05\
+G\x01B\x0a\x02\x03\x02\x01@\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01@\x05\
 \x02ids\x05titles\x04bodys\x0dafter-secondsw\x05daily\x7f\0\x02\x04\0\x08schedul\
 e\x01\x03\x01@\x01\x02ids\x01\0\x04\0\x06cancel\x01\x04\x01ps\x01@\0\0\x05\x04\0\
-\x07pending\x01\x06\x03\0\x18krate:ui/reminders@0.1.0\x05G\x01B\x08\x01q\x03\x09\
+\x07pending\x01\x06\x03\0\x18krate:ui/reminders@0.1.0\x05H\x01B\x08\x01q\x03\x09\
 cancelled\0\0\x0bunavailable\x01s\0\x07invalid\x01s\0\x04\0\x0dsign-in-error\x03\
 \0\0\x01o\x02ss\x01@\0\0\x02\x04\0\x04pkce\x01\x03\x01j\x01s\x01\x01\x01@\x03\x06\
 windoww\x0dauthorize-urls\x0fcallback-schemes\0\x04\x04\0\x05start\x01\x05\x03\0\
-\x16krate:ui/sign-in@0.1.0\x05H\x01B\x06\x01q\x03\x03yes\0\0\x02no\0\0\x0bunavai\
+\x16krate:ui/sign-in@0.1.0\x05I\x01B\x06\x01q\x03\x03yes\0\0\x02no\0\0\x0bunavai\
 lable\x01s\0\x04\0\x0dunlock-answer\x03\0\0\x01@\0\0\x7f\x04\0\x09available\x01\x02\
 \x01@\x01\x06reasons\0\x01\x04\0\x05check\x01\x03\x03\0\x15krate:ui/unlock@0.1.0\
-\x05I\x01B\x04\x01r\x03\x04dark\x7f\x0dhigh-contrast\x7f\x0atext-scalev\x04\0\x04\
+\x05J\x01B\x04\x01r\x03\x04dark\x7f\x0dhigh-contrast\x7f\x0atext-scalev\x04\0\x04\
 look\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x03\0\x19krate:ui/appearance@\
-0.1.0\x05J\x01B\x0d\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x01m\x08\x06butto\
+0.1.0\x05K\x01B\x0d\x02\x03\x02\x01*\x04\0\x08ui-error\x03\0\0\x01m\x08\x06butto\
 n\x04link\x07heading\x04text\x05image\x06toggle\x0aadjustable\x05field\x04\0\x04\
 role\x03\0\x02\x01k\x7f\x01r\x09\x01xv\x01yv\x05widthv\x06heightv\x04role\x03\x05\
 labels\x05values\x07checked\x04\x07enabled\x7f\x04\0\x07element\x03\0\x05\x01p\x06\
 \x01j\0\x01\x01\x01@\x02\x06windoww\x08elements\x07\0\x08\x04\0\x08describe\x01\x09\
 \x01@\0\0\x7f\x04\0\x10screen-reader-on\x01\x0a\x03\0\x1ckrate:ui/accessibility@\
-0.1.0\x05K\x01B\x12\x02\x03\x02\x01)\x04\0\x08ui-error\x03\0\0\x01r\x04\x07addre\
+0.1.0\x05L\x01B\x12\x02\x03\x02\x01*\x04\0\x08ui-error\x03\0\0\x01r\x04\x07addre\
 sss\x05titles\x07loading\x7f\x07problems\x04\0\x0apage-state\x03\0\x02\x01j\x01w\
 \x01\x01\x01@\x06\x06windoww\x07addresss\x01xv\x01yv\x05widthv\x06heightv\0\x04\x04\
 \0\x04open\x01\x05\x01j\0\x01\x01\x01@\x05\x04pagew\x01xv\x01yv\x05widthv\x06hei\
 ghtv\0\x06\x04\0\x05place\x01\x07\x01@\x02\x04pagew\x07addresss\0\x06\x04\0\x02g\
 o\x01\x08\x01@\x01\x04pagew\x01\0\x04\0\x04back\x01\x09\x01j\x01\x03\x01\x01\x01\
 @\x01\x04pagew\0\x0a\x04\0\x05state\x01\x0b\x04\0\x05close\x01\x09\x03\0\x17krat\
-e:ui/web-page@0.1.0\x05L\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05colo\
+e:ui/web-page@0.1.0\x05M\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05colo\
 r\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06he\
 ightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06ascentv\x07descen\
 tv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\
@@ -49945,15 +51030,15 @@ tv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04
 \0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0bbottom-leftv\x04\0\
 \x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0einvalid-target\0\
 \0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x12\x03\0\x15\
-krate:gfx/types@0.1.0\x05M\x02\x03\06\x05color\x02\x03\06\x05point\x02\x03\06\x04\
-rect\x02\x03\06\x04size\x02\x03\06\x0ctext-metrics\x02\x03\06\x09gfx-error\x02\x03\
-\06\x0dgradient-stop\x02\x03\06\x0ccorner-radii\x02\x03\06\x0atext-style\x02\x03\
-\06\x0bfont-family\x01BK\x02\x03\x02\x01N\x04\0\x05color\x03\0\0\x02\x03\x02\x01\
-O\x04\0\x05point\x03\0\x02\x02\x03\x02\x01P\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01\
-Q\x04\0\x04size\x03\0\x06\x02\x03\x02\x01R\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\
-\x02\x01S\x04\0\x09gfx-error\x03\0\x0a\x02\x03\x02\x01T\x04\0\x0dgradient-stop\x03\
-\0\x0c\x02\x03\x02\x01U\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01V\x04\0\x0a\
-text-style\x03\0\x10\x02\x03\x02\x01W\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\
+krate:gfx/types@0.1.0\x05N\x02\x03\07\x05color\x02\x03\07\x05point\x02\x03\07\x04\
+rect\x02\x03\07\x04size\x02\x03\07\x0ctext-metrics\x02\x03\07\x09gfx-error\x02\x03\
+\07\x0dgradient-stop\x02\x03\07\x0ccorner-radii\x02\x03\07\x0atext-style\x02\x03\
+\07\x0bfont-family\x01BK\x02\x03\x02\x01O\x04\0\x05color\x03\0\0\x02\x03\x02\x01\
+P\x04\0\x05point\x03\0\x02\x02\x03\x02\x01Q\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01\
+R\x04\0\x04size\x03\0\x06\x02\x03\x02\x01S\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\
+\x02\x01T\x04\0\x09gfx-error\x03\0\x0a\x02\x03\x02\x01U\x04\0\x0dgradient-stop\x03\
+\0\x0c\x02\x03\x02\x01V\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01W\x04\0\x0a\
+text-style\x03\0\x10\x02\x03\x02\x01X\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\
 \x0b\x01@\x02\x06windoww\x06widgetw\0\x14\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\
 \x0b\x01@\x01\x06canvasw\0\x16\x04\0\x0bcanvas-size\x01\x17\x01j\0\x01\x0b\x01@\x02\
 \x06canvasw\x04size\x07\0\x18\x04\0\x0fset-design-size\x01\x19\x01@\x05\x06canva\
@@ -49982,8 +51067,8 @@ t-sizev\x03ink\x01\0\x18\x04\0\x09draw-text\x01.\x01@\x03\x06canvasw\x04texts\x0
 font-sizev\0%\x04\0\x0cmeasure-text\x01/\x01@\x05\x06canvasw\x04area\x05\x05widt\
 hy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06ce\
 nter\x03\x03dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-\
-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05X\x01B\
-%\x02\x03\x02\x01N\x04\0\x05color\x03\0\0\x02\x03\x02\x01S\x04\0\x09gfx-error\x03\
+sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05Y\x01B\
+%\x02\x03\x02\x01O\x04\0\x05color\x03\0\0\x02\x03\x02\x01T\x04\0\x09gfx-error\x03\
 \0\x02\x01pv\x01r\x0a\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09\
 fog-color\x01\x0efill-direction\x04\x0afill-color\x01\x0dshadow-radiusv\x0fshado\
 w-softnessv\x08exposurev\x04\0\x08lighting\x03\0\x05\x01j\x01w\x01\x03\x01@\x02\x06\
@@ -50001,7 +51086,7 @@ enew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\x01@\x08\x05scenew\x08v
 ertices\x04\x07normals\x04\x08tangents\x04\x03uvs\x04\x07texturew\x0enormal-text\
 urew\x04tint\x01\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\0\x05unlit\x01\x11\x01\
 @\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-faces\x01\x15\x01@\x01\x05\
-scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gfx/scene3d@0.1.0\x05Y\x01B\
+scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gfx/scene3d@0.1.0\x05Z\x01B\
 \xf6\x01\x01w\x04\0\x06handle\x03\0\0\x01q\x06\x0einvalid-handle\x01s\0\x0avalid\
 ation\x01s\0\x0dout-of-memory\0\0\x04lost\x01s\0\x0bunsupported\x01s\0\x08intern\
 al\x01s\0\x04\0\x09gpu-error\x03\0\x02\x01r\x05\x07messages\x04liney\x06columny\x06\
@@ -50157,42 +51242,42 @@ surface-configuration\x03\0\xee\x01\x01r\x02\x07texture\x01\x0asuboptimal\x7f\x0
 \x08occluded\0\0\x04lost\x01s\0\x05other\x01s\0\x04\0\x0dsurface-error\x03\0\xf2\
 \x01\x01r\x05\x0eallowed-usages\x1d\x0dsample-counts\xc6\x01\x0afilterable\x7f\x09\
 blendable\x7f\x12storage-read-write\x7f\x04\0\x0fformat-features\x03\0\xf4\x01\x03\
-\0\x15krate:gpu/types@0.1.0\x05Z\x02\x03\09\x06handle\x02\x03\09\x09gpu-error\x02\
-\x03\09\x0cshader-error\x02\x03\09\x13compilation-message\x02\x03\09\x05limit\x02\
-\x03\09\x0fadapter-options\x02\x03\09\x0cadapter-info\x02\x03\09\x11device-descr\
-iptor\x02\x03\09\x11buffer-descriptor\x02\x03\09\x12texture-descriptor\x02\x03\0\
-9\x17texture-view-descriptor\x02\x03\09\x12sampler-descriptor\x02\x03\09\x1cbind\
--group-layout-descriptor\x02\x03\09\x15bind-group-descriptor\x02\x03\09\x1apipel\
-ine-layout-descriptor\x02\x03\09\x18shader-module-descriptor\x02\x03\09\x1arende\
-r-pipeline-descriptor\x02\x03\09\x1bcompute-pipeline-descriptor\x02\x03\09\x14qu\
-ery-set-descriptor\x02\x03\09\x17texel-copy-texture-info\x02\x03\09\x18texel-cop\
-y-buffer-layout\x02\x03\09\x16texel-copy-buffer-info\x02\x03\09\x08extent3d\x02\x03\
-\09\x16render-pass-descriptor\x02\x03\09\x0erender-command\x02\x03\09\x17compute\
--pass-descriptor\x02\x03\09\x0fcompute-command\x02\x03\09\x08map-mode\x02\x03\09\
-\x14surface-capabilities\x02\x03\09\x15surface-configuration\x02\x03\09\x0dsurfa\
-ce-frame\x02\x03\09\x0dsurface-error\x02\x03\09\x0fformat-features\x01B\xc5\x01\x02\
-\x03\x02\x01[\x04\0\x06handle\x03\0\0\x02\x03\x02\x01\\\x04\0\x09gpu-error\x03\0\
-\x02\x02\x03\x02\x01]\x04\0\x0cshader-error\x03\0\x04\x02\x03\x02\x01^\x04\0\x13\
-compilation-message\x03\0\x06\x02\x03\x02\x01_\x04\0\x05limit\x03\0\x08\x02\x03\x02\
-\x01`\x04\0\x0fadapter-options\x03\0\x0a\x02\x03\x02\x01a\x04\0\x0cadapter-info\x03\
-\0\x0c\x02\x03\x02\x01b\x04\0\x11device-descriptor\x03\0\x0e\x02\x03\x02\x01c\x04\
-\0\x11buffer-descriptor\x03\0\x10\x02\x03\x02\x01d\x04\0\x12texture-descriptor\x03\
-\0\x12\x02\x03\x02\x01e\x04\0\x17texture-view-descriptor\x03\0\x14\x02\x03\x02\x01\
-f\x04\0\x12sampler-descriptor\x03\0\x16\x02\x03\x02\x01g\x04\0\x1cbind-group-lay\
-out-descriptor\x03\0\x18\x02\x03\x02\x01h\x04\0\x15bind-group-descriptor\x03\0\x1a\
-\x02\x03\x02\x01i\x04\0\x1apipeline-layout-descriptor\x03\0\x1c\x02\x03\x02\x01j\
-\x04\0\x18shader-module-descriptor\x03\0\x1e\x02\x03\x02\x01k\x04\0\x1arender-pi\
-peline-descriptor\x03\0\x20\x02\x03\x02\x01l\x04\0\x1bcompute-pipeline-descripto\
-r\x03\0\"\x02\x03\x02\x01m\x04\0\x14query-set-descriptor\x03\0$\x02\x03\x02\x01n\
-\x04\0\x17texel-copy-texture-info\x03\0&\x02\x03\x02\x01o\x04\0\x18texel-copy-bu\
-ffer-layout\x03\0(\x02\x03\x02\x01p\x04\0\x16texel-copy-buffer-info\x03\0*\x02\x03\
-\x02\x01q\x04\0\x08extent3d\x03\0,\x02\x03\x02\x01r\x04\0\x16render-pass-descrip\
-tor\x03\0.\x02\x03\x02\x01s\x04\0\x0erender-command\x03\00\x02\x03\x02\x01t\x04\0\
-\x17compute-pass-descriptor\x03\02\x02\x03\x02\x01u\x04\0\x0fcompute-command\x03\
-\04\x02\x03\x02\x01v\x04\0\x08map-mode\x03\06\x02\x03\x02\x01w\x04\0\x14surface-\
-capabilities\x03\08\x02\x03\x02\x01x\x04\0\x15surface-configuration\x03\0:\x02\x03\
-\x02\x01y\x04\0\x0dsurface-frame\x03\0<\x02\x03\x02\x01z\x04\0\x0dsurface-error\x03\
-\0>\x02\x03\x02\x01{\x04\0\x0fformat-features\x03\0@\x01j\x01\x01\x01\x03\x01@\x01\
+\0\x15krate:gpu/types@0.1.0\x05[\x02\x03\0:\x06handle\x02\x03\0:\x09gpu-error\x02\
+\x03\0:\x0cshader-error\x02\x03\0:\x13compilation-message\x02\x03\0:\x05limit\x02\
+\x03\0:\x0fadapter-options\x02\x03\0:\x0cadapter-info\x02\x03\0:\x11device-descr\
+iptor\x02\x03\0:\x11buffer-descriptor\x02\x03\0:\x12texture-descriptor\x02\x03\0\
+:\x17texture-view-descriptor\x02\x03\0:\x12sampler-descriptor\x02\x03\0:\x1cbind\
+-group-layout-descriptor\x02\x03\0:\x15bind-group-descriptor\x02\x03\0:\x1apipel\
+ine-layout-descriptor\x02\x03\0:\x18shader-module-descriptor\x02\x03\0:\x1arende\
+r-pipeline-descriptor\x02\x03\0:\x1bcompute-pipeline-descriptor\x02\x03\0:\x14qu\
+ery-set-descriptor\x02\x03\0:\x17texel-copy-texture-info\x02\x03\0:\x18texel-cop\
+y-buffer-layout\x02\x03\0:\x16texel-copy-buffer-info\x02\x03\0:\x08extent3d\x02\x03\
+\0:\x16render-pass-descriptor\x02\x03\0:\x0erender-command\x02\x03\0:\x17compute\
+-pass-descriptor\x02\x03\0:\x0fcompute-command\x02\x03\0:\x08map-mode\x02\x03\0:\
+\x14surface-capabilities\x02\x03\0:\x15surface-configuration\x02\x03\0:\x0dsurfa\
+ce-frame\x02\x03\0:\x0dsurface-error\x02\x03\0:\x0fformat-features\x01B\xc5\x01\x02\
+\x03\x02\x01\\\x04\0\x06handle\x03\0\0\x02\x03\x02\x01]\x04\0\x09gpu-error\x03\0\
+\x02\x02\x03\x02\x01^\x04\0\x0cshader-error\x03\0\x04\x02\x03\x02\x01_\x04\0\x13\
+compilation-message\x03\0\x06\x02\x03\x02\x01`\x04\0\x05limit\x03\0\x08\x02\x03\x02\
+\x01a\x04\0\x0fadapter-options\x03\0\x0a\x02\x03\x02\x01b\x04\0\x0cadapter-info\x03\
+\0\x0c\x02\x03\x02\x01c\x04\0\x11device-descriptor\x03\0\x0e\x02\x03\x02\x01d\x04\
+\0\x11buffer-descriptor\x03\0\x10\x02\x03\x02\x01e\x04\0\x12texture-descriptor\x03\
+\0\x12\x02\x03\x02\x01f\x04\0\x17texture-view-descriptor\x03\0\x14\x02\x03\x02\x01\
+g\x04\0\x12sampler-descriptor\x03\0\x16\x02\x03\x02\x01h\x04\0\x1cbind-group-lay\
+out-descriptor\x03\0\x18\x02\x03\x02\x01i\x04\0\x15bind-group-descriptor\x03\0\x1a\
+\x02\x03\x02\x01j\x04\0\x1apipeline-layout-descriptor\x03\0\x1c\x02\x03\x02\x01k\
+\x04\0\x18shader-module-descriptor\x03\0\x1e\x02\x03\x02\x01l\x04\0\x1arender-pi\
+peline-descriptor\x03\0\x20\x02\x03\x02\x01m\x04\0\x1bcompute-pipeline-descripto\
+r\x03\0\"\x02\x03\x02\x01n\x04\0\x14query-set-descriptor\x03\0$\x02\x03\x02\x01o\
+\x04\0\x17texel-copy-texture-info\x03\0&\x02\x03\x02\x01p\x04\0\x18texel-copy-bu\
+ffer-layout\x03\0(\x02\x03\x02\x01q\x04\0\x16texel-copy-buffer-info\x03\0*\x02\x03\
+\x02\x01r\x04\0\x08extent3d\x03\0,\x02\x03\x02\x01s\x04\0\x16render-pass-descrip\
+tor\x03\0.\x02\x03\x02\x01t\x04\0\x0erender-command\x03\00\x02\x03\x02\x01u\x04\0\
+\x17compute-pass-descriptor\x03\02\x02\x03\x02\x01v\x04\0\x0fcompute-command\x03\
+\04\x02\x03\x02\x01w\x04\0\x08map-mode\x03\06\x02\x03\x02\x01x\x04\0\x14surface-\
+capabilities\x03\08\x02\x03\x02\x01y\x04\0\x15surface-configuration\x03\0:\x02\x03\
+\x02\x01z\x04\0\x0dsurface-frame\x03\0<\x02\x03\x02\x01{\x04\0\x0dsurface-error\x03\
+\0>\x02\x03\x02\x01|\x04\0\x0fformat-features\x03\0@\x01j\x01\x01\x01\x03\x01@\x01\
 \x07options\x0b\0\xc2\0\x04\0\x0frequest-adapter\x01C\x01j\x01\x0d\x01\x03\x01@\x01\
 \x07adapter\x01\0\xc4\0\x04\0\x10describe-adapter\x01E\x01ps\x01j\x01\xc6\0\x01\x03\
 \x01@\x01\x07adapter\x01\0\xc7\0\x04\0\x10adapter-features\x01H\x01p\x09\x01j\x01\
@@ -50251,15 +51336,15 @@ ies\x01\x89\x01\x01@\x03\x07surface\x01\x06device\x01\x0dconfiguration;\0\xd1\0\
 \0\x11configure-surface\x01\x8a\x01\x01j\x01=\x01?\x01@\x01\x07surface\x01\0\x8b\
 \x01\x04\0\x0fcurrent-texture\x01\x8c\x01\x01@\x01\x07surface\x01\0\xd1\0\x04\0\x07\
 present\x01\x8d\x01\x01@\x01\x06object\x01\x01\0\x04\0\x07release\x01\x8e\x01\x03\
-\0\x13krate:gpu/gpu@0.1.0\x05|\x01B\x11\x02\x03\x02\x01P\x04\0\x04rect\x03\0\0\x02\
-\x03\x02\x01U\x04\0\x0ccorner-radii\x03\0\x02\x02\x03\x02\x01S\x04\0\x09gfx-erro\
+\0\x13krate:gpu/gpu@0.1.0\x05}\x01B\x11\x02\x03\x02\x01Q\x04\0\x04rect\x03\0\0\x02\
+\x03\x02\x01V\x04\0\x0ccorner-radii\x03\0\x02\x02\x03\x02\x01T\x04\0\x09gfx-erro\
 r\x03\0\x04\x01p}\x01j\x01w\x01\x05\x01@\x04\x06canvasw\x05widthy\x06heighty\x04\
 rgba\x06\0\x07\x04\0\x04keep\x01\x08\x01j\0\x01\x05\x01@\x03\x06canvasw\x05image\
 w\x04area\x01\0\x09\x04\0\x04draw\x01\x0a\x01@\x04\x06canvasw\x05imagew\x04area\x01\
 \x05radii\x03\0\x09\x04\0\x0adraw-round\x01\x0b\x01@\x02\x06canvasw\x05imagew\x01\
-\0\x04\0\x06forget\x01\x0c\x03\0\x1dkrate:gfx/canvas-images@0.1.0\x05}\x01B\x1e\x02\
-\x03\x02\x01P\x04\0\x04rect\x03\0\0\x02\x03\x02\x01U\x04\0\x0ccorner-radii\x03\0\
-\x02\x02\x03\x02\x01S\x04\0\x09gfx-error\x03\0\x04\x01r\x08\x0fposition-millisw\x0f\
+\0\x04\0\x06forget\x01\x0c\x03\0\x1dkrate:gfx/canvas-images@0.1.0\x05~\x01B\x1e\x02\
+\x03\x02\x01Q\x04\0\x04rect\x03\0\0\x02\x03\x02\x01V\x04\0\x0ccorner-radii\x03\0\
+\x02\x02\x03\x02\x01T\x04\0\x09gfx-error\x03\0\x04\x01r\x08\x0fposition-millisw\x0f\
 duration-millisw\x05widthy\x06heighty\x05ready\x7f\x07playing\x7f\x05ended\x7f\x07\
 problems\x04\0\x0bvideo-state\x03\0\x06\x01j\x01w\x01\x05\x01@\x01\x06sources\0\x08\
 \x04\0\x04open\x01\x09\x01j\0\x01\x05\x01@\x01\x05videow\0\x0a\x04\0\x04play\x01\
@@ -50269,46 +51354,46 @@ problems\x04\0\x0bvideo-state\x03\0\x06\x01j\x01w\x01\x05\x01@\x01\x06sources\0\
 @\x01\x05videow\0\x0f\x04\0\x05state\x01\x10\x01@\x03\x06canvasw\x05videow\x04ar\
 ea\x01\0\x0a\x04\0\x04draw\x01\x11\x01@\x04\x06canvasw\x05videow\x04area\x01\x05\
 radii\x03\0\x0a\x04\0\x0adraw-round\x01\x12\x01@\x01\x05videow\x01\0\x04\0\x05cl\
-ose\x01\x13\x03\0\x15krate:gfx/video@0.1.0\x05~\x01B\x06\x01m\x02\x07pcm-s16\x07\
+ose\x01\x13\x03\0\x15krate:gfx/video@0.1.0\x05\x7f\x01B\x06\x01m\x02\x07pcm-s16\x07\
 float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06\
 format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permis\
 sion-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01\
 s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types\
-@0.1.0\x05\x7f\x02\x03\0=\x0baudio-error\x02\x03\0=\x0dstream-config\x01B\x15\x02\
-\x03\x02\x01\x80\x01\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x81\x01\x04\0\x0d\
-stream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04\
-open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\
-\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\
-\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0al\
-oad-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-\
-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\
-\x03\0\x1akrate:audio/playback@0.1.0\x05\x82\x01\x01B\x05\x02\x03\x02\x01\x80\x01\
-\x04\0\x0baudio-error\x03\0\0\x01j\x01y\x01\x01\x01@\x01\x09stream-idw\0\x02\x04\
-\0\x06queued\x01\x03\x03\0\x20krate:audio/playback-queue@0.1.0\x05\x83\x01\x01B\x0f\
-\x02\x03\x02\x01\x80\x01\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x81\x01\x04\
+@0.1.0\x05\x80\x01\x02\x03\0>\x0baudio-error\x02\x03\0>\x0dstream-config\x01B\x15\
+\x02\x03\x02\x01\x81\x01\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x82\x01\x04\
 \0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\
 \0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\
-\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09\
-max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05\x84\
-\x01\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05widthy\
-\x06heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05w\
-idthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02\
+\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05byt\
+es\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\
+\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0a\
+play-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\
+\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05\x83\x01\x01B\x05\x02\x03\x02\x01\x81\
+\x01\x04\0\x0baudio-error\x03\0\0\x01j\x01y\x01\x01\x01@\x01\x09stream-idw\0\x02\
+\x04\0\x06queued\x01\x03\x03\0\x20krate:audio/playback-queue@0.1.0\x05\x84\x01\x01\
+B\x0f\x02\x03\x02\x01\x81\x01\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\x82\x01\
+\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\
+\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05star\
+t\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-id\
+w\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05\
+\x85\x01\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05wi\
+dthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05\
+widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02\
 ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widt\
 hy\x06heighty\x0eelapsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permission\
 -denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0dsystem-denied\0\0\
 \x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18\
-krate:camera/types@0.1.0\x05\x85\x01\x02\x03\0A\x0ccamera-error\x02\x03\0A\x0bde\
-vice-info\x02\x03\0A\x05frame\x02\x03\0A\x0aframe-info\x02\x03\0A\x0dstream-conf\
-ig\x01B\x1d\x02\x03\x02\x01\x86\x01\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01\
-\x87\x01\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01\x88\x01\x04\0\x05frame\x03\
-\0\x04\x02\x03\x02\x01\x89\x01\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01\x8a\
+krate:camera/types@0.1.0\x05\x86\x01\x02\x03\0B\x0ccamera-error\x02\x03\0B\x0bde\
+vice-info\x02\x03\0B\x05frame\x02\x03\0B\x0aframe-info\x02\x03\0B\x0dstream-conf\
+ig\x01B\x1d\x02\x03\x02\x01\x87\x01\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01\
+\x88\x01\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01\x89\x01\x04\0\x05frame\x03\
+\0\x04\x02\x03\x02\x01\x8a\x01\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01\x8b\
 \x01\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\
 \x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\
 \x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04\
 info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\
 \0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\
 \0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05\
-\x8b\x01\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01q\x05\x0finva\
+\x8c\x01\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01q\x05\x0finva\
 lid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0bunsupported\
 \x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0finvalid-\
 request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\0\x0b\
@@ -50318,14 +51403,14 @@ pcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscribe\x01\x09
 language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\
 \x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08\
 expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\0\x20krate:\
-speech/transcription@0.1.0\x05\x8c\x01\x01B\x12\x01r\x03\x02ids\x04names\x08lang\
+speech/transcription@0.1.0\x05\x8d\x01\x01B\x12\x01r\x03\x02ids\x04names\x08lang\
 uages\x04\0\x05voice\x03\0\0\x01q\x04\x11permission-denied\0\0\x0finvalid-reques\
 t\x01s\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09say-error\x03\0\x02\x01\
 p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\0\x06voices\x01\x06\x01ks\x01kv\x01j\
 \0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04rate\x08\0\x09\x04\0\x03say\x01\x0a\
 \x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\x01\x03\x01@\0\0\x0c\x04\0\x08s\
-peaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@0.1.0\x05\x8d\x01\x01@\0\0z\x04\0\
-\x03run\x01\x8e\x01\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\
+peaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@0.1.0\x05\x8e\x01\x01@\0\0z\x04\0\
+\x03run\x01\x8f\x01\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\
 \0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bi\
 ndgen-rust\x060.41.0";
 #[inline(never)]

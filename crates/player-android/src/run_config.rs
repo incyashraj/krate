@@ -604,6 +604,8 @@ pub fn use_in_words(cap: &str) -> Option<String> {
         // Refused on a phone (IC-977), named so the menu is not a raw id.
         "process.run" => "Running programs".to_string(),
         "process.terminal" => "A terminal".to_string(),
+        // Refused on a phone (IC-985), named so the menu is not a raw id.
+        "device.serial" => "Serial devices you pick".to_string(),
         "ui.clipboard" => "The clipboard".to_string(),
         "ui.notify" => "Notifications".to_string(),
         "ui.open-url" => "Opening links".to_string(),
