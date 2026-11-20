@@ -34,6 +34,7 @@
 
 import { extendOrg } from "./org.js";
 import { endForDeletion } from "./account-sessions.js";
+import { endConnectorGrants } from "./mcp-oauth.js";
 import { eraseSync, syncSummary } from "./account-sync.js";
 import { webPackKey } from "./web-player.js";
 
@@ -60,6 +61,7 @@ export const STEPS = [
   "keys",
   "referrals",
   "orgs-index",
+  "connectors",
   "sessions",
   "identity",
   "account",
@@ -68,6 +70,7 @@ export const STEPS = [
 const DELETES = [
   "Your account: name, email address, picture and sign-in methods",
   "Every sign-in, on every browser and computer",
+  "Every connector you allowed, such as Krate in Claude: it can no longer build or publish",
   "Your conversations in Krate Studio on the web",
   "Your apps' data kept on all your devices (account sync), and its files",
   "Your messages to support, the reports and requests you sent us",
@@ -549,6 +552,14 @@ const STEP = {
 
   async "orgs-index"(env, deps, job) {
     for (const p of job.who.org_principals) await env.APPS.delete(`orgs-of:${p}`);
+  },
+
+  // A connector's refresh token names the account it was made for; ended
+  // here, before the sign-ins, so a deleted account builds nothing more
+  // through Claude (K-1304).
+  async connectors(env, deps, job) {
+    const ended = await endConnectorGrants(env, job.who.id);
+    job.counts.connectors = (job.counts.connectors || 0) + ended;
   },
 
   async sessions(env, deps, job) {

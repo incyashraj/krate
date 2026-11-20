@@ -699,6 +699,25 @@ async function revokeGrant(env, g) {
   await env.APPS.delete(grantKey(g));
 }
 
+/**
+ * End every connector an account allowed, for its deletion (K-1304). A
+ * refresh token carries the identity it was made for, so without this a
+ * deleted account's Claude connector kept minting access tokens for up to
+ * 30 days. Answers how many grants were ended.
+ */
+export async function endConnectorGrants(env, uid) {
+  const listKey = `mcpgrants:${uid}`;
+  const held = JSON.parse((await env.APPS.get(listKey)) || "[]");
+  let ended = 0;
+  for (const g of held) {
+    if (!g || !g.g) continue;
+    await revokeGrant(env, g.g);
+    ended += 1;
+  }
+  await env.APPS.delete(listKey);
+  return ended;
+}
+
 async function token(request, env, base) {
   const body = await readBody(request);
   if (!body) return oauthError("invalid_request", "expected a form body");
