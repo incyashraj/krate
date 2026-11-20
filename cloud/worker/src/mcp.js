@@ -300,6 +300,11 @@ export const TOOLS = [
   },
 ];
 
+// The directory reads a tool's name for its listing from annotations.title
+// (MCP 2025-06-18 and later), and flags every tool without one; an older
+// client reads the top-level title. One source: the top-level title, copied.
+for (const tool of TOOLS) tool.annotations = { title: tool.title, ...tool.annotations };
+
 // --------------------------------------------------------------- arguments
 
 /** Check `args` against a tool's input schema (the subset these tools use). */
@@ -519,8 +524,51 @@ async function getGuide(_args, deps) {
   if (!guide) return failure("Krate's guide could not be fetched just now. Try again in a minute.", { characters: 0, next: "get_krate_guide" });
   const lead =
     "Write the app's files as this guide says, then call build_app with all of them. Do not paste the files into the chat " +
-    "unless the person asks: Krate checks them, and build_status gives you its words if anything needs fixing.\n\n";
+    "unless the person asks: Krate checks them, and build_status gives you its words if anything needs fixing.\n\n" +
+    "Start src/lib.rs with `use krate::prelude::*;`. A Krate app is no_std, where x.floor(), round, sqrt, sin and atan2 " +
+    "do not exist on f32 or f64 without it; the first app built through this connector failed its first build on exactly that.\n\n";
   return { content: [{ type: "text", text: lead + guide }], structuredContent: { characters: guide.length, next: "build_app" } };
+}
+
+/** The float methods `krate::prelude::*` gives `f32` and `f64` in a no_std app. */
+const PRELUDE_FLOAT_METHODS = new Set([
+  "floor", "ceil", "round", "trunc", "abs", "sqrt", "cbrt", "exp", "exp2", "ln", "log2", "log10",
+  "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "powf", "atan2", "hypot",
+  "copysign", "fract", "powi", "sin_cos", "rem_euclid", "mul_add",
+]);
+
+/**
+ * The compiler's words without cargo's progress lines. A failed build's
+ * detail opened with a dozen "Downloaded" / "Compiling" lines, and claude.ai
+ * cut the answer ("Too long to show in full") before rustc's own help.
+ */
+export function compilerWords(detail) {
+  const noise = /^\s*(Compiling|Downloading|Downloaded|Updating|Locking|Generating bindings|Fetching|Blocking)\b/;
+  const kept = detail.split("\n").filter((line) => !noise.test(line));
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * The check's fix as it reads to someone in a chat, with no Krate on their
+ * machine. The builder runs a released Krate, whose advice can lag what the
+ * hub knows (crates/cli build_fix has the same float case from the next
+ * release on), and whose generic advice -- "run `krate doctor` if the target
+ * or toolchain looks wrong" -- means nothing here: the builder's toolchain is
+ * Krate's own.
+ */
+export function remoteFix(detail, fix) {
+  const m = /no method named `([a-z0-9_]+)` found for type `(f32|f64|\{float\})`/.exec(detail);
+  if (m && PRELUDE_FLOAT_METHODS.has(m[1])) {
+    return (
+      `\`${m[1]}\` is a std float method, and a Krate app is no_std. Do not write your own: add ` +
+      "`use krate::prelude::*;` at the top of src/lib.rs (and of any other file that calls it). It gives f32 and f64 " +
+      "the floor, round, sqrt, sin, atan2 and the rest of std's maths, with the same meanings. Then call build_app again."
+    );
+  }
+  if (/krate doctor|rustup's toolchain/.test(fix)) {
+    return "Fix the compiler errors above in the app's code. The builder's own toolchain is Krate's and needs nothing from you.";
+  }
+  return fix;
 }
 
 /** The files as the builder takes them: relative paths, base64 data. */
@@ -635,8 +683,8 @@ async function buildStatus(args, deps) {
   if (job.state === "failed") {
     const check = job.check || {};
     const stage = String(check.stage || "check");
-    const detail = String(check.detail || job.error || "the check did not pass");
-    const fix = String(check.fix || "");
+    const detail = compilerWords(String(check.detail || job.error || "the check did not pass"));
+    const fix = remoteFix(detail, String(check.fix || ""));
     return answer2(
       { build_id: id, status: "failed", name: rec.name, stage, detail, fix },
       `"${rec.name}" did not pass Krate's check, at the ${stage} stage.\n\n${detail}\n\n` +

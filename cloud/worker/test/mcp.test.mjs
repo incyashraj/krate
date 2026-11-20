@@ -105,6 +105,8 @@ test("tools/list: every tool is titled, named within 64 characters, with both sc
   for (const t of tools) {
     assert.ok(t.name.length <= 64 && /^[a-z_]+$/.test(t.name), t.name);
     assert.ok(typeof t.title === "string" && t.title.length > 0, `${t.name} has a title`);
+    // The directory's submission check reads the listing name from here.
+    assert.equal(t.annotations.title, t.title, `${t.name} carries its title in annotations`);
     assert.ok(t.description.length > 40, `${t.name} says what it does`);
     assert.equal(t.annotations.openWorldHint, false);
     assert.equal(t.inputSchema.type, "object");
