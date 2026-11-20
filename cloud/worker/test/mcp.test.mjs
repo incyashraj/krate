@@ -96,20 +96,28 @@ test("notifications get 202 and no body; GET is 405; a batch is refused", async 
   assert.equal(junk.body.error.code, -32700);
 });
 
-test("tools/list: every tool is read-only, titled, named within 64 characters, with both schemas", async () => {
+test("tools/list: every tool is titled, named within 64 characters, with both schemas; only the build tools write", async () => {
   const env = hubEnv();
   const r = await rpc(env, "tools/list", {});
   const tools = r.body.result.tools;
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["get_app", "list_featured", "search_apps"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["build_app", "build_status", "get_app", "get_krate_guide", "list_featured", "search_apps"]);
+  const WRITE = new Set(["build_app", "build_status"]);
   for (const t of tools) {
     assert.ok(t.name.length <= 64 && /^[a-z_]+$/.test(t.name), t.name);
     assert.ok(typeof t.title === "string" && t.title.length > 0, `${t.name} has a title`);
     assert.ok(t.description.length > 40, `${t.name} says what it does`);
-    assert.equal(t.annotations.readOnlyHint, true, `${t.name} is read-only`);
     assert.equal(t.annotations.openWorldHint, false);
     assert.equal(t.inputSchema.type, "object");
     assert.equal(t.outputSchema.type, "object");
-    assert.ok(!/publish|build|make|delete/.test(t.name), "no tool writes or builds in phase 1");
+    if (WRITE.has(t.name)) {
+      assert.equal(t.annotations.readOnlyHint, false, `${t.name} writes`);
+      assert.equal(t.annotations.destructiveHint, false, `${t.name} removes nothing`);
+      assert.equal(t.annotations.idempotentHint, false);
+      assert.match(t.description, /sign in/, `${t.name} says it needs a sign-in`);
+    } else {
+      assert.equal(t.annotations.readOnlyHint, true, `${t.name} is read-only`);
+    }
+    assert.ok(!/publish_|make_|delete|create_ai|generate/.test(t.name), "no tool starts an AI build, deletes or publishes directly");
   }
 });
 

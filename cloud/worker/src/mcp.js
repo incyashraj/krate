@@ -7,15 +7,26 @@
 // tool here reads public data, so nothing has to be remembered between
 // requests, and an Mcp-Session-Id a client sends is accepted and ignored.
 //
-// Read-only and public only. The three tools read what the public gallery
-// shows -- the same ranked search (searchRelevance, test 1315), the same
-// "Start here" and newest shelves, the same takedown and unlisted rules --
+// Phase 1, no sign-in: three tools read what the public gallery shows --
+// the same ranked search (searchRelevance, test 1315), the same "Start
+// here" and newest shelves, the same takedown and unlisted rules --
 // through the gallery code in index.js, handed in as `deps`, never a copy
-// of it. No tool starts an AI build (it would spend Krate's key) and none
-// publishes; publishing behind a sign-in is phase 2.
+// of it.
+//
+// Phase 2, CLAUDE WRITES, KRATE BUILDS: get_krate_guide (no sign-in) gives
+// the chat model Krate's authoring guide; build_app sends the files it
+// wrote to the build service, which compiles and checks them with NO model
+// of ours; build_status reports check-app's own words on a failure, and on
+// a pass publishes the app unlisted to the signed-in person's account and
+// answers a link that opens it on any device. The two write tools need an
+// OAuth sign-in (mcp-oauth.js); without one they answer 401 with the
+// resource metadata, which is what starts a client's sign-in. No tool ever
+// starts an AI build: that would spend Krate's key.
 //
 // JSON-RPC batches are refused: MCP 2025-06-18 removed them, and the
 // streamable HTTP clients that matter never send one.
+
+import { signInNeeded } from "./mcp-oauth.js";
 
 /** The protocol versions this server speaks, newest first. */
 export const MCP_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -23,8 +34,9 @@ export const MCP_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-
 /** This MCP surface's own version, not the hub's or Krate's. */
 export const MCP_SERVER_VERSION = "1.0.0";
 
-/** A request body over this is refused before it is parsed. */
-const MAX_BODY = 64 * 1024;
+/** A request body over this is refused before it is parsed: room for
+ * build_app's 2 MB of source with JSON's escaping, and no more. */
+const MAX_BODY = 4 * 1024 * 1024;
 
 /** The most results a search answers with. */
 const MAX_RESULTS = 20;
@@ -37,7 +49,7 @@ const MCP_CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "POST, GET, DELETE, OPTIONS",
   "access-control-allow-headers": "content-type, accept, authorization, mcp-protocol-version, mcp-session-id, last-event-id",
-  "access-control-expose-headers": "mcp-session-id, retry-after",
+  "access-control-expose-headers": "mcp-session-id, retry-after, www-authenticate",
 };
 
 /** Add the /mcp CORS headers to any response, the rate limiter's 429 included. */
@@ -60,6 +72,8 @@ const rpcError = (id, code, message, status = 200) =>
 
 /** A tool's arguments that do not fit its schema, or an unknown tool. */
 class BadParams extends Error {}
+/** A tool that needs the person signed in, called without a sign-in. */
+class SignInFirst extends Error {}
 
 // ------------------------------------------------------------------ schemas
 
@@ -112,6 +126,28 @@ const APP_DETAIL = {
 };
 
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
+/** A tool that makes something new on the person's account and removes nothing. */
+const WRITES = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+
+/** Every write tool, which needs the person signed in. */
+export const NEEDS_SIGN_IN = new Set(["build_app", "build_status"]);
+
+const BUILD_ANSWER = {
+  type: "object",
+  properties: {
+    build_id: { type: "string" },
+    status: { type: "string", enum: ["building", "failed", "published", "refused", "unknown"] },
+    message: { type: "string" },
+    stage: { type: "string", description: "Where Krate's check stopped, on a failure" },
+    detail: { type: "string", description: "What went wrong, in the check's own words" },
+    fix: { type: "string", description: "How to fix it, in the check's own words" },
+    name: { type: "string" },
+    app_id: { type: "string" },
+    link: { type: "string", description: "The app's own link; it opens the newest version" },
+    browser_link: { type: "string", description: "Opens the app in a browser on any device, nothing to install" },
+  },
+  required: ["build_id", "status", "message"],
+};
 
 export const TOOLS = [
   {
@@ -189,6 +225,79 @@ export const TOOLS = [
     },
     annotations: READ_ONLY,
   },
+  {
+    name: "get_krate_guide",
+    title: "Read the Krate app guide",
+    description:
+      "Krate's guide to writing a Krate app: the files an app is made of (Cargo.toml, src/lib.rs, manifest.toml), " +
+      "the API it may call, the permissions it may declare, and worked examples. Read it before writing any Krate app. " +
+      "Then send the files to build_app instead of pasting them into the chat. No sign-in needed.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    outputSchema: {
+      type: "object",
+      properties: {
+        characters: { type: "integer", description: "The guide's length; the guide itself is the text content" },
+        next: { type: "string" },
+      },
+      required: ["characters", "next"],
+    },
+    annotations: READ_ONLY,
+  },
+  {
+    name: "build_app",
+    title: "Build and publish a Krate app",
+    description:
+      "Compile the Krate app you wrote and check it with Krate's own check: it builds the code, confirms it uses only " +
+      "Krate's API, and runs it once. Send every file each time (Cargo.toml, src/lib.rs, manifest.toml and any assets), " +
+      "written as get_krate_guide says. Answers a build id at once; then call build_status until it is done. When the app " +
+      "passes, Krate publishes it unlisted to the signed-in person's account, with a link that opens it on any device. " +
+      "Needs the person to sign in to Krate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 1, maxLength: 60, description: "The app's name, as a person would say it" },
+        files: {
+          type: "array",
+          minItems: 1,
+          maxItems: 64,
+          description: "Every file of the app, with paths relative to the app folder",
+          items: {
+            type: "object",
+            properties: {
+              path: { type: "string", minLength: 1, maxLength: 200, description: "e.g. src/lib.rs" },
+              content: { type: "string", description: "The file's text, or base64 when encoding is base64" },
+              encoding: { type: "string", enum: ["utf8", "base64"], description: "base64 for a picture or other binary asset" },
+            },
+            required: ["path", "content"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["name", "files"],
+      additionalProperties: false,
+    },
+    outputSchema: BUILD_ANSWER,
+    annotations: WRITES,
+  },
+  {
+    name: "build_status",
+    title: "Check a Krate build",
+    description:
+      "Where a build_app build is. While it runs, call again in about 30 seconds. If it failed, the answer has Krate's " +
+      "check in its own words -- the stage, what went wrong, how to fix it: fix the code and call build_app again with " +
+      "every file. When it passes, the app is published unlisted to the person's Krate account and the answer has its " +
+      "link and a browser link that opens it on any device. Needs the person to sign in to Krate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        build_id: { type: "string", minLength: 32, maxLength: 32, description: "The id build_app answered" },
+      },
+      required: ["build_id"],
+      additionalProperties: false,
+    },
+    outputSchema: BUILD_ANSWER,
+    annotations: WRITES,
+  },
 ];
 
 // --------------------------------------------------------------- arguments
@@ -215,6 +324,11 @@ function checkArgs(tool, args) {
     } else if (rule.type === "integer") {
       if (!Number.isInteger(v)) throw new BadParams(`"${key}" must be a whole number`);
       if (v < rule.minimum || v > rule.maximum) throw new BadParams(`"${key}" must be ${rule.minimum} to ${rule.maximum}`);
+    } else if (rule.type === "array") {
+      if (!Array.isArray(v)) throw new BadParams(`"${key}" must be a list`);
+      if (v.length < (rule.minItems || 0) || v.length > (rule.maxItems || Infinity)) {
+        throw new BadParams(`"${key}" holds ${rule.minItems} to ${rule.maxItems} items`);
+      }
     }
   }
   return args;
@@ -395,7 +509,168 @@ function failure(words, structured) {
   };
 }
 
-const HANDLERS = { search_apps: searchApps, get_app: getApp, list_featured: listFeatured };
+// ------------------------------------------------------- phase 2: building
+
+/** The most source one build may carry, in characters (base64 counts as sent). */
+const MAX_SOURCE_CHARS = 2 * 1024 * 1024;
+
+async function getGuide(_args, deps) {
+  const guide = await deps.guide();
+  if (!guide) return failure("Krate's guide could not be fetched just now. Try again in a minute.", { characters: 0, next: "get_krate_guide" });
+  const lead =
+    "Write the app's files as this guide says, then call build_app with all of them. Do not paste the files into the chat " +
+    "unless the person asks: Krate checks them, and build_status gives you its words if anything needs fixing.\n\n";
+  return { content: [{ type: "text", text: lead + guide }], structuredContent: { characters: guide.length, next: "build_app" } };
+}
+
+/** The files as the builder takes them: relative paths, base64 data. */
+function sourceFiles(files) {
+  const seen = new Set();
+  let total = 0;
+  const out = [];
+  for (const f of files) {
+    if (!f || typeof f !== "object" || Array.isArray(f)) throw new BadParams("each file is { path, content }");
+    for (const key of Object.keys(f)) if (!["path", "content", "encoding"].includes(key)) throw new BadParams(`a file takes no "${key}"`);
+    if (typeof f.path !== "string" || typeof f.content !== "string") throw new BadParams("each file has a path and its content as text");
+    const path = f.path.trim().replace(/^\.\//, "");
+    if (!path || path.length > 200 || path.startsWith("/") || path.includes("\\") || path.split("/").some((p) => p === "" || p === "." || p === "..")) {
+      throw new BadParams(`"${f.path}" is not a path inside the app folder`);
+    }
+    if (seen.has(path)) throw new BadParams(`"${path}" is sent twice`);
+    seen.add(path);
+    if (f.encoding !== undefined && f.encoding !== "utf8" && f.encoding !== "base64") throw new BadParams(`"${path}": encoding is utf8 or base64`);
+    total += f.content.length;
+    if (total > MAX_SOURCE_CHARS) throw new BadParams("the files are more than 2 MB together; send the app's source, not its build output");
+    let data;
+    if (f.encoding === "base64") {
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(f.content.replace(/\s+/g, ""))) throw new BadParams(`"${path}" is not base64`);
+      data = f.content.replace(/\s+/g, "");
+    } else {
+      const bytes = new TextEncoder().encode(f.content);
+      let s = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      data = btoa(s);
+    }
+    out.push({ path, data });
+  }
+  for (const needed of ["Cargo.toml", "src/lib.rs", "manifest.toml"]) {
+    if (!seen.has(needed)) throw new BadParams(`a Krate app needs ${needed}; send every file each time`);
+  }
+  return out;
+}
+
+function signedIn(deps) {
+  if (!deps.who) throw new SignInFirst("sign in");
+  return deps.who;
+}
+
+const answer2 = (structured, words, isError = false) => ({
+  ...(isError ? { isError: true } : {}),
+  content: [{ type: "text", text: words }],
+  structuredContent: { ...structured, message: words },
+});
+
+async function buildApp(args, deps) {
+  const who = signedIn(deps);
+  const name = args.name.trim();
+  const files = sourceFiles(args.files);
+  const allowance = await deps.buildAllowance(who.owner);
+  if (allowance.over) {
+    return answer2({ build_id: "", status: "refused" }, `This Krate account has started ${allowance.over}, the most it may. Try again later.`, true);
+  }
+  const started = await deps.compile(who.owner, name, files);
+  if (!started.id) {
+    const words = started.status === 429
+      ? "A build for this account is still running. Call build_status for it, and build again when it is done."
+      : `Krate could not start the build: ${started.words}`;
+    return answer2({ build_id: "", status: "refused" }, words, true);
+  }
+  await deps.noteBuild(who.owner, allowance.held);
+  await deps.writeRecord(started.id, { owner: who.owner, name, at: Math.floor(Date.now() / 1000) });
+  return answer2(
+    { build_id: started.id, status: "building", name },
+    `Building "${name}" (build ${started.id}). Krate is compiling and checking it, which usually takes one to five minutes. ` +
+      `Call build_status with build_id "${started.id}" in about 30 seconds.`,
+  );
+}
+
+function publishedAnswer(id, rec) {
+  const p = rec.published;
+  return answer2(
+    { build_id: id, status: "published", name: rec.name, app_id: p.app_id, link: p.link, browser_link: p.browser_link },
+    `"${rec.name}" is built, checked and published to your Krate account, unlisted: only people with the link can open it.\n\n` +
+      `Open it in a browser on any device, nothing to install: ${p.browser_link}\n` +
+      `Its own link, which also opens it in Krate on a computer and always opens the newest version: ${p.link}`,
+  );
+}
+
+async function buildStatus(args, deps) {
+  const who = signedIn(deps);
+  const id = args.build_id.toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(id)) throw new BadParams("build_id is the 32-character id build_app answered");
+  const rec = await deps.readRecord(id);
+  // Another account's build is answered exactly like one that never was.
+  if (!rec || rec.owner !== who.owner) {
+    return answer2({ build_id: id, status: "unknown" }, "No build of this Krate account has that id. Start one with build_app.", true);
+  }
+  if (rec.published) return publishedAnswer(id, rec);
+  const job = await deps.jobStatus(who.owner, id);
+  if (job.status) {
+    return answer2(
+      { build_id: id, status: "unknown" },
+      job.status === 404
+        ? "Krate's build service no longer has this build. Call build_app again with every file."
+        : "Krate's build service could not be reached. Call build_status again in a minute.",
+      true,
+    );
+  }
+  if (job.state === "working") {
+    return answer2(
+      { build_id: id, status: "building", name: rec.name, stage: String(job.stage || "") },
+      `Still building "${rec.name}"${job.line ? `: ${job.line}` : ""}. Call build_status again in about 30 seconds.`,
+    );
+  }
+  if (job.state === "failed") {
+    const check = job.check || {};
+    const stage = String(check.stage || "check");
+    const detail = String(check.detail || job.error || "the check did not pass");
+    const fix = String(check.fix || "");
+    return answer2(
+      { build_id: id, status: "failed", name: rec.name, stage, detail, fix },
+      `"${rec.name}" did not pass Krate's check, at the ${stage} stage.\n\n${detail}\n\n` +
+        (fix ? `How to fix it:\n${fix}\n\n` : "") +
+        "Fix the code and call build_app again with every file.",
+    );
+  }
+  if (job.state !== "done") {
+    return answer2({ build_id: id, status: "unknown" }, `This build ${job.state || "ended"} before it finished. Call build_app again.`, true);
+  }
+  const bytes = await deps.jobFile(who.owner, id);
+  if (!bytes) {
+    return answer2({ build_id: id, status: "unknown" }, "The build passed, but its file could not be fetched. Call build_status again in a minute.", true);
+  }
+  const published = await deps.publishBuilt(who, bytes, rec.name);
+  if (published.problem) {
+    return answer2({ build_id: id, status: "failed", name: rec.name, stage: "publish", detail: published.problem, fix: "" },
+      `"${rec.name}" passed the check, but Krate could not publish it: ${published.problem}`, true);
+  }
+  rec.published = {
+    app_id: published.id,
+    link: published.url,
+    browser_link: `${deps.base}/run/${published.line || published.id}`,
+  };
+  await deps.writeRecord(id, rec);
+  return publishedAnswer(id, rec);
+}
+
+const HANDLERS = {
+  search_apps: searchApps,
+  get_app: getApp,
+  list_featured: listFeatured,
+  get_krate_guide: getGuide,
+  build_app: buildApp,
+  build_status: buildStatus,
+};
 
 // ----------------------------------------------------------------- protocol
 
@@ -403,7 +678,9 @@ const INSTRUCTIONS =
   "Krate apps are small desktop apps anyone can make and share as one link. These tools read the public Krate gallery: " +
   "search it, look at one app, or see the featured apps. Every app lists what it may do in plain words before it runs. " +
   "Give people the app's link (opens in Krate) or its browser link (opens in a tab, nothing to install). " +
-  "Nothing here builds, publishes or changes anything.";
+  "To make a new app: read get_krate_guide, write the files, send them to build_app, and call build_status until it " +
+  "answers a link (or Krate's check's words, to fix and build again). Building needs the person to sign in to Krate; " +
+  "Krate compiles and checks what you wrote and runs no AI of its own.";
 
 function initialize(params) {
   const asked = params && typeof params.protocolVersion === "string" ? params.protocolVersion : null;
@@ -419,6 +696,8 @@ async function callTool(params, deps) {
   if (!params || typeof params !== "object") throw new BadParams("tools/call needs a tool name");
   const tool = TOOLS.find((t) => t.name === params.name);
   if (!tool) throw new BadParams(`Unknown tool: ${String(params.name).slice(0, 80)}`);
+  // Asked before the arguments: a client learns to sign in first.
+  if (NEEDS_SIGN_IN.has(tool.name) && !deps.who) throw new SignInFirst(tool.name);
   const args = checkArgs(tool, params.arguments);
   return await HANDLERS[tool.name](args, deps);
 }
@@ -438,6 +717,7 @@ async function answer(message, deps) {
         return { result: await callTool(params, deps) };
       } catch (err) {
         if (err instanceof BadParams) return { error: { code: -32602, message: err.message } };
+        if (err instanceof SignInFirst) return { signIn: true };
         console.error(`mcp tool failed: ${err && err.stack ? err.stack : err}`);
         return {
           result: failure("Something went wrong on Krate's side while answering. Try again in a minute."),
@@ -484,6 +764,11 @@ export async function mcpRoute(request, deps) {
   if (!message || typeof message !== "object" || message.jsonrpc !== "2.0") {
     return rpcError(message && message.id, -32600, "Invalid Request: not a JSON-RPC 2.0 message", 400);
   }
+  // Who is signed in: a token that is not a live access token for this
+  // server is refused outright, as the spec asks; none means read-only.
+  const auth = deps.authenticate ? await deps.authenticate(request) : null;
+  if (auth && auth.invalid) return mcpCors(signInNeeded(deps.base, { invalid: true }));
+  deps = { ...deps, who: auth ? auth.who : null };
   const accepted = () => mcpCors(new Response(null, { status: 202 }));
   if (typeof message.method !== "string") {
     // A response to something the server asked -- it asks nothing.
@@ -496,5 +781,8 @@ export async function mcpRoute(request, deps) {
     return rpcError(null, -32600, "Invalid Request: id must be a string or a number", 400);
   }
   const out = await answer(message, deps);
+  // A write tool with no sign-in: the 401 whose header starts the client's
+  // OAuth sign-in (MCP authorization).
+  if (out.signIn) return mcpCors(signInNeeded(deps.base));
   return jsonResponse({ jsonrpc: "2.0", id: message.id, ...out });
 }

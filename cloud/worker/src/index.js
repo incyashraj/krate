@@ -121,6 +121,9 @@ import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./accoun
 import { accountSyncRoute, SyncAccount } from "./account-sync.js";
 // Krate as a remote MCP server (IC-989): the public gallery, read-only.
 import { mcpRoute, mcpCors, mcpPreflight } from "./mcp.js";
+// ... and its sign-in and builds (IC-989 phase 2).
+import { oauthRoute, bearerOf, connectorsRoute } from "./mcp-oauth.js";
+import { fetchGuide, buildAllowance, noteBuild, compile as compileOnBuilder, jobStatus, jobFile, readRecord, writeRecord } from "./mcp-build.js";
 export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
@@ -306,6 +309,9 @@ const RATE_LIMITS = {
   // come from its host's addresses, not each person's, so one address can
   // carry many people: generous, and still a ceiling on the reads.
   mcp: 120,
+  // Its OAuth doors (IC-989 phase 2): registering, approving and trading a
+  // code or refresh token. A client signs in once and refreshes hourly.
+  oauth: 30,
 };
 
 /// Who is asking, as far as the edge can tell.
@@ -460,6 +466,9 @@ export default {
     if (request.method === "OPTIONS") {
       // An MCP client in a browser sends its own headers (IC-989).
       if (pathname === "/mcp") return mcpPreflight();
+      if (pathname.startsWith("/oauth/") || pathname.startsWith("/.well-known/oauth-")) {
+        return await oauthRoute(request, url, env, oauthDeps(env));
+      }
       return cors(new Response(null, { status: 204 }));
     }
 
@@ -671,6 +680,21 @@ export default {
           if (over) return mcpCors(over);
         }
         return await mcpRoute(request, mcpDeps(env));
+      }
+      // Its sign-in (IC-989 phase 2): OAuth metadata, registration, the
+      // consent page, codes and tokens (mcp-oauth.js).
+      if (pathname.startsWith("/oauth/") || pathname.startsWith("/.well-known/oauth-")) {
+        const res = await oauthRoute(request, url, env, oauthDeps(env));
+        if (res) return res;
+      }
+      // The connectors a person allowed, and taking one back.
+      {
+        const conn = /^\/me\/connectors(?:\/([0-9a-f]{32}))?$/.exec(pathname);
+        if (conn) {
+          const user = await authedUser(request, env);
+          if (!user) return cors(text("Sign in first.", 401));
+          return cors(await connectorsRoute(request, env, user, conn[1] || null));
+        }
       }
       if (request.method === "GET" && pathname.startsWith("/meta/")) {
         // One app's public face, by hash or short alias -- name, size,
@@ -2725,6 +2749,17 @@ function mcpDeps(env) {
       return found;
     },
     versionInfo: (hash) => versionInfo(env, hash, base),
+    // Phase 2 (IC-989): who is signed in, the guide, and building.
+    authenticate: (request) => bearerOf(request, env, base),
+    guide: () => fetchGuide(env),
+    buildAllowance: (owner) => buildAllowance(env, owner),
+    noteBuild: (owner, held) => noteBuild(env, owner, held),
+    compile: (owner, name, files) => compileOnBuilder(env, owner, name, files),
+    jobStatus: (owner, id) => jobStatus(env, owner, id),
+    jobFile: (owner, id) => jobFile(env, owner, id),
+    readRecord: (id) => readRecord(env, id),
+    writeRecord: (id, record) => writeRecord(env, id, record),
+    publishBuilt: (who, bytes, name) => publishBuilt(env, who, bytes, name),
   };
 }
 
@@ -4047,7 +4082,10 @@ function signInStart(from, nonce, appNonce) {
   // `player:org/<slug>/<app-id>`: the same for an organisation's app as it
   // is now (the address a phone keeps on its home screen).
   const player = /^player:(?:[0-9a-f]{64}|org\/[a-z][a-z0-9-]{1,38}\/[a-z0-9][a-z0-9._-]{0,127})$/.test(from || "") ? from : null;
-  return { from: from === "app" ? "app" : player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
+  // `oauth`: a connector's consent page on this hub (IC-989), which takes
+  // the session only with its own nonce, as /login/done does.
+  const fixed = from === "app" || from === "oauth" ? from : null;
+  return { from: fixed || player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
 }
 
 /// What the company sign-in routes (org-sso.js) borrow from here: the same
@@ -4087,6 +4125,13 @@ function deliver(start, user, token) {
     return new Response(null, {
       status: 302,
       headers: { location: `/run/${start.from.slice("player:".length)}#${hand.toString()}`, "cache-control": "no-store" },
+    });
+  }
+  // A connector's consent page (IC-989): a fixed path on this hub.
+  if (start.from === "oauth") {
+    return new Response(null, {
+      status: 302,
+      headers: { location: `/oauth/authorize/done#${hand.toString()}`, "cache-control": "no-store" },
     });
   }
   const suffix = start.from === "app" ? "?app=1" : "";
@@ -7073,8 +7118,26 @@ async function signWebBuild(request, env) {
   if (!user) return text("Sign in first.", 401);
   const bundle = new Uint8Array(await request.arrayBuffer());
   if (!bundle.length || bundle.length > WEB_SIGN_MAX_BYTES) return text("expected a .krate", 400);
-  const seed = await accountSigningSeed(env, user.id);
-  if (!seed) return text("this account's signing key is not available", 503);
+  const signed = await signAsAccount(env, user.id, bundle);
+  if (!signed.ok) return text(signed.problem, signed.status);
+  return new Response(signed.bytes, {
+    headers: {
+      "content-type": "application/vnd.krate",
+      "x-krate-publisher": signed.publicKey,
+      "x-krate-namespace": signed.namespace,
+    },
+  });
+}
+
+/// Sign a bundle as the account `userId` with the key the hub keeps for it
+/// (IC-983): `{ ok: true, bytes, publicKey, namespace }` or
+/// `{ ok: false, status, problem }`. A web build and a connector's build
+/// (IC-989) are the same publisher for the same account.
+async function signAsAccount(env, userId, bundle) {
+  const refuse = (status, problem) => ({ ok: false, status, problem });
+  const seed = await accountSigningSeed(env, userId);
+  if (!seed) return refuse(503, "this account's signing key is not available");
+  const user = { id: userId };
   // The validator takes the seed with its public half (ring checks the
   // pair); WebCrypto derives that half from the seed.
   const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -7109,19 +7172,71 @@ async function signWebBuild(request, env) {
     v.krate_free(out, 4 + length);
     v.krate_free(input, frame.length);
   } catch (err) {
-    return text("the signing code stopped", 500);
+    return refuse(500, "the signing code stopped");
   }
   frame.fill(0, 0, 4 + header.length);
   const metaLength = new DataView(body.buffer).getUint32(0, true);
   const meta = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + metaLength)));
-  if (!meta.ok) return text(meta.problem || "the app could not be signed", 422);
-  return new Response(body.subarray(4 + metaLength), {
-    headers: {
-      "content-type": "application/vnd.krate",
-      "x-krate-publisher": meta.public_key,
-      "x-krate-namespace": meta.namespace,
-    },
+  if (!meta.ok) return refuse(422, meta.problem || "the app could not be signed");
+  return { ok: true, bytes: body.subarray(4 + metaLength), publicKey: meta.public_key, namespace: meta.namespace };
+}
+
+/// Publish a connector's finished build (IC-989 phase 2) for the person
+/// who signed in: signed as their account, judged by the validator, and
+/// admitted through admitJudged -- the publish door's own path -- unlisted.
+/// `who` is the identity the sign-in recorded. Answers `{ id, url, line }`
+/// or `{ problem }`.
+async function publishBuilt(env, who, bytes, name) {
+  let body = bytes;
+  const signed = await signAsAccount(env, who.uid, bytes);
+  // Not signed, the app goes out as it was made, as a web build does.
+  if (signed.ok) body = signed.bytes;
+  const problem = archiveProblem(body);
+  if (problem) return { problem: `not a valid .krate bundle: ${problem}` };
+  const judged = judgeBundle(body);
+  if (judged.crashed) return { problem: judged.problem };
+  if (!judged.ok) return { problem: `not a valid .krate bundle: ${judged.problem}` };
+  const identity = { login: who.login, name: who.name, avatar_url: who.avatar_url, github: who.github === true, id: who.iid };
+  if (!who.owner || ownerOf(identity) !== who.owner) return { problem: "this sign-in no longer names the account it was made for; sign in again" };
+  const hash = await sha256Hex(body);
+  const admitted = await admitJudged(env, {
+    identity,
+    judgement: judged.judgement,
+    hash,
+    size: body.length,
+    fields: { unlisted: true, quiet: false, name: String(name || "").slice(0, 80), description: "", category: "apps", succession: "" },
+    store: () => storeBundle(env, hash, body),
   });
+  const said = await admitted.text();
+  if (admitted.status !== 200) return { problem: said.slice(0, 500) };
+  // What a browser tab runs (IC-956), so the browser link opens it.
+  await ensureWebPack(env, hash, body, judgedComponent);
+  const out = JSON.parse(said);
+  return { id: out.id, url: out.url, line: out.line || null };
+}
+
+/// Who a hub session is, as a connector's grant records it (IC-989).
+async function connectorIdentity(request, env) {
+  const identity = await verifyGitHub(request, env).catch(() => null);
+  const user = identity ? await authedUser(request, env).catch(() => null) : null;
+  if (!identity || !user || !user.id) return null;
+  return {
+    owner: ownerOf(identity),
+    uid: user.id,
+    iid: identity.id || null,
+    login: identity.login || "",
+    name: identity.name || "",
+    avatar_url: identity.avatar_url || "",
+    github: identity.github === true,
+  };
+}
+
+function oauthDeps(env) {
+  return {
+    base: (env.PUBLIC_BASE || "").replace(/\/$/, ""),
+    rateLimited: (request, bucket) => rateLimited(request, env, bucket),
+    whoIs: (request) => connectorIdentity(request, env),
+  };
 }
 
 /* ---- what the builds cost ----------------------------------------------

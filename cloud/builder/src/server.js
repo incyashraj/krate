@@ -53,7 +53,7 @@ const BUILD_TIMEOUT_MS = Number(process.env.KRATE_BUILD_TIMEOUT_MS || 15 * 60 * 
 const IDLE_EXIT_MS = Number(process.env.KRATE_IDLE_EXIT_MS || 0);
 let lastActivity = Date.now();
 // What a person or the hub asks for: a build, a plan, a port, a judging.
-const DOORS = /^\/(build|plan|port|judge)(\/|$)/;
+const DOORS = /^\/(build|plan|port|judge|compile|guide)(\/|$)/;
 let leaving = false; // set once a shutdown starts (a signal, or idle)
 const PLAN_TIMEOUT_MS = Number(process.env.KRATE_PLAN_TIMEOUT_MS || 90 * 1000);
 
@@ -951,6 +951,157 @@ async function startBuild({ request, token, account, device, revise = null, shap
   return job;
 }
 
+/* ---- compiling files a chat model wrote (IC-989 phase 2) ------------------
+ *
+ * Krate as a connector in Claude: the chat model writes the app's files
+ * itself, from the guide below, and the hub hands them here. This box only
+ * compiles and checks them -- `krate check-app`, then `krate pack` -- the
+ * same oracle `krate create` runs after every change. No model runs and no
+ * key is read: nothing here can spend Krate's money on inference. Only the
+ * hub may ask (its secret), and it names the account the job belongs to.
+ */
+const COMPILE_TIMEOUT_MS = Number(process.env.KRATE_COMPILE_TIMEOUT_MS || 12 * 60 * 1000);
+/// What one compile may carry: an app's source, not a project tree.
+const COMPILE_MAX_FILES = 64;
+const COMPILE_MAX_BYTES = 4 * 1024 * 1024;
+
+/// The account a hub-vouched request is for: always `hub:<principal>`, a
+/// namespace no session's account (a login or an address) can be, so a
+/// person's own sign-in never reaches a connector's job and the reverse.
+function hubAccount(req) {
+  if (!fromHub(req)) return null;
+  const named = String(req.headers["x-krate-account"] || "");
+  return /^hub:[a-z]+:[A-Za-z0-9@._+-]{1,200}$/.test(named) ? named : null;
+}
+
+/// Run the engine once, bounded: { code, stdout, stderr }.
+function runEngine(args, cwd, timeoutMs) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let proc;
+    try {
+      // No model key either: compiling needs none, so none can be spent.
+      const env = withoutServiceSecrets(process.env);
+      for (const name of Object.values(API_AGENTS)) delete env[name];
+      proc = spawn(KRATE, args, { cwd, env, detached: GROUP });
+    } catch (e) {
+      return resolve({ code: -1, stdout, stderr: String(e.message || e) });
+    }
+    const killer = setTimeout(() => killTree(proc, "SIGKILL"), timeoutMs);
+    proc.stdout.on("data", (b) => { stdout = (stdout + b).slice(-200_000); });
+    proc.stderr.on("data", (b) => { stderr = (stderr + b).slice(-200_000); });
+    proc.on("error", (e) => { clearTimeout(killer); resolve({ code: -1, stdout, stderr: String(e.message || e) }); });
+    proc.on("close", (code) => { clearTimeout(killer); resolve({ code, stdout, stderr }); });
+  });
+}
+
+/// The component check-app built: the crate's own wasm, where it brings it
+/// home (target/wasm32-wasip1/release/<crate>.wasm).
+async function builtComponent(root) {
+  const release = join(root, "target", "wasm32-wasip1", "release");
+  let name = "";
+  try {
+    const cargo = await readFile(join(root, "Cargo.toml"), "utf8");
+    const pkg = /\[package\][^[]*?\bname\s*=\s*"([^"]+)"/.exec(cargo);
+    if (pkg) name = pkg[1].replace(/-/g, "_");
+  } catch (e) {}
+  if (name) {
+    const exact = join(release, `${name}.wasm`);
+    if (await stat(exact).catch(() => null)) return exact;
+  }
+  const found = (await readdir(release).catch(() => [])).filter((f) => f.endsWith(".wasm"));
+  return found.length === 1 ? join(release, found[0]) : null;
+}
+
+/// Compile and check the files; the job record says how it went. A failure
+/// keeps check-app's own stage, detail and fix, for the model to act on.
+async function startCompile({ account, name, files }) {
+  const id = randomBytes(16).toString("hex");
+  const dir = await mkdtemp(join(tmpdir(), "krate-compile-"));
+  const output = join(dir, "app.krate");
+  const job = {
+    id, account, device: "", request: `Compile ${name}`, dir, output, shotPath: null, parent: null,
+    kind: "compile", state: "working", stage: "write", line: "compiling and checking the app",
+    shot: null, result: null, error: null, check: null, started: Date.now(), finished: null, proc: null,
+    sourceDir: null,
+  };
+  let root;
+  try {
+    root = await writeProject({ name: name.replace(/[^A-Za-z0-9._ -]+/g, " "), files }, dir);
+  } catch (err) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
+  jobs.set(id, job);
+  activeByAccount.set(account, id);
+  await persistJob(job);
+  await audit({ action: "compile", account, job: id });
+
+  const settle = async (fields) => {
+    Object.assign(job, fields, { finished: Date.now() });
+    if (activeByAccount.get(account) === id) activeByAccount.delete(account);
+    if (job.state === "done") await persistResultBytes(job);
+    await persistJob(job);
+    await audit({ action: job.state === "done" ? "done" : "failed", account, job: id });
+    cleanup(job, { keepFile: job.state === "done" });
+  };
+
+  (async () => {
+    const checked = await runEngine(["check-app", "--json", "--", root], dir, COMPILE_TIMEOUT_MS);
+    // check-app --json prints one object, errors included; the last line
+    // that parses is it.
+    let verdict = null;
+    for (const line of checked.stdout.trim().split("\n").reverse()) {
+      try { verdict = JSON.parse(line); break; } catch (e) {}
+    }
+    if (!verdict || verdict.ok !== true || checked.code !== 0) {
+      const check = verdict && verdict.ok === false
+        ? {
+            stage: String(verdict.stage || ""),
+            kind: String(verdict.kind || ""),
+            detail: String(verdict.detail || "").slice(0, 8000),
+            fix: String(verdict.fix || "").slice(0, 4000),
+          }
+        : { stage: "check", kind: "", detail: (checked.stderr || checked.stdout || "check-app gave no answer").slice(-4000), fix: "" };
+      return settle({ state: "failed", stage: "test", check, error: `check-app stopped at ${check.stage || "the check"}` });
+    }
+    job.stage = "test";
+    job.line = "packing it into one file";
+    const component = await builtComponent(root);
+    if (!component) {
+      return settle({ state: "failed", check: { stage: "pack", kind: "", detail: "check-app passed but its component could not be found", fix: "" }, error: "the app could not be packed" });
+    }
+    const packed = await runEngine(["pack", component, "--manifest", join(root, "manifest.toml"), "--output", output], dir, 2 * 60 * 1000);
+    const bytes = packed.code === 0 ? await readFile(output).catch(() => null) : null;
+    if (!bytes) {
+      return settle({ state: "failed", check: { stage: "pack", kind: "", detail: (packed.stderr || packed.stdout).slice(-4000), fix: "" }, error: "the app could not be packed" });
+    }
+    return settle({
+      state: "done",
+      stage: "done",
+      line: "done",
+      result: { id, name, size: prettySize(bytes.length), asks: [], bytes, notes: Array.isArray(verdict.link_notes) ? verdict.link_notes : [] },
+    });
+  })().catch(async (err) => {
+    console.error(`[compile] ${err && err.stack ? err.stack : err}`);
+    await settle({ state: "failed", error: "The build stopped on our side. Try again in a minute." });
+  });
+  return job;
+}
+
+/// Krate's authoring guide for a chat model (Krate Mode), from this box's
+/// own engine, so it always matches the Krate that compiles the result.
+/// Made once per process.
+let guideText = null;
+async function authoringGuide() {
+  if (guideText) return guideText;
+  const made = await runEngine(["krate-mode"], tmpdir(), 60 * 1000);
+  if (made.code !== 0 || !made.stdout.trim()) return null;
+  guideText = made.stdout;
+  return guideText;
+}
+
 /* `krate plan <request>`: the engine's own pre-build answer, as JSON text.
  * Bounded, because a model that never answers must not hold the request
  * open; and one answer at a time is plenty. */
@@ -1714,6 +1865,44 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { id: next.id, parent: id });
     }
 
+    // The authoring guide and the compile door for Krate in Claude (IC-989).
+    // The hub's alone: its secret, and the account it vouches for.
+    if (req.method === "GET" && url.pathname === "/guide") {
+      if (!fromHub(req)) return send(res, 404, "not found");
+      const guide = await authoringGuide();
+      if (!guide) return send(res, 503, "The guide could not be made just now.");
+      res.setHeader("content-type", "text/markdown; charset=utf-8");
+      return send(res, 200, guide);
+    }
+    if (req.method === "POST" && url.pathname === "/compile") {
+      const account = hubAccount(req);
+      if (!account) return send(res, 404, "not found");
+      const body = await readBody(req);
+      const name = String(body.name || "").trim().slice(0, 80);
+      if (!name) return send(res, 400, "Name the app.");
+      const list = Array.isArray(body.files) ? body.files : [];
+      if (!list.length) return send(res, 400, "Send the app's files.");
+      if (list.length > COMPILE_MAX_FILES) return send(res, 413, `At most ${COMPILE_MAX_FILES} files.`);
+      let total = 0;
+      const files = [];
+      for (const f of list) {
+        const data = String((f && f.data) || "");
+        total += Math.floor((data.length * 3) / 4);
+        files.push({ path: f && f.path, bytes: data });
+      }
+      if (total > COMPILE_MAX_BYTES) return send(res, 413, `At most ${COMPILE_MAX_BYTES / 1024 / 1024} MB of files.`);
+      if (!claimBuildSlot(account)) return send(res, 429, "One app is already being built for this account. Wait for it to finish.");
+      let job;
+      try {
+        job = await startCompile({ account, name, files });
+      } catch (err) {
+        activeByAccount.delete(account);
+        if (err && err.status) return send(res, err.status, err.message);
+        throw err;
+      }
+      return json(res, 202, { id: job.id });
+    }
+
     if (req.method === "GET" && url.pathname.startsWith("/build/")) {
       const [, , id, action] = url.pathname.split("/");
       await expireOldResults();
@@ -1724,7 +1913,9 @@ const server = createServer(async (req, res) => {
       // the finished app, or kill the build. Now the token is resolved to an
       // account and compared -- and a job that is not yours looks exactly
       // like a job that does not exist, so a probe learns nothing.
-      const account = await resolveAccount(token);
+      // The hub asks for a connector's job with its secret and the account
+      // it vouches for (IC-989); everyone else with their own sign-in.
+      const account = hubAccount(req) || (await resolveAccount(token));
       if (!account) return send(res, 401, "Sign in first.");
       const job = jobs.get(id);
       if (!job || job.account !== account) {
@@ -1774,6 +1965,8 @@ const server = createServer(async (req, res) => {
         shot: job.shot,
         parent: job.parent || null,
         error: job.error,
+        // A compile's failure in check-app's own words (IC-989).
+        ...(job.kind === "compile" ? { kind: "compile", check: job.check || null } : {}),
         result: job.result && {
           id: job.result.id,
           name: job.result.name,
