@@ -38,6 +38,12 @@ getrandom-backend = ["dep:getrandom"]
 # app must not, because the feature decides which world the component
 # declares (IC-298, K-302).
 gui = []
+# Spreadsheets (IC-993): `krate::sheets` reads the .xlsx, .ods or .csv a
+# person opens and writes the .xlsx or .csv they save, inside the app --
+# no host call, no capability, the same on every platform and in a tab.
+# Off by default so apps that never touch a workbook do not fetch or link
+# the deflate code it needs.
+sheets = ["dep:miniz_oxide"]
 
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
@@ -55,9 +61,20 @@ unicode-segmentation = "1.13"
 # feature that lets a downstream register its own source; the `--cfg
 # getrandom_backend="custom"` flag (set by the app's build) is what activates it.
 getrandom = { version = "0.3", default-features = false, optional = true }
+# Inflate and deflate for the zip container every .xlsx and .ods is. Pure
+# Rust, `no_std` with `alloc`, no imports of any kind, already in the
+# workspace's lockfile. Only pulled in by the `sheets` feature.
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"], optional = true }
 # The global allocator for a `no_std` guest. This is the same allocator `std`
 # uses on wasm32-wasip1, so it is a known-good, no-surprises choice; the guest
 # gets `alloc` (Vec/String) with zero boilerplate and the SDK owns the wiring so
 # no app has to. Only linked into the wasm guest.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 dlmalloc = { version = "0.2", features = ["global"] }
+
+[dev-dependencies]
+# The `sheets` tests run in every `cargo test --workspace`, feature or not.
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
+# An independent reader for what `sheets::write_xlsx` produces (MIT; the
+# reader `krate port` already uses).
+calamine = "0.38"

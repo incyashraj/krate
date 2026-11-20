@@ -2419,9 +2419,11 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 name = "krate"
 version = "0.5.5"
 dependencies = [
+ "calamine",
  "dlmalloc",
  "getrandom 0.3.4",
  "libm",
+ "miniz_oxide",
  "unicode-segmentation",
  "wit-bindgen-rt",
 ]
