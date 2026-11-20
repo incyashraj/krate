@@ -370,15 +370,33 @@ export async function newestSdk(env) {
  * so that is the nudge: model-free, a second long, and a no-op once the
  * SDK exists. KRATE_SDK_ROOT overrides all of it, as it does for the
  * engine's own port path. */
-export async function ensureSdk({ krate, env, timeoutMs = 60_000 }) {
+//
+// The builder passes its sandbox (K-1293): `spawnImpl` runs the engine as
+// the build user with its own environment, `scratch` makes a directory that
+// user owns, `handOver` gives it what was written. `env` is that same
+// environment, read here only to find the cache.
+export async function ensureSdk({
+  krate,
+  env,
+  timeoutMs = 60_000,
+  spawnImpl = (cmd, args, opts) => spawn(cmd, args, { ...opts, env }),
+  scratch: makeScratch = () => mkdtemp(join(tmpdir(), "krate-sdk-nudge-")),
+  handOver = async () => {},
+}) {
   if (env.KRATE_SDK_ROOT) return env.KRATE_SDK_ROOT;
-  const scratch = await mkdtemp(join(tmpdir(), "krate-sdk-nudge-"));
+  const scratch = await makeScratch();
   try {
     await writeFile(join(scratch, "Cargo.toml"), '[package]\nname = "sdk-nudge"\nversion = "0.0.0"\n');
     await writeFile(join(scratch, "manifest.toml"), '[app]\nid = "dev.krate.sdk_nudge"\nname = "x"\nversion = "0.0.0"\nentry = "code.wasm"\nworld = "krate:app/cli@0.1.0"\n');
     await writeFile(join(scratch, "code.wasm"), Buffer.alloc(0));
+    await handOver(scratch);
     await new Promise((resolve) => {
-      const proc = spawn(krate, ["pack", join(scratch, "code.wasm"), "--manifest", join(scratch, "manifest.toml"), "-o", join(scratch, "nudge.krate")], { env, stdio: "ignore" });
+      let proc;
+      try {
+        proc = spawnImpl(krate, ["pack", join(scratch, "code.wasm"), "--manifest", join(scratch, "manifest.toml"), "-o", join(scratch, "nudge.krate")], { stdio: "ignore" });
+      } catch (e) {
+        return resolve();
+      }
       const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (e) {} }, timeoutMs);
       proc.on("error", () => { clearTimeout(killer); resolve(); });
       proc.on("close", () => { clearTimeout(killer); resolve(); });

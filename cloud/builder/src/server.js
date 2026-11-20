@@ -14,12 +14,10 @@
  */
 
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   appendFile,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rename,
@@ -28,10 +26,10 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createGifts } from "./gift.js";
 import { createJudge } from "./judge.js";
+import { createSandbox } from "./sandbox.js";
 import {
   DEFAULT_COMPILE_CRATES,
   checkCompileSource,
@@ -278,13 +276,21 @@ async function savePlans() {
 const STATE_DIR = process.env.KRATE_STATE_DIR || "/work/state";
 const JOBS_DIR = join(STATE_DIR, "jobs");
 
+/* Every child that builds or runs a stranger's code starts here: as the
+ * build user, with an allow-listed environment (sandbox.js, K-1293). */
+const sandbox = createSandbox();
+
 /* Judging for the hub's big-file path (IC-945): the hub asks, this box reads
  * the upload, judges it with `krate judge --tier hub-big`, and answers. */
 const judge = createJudge({
   hub: HUB,
   secret: process.env.KRATE_BUILDER_SECRET || "",
-  dir: join(STATE_DIR, "judge"),
+  // Not under STATE_DIR in production: the judge runs as the build user,
+  // and it must read the upload by its exact path. The Dockerfile points
+  // this at a root-owned 0711 directory it can read in but not list.
+  dir: process.env.KRATE_JUDGE_DIR || join(STATE_DIR, "judge"),
   krate: KRATE,
+  spawnImpl: (cmd, args, opts) => sandbox.spawn(cmd, args, opts),
 });
 
 /** Is this request from the hub? It carries the secret only the two hold. */
@@ -460,12 +466,14 @@ const STAGE_ORDER = ["read", "write", "test", "done"];
  */
 const API_AGENTS = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY" };
 
-/* A copy of this service's environment for a child, minus what is only the
- * service's business: the secret it proves itself to the hub with. */
-function withoutServiceSecrets(env) {
-  const copy = { ...env };
-  delete copy.KRATE_BUILDER_SECRET;
-  return copy;
+/* The model key an AI path hands its engine: the person's own when they
+ * have one, ours otherwise, and only the one this agent speaks to. Null for
+ * a CLI agent, which carries its own sign-in. Nothing else that runs here
+ * gets a key (sandbox.js). */
+function agentKey(theirKey) {
+  const name = API_AGENTS[AGENT];
+  if (!name) return null;
+  return { name, value: theirKey || process.env[name] || "" };
 }
 
 // Gifts for a friend without Krate (gift.js). A few an hour per account:
@@ -473,11 +481,10 @@ function withoutServiceSecrets(env) {
 const gifts = createGifts({
   krate: KRATE,
   stateDir: STATE_DIR,
-  env: (() => {
-    const env = withoutServiceSecrets(process.env);
-    for (const name of Object.values(API_AGENTS)) delete env[name];
-    return env;
-  })(),
+  // Wrapping a finished app runs nothing of it, so the gift stays this
+  // service's user (its kit is root's, and no build may change the players
+  // it hands out) -- with the same allow-listed environment and no key.
+  env: sandbox.childEnv({ as: "service" }),
 });
 const GIFTS_PER_HOUR = Number(process.env.KRATE_GIFTS_PER_HOUR || 20);
 const giftsByAccount = new Map(); // account -> [timestamps]
@@ -711,7 +718,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // Ownership is checked on every operation now, but the id stays opaque:
   // two locks, and this one also keeps 404 and 403 indistinguishable.
   const id = randomBytes(16).toString("hex");
-  const dir = await mkdtemp(join(tmpdir(), "krate-build-"));
+  const dir = await sandbox.scratch("krate-build-");
   const output = join(dir, "app.krate");
   const shotPath = join(dir, "frame.png");
 
@@ -792,6 +799,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
   } catch (e) {
     console.warn(`[build] could not write attachments: ${e.message}`);
   }
+  await sandbox.handOver(dir);
   // Options first and `--` before the person's words, so a request that
   // starts with "-" -- any pasted bullet list -- is text, not an option
   // the engine refuses (K-889).
@@ -806,15 +814,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
     : ["create", "--output", output, "--agent", AGENT, "--transcript", transcript, ...attachArgs, "--", request];
   if (port) job.port = { work: port.work, name: port.name || "" };
   // The engine needs the model key and nothing of the service's own: the
-  // secret that lets this service fetch a person's key stays here.
-  const runEnv = withoutServiceSecrets(process.env);
-  if (theirKey) runEnv[API_AGENTS[AGENT]] = theirKey;
+  // secret that lets this service fetch a person's key stays here. The key
+  // does reach the agent and everything it runs -- that is how it talks to
+  // the model -- and nothing of this service's does (sandbox.js).
+  const extra = {};
   // The shape the plan picked: the engine seeds that working example as
   // src/lib.rs and the model transforms it rather than writing a file from
   // nothing. This is the single biggest lever on how long a build takes,
   // and the browser was not using it.
-  if (shape && /^[a-z0-9-]{1,40}$/i.test(shape)) runEnv.KRATE_STARTER_SHAPE = shape;
-  const proc = spawn(KRATE, args, { cwd: dir, env: runEnv, detached: GROUP });
+  if (shape && /^[a-z0-9-]{1,40}$/i.test(shape)) extra.KRATE_STARTER_SHAPE = shape;
+  const proc = sandbox.spawn(KRATE, args, { cwd: dir, key: agentKey(theirKey), extra, detached: GROUP });
   job.proc = proc;
   // A child that cannot start emits "error", and an unhandled "error" event
   // took the whole service down with every build in flight (K-890). It is
@@ -1045,20 +1054,20 @@ async function startBuild({ request, token, account, device, revise = null, shap
  * tool call must not hold a request open for that long.
  */
 
-/* What the compile's children get: the service's environment minus every
- * secret. The code being compiled is a stranger's, so neither the model key
- * nor the hub secret has any business near it. */
-function compileEnv() {
-  const env = withoutServiceSecrets(process.env);
-  for (const name of Object.values(API_AGENTS)) delete env[name];
-  return env;
-}
+/* A compile's children get no key at all (sandbox.spawn with no `key`):
+ * the code being compiled is a stranger's, and no model is involved. */
 
 /* Where this engine's SDK is, found once per process (compile.js). */
 let sdkRootPromise = null;
 function sdkRoot() {
   if (!sdkRootPromise) {
-    sdkRootPromise = ensureSdk({ krate: KRATE, env: compileEnv() }).then((root) => {
+    sdkRootPromise = ensureSdk({
+      krate: KRATE,
+      env: sandbox.childEnv(),
+      spawnImpl: sandbox.spawn,
+      scratch: () => sandbox.scratch("krate-sdk-nudge-"),
+      handOver: sandbox.handOver,
+    }).then((root) => {
       if (!root) sdkRootPromise = null; // try again on the next compile
       return root;
     });
@@ -1070,7 +1079,7 @@ function sdkRoot() {
  * remaining wall clock, output kept for the verdict. */
 function runCompileStep(job, args, deadline) {
   return new Promise((resolve) => {
-    const proc = spawn(KRATE, args, { cwd: job.dir, env: compileEnv(), detached: GROUP });
+    const proc = sandbox.spawn(KRATE, args, { cwd: job.dir, detached: GROUP });
     job.proc = proc;
     let out = "";
     let err = "";
@@ -1107,7 +1116,7 @@ async function compileSettle(job, fields) {
 
 async function startCompile({ token, account, name, files }) {
   const id = randomBytes(16).toString("hex");
-  const dir = await mkdtemp(join(tmpdir(), "krate-compile-"));
+  const dir = await sandbox.scratch("krate-compile-");
   const job = {
     id, kind: "compile", account, device: "", request: name || "Compile", dir,
     output: join(dir, "app.krate"),
@@ -1152,6 +1161,7 @@ async function runCompile(job, { token, name, files }) {
   }
   const cargoPath = join(app, "Cargo.toml");
   await writeFile(cargoPath, resolveSdkPlaceholders(await readFile(cargoPath, "utf8"), sdk));
+  await sandbox.handOver(job.dir);
   if (job.state !== "working") return compileSettle(job, {});
 
   // Paths in the engine's words are this machine's; the caller wrote
@@ -1238,7 +1248,7 @@ const guides = new Map(); // engine version -> Promise<text|null>
 
 function engineOutput(args, timeoutMs = 60_000) {
   return new Promise((resolve) => {
-    const proc = spawn(KRATE, args, { env: compileEnv(), detached: GROUP });
+    const proc = sandbox.spawn(KRATE, args, { detached: GROUP });
     let out = "";
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", () => {});
@@ -1256,7 +1266,7 @@ async function authoringGuide() {
       const file = join(STATE_DIR, "guides", `${createHash("sha256").update(version).digest("hex").slice(0, 32)}.md`);
       const kept = await readFile(file, "utf8").catch(() => null);
       if (kept) return kept;
-      const fresh = await mkdtemp(join(tmpdir(), "krate-guide-"));
+      const fresh = await sandbox.scratch("krate-guide-");
       try {
         const pack = await engineOutput(["authoring-context", fresh]);
         if (!pack || !pack.trim()) return null;
@@ -1383,7 +1393,7 @@ async function writeProject(project, dir) {
  * uploaded project. No model, no allowance, bounded by time. */
 function portPlan(root) {
   return new Promise((resolve) => {
-    const proc = spawn(KRATE, ["port", "--format", "json", "--", root], { env: withoutServiceSecrets(process.env), detached: GROUP });
+    const proc = sandbox.spawn(KRATE, ["port", "--format", "json", "--", root], { detached: GROUP });
     let out = "";
     let err = "";
     proc.stdout.on("data", (b) => { out += b.toString(); });
@@ -1404,11 +1414,12 @@ async function planRequest(request, theirKey = null, attachments = []) {
   // The plan reads what was attached too: `krate plan --attach` exists
   // precisely so the questions can be about the file rather than only the
   // sentence. Written to a temp dir that is removed once the plan answers.
-  const holding = await mkdtemp(join(tmpdir(), "krate-plan-"));
+  const holding = await sandbox.scratch("krate-plan-");
   let files = [];
   try {
     files = await writeAttachments(attachments, holding);
   } catch (e) { /* a plan without the file is better than no plan */ }
+  await sandbox.handOver(holding);
   const attachArgs = files.flatMap((f) => ["--attach", f]);
   return new Promise((resolve) => {
     const finish = (value) => {
@@ -1417,9 +1428,7 @@ async function planRequest(request, theirKey = null, attachments = []) {
     };
     let out = "";
     let err = "";
-    const env = withoutServiceSecrets(process.env);
-    if (theirKey) env[API_AGENTS[AGENT]] = theirKey;
-    const proc = spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { env, detached: GROUP });
+    const proc = sandbox.spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { key: agentKey(theirKey), detached: GROUP });
     const killer = setTimeout(() => killTree(proc, "SIGKILL"), PLAN_TIMEOUT_MS);
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
@@ -1462,11 +1471,8 @@ async function takeShot(bundle, shotPath) {
     // at all: not Krate's, not the person's, not the service's secret. The
     // sandbox already keeps a guest from reading them; there is no reason
     // to hand the process them in the first place.
-    const shotEnv = withoutServiceSecrets(process.env);
-    for (const name of Object.values(API_AGENTS)) delete shotEnv[name];
-    shotEnv.KRATE_SHOOT_AFTER_MS = "1200";
-    const proc = spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
-      env: shotEnv,
+    const proc = sandbox.spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
+      extra: { KRATE_SHOOT_AFTER_MS: "1200" },
     });
     // Why a picture failed, kept for the log.
     //
@@ -1755,7 +1761,19 @@ const server = createServer(async (req, res) => {
         authoring: authoringOff() ? "off" : "on",
         agent: AGENT,
         gifts: await gifts.canGift(),
+        // Whether builds run as their own user (K-1293). "none" in
+        // production means every build door below answers 503.
+        isolation: sandbox.isolated ? "build-user" : "none",
       });
+    }
+
+    // A door that would start a build-time child, on a production box with
+    // no build user to hand it to: refused before anything is counted or
+    // spawned, rather than run as this service (K-1293).
+    const refused = sandbox.refusal();
+    if (refused && startsBuildChildren(req.method, url.pathname)) {
+      if (url.pathname === "/compile" || url.pathname === "/guide") return json(res, 503, { error: refused });
+      return send(res, 503, refused);
     }
 
     // The hub asks for a big upload to be judged (IC-945). Answered at once;
@@ -1836,9 +1854,10 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const account = await resolveAccount(token);
       if (!account) return send(res, 401, "Sign in first.");
-      const dir = await mkdtemp(join(tmpdir(), "krate-port-plan-"));
+      const dir = await sandbox.scratch("krate-port-plan-");
       try {
         const root = await writeProject(body.project, dir);
+        await sandbox.handOver(dir);
         const answer = await portPlan(root);
         await audit({ action: "port-plan", account, ok: answer.ok });
         if (!answer.ok) return send(res, 502, answer.message);
@@ -1940,10 +1959,11 @@ const server = createServer(async (req, res) => {
       try {
         // The project is written before the job starts, so a bad upload
         // is refused with a reason and never claims a case.
-        const holding = await mkdtemp(join(tmpdir(), "krate-port-"));
+        const holding = await sandbox.scratch("krate-port-");
         let root;
         try {
           root = await writeProject(body.project, holding);
+          await sandbox.handOver(holding);
         } catch (err) {
           await rm(holding, { recursive: true, force: true }).catch(() => {});
           throw err;
@@ -2091,9 +2111,10 @@ const server = createServer(async (req, res) => {
       // The source the change starts from is the file that was made -- the
       // one the person could have downloaded -- copied into the new job's
       // own directory so nothing edits a finished result in place.
-      const sourceDir = await mkdtemp(join(tmpdir(), "krate-revise-"));
+      const sourceDir = await sandbox.scratch("krate-revise-");
       const source = join(sourceDir, "app.krate");
       await writeFile(source, bytes);
+      await sandbox.handOver(sourceDir);
       let next;
       try {
         next = await startBuild({
@@ -2245,6 +2266,15 @@ function readBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+/* The doors whose work runs as the build user. Reading a job's status or
+ * downloading a finished file runs nothing and stays open. */
+function startsBuildChildren(method, path) {
+  if (method === "GET") return path === "/guide";
+  if (method !== "POST") return false;
+  if (["/build", "/plan", "/port", "/port/plan", "/compile", "/judge"].includes(path)) return true;
+  return path.startsWith("/build/") && path.endsWith("/revise");
 }
 
 function json(res, status, body) {

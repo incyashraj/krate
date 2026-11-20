@@ -81,6 +81,9 @@ KRATE_BIN=/path/to/krate KRATE_AGENT=claude node src/server.js
 | `KRATE_COMPILE_TIMEOUT_MS` | Wall clock for one compile, check and pack together. Default 10 minutes, for a cold dependency cache |
 | `KRATE_COMPILE_CRATES` | The crates.io crates uploaded source may depend on, comma-separated. Default `wit-bindgen-rt,libm` (K-1293) |
 | `KRATE_SDK_ROOT` | Where the SDK is, for `/compile`. Unset, the engine's own cache is used |
+| `KRATE_BUILD_USER` | The user every build runs as (K-1293). Default `kratebuild`. The service must be root to hand builds to it; with `FLY_APP_NAME` set and no such user, every build door answers 503 |
+| `KRATE_BUILD_ENV_PASS` | Extra environment names a build may see, comma-separated (a new engine setting, a test hook). A name that reads like a credential is refused |
+| `KRATE_JUDGE_DIR` | Where uploads being judged land. `/work/judge` in the image: root's, 0711, so the judge reads by exact path only |
 | `KRATE_BUILDER_SECRET` | The secret the hub's `/keys/use` asks for before it hands out a person's own API key (K-861). A Fly secret here and a Worker secret on the hub, the same value on both; unset, bring-your-own-key builds fall back to the funded path |
 
 ## The doors
@@ -90,7 +93,7 @@ POST /build            { request }   -> { id }
 GET  /build/<id>                     -> { state, stage, line, shot, error, result }
 GET  /build/<id>/file                -> the .krate itself
 POST /build/<id>/stop                -> { ok }
-GET  /health                         -> { ok, building, authoring, agent }
+GET  /health                         -> { ok, building, authoring, agent, isolation }
 
 POST /compile          { name, files: [{ path, data }] }   -> 202 { id }  | 4xx { error }
 GET  /guide                          -> text/markdown
@@ -109,6 +112,55 @@ the hub, as a web build is -- comes from `/build/<id>/file`. Write the SDK
 in Cargo.toml as `{KRATE_SDK}`; the builder puts its own path there. The
 guide is `krate authoring-context` for a fresh folder plus how to send
 the source, made once per engine version.
+
+## What a build can reach (K-1293)
+
+A build runs code nobody here wrote: the engine's AI loop, cargo, rustc,
+every dependency's build script and proc-macro, the app when it is
+photographed, the judge reading an upload. Any of it could read a file at
+compile time -- `include_str!("/proc/1/environ")` -- and send the bytes
+back in the bundle or a compiler error.
+
+**The boundary is the uid.** The service runs as root and holds the hub
+secret and the Anthropic key; every build-time child runs as `kratebuild`
+(`src/sandbox.js`, the one function every such child is started through).
+A process root handed to another uid cannot read root's
+`/proc/<pid>/environ`, and `/work/state` -- jobs, other people's finished
+apps, the ledgers -- is root's and 0700. `/health` says
+`"isolation":"build-user"` when this holds, and a production box where it
+does not refuses every build rather than run it as root.
+
+**The environment is the second line.** A child gets an allow-list:
+the toolchain, the engine's settings, its own HOME and TMPDIR. Never
+`KRATE_BUILDER_SECRET`. A model key only on the paths that talk to a model:
+
+| Door | Key the child gets |
+|---|---|
+| `/build`, `/build/<id>/revise`, `/port`, `/plan` | the agent's own, the person's if they set one, else ours |
+| `/compile`, `/guide`, `/port/plan`, `/judge`, the picture of a built app | none |
+
+On the AI paths the key necessarily reaches the agent and everything it
+runs, its build scripts included: that is how it talks to the model. What
+never reaches any build is anything of the service's own.
+
+`/compile` also narrows what uploaded source may do (a crate allow-list, no
+build scripts, no path or git dependencies, `include_str!` only inside the
+app). That is defence in depth and stays; the uid is what holds.
+
+After a deploy, prove it on the machine itself:
+
+```bash
+fly ssh console --app krate-builder -C krate-isolation-check
+```
+
+It checks, as the build user and through `src/sandbox.js` exactly as the
+server spawns, that neither the service's nor PID 1's environ can be read,
+that `/work/state` cannot be listed, and that the secret appears nowhere a
+build can see. It never prints the secret.
+
+Not covered by the uid: builds share one user, so two builds running at the
+same moment can read each other's files and environment, and the caches in
+`/work/build` are shared between them (K-1297).
 
 ## The two guards that matter
 

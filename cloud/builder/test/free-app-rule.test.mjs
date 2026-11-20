@@ -224,6 +224,8 @@ async function run() {
       ANTHROPIC_API_KEY: HOUSE_KEY,
       KRATE_BUILDER_SECRET: BUILDER_SECRET,
       KRATE_KEYLOG: KEYLOG,
+      // The fake engine's log, a test hook a child sees only when named.
+      KRATE_BUILD_ENV_PASS: "KRATE_KEYLOG",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
