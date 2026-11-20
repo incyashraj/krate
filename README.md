@@ -310,6 +310,12 @@ and `cloud/`).
 Studio is one front end for the engine, not the only one. Whichever you
 pick, every path ends at the same `.krate` file:
 
+- **Claude Code plugin**: in Claude Code, run
+  `/plugin install krate --marketplace incyashraj/krate` (or, in a terminal,
+  `claude plugin marketplace add incyashraj/krate` and then
+  `claude plugin install krate@krate`). It connects Krate's MCP server and
+  teaches Claude to make, check, package and publish Krate apps. Install
+  Krate itself first.
 - **MCP**: `krate mcp` is a server Claude Desktop or Cursor can call; add
   `{"mcpServers": {"krate": {"command": "krate", "args": ["mcp"]}}}` to the
   app's MCP config and ask for the app in chat. Full setup:

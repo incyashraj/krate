@@ -1,0 +1,17 @@
+{
+  "name": "krate",
+  "owner": {
+    "name": "Krate Labs",
+    "url": "https://krate.tech"
+  },
+  "metadata": {
+    "description": "Make, check and send sandboxed apps that run on Mac, Windows and Linux, or open from a link in any browser."
+  },
+  "plugins": [
+    {
+      "name": "krate",
+      "source": "./plugins/krate",
+      "description": "Build Krate apps with Claude: one small .krate file that runs natively on Mac, Windows and Linux, opens from a link in a browser, and reaches only what it declares."
+    }
+  ]
+}
