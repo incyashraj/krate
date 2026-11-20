@@ -137,7 +137,8 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // sensor, a board on a USB serial line. Resource-free: the app never
     // names a port -- it asks, the person chooses one from the system's
     // list, and that pick is the grant, for that port, for that run. Never
-    // default-granted, never in a tab or on a phone.
+    // default-granted, never on a phone; in a tab where the browser has Web
+    // Serial (IC-992).
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "device", "serial", false),
     // A printer the person picks (IC-986): a label printer on the packing
     // bench, the office laser for job travellers. Resource-free: the app
@@ -151,8 +152,8 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // product ids in hex -- `device.usb:1915:7777` -- exact, no wildcard, and
     // an app may name several. The app never lists devices: the person picks
     // one connected device of a named model, and that pick is the grant, for
-    // that device, for that run. Never default-granted, never in a tab or on
-    // a phone.
+    // that device, for that run. Never default-granted, never on a phone; in
+    // a tab where the browser has WebUSB (IC-992).
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "device",
@@ -648,7 +649,25 @@ pub fn works_in_a_tab(module: &str, action: &str) -> bool {
             // A file dropped on the app, judged by the desktop's own media
             // type table (krate_adapter_common::mime).
             | ("ui", "dropzone")
+            // Serial and USB devices the person picks (IC-992), through the
+            // browser's own Web Serial and WebUSB and its own device picker,
+            // which only some browsers have: see [`tab_needs`].
+            | ("device", "serial" | "usb")
     )
+}
+
+/// The browser API a capability needs in a tab, for those only some
+/// browsers have (IC-992): `serial` (Web Serial) for `device.serial`, `usb`
+/// (WebUSB) for `device.usb`, both in Chrome and Edge and not in Safari or
+/// Firefox. The Player's consent card treats such a capability as one a tab
+/// cannot give in a browser without it, and says to open the app in Chrome
+/// or Edge, or in Krate; the authoring pack's column says "Chrome and Edge".
+pub fn tab_needs(module: &str, action: &str) -> Option<&'static str> {
+    match (module, action) {
+        ("device", "serial") => Some("serial"),
+        ("device", "usb") => Some("usb"),
+        _ => None,
+    }
 }
 
 impl Capability {
@@ -800,6 +819,12 @@ impl Capability {
             return false;
         }
         works_in_a_tab(self.module(), self.action())
+    }
+
+    /// The browser API this capability needs in a tab, when only some
+    /// browsers have it ([`tab_needs`]).
+    pub fn tab_needs(&self) -> Option<&'static str> {
+        tab_needs(self.module(), self.action())
     }
 
     /// Render a capability as a short plain phrase for a person, e.g.
@@ -1792,12 +1817,15 @@ mod tests {
     }
 
     /// `device.serial` (IC-985) is one plain line, never granted without
-    /// asking, never in a tab, and names no port: the person picks it.
+    /// asking, in a tab only where the browser has Web Serial (IC-992), and
+    /// names no port: the person picks it.
     #[test]
     fn a_serial_device_is_asked_for_and_names_no_port() {
         let cap: Capability = "device.serial".parse().expect("device.serial");
         assert!(!cap.is_default_granted(), "never granted without asking");
-        assert!(!cap.works_in_a_tab(), "a tab has no serial port yet");
+        // In a tab, through the browser's Web Serial (IC-992).
+        assert!(cap.works_in_a_tab());
+        assert_eq!(cap.tab_needs(), Some("serial"));
         assert_eq!(cap.plain(), "talk to a serial device you choose");
         let spec = supported_capability_specs()
             .iter()
@@ -1816,13 +1844,16 @@ mod tests {
 
     /// `device.usb:<vendor>:<product>` (IC-988) names one device model by
     /// its two ids in hex, exactly: never a wildcard, a range or a bare
-    /// `device.usb`; never granted without asking, never in a tab; and the
+    /// `device.usb`; never granted without asking, in a tab only where the
+    /// browser has WebUSB (IC-992); and the
     /// consent line names the ids the person is asked about.
     #[test]
     fn a_usb_device_is_named_by_its_two_ids_exactly() {
         let cap: Capability = "device.usb:1915:7777".parse().expect("device.usb");
         assert!(!cap.is_default_granted(), "never granted without asking");
-        assert!(!cap.works_in_a_tab(), "a tab has no USB yet");
+        // In a tab, through the browser's WebUSB (IC-992).
+        assert!(cap.works_in_a_tab());
+        assert_eq!(cap.tab_needs(), Some("usb"));
         assert_eq!(cap.plain(), "talk to the 1915:7777 USB device you choose");
         // Upper case is the same device, written the one way.
         let upper: Capability = "device.usb:1A86:7523".parse().expect("upper case");

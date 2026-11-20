@@ -620,9 +620,9 @@ people can send. check-app ends with a note naming any it found.
 | `random.bytes` | no | yes | entropy (also what getrandom/rand need) |
 | `process.run:<program>` | no | computer only | run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can |
 | `process.terminal` | no | computer only | the person's own shell in a terminal the app draws |
-| `device.serial` | no | computer only | a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable |
+| `device.serial` | no | in Chrome and Edge | a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable |
 | `device.printer` | no | computer only | print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing |
-| `device.usb:<vendor-id>:<product-id>` | no | computer only | a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and class or vendor control transfers, never keyboards, mice, storage, audio, video or hubs |
+| `device.usb:<vendor-id>:<product-id>` | no | in Chrome and Edge | a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and class or vendor control transfers, never keyboards, mice, storage, audio, video or hubs |
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |
@@ -665,6 +665,15 @@ Mark `required = true` on a capability the app cannot begin without -- the verif
 "Cannot begin without" means the app it CLAIMS to be, not just a window that opens. A music player without `audio.playback` is not a music player -- it is a silent picture of one -- so mark that capability required. Ask: if this one capability were withheld, would the app still be the thing the request asked for? If no, it is required. A drawing app's canvas, a music player's audio, a recorder's microphone, **a webcam app's camera**: required. A capability the app only uses for a nice-to-have corner is genuinely optional; the app's whole reason for existing is not.
 
 This has real consequences, not just tidiness. The person is only asked about capabilities marked required -- an optional one is never mentioned and never granted, so the app opens without it and without a question. A generated webcam viewer marked `camera.capture` optional and opened to a permanently empty viewfinder: no camera, no prompt, nothing on screen explaining why. It looked broken, and from the person's side it was.
+**Devices from a link.** `device.serial` and `device.usb:<vendor>:<product>` work
+in Krate on a computer and also from a link in Chrome or Edge: the browser's own
+device list is the person's pick, and for USB it shows only the models the
+manifest names. Call `serial::pick` or `usb::pick` from a button the person taps
+(a browser shows its list only inside a tap; otherwise Krate asks for one more).
+Safari and Firefox answer `Err(Unavailable)` with words that say to open the app
+in Chrome or Edge, or in Krate: show `serial::words(&err)` or `usb::words(&err)`.
+Printing what the window shows (`ui::print`) uses the browser's print dialog.
+
 
 ---
 

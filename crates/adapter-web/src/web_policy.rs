@@ -3,7 +3,8 @@
 //!
 //! - [`consent_rows`]: the consent screen's lines, in `Capability::plain`'s
 //!   words (the CLI, the hub's approval screen and the Player say the same
-//!   thing), each marked with whether a tab can do it at all.
+//!   thing), each marked with whether a tab can do it at all, and the
+//!   browser API it needs where only some browsers have it (`needs`).
 //! - [`WebGrants`]: the session's grants, as a `krate_policy::SessionPolicy`,
 //!   and the `net.connect` judgement a request gets before the page is
 //!   asked to fetch: the URL parsed by `parse_url_endpoint`, the
@@ -58,6 +59,9 @@ pub fn consent_rows(capabilities_json: &str) -> Value {
                 "rationale": req.rationale,
                 "required": req.required,
                 "in_tab": works_in_a_tab(&cap),
+                // The browser API it needs where only some browsers have
+                // one (IC-992): the page asks its own browser.
+                "needs": cap.tab_needs(),
                 "known": true,
             })),
             Err(_) => Some(json!({
@@ -66,6 +70,7 @@ pub fn consent_rows(capabilities_json: &str) -> Value {
                 "rationale": req.rationale,
                 "required": req.required,
                 "in_tab": false,
+                "needs": null,
                 "known": false,
             })),
         })
@@ -200,7 +205,24 @@ mod tests {
         for cap in ["store.shared", "store.secret"] {
             assert!(works_in_a_tab(&cap.parse().unwrap()), "{cap}");
         }
+        // Serial and USB devices too, where the browser has Web Serial and
+        // WebUSB (IC-992): the row names the API, and the page asks its own
+        // browser whether it has it.
+        let rows_with_devices = consent_rows(
+            r#"[{"cap":"device.serial","rationale":"The scale","required":true},
+                {"cap":"device.usb:1915:7777","rationale":"The dongle","required":true}]"#,
+        );
+        let devices = rows_with_devices["rows"].as_array().unwrap();
+        assert_eq!(devices[0]["in_tab"], true);
+        assert_eq!(devices[0]["needs"], "serial");
+        assert_eq!(devices[1]["in_tab"], true);
+        assert_eq!(devices[1]["needs"], "usb");
+        assert_eq!(
+            devices[1]["plain"],
+            "talk to the 1915:7777 USB device you choose"
+        );
         let cam = rows.iter().find(|r| r["cap"] == "camera.capture").unwrap();
+        assert_eq!(cam["needs"], Value::Null);
         assert_eq!(cam["in_tab"], true);
         assert_eq!(cam["plain"], "use your camera");
         // What a browser cannot give is still said to need a computer.
