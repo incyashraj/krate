@@ -133,6 +133,12 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // Krate has -- a shell can do anything the person can -- so it is its
     // own line on the card, never implied by any `process.run`.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "process", "terminal", false),
+    // A serial device the person picks (IC-985): a lab instrument, a
+    // sensor, a board on a USB serial line. Resource-free: the app never
+    // names a port -- it asks, the person chooses one from the system's
+    // list, and that pick is the grant, for that port, for that run. Never
+    // default-granted, never in a tab or on a phone.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "device", "serial", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",
@@ -856,6 +862,8 @@ impl Capability {
             ("camera", "capture") => "use your camera".to_string(),
             ("location", "read") => "know where you are".to_string(),
             ("bluetooth", "connect") => "connect to Bluetooth devices".to_string(),
+            // IC-985: the person picks the device; the line says so.
+            ("device", "serial") => "talk to a serial device you choose".to_string(),
             ("photos", "add") => "add pictures to your photo library".to_string(),
             // IC-977: what a program can do, said plainly. A build runs the
             // project's own code (build scripts, macros, tests), so cargo
@@ -1656,6 +1664,29 @@ mod tests {
 
         // Long enough to be unreadable on the screen a person decides from.
         assert!(validate_group_name(&"a".repeat(65)).is_err());
+    }
+
+    /// `device.serial` (IC-985) is one plain line, never granted without
+    /// asking, never in a tab, and names no port: the person picks it.
+    #[test]
+    fn a_serial_device_is_asked_for_and_names_no_port() {
+        let cap: Capability = "device.serial".parse().expect("device.serial");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        assert!(!cap.works_in_a_tab(), "a tab has no serial port yet");
+        assert_eq!(cap.plain(), "talk to a serial device you choose");
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.name() == "device.serial")
+            .expect("in the registry");
+        assert_eq!(spec.phase(), CapabilityPhase::Phase2);
+        assert!(spec.implemented());
+        for named in [
+            "device.serial:/dev/ttyUSB0",
+            "device.serial:COM3",
+            "device.usb",
+        ] {
+            assert!(named.parse::<Capability>().is_err(), "{named}");
+        }
     }
 
     /// `process.run` names one program by its bare name (IC-977): a folder,

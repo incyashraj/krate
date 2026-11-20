@@ -132,6 +132,7 @@ world = "cli"
 "krate:store" = { path = "PREFIX/wit/krate/phase2/deps/store" }
 "krate:random" = { path = "PREFIX/wit/krate/phase2/deps/random" }
 "krate:process" = { path = "PREFIX/wit/krate/phase2/deps/process" }
+"krate:serial" = { path = "PREFIX/wit/krate/phase2/deps/serial" }
 
 [profile.release]
 panic = "abort"
@@ -191,6 +192,7 @@ world = "gui"
 "krate:store" = { path = "PREFIX/wit/krate/phase4/deps/store" }
 "krate:random" = { path = "PREFIX/wit/krate/phase4/deps/random" }
 "krate:process" = { path = "PREFIX/wit/krate/phase4/deps/process" }
+"krate:serial" = { path = "PREFIX/wit/krate/phase4/deps/serial" }
 "krate:ui" = { path = "PREFIX/wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "PREFIX/wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "PREFIX/wit/krate/phase4/deps/gpu" }
@@ -458,6 +460,11 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `secret::set(name: &str, secret: &[u8]) -> Result<(), SecretError>`
 - `secret::set_text(name: &str, secret: &str) -> Result<(), SecretError>`
 
+### `serial`
+
+- `serial::pick(title: &str) -> Result<Option<Port>, SerialError>`
+- `serial::words(err: &SerialError) -> &str`
+
 ### `shared`
 
 - `shared::code() -> Result<Option<String>, SharedError>`
@@ -564,6 +571,7 @@ people can send. check-app ends with a note naming any it found.
 | `random.bytes` | no | yes | entropy (also what getrandom/rand need) |
 | `process.run:<program>` | no | computer only | run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can |
 | `process.terminal` | no | computer only | the person's own shell in a terminal the app draws |
+| `device.serial` | no | computer only | a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable |
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |

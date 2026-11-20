@@ -32,6 +32,7 @@ The current world imports these interfaces:
 - `krate:store/org@0.1.0`
 - `krate:random/bytes@0.1.0`
 - `krate:process/processes@0.1.0`
+- `krate:serial/ports@0.1.0`
 
 The app exports:
 
@@ -1215,6 +1216,148 @@ Accepted capability strings for this module, generated from the runtime manifest
 > The host could not read the asset.
 
 - `io`: `string`
+
+
+## `krate:serial/ports@0.1.0`
+
+### Functions
+
+> Ask the person to choose one serial device. `title` is a short line
+> for the list ("Choose the plate reader"), at most 200 characters.
+> 
+> Some(port) when they chose one, none when they cancelled or no person
+> is there to choose (a run with no window and no display). Picking
+> does not open the port: call `open` with the settings the device
+> expects.
+
+- `pick(title: string) -> result<option<port>, serial-error>`
+> Open a picked port with `settings`. Called again on an open port, it
+> changes the settings in place.
+
+- `open(port: port-handle, settings: settings) -> result<_, serial-error>`
+> Read at most `max` bytes (at most 65536): wait up to `timeout-ms`
+> (none: the `read-timeout-ms` the port was opened with; at most 60000)
+> for the first byte, then answer with what has arrived. Empty when the
+> wait ran out with nothing.
+
+- `read(port: port-handle, max: u32, timeout-ms: option<u32>) -> result<list<u8>, serial-error>`
+> Write every byte of `bytes` (at most 65536) to the device. Returns once
+> the device has taken them, waiting at most the port's
+> `read-timeout-ms` (at least one second) plus the time the bytes take on
+> the wire at its baud rate; past that, `failed`.
+
+- `write(port: port-handle, bytes: list<u8>) -> result<_, serial-error>`
+> Close the port and give up the pick: the handle is spent, and talking
+> to the device again needs a new pick. Closing an unknown handle does
+> nothing.
+
+- `close(port: port-handle)`
+
+### Types
+
+#### `port-handle` type
+
+> A port the person picked. Numbers are never reused within a run and
+> mean nothing to another run.
+
+`u64`
+
+#### `port` record
+
+> A port the person picked.
+
+> The handle the app uses for this port from now on.
+
+- `handle`: `port-handle`
+> The device's name as the computer gives it, to show the person:
+> "USB Serial (FTDI)", "COM3", "/dev/cu.usbmodem1101".
+
+- `name`: `string`
+
+#### `parity` enum
+
+> Parity, the check bit after each character.
+
+> No parity bit. The usual setting (8N1).
+
+- `none`
+> An odd parity bit.
+
+- `odd`
+> An even parity bit.
+
+- `even`
+
+#### `stop-bits` enum
+
+> Stop bits after each character.
+
+> One stop bit. The usual setting (8N1).
+
+- `one`
+> Two stop bits.
+
+- `two`
+
+#### `settings` record
+
+> How to talk to the device. 9600 or 115200 baud, 8 data bits, no
+> parity and one stop bit (8N1) is what most devices expect.
+
+> Bits a second, from 50 to 4000000: 9600, 115200 and so on.
+
+- `baud-rate`: `u32`
+> Bits in a character: 5, 6, 7 or 8.
+
+- `data-bits`: `u8`
+> The parity bit.
+
+- `parity`: `parity`
+> The stop bits.
+
+- `stop-bits`: `stop-bits`
+> How long a `read` that names no wait of its own waits for the first
+> byte, in milliseconds, at most 60000. 0 answers at once with what
+> has already arrived.
+
+- `read-timeout-ms`: `u32`
+
+#### `serial-error` variant
+
+> Why a call was refused or failed. Each case carries words to show a
+> person, except `unknown-handle` and `not-open`, which are the app's own
+> mistakes.
+
+> The app did not declare `device.serial`, or the person did not allow
+> it. The words say which and name the capability.
+
+- `not-allowed`: `string`
+> No serial device is connected to this computer, or this place has
+> none: a browser tab, a phone.
+
+- `unavailable`: `string`
+> No port has this handle in this run: never picked, or closed.
+
+- `unknown-handle`
+> The port was picked and not opened yet: `open` it first.
+
+- `not-open`
+> A setting Krate does not accept, with words: a baud rate, data bits
+> or a wait out of range, or a write longer than 65536 bytes.
+
+- `bad-settings`: `string`
+> Another program has the device open.
+
+- `busy`: `string`
+> The device went away: unplugged, or switched off.
+
+- `disconnected`: `string`
+> The app already holds 8 ports; close one first.
+
+- `too-many`: `string`
+> The computer refused, with its words.
+
+- `failed`: `string`
 
 
 ## `krate:store/group@0.1.0`

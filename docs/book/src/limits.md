@@ -18,6 +18,7 @@ written from memory.
 | Storage | Key-value, SQL, a secret store, and a shared store across machines |
 | System | Clipboard, dialogs, notifications (macOS, Windows and Linux; Windows says so when the person has switched an app's off), open-a-URL, locale, time, random |
 | Input | Keyboard, pointer, wheel |
+| Devices | A serial device the person picks: an instrument, a sensor, an Arduino (macOS, Windows and Linux) |
 
 ## Not yet
 
@@ -26,7 +27,7 @@ written from memory.
 | Printing | Invoices, labels, anything a business prints |
 | Multiple windows | A dashboard with a separate controls window |
 | File watching | Folder-driven tools that react to changes |
-| Serial and USB | Arduino, ESP32, live sensor apps |
+| Raw USB and HID | USB radio dongles, security keys |
 | Bluetooth LE | Heart-rate monitors, scales, beacons |
 | Screen capture | Screenshot and recording tools |
 | Tray and menu bar | Utilities that live at the edge of the screen |

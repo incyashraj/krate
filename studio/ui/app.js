@@ -2818,6 +2818,8 @@ function friendlyAsk(cap) {
     "process.run:cargo": "run cargo on this computer: a project's build can run any code it contains",
     "process.run": "run a program on this computer: it can do what you can",
     "process.terminal": "open a terminal on this computer: it can do anything you can",
+    // IC-985: the device the person picks, nothing else.
+    "device.serial": "talk to a serial device you choose",
   };
   return map[cap] || map[cap.split(":")[0]] || cap;
 }
@@ -4930,6 +4932,8 @@ const CAP_WORDS = {
   "process.run:cargo": "Run cargo on this computer: a project's build can run any code it contains",
   "process.run": "Run a program on this computer: it can do what you can",
   "process.terminal": "Open a terminal on this computer: it can do anything you can",
+  // IC-985: the device the person picks, nothing else.
+  "device.serial": "Talk to a serial device you choose",
   "memory.budget": "Use more memory than apps normally get",
   "audio.playback": "Play sound",
   "audio.capture": "Record from the microphone",
@@ -5386,6 +5390,8 @@ const CAPS_REACH_OUT = new Set([
   // (IC-977).
   "process.run",
   "process.terminal",
+  // A device on a wire the person picks (IC-985).
+  "device.serial",
   // Acts on the desktop outside its own window.
   "ui.open-url",
   "ui.notify",

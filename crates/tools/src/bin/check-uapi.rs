@@ -24,6 +24,7 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:process/processes@0.1.0",
     "krate:resources/assets@0.1.0",
     "krate:random/bytes@0.1.0",
+    "krate:serial/ports@0.1.0",
     "krate:store/kv@0.1.0",
     "krate:store/sql@0.1.0",
     "krate:store/secret@0.1.0",
@@ -43,6 +44,7 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "krate:process@0.1.0",
     "krate:random@0.1.0",
     "krate:resources@0.1.0",
+    "krate:serial@0.1.0",
     "krate:store@0.1.0",
     "krate:time@0.1.0",
 ];

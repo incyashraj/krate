@@ -1653,6 +1653,114 @@ pub mod process {
     }
 }
 
+/// Serial devices the person picks (IC-985): a lab instrument, a sensor, a
+/// microcontroller board, a drone or robot on a USB serial line.
+///
+/// Declare `device.serial` with a rationale. The app never lists ports and
+/// never names one: [`pick`] shows the person the computer's serial devices
+/// and returns the one they chose, or `None` when they cancelled. That pick
+/// is the grant, for that one device, until the [`Port`] is dropped or the
+/// app ends. Without `device.serial` (or when the person said no) [`pick`]
+/// answers `SerialError::NotAllowed`, whose words name the capability.
+///
+/// ```ignore
+/// use krate::serial::{self, Settings};
+/// if let Some(port) = serial::pick("Choose the plate reader")? {
+///     port.open(&Settings::baud(115_200))?;
+///     port.write(b"READ\r\n")?;
+///     let answer = port.read(256, Some(2_000))?; // empty if the wait ran out
+/// }
+/// ```
+///
+/// A computer only: in a browser tab and on a phone every call answers
+/// `SerialError::Unavailable` with words saying so.
+pub mod serial {
+    use crate::bindings::krate::serial::ports as host;
+    pub use crate::bindings::krate::serial::ports::{Parity, SerialError, Settings, StopBits};
+    use alloc::vec::Vec;
+
+    /// The words a refusal carries, to show the person.
+    pub fn words(err: &SerialError) -> &str {
+        match err {
+            SerialError::NotAllowed(w)
+            | SerialError::Unavailable(w)
+            | SerialError::BadSettings(w)
+            | SerialError::Busy(w)
+            | SerialError::Disconnected(w)
+            | SerialError::TooMany(w)
+            | SerialError::Failed(w) => w,
+            SerialError::UnknownHandle => "that serial device is not open in this app",
+            SerialError::NotOpen => "open the serial device before reading or writing",
+        }
+    }
+
+    impl Settings {
+        /// `baud` bits a second, 8 data bits, no parity, one stop bit (8N1),
+        /// and reads that wait up to a second: what most devices expect.
+        pub fn baud(baud: u32) -> Self {
+            Settings {
+                baud_rate: baud,
+                data_bits: 8,
+                parity: Parity::None,
+                stop_bits: StopBits::One,
+                read_timeout_ms: 1_000,
+            }
+        }
+    }
+
+    /// A serial device the person picked. Dropped, it is closed and the pick
+    /// is spent.
+    #[derive(Debug)]
+    pub struct Port {
+        handle: u64,
+        name: alloc::string::String,
+    }
+
+    /// Ask the person to choose a serial device. `title` is a short line for
+    /// the list ("Choose the plate reader"). `None` when they cancelled.
+    pub fn pick(title: &str) -> Result<Option<Port>, SerialError> {
+        Ok(host::pick(title)?.map(|port| Port {
+            handle: port.handle,
+            name: port.name,
+        }))
+    }
+
+    impl Port {
+        /// The device's name as the computer gives it, to show the person.
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        /// The handle the host knows it by.
+        pub fn handle(&self) -> u64 {
+            self.handle
+        }
+
+        /// Open it with `settings`, or change the settings of an open port.
+        pub fn open(&self, settings: &Settings) -> Result<(), SerialError> {
+            host::open(self.handle, *settings)
+        }
+
+        /// Read at most `max` bytes (at most 65536), waiting up to
+        /// `timeout_ms` (`None`: the wait it was opened with) for the first.
+        /// Empty when the wait ran out.
+        pub fn read(&self, max: u32, timeout_ms: Option<u32>) -> Result<Vec<u8>, SerialError> {
+            host::read(self.handle, max, timeout_ms)
+        }
+
+        /// Write every byte (at most 65536 a call).
+        pub fn write(&self, bytes: &[u8]) -> Result<(), SerialError> {
+            host::write(self.handle, bytes)
+        }
+    }
+
+    impl Drop for Port {
+        fn drop(&mut self) {
+            host::close(self.handle);
+        }
+    }
+}
+
 pub mod random {
     pub use crate::bindings::krate::random::bytes::RandomError;
     use alloc::vec::Vec;

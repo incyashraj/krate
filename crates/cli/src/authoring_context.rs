@@ -311,6 +311,24 @@ and every one ends with the app. A command-line app may call \
 output. On a refusal show `krate::process::words(&err)`: \"the app did not ask \
 to run X\", \"X is not installed on this computer\". A computer only: a \
 browser tab and a phone refuse every call in words.\n\n\
+To talk to a device on a serial line -- a lab instrument, a field sensor, an \
+Arduino or other board, a drone or robot over USB serial -- declare \
+`device.serial` with a rationale. The app never lists ports and never names \
+one: `krate::serial::pick(\"Choose the plate reader\")?` (from a button the \
+person taps) shows them the computer's serial devices and answers the one \
+they choose, `None` when they cancel. That pick is the grant, for that one \
+device, until the `Port` is dropped or the app ends; a second device needs a \
+second pick. Then `port.open(&krate::serial::Settings::baud(115_200))?` (8N1, \
+reads wait up to a second; build `Settings { baud_rate, data_bits, parity, \
+stop_bits, read_timeout_ms }` for anything else), `port.write(b\"READ\\r\\n\")?`, \
+and `port.read(256, Some(50))?` from the event loop -- it returns at most \
+that many bytes and is empty when the wait ran out, so keep a short wait in \
+a windowed app and collect lines yourself. At most 65536 bytes a call and a \
+wait of at most 60000 ms. `Err(NotAllowed)` names `device.serial` (not \
+declared, or the person said no); `Err(Busy)` is another program holding \
+the device; `Err(Disconnected)` is the cable pulled: offer to pick again. \
+Show `krate::serial::words(&err)`. A computer only (macOS, Windows, Linux): \
+a browser tab and a phone answer `Err(Unavailable)` in words.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \
@@ -981,6 +999,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "photos.add" => "add pictures to the person's photo library (add-only: the app never sees the library)",
         "process.run" => "run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can",
         "process.terminal" => "the person's own shell in a terminal the app draws",
+        "device.serial" => "a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable",
         _ => "",
     }
 }

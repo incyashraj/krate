@@ -110,9 +110,15 @@ mod print_host;
 ))]
 pub mod process_host;
 pub mod random_host;
+// Serial devices the person picks (krate:serial, IC-985): desktop only.
 pub mod scene3d;
 pub mod screen_fit;
 pub mod secret_host;
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod serial_host;
 pub mod shared_host;
 #[cfg(target_os = "macos")]
 mod speech_apple;
@@ -1494,6 +1500,11 @@ impl Runtime {
         // (which adapts) held a wide app upright on a phone, shrunk into a
         // band across the middle (K-1209).
         gui_host.set_adapts(false);
+        // A headless run has nobody to pick a serial device (IC-985).
+        store
+            .data()
+            .phase2
+            .set_nobody_to_ask(gui_host.is_headless());
         store.data_mut().phase3_gui = Some(gui_host);
 
         let linker = self.phase3_gui_linker()?;
@@ -1550,6 +1561,11 @@ impl Runtime {
             .imports(&self.engine)
             .any(|(name, _)| name.starts_with("krate:ui/screen@"));
         gui_host.set_adapts(adapts);
+        // A headless run has nobody to pick a serial device (IC-985).
+        store
+            .data()
+            .phase2
+            .set_nobody_to_ask(gui_host.is_headless());
         store.data_mut().phase3_gui = Some(gui_host);
         // A windowed app's team-data sync never waits on the network.
         store.data().phase2.set_windowed();
@@ -1720,6 +1736,9 @@ impl Runtime {
         // Programs on the computer (IC-977); a phone or a tab answers every
         // call with words, so the import always links.
         link_phase2!(phase2_bindings::krate::process::processes);
+        // Serial devices the person picks (IC-985); a phone or a tab answers
+        // `unavailable`, so the import always links.
+        link_phase2!(phase2_bindings::krate::serial::ports);
 
         // The two that differ.
         link_gui!(ui4::types);
@@ -6178,6 +6197,104 @@ mod tests {
             host.start("cargo".into(), Vec::new(), ".".into(), Vec::new())
                 .expect("no trap"),
             Err(ProcessError::NotDeclared(_))
+        ));
+    }
+
+    /// A serial device is reached only when the manifest declares
+    /// `device.serial` and the person allowed it (krate:serial, IC-985).
+    /// Refused, no list is shown and no port is touched, and the words name
+    /// the capability; every other call is refused the same way, so a
+    /// handle cannot be guessed past the gate either.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn a_serial_device_needs_the_declaration_and_the_persons_yes() {
+        use phase2_bindings::krate::serial::ports::{
+            Host, Parity, SerialError, Settings, StopBits,
+        };
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let host_with = |grants: &[&str], declared: Option<&[&str]>| {
+            let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+        };
+        let settings = Settings {
+            baud_rate: 9_600,
+            data_bits: 8,
+            parity: Parity::None,
+            stop_bits: StopBits::One,
+            read_timeout_ms: 0,
+        };
+        let undeclared =
+            "this app did not ask for device.serial, so it cannot talk to a serial device";
+        let refused = "you did not allow this app to talk to a serial device (device.serial)";
+        for (mut host, words) in [
+            // Allowed on the command line, never declared.
+            (host_with(&["device.serial"], Some(&[])), undeclared),
+            // No manifest at all names nothing.
+            (host_with(&["device.serial"], None), undeclared),
+            // Declared, and the person said no.
+            (host_with(&[], Some(&["device.serial"])), refused),
+        ] {
+            let said = |err: SerialError| match err {
+                SerialError::NotAllowed(said) => said,
+                other => panic!("refused by name, got {other:?}"),
+            };
+            assert_eq!(
+                said(
+                    host.pick("Choose".into())
+                        .expect("no trap")
+                        .expect_err("pick")
+                ),
+                words
+            );
+            assert_eq!(
+                said(host.open(1, settings).expect("no trap").expect_err("open")),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.read(1, 16, Some(0))
+                        .expect("no trap")
+                        .expect_err("read")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.write(1, b"x".to_vec())
+                        .expect("no trap")
+                        .expect_err("write")
+                ),
+                words
+            );
+        }
+
+        // Declared and allowed: past the gate, a handle the person never
+        // gave is no device.
+        let mut host = host_with(&["device.serial"], Some(&["device.serial"]));
+        assert!(matches!(
+            host.open(1, settings).expect("no trap"),
+            Err(SerialError::UnknownHandle)
         ));
     }
 

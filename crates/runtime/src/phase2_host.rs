@@ -10,7 +10,9 @@ use std::{
 };
 
 use crate::{
-    phase2_bindings::krate::{fs, io, locale, net, process, random, resources, store, time},
+    phase2_bindings::krate::{
+        fs, io, locale, net, process, random, resources, serial, store, time,
+    },
     phase2_bridge as bridge,
     uapi::UapiGuard,
     uapi_dispatch::{FileHandle, HostAdapter, UapiDispatcher},
@@ -83,6 +85,18 @@ pub struct Phase2Host<'a> {
     /// with the run, which kills every one of them.
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     processes: crate::process_host::Processes,
+    /// Serial ports the person picked this run (`krate:serial`, IC-985).
+    /// Dropped with the run, which closes every one.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    serial: crate::serial_host::SerialPorts,
+    /// Nobody is there to pick a serial device: a headless windowed run.
+    /// A pick then answers "cancelled" rather than wait on a dialog nobody
+    /// can see.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    nobody_to_ask: std::cell::Cell<bool>,
     /// Requests started with `http-client.begin` and not yet answered.
     ///
     /// Lives here so it dies with the run: a handle cannot outlive the app
@@ -133,6 +147,9 @@ impl<'a> Phase2Host<'a> {
             declared: None,
             #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
             processes: crate::process_host::Processes::new(),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            serial: crate::serial_host::SerialPorts::new(),
+            nobody_to_ask: std::cell::Cell::new(false),
             async_fetches: crate::async_fetch::AsyncFetches::new(),
             async_ws: crate::async_ws::AsyncWs::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -401,6 +418,51 @@ impl<'a> Phase2Host<'a> {
             Decision::Refused { .. } => Err(ProcessError::RefusedByPerson(format!(
                 "you did not allow this app to {what}"
             ))),
+        }
+    }
+
+    /// Nobody is there to pick a serial device (a headless windowed run):
+    /// a pick answers cancelled instead of showing a list (IC-985).
+    pub fn set_nobody_to_ask(&self, nobody: bool) {
+        self.nobody_to_ask.set(nobody);
+    }
+
+    /// May this run reach a serial device (`device.serial`, IC-985)? Only
+    /// when the manifest declares it and the person allowed it. The words
+    /// name the capability, so a refusal says what to declare or allow.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_serial(&self) -> Result<(), serial::ports::SerialError> {
+        use krate_policy::{Decision, Refusal};
+        use serial::ports::SerialError;
+        let cap = krate_manifest::Capability::new("device", "serial", None)
+            .expect("device.serial is a capability");
+        let undeclared = || {
+            SerialError::NotAllowed(
+                "this app did not ask for device.serial, so it cannot talk to a serial device"
+                    .to_string(),
+            )
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        match self.guard.policy().decide(&cap, Some(declared)) {
+            Decision::Granted { .. } => Ok(()),
+            Decision::Refused {
+                reason: Refusal::Undeclared,
+            } => Err(undeclared()),
+            Decision::Refused {
+                reason: Refusal::Organisation,
+            } => Err(SerialError::NotAllowed(
+                "the organisation that manages this computer does not allow apps to talk to \
+                 serial devices (device.serial)"
+                    .to_string(),
+            )),
+            Decision::Refused { .. } => Err(SerialError::NotAllowed(
+                "you did not allow this app to talk to a serial device (device.serial)".to_string(),
+            )),
         }
     }
 
@@ -805,6 +867,160 @@ impl process::processes::Host for Phase2Host<'_> {
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn not_on_this_device() -> process::processes::ProcessError {
     process::processes::ProcessError::Platform(PROCESS_ON_A_COMPUTER.to_string())
+}
+
+/// Serial devices the person picks (`krate:serial`, IC-985).
+///
+/// Every call is admitted here -- the manifest declares `device.serial` and
+/// the person allowed it -- before `serial_host` shows a list or touches a
+/// port. The app holds handles only; no call takes a path.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+impl serial::ports::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<serial::ports::Port>, serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        let picked = match crate::serial_host::choose(&title, self.nobody_to_ask.get()) {
+            Ok(picked) => picked,
+            Err(fault) => return Ok(Err(serial_fault_to_wit(fault))),
+        };
+        let Some((path, name)) = picked else {
+            return Ok(Ok(None));
+        };
+        Ok(self
+            .serial
+            .remember(path, name.clone())
+            .map(|handle| Some(serial::ports::Port { handle, name }))
+            .map_err(serial_fault_to_wit))
+    }
+
+    fn open(
+        &mut self,
+        port: u64,
+        settings: serial::ports::Settings,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        use crate::serial_host::{Parity, Settings, StopBits};
+        let settings = Settings {
+            baud_rate: settings.baud_rate,
+            data_bits: settings.data_bits,
+            parity: match settings.parity {
+                serial::ports::Parity::None => Parity::None,
+                serial::ports::Parity::Odd => Parity::Odd,
+                serial::ports::Parity::Even => Parity::Even,
+            },
+            stop_bits: match settings.stop_bits {
+                serial::ports::StopBits::One => StopBits::One,
+                serial::ports::StopBits::Two => StopBits::Two,
+            },
+            read_timeout_ms: settings.read_timeout_ms,
+        };
+        Ok(self
+            .serial
+            .open(port, &settings)
+            .map_err(serial_fault_to_wit))
+    }
+
+    fn read(
+        &mut self,
+        port: u64,
+        max: u32,
+        timeout_ms: Option<u32>,
+    ) -> wasmtime::Result<Result<Vec<u8>, serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .serial
+            .read(port, max, timeout_ms)
+            .map_err(serial_fault_to_wit))
+    }
+
+    fn write(
+        &mut self,
+        port: u64,
+        bytes: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        Ok(self.serial.write(port, &bytes).map_err(serial_fault_to_wit))
+    }
+
+    fn close(&mut self, port: u64) -> wasmtime::Result<()> {
+        self.serial.close(port);
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn serial_fault_to_wit(fault: crate::serial_host::Fault) -> serial::ports::SerialError {
+    use crate::serial_host::Fault;
+    use serial::ports::SerialError;
+    match fault {
+        Fault::Unavailable(words) => SerialError::Unavailable(words),
+        Fault::UnknownHandle => SerialError::UnknownHandle,
+        Fault::NotOpen => SerialError::NotOpen,
+        Fault::BadSettings(words) => SerialError::BadSettings(words),
+        Fault::Busy(words) => SerialError::Busy(words),
+        Fault::Disconnected(words) => SerialError::Disconnected(words),
+        Fault::TooMany(words) => SerialError::TooMany(words),
+        Fault::Failed(words) => SerialError::Failed(words),
+    }
+}
+
+/// What a phone or a browser tab says to every `krate:serial` call.
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const SERIAL_ON_A_COMPUTER: &str =
+    "Serial devices work in Krate on a computer (macOS, Windows, Linux), not here.";
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+impl serial::ports::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        _title: String,
+    ) -> wasmtime::Result<Result<Option<serial::ports::Port>, serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn open(
+        &mut self,
+        _port: u64,
+        _settings: serial::ports::Settings,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn read(
+        &mut self,
+        _port: u64,
+        _max: u32,
+        _timeout_ms: Option<u32>,
+    ) -> wasmtime::Result<Result<Vec<u8>, serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn write(
+        &mut self,
+        _port: u64,
+        _bytes: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn close(&mut self, _port: u64) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn serial_not_here() -> serial::ports::SerialError {
+    serial::ports::SerialError::Unavailable(SERIAL_ON_A_COMPUTER.to_string())
 }
 
 impl random::bytes::Host for Phase2Host<'_> {
