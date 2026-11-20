@@ -2145,9 +2145,127 @@ pub mod locale {
         format::format_number(value, style, loc)
     }
 
+    /// Minutes east of UTC in the person's own timezone at `millis` (Unix
+    /// epoch milliseconds), daylight saving included: 60 in Zurich in
+    /// January, 120 in July, -300 in New York in January, 330 in India.
+    /// Needs `locale.info` (granted by default).
+    pub fn utc_offset(millis: u64) -> i32 {
+        info::utc_offset(millis)
+    }
+
+    /// A moment in the person's own time, as plain numbers (IC-991).
+    ///
+    /// Use it for anything a person reads as a date or a time of day:
+    /// "today", streaks, daily resets, schedules, reminders, calendars. The
+    /// UTC day (`millis / 86_400_000`) is the wrong day for most of the
+    /// world for part of every day.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct LocalTime {
+        /// Calendar year, e.g. 2026.
+        pub year: i32,
+        /// 1 = January ... 12 = December.
+        pub month: u8,
+        /// Day of the month, 1 to 31.
+        pub day: u8,
+        /// 0 to 23.
+        pub hour: u8,
+        /// 0 to 59.
+        pub minute: u8,
+        /// 0 to 59.
+        pub second: u8,
+        /// ISO weekday: 1 = Monday ... 7 = Sunday.
+        pub weekday: u8,
+        /// Minutes east of UTC at this moment (what `utc_offset` answered).
+        pub offset_minutes: i32,
+        /// The local day as a number: days since 1970-01-01 in the person's
+        /// time. Equal numbers are the same day; one apart are consecutive
+        /// days -- store it for "done today" and streaks.
+        pub day_number: i64,
+    }
+
+    impl LocalTime {
+        /// `millis` seen at `offset_minutes` east of UTC. Pure arithmetic --
+        /// no host call -- so it is also how to show a time in a zone other
+        /// than the person's when its offset is known.
+        pub fn at_offset(millis: u64, offset_minutes: i32) -> Self {
+            let local_ms = i128::from(millis) + i128::from(offset_minutes) * 60_000;
+            let secs = local_ms.div_euclid(1_000);
+            let day_number = secs.div_euclid(86_400) as i64;
+            let in_day = secs.rem_euclid(86_400) as u32;
+            let (year, month, day) = date_of_day(day_number);
+            LocalTime {
+                year,
+                month,
+                day,
+                hour: (in_day / 3_600) as u8,
+                minute: (in_day / 60 % 60) as u8,
+                second: (in_day % 60) as u8,
+                weekday: weekday_of_day(day_number),
+                offset_minutes,
+                day_number,
+            }
+        }
+    }
+
+    /// `millis` in the person's own time. Needs `locale.info`.
+    pub fn local_time(millis: u64) -> LocalTime {
+        LocalTime::at_offset(millis, utc_offset(millis))
+    }
+
+    /// Now, in the person's own time. Needs `time.clock` and `locale.info`.
+    pub fn local_now() -> LocalTime {
+        local_time(crate::time::now_millis())
+    }
+
+    /// The person's local day number for `millis` (see
+    /// [`LocalTime::day_number`]). Needs `locale.info`.
+    pub fn day_number(millis: u64) -> i64 {
+        local_time(millis).day_number
+    }
+
+    /// Today's local day number: store it with whatever was done today, and
+    /// a different number on the next open means a new day. Needs
+    /// `time.clock` and `locale.info`.
+    pub fn today() -> i64 {
+        local_now().day_number
+    }
+
+    /// The calendar date `(year, month, day)` of a local day number.
+    pub fn date_of_day(day_number: i64) -> (i32, u8, u8) {
+        // Howard Hinnant's civil_from_days.
+        let z = day_number + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z.rem_euclid(146_097);
+        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = (doy - (153 * mp + 2) / 5 + 1) as u8;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
+        let year = (yoe + era * 400 + i64::from(month <= 2)) as i32;
+        (year, month, day)
+    }
+
+    /// The local day number of a calendar date -- the inverse of
+    /// [`date_of_day`], for a date the person picked or typed.
+    pub fn day_of_date(year: i32, month: u8, day: u8) -> i64 {
+        let y = i64::from(year) - i64::from(month <= 2);
+        let era = y.div_euclid(400);
+        let yoe = y.rem_euclid(400);
+        let m = i64::from(month);
+        let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + i64::from(day) - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146_097 + doe - 719_468
+    }
+
+    /// ISO weekday of a local day number: 1 = Monday ... 7 = Sunday.
+    pub fn weekday_of_day(day_number: i64) -> u8 {
+        // 1970-01-01 was a Thursday (4).
+        ((day_number + 3).rem_euclid(7) + 1) as u8
+    }
+
     /// Locale and timezone discovery.
     pub mod info {
-        pub use crate::bindings::krate::locale::info::{current, timezone};
+        pub use crate::bindings::krate::locale::info::{current, timezone, utc_offset};
     }
 
     /// Date and number formatting.
@@ -2172,6 +2290,73 @@ mod tests {
         assert!(matches!(mode, fs::OpenMode::Read));
         assert!(matches!(method, net::HttpMethod::Get));
         assert!(matches!(date_style, locale::DateStyle::Short));
+    }
+
+    /// IC-991: the local day comes from the offset, not the UTC day. 23:30
+    /// UTC on Wednesday 14 January 2026 is already Thursday the 15th in
+    /// Zurich (+60) and still the 14th in New York (-300).
+    #[test]
+    fn local_time_is_the_persons_day_not_the_utc_day() {
+        let late = 1_768_433_400_000_u64; // 2026-01-14 23:30:00 UTC
+        let utc = locale::LocalTime::at_offset(late, 0);
+        assert_eq!((utc.year, utc.month, utc.day), (2026, 1, 14));
+        assert_eq!((utc.hour, utc.minute, utc.weekday), (23, 30, 3));
+
+        let zurich = locale::LocalTime::at_offset(late, 60);
+        assert_eq!((zurich.year, zurich.month, zurich.day), (2026, 1, 15));
+        assert_eq!((zurich.hour, zurich.minute, zurich.second), (0, 30, 0));
+        assert_eq!(zurich.weekday, 4, "Thursday");
+        assert_eq!(zurich.day_number, utc.day_number + 1);
+        assert_eq!(zurich.offset_minutes, 60);
+
+        let new_york = locale::LocalTime::at_offset(late, -300);
+        assert_eq!((new_york.day, new_york.hour), (14, 18));
+        assert_eq!(new_york.day_number, utc.day_number);
+
+        // Half-hour zone, and the day before the epoch.
+        let india = locale::LocalTime::at_offset(0, 330);
+        assert_eq!((india.year, india.month, india.day), (1970, 1, 1));
+        assert_eq!((india.hour, india.minute), (5, 30));
+        let hawaii = locale::LocalTime::at_offset(0, -600);
+        assert_eq!((hawaii.year, hawaii.month, hawaii.day), (1969, 12, 31));
+        assert_eq!((hawaii.day_number, hawaii.weekday), (-1, 3));
+    }
+
+    /// Day numbers and dates round-trip across leap days, month ends and
+    /// centuries, and consecutive days are one apart -- what a streak needs.
+    #[test]
+    fn day_numbers_and_dates_round_trip() {
+        assert_eq!(locale::day_of_date(1970, 1, 1), 0);
+        assert_eq!(locale::date_of_day(0), (1970, 1, 1));
+        assert_eq!(
+            locale::day_of_date(2000, 2, 29) + 1,
+            locale::day_of_date(2000, 3, 1)
+        );
+        assert_eq!(
+            locale::day_of_date(2026, 12, 31) + 1,
+            locale::day_of_date(2027, 1, 1)
+        );
+        assert_eq!(
+            locale::date_of_day(locale::day_of_date(2100, 2, 28) + 1),
+            (2100, 3, 1)
+        );
+        for day in -800_000..800_000_i64 {
+            if day % 997 != 0 {
+                continue;
+            }
+            let (y, m, d) = locale::date_of_day(day);
+            assert_eq!(locale::day_of_date(y, m, d), day, "{y}-{m}-{d}");
+        }
+        assert_eq!(
+            locale::weekday_of_day(locale::day_of_date(2026, 11, 21)),
+            6,
+            "Saturday"
+        );
+        assert_eq!(
+            locale::weekday_of_day(locale::day_of_date(2026, 11, 23)),
+            1,
+            "Monday"
+        );
     }
 
     #[test]

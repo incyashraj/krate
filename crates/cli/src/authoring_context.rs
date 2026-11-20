@@ -249,8 +249,10 @@ capability. Believe this table over your instinct:
 - **Live network fetch IS real.** Declare `net.http`. `net::begin` /
   `net::poll` from the SDK, in a CLI app and a GUI app alike.
   A currency converter fetching live rates is a normal Krate app.
-- **The real clock IS real.** `time.clock` gives epoch milliseconds; the
-  day number is `epoch_ms / 86_400_000`.
+- **The real clock IS real, in the person's own time zone.** `time.clock`
+  gives epoch milliseconds; `krate::locale::today()` is the local day
+  number and `krate::locale::local_now()` the local date and time. Never
+  `epoch_ms / 86_400_000` for a day a person sees -- that is the UTC day.
 - **The microphone IS real** (`audio.capture`), **the camera IS real**
   (`camera.capture`), **speech-to-text IS real** (`speech`).
 - **Remembering things IS real.** `store.kv` / `store.sql` persist across
@@ -705,8 +707,18 @@ keys; Nova takes the finger too.\n\n\
 `time.clock` gives wall-clock time (milliseconds since the Unix epoch) and \
 it IS granted -- do not talk yourself out of it. \"Show today's date\", \
 \"reset the ticks each morning\", \"how long since X\" are all one pattern: \
-derive a day number `epoch_ms / 86_400_000`, store it with the data \
-(`store.kv`), and on load compare -- a new day means reset before drawing. \
+take the person's LOCAL day number `krate::locale::today()` (needs \
+`time.clock` and `locale.info`), store it with the data (`store.kv`), and \
+on load compare -- a new day means reset before drawing. Consecutive days \
+are one apart, so a streak is a run of numbers. \
+`krate::locale::local_now()` returns `LocalTime { year: i32, month: u8, \
+day: u8, hour: u8, minute: u8, second: u8, weekday: u8 (1 = Monday), \
+offset_minutes: i32, day_number: i64 }`; \
+`local_time(ms)` and `day_number(ms)` do the same for a stored time, and \
+`date_of_day(n)` turns a day number back into (year, month, day). Never \
+divide epoch milliseconds by 86_400_000 for a day a person sees: that is \
+the UTC day, and it rolls over in the middle of the evening in America \
+and the morning in Asia (K-1300). \
 No timers, no midnight callback, no background work: the reset happens \
 whenever the app next opens, which is exactly what a person expects. (A \
 generated app once argued this was impossible mid-build, then used the \

@@ -435,6 +435,14 @@ export function buildImports(ctx) {
     'krate:locale/info': {
       current: () => { need('locale.info', 'reading your language'); return { bcp47: navigator.language || 'en-US' }; },
       timezone: () => { need('locale.info', 'reading your time zone'); return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; },
+      // Minutes east of UTC in the zone `timezone` names, at that instant,
+      // daylight saving included (IC-991). getTimezoneOffset answers in the
+      // browser's own zone with the opposite sign; `|| 0` keeps a -0 out.
+      utcOffset(millis) {
+        need('locale.info', 'reading your time zone');
+        const offset = -new Date(Number(millis)).getTimezoneOffset();
+        return Number.isFinite(offset) ? (offset || 0) : 0;
+      },
     },
     'krate:locale/format': {
       formatDate(millis, tz, style, loc) {

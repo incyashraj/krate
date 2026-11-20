@@ -113,6 +113,8 @@ declare module "krate:locale/info" {
 
   export function current(): LocaleId;
   export function timezone(): string;
+  /** Minutes east of UTC in the person's timezone at `millis`, daylight saving included. */
+  export function utcOffset(millis: bigint): number;
 }
 
 declare module "krate:locale/format" {

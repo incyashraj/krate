@@ -385,9 +385,17 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 ### `locale`
 
 - `locale::current() -> LocaleId`
+- `locale::date_of_day(day_number: i64) -> (i32, u8, u8)`
+- `locale::day_number(millis: u64) -> i64`
+- `locale::day_of_date(year: i32, month: u8, day: u8) -> i64`
 - `locale::format_date(millis: u64, tz: &str, style: DateStyle, loc: &LocaleId) -> String`
 - `locale::format_number(value: f64, style: NumberStyle, loc: &LocaleId) -> String`
+- `locale::local_now() -> LocalTime`
+- `locale::local_time(millis: u64) -> LocalTime`
 - `locale::timezone() -> String`
+- `locale::today() -> i64`
+- `locale::utc_offset(millis: u64) -> i32`
+- `locale::weekday_of_day(day_number: i64) -> u8`
 
 ### `mem`
 
@@ -867,6 +875,7 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 
 - `info::current: func() -> locale-id`
 - `info::timezone: func() -> string`
+- `info::utc-offset: func(millis: u64) -> s32`
 - `format::format-date: func( millis: u64, tz: string, style: date-style, loc: locale-id, ) -> string`
 - `format::format-number: func( value: f64, style: number-style, loc: locale-id, ) -> string`
 

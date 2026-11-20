@@ -117,8 +117,9 @@ png = "0.18.1"
 miniz_oxide = "0.8.9"
 # vector-text so a headless screenshot renders with the same antialiased vello
 # text the Windows and Linux windows use -- a screenshot has to look like the
-# real thing to be worth taking.
-krate-adapter-common = { path = "../adapter-common", features = ["vector-text"] }
+# real thing to be worth taking. tzdb: the person's local time comes from real
+# time zone data, not an offset parsed from the zone's name (IC-991).
+krate-adapter-common = { path = "../adapter-common", features = ["vector-text", "tzdb"] }
 krate-layout = { path = "../layout" }
 # The tree-to-widgets step, shared with the browser Player (IC-956).
 krate-lowering = { path = "../lowering" }

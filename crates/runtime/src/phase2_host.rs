@@ -2771,6 +2771,12 @@ impl locale::info::Host for Phase2Host<'_> {
             .timezone()
             .map_err(bridge::dispatch_error_to_trap)
     }
+
+    fn utc_offset(&mut self, millis: u64) -> wasmtime::Result<i32> {
+        self.dispatcher()
+            .utc_offset(millis)
+            .map_err(bridge::dispatch_error_to_trap)
+    }
 }
 
 impl locale::format::Host for Phase2Host<'_> {
