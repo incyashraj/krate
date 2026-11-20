@@ -4610,6 +4610,12 @@ pub mod krate {
         /// one. A listener for this computer only needs the declaration; one other
         /// devices on the network can open needs the person's yes as well. Every
         /// listener closes when the run ends.
+        ///
+        /// A listener for the network can say where it is reached and announce
+        /// itself (IC-990): `tcp-addresses` gives this computer's addresses on the
+        /// local network with the port, ready to show the person, and `tcp-announce`
+        /// lets devices on the network find it by the app's name (DNS-SD over
+        /// multicast DNS, as printers are found), until the listener closes.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod sockets {
             #[used]
@@ -4821,6 +4827,56 @@ pub mod krate {
                 }
             }
             impl std::error::Error for ListenError {}
+            /// One address other devices on the local network reach a listener at
+            /// (IC-990).
+            #[derive(Clone)]
+            pub struct ListenAddress {
+                /// This computer's address on the local network, as an IP:
+                /// "192.168.1.20". Always a private address, never a public one.
+                pub ip: _rt::String,
+                /// The listener's port.
+                pub port: u16,
+                /// What to open in a browser on another device when the app serves web
+                /// pages: "http://192.168.1.20:8080/".
+                pub url: _rt::String,
+            }
+            impl ::core::fmt::Debug for ListenAddress {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("ListenAddress")
+                        .field("ip", &self.ip)
+                        .field("port", &self.port)
+                        .field("url", &self.url)
+                        .finish()
+                }
+            }
+            /// A listener announced on the local network (IC-990).
+            #[derive(Clone)]
+            pub struct Announcement {
+                /// The name devices on the network list it under: the app's own name,
+                /// "Shop Floor".
+                pub name: _rt::String,
+                /// The name devices reach this computer by for it: "shop-floor.local".
+                pub host: _rt::String,
+                /// What to open in a browser on another device when the app serves web
+                /// pages: "http://shop-floor.local:8080/". Computers and iPhones open
+                /// it; some Android browsers do not, so show `tcp-addresses` too.
+                pub url: _rt::String,
+            }
+            impl ::core::fmt::Debug for Announcement {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Announcement")
+                        .field("name", &self.name)
+                        .field("host", &self.host)
+                        .field("url", &self.url)
+                        .finish()
+                }
+            }
             /// One datagram that arrived on a UDP socket.
             #[derive(Clone)]
             pub struct Datagram {
@@ -6880,6 +6936,449 @@ pub mod krate {
                         _ => _rt::invalid_enum_discriminant(),
                     };
                     result24
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Where other devices on the local network reach a listener (IC-990):
+            /// this computer's private network addresses with the listener's port,
+            /// its main connection first, to show the person. Only for a listener
+            /// opened for `local-network`, which the person allowed; one for this
+            /// computer alone answers `not-allowed`. Never a public address, never a
+            /// hardware (MAC) address. Empty when the computer is on no local network
+            /// (offline, or only on a public address). Never blocks.
+            pub fn tcp_addresses(
+                listener: u64,
+            ) -> Result<_rt::Vec<ListenAddress>, ListenError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/sockets@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "tcp-addresses"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&listener), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result33 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base12 = l3;
+                                let len12 = l4;
+                                let mut result12 = _rt::Vec::with_capacity(len12);
+                                for i in 0..len12 {
+                                    let base = base12
+                                        .add(i * (5 * ::core::mem::size_of::<*const u8>()));
+                                    let e12 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
+                                        let l8 = i32::from(
+                                            *base
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<u16>(),
+                                        );
+                                        let l9 = *base
+                                            .add(3 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<*mut u8>();
+                                        let l10 = *base
+                                            .add(4 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len11 = l10;
+                                        let bytes11 = _rt::Vec::from_raw_parts(
+                                            l9.cast(),
+                                            len11,
+                                            len11,
+                                        );
+                                        ListenAddress {
+                                            ip: _rt::string_lift(bytes7),
+                                            port: l8 as u16,
+                                            url: _rt::string_lift(bytes11),
+                                        }
+                                    };
+                                    result12.push(e12);
+                                }
+                                _rt::cabi_dealloc(
+                                    base12,
+                                    len12 * (5 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+                                result12
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l13 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v32 = match l13 {
+                                    0 => {
+                                        let e32 = {
+                                            let l14 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        ListenError::NotAllowed(e32)
+                                    }
+                                    1 => {
+                                        let e32 = {
+                                            let l17 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        ListenError::InUse(e32)
+                                    }
+                                    2 => {
+                                        let e32 = {
+                                            let l20 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        ListenError::BadPort(e32)
+                                    }
+                                    3 => {
+                                        let e32 = {
+                                            let l23 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        ListenError::TooMany(e32)
+                                    }
+                                    4 => {
+                                        let e32 = {
+                                            let l26 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 = _rt::Vec::from_raw_parts(
+                                                l26.cast(),
+                                                len28,
+                                                len28,
+                                            );
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        ListenError::Unavailable(e32)
+                                    }
+                                    5 => ListenError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e32 = {
+                                            let l29 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l30 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len31 = l30;
+                                            let bytes31 = _rt::Vec::from_raw_parts(
+                                                l29.cast(),
+                                                len31,
+                                                len31,
+                                            );
+                                            _rt::string_lift(bytes31)
+                                        };
+                                        ListenError::Failed(e32)
+                                    }
+                                };
+                                v32
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result33
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Let devices on the local network find a listener by name (IC-990):
+            /// DNS-SD over multicast DNS (Bonjour, Avahi), under the app's own name,
+            /// as `service-type` -- `_http._tcp` for web pages, or the app's own
+            /// (`_shopfloor._tcp`: 1 to 15 lowercase letters, digits and hyphens).
+            /// The same rule as `tcp-addresses`: a `local-network` listener only, so
+            /// the person's yes for the port covers it. Announcing again replaces the
+            /// announcement. Withdrawn when the listener closes or the app ends.
+            /// Returns at once; devices see it within a few seconds.
+            pub fn tcp_announce(
+                listener: u64,
+                service_type: &str,
+            ) -> Result<Announcement, ListenError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 7 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 7
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = service_type;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/sockets@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "tcp-announce"]
+                        fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(_rt::as_i64(&listener), ptr0.cast_mut(), len0, ptr1)
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result33 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+                                let bytes6 = _rt::Vec::from_raw_parts(
+                                    l4.cast(),
+                                    len6,
+                                    len6,
+                                );
+                                let l7 = *ptr1
+                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l8 = *ptr1
+                                    .add(4 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len9 = l8;
+                                let bytes9 = _rt::Vec::from_raw_parts(
+                                    l7.cast(),
+                                    len9,
+                                    len9,
+                                );
+                                let l10 = *ptr1
+                                    .add(5 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l11 = *ptr1
+                                    .add(6 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len12 = l11;
+                                let bytes12 = _rt::Vec::from_raw_parts(
+                                    l10.cast(),
+                                    len12,
+                                    len12,
+                                );
+                                Announcement {
+                                    name: _rt::string_lift(bytes6),
+                                    host: _rt::string_lift(bytes9),
+                                    url: _rt::string_lift(bytes12),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l13 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v32 = match l13 {
+                                    0 => {
+                                        let e32 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        ListenError::NotAllowed(e32)
+                                    }
+                                    1 => {
+                                        let e32 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        ListenError::InUse(e32)
+                                    }
+                                    2 => {
+                                        let e32 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        ListenError::BadPort(e32)
+                                    }
+                                    3 => {
+                                        let e32 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        ListenError::TooMany(e32)
+                                    }
+                                    4 => {
+                                        let e32 = {
+                                            let l26 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 = _rt::Vec::from_raw_parts(
+                                                l26.cast(),
+                                                len28,
+                                                len28,
+                                            );
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        ListenError::Unavailable(e32)
+                                    }
+                                    5 => ListenError::UnknownHandle,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e32 = {
+                                            let l29 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l30 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len31 = l30;
+                                            let bytes31 = _rt::Vec::from_raw_parts(
+                                                l29.cast(),
+                                                len31,
+                                                len31,
+                                            );
+                                            _rt::string_lift(bytes31)
+                                        };
+                                        ListenError::Failed(e32)
+                                    }
+                                };
+                                v32
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result33
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
@@ -16798,8 +17297,8 @@ pub(crate) use __export_cli_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 8734] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa4C\x01A\x02\x01AH\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 8904] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xceD\x01A\x02\x01AH\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -16868,7 +17367,7 @@ l\x01\x10\x03\0\x1bkrate:net/http-client@0.1.0\x05\x14\x01B\x11\x02\x03\x02\x01\
 \x01j\x01w\x01\x01\x01@\x01\x03urls\0\x07\x04\0\x04open\x01\x08\x01j\0\x01\x01\x01\
 @\x02\x06handlew\x07message\x04\0\x09\x04\0\x04send\x01\x0a\x01@\x01\x06handlew\0\
 \x06\x04\0\x04poll\x01\x0b\x01@\x01\x06handlew\x01\0\x04\0\x05close\x01\x0c\x03\0\
-\x12krate:net/ws@0.1.0\x05\x15\x01B5\x02\x03\x02\x01\x12\x04\0\x09net-error\x03\0\
+\x12krate:net/ws@0.1.0\x05\x15\x01B@\x02\x03\x02\x01\x12\x04\0\x09net-error\x03\0\
 \0\x01ps\x01q\x04\x07pending\0\0\x05ready\x01\x02\0\x06failed\x01\x01\0\x0eunkno\
 wn-handle\0\0\x04\0\x0dlookup-status\x03\0\x03\x01q\x04\x07pending\0\0\x09connec\
 ted\x01s\0\x06failed\x01\x01\0\x0eunknown-handle\0\0\x04\0\x0econnect-status\x03\
@@ -16876,135 +17375,139 @@ ted\x01s\0\x06failed\x01\x01\0\x0eunknown-handle\0\0\x04\0\x0econnect-status\x03
 \x01\0\x04\0\x0bread-result\x03\0\x08\x01m\x02\x0dthis-computer\x0dlocal-network\
 \x04\0\x0clisten-scope\x03\0\x0a\x01q\x07\x0bnot-allowed\x01s\0\x06in-use\x01s\0\
 \x08bad-port\x01s\0\x08too-many\x01s\0\x0bunavailable\x01s\0\x0eunknown-handle\0\
-\0\x06failed\x01s\0\x04\0\x0clisten-error\x03\0\x0c\x01r\x03\x04hosts\x04port{\x04\
-data\x07\x04\0\x08datagram\x03\0\x0e\x01j\x01w\x01\x01\x01@\x01\x04hosts\0\x10\x04\
-\0\x06lookup\x01\x11\x01@\x01\x06handlew\0\x04\x04\0\x0bpoll-lookup\x01\x12\x01@\
-\x02\x04hosts\x04port{\0\x10\x04\0\x0btcp-connect\x01\x13\x01@\x01\x06handlew\0\x06\
-\x04\0\x0atcp-status\x01\x14\x01j\x01y\x01\x01\x01@\x02\x06handlew\x05bytes\x07\0\
-\x15\x04\0\x09tcp-write\x01\x16\x01@\x02\x06handlew\x09max-bytesy\0\x09\x04\0\x08\
-tcp-read\x01\x17\x01@\x01\x04ipv6\x7f\0\x10\x04\0\x08udp-bind\x01\x18\x01j\x01{\x01\
-\x01\x01@\x01\x06handlew\0\x19\x04\0\x0eudp-local-port\x01\x1a\x01j\0\x01\x01\x01\
-@\x04\x06handlew\x04hosts\x04port{\x04data\x07\0\x1b\x04\0\x08udp-send\x01\x1c\x01\
-k\x0f\x01@\x01\x06handlew\0\x1d\x04\0\x0budp-receive\x01\x1e\x01j\x01w\x01\x0d\x01\
-@\x02\x04port{\x05scope\x0b\0\x1f\x04\0\x0atcp-listen\x01\x20\x01kw\x01j\x01!\x01\
-\x0d\x01@\x01\x08listenerw\0\"\x04\0\x0atcp-accept\x01#\x01j\x01{\x01\x0d\x01@\x01\
-\x06handlew\0$\x04\0\x0etcp-local-port\x01%\x01@\x01\x06handlew\x01\0\x04\0\x05c\
-lose\x01&\x03\0\x17krate:net/sockets@0.1.0\x05\x16\x01B\x03\x01@\0\0w\x04\0\x0an\
-ow-millis\x01\0\x04\0\x0fmonotonic-nanos\x01\0\x03\0\x16krate:time/clock@0.1.0\x05\
-\x17\x01B\x02\x01@\x01\x06millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x16kra\
-te:time/sleep@0.1.0\x05\x18\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09locale-id\x03\0\
-\0\x01m\x04\x05short\x06medium\x04long\x04full\x04\0\x0adate-style\x03\0\x02\x01\
-m\x03\x07decimal\x07percent\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x18\
-krate:locale/types@0.1.0\x05\x19\x02\x03\0\x0e\x09locale-id\x01B\x08\x02\x03\x02\
-\x01\x1a\x04\0\x09locale-id\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x01@\0\
-\0s\x04\0\x08timezone\x01\x03\x01@\x01\x06millisw\0z\x04\0\x0autc-offset\x01\x04\
-\x03\0\x17krate:locale/info@0.1.0\x05\x1b\x02\x03\0\x0e\x0adate-style\x02\x03\0\x0e\
-\x0cnumber-style\x01B\x0a\x02\x03\x02\x01\x1a\x04\0\x09locale-id\x03\0\0\x02\x03\
-\x02\x01\x1c\x04\0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x1d\x04\0\x0cnumber-s\
-tyle\x03\0\x04\x01@\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bfo\
-rmat-date\x01\x06\x01@\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dformat-\
-number\x01\x07\x03\0\x19krate:locale/format@0.1.0\x05\x1e\x01B\x0a\x01q\x04\x09n\
-ot-found\0\0\x0cinvalid-path\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0eresource\
--error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x04paths\0\x03\x04\0\x04read\x01\
-\x04\x01ps\x01j\x01\x05\x01\x01\x01@\x01\x04paths\0\x06\x04\0\x04list\x01\x07\x03\
-\0\x1ckrate:resources/assets@0.1.0\x05\x1f\x01B\x12\x01q\x04\x06denied\0\0\x0bin\
-valid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0bstore-error\x03\0\0\x01p}\x01\
-k\x02\x01j\x01\x03\x01\x01\x01@\x01\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\
-\x01\x01@\x02\x03keys\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x03keys\0\
-\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x04ke\
-ys\x01\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\x03\0\x14krate:store/kv@0.1.0\x05\
-\x20\x01B\x15\x01p}\x01q\x05\x04null\0\0\x07integer\x01x\0\x04real\x01u\0\x04tex\
-t\x01s\0\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\x01q\x05\x06denied\0\0\x11inva\
-lid-statement\x01s\0\x09forbidden\x01s\0\x09too-large\0\0\x02io\x01s\0\x04\0\x09\
-sql-error\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\x04\0\x03row\x03\0\x06\x01ps\
-\x01p\x07\x01r\x02\x07columns\x08\x04rows\x09\x04\0\x0cquery-result\x03\0\x0a\x01\
-j\x01\x0b\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0c\x04\0\x05query\x01\x0d\
-\x01j\x01w\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0e\x04\0\x07execute\x01\
-\x0f\x01j\0\x01\x04\x01@\x01\x0astatements\x08\0\x10\x04\0\x0btransaction\x01\x11\
-\x03\0\x15krate:store/sql@0.1.0\x05!\x01B\x10\x01q\x04\x06denied\0\0\x0cinvalid-\
-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01k\x02\
-\x01j\x01\x03\x01\x01\x01@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\
-\x01@\x02\x04names\x06secret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04names\0\x06\
-\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\
-\x0b\x03\0\x18krate:store/secret@0.1.0\x05\"\x01B\x1e\x01q\x06\x06denied\0\0\x0a\
-not-joined\0\0\x0dno-such-share\0\0\x0cinvalid-name\0\0\x09too-large\0\0\x02io\x01\
-s\0\x04\0\x0cshared-error\x03\0\0\x01ks\x01j\x01\x02\x01\x01\x01@\0\0\x03\x04\0\x04\
-code\x01\x04\x01j\x01s\x01\x01\x01@\0\0\x05\x04\0\x06create\x01\x06\x01j\0\x01\x01\
-\x01@\x01\x04codes\0\x07\x04\0\x04join\x01\x08\x01@\0\0\x07\x04\0\x05leave\x01\x09\
-\x01p}\x01k\x0a\x01j\x01\x0b\x01\x01\x01@\x01\x03keys\0\x0c\x04\0\x03get\x01\x0d\
-\x01@\x02\x03keys\x05value\x0a\0\x07\x04\0\x03set\x01\x0e\x01@\x01\x03keys\0\x07\
-\x04\0\x06delete\x01\x0f\x01ps\x01j\x01\x10\x01\x01\x01@\0\0\x11\x04\0\x04keys\x01\
-\x12\x01j\x01\x7f\x01\x01\x01@\0\0\x13\x04\0\x04sync\x01\x14\x03\0\x18krate:stor\
-e/shared@0.1.0\x05#\x01B\x10\x01q\x05\x06denied\0\0\x0cnot-a-member\0\0\x0binval\
-id-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0bgroup-error\x03\0\0\x01p}\x01k\
-\x02\x01j\x01\x03\x01\x01\x01@\x02\x05groups\x03keys\0\x04\x04\0\x03get\x01\x05\x01\
-j\0\x01\x01\x01@\x03\x05groups\x03keys\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01\
-@\x02\x05groups\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\
-\x01@\x01\x05groups\0\x0a\x04\0\x04keys\x01\x0b\x03\0\x17krate:store/group@0.1.0\
-\x05$\x01B5\x01p}\x01q\x05\x04null\0\0\x04text\x01s\0\x06number\x01u\0\x07boolea\
-n\x01\x7f\0\x05bytes\x01\0\0\x04\0\x05value\x03\0\x01\x01o\x02s\x02\x01p\x03\x01\
-r\x04\x02ids\x06fields\x04\x0achanged-bys\x0achanged-atw\x04\0\x05entry\x03\0\x05\
-\x01s\x04\0\x06cursor\x03\0\x07\x01p\x06\x01ps\x01r\x04\x07entries\x09\x07remove\
-d\x0a\x04next\x08\x04more\x7f\x04\0\x04page\x03\0\x0b\x01kw\x01r\x04\x06online\x7f\
-\x07changed\x7f\x07pendingy\x0blast-synced\x0d\x04\0\x0async-state\x03\0\x0e\x01\
-m\x04\x06synced\x07syncing\x07offline\x0fwaiting-for-key\x04\0\x04link\x03\0\x10\
-\x01r\x04\x04link\x11\x07pendingy\x0areached-at\x0d\x03orgs\x04\0\x08standing\x03\
-\0\x12\x01r\x03\x04names\x04roles\x03orgs\x04\0\x06member\x03\0\x14\x01r\x02\x06\
-reasons\x07messages\x04\0\x07refusal\x03\0\x16\x01q\x08\x06denied\0\0\x0enot-an-\
-org-app\0\0\x07invalid\x01s\0\x09too-large\0\0\x0aover-quota\0\0\x07refused\x01\x17\
-\0\x0bunsupported\0\0\x02io\x01s\0\x04\0\x09org-error\x03\0\x18\x01j\0\x01\x19\x01\
-@\x03\x0acollections\x02ids\x06fields\x04\0\x1a\x04\0\x03put\x01\x1b\x01k\x06\x01\
-j\x01\x1c\x01\x19\x01@\x02\x0acollections\x02ids\0\x1d\x04\0\x03get\x01\x1e\x01@\
-\x02\x0acollections\x02ids\0\x1a\x04\0\x06delete\x01\x1f\x01k\x08\x01j\x01\x0c\x01\
-\x19\x01@\x02\x0acollections\x05since\x20\0!\x04\0\x07records\x01\"\x01j\x01\x0f\
-\x01\x19\x01@\0\0#\x04\0\x04sync\x01$\x01k\x15\x01j\x01%\x01\x19\x01@\0\0&\x04\0\
-\x03who\x01'\x01p\x15\x01j\x01(\x01\x19\x01@\0\0)\x04\0\x07members\x01*\x01j\x01\
-\x13\x01\x19\x01@\0\0+\x04\0\x06status\x01,\x03\0\x15krate:store/org@0.1.0\x05%\x01\
-B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-range\0\0\x0bunavailable\x01\
-s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\
-\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\
-\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:random/bytes@0.1\
-.0\x05&\x01B$\x01w\x04\0\x0eprocess-handle\x03\0\0\x01q\x07\x0cnot-declared\x01s\
-\0\x09not-found\x01s\0\x11refused-by-person\x01s\0\x0abad-folder\x01s\0\x08too-m\
-any\x01s\0\x0eunknown-handle\0\0\x08platform\x01s\0\x04\0\x0dprocess-error\x03\0\
-\x02\x01kz\x01r\x02\x04code\x04\x06signal\x04\x04\0\x0bexit-status\x03\0\x05\x01\
-p}\x01r\x02\x05bytes\x07\x05ended\x7f\x04\0\x06output\x03\0\x08\x01ps\x01o\x02ss\
-\x01p\x0b\x01j\x01\x01\x01\x03\x01@\x04\x07programs\x04args\x0a\x03cwds\x03env\x0c\
-\0\x0d\x04\0\x05start\x01\x0e\x01@\x03\x03cwds\x04cols{\x04rows{\0\x0d\x04\0\x0d\
-open-terminal\x01\x0f\x01j\0\x01\x03\x01@\x02\x06handle\x01\x05bytes\x07\0\x10\x04\
-\0\x0bwrite-stdin\x01\x11\x01@\x01\x06handle\x01\0\x10\x04\0\x0bclose-stdin\x01\x12\
-\x01j\x01\x09\x01\x03\x01@\x02\x06handle\x01\x03maxy\0\x13\x04\0\x0bread-stdout\x01\
-\x14\x04\0\x0bread-stderr\x01\x14\x01k\x06\x01j\x01\x15\x01\x03\x01@\x02\x06hand\
-le\x01\x0atimeout-msy\0\x16\x04\0\x04wait\x01\x17\x04\0\x04kill\x01\x12\x01@\x03\
-\x06handle\x01\x04cols{\x04rows{\0\x10\x04\0\x06resize\x01\x18\x01@\x01\x06handl\
-e\x01\x01\0\x04\0\x07release\x01\x19\x03\0\x1dkrate:process/processes@0.1.0\x05'\
-\x01B\x1c\x01w\x04\0\x0bport-handle\x03\0\0\x01r\x02\x06handle\x01\x04names\x04\0\
-\x04port\x03\0\x02\x01m\x03\x04none\x03odd\x04even\x04\0\x06parity\x03\0\x04\x01\
-m\x02\x03one\x03two\x04\0\x09stop-bits\x03\0\x06\x01r\x05\x09baud-ratey\x09data-\
-bits}\x06parity\x05\x09stop-bits\x07\x0fread-timeout-msy\x04\0\x08settings\x03\0\
-\x08\x01q\x09\x0bnot-allowed\x01s\0\x0bunavailable\x01s\0\x0eunknown-handle\0\0\x08\
-not-open\0\0\x0cbad-settings\x01s\0\x04busy\x01s\0\x0cdisconnected\x01s\0\x08too\
--many\x01s\0\x06failed\x01s\0\x04\0\x0cserial-error\x03\0\x0a\x01k\x03\x01j\x01\x0c\
-\x01\x0b\x01@\x01\x05titles\0\x0d\x04\0\x04pick\x01\x0e\x01j\0\x01\x0b\x01@\x02\x04\
-port\x01\x08settings\x09\0\x0f\x04\0\x04open\x01\x10\x01ky\x01p}\x01j\x01\x12\x01\
-\x0b\x01@\x03\x04port\x01\x03maxy\x0atimeout-ms\x11\0\x13\x04\0\x04read\x01\x14\x01\
-@\x02\x04port\x01\x05bytes\x12\0\x0f\x04\0\x05write\x01\x15\x01@\x01\x04port\x01\
-\x01\0\x04\0\x05close\x01\x16\x03\0\x18krate:serial/ports@0.1.0\x05(\x01B\x1c\x01\
-w\x04\0\x0eprinter-handle\x03\0\0\x01r\x02\x06handle\x01\x04names\x04\0\x07print\
-er\x03\0\x02\x01m\x02\x03pdf\x03png\x04\0\x0fdocument-format\x03\0\x04\x01r\x02\x05\
-widthy\x06heighty\x04\0\x08paper-mm\x03\0\x06\x01q\x07\x0fprinter-default\0\0\x02\
-a4\0\0\x02a5\0\0\x02a6\0\0\x06letter\0\0\x05legal\0\0\x06custom\x01\x07\0\x04\0\x0a\
-paper-size\x03\0\x08\x01p}\x01r\x05\x06format\x05\x05bytes\x0a\x06copiesy\x05pap\
-er\x09\x05titles\x04\0\x08document\x03\0\x0b\x01q\x03\x06queued\x01s\0\x06failed\
-\x01s\0\x04gone\x01s\0\x04\0\x0dprint-outcome\x03\0\x0d\x01q\x04\x0bnot-allowed\x01\
-s\0\x0bunavailable\x01s\0\x0eunknown-handle\0\0\x07bad-job\x01s\0\x04\0\x0bprint\
--error\x03\0\x0f\x01k\x03\x01j\x01\x11\x01\x10\x01@\0\0\x12\x04\0\x0aremembered\x01\
-\x13\x01@\x01\x05titles\0\x12\x04\0\x04pick\x01\x14\x01j\x01\x0e\x01\x10\x01@\x02\
-\x07printer\x01\x08document\x0c\0\x15\x04\0\x0eprint-document\x01\x16\x01@\x04\x07\
-printer\x01\x05bytes\x0a\x06copiesy\x05titles\0\x15\x04\0\x09print-raw\x01\x17\x03\
-\0\x1akrate:print/printers@0.1.0\x05)\x01@\0\0z\x04\0\x03run\x01*\x04\0\x13krate\
-:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocess\
-ed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\0\x06failed\x01s\0\x04\0\x0clisten-error\x03\0\x0c\x01r\x03\x02ips\x04port{\x03\
+urls\x04\0\x0elisten-address\x03\0\x0e\x01r\x03\x04names\x04hosts\x03urls\x04\0\x0c\
+announcement\x03\0\x10\x01r\x03\x04hosts\x04port{\x04data\x07\x04\0\x08datagram\x03\
+\0\x12\x01j\x01w\x01\x01\x01@\x01\x04hosts\0\x14\x04\0\x06lookup\x01\x15\x01@\x01\
+\x06handlew\0\x04\x04\0\x0bpoll-lookup\x01\x16\x01@\x02\x04hosts\x04port{\0\x14\x04\
+\0\x0btcp-connect\x01\x17\x01@\x01\x06handlew\0\x06\x04\0\x0atcp-status\x01\x18\x01\
+j\x01y\x01\x01\x01@\x02\x06handlew\x05bytes\x07\0\x19\x04\0\x09tcp-write\x01\x1a\
+\x01@\x02\x06handlew\x09max-bytesy\0\x09\x04\0\x08tcp-read\x01\x1b\x01@\x01\x04i\
+pv6\x7f\0\x14\x04\0\x08udp-bind\x01\x1c\x01j\x01{\x01\x01\x01@\x01\x06handlew\0\x1d\
+\x04\0\x0eudp-local-port\x01\x1e\x01j\0\x01\x01\x01@\x04\x06handlew\x04hosts\x04\
+port{\x04data\x07\0\x1f\x04\0\x08udp-send\x01\x20\x01k\x13\x01@\x01\x06handlew\0\
+!\x04\0\x0budp-receive\x01\"\x01j\x01w\x01\x0d\x01@\x02\x04port{\x05scope\x0b\0#\
+\x04\0\x0atcp-listen\x01$\x01kw\x01j\x01%\x01\x0d\x01@\x01\x08listenerw\0&\x04\0\
+\x0atcp-accept\x01'\x01j\x01{\x01\x0d\x01@\x01\x06handlew\0(\x04\0\x0etcp-local-\
+port\x01)\x01p\x0f\x01j\x01*\x01\x0d\x01@\x01\x08listenerw\0+\x04\0\x0dtcp-addre\
+sses\x01,\x01j\x01\x11\x01\x0d\x01@\x02\x08listenerw\x0cservice-types\0-\x04\0\x0c\
+tcp-announce\x01.\x01@\x01\x06handlew\x01\0\x04\0\x05close\x01/\x03\0\x17krate:n\
+et/sockets@0.1.0\x05\x16\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\x01\0\x04\0\x0fm\
+onotonic-nanos\x01\0\x03\0\x16krate:time/clock@0.1.0\x05\x17\x01B\x02\x01@\x01\x06\
+millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x16krate:time/sleep@0.1.0\x05\x18\
+\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09locale-id\x03\0\0\x01m\x04\x05short\x06med\
+ium\x04long\x04full\x04\0\x0adate-style\x03\0\x02\x01m\x03\x07decimal\x07percent\
+\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x18krate:locale/types@0.1.0\x05\
+\x19\x02\x03\0\x0e\x09locale-id\x01B\x08\x02\x03\x02\x01\x1a\x04\0\x09locale-id\x03\
+\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x01@\0\0s\x04\0\x08timezone\x01\x03\x01\
+@\x01\x06millisw\0z\x04\0\x0autc-offset\x01\x04\x03\0\x17krate:locale/info@0.1.0\
+\x05\x1b\x02\x03\0\x0e\x0adate-style\x02\x03\0\x0e\x0cnumber-style\x01B\x0a\x02\x03\
+\x02\x01\x1a\x04\0\x09locale-id\x03\0\0\x02\x03\x02\x01\x1c\x04\0\x0adate-style\x03\
+\0\x02\x02\x03\x02\x01\x1d\x04\0\x0cnumber-style\x03\0\x04\x01@\x04\x06millisw\x02\
+tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01@\x03\x05valueu\x05\
+style\x05\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19krate:locale/for\
+mat@0.1.0\x05\x1e\x01B\x0a\x01q\x04\x09not-found\0\0\x0cinvalid-path\0\0\x09too-\
+large\0\0\x02io\x01s\0\x04\0\x0eresource-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\
+\x01@\x01\x04paths\0\x03\x04\0\x04read\x01\x04\x01ps\x01j\x01\x05\x01\x01\x01@\x01\
+\x04paths\0\x06\x04\0\x04list\x01\x07\x03\0\x1ckrate:resources/assets@0.1.0\x05\x1f\
+\x01B\x12\x01q\x04\x06denied\0\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\
+\x04\0\x0bstore-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x03ke\
+ys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x03keys\x05value\x02\0\x06\
+\x04\0\x03set\x01\x07\x01@\x01\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\
+\x09\x01\x01\x01@\0\0\x0a\x04\0\x04keys\x01\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\
+\x03\0\x14krate:store/kv@0.1.0\x05\x20\x01B\x15\x01p}\x01q\x05\x04null\0\0\x07in\
+teger\x01x\0\x04real\x01u\0\x04text\x01s\0\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\
+\x01q\x05\x06denied\0\0\x11invalid-statement\x01s\0\x09forbidden\x01s\0\x09too-l\
+arge\0\0\x02io\x01s\0\x04\0\x09sql-error\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\
+\x04\0\x03row\x03\0\x06\x01ps\x01p\x07\x01r\x02\x07columns\x08\x04rows\x09\x04\0\
+\x0cquery-result\x03\0\x0a\x01j\x01\x0b\x01\x04\x01@\x02\x09statements\x06params\
+\x05\0\x0c\x04\0\x05query\x01\x0d\x01j\x01w\x01\x04\x01@\x02\x09statements\x06pa\
+rams\x05\0\x0e\x04\0\x07execute\x01\x0f\x01j\0\x01\x04\x01@\x01\x0astatements\x08\
+\0\x10\x04\0\x0btransaction\x01\x11\x03\0\x15krate:store/sql@0.1.0\x05!\x01B\x10\
+\x01q\x04\x06denied\0\0\x0cinvalid-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0c\
+secret-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x04names\0\x04\
+\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04names\x06secret\x02\0\x06\x04\0\
+\x03set\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\
+\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\x18krate:store/secret@0.1.0\x05\
+\"\x01B\x1e\x01q\x06\x06denied\0\0\x0anot-joined\0\0\x0dno-such-share\0\0\x0cinv\
+alid-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0cshared-error\x03\0\0\x01ks\x01\
+j\x01\x02\x01\x01\x01@\0\0\x03\x04\0\x04code\x01\x04\x01j\x01s\x01\x01\x01@\0\0\x05\
+\x04\0\x06create\x01\x06\x01j\0\x01\x01\x01@\x01\x04codes\0\x07\x04\0\x04join\x01\
+\x08\x01@\0\0\x07\x04\0\x05leave\x01\x09\x01p}\x01k\x0a\x01j\x01\x0b\x01\x01\x01\
+@\x01\x03keys\0\x0c\x04\0\x03get\x01\x0d\x01@\x02\x03keys\x05value\x0a\0\x07\x04\
+\0\x03set\x01\x0e\x01@\x01\x03keys\0\x07\x04\0\x06delete\x01\x0f\x01ps\x01j\x01\x10\
+\x01\x01\x01@\0\0\x11\x04\0\x04keys\x01\x12\x01j\x01\x7f\x01\x01\x01@\0\0\x13\x04\
+\0\x04sync\x01\x14\x03\0\x18krate:store/shared@0.1.0\x05#\x01B\x10\x01q\x05\x06d\
+enied\0\0\x0cnot-a-member\0\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\
+\0\x0bgroup-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x02\x05groups\
+\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x03\x05groups\x03keys\x05\
+value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x02\x05groups\x03keys\0\x06\x04\0\x06d\
+elete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\x01\x05groups\0\x0a\x04\0\x04keys\x01\
+\x0b\x03\0\x17krate:store/group@0.1.0\x05$\x01B5\x01p}\x01q\x05\x04null\0\0\x04t\
+ext\x01s\0\x06number\x01u\0\x07boolean\x01\x7f\0\x05bytes\x01\0\0\x04\0\x05value\
+\x03\0\x01\x01o\x02s\x02\x01p\x03\x01r\x04\x02ids\x06fields\x04\x0achanged-bys\x0a\
+changed-atw\x04\0\x05entry\x03\0\x05\x01s\x04\0\x06cursor\x03\0\x07\x01p\x06\x01\
+ps\x01r\x04\x07entries\x09\x07removed\x0a\x04next\x08\x04more\x7f\x04\0\x04page\x03\
+\0\x0b\x01kw\x01r\x04\x06online\x7f\x07changed\x7f\x07pendingy\x0blast-synced\x0d\
+\x04\0\x0async-state\x03\0\x0e\x01m\x04\x06synced\x07syncing\x07offline\x0fwaiti\
+ng-for-key\x04\0\x04link\x03\0\x10\x01r\x04\x04link\x11\x07pendingy\x0areached-a\
+t\x0d\x03orgs\x04\0\x08standing\x03\0\x12\x01r\x03\x04names\x04roles\x03orgs\x04\
+\0\x06member\x03\0\x14\x01r\x02\x06reasons\x07messages\x04\0\x07refusal\x03\0\x16\
+\x01q\x08\x06denied\0\0\x0enot-an-org-app\0\0\x07invalid\x01s\0\x09too-large\0\0\
+\x0aover-quota\0\0\x07refused\x01\x17\0\x0bunsupported\0\0\x02io\x01s\0\x04\0\x09\
+org-error\x03\0\x18\x01j\0\x01\x19\x01@\x03\x0acollections\x02ids\x06fields\x04\0\
+\x1a\x04\0\x03put\x01\x1b\x01k\x06\x01j\x01\x1c\x01\x19\x01@\x02\x0acollections\x02\
+ids\0\x1d\x04\0\x03get\x01\x1e\x01@\x02\x0acollections\x02ids\0\x1a\x04\0\x06del\
+ete\x01\x1f\x01k\x08\x01j\x01\x0c\x01\x19\x01@\x02\x0acollections\x05since\x20\0\
+!\x04\0\x07records\x01\"\x01j\x01\x0f\x01\x19\x01@\0\0#\x04\0\x04sync\x01$\x01k\x15\
+\x01j\x01%\x01\x19\x01@\0\0&\x04\0\x03who\x01'\x01p\x15\x01j\x01(\x01\x19\x01@\0\
+\0)\x04\0\x07members\x01*\x01j\x01\x13\x01\x19\x01@\0\0+\x04\0\x06status\x01,\x03\
+\0\x15krate:store/org@0.1.0\x05%\x01B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\
+\x0bempty-range\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01\
+j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\
+\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\
+\x07\x03\0\x18krate:random/bytes@0.1.0\x05&\x01B$\x01w\x04\0\x0eprocess-handle\x03\
+\0\0\x01q\x07\x0cnot-declared\x01s\0\x09not-found\x01s\0\x11refused-by-person\x01\
+s\0\x0abad-folder\x01s\0\x08too-many\x01s\0\x0eunknown-handle\0\0\x08platform\x01\
+s\0\x04\0\x0dprocess-error\x03\0\x02\x01kz\x01r\x02\x04code\x04\x06signal\x04\x04\
+\0\x0bexit-status\x03\0\x05\x01p}\x01r\x02\x05bytes\x07\x05ended\x7f\x04\0\x06ou\
+tput\x03\0\x08\x01ps\x01o\x02ss\x01p\x0b\x01j\x01\x01\x01\x03\x01@\x04\x07progra\
+ms\x04args\x0a\x03cwds\x03env\x0c\0\x0d\x04\0\x05start\x01\x0e\x01@\x03\x03cwds\x04\
+cols{\x04rows{\0\x0d\x04\0\x0dopen-terminal\x01\x0f\x01j\0\x01\x03\x01@\x02\x06h\
+andle\x01\x05bytes\x07\0\x10\x04\0\x0bwrite-stdin\x01\x11\x01@\x01\x06handle\x01\
+\0\x10\x04\0\x0bclose-stdin\x01\x12\x01j\x01\x09\x01\x03\x01@\x02\x06handle\x01\x03\
+maxy\0\x13\x04\0\x0bread-stdout\x01\x14\x04\0\x0bread-stderr\x01\x14\x01k\x06\x01\
+j\x01\x15\x01\x03\x01@\x02\x06handle\x01\x0atimeout-msy\0\x16\x04\0\x04wait\x01\x17\
+\x04\0\x04kill\x01\x12\x01@\x03\x06handle\x01\x04cols{\x04rows{\0\x10\x04\0\x06r\
+esize\x01\x18\x01@\x01\x06handle\x01\x01\0\x04\0\x07release\x01\x19\x03\0\x1dkra\
+te:process/processes@0.1.0\x05'\x01B\x1c\x01w\x04\0\x0bport-handle\x03\0\0\x01r\x02\
+\x06handle\x01\x04names\x04\0\x04port\x03\0\x02\x01m\x03\x04none\x03odd\x04even\x04\
+\0\x06parity\x03\0\x04\x01m\x02\x03one\x03two\x04\0\x09stop-bits\x03\0\x06\x01r\x05\
+\x09baud-ratey\x09data-bits}\x06parity\x05\x09stop-bits\x07\x0fread-timeout-msy\x04\
+\0\x08settings\x03\0\x08\x01q\x09\x0bnot-allowed\x01s\0\x0bunavailable\x01s\0\x0e\
+unknown-handle\0\0\x08not-open\0\0\x0cbad-settings\x01s\0\x04busy\x01s\0\x0cdisc\
+onnected\x01s\0\x08too-many\x01s\0\x06failed\x01s\0\x04\0\x0cserial-error\x03\0\x0a\
+\x01k\x03\x01j\x01\x0c\x01\x0b\x01@\x01\x05titles\0\x0d\x04\0\x04pick\x01\x0e\x01\
+j\0\x01\x0b\x01@\x02\x04port\x01\x08settings\x09\0\x0f\x04\0\x04open\x01\x10\x01\
+ky\x01p}\x01j\x01\x12\x01\x0b\x01@\x03\x04port\x01\x03maxy\x0atimeout-ms\x11\0\x13\
+\x04\0\x04read\x01\x14\x01@\x02\x04port\x01\x05bytes\x12\0\x0f\x04\0\x05write\x01\
+\x15\x01@\x01\x04port\x01\x01\0\x04\0\x05close\x01\x16\x03\0\x18krate:serial/por\
+ts@0.1.0\x05(\x01B\x1c\x01w\x04\0\x0eprinter-handle\x03\0\0\x01r\x02\x06handle\x01\
+\x04names\x04\0\x07printer\x03\0\x02\x01m\x02\x03pdf\x03png\x04\0\x0fdocument-fo\
+rmat\x03\0\x04\x01r\x02\x05widthy\x06heighty\x04\0\x08paper-mm\x03\0\x06\x01q\x07\
+\x0fprinter-default\0\0\x02a4\0\0\x02a5\0\0\x02a6\0\0\x06letter\0\0\x05legal\0\0\
+\x06custom\x01\x07\0\x04\0\x0apaper-size\x03\0\x08\x01p}\x01r\x05\x06format\x05\x05\
+bytes\x0a\x06copiesy\x05paper\x09\x05titles\x04\0\x08document\x03\0\x0b\x01q\x03\
+\x06queued\x01s\0\x06failed\x01s\0\x04gone\x01s\0\x04\0\x0dprint-outcome\x03\0\x0d\
+\x01q\x04\x0bnot-allowed\x01s\0\x0bunavailable\x01s\0\x0eunknown-handle\0\0\x07b\
+ad-job\x01s\0\x04\0\x0bprint-error\x03\0\x0f\x01k\x03\x01j\x01\x11\x01\x10\x01@\0\
+\0\x12\x04\0\x0aremembered\x01\x13\x01@\x01\x05titles\0\x12\x04\0\x04pick\x01\x14\
+\x01j\x01\x0e\x01\x10\x01@\x02\x07printer\x01\x08document\x0c\0\x15\x04\0\x0epri\
+nt-document\x01\x16\x01@\x04\x07printer\x01\x05bytes\x0a\x06copiesy\x05titles\0\x15\
+\x04\0\x09print-raw\x01\x17\x03\0\x1akrate:print/printers@0.1.0\x05)\x01@\0\0z\x04\
+\0\x03run\x01*\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
