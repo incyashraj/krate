@@ -16542,9 +16542,11 @@ pub mod krate {
         /// `not-for-apps`.
         ///
         /// After the pick the app claims one interface of the device, and every
-        /// transfer goes to that interface: bulk and interrupt transfers on its own
-        /// endpoints, and control requests addressed to it or to one of its
-        /// endpoints, never to the whole device. Every transfer has a wait and a
+        /// transfer goes through that interface: bulk and interrupt transfers on its
+        /// own endpoints, and control requests addressed to it, to one of its
+        /// endpoints, or, for a class or vendor request, to the whole device the
+        /// person picked (many vendor devices are set up that way). Of the standard
+        /// requests only the reads are sent. Every transfer has a wait and a
         /// size limit: at most 65536 bytes a bulk or interrupt transfer, 4096 a
         /// control transfer, and a wait from 1 to 60000 milliseconds.
         ///
@@ -16592,10 +16594,10 @@ pub mod krate {
             #[repr(u8)]
             #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
             pub enum RequestType {
-                /// A request the USB standard defines. Only reading the status, clearing
-                /// a feature and reading a descriptor are allowed: the requests that
-                /// would change the device's address, configuration or interface
-                /// setting are the computer's.
+                /// A request the USB standard defines. Only reading the status
+                /// (GET_STATUS) and reading a descriptor (GET_DESCRIPTOR) are allowed:
+                /// the requests that would change the device's address, configuration,
+                /// interface setting or features are the computer's.
                 Standard,
                 /// A request the interface's class defines.
                 Class,
@@ -16634,8 +16636,9 @@ pub mod krate {
                     }
                 }
             }
-            /// Who a control request is for (bits 0-4 of bmRequestType). Never the
-            /// whole device: the claimed interface, or one of its endpoints.
+            /// Who a control request is for (bits 0-4 of bmRequestType): the
+            /// claimed interface, one of its endpoints, or the whole device for a
+            /// class or vendor request.
             #[repr(u8)]
             #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
             pub enum Recipient {
@@ -16644,6 +16647,12 @@ pub mod krate {
                 /// An endpoint of the claimed interface: the low byte of `index` is its
                 /// address.
                 Endpoint,
+                /// The whole device the person picked, for a class or vendor request:
+                /// a Crazyradio's channel and data rate are set this way. `index` is
+                /// the request's own. A standard request to the device is refused, except
+                /// the reads GET_STATUS and GET_DESCRIPTOR. An interface must still be
+                /// claimed first.
+                Device,
             }
             impl ::core::fmt::Debug for Recipient {
                 fn fmt(
@@ -16657,6 +16666,7 @@ pub mod krate {
                         Recipient::Endpoint => {
                             f.debug_tuple("Recipient::Endpoint").finish()
                         }
+                        Recipient::Device => f.debug_tuple("Recipient::Device").finish(),
                     }
                 }
             }
@@ -16669,6 +16679,7 @@ pub mod krate {
                     match val {
                         0 => Recipient::Interface,
                         1 => Recipient::Endpoint,
+                        2 => Recipient::Device,
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
@@ -16680,14 +16691,16 @@ pub mod krate {
             pub struct ControlSetup {
                 /// The kind of request.
                 pub request_type: RequestType,
-                /// Who it is for: the claimed interface or one of its endpoints.
+                /// Who it is for: the claimed interface, one of its endpoints, or the
+                /// device.
                 pub recipient: Recipient,
                 /// The request number (bRequest).
                 pub request: u8,
                 /// The request's value (wValue).
                 pub value: u16,
-                /// The request's index (wIndex). Its low byte names the claimed
-                /// interface or one of its endpoints, as `recipient` says.
+                /// The request's index (wIndex). For the interface or an endpoint its
+                /// low byte names the claimed interface or one of its endpoints, as
+                /// `recipient` says; for the device it is the request's own.
                 pub index: u16,
             }
             impl ::core::fmt::Debug for ControlSetup {
@@ -16726,8 +16739,8 @@ pub mod krate {
                 NotForApps(_rt::String),
                 /// A request Krate does not send, with words: an endpoint that is not
                 /// the claimed interface's or not of this kind or direction, a control
-                /// request for the whole device or another interface, a size or a wait
-                /// out of range.
+                /// request for another interface, a standard request other than
+                /// GET_STATUS or GET_DESCRIPTOR, a size or a wait out of range.
                 BadRequest(_rt::String),
                 /// Another program or the computer's own driver has the device or the
                 /// interface.
@@ -18367,8 +18380,8 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// A control request that reads up to `length` bytes (at most 4096) from
-            /// the claimed interface or one of its endpoints, waiting up to
-            /// `timeout-ms` (1 to 60000).
+            /// the claimed interface, one of its endpoints or the device, waiting up
+            /// to `timeout-ms` (1 to 60000).
             pub fn control_in(
                 device: DeviceHandle,
                 setup: ControlSetup,
@@ -18654,8 +18667,8 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// A control request that writes `data` (at most 4096 bytes) to the
-            /// claimed interface or one of its endpoints, waiting up to `timeout-ms`
-            /// (1 to 60000).
+            /// claimed interface, one of its endpoints or the device, waiting up to
+            /// `timeout-ms` (1 to 60000).
             pub fn control_out(
                 device: DeviceHandle,
                 setup: ControlSetup,
@@ -19210,8 +19223,8 @@ pub(crate) use __export_cli_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 9489] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x97I\x01A\x02\x01AJ\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 9496] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9eI\x01A\x02\x01AJ\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -19416,24 +19429,24 @@ nt-document\x01\x16\x01@\x04\x07printer\x01\x05bytes\x0a\x06copiesy\x05titles\0\
 \x04\0\x09print-raw\x01\x17\x03\0\x1akrate:print/printers@0.1.0\x05)\x01B!\x01w\x04\
 \0\x0ddevice-handle\x03\0\0\x01r\x04\x06handle\x01\x04names\x09vendor-id{\x0apro\
 duct-id{\x04\0\x06device\x03\0\x02\x01m\x03\x08standard\x05class\x06vendor\x04\0\
-\x0crequest-type\x03\0\x04\x01m\x02\x09interface\x08endpoint\x04\0\x09recipient\x03\
-\0\x06\x01r\x05\x0crequest-type\x05\x09recipient\x07\x07request}\x05value{\x05in\
-dex{\x04\0\x0dcontrol-setup\x03\0\x08\x01q\x0c\x0bnot-allowed\x01s\0\x0bunavaila\
-ble\x01s\0\x0eunknown-handle\0\0\x0bnot-claimed\0\0\x0cnot-for-apps\x01s\0\x0bba\
-d-request\x01s\0\x04busy\x01s\0\x0cdisconnected\x01s\0\x07stalled\x01s\0\x09time\
-d-out\x01s\0\x08too-many\x01s\0\x06failed\x01s\0\x04\0\x09usb-error\x03\0\x0a\x01\
-k\x03\x01j\x01\x0c\x01\x0b\x01@\x01\x05titles\0\x0d\x04\0\x04pick\x01\x0e\x01j\0\
-\x01\x0b\x01@\x02\x06device\x01\x06number}\0\x0f\x04\0\x05claim\x01\x10\x01p}\x01\
-j\x01\x11\x01\x0b\x01@\x04\x06device\x01\x08endpoint}\x03maxy\x0atimeout-msy\0\x12\
-\x04\0\x07bulk-in\x01\x13\x01@\x04\x06device\x01\x08endpoint}\x05bytes\x11\x0ati\
-meout-msy\0\x0f\x04\0\x08bulk-out\x01\x14\x04\0\x0cinterrupt-in\x01\x13\x04\0\x0d\
-interrupt-out\x01\x14\x01@\x04\x06device\x01\x05setup\x09\x06length{\x0atimeout-\
-msy\0\x12\x04\0\x0acontrol-in\x01\x15\x01@\x04\x06device\x01\x05setup\x09\x04dat\
-a\x11\x0atimeout-msy\0\x0f\x04\0\x0bcontrol-out\x01\x16\x01@\x01\x06device\x01\x01\
-\0\x04\0\x05close\x01\x17\x03\0\x17krate:usb/devices@0.1.0\x05*\x01@\0\0z\x04\0\x03\
-run\x01+\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09p\
-roducers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\
-\x060.41.0";
+\x0crequest-type\x03\0\x04\x01m\x03\x09interface\x08endpoint\x06device\x04\0\x09\
+recipient\x03\0\x06\x01r\x05\x0crequest-type\x05\x09recipient\x07\x07request}\x05\
+value{\x05index{\x04\0\x0dcontrol-setup\x03\0\x08\x01q\x0c\x0bnot-allowed\x01s\0\
+\x0bunavailable\x01s\0\x0eunknown-handle\0\0\x0bnot-claimed\0\0\x0cnot-for-apps\x01\
+s\0\x0bbad-request\x01s\0\x04busy\x01s\0\x0cdisconnected\x01s\0\x07stalled\x01s\0\
+\x09timed-out\x01s\0\x08too-many\x01s\0\x06failed\x01s\0\x04\0\x09usb-error\x03\0\
+\x0a\x01k\x03\x01j\x01\x0c\x01\x0b\x01@\x01\x05titles\0\x0d\x04\0\x04pick\x01\x0e\
+\x01j\0\x01\x0b\x01@\x02\x06device\x01\x06number}\0\x0f\x04\0\x05claim\x01\x10\x01\
+p}\x01j\x01\x11\x01\x0b\x01@\x04\x06device\x01\x08endpoint}\x03maxy\x0atimeout-m\
+sy\0\x12\x04\0\x07bulk-in\x01\x13\x01@\x04\x06device\x01\x08endpoint}\x05bytes\x11\
+\x0atimeout-msy\0\x0f\x04\0\x08bulk-out\x01\x14\x04\0\x0cinterrupt-in\x01\x13\x04\
+\0\x0dinterrupt-out\x01\x14\x01@\x04\x06device\x01\x05setup\x09\x06length{\x0ati\
+meout-msy\0\x12\x04\0\x0acontrol-in\x01\x15\x01@\x04\x06device\x01\x05setup\x09\x04\
+data\x11\x0atimeout-msy\0\x0f\x04\0\x0bcontrol-out\x01\x16\x01@\x01\x06device\x01\
+\x01\0\x04\0\x05close\x01\x17\x03\0\x17krate:usb/devices@0.1.0\x05*\x01@\0\0z\x04\
+\0\x03run\x01+\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
