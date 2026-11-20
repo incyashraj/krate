@@ -14,12 +14,10 @@
  */
 
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   appendFile,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rename,
@@ -28,10 +26,20 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createGifts } from "./gift.js";
 import { createJudge } from "./judge.js";
+import { createSandbox } from "./sandbox.js";
+import {
+  DEFAULT_COMPILE_CRATES,
+  checkCompileSource,
+  crateFileName,
+  ensureSdk,
+  guideAppendix,
+  lastJsonObject,
+  manifestFacts,
+  resolveSdkPlaceholders,
+} from "./compile.js";
 
 const PORT = Number(process.env.PORT || 8787);
 const KRATE = process.env.KRATE_BIN || "krate";
@@ -52,8 +60,9 @@ const BUILD_TIMEOUT_MS = Number(process.env.KRATE_BUILD_TIMEOUT_MS || 15 * 60 * 
 // 0 (the default, and every test that does not set it) never exits.
 const IDLE_EXIT_MS = Number(process.env.KRATE_IDLE_EXIT_MS || 0);
 let lastActivity = Date.now();
-// What a person or the hub asks for: a build, a plan, a port, a judging.
-const DOORS = /^\/(build|plan|port|judge)(\/|$)/;
+// What a person or the hub asks for: a build, a plan, a port, a judging,
+// a compile of source somebody else wrote, the guide for writing it.
+const DOORS = /^\/(build|plan|port|judge|compile|guide)(\/|$)/;
 let leaving = false; // set once a shutdown starts (a signal, or idle)
 const PLAN_TIMEOUT_MS = Number(process.env.KRATE_PLAN_TIMEOUT_MS || 90 * 1000);
 
@@ -102,6 +111,24 @@ const plansByAccount = new Map(); // account -> [timestamps]
 const PLAN_BUDGET_USD_PER_DAY = Number(process.env.KRATE_PLAN_BUDGET_USD_PER_DAY || 10);
 const PLAN_UNPRICED_USD = Number(process.env.KRATE_PLAN_UNPRICED_USD || 0.45);
 let planSpend = { day: "", usd: 0 };
+
+/* Compiling source somebody else wrote (IC-989 phase 2, /compile).
+ *
+ * No model, so no AI allowance and no funded case: what it costs is this
+ * machine's CPU, and that is what is counted. Per account, per hour and per
+ * day, on the volume like the plan ledger (so a wake does not reset it); at
+ * most a few compiles at once on the whole box, because two shared CPUs
+ * compiling four apps compile none of them well; and a wall clock on each,
+ * long enough for a cold dependency cache on a fresh volume. */
+const COMPILE_PER_HOUR = Number(process.env.KRATE_COMPILE_PER_HOUR || 20);
+const COMPILE_PER_DAY = Number(process.env.KRATE_COMPILE_PER_DAY || 60);
+const COMPILE_CONCURRENT = Number(process.env.KRATE_COMPILE_CONCURRENT || 2);
+const COMPILE_TIMEOUT_MS = Number(process.env.KRATE_COMPILE_TIMEOUT_MS || 10 * 60 * 1000);
+const COMPILE_CRATES = (process.env.KRATE_COMPILE_CRATES || DEFAULT_COMPILE_CRATES.join(","))
+  .split(",").map((c) => c.trim()).filter((c) => /^[A-Za-z0-9_-]{1,64}$/.test(c));
+const compilesByAccount = new Map(); // account -> [timestamps, last 24h]
+let compilesRunning = 0;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function planDay() {
   return new Date().toISOString().slice(0, 10);
@@ -152,6 +179,56 @@ function planAllowance(account) {
   return { ok: true };
 }
 
+/* May this account start one more compile? Counted when it starts, so a
+ * refused upload (bad paths, no manifest) never uses one up. */
+function compileAllowance(account) {
+  const now = Date.now();
+  const recent = (compilesByAccount.get(account) || []).filter((at) => now - at < DAY_MS);
+  const lastHour = recent.filter((at) => now - at < PLAN_WINDOW_MS);
+  compilesByAccount.set(account, recent);
+  if (lastHour.length >= COMPILE_PER_HOUR) {
+    const minutes = Math.max(1, Math.ceil((lastHour[0] + PLAN_WINDOW_MS - now) / 60000));
+    return { ok: false, message: `That is ${COMPILE_PER_HOUR} builds in an hour. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.` };
+  }
+  if (recent.length >= COMPILE_PER_DAY) {
+    const hours = Math.max(1, Math.ceil((recent[0] + DAY_MS - now) / 3600000));
+    return { ok: false, message: `That is ${COMPILE_PER_DAY} builds today. Try again in ${hours} hour${hours === 1 ? "" : "s"}.` };
+  }
+  recent.push(now);
+  return { ok: true };
+}
+
+function compilesFile() {
+  return join(STATE_DIR, "compiles.json");
+}
+
+async function loadCompiles() {
+  try {
+    const saved = JSON.parse(await readFile(compilesFile(), "utf8"));
+    for (const [account, list] of Object.entries(saved.accounts || {})) {
+      if (Array.isArray(list)) compilesByAccount.set(account, list.filter(Number.isFinite));
+    }
+  } catch (e) { /* none yet, or torn */ }
+}
+
+async function saveCompiles() {
+  if (!stateWritable) return;
+  const now = Date.now();
+  const accounts = {};
+  for (const [account, list] of compilesByAccount) {
+    const recent = list.filter((at) => now - at < DAY_MS);
+    if (recent.length) accounts[account] = recent;
+    else compilesByAccount.delete(account);
+  }
+  const tmp = `${compilesFile()}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, JSON.stringify({ accounts }));
+    await rename(tmp, compilesFile());
+  } catch (e) {
+    console.error(`could not save the compile ledger: ${e.message}`);
+  }
+}
+
 /* The plan ledger on the volume: recent plans per account, and the day's
  * spend. Small (one timestamp per plan in the last hour), written whole
  * and renamed into place so a crash mid-write leaves the old one. */
@@ -199,13 +276,21 @@ async function savePlans() {
 const STATE_DIR = process.env.KRATE_STATE_DIR || "/work/state";
 const JOBS_DIR = join(STATE_DIR, "jobs");
 
+/* Every child that builds or runs a stranger's code starts here: as the
+ * build user, with an allow-listed environment (sandbox.js, K-1293). */
+const sandbox = createSandbox();
+
 /* Judging for the hub's big-file path (IC-945): the hub asks, this box reads
  * the upload, judges it with `krate judge --tier hub-big`, and answers. */
 const judge = createJudge({
   hub: HUB,
   secret: process.env.KRATE_BUILDER_SECRET || "",
-  dir: join(STATE_DIR, "judge"),
+  // Not under STATE_DIR in production: the judge runs as the build user,
+  // and it must read the upload by its exact path. The Dockerfile points
+  // this at a root-owned 0711 directory it can read in but not list.
+  dir: process.env.KRATE_JUDGE_DIR || join(STATE_DIR, "judge"),
   krate: KRATE,
+  spawnImpl: (cmd, args, opts) => sandbox.spawn(cmd, args, opts),
 });
 
 /** Is this request from the hub? It carries the secret only the two hold. */
@@ -239,6 +324,7 @@ async function initState() {
     return;
   }
   await loadPlans();
+  await loadCompiles();
 
   // Every record left by the previous life of this process. A job that was
   // mid-build when the machine stopped cannot be resumed -- the compiler
@@ -380,12 +466,14 @@ const STAGE_ORDER = ["read", "write", "test", "done"];
  */
 const API_AGENTS = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY" };
 
-/* A copy of this service's environment for a child, minus what is only the
- * service's business: the secret it proves itself to the hub with. */
-function withoutServiceSecrets(env) {
-  const copy = { ...env };
-  delete copy.KRATE_BUILDER_SECRET;
-  return copy;
+/* The model key an AI path hands its engine: the person's own when they
+ * have one, ours otherwise, and only the one this agent speaks to. Null for
+ * a CLI agent, which carries its own sign-in. Nothing else that runs here
+ * gets a key (sandbox.js). */
+function agentKey(theirKey) {
+  const name = API_AGENTS[AGENT];
+  if (!name) return null;
+  return { name, value: theirKey || process.env[name] || "" };
 }
 
 // Gifts for a friend without Krate (gift.js). A few an hour per account:
@@ -393,11 +481,10 @@ function withoutServiceSecrets(env) {
 const gifts = createGifts({
   krate: KRATE,
   stateDir: STATE_DIR,
-  env: (() => {
-    const env = withoutServiceSecrets(process.env);
-    for (const name of Object.values(API_AGENTS)) delete env[name];
-    return env;
-  })(),
+  // Wrapping a finished app runs nothing of it, so the gift stays this
+  // service's user (its kit is root's, and no build may change the players
+  // it hands out) -- with the same allow-listed environment and no key.
+  env: sandbox.childEnv({ as: "service" }),
 });
 const GIFTS_PER_HOUR = Number(process.env.KRATE_GIFTS_PER_HOUR || 20);
 const giftsByAccount = new Map(); // account -> [timestamps]
@@ -631,7 +718,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // Ownership is checked on every operation now, but the id stays opaque:
   // two locks, and this one also keeps 404 and 403 indistinguishable.
   const id = randomBytes(16).toString("hex");
-  const dir = await mkdtemp(join(tmpdir(), "krate-build-"));
+  const dir = await sandbox.scratch("krate-build-");
   const output = join(dir, "app.krate");
   const shotPath = join(dir, "frame.png");
 
@@ -712,6 +799,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
   } catch (e) {
     console.warn(`[build] could not write attachments: ${e.message}`);
   }
+  await sandbox.handOver(dir);
   // Options first and `--` before the person's words, so a request that
   // starts with "-" -- any pasted bullet list -- is text, not an option
   // the engine refuses (K-889).
@@ -726,15 +814,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
     : ["create", "--output", output, "--agent", AGENT, "--transcript", transcript, ...attachArgs, "--", request];
   if (port) job.port = { work: port.work, name: port.name || "" };
   // The engine needs the model key and nothing of the service's own: the
-  // secret that lets this service fetch a person's key stays here.
-  const runEnv = withoutServiceSecrets(process.env);
-  if (theirKey) runEnv[API_AGENTS[AGENT]] = theirKey;
+  // secret that lets this service fetch a person's key stays here. The key
+  // does reach the agent and everything it runs -- that is how it talks to
+  // the model -- and nothing of this service's does (sandbox.js).
+  const extra = {};
   // The shape the plan picked: the engine seeds that working example as
   // src/lib.rs and the model transforms it rather than writing a file from
   // nothing. This is the single biggest lever on how long a build takes,
   // and the browser was not using it.
-  if (shape && /^[a-z0-9-]{1,40}$/i.test(shape)) runEnv.KRATE_STARTER_SHAPE = shape;
-  const proc = spawn(KRATE, args, { cwd: dir, env: runEnv, detached: GROUP });
+  if (shape && /^[a-z0-9-]{1,40}$/i.test(shape)) extra.KRATE_STARTER_SHAPE = shape;
+  const proc = sandbox.spawn(KRATE, args, { cwd: dir, key: agentKey(theirKey), extra, detached: GROUP });
   job.proc = proc;
   // A child that cannot start emits "error", and an unhandled "error" event
   // took the whole service down with every build in flight (K-890). It is
@@ -951,6 +1040,253 @@ async function startBuild({ request, token, account, device, revise = null, shap
   return job;
 }
 
+/* ---- compiling source somebody else wrote (IC-989 phase 2) ---------------
+ *
+ * The chat model writes the app; this runs the engine's own checks on it
+ * and packs it. Two engine commands and nothing else: `krate check-app
+ * <dir> --json` (build, import check, headless run, usability -- the same
+ * oracle every made app passes) and `krate pack` (which carries the source
+ * and the SDK in the bundle, so the app can be changed later). No agent, no
+ * model, no funded case, no spend line: the only thing this costs is CPU.
+ *
+ * A job like a build, so the caller polls GET /build/<id> and downloads
+ * from /build/<id>/file: a compile is minutes on a cold cache, and an MCP
+ * tool call must not hold a request open for that long.
+ */
+
+/* A compile's children get no key at all (sandbox.spawn with no `key`):
+ * the code being compiled is a stranger's, and no model is involved. */
+
+/* Where this engine's SDK is, found once per process (compile.js). */
+let sdkRootPromise = null;
+function sdkRoot() {
+  if (!sdkRootPromise) {
+    sdkRootPromise = ensureSdk({
+      krate: KRATE,
+      env: sandbox.childEnv(),
+      spawnImpl: sandbox.spawn,
+      scratch: () => sandbox.scratch("krate-sdk-nudge-"),
+      handOver: sandbox.handOver,
+    }).then((root) => {
+      if (!root) sdkRootPromise = null; // try again on the next compile
+      return root;
+    });
+  }
+  return sdkRootPromise;
+}
+
+/* One engine run inside a compile: its own process group, the job's
+ * remaining wall clock, output kept for the verdict. */
+function runCompileStep(job, args, deadline) {
+  return new Promise((resolve) => {
+    const proc = sandbox.spawn(KRATE, args, { cwd: job.dir, detached: GROUP });
+    job.proc = proc;
+    let out = "";
+    let err = "";
+    let timedOut = false;
+    proc.stdout.on("data", (b) => { out = (out + b.toString()).slice(-512 * 1024); });
+    proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-4000); });
+    const killer = setTimeout(() => { timedOut = true; killTree(proc, "SIGKILL"); }, Math.max(0, deadline - Date.now()));
+    proc.on("error", (e) => { clearTimeout(killer); resolve({ code: -1, out, err: e.message, timedOut }); });
+    proc.on("close", (code) => { clearTimeout(killer); resolve({ code, out, err, timedOut }); });
+  });
+}
+
+async function compileSettle(job, fields) {
+  if (job.settled) return;
+  job.settled = true;
+  if (activeByAccount.get(job.account) === job.id) activeByAccount.delete(job.account);
+  compilesRunning = Math.max(0, compilesRunning - 1);
+  job.proc = null;
+  if (job.state !== "working") {
+    // Stopped: the stop route has recorded it already.
+    return cleanup(job);
+  }
+  Object.assign(job, fields, { finished: Date.now() });
+  if (job.state === "done") await persistResultBytes(job);
+  await persistJob(job);
+  await audit({
+    action: job.state === "done" ? "compiled" : "compile-failed",
+    account: job.account,
+    job: job.id,
+    ...(job.check && job.check.stage ? { stage: job.check.stage } : {}),
+  });
+  return cleanup(job, { keepFile: job.state === "done" });
+}
+
+async function startCompile({ token, account, name, files }) {
+  const id = randomBytes(16).toString("hex");
+  const dir = await sandbox.scratch("krate-compile-");
+  const job = {
+    id, kind: "compile", account, device: "", request: name || "Compile", dir,
+    output: join(dir, "app.krate"),
+    parent: null,
+    state: "working",
+    stage: "test",
+    line: "checking it builds",
+    shot: null,
+    result: null,
+    error: null,
+    check: null,
+    started: Date.now(),
+    finished: null,
+    proc: null,
+    sourceDir: null,
+  };
+  jobs.set(id, job);
+  activeByAccount.set(account, id);
+  await persistJob(job);
+  await audit({ action: "compile", account, job: id, files: files.length });
+  runCompile(job, { token, name, files }).catch((err) => {
+    console.error(`[compile] ${id}: ${err && err.message}`);
+    return compileSettle(job, { state: "failed", error: "Something broke on our side while building this. Try again." });
+  });
+  return job;
+}
+
+async function runCompile(job, { token, name, files }) {
+  const deadline = job.started + COMPILE_TIMEOUT_MS;
+  const app = join(job.dir, "app");
+  // Every path was checked before the job existed (checkCompileSource);
+  // `wx` refuses to write through anything already there.
+  for (const file of files) {
+    const target = join(app, ...file.path.split("/"));
+    if (!target.startsWith(app + "/")) throw new Error(`refused path ${file.path}`);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, file.bytes, { flag: "wx" });
+  }
+  const sdk = await sdkRoot();
+  if (!sdk) {
+    return compileSettle(job, { state: "failed", error: "The build machine could not prepare Krate's SDK. Nothing was counted against your AI allowance; try again in a minute." });
+  }
+  const cargoPath = join(app, "Cargo.toml");
+  await writeFile(cargoPath, resolveSdkPlaceholders(await readFile(cargoPath, "utf8"), sdk));
+  await sandbox.handOver(job.dir);
+  if (job.state !== "working") return compileSettle(job, {});
+
+  // Paths in the engine's words are this machine's; the caller wrote
+  // relative ones and the SDK as a placeholder, so it reads its own.
+  const local = (value) => JSON.parse(
+    JSON.stringify(value).split(app + "/").join("").split(app).join(".").split(sdk).join("{KRATE_SDK}"),
+  );
+  const minutes = Math.round(COMPILE_TIMEOUT_MS / 60000);
+
+  const checked = await runCompileStep(job, ["check-app", app, "--json"], deadline);
+  if (job.state !== "working") return compileSettle(job, {});
+  if (checked.timedOut) {
+    return compileSettle(job, { state: "failed", error: `Building and checking took longer than ${minutes} minutes and was stopped. A smaller app, or fewer dependencies, builds faster.` });
+  }
+  const verdict = lastJsonObject(checked.out);
+  if (!verdict) {
+    console.error(`[compile] ${job.id}: check-app gave no verdict (exit ${checked.code}): ${checked.err.split("\n").filter(Boolean).pop() || ""}`);
+    return compileSettle(job, { state: "failed", error: "The check could not run on our side. Nothing was wrong with the code that we know of; try again." });
+  }
+  const { dir: _dir, ...said } = verdict;
+  job.check = local(said);
+  if (!verdict.ok) {
+    return compileSettle(job, {
+      state: "failed",
+      error: `It did not pass check-app at the ${verdict.stage || "unknown"} stage. Fix what it says and send it again.`,
+    });
+  }
+
+  // The component check-app built and judged. The engine copies it home
+  // to the app's own target/ even when it compiled in the shared cache.
+  job.stage = "done";
+  job.line = "packing it";
+  const release = join(app, "target", "wasm32-wasip1", "release");
+  const crate = crateFileName(await readFile(cargoPath, "utf8"));
+  let wasm = crate ? join(release, `${crate}.wasm`) : null;
+  if (!wasm || !(await stat(wasm).catch(() => null))) {
+    const built = (await readdir(release).catch(() => [])).filter((n) => n.endsWith(".wasm"));
+    wasm = built.length === 1 ? join(release, built[0]) : null;
+  }
+  if (!wasm) {
+    return compileSettle(job, { state: "failed", error: "It passed check-app, but the built app could not be found to pack. This one is on us; try again." });
+  }
+  const packed = await runCompileStep(job, ["pack", wasm, "--manifest", join(app, "manifest.toml"), "-o", job.output], deadline);
+  if (job.state !== "working") return compileSettle(job, {});
+  if (packed.timedOut || packed.code !== 0 || !(await stat(job.output).catch(() => null))) {
+    console.error(`[compile] ${job.id}: pack failed (exit ${packed.code}): ${packed.err.split("\n").filter(Boolean).pop() || ""}`);
+    return compileSettle(job, {
+      state: "failed",
+      error: packed.timedOut
+        ? `Building and checking took longer than ${minutes} minutes and was stopped.`
+        : "It passed check-app but could not be packed. This one is on us; try again.",
+    });
+  }
+
+  // Signed as the person's account by the hub, exactly as a web build is
+  // (IC-983): this box holds no signing key.
+  const signed = await signedAsTheAccount(token, await readFile(job.output));
+  if (signed) await writeFile(job.output, signed);
+  const bytes = await readFile(job.output);
+  const facts = manifestFacts(await readFile(join(app, "manifest.toml"), "utf8").catch(() => ""));
+  return compileSettle(job, {
+    state: "done",
+    line: "built and checked",
+    result: {
+      id: job.id,
+      name: name || facts.name || "Your app",
+      size: prettySize(bytes.length),
+      asks: facts.asks,
+      shot: null,
+      verdict: null,
+      verdict_detail: null,
+      signed: Boolean(signed),
+      bytes,
+    },
+  });
+}
+
+/* The guide the connector hands a chat model before it writes an app: the
+ * engine's own authoring pack (`krate authoring-context`, the API, the
+ * permission catalog, the no_std rules, a worked example) for a fresh app
+ * folder, then how to hand the source to /compile. Computed once per
+ * engine version and kept on the volume: it is the same text for everyone. */
+const guides = new Map(); // engine version -> Promise<text|null>
+
+function engineOutput(args, timeoutMs = 60_000) {
+  return new Promise((resolve) => {
+    const proc = sandbox.spawn(KRATE, args, { detached: GROUP });
+    let out = "";
+    proc.stdout.on("data", (b) => { out += b.toString(); });
+    proc.stderr.on("data", () => {});
+    const killer = setTimeout(() => killTree(proc, "SIGKILL"), timeoutMs);
+    proc.on("error", () => { clearTimeout(killer); resolve(null); });
+    proc.on("close", (code) => { clearTimeout(killer); resolve(code === 0 ? out : null); });
+  });
+}
+
+async function authoringGuide() {
+  const version = ((await engineOutput(["--version"])) || "").trim();
+  if (!version) return null;
+  if (!guides.has(version)) {
+    guides.set(version, (async () => {
+      const file = join(STATE_DIR, "guides", `${createHash("sha256").update(version).digest("hex").slice(0, 32)}.md`);
+      const kept = await readFile(file, "utf8").catch(() => null);
+      if (kept) return kept;
+      const fresh = await sandbox.scratch("krate-guide-");
+      try {
+        const pack = await engineOutput(["authoring-context", fresh]);
+        if (!pack || !pack.trim()) return null;
+        if (stateWritable) {
+          await mkdir(dirname(file), { recursive: true }).catch(() => {});
+          await writeFile(file, pack).catch(() => {});
+        }
+        return pack;
+      } finally {
+        await rm(fresh, { recursive: true, force: true }).catch(() => {});
+      }
+    })().then((text) => {
+      if (!text) guides.delete(version); // not cached: try again next time
+      return text;
+    }));
+  }
+  const pack = await guides.get(version);
+  return pack ? pack.trimEnd() + guideAppendix(COMPILE_CRATES) : null;
+}
+
 /* `krate plan <request>`: the engine's own pre-build answer, as JSON text.
  * Bounded, because a model that never answers must not hold the request
  * open; and one answer at a time is plenty. */
@@ -1057,7 +1393,7 @@ async function writeProject(project, dir) {
  * uploaded project. No model, no allowance, bounded by time. */
 function portPlan(root) {
   return new Promise((resolve) => {
-    const proc = spawn(KRATE, ["port", "--format", "json", "--", root], { env: withoutServiceSecrets(process.env), detached: GROUP });
+    const proc = sandbox.spawn(KRATE, ["port", "--format", "json", "--", root], { detached: GROUP });
     let out = "";
     let err = "";
     proc.stdout.on("data", (b) => { out += b.toString(); });
@@ -1078,11 +1414,12 @@ async function planRequest(request, theirKey = null, attachments = []) {
   // The plan reads what was attached too: `krate plan --attach` exists
   // precisely so the questions can be about the file rather than only the
   // sentence. Written to a temp dir that is removed once the plan answers.
-  const holding = await mkdtemp(join(tmpdir(), "krate-plan-"));
+  const holding = await sandbox.scratch("krate-plan-");
   let files = [];
   try {
     files = await writeAttachments(attachments, holding);
   } catch (e) { /* a plan without the file is better than no plan */ }
+  await sandbox.handOver(holding);
   const attachArgs = files.flatMap((f) => ["--attach", f]);
   return new Promise((resolve) => {
     const finish = (value) => {
@@ -1091,9 +1428,7 @@ async function planRequest(request, theirKey = null, attachments = []) {
     };
     let out = "";
     let err = "";
-    const env = withoutServiceSecrets(process.env);
-    if (theirKey) env[API_AGENTS[AGENT]] = theirKey;
-    const proc = spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { env, detached: GROUP });
+    const proc = sandbox.spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { key: agentKey(theirKey), detached: GROUP });
     const killer = setTimeout(() => killTree(proc, "SIGKILL"), PLAN_TIMEOUT_MS);
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
@@ -1136,11 +1471,8 @@ async function takeShot(bundle, shotPath) {
     // at all: not Krate's, not the person's, not the service's secret. The
     // sandbox already keeps a guest from reading them; there is no reason
     // to hand the process them in the first place.
-    const shotEnv = withoutServiceSecrets(process.env);
-    for (const name of Object.values(API_AGENTS)) delete shotEnv[name];
-    shotEnv.KRATE_SHOOT_AFTER_MS = "1200";
-    const proc = spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
-      env: shotEnv,
+    const proc = sandbox.spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
+      extra: { KRATE_SHOOT_AFTER_MS: "1200" },
     });
     // Why a picture failed, kept for the log.
     //
@@ -1429,7 +1761,19 @@ const server = createServer(async (req, res) => {
         authoring: authoringOff() ? "off" : "on",
         agent: AGENT,
         gifts: await gifts.canGift(),
+        // Whether builds run as their own user (K-1293). "none" in
+        // production means every build door below answers 503.
+        isolation: sandbox.isolated ? "build-user" : "none",
       });
+    }
+
+    // A door that would start a build-time child, on a production box with
+    // no build user to hand it to: refused before anything is counted or
+    // spawned, rather than run as this service (K-1293).
+    const refused = sandbox.refusal();
+    if (refused && startsBuildChildren(req.method, url.pathname)) {
+      if (url.pathname === "/compile" || url.pathname === "/guide") return json(res, 503, { error: refused });
+      return send(res, 503, refused);
     }
 
     // The hub asks for a big upload to be judged (IC-945). Answered at once;
@@ -1510,9 +1854,10 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const account = await resolveAccount(token);
       if (!account) return send(res, 401, "Sign in first.");
-      const dir = await mkdtemp(join(tmpdir(), "krate-port-plan-"));
+      const dir = await sandbox.scratch("krate-port-plan-");
       try {
         const root = await writeProject(body.project, dir);
+        await sandbox.handOver(dir);
         const answer = await portPlan(root);
         await audit({ action: "port-plan", account, ok: answer.ok });
         if (!answer.ok) return send(res, 502, answer.message);
@@ -1525,6 +1870,70 @@ const server = createServer(async (req, res) => {
       } finally {
         await rm(dir, { recursive: true, force: true }).catch(() => {});
       }
+    }
+
+    // Compile source somebody else wrote (IC-989 phase 2): the hub's
+    // connector sends what a chat model wrote; this checks and packs it
+    // with no model at all. Both credentials, as /keys/use and the signing
+    // door take them: the builder secret says the hub is asking, the
+    // person's session says whose app -- and is what the hub signs with.
+    // Every refusal is JSON { error }, so the connector can hand the words
+    // straight back to the model.
+    if (req.method === "POST" && url.pathname === "/compile") {
+      if (!fromHub(req)) return json(res, 403, { error: "Only Krate's hub may ask for a compile." });
+      const account = await resolveAccount(token);
+      if (!account) return json(res, 401, { error: "Sign in first." });
+      let body;
+      try {
+        body = await readBody(req);
+      } catch (err) {
+        return json(res, err.status || 400, { error: err.message || "That could not be read." });
+      }
+      // Everything about the upload is judged before anything is written,
+      // spawned or counted.
+      const checked = checkCompileSource(body.files, { crates: COMPILE_CRATES });
+      if (!checked.ok) {
+        await audit({ action: "compile-refused", account, why: checked.error.slice(0, 200) });
+        return json(res, checked.status, { error: checked.error });
+      }
+      if (compilesRunning >= COMPILE_CONCURRENT) {
+        return json(res, 429, { error: "The build machine is busy with other apps. Try again in a minute." });
+      }
+      if (!claimBuildSlot(account)) {
+        return json(res, 429, { error: "One app is already being built for this account. Wait for it to finish, then send this again." });
+      }
+      const room = compileAllowance(account);
+      if (!room.ok) {
+        activeByAccount.delete(account);
+        await audit({ action: "compile-refused", account, why: "limit" });
+        return json(res, 429, { error: room.message });
+      }
+      compilesRunning += 1;
+      await saveCompiles();
+      let job;
+      try {
+        job = await startCompile({
+          token, account,
+          name: String(body.name || "").trim().replace(/[\u0000-\u001f]+/g, " ").slice(0, 80),
+          files: checked.files,
+        });
+      } catch (err) {
+        compilesRunning = Math.max(0, compilesRunning - 1);
+        activeByAccount.delete(account);
+        throw err;
+      }
+      return json(res, 202, { id: job.id });
+    }
+
+    // The words a chat model reads before it writes an app for /compile.
+    if (req.method === "GET" && url.pathname === "/guide") {
+      if (!fromHub(req)) return json(res, 403, { error: "Only Krate's hub may ask for the guide." });
+      const account = await resolveAccount(token);
+      if (!account) return json(res, 401, { error: "Sign in first." });
+      const text = await authoringGuide();
+      if (!text) return json(res, 502, { error: "The guide could not be made just now. Try again in a minute." });
+      res.setHeader("content-type", "text/markdown; charset=utf-8");
+      return send(res, 200, text);
     }
 
     // Port an uploaded project: the same wall, slot and ledger as a build.
@@ -1550,10 +1959,11 @@ const server = createServer(async (req, res) => {
       try {
         // The project is written before the job starts, so a bad upload
         // is refused with a reason and never claims a case.
-        const holding = await mkdtemp(join(tmpdir(), "krate-port-"));
+        const holding = await sandbox.scratch("krate-port-");
         let root;
         try {
           root = await writeProject(body.project, holding);
+          await sandbox.handOver(holding);
         } catch (err) {
           await rm(holding, { recursive: true, force: true }).catch(() => {});
           throw err;
@@ -1656,6 +2066,10 @@ const server = createServer(async (req, res) => {
         return send(res, 404, "no such build");
       }
       if (job.state === "expired") return send(res, 404, job.error);
+      // A compiled app was written by the person's own AI, and this door
+      // runs ours: changing it here would spend the allowance /compile
+      // promises never to touch. The change goes back through their AI.
+      if (job.kind === "compile") return send(res, 409, "This app was written by your own AI. Ask it for the change and build again.");
       if (job.state !== "done" || !job.result) return send(res, 409, "Make the app first; a change starts from a finished one.");
       const bytes = await resultBytes(job);
       if (!bytes) return send(res, 404, "not ready");
@@ -1697,9 +2111,10 @@ const server = createServer(async (req, res) => {
       // The source the change starts from is the file that was made -- the
       // one the person could have downloaded -- copied into the new job's
       // own directory so nothing edits a finished result in place.
-      const sourceDir = await mkdtemp(join(tmpdir(), "krate-revise-"));
+      const sourceDir = await sandbox.scratch("krate-revise-");
       const source = join(sourceDir, "app.krate");
       await writeFile(source, bytes);
+      await sandbox.handOver(sourceDir);
       let next;
       try {
         next = await startBuild({
@@ -1768,12 +2183,18 @@ const server = createServer(async (req, res) => {
       }
 
       return json(res, 200, {
-        state: job.state,
+        // A compile says "building" while it runs, the word the hub's
+        // connector reads; a build keeps "working", which the pages read.
+        state: job.kind === "compile" && job.state === "working" ? "building" : job.state,
+        kind: job.kind || "build",
         stage: job.stage,
         line: job.line,
         shot: job.shot,
         parent: job.parent || null,
         error: job.error,
+        // check-app's own verdict for a compile: on failure the stage, what
+        // went wrong and the fix, so the model can correct its code.
+        check: job.check || null,
         result: job.result && {
           id: job.result.id,
           name: job.result.name,
@@ -1845,6 +2266,15 @@ function readBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+/* The doors whose work runs as the build user. Reading a job's status or
+ * downloading a finished file runs nothing and stays open. */
+function startsBuildChildren(method, path) {
+  if (method === "GET") return path === "/guide";
+  if (method !== "POST") return false;
+  if (["/build", "/plan", "/port", "/port/plan", "/compile", "/judge"].includes(path)) return true;
+  return path.startsWith("/build/") && path.endsWith("/revise");
 }
 
 function json(res, status, body) {

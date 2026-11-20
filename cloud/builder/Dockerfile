@@ -143,16 +143,51 @@ WORKDIR /srv
 COPY package.json ./
 COPY src ./src
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+# The post-deploy check for K-1293: `fly ssh console -C krate-isolation-check`.
+COPY isolation-check.sh /usr/local/bin/krate-isolation-check
 
-# The service does not run as root: it spawns a compiler and an AI agent on
-# a stranger's words, and the blast radius of a bad day should not include
-# the machine. The container still STARTS as root, because a freshly created
-# Fly volume arrives root-owned and something has to chown it -- entrypoint.sh
-# does that and then drops to this user for good.
-RUN useradd --create-home --shell /bin/sh builder \
-    && chmod 0755 /usr/local/bin/entrypoint.sh \
+# Two users, and the line between them is the whole of K-1293.
+#
+# The SERVICE runs as root. It holds the hub secret and the Anthropic key in
+# its environment, and it runs none of a stranger's code itself.
+#
+# Every BUILD runs as `kratebuild`: the engine, the AI agent loop inside it,
+# cargo, rustc, every dependency's build script and proc-macro, the app when
+# it is photographed, the judge reading an upload. All of that is code shaped
+# by a stranger's words or upload. When it ran as the service's own user it
+# could read /proc/<service>/environ -- `include_str!("/proc/1/environ")` was
+# enough -- and carry the secrets out in a bundle or a compiler error. A
+# process that root handed to another uid has no ptrace rights over root, so
+# root's environ, and /work/state (root's, 0700), are out of its reach.
+#
+# Root, not an unprivileged service user with CAP_SETUID: capabilities
+# granted that way survive the child's setuid and its exec, so the child
+# could switch straight back. A switch FROM root clears every capability.
+#
+# kratebuild: its own group and nothing else, a home on the volume
+# (/work/build, made by entrypoint.sh, where its caches survive a stop), no
+# login shell, no sudo in the image. Every set-uid and set-gid bit in the
+# image is cleared so no program can lift a build back to root.
+#
+# The last line proves, at image build, that kratebuild can run every tool a
+# build uses and cannot read PID 1's environment. If a base image change
+# breaks either, the image does not build -- rather than the first person's
+# build failing on the live box.
+RUN useradd --uid 10001 --user-group --no-create-home --home-dir /work/build \
+      --shell /usr/sbin/nologin kratebuild \
+    && chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/krate-isolation-check \
+    && find / -xdev -type f -perm /6000 -exec chmod ug-s {} + \
     && mkdir -p /work \
-    && chown -R builder:builder /srv /work
+    && HOME=/tmp setpriv --reuid=kratebuild --regid=kratebuild --clear-groups sh -euc '\
+      krate --version >/dev/null; \
+      cargo-component --version >/dev/null; \
+      cargo --version >/dev/null; \
+      rustup which cargo >/dev/null; \
+      rustup target list --installed | grep -qx wasm32-wasip1; \
+      /opt/wasi-sdk/bin/clang --version >/dev/null; \
+      test -w "$CARGO_HOME"; \
+      if cat /proc/1/environ >/dev/null 2>&1; then echo "kratebuild can read PID 1s environment" >&2; exit 1; fi; \
+      echo "kratebuild: toolchain ok, PID 1 environ unreadable"'
 
 # Where builds happen. A Fly volume mounts at /work, so scratch build dirs
 # and the downloaded-crate cache survive a machine stopping -- the difference
@@ -167,8 +202,10 @@ RUN useradd --create-home --shell /bin/sh builder \
 #
 # HOME does the work instead, and that is enough: the engine already keeps a
 # shared dependency cache at $HOME/.cache/krate/build, keyed by SDK
-# fingerprint so a WIT change can never serve stale artifacts. Pointing HOME
-# at the volume puts that cache on the volume.
+# fingerprint so a WIT change can never serve stale artifacts. A build's HOME
+# is the build user's, /work/build (src/sandbox.js sets it per child), so that
+# cache is on the volume. The registry stays in CARGO_HOME, which the base
+# image leaves writable by every user.
 #
 # Do NOT set CARGO_TARGET_DIR here to "help". The engine treats an explicit
 # one as the person overriding it and switches its own fingerprinted cache
@@ -180,10 +217,18 @@ RUN useradd --create-home --shell /bin/sh builder \
 # would sign every account's apps as one publisher, so it signs nothing
 # itself: the hub signs each finished build as that person's account
 # (/sign/web-build, IC-983 option B), and the key never comes here.
+#
+# KRATE_BUILD_USER names the build user (src/sandbox.js); with FLY_APP_NAME
+# set, a box without it refuses every build instead of running it as root.
+# KRATE_JUDGE_DIR is where the hub's big uploads land for judging: root's,
+# 0711, so the judge (as kratebuild) reads a file by its exact path but can
+# neither list the folder nor swap a file after its hash was checked.
 ENV HOME=/work \
     TMPDIR=/work/tmp \
     PORT=8080 \
-    KRATE_MAKER_SIGNING=off
+    KRATE_MAKER_SIGNING=off \
+    KRATE_BUILD_USER=kratebuild \
+    KRATE_JUDGE_DIR=/work/judge
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
